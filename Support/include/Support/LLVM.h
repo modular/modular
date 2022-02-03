@@ -260,4 +260,4 @@ using mlir::WalkResult;                // NOLINT(misc-unused-using-decls)
 namespace OpTrait = mlir::OpTrait;
 } // namespace M
 
-#endif // CIRCT_SUPPORT_LLVM_H
+#endif // SUPPORT_LLVM_H
