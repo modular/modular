@@ -15,12 +15,12 @@
 #ifndef LLCL_RUNTIME_H
 #define LLCL_RUNTIME_H
 
-//#include "llvm/ADT/FunctionExtras.h"
-//#include "llvm/Support/Compiler.h"
-#include <memory>
+#include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {
 class Allocator;
+class WorkQueue;
+using TaskFunction = llvm::unique_function<void()>;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, and a way of reporting errors.  This is
@@ -28,8 +28,9 @@ class Allocator;
 ///
 class Runtime final {
 public:
-  // TODO: Diagnostics, thread pool.
-  Runtime(std::unique_ptr<Allocator> allocator);
+  // TODO: Diagnostics.
+  Runtime(std::unique_ptr<Allocator> allocator,
+          std::unique_ptr<WorkQueue> workQueue);
   ~Runtime();
 
   //===--------------------------------------------------------------------===//
@@ -54,7 +55,7 @@ public:
   // Deallocate the memory for one or more entries of type T.
   template <typename T>
   void deallocate(T *ptr, size_t numElements) {
-    DeallocateBytes(ptr, sizeof(T) * numElements);
+    deallocateBytes(ptr, sizeof(T) * numElements);
   }
 
   // Allocate and initialize an object of type T.
@@ -68,14 +69,22 @@ public:
   template <typename T>
   void destroy(T *t) {
     t->~T();
-    deallocate(t);
+    deallocate(t, 1);
   }
 
   //===--------------------------------------------------------------------===//
   // Concurrency
   //===--------------------------------------------------------------------===//
 
-  // TODO
+  // Enqueue a block of work. Thread-safe.
+  void addTask(TaskFunction work);
+
+  // TODO: Await.
+
+  // Block until the system is quiescent (no pending work and no inflight work).
+  //
+  // This should not be called by a thread managed by the work queue.
+  void quiesce();
 
   //===--------------------------------------------------------------------===//
   // Error Reporting
@@ -94,6 +103,7 @@ private:
   void operator=(const Runtime &) = delete;
 
   std::unique_ptr<Allocator> allocator;
+  std::unique_ptr<WorkQueue> workQueue;
 };
 
 } // namespace LLCL
