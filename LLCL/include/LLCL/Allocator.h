@@ -65,6 +65,16 @@ private:
 // Create an allocator that just calls malloc/free.
 std::unique_ptr<Allocator> createMallocAllocator();
 
+/// Create a wrapper allocator that checks to make sure all memoory is
+/// deallocated when the allocator itself is destroyed.
+std::unique_ptr<Allocator>
+createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator);
+
+/// Create a wrapper allocator that prints memory profiling information when it
+/// is destroyed.  This also performs leak checks.
+std::unique_ptr<Allocator>
+createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
+
 } // namespace LLCL
 
 #endif // LLCL_ALLOCATOR_H
