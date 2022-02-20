@@ -15,6 +15,7 @@
 #ifndef LLCL_RUNTIME_H
 #define LLCL_RUNTIME_H
 
+#include "LLCL/CompactRuntimePtr.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {
@@ -32,6 +33,11 @@ public:
   Runtime(std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue);
   ~Runtime();
+
+  /// Return a CompactRuntimePtr that identifies this Runtime instance.
+  CompactRuntimePtr getCompactPtr() const {
+    return CompactRuntimePtr(runtimeIndex);
+  }
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -104,6 +110,10 @@ private:
 
   std::unique_ptr<Allocator> allocator;
   std::unique_ptr<WorkQueue> workQueue;
+
+  /// This is the index # for the runtime object created.  This is held by the
+  /// CompactRuntimePtr.
+  uint8_t runtimeIndex;
 };
 
 } // namespace LLCL
