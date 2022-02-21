@@ -51,7 +51,7 @@ void AsyncValue::destroyWithRefCountZero() {
 
   auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
   concrete->getDestructor()(concrete);
-  free(this);
+  M::alignedFree(this);
 }
 
 //===----------------------------------------------------------------------===//

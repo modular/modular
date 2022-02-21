@@ -13,6 +13,7 @@
 #define LLCL_SUPPORT_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "Support/AlignedAlloc.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -359,9 +360,9 @@ const uint16_t ConcreteAsyncValue<T>::staticTypeID =
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
 AsyncValue *AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
-  // TODO: Aligned malloc.
-  auto *ptr = (Detail::ConcreteAsyncValue<T> *)malloc(
-      sizeof(Detail::ConcreteAsyncValue<T>));
+  auto *ptr = (Detail::ConcreteAsyncValue<T> *)M::alignedAlloc(
+      sizeof(Detail::ConcreteAsyncValue<T>),
+      alignof(Detail::ConcreteAsyncValue<T>));
   new (ptr) Detail::ConcreteAsyncValue<T>(
       State::kUnconstructed, std::is_polymorphic_v<T>, getTypeID<T>(), runtime);
   return ptr;
