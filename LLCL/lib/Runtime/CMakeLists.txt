@@ -5,6 +5,7 @@
 #===------------------------------------------------------------------------===#
 
 add_mlir_library(LLCLRuntime
+  AsyncValue.cpp
   DebuggingAllocators.cpp
   MallocAllocator.cpp
   Runtime.cpp
