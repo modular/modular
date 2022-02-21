@@ -46,18 +46,47 @@ class ConcreteAsyncValue;
 class AsyncValue {
 public:
   //===--------------------------------------------------------------------===//
-  // Primary interface to AsyncValue for clients to use.
+  // Static creation methods for AsyncValue's
   //===--------------------------------------------------------------------===//
 
   /// Create an AsyncValue for the specified type in "unconstructed" state.
+  /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
   static AsyncValue *createUnconstructed(CompactRuntimePtr runtime);
 
+  /// Create an AsyncValue for the specified type in "constructed" but non-ready
+  /// state.  When This should be `markReady()`, or finalized with an error.
+  template <typename T, typename... Args>
+  static AsyncValue *createConstructed(CompactRuntimePtr runtime,
+                                       Args &&...args);
+
+  /// Create an AsyncValue for the specified type in "available" and ready
+  /// state. This is a terminal state for an AsyncValue, it can never change out
+  /// of this state.
+  template <typename T, typename... Args>
+  static AsyncValue *createReady(CompactRuntimePtr runtime, Args &&...args);
+
+  //===--------------------------------------------------------------------===//
+  // State change methods.
+  //===--------------------------------------------------------------------===//
+
   /// Construct the payload of a ConcreteAsyncValue and change our state to
-  /// `available`.  Requires that this AsyncValue's state is `unconstructed` or
-  /// `constructed`.
+  /// `kAvailable`.  Requires that this AsyncValue's state is `unconstructed`.
   template <typename T, typename... Args>
   void emplace(Args &&...args);
+
+  /// Transition a "constructed" AsyncValue to "available" and notify any
+  /// waiters.
+  void markReady() {
+    auto oldState = notifyReady(State::kAvailable);
+    assert(oldState == State::kConstructed &&
+           "can only mark 'constructed' values ready");
+    (void)oldState;
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Primary interface to AsyncValue for clients to use.
+  //===--------------------------------------------------------------------===//
 
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.
@@ -329,6 +358,17 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
     static_cast<ConcreteAsyncValue<T> *>(v)->~ConcreteAsyncValue();
   }
 
+  /// Allocate an instance of ConcreteAsyncValue in the specified state, but
+  /// with the payload uninitialized.
+  static ConcreteAsyncValue<T> *allocate(State state,
+                                         CompactRuntimePtr runtime) {
+    auto *ptr = (ConcreteAsyncValue<T> *)M::alignedAlloc(
+        sizeof(ConcreteAsyncValue<T>), alignof(ConcreteAsyncValue<T>));
+    new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
+                                    getTypeID<T>(), runtime);
+    return ptr;
+  }
+
 private:
   ConcreteAsyncValue(State state, bool hasVTable, uint16_t typeID,
                      CompactRuntimePtr runtime)
@@ -359,13 +399,32 @@ const uint16_t ConcreteAsyncValue<T>::staticTypeID =
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-AsyncValue *AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
-  auto *ptr = (Detail::ConcreteAsyncValue<T> *)M::alignedAlloc(
-      sizeof(Detail::ConcreteAsyncValue<T>),
-      alignof(Detail::ConcreteAsyncValue<T>));
-  new (ptr) Detail::ConcreteAsyncValue<T>(
-      State::kUnconstructed, std::is_polymorphic_v<T>, getTypeID<T>(), runtime);
-  return ptr;
+inline AsyncValue *AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
+  return Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed,
+                                                 runtime);
+}
+
+/// Create an AsyncValue for the specified type in "constructed" but non-ready
+/// state.  When This should be `markReady()`, or finalized with an error.
+template <typename T, typename... Args>
+inline AsyncValue *AsyncValue::createConstructed(CompactRuntimePtr runtime,
+                                                 Args &&...args) {
+  auto *result =
+      Detail::ConcreteAsyncValue<T>::allocate(State::kConstructed, runtime);
+  new (&result->payload) T(std::forward<Args>(args)...);
+  return result;
+}
+
+/// Create an AsyncValue for the specified type in "available" and ready state.
+/// This is a terminal state for an AsyncValue, it can never change out of this
+/// state.
+template <typename T, typename... Args>
+inline AsyncValue *AsyncValue::createReady(CompactRuntimePtr runtime,
+                                           Args &&...args) {
+  auto *result =
+      Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
+  new (&result->payload) T(std::forward<Args>(args)...);
+  return result;
 }
 
 inline void AsyncValue::addRef() {
