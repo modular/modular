@@ -1,0 +1,43 @@
+//===- AlignedAlloc.cpp - Memory alignment helpers ------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support/AlignedAlloc.h"
+#include "llvm/Support/MathExtras.h"
+using namespace M;
+
+/// This is a helper to handle host-specific system alignment functions.
+void *M::alignedAlloc(size_t size, size_t alignment) {
+  assert(llvm::isPowerOf2_64(alignment) && "non-power-of-2 alignment!");
+
+#ifdef _WIN32
+  // MSVC runtime doesn't support aligned_alloc(). See
+  // https://developercommunity.visualstudio.com/t/c17-stdaligned-alloc%E7%BC%BA%E5%A4%B1/468021#T-N473365
+  size = (size + alignment - 1) / alignment * alignment;
+  return _aligned_malloc(size, alignment);
+#else // _WIN32
+  if (alignment <= 8)
+    return malloc(size);
+#if defined(__ANDROID__) || defined(OS_ANDROID)
+  return memalign(alignment, size);
+#else // !__ANDROID__ && !OS_ANDROID
+  void *ptr = nullptr;
+  assert(alignment >= sizeof(void *) && "caller already checked");
+  if (posix_memalign(&ptr, alignment, size) != 0)
+    return nullptr;
+  return ptr;
+#endif
+#endif // _WIN32
+}
+
+#ifdef _WIN32
+void M::alignedFree(void *ptr) {
+  // _aligned_alloc() must be paired with _aligned_free().
+  //
+  // Attempting to use free() with a pointer returned by _aligned_malloc()
+  // results in runtime issues that are hard to debug.
+  _aligned_free(ptr);
+}
+#endif

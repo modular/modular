@@ -18,5 +18,6 @@ add_mlir_library(LLCLRuntime
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
+  MSupport
   LLVMSupport
   )
