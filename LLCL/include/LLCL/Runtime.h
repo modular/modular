@@ -16,6 +16,7 @@
 #define LLCL_RUNTIME_H
 
 #include "LLCL/CompactRuntimePtr.h"
+#include "LLCL/WorkQueue.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {
@@ -83,14 +84,14 @@ public:
   //===--------------------------------------------------------------------===//
 
   // Enqueue a block of work. Thread-safe.
-  void addTask(TaskFunction work);
+  void addTask(TaskFunction work) { workQueue->addTask(std::move(work)); }
 
   // TODO: Await.
 
   // Block until the system is quiescent (no pending work and no inflight work).
   //
   // This should not be called by a thread managed by the work queue.
-  void quiesce();
+  void quiesce() { workQueue->quiesce(); }
 
   //===--------------------------------------------------------------------===//
   // Error Reporting

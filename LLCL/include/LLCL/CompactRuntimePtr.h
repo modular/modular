@@ -24,6 +24,8 @@ public:
 
   // Implicitly convert Runtime* to CompactRuntimePtr.
   /*implicit*/ CompactRuntimePtr(Runtime *runtime);
+  /*implicit*/ CompactRuntimePtr(Runtime &runtime)
+      : CompactRuntimePtr(&runtime) {}
 
   Runtime *operator->() const { return get(); }
   Runtime &operator*() const { return *get(); }
