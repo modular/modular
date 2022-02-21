@@ -1,4 +1,4 @@
-//===- AsyncValue.h ---------------------------------------------*- C++ -*-===//
+//===- LLCL/Runtime/AsyncValue.h --------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,10 +9,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_ASYNCVALUE_H
-#define LLCL_ASYNCVALUE_H
+#ifndef LLCL_SUPPORT_ASYNCVALUE_H
+#define LLCL_SUPPORT_ASYNCVALUE_H
 
-#include "LLCL/CompactRuntimePtr.h"
+#include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -457,4 +457,4 @@ const T &AsyncValue::get() const {
 
 } // namespace LLCL
 
-#endif // LLCL_ASYNCVALUE_H
+#endif // LLCL_SUPPORT_ASYNCVALUE_H

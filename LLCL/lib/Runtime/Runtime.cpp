@@ -8,9 +8,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Runtime.h"
-#include "LLCL/Allocator.h"
-#include "LLCL/WorkQueue.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/WorkQueue.h"
 using namespace LLCL;
 
 void WorkQueue::vtableAnchor() {}

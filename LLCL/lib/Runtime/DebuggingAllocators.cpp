@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Allocator.h"
-#include "LLCL/Atomics.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Support/Atomics.h"
 #include <atomic>
 
 using namespace LLCL;

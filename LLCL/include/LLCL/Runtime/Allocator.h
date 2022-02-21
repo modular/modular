@@ -1,4 +1,4 @@
-//===- Allocator.h - Allocator Abstraction ----------------------*- C++ -*-===//
+//===- LLCL/Runtime/Allocator.h - Allocator Abstraction ---------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,14 +9,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_ALLOCATOR_H
-#define LLCL_ALLOCATOR_H
+#ifndef LLCL_SUPPORT_ALLOCATOR_H
+#define LLCL_SUPPORT_ALLOCATOR_H
 
 #include <memory>
 
 namespace LLCL {
 class LLCLAllocator;
 
+/// This class defines an abstract interface for custom allocators to implement.
+/// This is intended for use by large object allocations (e.g. tensor data), not
+/// for use by every single small allocation that happens in the execution of a
+/// program (don't route std::string's through this!).
+///
 class Allocator {
 public:
   virtual ~Allocator() {}
@@ -77,4 +82,4 @@ createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 
 } // namespace LLCL
 
-#endif // LLCL_ALLOCATOR_H
+#endif // LLCL_SUPPORT_ALLOCATOR_H

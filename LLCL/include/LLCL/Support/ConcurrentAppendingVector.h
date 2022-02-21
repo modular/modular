@@ -1,4 +1,4 @@
-//===- ConcurrentAppendingVector.h ------------------------------*- C++ -*-===//
+//===- LLCL/Support/ConcurrentAppendingVector.h -----------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_CONCURRENT_VECTOR_H
-#define LLCL_SUPPORT_CONCURRENT_VECTOR_H
+#ifndef LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
+#define LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 
 #include <mutex>
 #include <vector>
@@ -144,4 +144,5 @@ private:
 };
 
 } // namespace LLCL
-#endif // LLCL_SUPPORT_CONCURRENT_VECTOR_H
+
+#endif // LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H

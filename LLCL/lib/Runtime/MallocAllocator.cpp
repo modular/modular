@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Allocator.h"
+#include "LLCL/Runtime/Allocator.h"
 #include "llvm/Support/MathExtras.h"
 
 using namespace LLCL;
