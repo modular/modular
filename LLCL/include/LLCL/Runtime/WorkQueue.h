@@ -1,4 +1,4 @@
-//===- WorkQueue.h ----------------------------------------------*- C++ -*-===//
+//===- LLCL/Runtime/WorkQueue.h ---------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_WORKQUEUE_H
-#define LLCL_WORKQUEUE_H
+#ifndef LLCL_RUNTIME_WORKQUEUE_H
+#define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "llvm/ADT/FunctionExtras.h"
 
@@ -51,4 +51,4 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
 } // namespace LLCL
 
-#endif // LLCL_WORKQUEUE_H
+#endif // LLCL_RUNTIME_WORKQUEUE_H

@@ -1,4 +1,4 @@
-//===- Atomics.h - std::atomic helpers --------------------------*- C++ -*-===//
+//===- LLCL/Support/Atomics.h - std::atomic helpers -------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_ATOMICS_H
-#define LLCL_ATOMICS_H
+#ifndef LLCL_SUPPORT_ATOMICS_H
+#define LLCL_SUPPORT_ATOMICS_H
 
 /// This method atomically updates 'maxValue' to 'value' if it is less than it
 /// is already.  This exists because std::atomic doesn't provide a native max
@@ -24,4 +24,4 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   }
 }
 
-#endif // LLCL_ATOMICS_H
+#endif // LLCL_SUPPORT_ATOMICS_H

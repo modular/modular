@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/AsyncValue.h"
-#include "LLCL/ConcurrentAppendingVector.h"
-#include "LLCL/Runtime.h"
+#include "LLCL/Runtime/AsyncValue.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/ConcurrentAppendingVector.h"
 
 using namespace LLCL;
 

@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/WorkQueue.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include <vector>
 using namespace LLCL;
 

@@ -1,11 +1,15 @@
-//===- CompactRuntimePtr.h - A `Runtime*` encoded in 8 bits -----*- C++ -*-===//
+//===- LLCL/Runtime/CompactRuntimePtr.h -------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// A `Runtime*` encoded in 8 bits.
+//
+//===----------------------------------------------------------------------===//
 
-#ifndef LLCL_COMPACT_RUNTIME_PTR_H
-#define LLCL_COMPACT_RUNTIME_PTR_H
+#ifndef LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
+#define LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
 
 #include <cassert>
 
@@ -45,4 +49,4 @@ private:
 
 } // namespace LLCL
 
-#endif // LLCL_COMPACT_RUNTIME_PTR_H
+#endif // LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H

@@ -1,4 +1,4 @@
-//===- Runtime.h - Top-level context for LLCL -------------------*- C++ -*-===//
+//===- LLCL/Runtime/Runtime.h - Top-level object for LLCL -------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -15,8 +15,8 @@
 #ifndef LLCL_RUNTIME_H
 #define LLCL_RUNTIME_H
 
-#include "LLCL/CompactRuntimePtr.h"
-#include "LLCL/WorkQueue.h"
+#include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {
