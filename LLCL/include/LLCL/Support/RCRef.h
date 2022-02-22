@@ -1,16 +1,11 @@
-//===- LLCL/Support/ReferenceCount.h ----------------------------*- C++ -*-===//
+//===- LLCL/Support/RCRef.h -------------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-//
-// This file provides classes that are helpful for working with
-// domain-independent reference counted objects.
-//
-//===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_REFERENCE_COUNT_H
-#define LLCL_SUPPORT_REFERENCE_COUNT_H
+#ifndef LLCL_SUPPORT_RCREF_H
+#define LLCL_SUPPORT_RCREF_H
 
 #include <atomic>
 
@@ -135,4 +130,4 @@ inline void swap(RCRef<T> &a, RCRef<T> &b) {
 
 } // namespace LLCL
 
-#endif // LLCL_SUPPORT_REFERENCE_COUNT_H
+#endif // LLCL_SUPPORT_RCREF_H
