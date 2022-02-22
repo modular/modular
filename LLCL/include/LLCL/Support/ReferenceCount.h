@@ -89,10 +89,10 @@ public:
   }
 
   // Return a raw pointer.
-  T *get() const { return pointer; }
+  T *getPointer() const { return pointer; }
 
   /// Make an explicit copy of this RCRef, increasing the refcount by one.
-  RCRef<T> copy() const { return RCRef<T>::copy(get()); }
+  RCRef<T> copy() const { return RCRef<T>::copy(pointer); }
 
   /// Test for null.
   explicit operator bool() const { return pointer != nullptr; }
