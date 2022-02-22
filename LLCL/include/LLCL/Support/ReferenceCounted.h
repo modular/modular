@@ -1,0 +1,97 @@
+//===- LLCL/Support/ReferenceCounted.h --------------------------*- C++ -*-===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLCL_SUPPORT_REFERENCE_COUNTED_H
+#define LLCL_SUPPORT_REFERENCE_COUNTED_H
+
+#include <atomic>
+
+namespace LLCL {
+
+/// This class is a convenience base class for things that need an atomic
+/// intrusive reference count for ownership management.  It is implemented with
+/// a CRTP pattern where the subclass is specified as a template argument.  It
+/// implicitly makes any derived classes non-copyable and non-assignable.
+///
+/// Subclasses of this are allowed to implement a destroy() instance method,
+/// which allows custom allocation/deallocation logic.  By default, the object
+/// is deallocated with `delete` when the refcount drops to zero.
+///
+/// This class intentionally doesn't have a virtual destructor or anything that
+/// would require a vtable, but subclasses can have one if they choose.
+///
+template <typename SubClass>
+class ReferenceCounted {
+public:
+  explicit ReferenceCounted(); // Initialize with refcount = 1.
+  ~ReferenceCounted();
+
+  // Add a new reference to this object.
+  void addRef() {
+    // It is OK to use std::memory_order_relaxed here as it does not affect the
+    // ownership state of the object.
+    refCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  // Drop a reference to this object, potentially deallocating it.
+  void dropRef() {
+    // If refCount == 1, this object is owned only by the caller. Bypass a
+    // locked op in that case.
+    if (refCount.load(std::memory_order_acquire) == 1 ||
+        refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Make assert in ~ReferenceCounted happy
+      assert((refCount.store(0, std::memory_order_relaxed), true));
+      static_cast<SubClass *>(this)->destroy();
+    }
+  }
+
+  // Return reference count. This should be used for testing and debugging only.
+  uint32_t getNumReferences() const { return refCount.load(); }
+
+  /// Return true if reference count is 1.
+  bool isUnique() const {
+    return refCount.load(std::memory_order_acquire) == 1;
+  }
+
+protected:
+  // Subclasses are allowed to customize this, but the default implementation of
+  // destroy() just deletes the pointer.
+  void destroy() { delete static_cast<SubClass *>(this); }
+
+private:
+  // Not copyable or movable.
+  ReferenceCounted(const ReferenceCounted &) = delete;
+  ReferenceCounted &operator=(const ReferenceCounted &) = delete;
+
+  std::atomic<uint32_t> refCount;
+};
+
+#ifndef NDEBUG
+/// In debug builds we keep track of the number of reference counted objects,
+/// which enables clients to check that none are alive at key moments.  This is
+/// a low-tech way to find certain classes of memory leaks.
+extern std::atomic<size_t> currentReferenceCountedObjects;
+#endif
+
+/// Verify that there are no live ReferenceCounted objects that are currently
+/// alive and print the specified message and abort if there are.
+void verifyNoLiveReferenceCountedObjects(const char *errorMessage);
+
+template <typename SubClass>
+inline ReferenceCounted<SubClass>::ReferenceCounted() : refCount(1) {
+  ++currentReferenceCountedObjects;
+}
+
+template <typename SubClass>
+inline ReferenceCounted<SubClass>::~ReferenceCounted() {
+  assert(refCount.load() == 0 &&
+         "Shouldn't destroy a reference counted object with references!");
+  --currentReferenceCountedObjects;
+}
+
+} // namespace LLCL
+
+#endif // LLCL_SUPPORT_REFERENCE_COUNTED_H
