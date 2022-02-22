@@ -8,7 +8,7 @@
 #define LLCL_RUNTIME_ASYNCVALUEREF_H
 
 #include "LLCL/Runtime/AsyncValue.h"
-#include "LLCL/Support/ReferenceCount.h"
+#include "LLCL/Support/RCRef.h"
 
 namespace LLCL {
 
