@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_ASYNCVALUE_H
-#define LLCL_SUPPORT_ASYNCVALUE_H
+#ifndef LLCL_RUNTIME_ASYNCVALUE_H
+#define LLCL_RUNTIME_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "Support/AlignedAlloc.h"
@@ -517,4 +517,4 @@ const T &AsyncValue::get() const {
 
 } // namespace LLCL
 
-#endif // LLCL_SUPPORT_ASYNCVALUE_H
+#endif // LLCL_RUNTIME_ASYNCVALUE_H
