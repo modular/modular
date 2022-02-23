@@ -21,7 +21,7 @@ namespace M {
 /// that the operation failed, we also have an string error message that
 /// describes why it failed.
 ///
-/// It is used like the following.
+/// It is used like the following:
 /// \code
 ///   ErrorOr<Buffer> getBuffer() {
 ///     if (...not good...)
@@ -39,6 +39,10 @@ namespace M {
 /// Implicit conversion to bool returns true if there is a usable value. The
 /// unary * and -> operators provide pointer like access to the value. Accessing
 /// the value when there is an error will abort.
+///
+/// ErrorOr is moveable but not implicitly copyable because that may invoke
+/// allocation of the value and error.  Typically you would want to move values
+/// out of it.  However, you can use the `copy()` method to do explicit copies.
 ///
 /// This class is extremely related to the llvm::ErrorOr<> type, except that it
 /// holds a string error instead of an error code.  It is similar to the
@@ -68,13 +72,6 @@ public:
     errorStorage = errorValue.release();
   }
 
-  /// Copy constructor from value.
-  template <class OtherT,
-            typename = std::enable_if_t<std::is_convertible<OtherT, T>::value>>
-  ErrorOr(OtherT &val) : storageMode(StorageMode::kValue) {
-    new (&valueStorage) T(val);
-  }
-
   /// Move constructor from value.
   template <class OtherT,
             typename = std::enable_if_t<std::is_convertible<OtherT, T>::value>>
@@ -100,37 +97,29 @@ public:
     }
   }
 
-  /// Copy constructor from ErrorOr.
-  template <class OtherT,
-            typename = std::enable_if_t<std::is_convertible<OtherT, T>::value>>
-  ErrorOr(const ErrorOr<OtherT> &other) : storageMode(other.storageMode) {
-    switch (storageMode) {
-    case StorageMode::kValue:
-      new (&valueStorage) T(other.valueStorage);
-      return;
-    case StorageMode::kStaticError:
-      errorStorage = other.errorStorage;
-      return;
-    case StorageMode::kMallocError:
-      errorStorage = strdup(other.errorStorage);
-      return;
-    }
-  }
-
-  ErrorOr &operator=(const ErrorOr &other) {
-    if (&other != this) {
-      this->~ErrorOr();
-      new (this) ErrorOr(other);
-    }
-    return *this;
-  }
-
   ErrorOr &operator=(ErrorOr &&other) {
     if (&other != this) {
       this->~ErrorOr();
       new (this) ErrorOr(std::move(other));
     }
     return *this;
+  }
+
+  ErrorOr copy() const {
+    ErrorOr result;
+    result.storageMode = storageMode;
+    switch (storageMode) {
+    case StorageMode::kValue:
+      new (&result.valueStorage) T(valueStorage);
+      break;
+    case StorageMode::kStaticError:
+      result.errorStorage = errorStorage;
+      break;
+    case StorageMode::kMallocError:
+      result.errorStorage = strdup(errorStorage);
+      break;
+    }
+    return result;
   }
 
   /// Return false if there is an error.
@@ -160,7 +149,10 @@ public:
 private:
   template <class OtherT>
   friend class ErrorOr;
-  ErrorOr() = delete;
+  ErrorOr(){};
+  // Implicit copies are disabled, use copy() for explicit copies.
+  ErrorOr(const ErrorOr &) = delete;                 // use copy() explicitly.
+  ErrorOr &operator=(const ErrorOr &other) = delete; // use copy() explicitly.
 
   union {
     T valueStorage;

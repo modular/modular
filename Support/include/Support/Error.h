@@ -18,7 +18,7 @@ template <typename T>
 class ErrorOr;
 
 /// This is a lightweight error class that holds a nul-terminated string, with a
-/// static string optimization that does not allocate.  These are not implicitly
+/// static string optimization that does not allocate.  This is not implicitly
 /// copyable because that may invoke allocation, use the `copy()` method to make
 /// this explicit if you want that.
 ///
@@ -59,16 +59,14 @@ public:
 
   /// Return the message this contains and release ownership of it.
   const char *release() {
-    auto *result = value;
     storageMode = kStaticError;
-    return result;
+    return value;
   }
 
   // Explicit copy operation.
   Error copy() const {
     Error result;
     result.storageMode = storageMode;
-
     if (storageMode == kMallocError)
       result.value = strdup(value);
     else
@@ -93,8 +91,8 @@ public:
 
 private:
   Error() = default;
-  Error(const Error &) = delete;
-  Error &operator=(const Error &other) = delete;
+  Error(const Error &) = delete;                 // use copy() explicitly.
+  Error &operator=(const Error &other) = delete; // use copy() explicitly.
   template <typename T>
   friend class M::ErrorOr;
 
