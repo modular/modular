@@ -23,11 +23,9 @@ public:
   /// This constructor forms a reference to the specified pointer, increasing
   /// the underlying reference count by 1.
   static RCRef copy(T *pointer) {
-    RCRef<T> ref;
-    ref.pointer = pointer;
     if (pointer)
       pointer->addRef();
-    return ref;
+    return take(pointer);
   }
 
   /// This constructor forms a reference to the specified pointer, taking
@@ -38,12 +36,17 @@ public:
     return ref;
   }
 
+  /// Create an instance of T with the specified constructor arguments and
+  /// return it as an RCRef.
+  template <typename... Args>
+  static RCRef create(Args &&...args) {
+    return take(new T(std::forward<Args>(args)...));
+  }
+
   // Support implicit conversion from RCRef<Derived> to RCRef<Base>.
   template <typename U,
             typename = std::enable_if_t<std::is_base_of<T, U>::value>>
-  RCRef(RCRef<U> &&u) : pointer(u.pointer) { // NOLINT
-    u.pointer = nullptr;
-  }
+  RCRef(RCRef<U> &&u) : pointer(u.release()) {}
 
   ~RCRef() {
     if (pointer)
