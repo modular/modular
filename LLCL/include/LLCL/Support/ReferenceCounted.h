@@ -8,6 +8,7 @@
 #define LLCL_SUPPORT_REFERENCE_COUNTED_H
 
 #include <atomic>
+#include <cassert>
 
 namespace LLCL {
 
