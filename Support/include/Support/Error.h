@@ -11,7 +11,7 @@
 #ifndef SUPPORT_ERROR_H
 #define SUPPORT_ERROR_H
 
-#include "llvm/ADT/Twine.h"
+#include "Support/LLVM.h"
 
 namespace M {
 template <typename T>
@@ -39,14 +39,7 @@ public:
 
   /// Construct an ErrorOr with a dynamic Twine value (including std::string,
   /// const char *, etc).
-  Error(llvm::Twine message) : storageMode(kMallocError) {
-    llvm::SmallVector<char, 128> tmp;
-    llvm::StringRef str = message.toStringRef(tmp);
-    auto *ptr = (char *)malloc(str.size() + 1);
-    memcpy(ptr, str.data(), str.size());
-    ptr[str.size()] = 0;
-    value = ptr;
-  }
+  Error(llvm::Twine message);
 
   Error(Error &&other) : value(other.value), storageMode(other.storageMode) {
     other.value = nullptr;

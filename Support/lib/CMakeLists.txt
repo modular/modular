@@ -6,6 +6,7 @@
 
 add_mlir_library(MSupport
   AlignedAlloc.cpp
+  Error.cpp
   
   ADDITIONAL_HEADER_DIRS
 
