@@ -15,6 +15,7 @@
 #ifndef LLCL_RUNTIME_H
 #define LLCL_RUNTIME_H
 
+#include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -48,10 +49,14 @@ public:
   Allocator *getAllocator() { return allocator.get(); }
 
   // Allocate the specified number of bytes with the specified alignment.
-  void *allocateBytes(size_t size, size_t alignment);
+  void *allocateBytes(size_t size, size_t alignment) {
+    return allocator->allocateBytes(size, alignment);
+  }
 
   // Deallocate the specified pointer that had the specified size.
-  void deallocateBytes(void *ptr, size_t size);
+  void deallocateBytes(void *ptr, size_t size) {
+    return allocator->deallocateBytes(ptr, size);
+  }
 
   // Allocate memory for one or more entries of type T.
   template <typename T>
@@ -109,8 +114,10 @@ private:
   Runtime(const Runtime &) = delete;
   void operator=(const Runtime &) = delete;
 
-  std::unique_ptr<Allocator> allocator;
-  std::unique_ptr<WorkQueue> workQueue;
+  /// These are the allocator and workQueue's that were configured by the client
+  /// for this Runtime.
+  const std::unique_ptr<Allocator> allocator;
+  const std::unique_ptr<WorkQueue> workQueue;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.
