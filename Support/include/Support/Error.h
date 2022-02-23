@@ -76,14 +76,6 @@ public:
     return result;
   }
 
-  Error &operator=(const Error &other) {
-    if (&other != this) {
-      this->~Error();
-      new (this) Error(other.copy());
-    }
-    return *this;
-  }
-
   Error &operator=(Error &&other) {
     if (&other != this) {
       this->~Error();
@@ -102,6 +94,7 @@ public:
 private:
   Error() = default;
   Error(const Error &) = delete;
+  Error &operator=(const Error &other) = delete;
   template <typename T>
   friend class M::ErrorOr;
 
