@@ -39,7 +39,7 @@ namespace LLCL {
 /// Both readers and writers are allowed to be concurrent.
 ///
 /// TODO: This could be much more efficient by getting rid of the std::vector's.
-/// We could instead maintain our our array of `std::pair<T*, size_t>` records
+/// We could instead maintain our array of `std::pair<T*, size_t>` records
 /// that contain allocated space and capacity, replacing allAllocatedVectors.
 /// We could then make append be completely lock-free in the common case where
 /// a reallocation isn't required.

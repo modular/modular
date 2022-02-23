@@ -24,7 +24,7 @@ static ConcurrentAppendingVector<DestructorFn> &getTypeInfoTableSingleton() {
 
 auto Detail::SomeConcreteAsyncValue::getDestructor() -> DestructorFn {
   auto &table = getTypeInfoTableSingleton();
-  auto typeID = getTypeID();
+  uint16_t typeID = getTypeID();
   assert(typeID != 0);
   return table[getTypeID() - 1];
 }

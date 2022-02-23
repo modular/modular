@@ -11,6 +11,8 @@
 #ifndef LLCL_SUPPORT_ATOMICS_H
 #define LLCL_SUPPORT_ATOMICS_H
 
+namespace LLCL {
+
 /// This method atomically updates 'maxValue' to 'value' if it is less than it
 /// is already.  This exists because std::atomic doesn't provide a native max
 /// operation.
@@ -23,5 +25,7 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
          !maxValue.compare_exchange_weak(previousMax, value)) {
   }
 }
+
+} // namespace LLCL
 
 #endif // LLCL_SUPPORT_ATOMICS_H

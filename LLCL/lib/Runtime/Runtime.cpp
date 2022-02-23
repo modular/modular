@@ -16,6 +16,10 @@ using namespace LLCL;
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
 
+//===----------------------------------------------------------------------===//
+// CompactRuntimePtr
+//===----------------------------------------------------------------------===//
+
 /// The `CompactRuntimePtr` type provides a pointer compressed version of
 /// `Runtime*` that fits in 8 bits.  This allows every AsyncValue to carry a
 /// backpointer to the Runtime that allocated them, and allows deallocating the
@@ -33,6 +37,10 @@ Runtime *CompactRuntimePtr::get() const {
   assert(index != kInvalidIndex);
   return allRuntimes[index];
 }
+
+//===----------------------------------------------------------------------===//
+// Runtime
+//===----------------------------------------------------------------------===//
 
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue)

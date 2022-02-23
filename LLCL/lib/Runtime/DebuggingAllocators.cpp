@@ -10,10 +10,12 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
+#include "Support/LLVM.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <atomic>
 
 using namespace LLCL;
-
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator
 //===----------------------------------------------------------------------===//
@@ -41,12 +43,12 @@ public:
   /// Print a message and exit(1) when memory leak is detected.
   void checkLeak() {
     if (numBytesAllocated.load() != 0) {
-      printf("Memory leak detected: %lld alive allocations, %lld alive bytes\n",
-             (long long)numAllocations.load(),
-             (long long)numBytesAllocated.load());
-      printf("Run with other allocators to debug what happened.\n");
-      fflush(stdout);
-      exit(1);
+
+      llvm::report_fatal_error(
+          "Memory leak detected: " + llvm::Twine(numAllocations.load()) +
+          " alive allocations, " + llvm::Twine(numBytesAllocated.load()) +
+          " alive bytes\n" +
+          "Run with other allocators to debug what happened.\n");
     }
   }
 
@@ -58,7 +60,7 @@ private:
 };
 } // end anonymous namespace.
 
-/// Create a wrapper allocator that checks to make sure all memoory is
+/// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
 std::unique_ptr<Allocator>
 LLCL::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {

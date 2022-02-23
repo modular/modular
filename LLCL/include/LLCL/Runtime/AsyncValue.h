@@ -26,13 +26,13 @@ class ConcreteAsyncValue;
 }
 
 /// This is a future of the specified value type. Arbitrary C++ types may be
-/// used here, even non-copyable types and expensive ones like tensors.  All
-/// AsyncValues are allocated out of a specific `Runtime` instance and can
+/// used here, even non-copyable types and expensive ones like "your database".
+/// All AsyncValues are allocated out of a specific `Runtime` instance and can
 /// identify them with `getRuntime()`.
 ///
 /// An AsyncValue is in one of four states (unconstructed, constructed,
 /// available, error), where the first two are considered "non-ready" and the
-/// last two are considered "ready" (waiters are notified).   If it is in the
+/// last two are considered "ready" (waiters are notified).  If it is in the
 /// non-ready state, it may have a list of waiters which are notified when the
 /// value transitions to a ready state.
 //
@@ -49,7 +49,7 @@ public:
   // Static creation methods for AsyncValue's
   //===--------------------------------------------------------------------===//
 
-  /// Create an AsyncValue for the specified type in "unconstructed" state.
+  /// Create an AsyncValue for the specified type in an "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
   static AsyncValue *createUnconstructed(CompactRuntimePtr runtime);
@@ -129,7 +129,10 @@ public:
 
   /// Return a type identifier for the payload held by this AsyncValue.  In the
   /// case of an IndirectAsyncValue, this will be meaningless.
-  uint16_t getTypeID() const { return typeID; }
+  uint16_t getTypeID() const {
+    // TODO: Handle the indirect case.
+    return typeID;
+  }
 
   // Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
   // unique types can be used in AsyncValues, since the ID is 16 bits, and 0 and
@@ -166,7 +169,7 @@ public:
 
     /// The underlying value's constructor is called but the value is not
     /// ready for consumption (triggering waiters). This state can
-    /// transition to `available` and `error`.
+    /// transition to `kAvailable` and `kError`.
     kConstructed = 1,
 
     /// The underlying value is constructed and ready for consumption by
