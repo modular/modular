@@ -33,13 +33,22 @@ class LLVM_NODISCARD Error final {
   };
 
 public:
-  /// Construct an ErrorOr with a static error string.
+  /// Construct an Error with a static error string.
   template <size_t n>
   Error(const char (&message)[n]) : value(message), storageMode(kStaticError) {}
 
-  /// Construct an ErrorOr with a dynamic Twine value (including std::string,
+  /// Construct an Error with a dynamic Twine value (including std::string,
   /// const char *, etc).
   Error(llvm::Twine message);
+
+  /// Construct an Error with a known-static string that doesn't need lifetime
+  /// management.
+  static Error getStaticString(const char *message) {
+    Error result;
+    result.value = message;
+    result.storageMode = kStaticError;
+    return result;
+  }
 
   Error(Error &&other) : value(other.value), storageMode(other.storageMode) {
     other.value = nullptr;
