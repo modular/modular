@@ -21,6 +21,10 @@ namespace {
 class SingleThreadedWorkQueue : public WorkQueue {
 public:
   SingleThreadedWorkQueue() {}
+  ~SingleThreadedWorkQueue() {
+    assert(workItems.empty() &&
+           "WorkQueue shouldn't be destroyed if work remains!");
+  }
 
   void addTask(TaskFunction work) override;
   void quiesce() override;
