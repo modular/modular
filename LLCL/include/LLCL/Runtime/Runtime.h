@@ -77,11 +77,12 @@ public:
     return new (buf) T(std::forward<Args>(args)...);
   }
 
-  // Destruct and deallocate space for an object of type T.
+  // Destruct and deallocate space for one or more object of type T.
   template <typename T>
-  void destroy(T *t) {
-    t->~T();
-    deallocate(t, 1);
+  void destroyAndDeallocate(T *ptr, size_t numElements = 1) {
+    for (size_t i = 0; i != numElements; ++i)
+      ptr[i].~T();
+    deallocate(ptr, numElements);
   }
 
   //===--------------------------------------------------------------------===//
