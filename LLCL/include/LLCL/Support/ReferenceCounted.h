@@ -31,21 +31,21 @@ public:
   ~ReferenceCounted();
 
   // Add a new reference to this object.
-  void addRef() {
+  void addRef() const {
     // It is OK to use std::memory_order_relaxed here as it does not affect the
     // ownership state of the object.
     refCount.fetch_add(1, std::memory_order_relaxed);
   }
 
   // Drop a reference to this object, potentially deallocating it.
-  void dropRef() {
+  void dropRef() const {
     // If refCount == 1, this object is owned only by the caller. Bypass a
     // locked op in that case.
     if (refCount.load(std::memory_order_acquire) == 1 ||
         refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
       // Make assert in ~ReferenceCounted happy
       assert((refCount.store(0, std::memory_order_relaxed), true));
-      static_cast<SubClass *>(this)->destroy();
+      static_cast<const SubClass *>(this)->destroy();
     }
   }
 
@@ -60,14 +60,14 @@ public:
 protected:
   // Subclasses are allowed to customize this, but the default implementation of
   // destroy() just deletes the pointer.
-  void destroy() { delete static_cast<SubClass *>(this); }
+  void destroy() const { delete static_cast<const SubClass *>(this); }
 
 private:
   // Not copyable or movable.
   ReferenceCounted(const ReferenceCounted &) = delete;
   ReferenceCounted &operator=(const ReferenceCounted &) = delete;
 
-  std::atomic<uint32_t> refCount;
+  mutable std::atomic<uint32_t> refCount;
 };
 
 #ifndef NDEBUG
