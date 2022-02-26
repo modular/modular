@@ -33,9 +33,6 @@ class LLVM_NODISCARD Error final {
   };
 
 public:
-  /// Default constructing an Error gives an error without a message.
-  explicit Error() : value(nullptr), storageMode(kValue) {}
-
   /// Construct an Error with a static error string.
   template <size_t n>
   Error(const char (&message)[n]) : value(message), storageMode(kStaticError) {}
@@ -58,10 +55,6 @@ public:
   }
 
   ~Error() {}
-
-  /// return true if this contains an error message, false if this was default
-  /// constructed.
-  bool hasError() const { return storageMode != kValue; }
 
   /// Return the message this contains as a nul-terminated string.
   const char *get() const { return value; }
@@ -99,6 +92,7 @@ public:
   }
 
 private:
+  Error() = default;
   Error(const Error &) = delete;                 // use copy() explicitly.
   Error &operator=(const Error &other) = delete; // use copy() explicitly.
   template <typename T>
