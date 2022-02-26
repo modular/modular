@@ -11,6 +11,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "llvm/ADT/ArrayRef.h"
 using namespace LLCL;
 
 void WorkQueue::vtableAnchor() {}
@@ -54,3 +55,9 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
 }
 
 Runtime::~Runtime() { allRuntimes[runtimeIndex] = nullptr; }
+
+/// Block until the specified values are ready.  This should not be called by
+/// a thread managed by our work queue.
+void Runtime::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+  workQueue->await(values);
+}
