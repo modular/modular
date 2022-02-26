@@ -20,17 +20,16 @@
 namespace LLCL {
 // LLCL/Support Declarations
 
-// Support/RCRef.h
 template <typename T>
 class RCRef;
-
-// Support/ReferenceCounted.h
 template <typename SubClass>
 class ReferenceCounted;
 
 // LLCL/Runtime Declarations
 
-// Runtime/Runtime.h
+class AsyncValue;
+template <typename T>
+class AsyncValueRef;
 class Runtime;
 
 } // end namespace LLCL
@@ -45,6 +44,8 @@ using LLCL::RCRef;
 using LLCL::ReferenceCounted;
 
 // LLCL/Runtime Declarations
+using LLCL::AsyncValue;
+using LLCL::AsyncValueRef;
 using LLCL::Runtime;
 } // namespace M
 
