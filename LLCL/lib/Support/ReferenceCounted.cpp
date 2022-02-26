@@ -26,7 +26,7 @@ void LLCL::verifyNoLiveReferenceCountedObjects(const char *errorMessage) {
     return;
 
   // Otherwise print an error and crash.
-  puts(errorMessage);
-  fflush(stdout);
+  fprintf(stderr, "LLCL internal error %s\n", errorMessage);
+  fflush(stderr);
   abort();
 }
