@@ -16,12 +16,21 @@ namespace M {
 /// lifetimes of strings.
 class StaticString final {
 public:
-  /// Construct an Error with a static error string.
+  /// Implicitly construct an Error with a static error string.
   template <size_t n>
-  constexpr StaticString(const char (&value)[n]) : value(value) {}
+  /*implicit*/ constexpr StaticString(const char (&value)[n]) : value(value) {}
+
+  /// May also explicitly construct with a `const char*` when you know the
+  /// lifetime is static.
+  static constexpr StaticString get(const char *ptr) {
+    return StaticString(ptr, /*unused*/ 4);
+  }
 
   /// This is the value of the string, it is public since it is immutable.
   const char *const value;
+
+private:
+  constexpr StaticString(const char *value, int /*unused*/) : value(value) {}
 };
 
 } // end namespace M
