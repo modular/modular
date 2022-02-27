@@ -13,6 +13,7 @@
 #define LLCL_RUNTIME_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "LLCL/Support/RCRef.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Error.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -53,24 +54,26 @@ public:
   /// Create an AsyncValue for the specified type in an "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
-  static AsyncValue *createUnconstructed(CompactRuntimePtr runtime);
+  static RCRef<AsyncValue> createUnconstructed(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
   /// state.  When This should be `markReady()`, or finalized with an error.
   template <typename T, typename... Args>
-  static AsyncValue *createConstructed(CompactRuntimePtr runtime,
-                                       Args &&...args);
+  static RCRef<AsyncValue> createConstructed(CompactRuntimePtr runtime,
+                                             Args &&...args);
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
   template <typename T, typename... Args>
-  static AsyncValue *createReady(CompactRuntimePtr runtime, Args &&...args);
+  static RCRef<AsyncValue> createReady(CompactRuntimePtr runtime,
+                                       Args &&...args);
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
   /// TODO: Add location support.
-  static AsyncValue *createError(CompactRuntimePtr runtime, M::Error message);
+  static RCRef<AsyncValue> createError(CompactRuntimePtr runtime,
+                                       M::Error message);
 
   //===--------------------------------------------------------------------===//
   // State change methods.
@@ -417,32 +420,33 @@ const uint16_t ConcreteAsyncValue<T>::staticTypeID =
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-inline AsyncValue *AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
-  return Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed,
-                                                 runtime);
+inline RCRef<AsyncValue>
+AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
+  return takeRCRef(
+      Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed, runtime));
 }
 
 /// Create an AsyncValue for the specified type in "constructed" but non-ready
 /// state.  When This should be `markReady()`, or finalized with an error.
 template <typename T, typename... Args>
-inline AsyncValue *AsyncValue::createConstructed(CompactRuntimePtr runtime,
-                                                 Args &&...args) {
+inline RCRef<AsyncValue>
+AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kConstructed, runtime);
   new (&result->payload) T(std::forward<Args>(args)...);
-  return result;
+  return takeRCRef(result);
 }
 
 /// Create an AsyncValue for the specified type in "available" and ready state.
 /// This is a terminal state for an AsyncValue, it can never change out of this
 /// state.
 template <typename T, typename... Args>
-inline AsyncValue *AsyncValue::createReady(CompactRuntimePtr runtime,
-                                           Args &&...args) {
+inline RCRef<AsyncValue> AsyncValue::createReady(CompactRuntimePtr runtime,
+                                                 Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
   new (&result->payload) T(std::forward<Args>(args)...);
-  return result;
+  return takeRCRef(result);
 }
 
 inline void AsyncValue::addRef() {

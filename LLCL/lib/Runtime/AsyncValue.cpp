@@ -143,12 +143,12 @@ AsyncValue::State AsyncValue::notifyReady(State newState) {
 /// Create an AsyncValue that has already been turned into an error with the
 /// specified message.
 /// TODO: Add location support.
-AsyncValue *AsyncValue::createError(CompactRuntimePtr runtime,
-                                    M::Error message) {
+RCRef<AsyncValue> AsyncValue::createError(CompactRuntimePtr runtime,
+                                          M::Error message) {
   auto *result =
       Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
   new (&result->payload) M::Error(std::move(message));
-  return result;
+  return takeRCRef(result);
 }
 
 /// Mark an "unconstructed" AsyncValue as an error.

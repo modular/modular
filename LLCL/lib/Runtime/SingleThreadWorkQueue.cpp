@@ -11,10 +11,8 @@
 #include "LLCL/Runtime/WorkQueue.h"
 
 #include "LLCL/Runtime/AsyncValue.h"
-#include "LLCL/Support/RCRef.h"
 #include "Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/FunctionExtras.h"
 using namespace LLCL;
 
 namespace {
