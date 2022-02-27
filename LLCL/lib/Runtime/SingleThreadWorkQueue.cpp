@@ -19,10 +19,10 @@ using namespace LLCL;
 
 namespace {
 
-// This class implements a work queue that uses the client thread to execute all
-// work. It spawns no additional threads and has no internal synchronization.
-// threads and performs no synchronization. The only thread used is the host
-// thread when it gets donated.
+/// This class implements a work queue that uses the client thread to execute
+/// all work. It spawns no additional threads and has no internal
+/// synchronization.  The only thread used is the client thread when it gets
+/// donated.
 class SingleThreadedWorkQueue : public WorkQueue {
 public:
   SingleThreadedWorkQueue() {}
@@ -41,7 +41,7 @@ private:
 };
 } // end anonymous namespace
 
-// Enqueue a block of work. This does not use synchronization since this
+/// Enqueue a block of work. This does not use synchronization since this
 void SingleThreadedWorkQueue::addTask(TaskFunction work) {
   workItems.push_back(std::move(work));
 }
@@ -61,9 +61,9 @@ void SingleThreadedWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   doWork([&]() -> bool { return numRemaining == 0; });
 }
 
-// Block until the system is quiescent (no pending work and no inflight work).
-// Because we are single threaded, we *have* to use the host thread to run
-// work - there is no one else to do it.
+/// Block until the system is quiescent (no pending work and no inflight work).
+/// Because we are single threaded, we *have* to use the client thread to run
+/// work - there is no one else to do it.
 void SingleThreadedWorkQueue::quiesce() { doWork({}); }
 
 /// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
