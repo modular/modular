@@ -49,7 +49,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue)
     : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       runtimeIndex(nextRuntimeIndex.fetch_add(1)),
-      readyChain(AsyncValue::createReady<Chain>(*this)) {
+      readyChain(AsyncValue::createReady<Chain>(*this).release()) {
   // We provide a dense numbering of runtime instances right now, but we could
   // make this fancier to allow deallocating and reusing indexes if needbe.
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&

@@ -8,7 +8,6 @@
 #define LLCL_RUNTIME_ASYNCVALUEREF_H
 
 #include "LLCL/Runtime/AsyncValue.h"
-#include "LLCL/Support/RCRef.h"
 
 namespace LLCL {
 
@@ -60,7 +59,7 @@ public:
   /// Create an AsyncValue for the specified type in "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   static AsyncValueRef<T> createUnconstructed(CompactRuntimePtr runtime) {
-    return AsyncValueRef<T>::take(AsyncValue::createUnconstructed<T>(runtime));
+    return AsyncValue::createUnconstructed<T>(runtime);
   }
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
@@ -68,9 +67,8 @@ public:
   template <typename... Args>
   static AsyncValueRef<T> createConstructed(CompactRuntimePtr runtime,
                                             Args &&...args) {
-    auto *ptr =
-        AsyncValue::createConstructed<T>(runtime, std::forward<Args>(args)...);
-    return AsyncValueRef<T>::take(ptr);
+    return AsyncValue::createConstructed<T>(runtime,
+                                            std::forward<Args>(args)...);
   }
 
   /// Create an AsyncValue for the specified type in "available" and ready
@@ -79,9 +77,7 @@ public:
   template <typename... Args>
   static AsyncValueRef<T> createReady(CompactRuntimePtr runtime,
                                       Args &&...args) {
-    auto *ptr =
-        AsyncValue::createReady<T>(runtime, std::forward<Args>(args)...);
-    return AsyncValueRef<T>::take(ptr);
+    return AsyncValue::createReady<T>(runtime, std::forward<Args>(args)...);
   }
 
   //===--------------------------------------------------------------------===//
