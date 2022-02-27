@@ -14,6 +14,7 @@
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/Error.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -66,6 +67,11 @@ public:
   template <typename T, typename... Args>
   static AsyncValue *createReady(CompactRuntimePtr runtime, Args &&...args);
 
+  /// Create an AsyncValue that has already been turned into an error with the
+  /// specified message.
+  /// TODO: Add location support.
+  static AsyncValue *createError(CompactRuntimePtr runtime, M::Error message);
+
   //===--------------------------------------------------------------------===//
   // State change methods.
   //===--------------------------------------------------------------------===//
@@ -74,6 +80,10 @@ public:
   /// `kAvailable`.  Requires that this AsyncValue's state is `unconstructed`.
   template <typename T, typename... Args>
   void emplace(Args &&...args);
+
+  /// Mark an "unconstructed" AsyncValue as an error.
+  /// TODO: Add location support.
+  void setToError(M::Error message);
 
   /// Transition a "constructed" AsyncValue to "available" and notify any
   /// waiters.
@@ -121,9 +131,17 @@ public:
     return const_cast<T &>(static_cast<const AsyncValue *>(this)->get<T>());
   }
 
-  // TODO: Handle Errors.
-
   bool isError() const { return getState() == State::kError; }
+
+  /// Return the Error value in this AsyncValue, aborting if it isn't an error.
+  const M::Error &getError() const {
+    auto *result = getErrorIfPresent();
+    assert(result && "AsyncValue doesn't hold an error");
+    return *result;
+  }
+
+  /// If this AsyncValue holds an error, return it.  If not, return nullptr.
+  const M::Error *getErrorIfPresent() const;
 
   //===--------------------------------------------------------------------===//
   // Type Related functionality
@@ -347,12 +365,10 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
                   "Offset of ConcreteAsyncValue::payload needs to be aligned");
 
     auto s = getState();
-    if (s == State::kError) {
-      assert(0 && "errors not implemented yet");
-      // delete error;
-    } else if (isConstructedOrAvailable(s)) {
+    if (s == State::kError)
+      error.~Error();
+    else if (isConstructedOrAvailable(s))
       payload.~T();
-    }
   }
 
   // The destructor function for a ConcreteAsyncValue<T>.
@@ -378,7 +394,7 @@ private:
                                typeID, runtime) {}
 
   union {
-    // TODO: DecodedDiagnostic *error;
+    M::Error error;
     T payload;
   };
 
@@ -511,6 +527,24 @@ const T &AsyncValue::get() const {
     assert(thisConcrete->template isTypeCompatible<T>() &&
            std::is_polymorphic_v<T> == hasVTable && "incorrect accessor");
     return thisConcrete->payload;
+  }
+
+  assert(0 && "indirect not implemented yet");
+  abort();
+}
+
+/// If this AsyncValue holds an error, return it.  If not, return nullptr.
+inline const M::Error *AsyncValue::getErrorIfPresent() const {
+  if (getSubclassKind() == SubclassKind::kConcrete) {
+    // If this isn't an error, we're done.
+    if (getState() != State::kError)
+      return nullptr;
+
+    // We don't know the concrete <T> type, so get to the error with pointer
+    // arithmetic.
+    auto *nextPtr =
+        static_cast<const Detail::SomeConcreteAsyncValue *>(this) + 1;
+    return reinterpret_cast<const M::Error *>(nextPtr);
   }
 
   assert(0 && "indirect not implemented yet");
