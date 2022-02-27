@@ -43,15 +43,14 @@ uint16_t Detail::SomeConcreteAsyncValue::createTypeInfoAndReturnTypeIDImpl(
 //===----------------------------------------------------------------------===//
 
 void AsyncValue::destroyWithRefCountZero() {
-  if (getSubclassKind() == SubclassKind::kIndirect) {
-    assert(0 && "indirect async values not implemented yet");
-    // delete static_cast<IndirectAsyncValue *>(this);
+  if (getSubclassKind() != SubclassKind::kIndirect) {
+    auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
+    concrete->getDestructor()(concrete);
+    M::alignedFree(this);
     return;
   }
 
-  auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
-  concrete->getDestructor()(concrete);
-  M::alignedFree(this);
+  delete static_cast<Detail::IndirectAsyncValue *>(this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -154,17 +153,80 @@ RCRef<AsyncValue> AsyncValue::createError(CompactRuntimePtr runtime,
 /// Mark an "unconstructed" AsyncValue as an error.
 /// TODO: Add location support.
 void AsyncValue::setToError(M::Error message) {
-  assert(getSubclassKind() == SubclassKind::kConcrete &&
-         getState() == State::kUnconstructed &&
-         "cannot set an error to an indirect or already set up AsyncValue");
+  if (getSubclassKind() == SubclassKind::kConcrete) {
+    assert(getState() == State::kUnconstructed &&
+           "cannot set an error to an indirect or already set up AsyncValue");
 
-  // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
-  // do the pointer arithmetic manually.
-  auto *nextPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this) + 1;
-  auto *errorPtr = reinterpret_cast<M::Error *>(nextPtr);
-  new (errorPtr) M::Error(std::move(message));
-  auto oldState = notifyReady(State::kError);
-  assert(oldState == State::kUnconstructed &&
-         "setting an erro to an AsyncValue that was already set up?");
-  (void)oldState;
+    // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
+    // do the pointer arithmetic manually.
+    auto *nextPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this) + 1;
+    auto *errorPtr = reinterpret_cast<M::Error *>(nextPtr);
+    new (errorPtr) M::Error(std::move(message));
+    auto oldState = notifyReady(State::kError);
+    assert(oldState == State::kUnconstructed &&
+           "setting an erro to an AsyncValue that was already set up?");
+    (void)oldState;
+  } else {
+    resolveIndirect(createError(getRuntime(), std::move(message)));
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// IndirectAsyncValue implementation logic
+//===----------------------------------------------------------------------===//
+
+/// Resolve an IndirectAsyncValue to point to the specified new value,
+/// resolving any waiters whenever newValue becomes ready.
+void AsyncValue::resolveIndirect(RCRef<AsyncValue> newValue) {
+  assert(getSubclassKind() == SubclassKind::kIndirect &&
+         getState() == State::kUnconstructed &&
+         "Can only resolve indirect async values");
+  auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
+
+  assert(!thisIndirect->value && "IndirectAsyncValue is already resolved");
+
+  // If the newValue is already itself ready, we can resolve this indirect value
+  // and make it ready.
+  auto newValueState = newValue->getState();
+  if (isReady(newValueState)) {
+    // Collapse through an intermediate IndirectAsyncValue so they can be
+    // deallocated and to reduce pointer hops.  We know there can be at most one
+    // IndirectAsyncValue here because each locally resolves when they become
+    // ready.
+    if (newValue->getSubclassKind() == SubclassKind::kIndirect) {
+      auto *concreteValue = newValue.getPointer();
+      concreteValue = static_cast<Detail::IndirectAsyncValue *>(concreteValue)
+                          ->value.getPointer();
+      assert(concreteValue->getSubclassKind() == SubclassKind::kConcrete);
+      newValue = copyRCRef(concreteValue);
+    }
+
+    // Resolve the type of the contained value.
+    typeID = newValue->typeID;
+    thisIndirect->value = std::move(newValue);
+
+    // Finally, notify our waiters and switch to kAvailable or kError state.
+    auto oldState = notifyReady(newValueState);
+    assert(oldState == State::kUnconstructed &&
+           "setting an erro to an AsyncValue that was already set up?");
+    (void)oldState;
+    return;
+  }
+
+  // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
+  // until it becomes ready and then try again.
+
+  // Note: the order of evaluation of `value->andThen(std::move(value))` is
+  // not well specified, so we break this across two lines.
+  AsyncValue *value2 = newValue.getPointer();
+  value2->andThen(
+      [this2 = copyRCRef(this), newValue = std::move(newValue)]() mutable {
+        this2->resolveIndirect(std::move(newValue));
+      });
+}
+
+/// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
+/// the future.
+RCRef<AsyncValue> AsyncValue::createIndirect(CompactRuntimePtr runtime) {
+  return takeRCRef(new Detail::IndirectAsyncValue(runtime));
 }

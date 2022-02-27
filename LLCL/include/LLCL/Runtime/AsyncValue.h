@@ -69,6 +69,10 @@ public:
   static RCRef<AsyncValue> createReady(CompactRuntimePtr runtime,
                                        Args &&...args);
 
+  /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
+  /// the future.
+  static RCRef<AsyncValue> createIndirect(CompactRuntimePtr runtime);
+
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
   /// TODO: Add location support.
@@ -96,6 +100,10 @@ public:
            "can only mark 'constructed' values ready");
     (void)oldState;
   }
+
+  /// Resolve an IndirectAsyncValue to point to the specified new value,
+  /// resolving any waiters whenever newValue becomes ready.
+  void resolveIndirect(RCRef<AsyncValue> newValue);
 
   //===--------------------------------------------------------------------===//
   // Primary interface to AsyncValue for clients to use.
@@ -241,13 +249,14 @@ private:
   /// Whether this is an indirect or concrete AsyncValue.
   const SubclassKind subclassKind : 1;
 
-  // hasVTable has the same value for a given payload type T.
+  /// hasVTable has the same value for a given payload type T.
   const bool hasVTable : 1;
 
   // NOTE: 6 unused padding bits.
 
-  // This is a 16-bit value that identifies the type.
-  const uint16_t typeID;
+  /// This is a 16-bit value that identifies the type.  This is dynamically set
+  /// for IndirectAsyncValue's when they get resolved.
+  uint16_t typeID;
 
   struct WaiterListNodePointerTraits {
     static inline void *getAsVoidPointer(WaiterListNode *ptr) { return ptr; }
@@ -414,6 +423,23 @@ const uint16_t ConcreteAsyncValue<T>::staticTypeID =
     ConcreteAsyncValue::createTypeInfoAndReturnTypeID<T>();
 } // end namespace Detail.
 
+namespace Detail {
+/// IndirectAsyncValue represents an uncomputed AsyncValue of unspecified type.
+/// This is used when an AsyncValue must be returned, but the value it holds is
+/// not ready and the producer of the value doesn't know what type it will
+/// ultimately be, or whether it will be an error.
+class IndirectAsyncValue : public AsyncValue {
+  friend class AsyncValue;
+  IndirectAsyncValue(CompactRuntimePtr runtime)
+      : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
+                   /*hasVTable*/ false,
+                   /*typeID*/ uint16_t(~0U), runtime) {}
+  ~IndirectAsyncValue() {}
+
+  RCRef<AsyncValue> value;
+};
+} // end namespace Detail
+
 //===----------------------------------------------------------------------===//
 // AsyncValue inline method implementations.
 //===----------------------------------------------------------------------===//
@@ -521,9 +547,9 @@ inline void AsyncValue::emplace(Args &&...args) {
 
 template <typename T>
 const T &AsyncValue::get() const {
+  assert(isConstructedOrAvailable(getState()) &&
+         "Cannot call get() when AsyncValue isn't constructed");
   if (getSubclassKind() == SubclassKind::kConcrete) {
-    assert(isConstructedOrAvailable(getState()) &&
-           "Cannot call get() when ConcreteAsyncValue isn't constructed");
     auto *thisConcrete =
         static_cast<const Detail::ConcreteAsyncValue<T> *>(this);
     // Make sure both T (the stored type) and BaseT have a VTable or
@@ -531,10 +557,12 @@ const T &AsyncValue::get() const {
     assert(thisConcrete->template isTypeCompatible<T>() &&
            std::is_polymorphic_v<T> == hasVTable && "incorrect accessor");
     return thisConcrete->payload;
+  } else {
+    auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
+    assert(thisIndirect->value &&
+           "indirect can't be constructed without being resolved");
+    return thisIndirect->value->get<T>();
   }
-
-  assert(0 && "indirect not implemented yet");
-  abort();
 }
 
 /// If this AsyncValue holds an error, return it.  If not, return nullptr.
