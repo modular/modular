@@ -88,6 +88,9 @@ public:
   // Primary interface to AsyncValue for clients to use.
   //===--------------------------------------------------------------------===//
 
+  /// Return the `Runtime` instance this is part of.
+  CompactRuntimePtr getRuntime() const { return runtime; }
+
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.
   template <typename WaiterT>
@@ -120,8 +123,7 @@ public:
 
   // TODO: Handle Errors.
 
-  /// Return the `Runtime` instance this is part of.
-  CompactRuntimePtr getRuntime() const { return runtime; }
+  bool isError() const { return getState() == State::kError; }
 
   //===--------------------------------------------------------------------===//
   // Type Related functionality
