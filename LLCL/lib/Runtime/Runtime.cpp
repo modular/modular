@@ -10,7 +10,9 @@
 
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
 using namespace LLCL;
 
@@ -46,7 +48,8 @@ Runtime *CompactRuntimePtr::get() const {
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue)
     : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      runtimeIndex(nextRuntimeIndex.fetch_add(1)) {
+      runtimeIndex(nextRuntimeIndex.fetch_add(1)),
+      readyChain(AsyncValue::createReady<Chain>(*this)) {
   // We provide a dense numbering of runtime instances right now, but we could
   // make this fancier to allow deallocating and reusing indexes if needbe.
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&
@@ -54,10 +57,20 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   allRuntimes[runtimeIndex] = this;
 }
 
-Runtime::~Runtime() { allRuntimes[runtimeIndex] = nullptr; }
+Runtime::~Runtime() {
+  readyChain->dropRef();
+  allRuntimes[runtimeIndex] = nullptr;
+}
 
 /// Block until the specified values are ready.  This should not be called by
 /// a thread managed by our work queue.
 void Runtime::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   workQueue->await(values);
+}
+
+/// Return a reference to a pre-allocated Chain value that is already ready.
+/// This can be used by logic that needs to flag that a side effect has
+/// already happened, without doing an extraneous memory allocation.
+AsyncValueRef<Chain> Runtime::getReadyChain() const {
+  return AsyncValueRef<Chain>::copy(readyChain);
 }

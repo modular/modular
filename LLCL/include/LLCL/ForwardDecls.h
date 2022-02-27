@@ -19,7 +19,7 @@
 
 namespace LLCL {
 // LLCL/Support Declarations
-
+class Chain;
 template <typename T>
 class RCRef;
 template <typename SubClass>
