@@ -129,12 +129,9 @@ public:
   // Type Related functionality
   //===--------------------------------------------------------------------===//
 
-  /// Return a type identifier for the payload held by this AsyncValue.  In the
-  /// case of an IndirectAsyncValue, this will be meaningless.
-  uint16_t getTypeID() const {
-    // TODO: Handle the indirect case.
-    return typeID;
-  }
+  /// Return a type identifier for the payload held by this AsyncValue.  This is
+  /// not set for IndirectAsyncValue's until they are resolved to a value.
+  uint16_t getTypeID() const { return typeID; }
 
   // Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
   // unique types can be used in AsyncValues, since the ID is 16 bits, and 0 and

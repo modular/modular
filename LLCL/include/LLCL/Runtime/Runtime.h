@@ -40,6 +40,11 @@ public:
     return CompactRuntimePtr(runtimeIndex);
   }
 
+  /// Return a reference to a pre-allocated Chain value that is already ready.
+  /// This can be used by logic that needs to flag that a side effect has
+  /// already happened, without doing an extraneous memory allocation.
+  AsyncValueRef<Chain> getReadyChain() const;
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
@@ -124,6 +129,10 @@ private:
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.
   uint8_t runtimeIndex;
+
+  /// This is a preallocated Chain value that is marked as ready, for use by
+  /// getReadyChain.
+  AsyncValue *const readyChain;
 };
 
 } // namespace LLCL
