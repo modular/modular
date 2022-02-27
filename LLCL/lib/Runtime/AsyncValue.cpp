@@ -6,8 +6,8 @@
 
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/Chain.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
-
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
@@ -134,4 +134,37 @@ AsyncValue::State AsyncValue::notifyReady(State newState) {
                                            std::memory_order_acq_rel);
   runWaitersAndDeallocate(oldValue.getPointer());
   return oldValue.getInt();
+}
+
+//===----------------------------------------------------------------------===//
+// Error Handling
+//===----------------------------------------------------------------------===//
+
+/// Create an AsyncValue that has already been turned into an error with the
+/// specified message.
+/// TODO: Add location support.
+AsyncValue *AsyncValue::createError(CompactRuntimePtr runtime,
+                                    M::Error message) {
+  auto *result =
+      Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
+  new (&result->payload) M::Error(std::move(message));
+  return result;
+}
+
+/// Mark an "unconstructed" AsyncValue as an error.
+/// TODO: Add location support.
+void AsyncValue::setToError(M::Error message) {
+  assert(getSubclassKind() == SubclassKind::kConcrete &&
+         getState() == State::kUnconstructed &&
+         "cannot set an error to an indirect or already set up AsyncValue");
+
+  // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
+  // do the pointer arithmetic manually.
+  auto *nextPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this) + 1;
+  auto *errorPtr = reinterpret_cast<M::Error *>(nextPtr);
+  new (errorPtr) M::Error(std::move(message));
+  auto oldState = notifyReady(State::kError);
+  assert(oldState == State::kUnconstructed &&
+         "setting an erro to an AsyncValue that was already set up?");
+  (void)oldState;
 }
