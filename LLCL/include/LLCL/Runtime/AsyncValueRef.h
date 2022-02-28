@@ -132,12 +132,6 @@ public:
     value->emplace<T>(std::forward<Args>(args)...);
   }
 
-  //===--------------------------------------------------------------------===//
-  // Error Handling
-  //===--------------------------------------------------------------------===//
-
-  // TODO: Error handling!
-
 private:
   RCRef<AsyncValue> value;
 };
