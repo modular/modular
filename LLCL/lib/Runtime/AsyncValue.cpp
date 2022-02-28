@@ -10,6 +10,8 @@
 #include "LLCL/Support/ConcurrentAppendingVector.h"
 using namespace LLCL;
 
+std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
+
 //===----------------------------------------------------------------------===//
 // TypeID and Destructor related functionality
 //===----------------------------------------------------------------------===//
