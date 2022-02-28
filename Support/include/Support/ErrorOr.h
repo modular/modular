@@ -141,6 +141,22 @@ public:
     }
   }
 
+  /// Move the error out of this ErrorOr, taking ownership of any heap allocated
+  /// data.
+  Error takeErrorStorage() {
+    switch (storageMode) {
+    case StorageMode::kValue:
+      assert(0 && "must hold an error!");
+    case StorageMode::kStaticError:
+    case StorageMode::kMallocError:
+      Error result;
+      result.storageMode = storageMode;
+      result.value = errorStorage;
+      storageMode = StorageMode::kStaticError;
+      return result;
+    }
+  }
+
   T *operator->() { return &get(); }
   T &operator*() { return get(); }
   const T *operator->() const { return &get(); }
