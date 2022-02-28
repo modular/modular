@@ -40,6 +40,7 @@ class Runtime;
 
 namespace M {
 // LLCL/Support Declarations
+using LLCL::Chain;
 using LLCL::RCRef;
 using LLCL::ReferenceCounted;
 
