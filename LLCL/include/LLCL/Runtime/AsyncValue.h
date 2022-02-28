@@ -234,6 +234,25 @@ public:
   /// Decrease the reference count of this object, potentially deallocating it.
   void dropRef(uint16_t count = 1);
 
+  /// Return true if we tracking of live AsyncValue instances is enabled.
+  static bool isAllocationTrackingEnabled() {
+#ifdef NDEBUG
+    // Only track the number of alive AsyncValue instances in debug builds.
+    return false;
+#else
+    return true;
+#endif
+  }
+
+  /// Return the total number of async values that are currently live in the
+  /// process. This is intended for debugging/assertions only, and shouldn't be
+  /// used for mainline logic in the runtime.
+  static ssize_t getNumAllocatedInstances() {
+    assert(isAllocationTrackingEnabled() &&
+           "AsyncValue instance tracking disabled!");
+    return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
+  }
+
 private:
   //===--------------------------------------------------------------------===//
   // State held by an AsyncValue
@@ -294,10 +313,24 @@ protected:
   AsyncValue(SubclassKind subclassKind, State state, bool hasVTable,
              uint16_t typeID, CompactRuntimePtr runtime)
       : runtime(runtime), subclassKind(subclassKind), hasVTable(hasVTable),
-        typeID(typeID), waitersAndState(WaitersAndState(nullptr, state)) {}
+        typeID(typeID), waitersAndState(WaitersAndState(nullptr, state)) {
+    if (isAllocationTrackingEnabled())
+      ++totalAllocatedAsyncValues;
+  }
 
+  ~AsyncValue() {
+    if (isAllocationTrackingEnabled())
+      --totalAllocatedAsyncValues;
+  }
+
+private:
   AsyncValue(const AsyncValue &) = delete;
   void operator=(const AsyncValue &) = delete;
+
+  /// This is a global counter of the number of AsyncValue instances currently
+  /// live in the process.  This is intended to be used for debugging only, and
+  /// is only kept in sync if `isAllocationTrackingEnabled()` returns true.
+  static std::atomic<ssize_t> totalAllocatedAsyncValues;
 };
 
 //===----------------------------------------------------------------------===//
