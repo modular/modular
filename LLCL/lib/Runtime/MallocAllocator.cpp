@@ -1,4 +1,4 @@
-//===- MallocAllocator.cpp - Allocator using malloc/free ------------------===//
+//===- MallocAllocator.cpp ------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -10,6 +10,8 @@
 using namespace LLCL;
 
 namespace {
+/// This is an implementation of the Allocator interface that just calls to
+/// alignedAlloc/alignedFree, the system allocator implementations.
 class MallocAllocator : public Allocator {
   // Allocate the specified number of bytes with the specified alignment.
   void *allocateBytes(size_t size, size_t alignment) override {

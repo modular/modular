@@ -1,8 +1,8 @@
-#===- CMakeLists.txt - Support Build --------------------------*- cmake -*-===##
+#===- CMakeLists.txt -------------------------------------------*- cmake -*-===#
 #
 # This file is Modular Inc proprietary.
 #
-#===-----------------------------------------------------------------------===##
+#===------------------------------------------------------------------------===#
 
 #add_subdirectory(include/Support)
 add_subdirectory(lib)

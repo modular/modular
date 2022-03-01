@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/Runtime.h - Top-level object for LLCL -------*- C++ -*-===//
+//===- LLCL/Runtime/Runtime.h -----------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //

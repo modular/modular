@@ -1,4 +1,4 @@
-//===- LLCL/ForwardDecls.h - Forward Declare LLCL Types ---------*- C++ -*-===//
+//===- LLCL/ForwardDecls.h --------------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //

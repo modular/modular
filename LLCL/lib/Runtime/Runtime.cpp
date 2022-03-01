@@ -1,4 +1,4 @@
-//===- Runtime.cpp - LLCL Runtime implementation --------------------------===//
+//===- Runtime.cpp --------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

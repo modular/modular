@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/Allocator.h - Allocator Abstraction ---------*- C++ -*-===//
+//===- LLCL/Runtime/Allocator.h ---------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //

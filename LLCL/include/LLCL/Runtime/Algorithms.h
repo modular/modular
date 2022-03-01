@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/Algorithms.h - Parallel Algorithms ----------*- C++ -*-===//
+//===- LLCL/Runtime/Algorithms.h --------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //
