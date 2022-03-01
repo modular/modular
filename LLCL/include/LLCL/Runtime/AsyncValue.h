@@ -84,7 +84,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Construct the payload of a ConcreteAsyncValue and change our state to
-  /// `kAvailable`.  Requires that this AsyncValue's state is `unconstructed`.
+  /// `kAvailable`.  Requires that this AsyncValue's state is `kUnconstructed`.
   template <typename T, typename... Args>
   void emplace(Args &&...args);
 
@@ -486,7 +486,8 @@ AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
 }
 
 /// Create an AsyncValue for the specified type in "constructed" but non-ready
-/// state.  When This should be `markReady()`, or finalized with an error.
+/// state.  When the value is finalized, you should call `markReady()`, or
+/// `setToError` to mark it as ready and notify waiters.
 template <typename T, typename... Args>
 inline RCRef<AsyncValue>
 AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
@@ -562,7 +563,7 @@ inline void AsyncValue::andThen(WaiterT &&waiter) {
 
 /// Construct the payload of the AsyncValue in place and change its state to
 /// kConcrete. Requires that this is a ConcreteAsyncValue that have state
-/// `unavailable`.
+/// `kUnconstructed`.
 template <typename T, typename... Args>
 inline void AsyncValue::emplace(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
