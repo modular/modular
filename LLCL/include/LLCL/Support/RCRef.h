@@ -43,7 +43,7 @@ public:
     return take(new T(std::forward<Args>(args)...));
   }
 
-  // Support implicit conversion from RCRef<Derived> to RCRef<Base>.
+  /// Support implicit conversion from RCRef<Derived> to RCRef<Base>.
   template <typename U,
             typename = std::enable_if_t<std::is_base_of<T, U>::value>>
   RCRef(RCRef<U> &&u) : pointer(u.release()) {}
@@ -86,7 +86,7 @@ public:
     return pointer;
   }
 
-  // Return a raw pointer.
+  /// Return a raw pointer.
   T *getPointer() const { return pointer; }
 
   /// Make an explicit copy of this RCRef, increasing the refcount by one.

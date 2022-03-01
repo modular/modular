@@ -165,7 +165,7 @@ public:
 private:
   template <class OtherT>
   friend class ErrorOr;
-  ErrorOr(){};
+  ErrorOr() = default;
   // Implicit copies are disabled, use copy() for explicit copies.
   ErrorOr(const ErrorOr &) = delete;                 // use copy() explicitly.
   ErrorOr &operator=(const ErrorOr &other) = delete; // use copy() explicitly.
