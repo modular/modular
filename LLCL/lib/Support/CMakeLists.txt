@@ -1,4 +1,4 @@
-#===- CMakeLists.txt - LLCL Support Build ----------------------*- cmake -*-===#
+#===- CMakeLists.txt -------------------------------------------*- cmake -*-===#
 #
 # This file is Modular Inc proprietary.
 #

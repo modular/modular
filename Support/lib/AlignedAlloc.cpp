@@ -1,4 +1,4 @@
-//===- AlignedAlloc.cpp - Memory alignment helpers ------------------------===//
+//===- AlignedAlloc.cpp ---------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

@@ -1,10 +1,6 @@
-//===- SingleThreadWorkQueue.cpp - Simple WorkQueue implementation --------===//
+//===- SingleThreadWorkQueue.cpp ------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
-//
-//===----------------------------------------------------------------------===//
-//
-// This file implements the SingleThreadWorkQueue.
 //
 //===----------------------------------------------------------------------===//
 
@@ -21,10 +17,10 @@ namespace {
 /// all work. It spawns no additional threads and has no internal
 /// synchronization.  The only thread used is the client thread when it gets
 /// donated.
-class SingleThreadedWorkQueue : public WorkQueue {
+class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadedWorkQueue() {}
-  ~SingleThreadedWorkQueue() {
+  SingleThreadWorkQueue() {}
+  ~SingleThreadWorkQueue() {
     assert(workItems.empty() &&
            "WorkQueue shouldn't be destroyed if work remains!");
   }
@@ -40,11 +36,11 @@ private:
 } // end anonymous namespace
 
 /// Enqueue a block of work. This does not use synchronization since this
-void SingleThreadedWorkQueue::addTask(TaskFunction work) {
+void SingleThreadWorkQueue::addTask(TaskFunction work) {
   workItems.push_back(std::move(work));
 }
 
-void SingleThreadedWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+void SingleThreadWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   // We are done when values_remaining drops to zero.
   int numRemaining = values.size();
 
@@ -62,11 +58,11 @@ void SingleThreadedWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
 /// Block until the system is quiescent (no pending work and no inflight work).
 /// Because we are single threaded, we *have* to use the client thread to run
 /// work - there is no one else to do it.
-void SingleThreadedWorkQueue::quiesce() { doWork({}); }
+void SingleThreadWorkQueue::quiesce() { doWork({}); }
 
 /// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
 /// early if it returns true.
-void SingleThreadedWorkQueue::doWork(
+void SingleThreadWorkQueue::doWork(
     llvm::unique_function<bool()> stopPredicate) {
 
   std::vector<TaskFunction> localWorkItems;
@@ -96,5 +92,5 @@ void SingleThreadedWorkQueue::doWork(
 }
 
 std::unique_ptr<WorkQueue> LLCL::createSingleThreadWorkQueue() {
-  return std::make_unique<SingleThreadedWorkQueue>();
+  return std::make_unique<SingleThreadWorkQueue>();
 }

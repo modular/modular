@@ -1,4 +1,4 @@
-//===- Support/LLVM.h - Import/forward declare LLVM/MLIR types --*- C++ -*-===//
+//===- Support/LLVM.h -------------------------------------------*- C++ -*-===//
 //
 // This file is Modular Inc proprietary.
 //

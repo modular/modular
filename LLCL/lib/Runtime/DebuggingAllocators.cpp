@@ -1,4 +1,4 @@
-//===- DebuggingAllocators.cpp - Allocators for debugging -----------------===//
+//===- DebuggingAllocators.cpp --------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -16,6 +16,7 @@
 #include <atomic>
 
 using namespace LLCL;
+
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator
 //===----------------------------------------------------------------------===//

@@ -1,4 +1,4 @@
-//===- AsyncValue.cpp - Implementation for AsyncValue classes -------------===//
+//===- AsyncValue.cpp -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

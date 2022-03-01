@@ -1,4 +1,4 @@
-//===- Error.cpp - Implementation logic for the Error class ---------------===//
+//===- Error.cpp ----------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
