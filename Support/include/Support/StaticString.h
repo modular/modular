@@ -16,7 +16,7 @@ namespace M {
 /// lifetimes of strings.
 class StaticString final {
 public:
-  /// Implicitly construct an Error with a static error string.
+  /// Implicitly construct a StaticString with a static string (char array).
   template <size_t n>
   /*implicit*/ constexpr StaticString(const char (&value)[n]) : value(value) {}
 
