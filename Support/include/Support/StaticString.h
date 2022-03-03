@@ -27,12 +27,16 @@ public:
     return StaticString(const_cast<char *>(ptr), /*unused*/ 4);
   }
 
-  /// This is the value of the string, it is public since it is immutable.
-  char *value;
+  /// Return the value of the string. Because we want this class to be
+  /// copyable/movable we can't const-qualify the char *, but we also don't want
+  /// it to be modifiable so we only provide a getter.
+  char *getValue() const { return value; }
 
 private:
   constexpr StaticString(const char *value, int /*unused*/)
       : value(const_cast<char *>(value)) {}
+
+  char *value;
 };
 
 } // end namespace M
