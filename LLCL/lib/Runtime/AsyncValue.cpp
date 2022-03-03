@@ -161,8 +161,8 @@ void AsyncValue::setToError(M::Error message) {
 
     // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
     // do the pointer arithmetic manually.
-    auto *nextPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this) + 1;
-    auto *errorPtr = reinterpret_cast<M::Error *>(nextPtr);
+    auto *errorPtr =
+        static_cast<Detail::SomeConcreteAsyncValue *>(this)->getErrorPointer();
     new (errorPtr) M::Error(std::move(message));
     auto oldState = notifyReady(State::kError);
     assert(oldState == State::kUnconstructed &&

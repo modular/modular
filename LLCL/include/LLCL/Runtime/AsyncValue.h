@@ -385,6 +385,10 @@ private:
 
   static uint16_t createTypeInfoAndReturnTypeIDImpl(DestructorFn destructor);
 
+  /// The error field and the payload field are always first thing in our
+  // derived class.
+  M::Error *getErrorPointer() { return reinterpret_cast<M::Error *>(this + 1); }
+
   // Creates a DestructorFn entry for `T` and store it in a global
   // TypeInfo table. Returns the "type id" for `T` which currently happens to
   // be one plus the index of this TypeInfo object in the TypeInfo table.
@@ -465,8 +469,8 @@ class IndirectAsyncValue : public AsyncValue {
   friend class AsyncValue;
   IndirectAsyncValue(CompactRuntimePtr runtime)
       : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
-                   /*hasVTable*/ false,
-                   /*typeID*/ uint16_t(~0U), runtime) {}
+                   /*hasVTable=*/false,
+                   /*typeID=*/uint16_t(~0U), runtime) {}
   ~IndirectAsyncValue() {}
 
   RCRef<AsyncValue> value;
@@ -591,12 +595,12 @@ const T &AsyncValue::get() const {
     assert(thisConcrete->template isTypeCompatible<T>() &&
            std::is_polymorphic_v<T> == hasVTable && "incorrect accessor");
     return thisConcrete->payload;
-  } else {
-    auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
-    assert(thisIndirect->value &&
-           "indirect can't be constructed without being resolved");
-    return thisIndirect->value->get<T>();
   }
+
+  auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
+  assert(thisIndirect->value &&
+          "indirect can't be constructed without being resolved");
+  return thisIndirect->value->get<T>();
 }
 
 /// If this AsyncValue holds an error, return it.  If not, return nullptr.
@@ -608,9 +612,9 @@ inline const M::Error *AsyncValue::getErrorIfPresent() const {
 
     // We don't know the concrete <T> type, so get to the error with pointer
     // arithmetic.
-    auto *nextPtr =
-        static_cast<const Detail::SomeConcreteAsyncValue *>(this) + 1;
-    return reinterpret_cast<const M::Error *>(nextPtr);
+    return static_cast<Detail::SomeConcreteAsyncValue *>(
+               const_cast<AsyncValue *>(this))
+        ->getErrorPointer();
   }
 
   assert(0 && "indirect not implemented yet");

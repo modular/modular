@@ -40,7 +40,8 @@ using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
 
 /// Add some non-blocking work to the WorkQueue managed by the specified
 /// Runtime.
-static void addTask(Runtime &runtime, llvm::unique_function<void()> work) {
+inline static void addTask(Runtime &runtime,
+                           llvm::unique_function<void()> work) {
   runtime.addTask(std::move(work));
 }
 
@@ -53,8 +54,8 @@ static void addTask(Runtime &runtime, llvm::unique_function<void()> work) {
 ///
 template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
-LLVM_NODISCARD static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
-                                                      FnTy work) {
+LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
+                                                             FnTy work) {
   auto result = AsyncValueRef<ResultTy>::createUnconstructed(runtime);
   addTask(runtime,
           [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
