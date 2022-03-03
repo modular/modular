@@ -18,19 +18,21 @@ class StaticString final {
 public:
   /// Implicitly construct a StaticString with a static string (char array).
   template <size_t n>
-  /*implicit*/ constexpr StaticString(const char (&value)[n]) : value(value) {}
+  /*implicit*/ constexpr StaticString(const char (&value)[n])
+      : value(const_cast<char *>(value)) {}
 
   /// May also explicitly construct with a `const char*` when you know the
   /// lifetime is static.
   static constexpr StaticString get(const char *ptr) {
-    return StaticString(ptr, /*unused*/ 4);
+    return StaticString(const_cast<char *>(ptr), /*unused*/ 4);
   }
 
   /// This is the value of the string, it is public since it is immutable.
-  const char *const value;
+  char *value;
 
 private:
-  constexpr StaticString(const char *value, int /*unused*/) : value(value) {}
+  constexpr StaticString(const char *value, int /*unused*/)
+      : value(const_cast<char *>(value)) {}
 };
 
 } // end namespace M
