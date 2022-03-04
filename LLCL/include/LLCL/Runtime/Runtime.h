@@ -19,6 +19,10 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 
+namespace M {
+class Error;
+}
+
 namespace LLCL {
 class Allocator;
 class WorkQueue;
@@ -109,7 +113,21 @@ public:
   // Cancel the current execution
   //===--------------------------------------------------------------------===//
 
-  // TODO: Cancellation
+  /// Cancel the current BEF Execution. This transitions this Runtime to the
+  /// canceled state, which causes all asynchronously executing threads to be
+  /// canceled when they check the cancellation state (e.g. in BEFExecutor).
+  void cancelExecution(M::Error message);
+
+  /// restartFromCancellation() transitions Runtime from the canceled state to
+  /// the normal execution state.
+  void restartFromCancellation();
+
+  /// When this Runtime is in a canceled state, getCancelValue() returns a
+  /// non-null AsyncValue containing the message for the cancellation.
+  /// Otherwise, it returns nullptr.
+  AsyncValue *getCancelValue() const {
+    return cancelValue.load(std::memory_order_acquire);
+  }
 
 private:
   Runtime(const Runtime &) = delete;
@@ -127,6 +145,10 @@ private:
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValue *const readyChain;
+
+  /// If execution is cancelled, this holds the error value to forward into the
+  /// results of computations.
+  std::atomic<AsyncValue *> cancelValue{nullptr};
 };
 
 } // namespace LLCL
