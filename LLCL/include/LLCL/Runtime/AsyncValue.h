@@ -617,8 +617,10 @@ inline const M::Error *AsyncValue::getErrorIfPresent() const {
         ->getErrorPointer();
   }
 
-  assert(0 && "indirect not implemented yet");
-  abort();
+  auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
+  if (!thisIndirect->value)
+    return nullptr;
+  return thisIndirect->value->getErrorIfPresent();
 }
 
 } // namespace LLCL

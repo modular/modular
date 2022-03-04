@@ -58,6 +58,8 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
 }
 
 Runtime::~Runtime() {
+  // Clear cancellation value if present.
+  restartFromCancellation();
   readyChain->dropRef();
   allRuntimes[runtimeIndex] = nullptr;
 }
@@ -66,6 +68,35 @@ Runtime::~Runtime() {
 /// a thread managed by our work queue.
 void Runtime::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   workQueue->await(values);
+}
+
+/// Cancel the current BEF Execution. This transitions this Runtime to the
+/// canceled state, which causes all asynchronously executing threads to be
+/// canceled when they check the cancellation state (e.g. in BEFExecutor).
+void Runtime::cancelExecution(M::Error message) {
+  AsyncValue *messageVal =
+      AsyncValue::createError(*this, std::move(message)).release();
+
+  AsyncValue *expectedValue = nullptr;
+  // Use memory_order_release for the success case so that error_value is
+  // visible to other threads when they load with memory_order_acquire. For the
+  // failure case, we do not care about expectedValue, so we can use
+  // memory_order_relaxed.
+  if (!cancelValue.compare_exchange_strong(expectedValue, messageVal,
+                                           std::memory_order_release,
+                                           std::memory_order_relaxed))
+    messageVal->dropRef();
+}
+
+/// restartFromCancellation() transitions Runtime from the canceled state to
+/// the normal execution state.
+void Runtime::restartFromCancellation() {
+  // Use memory_order_acq_rel so that previous writes on this thread are visible
+  // to other threads and previous writes from other threads (e.g. the return
+  // 'value') are visible to this thread.
+  AsyncValue *value = cancelValue.exchange(nullptr, std::memory_order_acq_rel);
+  if (value)
+    value->dropRef();
 }
 
 /// Return a reference to a pre-allocated Chain value that is already ready.
