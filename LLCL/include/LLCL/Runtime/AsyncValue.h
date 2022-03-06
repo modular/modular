@@ -236,11 +236,11 @@ public:
 
   /// Return true if we tracking of live AsyncValue instances is enabled.
   static bool isAllocationTrackingEnabled() {
-#ifdef NDEBUG
+#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+    return true;
+#else
     // Only track the number of alive AsyncValue instances in debug builds.
     return false;
-#else
-    return true;
 #endif
   }
 
