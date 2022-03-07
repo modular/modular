@@ -142,6 +142,9 @@ public:
     return const_cast<T &>(static_cast<const AsyncValue *>(this)->get<T>());
   }
 
+  /// Return true if `get()` will work and produce a value.
+  bool isValueAvailable() const { return getState() == State::kAvailable; }
+
   bool isError() const { return getState() == State::kError; }
 
   /// Return the Error value in this AsyncValue, aborting if it isn't an error.
