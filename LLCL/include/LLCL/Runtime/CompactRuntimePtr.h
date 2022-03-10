@@ -12,6 +12,7 @@
 #define LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
 
 #include <cassert>
+#include <cstdint>
 
 namespace LLCL {
 

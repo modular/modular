@@ -348,6 +348,8 @@ constexpr bool kMaybeBase = std::is_class<T>::value && !std::is_final<T>::value;
 /// never be directly accessed by users - always use AsyncValue methods instead.
 class SomeConcreteAsyncValue : public AsyncValue {
   friend class AsyncValue;
+  template <typename T>
+  friend class ConcreteAsyncValue;
   using AsyncValue::AsyncValue;
 
   //===--------------------------------------------------------------------===//

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Support/ReferenceCounted.h"
+#include <cstdio>
 #include <cstdlib>
 using namespace LLCL;
 
