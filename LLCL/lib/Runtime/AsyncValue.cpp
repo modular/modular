@@ -148,7 +148,7 @@ RCRef<AsyncValue> AsyncValue::createError(CompactRuntimePtr runtime,
                                           M::Error message) {
   auto *result =
       Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
-  new (&result->payload) M::Error(std::move(message));
+  new (&result->error) M::Error(std::move(message));
   return takeRCRef(result);
 }
 

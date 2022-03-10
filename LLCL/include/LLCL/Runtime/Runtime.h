@@ -18,6 +18,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include <atomic>
 
 namespace M {
 class Error;
