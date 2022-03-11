@@ -29,7 +29,7 @@ using TaskFunction = llvm::unique_function<void()>;
 /// ready to go, and `quiesce` which blocks until all work is done.
 class WorkQueue {
 public:
-  virtual ~WorkQueue() {}
+  virtual ~WorkQueue() = default;
 
 protected:
   /// Clients should access WorkQueue's methods via LLCL::Runtime.
@@ -41,12 +41,6 @@ protected:
   /// Block until the specified values are ready.  This should not be called by
   /// a thread managed by our work queue.
   virtual void await(llvm::ArrayRef<RCRef<AsyncValue>> values) = 0;
-
-  /// Block until the system is quiescent (no pending work and no inflight
-  /// work).
-  ///
-  /// This should not be called by a thread managed by the work queue.
-  virtual void quiesce() = 0;
 
   WorkQueue() = default;
 
