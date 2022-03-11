@@ -37,6 +37,7 @@ class AsyncValue;
 template <typename T>
 class AsyncValueRef;
 class Runtime;
+class Allocator;
 
 } // end namespace LLCL
 
@@ -56,6 +57,7 @@ using LLCL::takeRCRef;
 using LLCL::AsyncValue;
 using LLCL::AsyncValueRef;
 using LLCL::Runtime;
+using LLCL::Allocator;
 } // namespace M
 
 #endif // SUPPORT_FORWARD_DECLS_H

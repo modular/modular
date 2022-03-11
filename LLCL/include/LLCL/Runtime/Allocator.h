@@ -58,6 +58,14 @@ public:
     deallocate(t);
   }
 
+  /// Destruct and deallocate space for one or more object of type T.
+  template <typename T>
+  void destroyAndDeallocate(T *ptr, size_t numElements = 1) {
+    for (size_t i = 0; i != numElements; ++i)
+      ptr[i].~T();
+    deallocate(ptr, numElements);
+  }
+
 protected:
   Allocator() = default;
   Allocator(const Allocator &) = delete;
