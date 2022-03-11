@@ -2,8 +2,7 @@
 
 This document introduces the `LLCL::Runtime`, some of the design points, key
 configuration points and rationale for how it works.  For more details on
-datatypes and more specialized
-topics please see:
+datatypes and more specialized topics please see:
 
  - [`AsyncValue` type documentation](AsyncValue.md)
  - [Non-blocking work queues](WorkQueueNonblocking.md)
@@ -11,16 +10,17 @@ topics please see:
 ## Library-based Design
 
 `LLCL::Runtime` is designed as a low-level concurrency library for managing
-system
-resources on modern CPU systems.  It has many peers with similar functionality,
-e.g. Intel Thread Building Blocks, Apple Grand Central Dispatch and many others.
+system resources on modern CPU systems.  It has many peers that provide similar
+functionality, such as Intel Thread Building Blocks, Apple Grand Central Dispatch,
+and many others.
+
 It has three major differentiating factors:
 
- 1) it follows proper library-based design approaches (e.g. there are no global
+ 1) It follows proper library-based design approaches (e.g. there are no global
     parallel-for-each operations that act against an implicit thread pool).
- 2) it is designed to cooperate with other things in the application that are
-    using the CPU threads (including multiple instances of itself).
- 3) its key policies (e.g. how is a thread pool implemented?) are abstracted
+ 2) It is designed to cooperate with other things within the application that are
+    using CPU threads (including multiple instances of itself).
+ 3) Its key policies (e.g. how is a thread pool implemented?) are abstracted
     from the code that is working with it.
 
 This is very important: we want LLCL-based technology to compose into existing
@@ -35,17 +35,17 @@ operating system details - in fact, many of these can run on bare-metal systems.
 
 On the other hand, we're not providing a virtual machine.  If clients of
 `LLCL::Runtime` want to be written in a system specific way, the full machine is
-open and clients are not prevented from doing quirky and exotic things.
+open and clients are not prevented from doing quirky and exotic things as necessary.
 
 ## LLCL `WorkQueue` / Thread Pool Abstraction
 
 The [LLCL::WorkQueue](../include/LLCL/Runtime/WorkQueue.h) class is an abstract
-interface for a work queue, which usually implemented to execute the submitted
+interface for a work queue, which is usually implemented to execute the submitted
 work in parallel with a thread pool.  This class is intentionally very simple,
 but has a few important design points:
 
 1) It is an abstract interface that may be implemented in many different ways,
-   for systems with different level thread abstractions or ones with familiar
+   for systems with different levels of thread abstractions or ones with familiar
    abstractions but different constraints.
 
 2) The interface is minimal: you may add work, and may ask that a client thread
@@ -65,9 +65,9 @@ facilitate efficient implementation of it for different use-cases.
 
 ### An abstract interface with multiple implementations
 
-`WorkQueue` being an abstract interface is important for our goals of LLCL as a
-root technology of a bunch of library-based designs.  If the bottom of the stack
-doesn't have a proper library-based design, then nothing built on top of it will
+`WorkQueue` providing an abstract interface is important for our goals of LLCL as a
+root technology of various library-based designs.  If the bottom of the stack
+doesn't have a proper library-based design, nothing built on top of it will
 either.
 
 Furthermore, there are lots of ways to implement threading, including pthreads,
@@ -75,22 +75,22 @@ Windows threads, fibers, running in an unsynchronized single-thread context,
 running on a multi-core bare-metal embedded system, in a Linux kernel, pinning
 computation to just the "little cores" of a mobile device, pinned to one socket
 of a multi-socket NUMA server, server processes with dynamically changing core
-count (as more processes are loaded onto the machine) etc.
+count (as more processes are loaded onto the machine), etc.
 
 There is no "right" answer here - only the client can know the right way to
 execute the work.
 
 ### Minimal interface
 
-Keeping the interface minimal allows flexibility in the implementation, and
-ensures that the client algorithms (e.g. a "parallel for loop") are kept
+Keeping the interface minimal allows flexibility within the implementation, and
+ensures that client algorithms (e.g. a "parallel for loop") are kept
 orthogonal from the implementations of the `WorkQueue` implementations.  The
 algorithms that compose onto this interface are implemented separately, in
 [Runtime/Algorithms.h](../include/LLCL/Runtime/Algorithms.h).
 
 ### Designed for non-blocking work
 
-Implementations of WorkQueue are allowed to assume that no work items submitted
+Implementations of `WorkQueue` are allowed to assume that no work items submitted
 to the queue may block (e.g. on I/O).  This allows a much simpler implementation
 approach and allows more efficient use of the machine.  For an exploration of
 the issues involved here, please see [detailed document on non-blocking
@@ -109,7 +109,7 @@ interface for heap allocation.  Similar to the `WorkQueue` class, it is an
 abstract interface that allows algorithmic code to be kept independent of client
 specific policies, allowing both to work together.
 
-The core interface is similar to the `malloc`/`free`, with a couple of
+The core interface is similar to `malloc`/`free`, with a couple of
 refinements: 1) the allocation interface takes an alignment specifier, allowing
 the allocation of SIMD vectors and other types that require 16 or 32-byte
 alignment in a composable way, and 2) the deallocation interface also takes a
@@ -127,7 +127,7 @@ compute (with `WorkQueue`) and the data (with `Allocator`) to the same socket to
 avoid saturating the relatively low bandwidth inter-socket interconnect between
 the CPUs.  It also allows integration with "huge page" OS features which
 [require fiddly logic to use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
-but can massively latency in some cases by reducing TLB misses.
+but can massively affect latency in some cases by reducing TLB misses.
 
 When building data intensive applications (e.g. allocating tensor data in a
 machine learning application), it is a good idea to allocate that data with the
@@ -139,7 +139,7 @@ While the `Allocator` interface is important for large-scale allocations, it
 does provide a tiny bit of overhead (a vtable indirection) and isn't intended
 to integrate into fine-grained C++ allocators.  This means you shouldn't try to
 funnel all `std::string` or `std::vector` allocations through it, nor should
-ever tiny linked list node go through it.
+every tiny linked list node go through it.
 
 Focus on large scale allocations that can matter to the memory bandwidth of your
 workload.
