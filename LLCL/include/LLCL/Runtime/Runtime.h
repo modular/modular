@@ -105,11 +105,6 @@ public:
   /// a thread managed by our work queue.
   void await(llvm::ArrayRef<RCRef<AsyncValue>> values);
 
-  /// Block until the system is quiescent (no pending/inflight work).
-  ///
-  /// This should not be called by a thread managed by the work queue.
-  void quiesce() { workQueue->quiesce(); }
-
   //===--------------------------------------------------------------------===//
   // Cancel the current execution
   //===--------------------------------------------------------------------===//
@@ -136,8 +131,8 @@ private:
 
   /// These are the allocator and workQueue's that were configured by the client
   /// for this Runtime.
-  const std::unique_ptr<Allocator> allocator;
-  const std::unique_ptr<WorkQueue> workQueue;
+  std::unique_ptr<Allocator> allocator;
+  std::unique_ptr<WorkQueue> workQueue;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.

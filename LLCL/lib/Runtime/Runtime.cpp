@@ -58,6 +58,14 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
 }
 
 Runtime::~Runtime() {
+  // Explicitly call the destructor here while the workQueue is still alive.
+  // This is because the work queue's destructor will clear out its internal
+  // task list by doing all the work required. This will result in segfaults if
+  // the work queue itself has been freed already.
+  workQueue->~WorkQueue();
+  WorkQueue *wq = workQueue.release();
+  operator delete(wq);
+
   // Clear cancellation value if present.
   restartFromCancellation();
   readyChain->dropRef();

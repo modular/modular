@@ -21,13 +21,12 @@ class SingleThreadWorkQueue : public WorkQueue {
 public:
   SingleThreadWorkQueue() {}
   ~SingleThreadWorkQueue() {
-    assert(workItems.empty() &&
-           "WorkQueue shouldn't be destroyed if work remains!");
+    // Complete any work that's still in-flight.
+    doWork({});
   }
 
   void addTask(TaskFunction work) override;
   void await(llvm::ArrayRef<RCRef<AsyncValue>> values) override;
-  void quiesce() override;
 
 private:
   void doWork(llvm::unique_function<bool()> stopPredicate);
@@ -54,11 +53,6 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   // Run work items until numRemaining drops to zero.
   doWork([&]() -> bool { return numRemaining == 0; });
 }
-
-/// Block until the system is quiescent (no pending work and no inflight work).
-/// Because we are single threaded, we *have* to use the client thread to run
-/// work - there is no one else to do it.
-void SingleThreadWorkQueue::quiesce() { doWork({}); }
 
 /// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
 /// early if it returns true.
