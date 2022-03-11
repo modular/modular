@@ -1,6 +1,6 @@
-# LLCL/Runtime Overview
+# `LLCL::Runtime` Overview
 
-This document introduces the LLCL runtime, some of the design points, key
+This document introduces the `LLCL::Runtime`, some of the design points, key
 configuration points and rationale for how it works.  For more details on
 datatypes and more specialized
 topics please see:
@@ -10,7 +10,8 @@ topics please see:
 
 ## Library-based Design
 
-LLCL/Runtime is designed as a low-level concurrency library for managing system
+`LLCL::Runtime` is designed as a low-level concurrency library for managing
+system
 resources on modern CPU systems.  It has many peers with similar functionality,
 e.g. Intel Thread Building Blocks, Apple Grand Central Dispatch and many others.
 It has three major differentiating factors:
@@ -33,7 +34,7 @@ these algorithms to be expressible in a way that isn't unduly exposed to the
 operating system details - in fact, many of these can run on bare-metal systems.
 
 On the other hand, we're not providing a virtual machine.  If clients of
-LLCL/Runtime want to be written in a system specific way, the full machine is
+`LLCL::Runtime` want to be written in a system specific way, the full machine is
 open and clients are not prevented from doing quirky and exotic things.
 
 ## LLCL `WorkQueue` / Thread Pool Abstraction
@@ -97,9 +98,9 @@ work queues](WorkQueueNonblocking.md).
 
 That said, it is very typical for top level clients to want to submit work and
 not embrace the non-blocking approach themselves.  As such, there is a top-level
-`await` and `quiesce` calls which work for a specified set of values to be
-computed, or wait for the work queue to complete all work.  These routines are
-designed to be used by the client only, and not by items in the work queue.
+`await` call which wait for a specified set of values to be computed.  This
+routines is designed to be used by the client only, and not by items in the work
+queue or other things that are supposed to be non-blocking.
 
 ## LLCL `Allocator` Abstraction
 
