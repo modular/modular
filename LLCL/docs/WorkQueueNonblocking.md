@@ -12,9 +12,13 @@ execute other work in the work queue.
 
 This is a challenging problem to deal with, particularly with large scale
 software systems - most existing code in the world was built on top of
-existing blocking APIs (e.g. even simple things like `printf` can block!). There
-are two major approaches to solving this problem: adaptive thread pools... and
-what LLCL does. :)
+existing blocking APIs (e.g. even simple things like `printf` can block!). We
+also face the unfortunate situation where some important OS's (e.g. like older
+Linux kernels) [don't even support non-blocking async
+I/O](http://davmac.org/davpage/linux/async-io.html).
+
+There are two major approaches used to solve this problem: adaptive thread
+pools... and what LLCL does. :)
 
 ## Adaptive thread pools
 
@@ -51,12 +55,68 @@ actors that eliminates blocking... but that isn't helpful to us in C++ land.
 
 ## LLCL's Approach for Blocking Tasks
 
-XXX Our approach for `LLCL/Runtime` and `WorkQueue` is ... 
-XX For LLCL/Runtime, we take a different approach, which leverages our library
-XX based design await/quiesce to donate the host thread.
+Our approach for `WorkQueue` is to punt on the problem, and build on our
+approach to library based design to allow clients to control things at a coarse
+grain.  This involves a few things:
 
+1) The implementations of the `WorkQueue` interface can and should assume that
+   the work items do not block.  This allows them to be relatively simple and
+   efficient in the important case where we have cooperative workloads.
+2) Our runtime cooperates with other runtimes, threading models, and other stuff
+   going on in the system.  That non-cooperative stuff typically has other
+   considerations, including their own synchronization primitives, etc.  As such
+   we just use those foreign systems to solve our problem: instead of running a
+   potentially blocking operation on a `WorkQueue`, you should invoke it on the
+   foreign thread pool, and have it add a completion handler work-item to the
+   `WorkQueue` when it completes.
+3) The top level client of `LLCL::Runtime` can then configure the system so the
+   `WorkQueue` is balanced with the foreign runtimes at a granular level.  For
+   example, it is entirely reasonable for some use cases to configure `Runtime`
+   to have N threads on an N CPU system, while also having other foreign
+   runtimes with N (or more) threads for themselves.  The OS kernel will handle
+   context switching.  It won't be ideal situations, but working with legacy
+   code is not ideal.
+4) This approach makes it slightly less efficient to use the legacy approach,
+   so cases that matter will have pressure to move to the native design.  This
+   encourages the legacy code that matters to improve, instead of leaving it
+   around with no incentive to invest in it.
+5) Finally, there is no checking that workitems don't block, so an empirical
+   approach to this is fine.  For example, `printf` can theoretically block
+   (e.g. when the output is redirected to a file) but we don't want to make
+   `printf` debugging painful.  Similarly, a `std::mutex` can block, but if you
+   have a mutex that is protecting a tiny critical region, then it is safe
+   enough to 
 
-TODO: keep writing.
+This is a different approach than is used in many systems, but it strikes a
+mix between being very useful for "completely pure" systems which scales down to
+embedded systems where you want to control everything, while still working for
+large scale systems with a lot of legacy.
 
+Many clients of `LLCL::Runtime` will themselves be built with blocking
+expectations (purely async-safe code is still relatively unusual) so there is a
+top-level `WorkQueue::await` call which blocks the client thread waiting for
+some set of values to resolve.  Since this is a blocking call, it should not be
+called from within the work queue itself.
+
+### The "Missing" I/O Subsystem in LLCL
+
+One challenge of building high-performance infrastructure that needs I/O is that
+there is no consistent and portable way to use [asynchronous
+I/O](https://en.wikipedia.org/wiki/Asynchronous_I/O).  You've got things like
+AIO on Linux (which is [surprisingly bad](http://davmac.org/davpage/linux/async-io.html)),
+Windows has [reasonable async 
+I/O](https://docs.microsoft.com/en-us/windows/win32/fileio/synchronous-and-asynchronous-i-o) that just has [a few edge
+cases](https://docs.microsoft.com/en-us/troubleshoot/windows/win32/asynchronous-disk-io-synchronous).  New Linux kernels have a new fancy new
+[io_uring API](https://blogs.oracle.com/linux/post/an-introduction-to-the-io-uring-asynchronous-io-framework) that is perfect for
+what we need. 
+On the other hand, asynchronous I/O may not even make sense for embedded
+systems.
+
+At some point we will care enough about this to build a new async I/O subsystem
+and build this into the LLCL.  This should be an optional component that has OS
+specific implementations, and allows clients of LLCL to access it
+asynchronously.  This will allow those algorithms to be written in a host OS
+independent way, and allows us to centralize the complexity of this world into
+one place.
 
 
