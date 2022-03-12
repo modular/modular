@@ -31,13 +31,20 @@ auto Detail::SomeConcreteAsyncValue::getDestructor() -> DestructorFn {
   return table[getTypeID() - 1];
 }
 
-uint16_t Detail::SomeConcreteAsyncValue::createTypeInfoAndReturnTypeIDImpl(
-    DestructorFn destructor) {
+void Detail::SomeConcreteAsyncValue::doTypeRegistration(
+    std::atomic<uint16_t> *staticTypeID, DestructorFn destructor) {
   size_t typeID = getTypeInfoTableSingleton().emplace_back(destructor) + 1;
   // Detect overflow.
   assert(typeID < std::numeric_limits<uint16_t>::max() &&
-         "too many different AsyncValue types.");
-  return typeID;
+         "too many different AsyncValue types");
+
+  // Set the value to the entry ID if we're the first one to do so.  If some
+  // other thread beat us here, then we just abandon the table entry.  We don't
+  // actually care if we succeed or if some other thread succeeded.
+  uint16_t existing = uint16_t(~0U);
+  (void)staticTypeID->compare_exchange_strong(existing, uint16_t(typeID),
+                                              std::memory_order_release,
+                                              std::memory_order_acquire);
 }
 
 //===----------------------------------------------------------------------===//
