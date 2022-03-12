@@ -8,7 +8,6 @@
 
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Support/ConcurrentQueue.h"
-#include "Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 
 #include <thread>
@@ -128,6 +127,12 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   for (auto &value : values)
     value->andThen([&numRemaining]() { --numRemaining; });
 
+  // Donate the client thread to popping tasks off the queue. `popAndDoWork`
+  // will return failure if `taskList.dequeue()` returns failure, which
+  // indicates there's nothing in the queue. This could mean that something has
+  // already been kicked-off and will enqueue more work in the process of
+  // executing, but we need to wait for it to complete for those tasks to become
+  // visible.
   while (numRemaining.load() > 0)
     if (mlir::failed(popAndDoWork(taskList)))
       std::this_thread::yield();
@@ -138,7 +143,8 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
 //===----------------------------------------------------------------------===//
 
 void ThreadPoolWorkQueue::Thread::run() {
-  // While we haven't been cancelled, attempt to dequeue and execute work.
+  // While we haven't been told to finish up, attempt to dequeue and execute
+  // work.
   while (true) {
     if (mlir::succeeded(popAndDoWork(taskList)))
       continue;
