@@ -1,4 +1,4 @@
-//===- LLCL/ForwardDecls.h --------------------------------------*- C++ -*-===//
+//===- LLCL/ForwardDecls.h ------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

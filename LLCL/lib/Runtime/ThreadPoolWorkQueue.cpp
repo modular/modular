@@ -1,4 +1,4 @@
-//===- ThreadPoolWorkQueue.cpp ----------------------------------*- C++ -*-===//
+//===- ThreadPoolWorkQueue.cpp --------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

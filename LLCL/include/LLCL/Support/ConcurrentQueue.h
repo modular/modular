@@ -1,4 +1,4 @@
-//===- ConcurrentQueue.h ----------------------------------------*- C++ -*-===//
+//===- ConcurrentQueue.h --------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

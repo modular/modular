@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/AsyncValue.h --------------------------------*- C++ -*-===//
+//===- LLCL/Runtime/AsyncValue.h ------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

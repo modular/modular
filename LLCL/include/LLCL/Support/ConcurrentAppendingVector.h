@@ -1,4 +1,4 @@
-//===- LLCL/Support/ConcurrentAppendingVector.h -----------------*- C++ -*-===//
+//===- LLCL/Support/ConcurrentAppendingVector.h ---------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

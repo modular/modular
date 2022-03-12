@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/Runtime.h -----------------------------------*- C++ -*-===//
+//===- LLCL/Runtime/Runtime.h ---------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

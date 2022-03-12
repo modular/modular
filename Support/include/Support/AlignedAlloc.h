@@ -1,4 +1,4 @@
-//===- Support/AlignedAlloc.h -----------------------------------*- C++ -*-===//
+//===- Support/AlignedAlloc.h ---------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
