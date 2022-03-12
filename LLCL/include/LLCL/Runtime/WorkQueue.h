@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/WorkQueue.h ---------------------------------*- C++ -*-===//
+//===- LLCL/Runtime/WorkQueue.h -------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

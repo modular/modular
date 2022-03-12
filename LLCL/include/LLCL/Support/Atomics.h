@@ -1,4 +1,4 @@
-//===- LLCL/Support/Atomics.h -----------------------------------*- C++ -*-===//
+//===- LLCL/Support/Atomics.h ---------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
