@@ -61,7 +61,9 @@ Runtime::~Runtime() {
   // Explicitly call the destructor here while the workQueue is still alive.
   // This is because the work queue's destructor will clear out its internal
   // task list by doing all the work required. This will result in segfaults if
-  // the work queue itself has been freed already.
+  // the work queue itself has been freed already because inflight tasks that
+  // run during the destructor try to add work to the Runtime object whose
+  // pointer is now gone.
   workQueue->~WorkQueue();
   WorkQueue *wq = workQueue.release();
   operator delete(wq);
