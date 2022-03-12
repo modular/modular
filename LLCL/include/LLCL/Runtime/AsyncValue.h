@@ -47,6 +47,13 @@ class ConcreteAsyncValue;
 ///
 class AsyncValue {
 public:
+  /// Type registration - AsyncValue requires that each static type be
+  /// registered ahead of their use in an AsyncValue.  This method is efficient
+  /// in the case where a type is already registered, so it is fine to register
+  /// types without guarding against duplicates etc.
+  template <typename T>
+  static void registerType();
+
   //===--------------------------------------------------------------------===//
   // Static creation methods for AsyncValue's
   //===--------------------------------------------------------------------===//
@@ -388,23 +395,13 @@ private:
   /// Return the stored destructor for this ConcreteValue.
   DestructorFn getDestructor();
 
-  static uint16_t createTypeInfoAndReturnTypeIDImpl(DestructorFn destructor);
-
   /// The error field and the payload field are always first thing in our
-  // derived class.
+  /// derived class.
   M::Error *getErrorPointer() { return reinterpret_cast<M::Error *>(this + 1); }
 
-  // Creates a DestructorFn entry for `T` and store it in a global
-  // TypeInfo table. Returns the "type id" for `T` which currently happens to
-  // be one plus the index of this TypeInfo object in the TypeInfo table.
-  //
-  // This is only be called from the static initializer for the
-  // ConcreteAsyncValue::staticTypeID field.
-  template <typename T>
-  static uint16_t createTypeInfoAndReturnTypeID() {
-    return createTypeInfoAndReturnTypeIDImpl(
-        Detail::ConcreteAsyncValue<T>::destructorFnPtr);
-  }
+  /// This is the out-of-line slow patch for type registration.
+  static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
+                                 DestructorFn destructor);
 };
 
 /// Subclass for storing the payload of the AsyncValue inline.  This should
@@ -434,11 +431,24 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   /// with the payload uninitialized.
   static ConcreteAsyncValue<T> *allocate(State state,
                                          CompactRuntimePtr runtime) {
+    assert(ConcreteAsyncValue<T>::staticTypeID.load(
+               std::memory_order_relaxed) != uint16_t(~0U) &&
+           "AsyncValue type not registered");
     auto *ptr = (ConcreteAsyncValue<T> *)M::alignedAlloc(
         sizeof(ConcreteAsyncValue<T>), alignof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
                                     getTypeID<T>(), runtime);
     return ptr;
+  }
+
+  /// Register our T type, setting `staticTypeID` to a non-sentinel value and
+  /// remembering our destructor function in a side table.
+  static void registerType() {
+    if (ConcreteAsyncValue<T>::staticTypeID.load(std::memory_order_acquire) !=
+        uint16_t(~0U))
+      return;
+    doTypeRegistration(&ConcreteAsyncValue<T>::staticTypeID,
+                       Detail::ConcreteAsyncValue<T>::destructorFnPtr);
   }
 
 private:
@@ -457,12 +467,11 @@ private:
   static_assert(sizeof(AsyncValue) == kAsyncValueSize,
                 "Unexpected size for AsyncValue");
 
-  static const uint16_t staticTypeID;
+  static std::atomic<uint16_t> staticTypeID;
 };
 
 template <typename T>
-const uint16_t ConcreteAsyncValue<T>::staticTypeID =
-    ConcreteAsyncValue::createTypeInfoAndReturnTypeID<T>();
+std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(-1));
 } // end namespace Detail.
 
 namespace Detail {
@@ -485,6 +494,15 @@ class IndirectAsyncValue : public AsyncValue {
 //===----------------------------------------------------------------------===//
 // AsyncValue inline method implementations.
 //===----------------------------------------------------------------------===//
+
+/// Type registration - AsyncValue requires that each static type be
+/// registered ahead of their use in an AsyncValue.  This method is efficient
+/// in the case where a type is already registered, so it is fine to register
+/// types without guarding against duplicates etc.
+template <typename T>
+void AsyncValue::registerType() {
+  Detail::ConcreteAsyncValue<T>::registerType();
+}
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
