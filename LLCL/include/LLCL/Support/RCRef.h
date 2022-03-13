@@ -100,6 +100,22 @@ public:
     swap(pointer, other.pointer);
   }
 
+  /// Low level access for manipulating reference counts.  This allows the
+  /// addRef/dropRef to be private on the classes themselves, forcing clients to
+  /// go through RCRef.
+  static void lowLevelAddRef(T *pointer) {
+    pointer->addRef();
+  }
+  static void lowLevelDropRef(T *pointer) {
+    pointer->dropRef();
+  }
+  static void lowLevelAddRef(T *pointer, size_t amount) {
+    pointer->addRef(amount);
+  }
+  static void lowLevelDropRef(T *pointer, size_t amount) {
+    pointer->dropRef(amount);
+  }
+
 private:
   // Not implicity copyable, use the copy() method for an explicit copy of
   // this reference.

@@ -246,13 +246,6 @@ public:
   /// Return true if reference count is 1.
   bool isUnique() const { return refcount.load() == 1; }
 
-  /// Increase the reference count.
-  void addRef();
-  void addRef(uint16_t count);
-
-  /// Decrease the reference count of this object, potentially deallocating it.
-  void dropRef(uint16_t count = 1);
-
   /// Return true if we tracking of live AsyncValue instances is enabled.
   static bool isAllocationTrackingEnabled() {
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
@@ -281,6 +274,17 @@ public:
   };
 
 private:
+  // Reference counting, only accessible to RCRef<>.
+  template <typename T>
+  friend class RCRef;
+
+  /// Increase the reference count.
+  void addRef();
+  void addRef(uint16_t count);
+
+  /// Decrease the reference count of this object, potentially deallocating it.
+  void dropRef(uint16_t count = 1);
+
   //===--------------------------------------------------------------------===//
   // State held by an AsyncValue
   //===--------------------------------------------------------------------===//

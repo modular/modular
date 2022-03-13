@@ -12,6 +12,8 @@
 #include <cstddef>
 
 namespace LLCL {
+template <typename T>
+class RCRef;
 
 /// This class is a convenience base class for things that need an atomic
 /// intrusive reference count for ownership management.  It is implemented with
@@ -31,6 +33,19 @@ public:
   explicit ReferenceCounted(); // Initialize with refcount = 1.
   ~ReferenceCounted();
 
+  // Return reference count. This should be used for testing and debugging only.
+  uint32_t getNumReferences() const { return refCount.load(); }
+
+  /// Return true if reference count is 1.
+  bool isUnique() const {
+    return refCount.load(std::memory_order_acquire) == 1;
+  }
+
+private:
+  // Reference counting, only accessible to RCRef<>.
+  template <typename T>
+  friend class RCRef;
+
   // Add a new reference to this object.
   void addRef() const {
     // It is OK to use std::memory_order_relaxed here as it does not affect the
@@ -48,14 +63,6 @@ public:
       assert((refCount.store(0, std::memory_order_relaxed), true));
       static_cast<const SubClass *>(this)->destroy();
     }
-  }
-
-  // Return reference count. This should be used for testing and debugging only.
-  uint32_t getNumReferences() const { return refCount.load(); }
-
-  /// Return true if reference count is 1.
-  bool isUnique() const {
-    return refCount.load(std::memory_order_acquire) == 1;
   }
 
 protected:
