@@ -98,12 +98,9 @@ public:
   // Concurrency
   //===--------------------------------------------------------------------===//
 
-  /// Enqueue a block of work. Thread-safe.
-  void addTask(TaskFunction work) { workQueue->addTask(std::move(work)); }
-
-  /// Block until the specified values are ready.  This should not be called by
-  /// a thread managed by our work queue.
-  void await(llvm::ArrayRef<RCRef<AsyncValue>> values);
+  /// Get direct access to the low level WorkQueue.  You should typically
+  /// interface with the higher level algorithms in Algorithms.h.
+  WorkQueue *getWorkQueue() { return workQueue.get(); }
 
   //===--------------------------------------------------------------------===//
   // Cancel the current execution
