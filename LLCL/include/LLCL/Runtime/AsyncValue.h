@@ -484,7 +484,7 @@ private:
 };
 
 template <typename T>
-std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(-1));
+std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(~0));
 } // end namespace Detail.
 
 namespace Detail {

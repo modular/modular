@@ -94,9 +94,13 @@ large scale systems with a lot of legacy.
 
 Many clients of `LLCL::Runtime` will themselves be built with blocking
 expectations (purely async-safe code is still relatively unusual) so there is a
-top-level `WorkQueue::await` call which blocks the client thread waiting for
-some set of values to resolve.  Since this is a blocking call, it should not be
-called from within the work queue itself.
+top-level `await` call which waits until a specified set of values are complete
+before returning.  It doesn't block: it donates the client thread to running
+work in the work queue until the values of interest are available.
+
+That said, it is better to avoid using this - particularly if you are working
+with accelerators - because you typically want the client thread to go off and
+discover new work, not running existing background tasks.
 
 ### The "Missing" I/O Subsystem in LLCL
 
