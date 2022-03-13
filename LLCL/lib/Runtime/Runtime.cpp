@@ -74,12 +74,6 @@ Runtime::~Runtime() {
   allRuntimes[runtimeIndex] = nullptr;
 }
 
-/// Block until the specified values are ready.  This should not be called by
-/// a thread managed by our work queue.
-void Runtime::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
-  workQueue->await(values);
-}
-
 /// Cancel the current BEF Execution. This transitions this Runtime to the
 /// canceled state, which causes all asynchronously executing threads to be
 /// canceled when they check the cancellation state (e.g. in BEFExecutor).

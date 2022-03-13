@@ -35,6 +35,26 @@ using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
 } // namespace Detail
 
 //===----------------------------------------------------------------------===//
+// Helpers that wait for values.
+//===----------------------------------------------------------------------===//
+
+/// Donate the current thread to running work until all of the specified values
+/// are ready.
+inline static void await(Runtime &runtime,
+                         llvm::ArrayRef<RCRef<AsyncValue>> values) {
+  runtime.getWorkQueue()->await(values);
+}
+
+template <typename T>
+inline static void await(Runtime &runtime, const AsyncValueRef<T> &value) {
+  // Convert from a guaranteed AsyncValueRef to a guaranteed RCRef without
+  // bumping reference counts.
+  RCRef<AsyncValue> ref = takeRCRef(value.getPointer());
+  runtime.getWorkQueue()->await(ref);
+  (void)ref.release();
+}
+
+//===----------------------------------------------------------------------===//
 // Helpers to add tasks to the runtime's work queue
 //===----------------------------------------------------------------------===//
 
@@ -42,7 +62,7 @@ using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
 /// Runtime.
 inline static void addTask(Runtime &runtime,
                            llvm::unique_function<void()> work) {
-  runtime.addTask(std::move(work));
+  runtime.getWorkQueue()->addTask(std::move(work));
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
@@ -68,8 +88,12 @@ LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
 // parallelForEachN
 //===----------------------------------------------------------------------===//
 
-/// This version of parallelForEachN takes an element closure and a completion
-/// handler callback.
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
+/// When all of the elements have finished, a completion handler is invoked.
+///
 template <typename... CaptureTys, typename ElementFn, typename CompletionFn>
 static inline void
 parallelForEachN(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
