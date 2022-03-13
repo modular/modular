@@ -36,7 +36,13 @@ public:
   Runtime &operator*() const { return *get(); }
   Runtime *get() const;
 
+  /// Explicitly testing for truth value determines whether this pointer is
+  /// "null".
   explicit operator bool() const { return index != kInvalidIndex; }
+
+  /// We implicitly convert to Runtime& since we are used interchangably with
+  /// it.
+  operator Runtime &() const { return *get(); }
 
   static constexpr uint8_t kInvalidIndex = 255;
 

@@ -122,7 +122,16 @@ public:
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.
   template <typename WaiterT>
-  void andThen(WaiterT &&waiter);
+  auto andThen(WaiterT &&waiter) -> decltype(waiter(), void());
+
+  /// Call the specified closure if the value is ready.  Otherwise, add it
+  /// to the waiter list and calls it when the value becomes ready.  This
+  /// overload passes the current value back into the closure as a
+  /// `const RCRef<AsyncValue> &`.  This eliminates the need to capture the
+  /// receiver in the closure and reduces reference count traffic.
+  template <typename WaiterT>
+  auto andThen(WaiterT &&waiter)
+      -> decltype(waiter(RCRef<AsyncValue>()), void());
 
   /// Return the stored value as type T.
   ///
@@ -263,6 +272,14 @@ public:
     return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
+  struct WaiterListNodePointerTraits {
+    static inline void *getAsVoidPointer(WaiterListNode *ptr) { return ptr; }
+    static inline WaiterListNode *getFromVoidPointer(void *ptr) {
+      return static_cast<WaiterListNode *>(ptr);
+    }
+    enum { NumLowBitsAvailable = 2 };
+  };
+
 private:
   //===--------------------------------------------------------------------===//
   // State held by an AsyncValue
@@ -287,14 +304,6 @@ private:
   /// for IndirectAsyncValue's when they get resolved.
   uint16_t typeID;
 
-  struct WaiterListNodePointerTraits {
-    static inline void *getAsVoidPointer(WaiterListNode *ptr) { return ptr; }
-    static inline WaiterListNode *getFromVoidPointer(void *ptr) {
-      return static_cast<WaiterListNode *>(ptr);
-    }
-    enum { NumLowBitsAvailable = 2 };
-  };
-
   /// The waiter list and the state are compacted into a single atomic word,
   /// since the fields need to be accessed at the same time for state changes.
   ///
@@ -304,8 +313,12 @@ private:
   std::atomic<WaitersAndState> waitersAndState;
 
 protected:
+  void andThenOutOfLine(WaiterListNode *node, WaitersAndState oldValue);
   void andThenOutOfLine(llvm::unique_function<void()> &&waiter,
                         WaitersAndState oldValue);
+  void andThenOutOfLine(
+      llvm::unique_function<void(const RCRef<AsyncValue> &)> &&waiter,
+      WaitersAndState oldValue);
   void destroyWithRefCountZero();
 
   /// Transition to a ready state and notify all waiters about this.  This
@@ -574,8 +587,11 @@ inline void AsyncValue::dropRef(uint16_t count) {
     destroyWithRefCountZero();
 }
 
+/// Call the specified closure if the value is ready.  Otherwise, add it
+/// to the waiter list and calls it when the value becomes ready.
 template <typename WaiterT>
-inline void AsyncValue::andThen(WaiterT &&waiter) {
+inline auto AsyncValue::andThen(WaiterT &&waiter)
+    -> decltype(waiter(), void()) {
   // Clients generally want to use andThen without them each having to check
   // to see if the value is present. Check for them, and immediately run the
   // lambda if it is already here.
@@ -583,6 +599,32 @@ inline void AsyncValue::andThen(WaiterT &&waiter) {
   if (isReady(waitersAndStateValue.getInt())) {
     assert(waitersAndStateValue.getPointer() == nullptr);
     waiter();
+    return;
+  }
+  andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+}
+
+/// Call the specified closure if the value is ready.  Otherwise, add it
+/// to the waiter list and calls it when the value becomes ready.  This
+/// overload passes the current value back into the closure as a
+/// `const RCRef<AsyncValue> &`.  This eliminates the need to capture the
+/// receiver in the closure and reduces reference count traffic.
+template <typename WaiterT>
+inline auto AsyncValue::andThen(WaiterT &&waiter)
+    -> decltype(waiter(RCRef<AsyncValue>()), void()) {
+  // Clients generally want to use andThen without them each having to check
+  // to see if the value is present. Check for them, and immediately run the
+  // lambda if it is already here.
+  auto waitersAndStateValue = waitersAndState.load(std::memory_order_acquire);
+  if (isReady(waitersAndStateValue.getInt())) {
+    assert(waitersAndStateValue.getPointer() == nullptr);
+    // We pass the AsyncValue in as a `const RCRef<AsyncValue>&` to make the
+    // ownership very clear (they can use the value but have to copy it if
+    // persisting it).  We do this delicately to avoid additional refcount
+    // bumps.
+    auto rcThisRef = RCRef<AsyncValue>::take(this);
+    waiter(const_cast<const RCRef<AsyncValue> &>(rcThisRef));
+    (void)rcThisRef.release();
     return;
   }
   andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);

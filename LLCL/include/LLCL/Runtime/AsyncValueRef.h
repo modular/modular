@@ -132,6 +132,41 @@ public:
     value->emplace<T>(std::forward<Args>(args)...);
   }
 
+  /// Perform an 'andThen' operation on the current typed AsyncValueRef<> and
+  /// get no argument value passed in.
+  template <typename WaiterT>
+  auto andThen(WaiterT &&waiter) -> decltype(waiter(), void()) {
+    // Standard andThen works here!
+    getPointer()->andThen(std::forward<WaiterT>(waiter));
+  }
+
+  /// Perform an 'andThen' operation on the current typed AsyncValueRef<> and
+  /// get the current value passed in as `const RCRef<AsyncValue>&` when the
+  /// closure is invoked.
+  template <typename WaiterT>
+  auto andThen(WaiterT &&waiter)
+      -> decltype(waiter(std::declval<const RCRef<AsyncValue> &>()), void()) {
+    // Standard andThen works here!
+    getPointer()->andThen(std::forward<WaiterT>(waiter));
+  }
+
+  /// Perform an 'andThen' operation on the current typed AsyncValueRef<> and
+  /// get the current value passed in as `const AsyncValueRef&` when the closure
+  /// is invoked.
+  template <typename WaiterT>
+  auto andThen(WaiterT &&waiter)
+      -> decltype(waiter(std::declval<const AsyncValueRef<T> &>()), void()) {
+    getPointer()->andThen([fn = std::forward<WaiterT>(waiter)](
+                              const RCRef<AsyncValue> &ref) mutable {
+      // Carefully form a AsyncValueRef without additional refcount
+      // operations, given we know the value will be live for the duration
+      // of our invocation.
+      auto ourRef = AsyncValueRef<T>::take(ref.getPointer());
+      fn(const_cast<const AsyncValueRef<T> &>(ourRef));
+      (void)ourRef.release();
+    });
+  }
+
 private:
   RCRef<AsyncValue> value;
 };
