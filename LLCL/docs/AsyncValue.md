@@ -69,7 +69,7 @@ One of the most common things to do when building a series of asynchronous
 computations is to enqueue work that occurs when a value becomes available.
 `AsyncValue` makes this very easy through the `andThen` method:
 
-```
+```c++
 void printWhenReady(RCRef<AsyncValue> input) {
   input->andThen([]() {
     // This prints whenever `input` becomes ready.
@@ -87,7 +87,7 @@ capture arbitrary state in the the lambda's capture list, and that capture list
 is kept alive for the duration of the lambdas execution.  This means that any
 other `RCRef` you capture will be alive for the duration as well:
 
-```
+```c++
 /// When the specified int32_t becomes available, add it to the refcounted
 /// table.
 void addToTableWhenReady(AsyncValueRef<int32_t> input, 
@@ -115,7 +115,7 @@ address both of these problems, you can use a form of `andThen` that gets passed
 in a reference to the value when it is available.  The same thing as above can
 be expressed as:
 
-```
+```c++
 /// When the specified int32_t becomes available, add it to the refcounted
 /// table.
 void addToTableWhenReady(AsyncValueRef<int32_t> input, 
