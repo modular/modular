@@ -115,8 +115,8 @@ parallelForEachN(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
         return;
 
       // Invoke the completion function, since we're done.
-      std::apply([&](auto &&...args) { state->completionFn(args...); },
-                 state->capturesList);
+      llvm::apply_tuple([&](auto &&...args) { state->completionFn(args...); },
+                        state->capturesList);
 
       // All uses of the state are done, so we can deallocate it.
       delete state;
