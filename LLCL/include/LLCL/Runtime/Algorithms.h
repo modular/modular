@@ -95,9 +95,11 @@ LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
 /// When all of the elements have finished, a completion handler is invoked.
 ///
 template <typename... CaptureTys, typename ElementFn, typename CompletionFn>
-static inline void
-parallelForEachN(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
-                 CompletionFn &&completionFn, CaptureTys &&...captures) {
+static inline void parallelForEachNCustomCompletion(Runtime &runtime,
+                                                    size_t totalCount,
+                                                    ElementFn &&elementFn,
+                                                    CompletionFn &&completionFn,
+                                                    CaptureTys &&...captures) {
   // If there is nothing to do, then we're already done.
   if (totalCount == 0)
     return;
@@ -146,6 +148,69 @@ parallelForEachN(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
       delete state;
     });
   }
+}
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
+/// When all of the elements have finished, the `readyMarker` is marked as
+/// ready, unblocking any computation `andThen`d on it.  Its `AsyncValue` may
+/// contain any type.
+///
+template <typename... CaptureTys, typename ElementFn>
+static inline void
+parallelForEachNMarkReady(Runtime &runtime, size_t totalCount,
+                          RCRef<AsyncValue> readyMarker, ElementFn &&elementFn,
+                          CaptureTys &&...captures) {
+  parallelForEachNCustomCompletion(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      [readyMarker = std::move(readyMarker)](auto &&...args) {
+        // When all the elements are ready, mark the `readyMarker` as complete,
+        // unblocking other work.
+        readyMarker->markReady();
+      },
+      std::forward<CaptureTys...>(captures)...);
+}
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
+/// When all of the elements have finished, the chain result is marked as ready.
+/// provides a convenient way to chain together work with `.andThen` on the
+/// chain.
+///
+template <typename... CaptureTys, typename ElementFn>
+static inline AsyncValueRef<Chain>
+parallelForEachNChain(Runtime &runtime, size_t totalCount,
+                      ElementFn &&elementFn, CaptureTys &&...captures) {
+  auto result = AsyncValueRef<Chain>::createConstructed(runtime);
+  parallelForEachNMarkReady(runtime, totalCount, result.copy(),
+                            std::forward<ElementFn>(elementFn),
+                            std::forward<CaptureTys...>(captures)...);
+  return result;
+}
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function kicks off the per-element work into the
+/// Runtime's WorkQueue and then donates the client thread to doing work.  It
+/// returns when all the elements are completed.
+///
+/// Because this doesn't return until the elements are done, it is ok for the
+/// element function to capture things on the caller's stack by reference.
+///
+template <typename... CaptureTys, typename ElementFn>
+static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
+                                    ElementFn &&elementFn,
+                                    CaptureTys &&...captures) {
+  auto chainResult = parallelForEachNChain(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      std::forward<CaptureTys...>(captures)...);
+
+  // Donate the client thread to executing work until all the elements have
+  // completed.
+  await(runtime, chainResult);
 }
 
 } // namespace LLCL
