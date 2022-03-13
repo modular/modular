@@ -16,6 +16,7 @@
 #define LLCL_RUNTIME_H
 
 #include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include <atomic>
@@ -48,7 +49,7 @@ public:
   /// Return a reference to a pre-allocated Chain value that is already ready.
   /// This can be used by logic that needs to flag that a side effect has
   /// already happened, without doing an extraneous memory allocation.
-  AsyncValueRef<Chain> getReadyChain() const;
+  const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -137,7 +138,7 @@ private:
 
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
-  AsyncValue *const readyChain;
+  AsyncValueRef<Chain> readyChain;
 
   /// If execution is cancelled, this holds the error value to forward into the
   /// results of computations.

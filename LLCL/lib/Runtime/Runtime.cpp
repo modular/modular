@@ -49,7 +49,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue)
     : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       runtimeIndex(nextRuntimeIndex.fetch_add(1)),
-      readyChain(AsyncValue::createReady<Chain>(*this).release()) {
+      readyChain(AsyncValueRef<Chain>::createReady(*this)) {
   // We provide a dense numbering of runtime instances right now, but we could
   // make this fancier to allow deallocating and reusing indexes if needbe.
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&
@@ -70,7 +70,6 @@ Runtime::~Runtime() {
 
   // Clear cancellation value if present.
   restartFromCancellation();
-  readyChain->dropRef();
   allRuntimes[runtimeIndex] = nullptr;
 }
 
@@ -78,18 +77,18 @@ Runtime::~Runtime() {
 /// canceled state, which causes all asynchronously executing threads to be
 /// canceled when they check the cancellation state (e.g. in BEFExecutor).
 void Runtime::cancelExecution(M::Error message) {
-  AsyncValue *messageVal =
-      AsyncValue::createError(*this, std::move(message)).release();
+  RCRef<AsyncValue> messageVal =
+      AsyncValue::createError(*this, std::move(message));
 
   AsyncValue *expectedValue = nullptr;
   // Use memory_order_release for the success case so that error_value is
   // visible to other threads when they load with memory_order_acquire. For the
   // failure case, we do not care about expectedValue, so we can use
   // memory_order_relaxed.
-  if (!cancelValue.compare_exchange_strong(expectedValue, messageVal,
-                                           std::memory_order_release,
-                                           std::memory_order_relaxed))
-    messageVal->dropRef();
+  if (cancelValue.compare_exchange_strong(
+          expectedValue, messageVal.getPointer(), std::memory_order_release,
+          std::memory_order_relaxed))
+    (void)messageVal.release();
 }
 
 /// restartFromCancellation() transitions Runtime from the canceled state to
@@ -99,13 +98,6 @@ void Runtime::restartFromCancellation() {
   // to other threads and previous writes from other threads (e.g. the return
   // 'value') are visible to this thread.
   AsyncValue *value = cancelValue.exchange(nullptr, std::memory_order_acq_rel);
-  if (value)
-    value->dropRef();
-}
-
-/// Return a reference to a pre-allocated Chain value that is already ready.
-/// This can be used by logic that needs to flag that a side effect has
-/// already happened, without doing an extraneous memory allocation.
-AsyncValueRef<Chain> Runtime::getReadyChain() const {
-  return AsyncValueRef<Chain>::copy(readyChain);
+  // Deallocate the value.
+  RCRef<AsyncValue>::take(value);
 }
