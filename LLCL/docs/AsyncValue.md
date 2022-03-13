@@ -46,6 +46,96 @@ types, but all types need to be registered before use with
 storage of the payloads and data, and allows limited type reflection with the
 `->isType<T>()` predicate.
 
+## Access to the `LLCL::Runtime` for an `AsyncValue`
+
+The LLCL runtime is designed to support multiple instances of a runtime in a
+process at the same time, so some things (e.g. allocating a new `AsyncValue`)
+require an `LLCL::Runtime&` to be handy and around.  This can be awkward,
+because (like an `MLIRContext`) it is almost global state, and it is a pain to
+pass it around everywhere.
+
+Fortunately, `AsyncValue` instances is that they always know what
+`LLCL::Runtime` they came from.  You can access this through the
+`asyncVal->getRuntime()` method which returns a [`CompactRuntimePtr`](../include/LLCL/Runtime/CompactRuntimePtr.h).
+A `CompactRuntimePtr` is a specialized class that can be used interchangably
+with `Runtime&`.
+
+The consequence of this is that having an `AsyncValue` at hand gives you access
+to the `Runtime&` that you need.
+
+## Chaining work together with `andThen`
+
+One of the most common things to do when building a series of asynchronous
+computations is to enqueue work that occurs when a value becomes available.
+`AsyncValue` makes this very easy through the `andThen` method:
+
+```
+void printWhenReady(RCRef<AsyncValue> input) {
+  input->andThen([]() {
+    // This prints whenever `input` becomes ready.
+    printf("input is ready!");
+  });
+}
+```
+
+If the `AsyncValue` is already ready when the `andThen` is executed, then the
+lambda is immediately executed.  Otherwise it is enqueued and run when the value
+becomes available.
+
+The nice thing about this pattern is that it provides the direct ability to
+capture arbitrary state in the the lambda's capture list, and that capture list
+is kept alive for the duration of the lambdas execution.  This means that any
+other `RCRef` you capture will be alive for the duration as well:
+
+```
+/// When the specified int32_t becomes available, add it to the refcounted
+/// table.
+void addToTableWhenReady(AsyncValueRef<int32_t> input, 
+                         RCRef<TableOfValues> tablePtr) {
+  // Watch out for order of evaluation, std::move will corrupt our `input`
+  // argument.
+  AsyncValue *inputPtr = input.getPointer();
+  inputPtr->andThen([input = std::move(input),
+                     tablePtr = std::move(tablePtr)]() {
+    tablePtr->addValue(input.get());
+  });
+}
+```
+
+This is extremely handy for capturing and working with values, but you'll note
+that there is a footgun here due to C++'s lack of order of evaluation rules.  We
+can't just use `input->andThen([input = std::move(input), ...` because the
+compiler might evaluate the `std::move` before the load of input for the base
+expression.
+
+Another downside of this style of `andThen` is that it is capturing a pointer to
+the value being waited on.  This can increase the size of the lambda and
+increase the chances of an out-of-line representation for the function.  To
+address both of these problems, you can use a form of `andThen` that gets passed
+in a reference to the value when it is available.  The same thing as above can
+be expressed as:
+
+```
+/// When the specified int32_t becomes available, add it to the refcounted
+/// table.
+void addToTableWhenReady(AsyncValueRef<int32_t> input, 
+                         RCRef<TableOfValues> tablePtr) {
+  // Note that use of `input.` vs `input->`:
+  input.andThen([tablePtr = std::move(tablePtr)]
+                (const AsyncValueRef<int32_t> &input) {
+    tablePtr->addValue(input.get());
+  });
+}
+```
+
+Now we're not moving away from the `input` argument, we're introducing a shadow
+of it within the lambda.  This reduces the size of the capture list and removes
+a footgun.  You may take the argument in this way as `const
+AsyncValueRef<int32_t> &` or `const RCRef<AsyncValue> &` depending on whether
+you have an `AsyncValueRef` or just an untyped `RCRef`.  Because these are
+passed in as a const reference, you will need to `.copy()` them if you want
+to extend the lifetime of the reference.
+
 ## The states of `AsyncValue`
 
 `AsyncValue` may be in four possible states: "unconstructed", "constructed",
@@ -83,11 +173,11 @@ an error.  You may create an `AsyncValue` directly in this state with the
 unconstructed or constructed `AsyncValue` had a problem, and transition it to
 this state with the `setToError` method.
 
-### Indirect Async Values
+## Indirect Async Values
 
 Beyond these four core states, you may run into a situation where you need to
 create an `AsyncValue` before knowing what C++ type it will contain.  In this
-case, you can create a special "IndirectAsyncValue" with the
+case, you can create a special "indirect AsyncValue" with the
 `AsyncValue::createIndirect`, and resolve it with `resolveIndirect` method.  As
 the name implies, this adds a level of indirection that allows you to create an
 AsyncValue, and then fulfill it with another AsyncValue of concrete type later.  
@@ -102,8 +192,7 @@ RCRef<AsyncValue> genericAsyncDouble(RCRef<AsyncValue> input) {
   // Must create this value before knowing what type `input` is.
   RCRef<AsyncValue> result = AsyncValue::createIndirect(input->getRuntime());
 
-  auto *inputPtr = input.getPointer(); // Watch out for order of evaluation.
-  inputPtr->andThen([input = std::move(input), result = result.copy()]() {
+  input.andThen([result = result.copy()](const RCRef<AsyncValue> &input) {
     RCRef<AsyncValue> newVal;
     if (input.isType<int32_t>())
       newVal = AsyncValue::createReady<T>(input.get<int32_t>()*2);
@@ -118,10 +207,3 @@ RCRef<AsyncValue> genericAsyncDouble(RCRef<AsyncValue> input) {
   return result;
 }
 ```
-
-The order of evaluation issue is a bit annoying.  If this were written as 
-`input->andThen([input = std::move(input), ...` then we would have a problem.
-C++ compilers before C++'20 do not specify the order of evaluation, and some
-will do the move of 'input' into the capture list before reading from the
-receiver.  FIXME: Address this with [Issue #35](https://github.com/modularml/modular/issues/35).
-

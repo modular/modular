@@ -73,23 +73,97 @@ namespace LLCL {
 class WaiterListNode {
 public:
   explicit WaiterListNode(llvm::unique_function<void()> waiter)
-      : waiter(std::move(waiter)), next(nullptr) {}
+      : waiterFn1(std::move(waiter)), nextAndIsFn2(nullptr, false) {}
+  explicit WaiterListNode(
+      llvm::unique_function<void(const RCRef<AsyncValue> &)> waiter)
+      : waiterFn2(std::move(waiter)), nextAndIsFn2(nullptr, true) {}
 
-  llvm::unique_function<void()> waiter;
-  // This is the next thing waiting on the AsyncValue.
-  WaiterListNode *next;
+  ~WaiterListNode() {
+    if (hasClosureArgument())
+      waiterFn2.~unique_function();
+    else
+      waiterFn1.~unique_function();
+  }
+
+  union {
+    llvm::unique_function<void()> waiterFn1;
+    llvm::unique_function<void(const RCRef<AsyncValue> &)> waiterFn2;
+  };
+
+  bool hasClosureArgument() const { return nextAndIsFn2.getInt(); }
+  void setNext(WaiterListNode *newNext) { nextAndIsFn2.setPointer(newNext); }
+
+  /// This is the next thing waiting on the AsyncValue, and a bit indicating
+  /// whether we are waiterFn2 (true) or waiterFn1 (false).
+  llvm::PointerIntPair<WaiterListNode *, 1, bool,
+                       AsyncValue::WaiterListNodePointerTraits>
+      nextAndIsFn2;
+
+private:
+  WaiterListNode(const WaiterListNode &) = delete;
+  void operator=(const WaiterListNode &) = delete;
 };
 } // namespace LLCL
 
 /// Invoke all of the waiters specified by the list of waiter nodes, and
 /// deallocate the waiter nodes.
-static void runWaitersAndDeallocate(WaiterListNode *list) {
+static void runWaitersAndDeallocate(AsyncValue *value, WaiterListNode *list) {
+  // We pass the AsyncValue in as a `const RCRef<AsyncValue>&` to make the
+  // ownership very clear (they can use the value but have to copy it if
+  // persisting it).  We do this delicately to avoid additional refcount
+  // bumps.
+  auto rcThisRef = RCRef<AsyncValue>::take(value);
+
   while (list) {
     auto *node = list;
-    node->waiter();
-    list = node->next;
+    if (node->hasClosureArgument())
+      node->waiterFn2(rcThisRef);
+    else
+      node->waiterFn1();
+    list = node->nextAndIsFn2.getPointer();
     delete node;
   }
+
+  // We're done with the RCRef.
+  (void)rcThisRef.release();
+}
+
+/// This is the out-of-line portion of the `AsyncValue::andThen` method which is
+/// invoked when the value appears to be non-ready.
+///
+/// If the value is available or becomes available, this calls the closure
+/// immediately. Otherwise, the add closure to the waiter list where it will be
+/// called when the value becomes available.
+void AsyncValue::andThenOutOfLine(WaiterListNode *node,
+                                  WaitersAndState oldValue) {
+  auto oldState = oldValue.getInt();
+
+  // Swap the next link in. oldValue.getInt() must be non-ready when
+  // evaluating the loop condition. The acquire barrier on the compare_exchange
+  // ensures that prior changes to waiter list are visible here as we may call
+  // RunWaiter() on it. The release barrier ensures that prior changes to *node
+  // appear to happen before it's added to the list.
+  node->setNext(oldValue.getPointer());
+  auto newValue = WaitersAndState(node, oldState);
+  while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
+                                                std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+    // While swapping in our waiter, the value could have become ready.  If
+    // so, just run the waiter and deallocate the node we don't need anymore.
+    if (isReady(oldValue.getInt())) {
+      assert(oldValue.getPointer() == nullptr);
+      node->setNext(nullptr);
+      runWaitersAndDeallocate(this, node);
+      return;
+    }
+    // Otherwise, it is possible we just got extra waiter nodes.  Update the
+    // waiter list in newValue.
+    node->setNext(oldValue.getPointer());
+  }
+
+  // compare_exchange_weak succeeds. The oldValue must be in some non-ready
+  // state.
+  assert(!isReady(oldValue.getInt()));
 }
 
 /// This is the out-of-line portion of the `AsyncValue::andThen` method which is
@@ -102,33 +176,21 @@ void AsyncValue::andThenOutOfLine(llvm::unique_function<void()> &&waiter,
                                   WaitersAndState oldValue) {
   // Create the node for our waiter.
   auto *node = new WaiterListNode(std::move(waiter));
-  auto oldState = oldValue.getInt();
+  andThenOutOfLine(node, oldValue);
+}
 
-  // Swap the next link in. oldValue.getInt() must be non-ready when
-  // evaluating the loop condition. The acquire barrier on the compare_exchange
-  // ensures that prior changes to waiter list are visible here as we may call
-  // RunWaiter() on it. The release barrier ensures that prior changes to *node
-  // appear to happen before it's added to the list.
-  node->next = oldValue.getPointer();
-  auto newValue = WaitersAndState(node, oldState);
-  while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
-                                                std::memory_order_acq_rel,
-                                                std::memory_order_acquire)) {
-    // While swapping in our waiter, the value could have become ready.  If
-    // so, just run the waiter and deallocate the node we don't need anymore.
-    if (isReady(oldValue.getInt())) {
-      assert(oldValue.getPointer() == nullptr);
-      node->next = nullptr;
-      runWaitersAndDeallocate(node);
-      return;
-    }
-    // Update the waiter list in newValue.
-    node->next = oldValue.getPointer();
-  }
-
-  // compare_exchange_weak succeeds. The oldValue must be in some non-ready
-  // state.
-  assert(!isReady(oldValue.getInt()));
+/// This is the out-of-line portion of the `AsyncValue::andThen` method which is
+/// invoked when the value appears to be non-ready.
+///
+/// If the value is available or becomes available, this calls the closure
+/// immediately. Otherwise, the add closure to the waiter list where it will be
+/// called when the value becomes available.
+void AsyncValue::andThenOutOfLine(
+    llvm::unique_function<void(const RCRef<AsyncValue> &)> &&waiter,
+    WaitersAndState oldValue) {
+  // Create the node for our waiter.
+  auto *node = new WaiterListNode(std::move(waiter));
+  andThenOutOfLine(node, oldValue);
 }
 
 /// Transition to a ready state and notify all waiters about this.  This
@@ -140,7 +202,7 @@ AsyncValue::State AsyncValue::notifyReady(State newState) {
   // the value that got filled in.
   auto oldValue = waitersAndState.exchange(WaitersAndState(nullptr, newState),
                                            std::memory_order_acq_rel);
-  runWaitersAndDeallocate(oldValue.getPointer());
+  runWaitersAndDeallocate(this, oldValue.getPointer());
   return oldValue.getInt();
 }
 
@@ -224,13 +286,9 @@ void AsyncValue::resolveIndirect(RCRef<AsyncValue> newValue) {
 
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
   // until it becomes ready and then try again.
-
-  // Note: the order of evaluation of `value->andThen(std::move(value))` is
-  // not well specified, so we break this across two lines.
-  AsyncValue *value2 = newValue.getPointer();
-  value2->andThen(
-      [this2 = copyRCRef(this), newValue = std::move(newValue)]() mutable {
-        this2->resolveIndirect(std::move(newValue));
+  newValue->andThen(
+      [this2 = copyRCRef(this)](const RCRef<AsyncValue> &newValue) mutable {
+        this2->resolveIndirect(newValue.copy());
       });
 }
 
