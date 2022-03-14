@@ -10,6 +10,7 @@
 #if defined(__APPLE__)
 #include <dispatch/dispatch.h>
 #elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
+#include <cassert>
 #include <semaphore.h>
 #else
 #include <condition_variable>
@@ -88,7 +89,7 @@ bool Semaphore::Impl::wait(int64_t ns) {
   // If we have no timeout, then we just have check for having been interrupted
   // by a signal handler.
   if (ns == -1) {
-    while ((rc = sem_wait(sema, &ts)) == -1 && errno == EINTR)
+    while ((rc = sem_wait(sema)) == -1 && errno == EINTR)
       continue;
 
     // If sem_wait returned 0 then we're good, we acquired the semaphore.
