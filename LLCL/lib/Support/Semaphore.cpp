@@ -60,9 +60,11 @@ Semaphore::Impl::Impl() : sema(dispatch_semaphore_create(0)) {}
 Semaphore::Impl::~Impl() { dispatch_release(sema); }
 void Semaphore::Impl::post() { dispatch_semaphore_signal(sema); }
 bool Semaphore::Impl::wait(int64_t ns) {
-  dispatch_time_t timeout = dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ ns);
+  dispatch_time_t timeout;
   if (ns == -1)
     timeout = DISPATCH_TIME_FOREVER;
+  else
+    timeout = dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ ns);
 
   return 0 != dispatch_semaphore_wait(sema, timeout);
 }
@@ -93,7 +95,7 @@ bool Semaphore::Impl::wait(int64_t ns) {
       continue;
 
     // If sem_wait returned 0 then we're good, we acquired the semaphore.
-    // Otherwise, we hit an error and were unable to ackquire the semaphore.
+    // Otherwise, we hit an error and were unable to acquire the semaphore.
     return rc != 0;
   }
 
