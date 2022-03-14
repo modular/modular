@@ -25,8 +25,11 @@ public:
 
   /// Attempts to decrement the semaphore, but waits for `ns` nanoseconds.
   /// Returns true if the decrement timed out. Conceptually similar to
-  /// POSIX sem_timedwait. Passing -1 here means to wait forever.
-  bool wait(int64_t ns);
+  /// POSIX sem_timedwait. You can also pass in a special value: -1 means wait
+  /// forever.
+  ///
+  /// Generally, you should pass -1 here; timeouts usually aren't the answer!
+  bool wait(int64_t ns = -1);
 
 private:
   class Impl;
