@@ -37,7 +37,9 @@ TO WRITE:
 
 TO WRITE:
  
- - Higher level addTask.  Parallel for loop, map reduce ...
+ - Generally use this instead of poking at WorkQueue directly.
+
+ - addTask, await.  Parallel for loop, map reduce ...
 
  - If this gets larger and more detailed, it may make sense to split it out to
    its own doc.
