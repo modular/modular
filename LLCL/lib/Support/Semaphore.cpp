@@ -39,7 +39,7 @@ private:
 #if defined(__APPLE__)
   dispatch_semaphore_t sema;
 #elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
-  sem_t *sema;
+  sem_t sema;
 #else
   int counter;
   std::mutex mut;
@@ -72,24 +72,24 @@ bool Semaphore::Impl::wait(int64_t ns) {
 // Semaphore::Impl for POSIX platforms with sem_timedwait
 //===----------------------------------------------------------------------===//
 
-Semaphore::Impl::Impl() : sema(nullptr) {
-  if (-1 == sem_init(sema, 0, 0))
+Semaphore::Impl::Impl() {
+  if (-1 == sem_init(&sema, 0, 0))
     llvm::report_fatal_error("Unable to initialize an unnamed semaphore.");
 }
 
 Semaphore::Impl::~Impl() {
-  int rc = sem_destroy(sema);
+  int rc = sem_destroy(&sema);
   assert(rc == 0 && "Unable to destroy the unnamed semaphore.");
 }
 
-void Semaphore::Impl::post() { sem_post(sema); }
+void Semaphore::Impl::post() { sem_post(&sema); }
 
 bool Semaphore::Impl::wait(int64_t ns) {
   int rc;
   // If we have no timeout, then we just have check for having been interrupted
   // by a signal handler.
   if (ns == -1) {
-    while ((rc = sem_wait(sema)) == -1 && errno == EINTR)
+    while ((rc = sem_wait(&sema)) == -1 && errno == EINTR)
       continue;
 
     // If sem_wait returned 0 then we're good, we acquired the semaphore.
@@ -106,7 +106,7 @@ bool Semaphore::Impl::wait(int64_t ns) {
   ts.tv_nsec += ns;
   // The semaphore may be interrupted by a signal handler, so check for this
   // case and continue if that is what happens.
-  while ((rc = sem_timedwait(sema, &ts)) == -1 && errno == EINTR)
+  while ((rc = sem_timedwait(&sema, &ts)) == -1 && errno == EINTR)
     continue;
 
   // Semaphore successfully decremented, return no error.
