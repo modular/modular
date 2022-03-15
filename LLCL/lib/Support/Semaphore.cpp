@@ -128,9 +128,9 @@ bool Semaphore::Impl::wait(int64_t ns) {
 // Backup Semaphore::Impl using std::mutex and std::condition_variable.
 //===----------------------------------------------------------------------===//
 
-Semaphore::Impl::Semaphore::Impl() : counter(0) {}
+Semaphore::Impl::Impl() : counter(0) {}
 
-Semaphore::Impl::~Semaphore::Impl() {}
+Semaphore::Impl::~Impl() {}
 
 void Semaphore::Impl::post() {
   {
@@ -142,7 +142,7 @@ void Semaphore::Impl::post() {
   cv.notify_one();
 }
 
-bool Semaphore::Impl::wait(uint64_t ns) {
+bool Semaphore::Impl::wait(int64_t ns) {
   // Use the condition variable to wait for counter to be greater than 0.
   std::unique_lock lock(mut);
 
