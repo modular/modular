@@ -8,6 +8,7 @@
 
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Support/ConcurrentQueue.h"
+#include "LLCL/Support/Semaphore.h"
 #include "llvm/ADT/ArrayRef.h"
 
 #include <thread>
@@ -28,6 +29,7 @@ public:
 
   void addTask(TaskFunction work) override {
     taskList.enqueue(std::move(work));
+    syncState.sema.post();
   }
 
   void await(llvm::ArrayRef<RCRef<AsyncValue>> values) override;
@@ -52,6 +54,7 @@ private:
   /// for the required exit functionality.
   struct ThreadSyncState {
     std::atomic<bool> done;
+    Semaphore sema;
   };
 
   /// RAII wrapper around a thread to simplify handling of each thread in the
@@ -99,7 +102,7 @@ private:
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numThreads)
     : poolSize(numThreads),
-      pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false} {
+      pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}} {
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
     new (&pool[i]) Thread(syncState, taskList);
@@ -111,11 +114,16 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 
   // Now we can tell all the threads to exit.
   syncState.done.store(true, std::memory_order_release);
+
+  // Post on the semaphore for every thread to wake it if it's waiting.
+  for (size_t i = 0; i < poolSize; ++i)
+    syncState.sema.post();
+
   // Call the destructor.
   for (size_t i = 0; i < poolSize; ++i)
     pool[i].~Thread();
 
-  // Free the memory we allocated with calloc.
+  // Free the memory we allocated with malloc.
   free(pool);
 }
 
@@ -123,19 +131,30 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
   // We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
+  // Set up a private semaphore so we can just wait on the values that we care
+  // about finishing, without waiting on the whole work queue's semaphore. This
+  // is applicable in the case where we are waiting on something, but there's no
+  // new work being added.
+  Semaphore allValuesDone;
+
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
-    value->andThen([&numRemaining]() { --numRemaining; });
+    value->andThen([&numRemaining, &allValuesDone]() {
+      --numRemaining;
+      allValuesDone.post();
+    });
 
-  // Donate the client thread to popping tasks off the queue. `popAndDoWork`
-  // will return failure if `taskList.dequeue()` returns failure, which
-  // indicates there's nothing in the queue. This could mean that something has
-  // already been kicked-off and will enqueue more work in the process of
-  // executing, but we need to wait for it to complete for those tasks to become
-  // visible.
+  // Donate the client thread to doing useful work until there's no more useful
+  // work to do. The thread should wake up and this function should return as
+  // soon as the work that it's waiting on has finished.
+  // TODO: This code has a problem - once the taskList has been drained the
+  //   client thread is now sleeping on its semaphore. If someone else adds more
+  //   work, this thread currently has no way of waking up to check again if
+  //   there's more work to be done.
   while (numRemaining.load() > 0)
     if (mlir::failed(popAndDoWork(taskList)))
-      std::this_thread::yield();
+      for (size_t i = 0, e = values.size(); i < e; ++i)
+        allValuesDone.wait();
 }
 
 //===----------------------------------------------------------------------===//
@@ -146,13 +165,15 @@ void ThreadPoolWorkQueue::Thread::run() {
   // While we haven't been told to finish up, attempt to dequeue and execute
   // work.
   while (true) {
+    // Wait for any work that might be on its way in. If there's no work, then
+    // this thread will be slept by the kernel.
+    sync.sema.wait();
+
     if (mlir::succeeded(popAndDoWork(taskList)))
       continue;
 
     if (sync.done.load(std::memory_order_acquire))
       return;
-
-    std::this_thread::yield();
   }
 }
 
