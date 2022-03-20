@@ -84,7 +84,7 @@ public:
   // Smart Pointer operations
   //===--------------------------------------------------------------------===//
 
-  // Return a raw pointer to the AsyncValue.
+  /// Return a raw pointer to the AsyncValue.
   AsyncValue *getPointer() const { return value.getPointer(); }
 
   AsyncValue &operator*() const {
