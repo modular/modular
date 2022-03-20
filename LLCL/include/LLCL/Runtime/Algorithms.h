@@ -135,7 +135,7 @@ template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
 LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
                                                              FnTy work) {
-  auto result = AsyncValueRef<ResultTy>::createUnconstructed(runtime);
+  auto result = AsyncValueRef<ResultTy>::allocate(runtime);
   addTask(runtime,
           [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
             result.emplace(work());

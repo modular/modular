@@ -58,8 +58,8 @@ public:
 
   /// Create an AsyncValue for the specified type in "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
-  static AsyncValueRef<T> createUnconstructed(CompactRuntimePtr runtime) {
-    return AsyncValue::createUnconstructed<T>(runtime);
+  static AsyncValueRef<T> allocate(CompactRuntimePtr runtime) {
+    return AsyncValue::allocate<T>(runtime);
   }
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
