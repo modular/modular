@@ -40,17 +40,17 @@ using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
 
 /// Donate the current thread to running work until all of the specified values
 /// are ready.
-inline static void await(Runtime &runtime,
-                         llvm::ArrayRef<RCRef<AsyncValue>> values) {
-  runtime.getWorkQueue()->await(values);
+inline static void await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+  if (!values.empty())
+    values[0]->getRuntime().get()->getWorkQueue()->await(values);
 }
 
 template <typename T>
-inline static void await(Runtime &runtime, const AsyncValueRef<T> &value) {
+inline static void await(const AsyncValueRef<T> &value) {
   // Convert from a guaranteed AsyncValueRef to a guaranteed RCRef without
   // bumping reference counts.
   RCRef<AsyncValue> ref = takeRCRef(value.getPointer());
-  runtime.getWorkQueue()->await(ref);
+  await(ref);
   (void)ref.release();
 }
 
