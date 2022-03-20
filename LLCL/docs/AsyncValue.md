@@ -145,9 +145,9 @@ an error) - all waiters are notified transitioning to a ready state, and you
 cannot transition an `AsyncValue` back out of a ready state.
 
 **"Unconstructed":** An `AsyncValue` in unconstructed state is obtained from the
-`AsyncValue::createUnconstructed<T>` or `AsyncValueRef<T>::createUnconstructed`
-static method.  In this state, any `andThen` requests are queued up until the
-value transitions into a ready state.
+`AsyncValue::allocate<T>` or `AsyncValueRef<T>::allocate` static method.  In
+this state, any `andThen` requests are queued up until the value transitions
+into a ready state.
 
 **"Constructed":** An `AsyncValue` in constructed state is obtained from
 `AsyncValue::createConstructed<T>` or `AsyncValueRef<T>::createConstructed`

@@ -61,7 +61,7 @@ public:
   /// Create an AsyncValue for the specified type in an "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
-  static RCRef<AsyncValue> createUnconstructed(CompactRuntimePtr runtime);
+  static RCRef<AsyncValue> allocate(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
   /// state.  When This should be `markReady()`, or finalized with an error.
@@ -523,8 +523,7 @@ void AsyncValue::registerType() {
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-inline RCRef<AsyncValue>
-AsyncValue::createUnconstructed(CompactRuntimePtr runtime) {
+inline RCRef<AsyncValue> AsyncValue::allocate(CompactRuntimePtr runtime) {
   return takeRCRef(
       Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed, runtime));
 }
