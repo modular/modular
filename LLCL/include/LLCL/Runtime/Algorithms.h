@@ -55,6 +55,65 @@ inline static void await(Runtime &runtime, const AsyncValueRef<T> &value) {
 }
 
 //===----------------------------------------------------------------------===//
+// 'andThen' for multiple values.
+//===----------------------------------------------------------------------===//
+
+template <typename CompletionFn, typename... ValueTys>
+inline static void andThen(CompletionFn completionFn, ValueTys &&...values) {
+  struct AndThenState {
+    /// This is the number of values we're waiting on.  When this drops to zero,
+    /// the completion handler is run.
+    std::atomic<size_t> numElementsLeft;
+
+    /// This is the function to execute once all elements are done.
+    CompletionFn completionFn;
+
+    /// These are the async values we're waiting on.  They are passed into the
+    /// completion function once they all become ready.
+    std::tuple<ValueTys...> values;
+  };
+
+  // Allocate the parallel state on the heap since it will out-live the call to
+  // this function.  We will deallocate it after invoking the completion
+  // handler when the last element completes.
+  auto state = new AndThenState{sizeof...(values),
+                                std::forward<CompletionFn>(completionFn),
+                                {std::forward<ValueTys>(values)...}};
+
+  // This function is invoked on every async value to wait for it to complete.
+  auto processAsyncValue = [&](AsyncValue *value) -> int {
+    value->andThen([state]() {
+      // Once that is done we can decrement the count and trigger completion
+      // when the last element is done.
+      if (--state->numElementsLeft != 0)
+        return;
+
+      // Invoke the completion function, since we're done.
+      llvm::apply_tuple(
+          [&](auto &&...args) {
+            state->completionFn(std::forward<ValueTys>(args)...);
+          },
+          state->values);
+
+      // All uses of the state are done, so we can deallocate it.
+      delete state;
+    });
+
+    // Return an int just so the using make_tuple creates a tuple with trivial
+    // element types.
+    return 0;
+  };
+
+  // This magical incantation invokes `processAsyncValue` on each element of the
+  // tuple.
+  llvm::apply_tuple(
+      [&](auto &...elt) {
+        (void)std::make_tuple(processAsyncValue(elt.getPointer())...);
+      },
+      state->values);
+}
+
+//===----------------------------------------------------------------------===//
 // Helpers to add tasks to the runtime's work queue
 //===----------------------------------------------------------------------===//
 
