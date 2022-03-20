@@ -126,6 +126,14 @@ public:
   T &get() const { return value->get<T>(); }
 
   /// Construct the payload of a ConcreteAsyncValue and change its state to
+  /// `constructed`.  Requires that the AsyncValue's state is `unconstructed`,
+  /// and is moved to a ready state with `->markReady()`.
+  template <typename... Args>
+  void construct(Args &&...args) const {
+    value->construct<T>(std::forward<Args>(args)...);
+  }
+
+  /// Construct the payload of a ConcreteAsyncValue and change its state to
   /// `available`.  Requires that the AsyncValue's state is `unconstructed`.
   template <typename... Args>
   void emplace(Args &&...args) const {

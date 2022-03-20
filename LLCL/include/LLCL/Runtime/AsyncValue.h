@@ -90,6 +90,12 @@ public:
   // State change methods.
   //===--------------------------------------------------------------------===//
 
+  /// Construct the payload of a ConcreteAsyncValue and change its state to
+  /// `kConstructed`.  Requires that the AsyncValue's state is `kUnconstructed`,
+  /// and is moved to a ready state with `markReady()`.
+  template <typename T, typename... Args>
+  void construct(Args &&...args);
+
   /// Construct the payload of a ConcreteAsyncValue and change our state to
   /// `kAvailable`.  Requires that this AsyncValue's state is `kUnconstructed`.
   template <typename T, typename... Args>
@@ -631,6 +637,32 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
     return;
   }
   andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+}
+
+/// Construct the payload of a ConcreteAsyncValue and change its state to
+/// `kConstructed`.  Requires that the AsyncValue's state is `kUnconstructed`,
+/// and is moved to a ready state with `markReady()`.
+template <typename T, typename... Args>
+inline void AsyncValue::construct(Args &&...args) {
+  auto oldValue = waitersAndState.load(std::memory_order_acquire);
+  assert(getSubclassKind() == SubclassKind::kConcrete &&
+         oldValue.getInt() == State::kUnconstructed &&
+         "cannot construct an indirect or already set up AsyncValue");
+  assert(getTypeID<T>() == typeID && "Incorrect accessor");
+
+  auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
+  new (&concrete->payload) T(std::forward<Args>(args)...);
+
+  // Change the state to 'constructed' while making sure any waiters that get
+  // concurrently added don't get lost.
+  auto newValue = WaitersAndState(oldValue.getPointer(), State::kConstructed);
+  while (!waitersAndState.compare_exchange_strong(oldValue, newValue,
+                                                  std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
+    assert(oldValue.getInt() == State::kUnconstructed &&
+           "state changed while constructing?");
+    newValue.setPointer(oldValue.getPointer());
+  }
 }
 
 /// Construct the payload of the AsyncValue in place and change its state to
