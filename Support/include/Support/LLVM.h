@@ -154,6 +154,9 @@ struct LogicalResult;
 struct MemRefAccess;
 struct OperationState;
 
+template <typename T>
+class FailureOr;
+
 template <typename SourceOp>
 class OpConversionPattern;
 template <typename T>
@@ -196,6 +199,7 @@ using mlir::DictionaryAttr;            // NOLINT(misc-unused-using-decls)
 using mlir::ElementsAttr;              // NOLINT(misc-unused-using-decls)
 using mlir::failed;                    // NOLINT(misc-unused-using-decls)
 using mlir::failure;                   // NOLINT(misc-unused-using-decls)
+using mlir::FailureOr;                 // NOLINT(misc-unused-using-decls)
 using mlir::FileLineColLoc;            // NOLINT(misc-unused-using-decls)
 using mlir::FlatSymbolRefAttr;         // NOLINT(misc-unused-using-decls)
 using mlir::FloatAttr;                 // NOLINT(misc-unused-using-decls)
