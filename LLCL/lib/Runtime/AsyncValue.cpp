@@ -28,7 +28,7 @@ auto Detail::SomeConcreteAsyncValue::getDestructor() -> DestructorFn {
   auto &table = getTypeInfoTableSingleton();
   uint16_t typeID = getTypeID();
   assert(typeID != 0);
-  return table[getTypeID() - 1];
+  return table[typeID - 1];
 }
 
 void Detail::SomeConcreteAsyncValue::doTypeRegistration(

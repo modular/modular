@@ -36,6 +36,7 @@ public:
 
   void deallocateBytes(void *ptr, size_t size) override {
     auto curNumAllocations = --numAllocations;
+    (void)curNumAllocations;
     assert(curNumAllocations >= 0 && "deallocation imbalance");
     numBytesAllocated.fetch_sub(size);
     baseAllocator->deallocateBytes(ptr, size);
