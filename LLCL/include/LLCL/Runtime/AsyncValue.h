@@ -71,14 +71,14 @@ public:
   /// state.  When This should be `markReady()`, or finalized with an error.
   template <typename T, typename... Args>
   static AnyAsyncValueRef createConstructed(CompactRuntimePtr runtime,
-                                             Args &&...args);
+                                            Args &&...args);
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
   template <typename T, typename... Args>
   static AnyAsyncValueRef createReady(CompactRuntimePtr runtime,
-                                       Args &&...args);
+                                      Args &&...args);
 
   /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
   /// the future.
@@ -560,8 +560,8 @@ inline AnyAsyncValueRef AsyncValue::allocate(CompactRuntimePtr runtime) {
 /// state.  When the value is finalized, you should call `markReady()`, or
 /// `setToError` to mark it as ready and notify waiters.
 template <typename T, typename... Args>
-inline AnyAsyncValueRef
-AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
+inline AnyAsyncValueRef AsyncValue::createConstructed(CompactRuntimePtr runtime,
+                                                      Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kConstructed, runtime);
   new (&result->payload) T(std::forward<Args>(args)...);
@@ -573,7 +573,7 @@ AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
 /// state.
 template <typename T, typename... Args>
 inline AnyAsyncValueRef AsyncValue::createReady(CompactRuntimePtr runtime,
-                                                 Args &&...args) {
+                                                Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
   new (&result->payload) T(std::forward<Args>(args)...);
