@@ -36,7 +36,7 @@ public:
 
   /// Run work items until the specified values are ready, returning to the
   /// caller when they are ready (either as values or as errors).
-  virtual void await(llvm::ArrayRef<RCRef<AsyncValue>> values) = 0;
+  virtual void await(llvm::ArrayRef<AnyAsyncValueRef> values) = 0;
 
 protected:
   WorkQueue() = default;

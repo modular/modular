@@ -14,7 +14,7 @@ namespace LLCL {
 /// This class is a typed smart pointer that automatically maintains the
 /// reference count and static type for an underlying AsyncValue object.
 ///
-/// It is analogous to RCRef<AsyncValue>, but provides AsyncValue specific
+/// It is analogous to AnyAsyncValueRef, but provides AsyncValue specific
 /// helper methods, and doesn't require passing <T> to get() or emplace().
 /// It follows the design of RCRef, including not being implicitly copyable.
 ///
@@ -28,7 +28,7 @@ public:
   AsyncValueRef() = default;
   ~AsyncValueRef() = default;
 
-  AsyncValueRef(RCRef<AsyncValue> &&value) : value(std::move(value)) {}
+  AsyncValueRef(AnyAsyncValueRef &&value) : value(std::move(value)) {}
   AsyncValueRef(AsyncValueRef &&rhs) : value(std::move(rhs.value)) {}
 
   // Support implicit conversion from AsyncValueRef<Derived> to
@@ -37,8 +37,8 @@ public:
             std::enable_if_t<std::is_base_of<T, DerivedT>::value, int> = 0>
   AsyncValueRef(AsyncValueRef<DerivedT> &&u) : value(u.ReleaseRCRef()) {}
 
-  // Allow implicit conversion to type-erased RCRef<AsyncValue>
-  operator RCRef<AsyncValue>() && { return std::move(value); }
+  // Allow implicit conversion to type-erased AnyAsyncValueRef
+  operator AnyAsyncValueRef() && { return std::move(value); }
 
   /// This constructor forms a reference to the specified pointer, increasing
   /// the underlying reference count by 1.
@@ -103,14 +103,14 @@ public:
 
   /// Take ownership of the underlying pointer away from the AsyncValueRef and
   /// reset it to null.
-  RCRef<AsyncValue> releaseRCRef() { return std::move(value); }
+  AnyAsyncValueRef releaseRCRef() { return std::move(value); }
 
   // Make an explicit copy of this AsyncValueRef, increasing value's refcount
   // by one.
   AsyncValueRef<T> copy() const { return AsyncValueRef(copyRCRef()); }
 
   // Make a copy of value, increasing value's refcount by one.
-  RCRef<AsyncValue> copyRCRef() const { return value.copy(); }
+  AnyAsyncValueRef copyRCRef() const { return value.copy(); }
 
   /// Manually drop the reference in this AsyncValueRef, setting it to null.
   void reset() { value.reset(); }
@@ -149,11 +149,11 @@ public:
   }
 
   /// Perform an 'andThen' operation on the current typed AsyncValueRef<> and
-  /// get the current value passed in as `const RCRef<AsyncValue>&` when the
+  /// get the current value passed in as `const AnyAsyncValueRef&` when the
   /// closure is invoked.
   template <typename WaiterT>
   auto andThen(WaiterT &&waiter)
-      -> decltype(waiter(std::declval<const RCRef<AsyncValue> &>()), void()) {
+      -> decltype(waiter(std::declval<const AnyAsyncValueRef &>()), void()) {
     // Standard andThen works here!
     getPointer()->andThen(std::forward<WaiterT>(waiter));
   }
@@ -165,7 +165,7 @@ public:
   auto andThen(WaiterT &&waiter)
       -> decltype(waiter(std::declval<const AsyncValueRef<T> &>()), void()) {
     getPointer()->andThen([fn = std::forward<WaiterT>(waiter)](
-                              const RCRef<AsyncValue> &ref) mutable {
+                              const AnyAsyncValueRef &ref) mutable {
       // Carefully form a AsyncValueRef without additional refcount
       // operations, given we know the value will be live for the duration
       // of our invocation.
@@ -176,7 +176,7 @@ public:
   }
 
 private:
-  RCRef<AsyncValue> value;
+  AnyAsyncValueRef value;
 };
 
 //===----------------------------------------------------------------------===//
@@ -184,7 +184,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// This template may be used where it is useful to bundle together a reference
-/// to an AsyncValue (either RCRef<AsyncValue> or AsyncValueRef<T>) with an
+/// to an AsyncValue (either AnyAsyncValueRef or AsyncValueRef<T>) with an
 /// EncodedLocation.
 ///
 /// This value is larger than an AsyncValue reference (3 words instead of 1) and

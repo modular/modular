@@ -42,6 +42,7 @@ class AsyncValue;
 template <typename T>
 class AsyncValueRef;
 class Runtime;
+using AnyAsyncValueRef = RCRef<AsyncValue>;
 
 } // end namespace LLCL
 
@@ -62,6 +63,7 @@ using LLCL::takeRCRef;
 
 // LLCL/Runtime Declarations
 using LLCL::Allocator;
+using LLCL::AnyAsyncValueRef;
 using LLCL::AsyncValue;
 using LLCL::AsyncValueRef;
 using LLCL::Runtime;

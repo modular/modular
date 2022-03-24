@@ -75,7 +75,7 @@ public:
   explicit WaiterListNode(llvm::unique_function<void()> waiter)
       : waiterFn1(std::move(waiter)), nextAndIsFn2(nullptr, false) {}
   explicit WaiterListNode(
-      llvm::unique_function<void(const RCRef<AsyncValue> &)> waiter)
+      llvm::unique_function<void(const AnyAsyncValueRef &)> waiter)
       : waiterFn2(std::move(waiter)), nextAndIsFn2(nullptr, true) {}
 
   ~WaiterListNode() {
@@ -87,7 +87,7 @@ public:
 
   union {
     llvm::unique_function<void()> waiterFn1;
-    llvm::unique_function<void(const RCRef<AsyncValue> &)> waiterFn2;
+    llvm::unique_function<void(const AnyAsyncValueRef &)> waiterFn2;
   };
 
   bool hasClosureArgument() const { return nextAndIsFn2.getInt(); }
@@ -108,11 +108,11 @@ private:
 /// Invoke all of the waiters specified by the list of waiter nodes, and
 /// deallocate the waiter nodes.
 static void runWaitersAndDeallocate(AsyncValue *value, WaiterListNode *list) {
-  // We pass the AsyncValue in as a `const RCRef<AsyncValue>&` to make the
+  // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
   // ownership very clear (they can use the value but have to copy it if
   // persisting it).  We do this delicately to avoid additional refcount
   // bumps.
-  auto rcThisRef = RCRef<AsyncValue>::take(value);
+  auto rcThisRef = AnyAsyncValueRef::take(value);
 
   while (list) {
     auto *node = list;
@@ -186,7 +186,7 @@ void AsyncValue::andThenOutOfLine(llvm::unique_function<void()> &&waiter,
 /// immediately. Otherwise, the add closure to the waiter list where it will be
 /// called when the value becomes available.
 void AsyncValue::andThenOutOfLine(
-    llvm::unique_function<void(const RCRef<AsyncValue> &)> &&waiter,
+    llvm::unique_function<void(const AnyAsyncValueRef &)> &&waiter,
     WaitersAndState oldValue) {
   // Create the node for our waiter.
   auto *node = new WaiterListNode(std::move(waiter));
@@ -232,7 +232,7 @@ EncodedDiagnostic *AsyncValue::getDiagnosticIfPresent() {
 
 /// Create an AsyncValue that has already been turned into an error with the
 /// specified message.
-RCRef<AsyncValue> AsyncValue::createError(EncodedDiagnostic diagnostic) {
+AnyAsyncValueRef AsyncValue::createError(EncodedDiagnostic diagnostic) {
   auto *result = Detail::ConcreteAsyncValue<Chain>::allocate(
       State::kError, diagnostic.getRuntime());
   new (&result->diagnostic) EncodedDiagnostic(std::move(diagnostic));
@@ -265,7 +265,7 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
 
 /// Resolve an IndirectAsyncValue to point to the specified new value,
 /// resolving any waiters whenever newValue becomes ready.
-void AsyncValue::resolveIndirect(RCRef<AsyncValue> newValue) {
+void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
   assert(getSubclassKind() == SubclassKind::kIndirect &&
          getState() == State::kUnconstructed &&
          "Can only resolve indirect async values");
@@ -304,13 +304,13 @@ void AsyncValue::resolveIndirect(RCRef<AsyncValue> newValue) {
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
   // until it becomes ready and then try again.
   newValue->andThen(
-      [this2 = copyRCRef(this)](const RCRef<AsyncValue> &newValue) mutable {
+      [this2 = copyRCRef(this)](const AnyAsyncValueRef &newValue) mutable {
         this2->resolveIndirect(newValue.copy());
       });
 }
 
 /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
 /// the future.
-RCRef<AsyncValue> AsyncValue::createIndirect(CompactRuntimePtr runtime) {
+AnyAsyncValueRef AsyncValue::createIndirect(CompactRuntimePtr runtime) {
   return takeRCRef(new Detail::IndirectAsyncValue(runtime));
 }

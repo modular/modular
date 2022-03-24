@@ -26,7 +26,7 @@ public:
   }
 
   void addTask(TaskFunction work) override;
-  void await(llvm::ArrayRef<RCRef<AsyncValue>> values) override;
+  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
 
 private:
   void doWork(llvm::unique_function<bool()> stopPredicate);
@@ -39,7 +39,7 @@ void SingleThreadWorkQueue::addTask(TaskFunction work) {
   workItems.push_back(std::move(work));
 }
 
-void SingleThreadWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // We are done when values_remaining drops to zero.
   int numRemaining = values.size();
 
