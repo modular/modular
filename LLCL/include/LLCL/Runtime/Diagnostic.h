@@ -15,15 +15,10 @@
 #include "Support/Error.h"
 
 namespace LLCL {
-class DecodedDiagnostic {
-public:
-  M::Error message;
-  DecodedLocation location;
-};
 
 /// This is a combination of an `Error` message with an encoded location.  It is
-/// relatively efficient to pass around, but must be decoded into a
-/// `DecodedDiagnostic` before anything useful can be done with it.
+/// relatively efficient to pass around, but its location must be decoded before
+/// it can be interpreted.
 class EncodedDiagnostic {
 public:
   M::Error message;
@@ -35,9 +30,7 @@ public:
 
   Runtime &getRuntime() const { return location.getRuntime(); }
 
-  DecodedDiagnostic decode() const {
-    return {message.copy(), location.decode()};
-  }
+  DecodedLocation decodeLocation() const { return location.decode(); }
 };
 
 } // namespace LLCL

@@ -493,8 +493,8 @@ private:
                                typeID, runtime) {}
 
   /// This value in a 'constructed' AsyncValue is always "payload".  This value
-  /// in a 'ready' AsyncValue may either be "payload" or "error".  Note that
-  /// EncodedDiagnostic is 3 words.  We could store this out of line when
+  /// in a 'ready' AsyncValue may either be "payload" or "diagnostic".  Note
+  /// that EncodedDiagnostic is 3 words.  We could store this out of line when
   /// sizeof(T) is smaller than sizeof(EncodedDiagnostic) at the cost of
   /// complexity and expense in the error case for those types.
   union {
