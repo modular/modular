@@ -27,18 +27,18 @@ possible to maintain their lifetime.
 
 An `AsyncValue` will eventually resolve to hold a value of some C++ type, but
 this is dynamic and can happen after construction.  The `AsyncValue` type itself
-is therefore type-erased: users can manipulate an `RCRef<AsyncValue>` without
+is therefore type-erased: users can manipulate an `AnyAsyncValueRef` without
 knowing what type it will ultimately contain.  For example, you can enqueue a
 closure with `AsyncValue::andThen()` without knowing the actual type that will
 ultimately be contained in the `AsyncValue`. Type information is only needed
 when *accessing* the contained data, for example with `AsyncValue::get<T>()` or
 `AsyncValue::emplace<T>()`.
 
-`RCRef<AsyncValue>` is used when working with a type-erased
+`AnyAsyncValueRef` is used when working with a type-erased
 `AsyncValue` and `AsyncValueRef<T>` is used when you know the element type `T`
 that is stored in the `AsyncValue`.  It is preferable to use strong types if
 you know them, but dynamic type-generic code sometimes doesn't.  
-`AsyncValueRef<T>` implicitly converts to `RCRef<AsyncValue>`.
+`AsyncValueRef<T>` implicitly converts to `AnyAsyncValueRef`.
 
 `AsyncValue` can hold any C++ type, including move-only and even non-movable
 types, but all types need to be registered before use with
@@ -70,7 +70,7 @@ computations is to enqueue work that occurs when a value becomes available.
 `AsyncValue` makes this very easy through the `andThen` method:
 
 ```c++
-void printWhenReady(RCRef<AsyncValue> input) {
+void printWhenReady(AnyAsyncValueRef input) {
   input->andThen([]() {
     // This prints whenever `input` becomes ready.
     printf("input is ready!");
@@ -131,7 +131,7 @@ void addToTableWhenReady(AsyncValueRef<int32_t> input,
 Now we're not moving away from the `input` argument, we're introducing a shadow
 of it within the lambda.  This reduces the size of the capture list and removes
 a footgun.  You may take the argument in this way as `const
-AsyncValueRef<int32_t> &` or `const RCRef<AsyncValue> &` depending on whether
+AsyncValueRef<int32_t> &` or `const AnyAsyncValueRef &` depending on whether
 you have an `AsyncValueRef` or just an untyped `RCRef`.  Because these are
 passed in as a const reference, you will need to `.copy()` them if you want
 to extend the lifetime of the reference.
@@ -188,12 +188,12 @@ depending on the input types:
 ```C++
 // This works with both integer and string values forming "x+x" or "concat(x,x)"
 // depending on what the argument resolves to.
-RCRef<AsyncValue> genericAsyncDouble(RCRef<AsyncValue> input) {
+AnyAsyncValueRef genericAsyncDouble(AnyAsyncValueRef input) {
   // Must create this value before knowing what type `input` is.
-  RCRef<AsyncValue> result = AsyncValue::createIndirect(input->getRuntime());
+  AnyAsyncValueRef result = AsyncValue::createIndirect(input->getRuntime());
 
-  input.andThen([result = result.copy()](const RCRef<AsyncValue> &input) {
-    RCRef<AsyncValue> newVal;
+  input.andThen([result = result.copy()](const AnyAsyncValueRef &input) {
+    AnyAsyncValueRef newVal;
     if (input.isType<int32_t>())
       newVal = AsyncValue::createReady<T>(input.get<int32_t>()*2);
     else {

@@ -21,10 +21,15 @@
 namespace LLCL {
 class Runtime;
 class WaiterListNode;
+class AsyncValue;
 namespace Detail {
 template <typename T>
 class ConcreteAsyncValue;
 }
+
+/// AnyAsyncValueRef is a using declaration that keeps typed and untyped
+/// reference counted references to AsyncValue more syntactically similar.
+using AnyAsyncValueRef = RCRef<AsyncValue>;
 
 /// This is a future of the specified value type. Arbitrary C++ types may be
 /// used here, even non-copyable types and expensive ones like "your database".
@@ -60,28 +65,28 @@ public:
   /// Create an AsyncValue for the specified type in an "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
-  static RCRef<AsyncValue> allocate(CompactRuntimePtr runtime);
+  static AnyAsyncValueRef allocate(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
   /// state.  When This should be `markReady()`, or finalized with an error.
   template <typename T, typename... Args>
-  static RCRef<AsyncValue> createConstructed(CompactRuntimePtr runtime,
+  static AnyAsyncValueRef createConstructed(CompactRuntimePtr runtime,
                                              Args &&...args);
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
   template <typename T, typename... Args>
-  static RCRef<AsyncValue> createReady(CompactRuntimePtr runtime,
+  static AnyAsyncValueRef createReady(CompactRuntimePtr runtime,
                                        Args &&...args);
 
   /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
   /// the future.
-  static RCRef<AsyncValue> createIndirect(CompactRuntimePtr runtime);
+  static AnyAsyncValueRef createIndirect(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
-  static RCRef<AsyncValue> createError(EncodedDiagnostic diagnostic);
+  static AnyAsyncValueRef createError(EncodedDiagnostic diagnostic);
 
   //===--------------------------------------------------------------------===//
   // State change methods.
@@ -112,7 +117,7 @@ public:
 
   /// Resolve an IndirectAsyncValue to point to the specified new value,
   /// resolving any waiters whenever newValue becomes ready.
-  void resolveIndirect(RCRef<AsyncValue> newValue);
+  void resolveIndirect(AnyAsyncValueRef newValue);
 
   //===--------------------------------------------------------------------===//
   // Primary interface to AsyncValue for clients to use.
@@ -129,11 +134,11 @@ public:
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.  This
   /// overload passes the current value back into the closure as a
-  /// `const RCRef<AsyncValue> &`.  This eliminates the need to capture the
+  /// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
   /// receiver in the closure and reduces reference count traffic.
   template <typename WaiterT>
   auto andThen(WaiterT &&waiter)
-      -> decltype(waiter(RCRef<AsyncValue>()), void());
+      -> decltype(waiter(AnyAsyncValueRef()), void());
 
   /// Return the stored value as type T.
   ///
@@ -337,7 +342,7 @@ protected:
   void andThenOutOfLine(llvm::unique_function<void()> &&waiter,
                         WaitersAndState oldValue);
   void andThenOutOfLine(
-      llvm::unique_function<void(const RCRef<AsyncValue> &)> &&waiter,
+      llvm::unique_function<void(const AnyAsyncValueRef &)> &&waiter,
       WaitersAndState oldValue);
   void destroyWithRefCountZero();
 
@@ -527,7 +532,7 @@ class IndirectAsyncValue : public AsyncValue {
                    /*typeID=*/uint16_t(~0U), runtime) {}
   ~IndirectAsyncValue() {}
 
-  RCRef<AsyncValue> value;
+  AnyAsyncValueRef value;
 };
 } // end namespace Detail
 
@@ -546,7 +551,7 @@ void AsyncValue::registerType() {
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-inline RCRef<AsyncValue> AsyncValue::allocate(CompactRuntimePtr runtime) {
+inline AnyAsyncValueRef AsyncValue::allocate(CompactRuntimePtr runtime) {
   return takeRCRef(
       Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed, runtime));
 }
@@ -555,7 +560,7 @@ inline RCRef<AsyncValue> AsyncValue::allocate(CompactRuntimePtr runtime) {
 /// state.  When the value is finalized, you should call `markReady()`, or
 /// `setToError` to mark it as ready and notify waiters.
 template <typename T, typename... Args>
-inline RCRef<AsyncValue>
+inline AnyAsyncValueRef
 AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kConstructed, runtime);
@@ -567,7 +572,7 @@ AsyncValue::createConstructed(CompactRuntimePtr runtime, Args &&...args) {
 /// This is a terminal state for an AsyncValue, it can never change out of this
 /// state.
 template <typename T, typename... Args>
-inline RCRef<AsyncValue> AsyncValue::createReady(CompactRuntimePtr runtime,
+inline AnyAsyncValueRef AsyncValue::createReady(CompactRuntimePtr runtime,
                                                  Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
@@ -633,23 +638,23 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
 /// Call the specified closure if the value is ready.  Otherwise, add it
 /// to the waiter list and calls it when the value becomes ready.  This
 /// overload passes the current value back into the closure as a
-/// `const RCRef<AsyncValue> &`.  This eliminates the need to capture the
+/// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
 /// receiver in the closure and reduces reference count traffic.
 template <typename WaiterT>
 inline auto AsyncValue::andThen(WaiterT &&waiter)
-    -> decltype(waiter(RCRef<AsyncValue>()), void()) {
+    -> decltype(waiter(AnyAsyncValueRef()), void()) {
   // Clients generally want to use andThen without them each having to check
   // to see if the value is present. Check for them, and immediately run the
   // lambda if it is already here.
   auto waitersAndStateValue = waitersAndState.load(std::memory_order_acquire);
   if (isReady(waitersAndStateValue.getInt())) {
     assert(waitersAndStateValue.getPointer() == nullptr);
-    // We pass the AsyncValue in as a `const RCRef<AsyncValue>&` to make the
+    // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
     // ownership very clear (they can use the value but have to copy it if
     // persisting it).  We do this delicately to avoid additional refcount
     // bumps.
-    auto rcThisRef = RCRef<AsyncValue>::take(this);
-    waiter(const_cast<const RCRef<AsyncValue> &>(rcThisRef));
+    auto rcThisRef = AnyAsyncValueRef::take(this);
+    waiter(const_cast<const AnyAsyncValueRef &>(rcThisRef));
     (void)rcThisRef.release();
     return;
   }

@@ -40,7 +40,7 @@ using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
 
 /// Donate the current thread to running work until all of the specified values
 /// are ready.
-inline static void await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+inline static void await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
     values[0]->getRuntime().get()->getWorkQueue()->await(values);
 }
@@ -49,7 +49,7 @@ template <typename T>
 inline static void await(const AsyncValueRef<T> &value) {
   // Convert from a guaranteed AsyncValueRef to a guaranteed RCRef without
   // bumping reference counts.
-  RCRef<AsyncValue> ref = takeRCRef(value.getPointer());
+  AnyAsyncValueRef ref = takeRCRef(value.getPointer());
   await(ref);
   (void)ref.release();
 }
@@ -220,7 +220,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 template <typename... CaptureTys, typename ElementFn>
 static inline void
 parallelForEachNMarkReady(Runtime &runtime, size_t totalCount,
-                          RCRef<AsyncValue> readyMarker, ElementFn &&elementFn,
+                          AnyAsyncValueRef readyMarker, ElementFn &&elementFn,
                           CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
       runtime, totalCount, std::forward<ElementFn>(elementFn),

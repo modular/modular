@@ -19,6 +19,7 @@ class AsyncValue;
 class EncodedLocation;
 class EncodedDiagnostic;
 class Runtime;
+using AnyAsyncValueRef = RCRef<AsyncValue>;
 
 /// This represents a "decoded" location that is usable for diagnostic emission
 /// and other processing.  This object is relatively heavy-weight that is
@@ -70,7 +71,7 @@ public:
   /// Create an error AsyncValue at this location with the specified message.
   /// For consistency, the error message should start with a lower case letter
   /// and not end with a period.
-  RCRef<AsyncValue> createErrorValue(M::Error message) const;
+  AnyAsyncValueRef createErrorValue(M::Error message) const;
 
   /// Return a copy of this EncodedLocation.
   EncodedLocation copy() const { return EncodedLocation(data, decoder.copy()); }

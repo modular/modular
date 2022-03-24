@@ -32,7 +32,7 @@ public:
     syncState.sema.post();
   }
 
-  void await(llvm::ArrayRef<RCRef<AsyncValue>> values) override;
+  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
 
 private:
   /// Pop a single item off the queue and do the task.
@@ -127,7 +127,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   free(pool);
 }
 
-void ThreadPoolWorkQueue::await(llvm::ArrayRef<RCRef<AsyncValue>> values) {
+void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
