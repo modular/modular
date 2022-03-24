@@ -15,8 +15,8 @@ the value becomes available. This approach is similar to
 
 Another major difference is that `AsyncValue` has built in support for error
 handling: in addition to being completed by a future value, they may also be
-completed by an error value.  All clients are expected to cope with (and
-propagate) errors in a correct way.
+completed by an error value (which tracks location information as well).  All
+clients are expected to cope with (and propagate) errors in a correct way.
 
 `AsyncValue`s are heap allocated and reference counted.  You should use them
 with the [`RCRef`](../include/LLCL/Support/RCRef.h) and

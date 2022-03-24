@@ -31,7 +31,10 @@ TO WRITE:
   accidental implicit atomic reference counts.
 
 - `Chain` is an empty marker type used in AsyncValue-based logic for expressing
-  control dependencies into data dependencies. (LINK TO A DEDICATED DOC).
+  control dependencies into data dependencies. (link to a dedicated explainer
+  doc on control dependencies).
+
+ - Location and Diagnostic.
 
 ## Introduction to LLCL/Runtime/Algorithms.h
 
