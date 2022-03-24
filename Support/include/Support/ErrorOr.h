@@ -148,7 +148,6 @@ public:
     case StorageMode::kValue:
       llvm::report_fatal_error("must hold an error");
     case StorageMode::kStaticError:
-      LLVM_FALLTHROUGH;
     case StorageMode::kMallocError:
       Error result;
       result.storageMode = storageMode;
