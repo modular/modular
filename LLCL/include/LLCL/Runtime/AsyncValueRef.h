@@ -178,6 +178,38 @@ public:
 private:
   RCRef<AsyncValue> value;
 };
+
+//===----------------------------------------------------------------------===//
+// AsyncValueRefWithEncodedLocation
+//===----------------------------------------------------------------------===//
+
+/// This template may be used where it is useful to bundle together a reference
+/// to an AsyncValue (either RCRef<AsyncValue> or AsyncValueRef<T>) with an
+/// EncodedLocation.
+///
+/// This value is larger than an AsyncValue reference (3 words instead of 1) and
+/// involves more reference counting (EncodedLocations need to keep their
+/// decoder alive), so it should only be used where needed.
+template <typename AVRefType>
+class AsyncValueRefWithEncodedLocation : public AVRefType {
+public:
+  AsyncValueRefWithEncodedLocation(AVRefType refValue, EncodedLocation loc)
+      : AVRefType(std::move(refValue)), loc(std::move(loc)) {}
+
+  AsyncValueRefWithEncodedLocation(AsyncValueRefWithEncodedLocation &&) =
+      default;
+
+  /// Fill this AsyncValue with an error that has the specified message.
+  void setToError(M::Error message) const {
+    this->getPointer()->setToError({std::move(message), loc.copy()});
+  }
+
+  /// Provide access to the location.
+  const EncodedLocation &getLocation() const { return loc; }
+
+private:
+  EncodedLocation loc;
+};
 } // namespace LLCL
 
 #endif // LLCL_RUNTIME_ASYNCVALUEREF_H
