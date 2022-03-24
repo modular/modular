@@ -146,8 +146,9 @@ public:
   Error takeErrorStorage() {
     switch (storageMode) {
     case StorageMode::kValue:
-      assert(0 && "must hold an error!");
+      llvm::report_fatal_error("must hold an error");
     case StorageMode::kStaticError:
+      LLVM_FALLTHROUGH;
     case StorageMode::kMallocError:
       Error result;
       result.storageMode = storageMode;
