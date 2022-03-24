@@ -9,6 +9,7 @@ find_package(Threads)
 add_mlir_library(LLCLRuntime
   AsyncValue.cpp
   DebuggingAllocators.cpp
+  Location.cpp
   MallocAllocator.cpp
   Runtime.cpp
   SingleThreadWorkQueue.cpp

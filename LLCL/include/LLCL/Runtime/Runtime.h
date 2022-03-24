@@ -110,7 +110,7 @@ public:
   /// Cancel the current BEF Execution. This transitions this Runtime to the
   /// canceled state, which causes all asynchronously executing threads to be
   /// canceled when they check the cancellation state (e.g. in BEFExecutor).
-  void cancelExecution(M::Error message);
+  void cancelExecution(EncodedDiagnostic message);
 
   /// restartFromCancellation() transitions Runtime from the canceled state to
   /// the normal execution state.

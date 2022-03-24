@@ -210,35 +210,52 @@ AsyncValue::State AsyncValue::notifyReady(State newState) {
 // Error Handling
 //===----------------------------------------------------------------------===//
 
+/// If this AsyncValue holds an error, return its diagnostic.  If not, return
+/// nullptr.
+EncodedDiagnostic *AsyncValue::getDiagnosticIfPresent() {
+  if (getSubclassKind() == SubclassKind::kConcrete) {
+    // If this isn't an error, we're done.
+    if (getState() != State::kError)
+      return nullptr;
+
+    // We don't know the concrete <T> type, so get to the error with pointer
+    // arithmetic.
+    return static_cast<Detail::SomeConcreteAsyncValue *>(this)
+        ->getDiagnosticPointer();
+  }
+
+  auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
+  if (!thisIndirect->value)
+    return nullptr;
+  return thisIndirect->value->getDiagnosticIfPresent();
+}
+
 /// Create an AsyncValue that has already been turned into an error with the
 /// specified message.
-/// TODO: Add location support.
-RCRef<AsyncValue> AsyncValue::createError(CompactRuntimePtr runtime,
-                                          M::Error message) {
-  auto *result =
-      Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
-  new (&result->error) M::Error(std::move(message));
+RCRef<AsyncValue> AsyncValue::createError(EncodedDiagnostic diagnostic) {
+  auto *result = Detail::ConcreteAsyncValue<Chain>::allocate(
+      State::kError, diagnostic.getRuntime());
+  new (&result->diagnostic) EncodedDiagnostic(std::move(diagnostic));
   return takeRCRef(result);
 }
 
 /// Mark an "unconstructed" AsyncValue as an error.
-/// TODO: Add location support.
-void AsyncValue::setToError(M::Error message) {
+void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   if (getSubclassKind() == SubclassKind::kConcrete) {
     assert(getState() == State::kUnconstructed &&
            "cannot set an error to an indirect or already set up AsyncValue");
 
     // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
     // do the pointer arithmetic manually.
-    auto *errorPtr =
-        static_cast<Detail::SomeConcreteAsyncValue *>(this)->getErrorPointer();
-    new (errorPtr) M::Error(std::move(message));
+    auto *diagPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this)
+                        ->getDiagnosticPointer();
+    new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
     auto oldState = notifyReady(State::kError);
     assert(oldState == State::kUnconstructed &&
            "setting an erro to an AsyncValue that was already set up?");
     (void)oldState;
   } else {
-    resolveIndirect(createError(getRuntime(), std::move(message)));
+    resolveIndirect(createError(std::move(diagnostic)));
   }
 }
 

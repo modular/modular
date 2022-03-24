@@ -31,6 +31,10 @@ RCRef<T> takeRCRef(T *ptr);
 template <typename SubClass>
 class ReferenceCounted;
 
+class EncodedLocation;
+class EncodedDiagnostic;
+class LocationDecoder;
+
 // LLCL/Runtime Declarations
 
 class Allocator;
@@ -49,6 +53,9 @@ namespace M {
 // LLCL/Support Declarations
 using LLCL::Chain;
 using LLCL::copyRCRef;
+using LLCL::EncodedDiagnostic;
+using LLCL::EncodedLocation;
+using LLCL::LocationDecoder;
 using LLCL::RCRef;
 using LLCL::ReferenceCounted;
 using LLCL::takeRCRef;

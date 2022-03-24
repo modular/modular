@@ -8,6 +8,7 @@
 #define LLCL_SUPPORT_RCREF_H
 
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 
 namespace LLCL {
