@@ -23,6 +23,7 @@ std::atomic<size_t> LLCL::currentReferenceCountedObjects{0};
 /// Verify that there are no live ReferenceCounted objects that are currently
 /// alive and print the specified message and abort if there are.
 void LLCL::verifyNoLiveReferenceCountedObjects(const char *errorMessage) {
+#ifndef NDEBUG
   if (!currentReferenceCountedObjects.load(std::memory_order_relaxed))
     return;
 
@@ -30,4 +31,5 @@ void LLCL::verifyNoLiveReferenceCountedObjects(const char *errorMessage) {
   fprintf(stderr, "LLCL internal error %s\n", errorMessage);
   fflush(stderr);
   abort();
+#endif
 }

@@ -91,14 +91,18 @@ void verifyNoLiveReferenceCountedObjects(const char *errorMessage);
 
 template <typename SubClass>
 inline ReferenceCounted<SubClass>::ReferenceCounted() : refCount(1) {
+#ifndef NDEBUG
   ++currentReferenceCountedObjects;
+#endif
 }
 
 template <typename SubClass>
 inline ReferenceCounted<SubClass>::~ReferenceCounted() {
   assert(refCount.load() == 0 &&
          "Shouldn't destroy a reference counted object with references!");
+#ifndef NDEBUG
   --currentReferenceCountedObjects;
+#endif
 }
 
 } // namespace LLCL
