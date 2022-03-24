@@ -13,9 +13,8 @@
 #define LLCL_RUNTIME_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
-#include "LLCL/Support/RCRef.h"
+#include "LLCL/Runtime/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
-#include "Support/Error.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -82,9 +81,7 @@ public:
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
-  /// TODO: Add location support.
-  static RCRef<AsyncValue> createError(CompactRuntimePtr runtime,
-                                       M::Error message);
+  static RCRef<AsyncValue> createError(EncodedDiagnostic diagnostic);
 
   //===--------------------------------------------------------------------===//
   // State change methods.
@@ -102,8 +99,7 @@ public:
   void emplace(Args &&...args);
 
   /// Mark an "unconstructed" AsyncValue as an error.
-  /// TODO: Add location support.
-  void setToError(M::Error message);
+  void setToError(EncodedDiagnostic diagnostic);
 
   /// Transition a "constructed" AsyncValue to "available" and notify any
   /// waiters.
@@ -169,15 +165,29 @@ public:
 
   bool isError() const { return getState() == State::kError; }
 
-  /// Return the Error value in this AsyncValue, aborting if it isn't an error.
-  const M::Error &getError() const {
-    auto *result = getErrorIfPresent();
+  /// Return the Diagnostic in this AsyncValue, aborting if it isn't an error.
+  const EncodedDiagnostic &getDiagnostic() const {
+    auto *result = getDiagnosticIfPresent();
     assert(result && "AsyncValue doesn't hold an error");
     return *result;
   }
 
-  /// If this AsyncValue holds an error, return it.  If not, return nullptr.
-  const M::Error *getErrorIfPresent() const;
+  /// Return the Diagnostic in this AsyncValue, aborting if it isn't an error.
+  EncodedDiagnostic takeDiagnostic() {
+    auto *result = getDiagnosticIfPresent();
+    assert(result && "AsyncValue doesn't hold an error");
+    return std::move(*result);
+  }
+
+  /// If this AsyncValue holds an error, return its diagnostic.  If not, return
+  /// nullptr.
+  const EncodedDiagnostic *getDiagnosticIfPresent() const {
+    return const_cast<AsyncValue *>(this)->getDiagnosticIfPresent();
+  }
+
+  /// If this AsyncValue holds an error, return its diagnostic.  If not, return
+  /// nullptr.
+  EncodedDiagnostic *getDiagnosticIfPresent();
 
   //===--------------------------------------------------------------------===//
   // Type Related functionality
@@ -420,7 +430,9 @@ private:
 
   /// The error field and the payload field are always first thing in our
   /// derived class.
-  M::Error *getErrorPointer() { return reinterpret_cast<M::Error *>(this + 1); }
+  EncodedDiagnostic *getDiagnosticPointer() {
+    return reinterpret_cast<EncodedDiagnostic *>(this + 1);
+  }
 
   /// This is the out-of-line slow patch for type registration.
   static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
@@ -440,7 +452,7 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
 
     auto s = getState();
     if (s == State::kError)
-      error.~Error();
+      diagnostic.~EncodedDiagnostic();
     else if (isConstructedOrAvailable(s))
       payload.~T();
   }
@@ -480,8 +492,13 @@ private:
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
                                typeID, runtime) {}
 
+  /// This value in a 'constructed' AsyncValue is always "payload".  This value
+  /// in a 'ready' AsyncValue may either be "payload" or "error".  Note that
+  /// EncodedDiagnostic is 3 words.  We could store this out of line when
+  /// sizeof(T) is smaller than sizeof(EncodedDiagnostic) at the cost of
+  /// complexity and expense in the error case for those types.
   union {
-    M::Error error;
+    EncodedDiagnostic diagnostic;
     T payload;
   };
 
@@ -701,26 +718,6 @@ const T &AsyncValue::get() const {
   assert(thisIndirect->value &&
           "indirect can't be constructed without being resolved");
   return thisIndirect->value->get<T>();
-}
-
-/// If this AsyncValue holds an error, return it.  If not, return nullptr.
-inline const M::Error *AsyncValue::getErrorIfPresent() const {
-  if (getSubclassKind() == SubclassKind::kConcrete) {
-    // If this isn't an error, we're done.
-    if (getState() != State::kError)
-      return nullptr;
-
-    // We don't know the concrete <T> type, so get to the error with pointer
-    // arithmetic.
-    return static_cast<Detail::SomeConcreteAsyncValue *>(
-               const_cast<AsyncValue *>(this))
-        ->getErrorPointer();
-  }
-
-  auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
-  if (!thisIndirect->value)
-    return nullptr;
-  return thisIndirect->value->getErrorIfPresent();
 }
 
 } // namespace LLCL
