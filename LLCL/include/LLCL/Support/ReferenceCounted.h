@@ -78,7 +78,7 @@ private:
   mutable std::atomic<uint32_t> refCount;
 };
 
-#ifndef NDEBUG
+#ifndef LLVM_ENABLE_ABI_BREAKING_CHECKS
 /// In debug builds we keep track of the number of reference counted objects,
 /// which enables clients to check that none are alive at key moments.  This is
 /// a low-tech way to find certain classes of memory leaks.
@@ -91,7 +91,7 @@ void verifyNoLiveReferenceCountedObjects(const char *errorMessage);
 
 template <typename SubClass>
 inline ReferenceCounted<SubClass>::ReferenceCounted() : refCount(1) {
-#ifndef NDEBUG
+#ifndef LLVM_ENABLE_ABI_BREAKING_CHECKS
   ++currentReferenceCountedObjects;
 #endif
 }
@@ -100,7 +100,7 @@ template <typename SubClass>
 inline ReferenceCounted<SubClass>::~ReferenceCounted() {
   assert(refCount.load() == 0 &&
          "Shouldn't destroy a reference counted object with references!");
-#ifndef NDEBUG
+#ifndef LLVM_ENABLE_ABI_BREAKING_CHECKS
   --currentReferenceCountedObjects;
 #endif
 }
