@@ -21,16 +21,26 @@ namespace LLCL {
 /// it can be interpreted.
 class EncodedDiagnostic {
 public:
-  M::Error message;
-  EncodedLocation location;
-
   EncodedDiagnostic(M::Error message, EncodedLocation location)
       : message(std::move(message)), location(std::move(location)) {}
   EncodedDiagnostic(EncodedDiagnostic &&) = default;
 
+  /// Access the message in the diagnostic.
+  const M::Error &getMessage() const { return message; }
+  M::Error &getMessage() { return message; }
+
+  /// Access the location in the diagnostic.
+  const EncodedLocation &getLocation() const { return location; }
+  EncodedLocation &getLocation() { return location; }
+
   Runtime &getRuntime() const { return location.getRuntime(); }
 
+  /// Decode the compressed location into a `DecodedLocation` for rendering.
   DecodedLocation decodeLocation() const { return location.decode(); }
+
+private:
+  M::Error message;
+  EncodedLocation location;
 };
 
 } // namespace LLCL

@@ -63,7 +63,7 @@ public:
   }
 
   /// Create an AsyncValue for the specified type in "constructed" but non-ready
-  /// state.  When This should be `markReady()`, or finalized with an error.
+  /// state.  This should be `markReady()`, or finalized with an error.
   template <typename... Args>
   static AsyncValueRef<T> createConstructed(CompactRuntimePtr runtime,
                                             Args &&...args) {
@@ -127,7 +127,7 @@ public:
 
   /// Construct the payload of a ConcreteAsyncValue and change its state to
   /// `constructed`.  Requires that the AsyncValue's state is `unconstructed`,
-  /// and is moved to a ready state with `->markReady()`.
+  /// and is moved to a ready state with `markReady()`.
   template <typename... Args>
   void construct(Args &&...args) const {
     value->construct<T>(std::forward<Args>(args)...);
