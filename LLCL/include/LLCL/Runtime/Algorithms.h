@@ -144,7 +144,7 @@ inline static void andThen(llvm::ArrayRef<AnyAsyncValueRef> values,
   // For each value, wait for completion and then run the completion function on
   // the last one.
   for (auto &v : state->values)
-    v.andThen([state]() {
+    v->andThen([state]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
