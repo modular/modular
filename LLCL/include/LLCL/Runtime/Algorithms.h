@@ -59,7 +59,9 @@ inline static void await(const AsyncValueRef<T> &value) {
 //===----------------------------------------------------------------------===//
 
 template <typename CompletionFn, typename... ValueTys>
-inline static void andThen(CompletionFn completionFn, ValueTys &&...values) {
+inline static std::enable_if_t<
+    std::is_invocable<CompletionFn, ValueTys...>::value, void>
+andThen(CompletionFn completionFn, ValueTys &&...values) {
   struct AndThenState {
     /// This is the number of values we're waiting on.  When this drops to zero,
     /// the completion handler is run.
@@ -111,6 +113,49 @@ inline static void andThen(CompletionFn completionFn, ValueTys &&...values) {
         (void)std::make_tuple(processAsyncValue(elt.getPointer())...);
       },
       state->values);
+}
+
+//===----------------------------------------------------------------------===//
+// 'andThen' for an array of values
+//===----------------------------------------------------------------------===//
+
+template <typename CompletionFn>
+inline static void andThen(llvm::ArrayRef<AnyAsyncValueRef> values,
+                           CompletionFn completionFn) {
+  struct AndThenState {
+    /// This is the number of values we're waiting on.  When this drops to zero,
+    /// the completion handler is run.
+    std::atomic<size_t> numElementsLeft;
+
+    /// This is the function to execute once all elements are done.
+    CompletionFn completionFn;
+
+    /// These are the async values we're waiting on.  They are passed into the
+    /// completion function once they all become ready.
+    llvm::ArrayRef<AnyAsyncValueRef> values;
+  };
+
+  // Allocate the parallel state on the heap since it will out-live the call to
+  // this function.  We will deallocate it after invoking the completion
+  // handler when the last element completes.
+  auto state = new AndThenState{
+      values.size(), std::forward<CompletionFn>(completionFn), values};
+
+  // For each value, wait for completion and then run the completion function on
+  // the last one.
+  for (auto &v : state->values)
+    v.andThen([state]() {
+      // Once that is done we can decrement the count and trigger completion
+      // when the last element is done.
+      if (--state->numElementsLeft != 0)
+        return;
+
+      // Invoke the completion function, since we're done.
+      state->completionFn(state->values);
+
+      // All uses of the state are done, so we can deallocate it.
+      delete state;
+    });
 }
 
 //===----------------------------------------------------------------------===//
