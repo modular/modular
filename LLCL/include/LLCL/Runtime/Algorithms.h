@@ -171,7 +171,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
   // the last one.
   for (auto &v : values) {
     state->values.push_back(copyOrMoveFn(v));
-    v->andThen([state]() {
+    state->values.back()->andThen([state]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
