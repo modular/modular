@@ -90,7 +90,7 @@ inline static void andThen(std::tuple<ValueTys...> values,
   // Allocate the parallel state on the heap since it will out-live the call to
   // this function.  We will deallocate it after invoking the completion
   // handler when the last element completes.
-  auto state = new AndThenState{std::tuple_size<decltype(values)>::value,
+  auto state = new AndThenState{sizeof...(ValueTys),
                                 std::forward<CompletionFn>(completionFn),
                                 std::forward<decltype(values)>(values)};
 
