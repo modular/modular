@@ -52,9 +52,13 @@ public:
 
   Error(Error &&other) : value(other.value), storageMode(other.storageMode) {
     other.value = nullptr;
+    other.storageMode = kStaticError;
   }
 
-  ~Error() {}
+  ~Error() {
+    if (storageMode == kMallocError)
+      free((void *)value);
+  }
 
   /// Return the message this contains as a nul-terminated string.
   const char *get() const { return value; }
