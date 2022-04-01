@@ -119,6 +119,11 @@ public:
   /// resolving any waiters whenever newValue becomes ready.
   void resolveIndirect(AnyAsyncValueRef newValue);
 
+  /// Resolve an IndirectAsyncValue to contain a concrete AsyncValue with a
+  /// newly initialized value, resolving any waiters.
+  template <typename T, typename... Args>
+  void emplaceIndirect(Args &&...args);
+
   //===--------------------------------------------------------------------===//
   // Primary interface to AsyncValue for clients to use.
   //===--------------------------------------------------------------------===//
@@ -703,6 +708,16 @@ inline void AsyncValue::emplace(Args &&...args) {
   assert(oldState == State::kUnconstructed &&
          "fulfilling a concrete value that was already set up?");
   (void)oldState;
+}
+
+/// Construct the payload of the AsyncValue in place and change its state to
+/// kConcrete. Requires that this is a ConcreteAsyncValue that have state
+/// `kUnconstructed`.
+template <typename T, typename... Args>
+inline void AsyncValue::emplaceIndirect(Args &&...args) {
+  assert(getSubclassKind() == SubclassKind::kIndirect);
+  resolveIndirect(
+      createReady<T, Args...>(getRuntime(), std::forward<Args>(args)...));
 }
 
 template <typename T>
