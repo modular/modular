@@ -87,14 +87,14 @@ public:
   /// Return a raw pointer to the AsyncValue.
   AsyncValue *getPointer() const { return value.getPointer(); }
 
-  AsyncValue &operator*() const {
+  T &operator*() const {
     assert(value && "null AsyncValueRef");
-    return *getPointer();
+    return value->get<T>();
   }
 
-  AsyncValue *operator->() const {
+  T *operator->() const {
     assert(value && "null AsyncValueRef");
-    return getPointer();
+    return &value->get<T>();
   }
 
   /// Take ownership of the underlying pointer away from the AsyncValueRef and
@@ -122,6 +122,11 @@ public:
   // Core AsyncValue operations
   //===--------------------------------------------------------------------===//
 
+  CompactRuntimePtr getRuntime() const { return value->getRuntime(); }
+
+  /// Return true if this has been turned into an error.
+  bool isError() const { return value->isError(); }
+
   /// Return the stored value in an `available` AsyncValue.
   T &get() const { return value->get<T>(); }
 
@@ -138,6 +143,11 @@ public:
   template <typename... Args>
   void emplace(Args &&...args) const {
     value->emplace<T>(std::forward<Args>(args)...);
+  }
+
+  /// Mark an "unconstructed" AsyncValue as an error.
+  void setToError(EncodedDiagnostic diagnostic) const {
+    value->setToError(std::move(diagnostic));
   }
 
   /// Perform an 'andThen' operation on the current typed AsyncValueRef<> and
