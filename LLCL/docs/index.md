@@ -1,5 +1,9 @@
 # LLCL: Low Level Concurrency Library
 
+[TOC]
+
+## Introduction
+
 This library contains low level support for domain independent parallel CPU
 computation.  It is intended to support building high performance runtimes, as
 well as hosting parallel compiler infrastructure like MLIR and LLD.  LLCL

@@ -1,5 +1,9 @@
 # The nonblocking design of `LLCL::WorkQueue`
 
+[TOC]
+
+## Introduction
+
 One of the key problems that a thread pool must solve is how they behave when an
 item of work they execute blocks its thread (e.g. on I/O).  When this happens,
 the thread is implicitly taken out of the thread pool, and therefore the machine
