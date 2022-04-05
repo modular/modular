@@ -19,6 +19,14 @@ using namespace LLCL;
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
 
+/// Create "Chain" AsynchValue, making sure that "Chain" type is registered
+/// before the construction. "Chain" is core to LLCL implemention, so it
+/// needs to be registered unconditonally from LLCL.
+static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
+  AsyncValue::registerType<Chain>();
+  return AsyncValueRef<Chain>::createReady(runtime);
+}
+
 //===----------------------------------------------------------------------===//
 // CompactRuntimePtr
 //===----------------------------------------------------------------------===//
@@ -49,7 +57,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue)
     : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       runtimeIndex(nextRuntimeIndex.fetch_add(1)),
-      readyChain(AsyncValueRef<Chain>::createReady(*this)) {
+      readyChain(createReadyChain(*this)) {
   // We provide a dense numbering of runtime instances right now, but we could
   // make this fancier to allow deallocating and reusing indexes if needbe.
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&
