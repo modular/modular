@@ -12,6 +12,8 @@
 #define LLCL_RUNTIME_ALGORITHMS_H
 
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/Chain.h"
+#include "llvm/ADT/ArrayRef.h"
 
 namespace LLCL {
 
@@ -392,7 +394,7 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
 
   // Donate the client thread to executing work until all the elements have
   // completed.
-  await(runtime, chainResult);
+  await(chainResult);
 }
 
 } // namespace LLCL
