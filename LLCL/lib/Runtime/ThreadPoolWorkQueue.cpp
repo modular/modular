@@ -33,6 +33,7 @@ public:
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
+  int getParallelismLevel() const final { return poolSize; }
 
 private:
   /// Pop a single item off the queue and do the task.

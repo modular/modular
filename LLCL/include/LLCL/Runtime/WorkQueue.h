@@ -38,6 +38,11 @@ public:
   /// caller when they are ready (either as values or as errors).
   virtual void await(llvm::ArrayRef<AnyAsyncValueRef> values) = 0;
 
+  /// Return the pool size maintained by this work queue. Kernels can use
+  /// this as a hint indicating the maximum useful number of work items
+  /// they should break themselves into.
+  virtual int getParallelismLevel() const = 0;
+
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();

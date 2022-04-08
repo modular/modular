@@ -27,6 +27,7 @@ public:
 
   void addTask(TaskFunction work) override;
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
+  int getParallelismLevel() const override { return 1; }
 
 private:
   void doWork(llvm::unique_function<bool()> stopPredicate);
