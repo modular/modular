@@ -11,7 +11,7 @@
 #include <dispatch/dispatch.h>
 #elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
 #include <cassert>
-#include <errno.h>
+#include <cerrno>
 #include <semaphore.h>
 #else
 #include <condition_variable>
