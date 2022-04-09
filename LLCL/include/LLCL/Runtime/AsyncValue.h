@@ -408,15 +408,22 @@ class SomeConcreteAsyncValue : public AsyncValue {
 
   // We don't want a virtual function pointer in AsyncValue because it is too
   // big. Accordingly, we need another way to get a pointer to the destructor
-  // for ConcreteAsyncValue<T> whose details depend on the destructor for T.
-  // To solve for this, we store the function pointers in a side table and
-  // use 16-bit indexes into it.
-
+  // an arbitrary type T.  To solve for this, we store the function pointers in
+  // a side table and use 16-bit indexes into it.
 public:
-  // This is the signature for the destructor function.
-  using DestructorFn = void (*)(AsyncValue *);
+  // This is the signature for the destructor function for some value.
+  using ValueDestructorFn = void (*)(void *);
+
+  /// This function destroys a value of type T at the specified address.
+  template <typename T>
+  static void destructorFnPtr(void *pointer) {
+    static_cast<T *>(pointer)->~T();
+  }
 
 private:
+  // Only invoked by destroyWithRefCountZero.
+  ~SomeConcreteAsyncValue();
+
   /// isTypeCompatible returns true if the type value stored in this AsyncValue
   /// instance can be safely cast to `T`. This is a conservative check:
   /// isTypeCompatible may return true even if the value cannot be safely cast
@@ -435,8 +442,8 @@ private:
     return getTypeID<T>() == getTypeID();
   }
 
-  /// Return the stored destructor for this ConcreteValue.
-  DestructorFn getDestructor();
+  /// Return the stored destructor function for this ConcreteValue.
+  ValueDestructorFn getValueDestructor();
 
   /// The error field and the payload field are always first thing in our
   /// derived class.
@@ -444,9 +451,17 @@ private:
     return reinterpret_cast<EncodedDiagnostic *>(this + 1);
   }
 
+  /// Return the address of the (potentially uninitialized) payload.
+  void *getPayloadPointer() {
+    /// The payload in a ConcreteAsyncValue always immediately follows the
+    /// AsyncValue.  This is guaranteed by static_asserts in ConcreteAsyncValue
+    /// below.
+    return this + 1;
+  }
+
   /// This is the out-of-line slow patch for type registration.
   static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
-                                 DestructorFn destructor);
+                                 ValueDestructorFn destructor);
 };
 
 /// Subclass for storing the payload of the AsyncValue inline.  This should
@@ -455,23 +470,6 @@ template <typename T>
 class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   friend class AsyncValue;
   friend class SomeConcreteAsyncValue;
-  ~ConcreteAsyncValue() {
-    static_assert(offsetof(ConcreteAsyncValue<T>, payload) ==
-                      AsyncValue::kAsyncValueSize,
-                  "Offset of ConcreteAsyncValue::payload needs to be aligned");
-
-    auto s = getState();
-    if (s == State::kError)
-      diagnostic.~EncodedDiagnostic();
-    else if (isConstructedOrAvailable(s))
-      payload.~T();
-  }
-
-  // The destructor function for a ConcreteAsyncValue<T>.
-  static void destructorFnPtr(AsyncValue *v) {
-    static_cast<ConcreteAsyncValue<T> *>(v)->~ConcreteAsyncValue();
-  }
-
   /// Allocate an instance of ConcreteAsyncValue in the specified state, but
   /// with the payload uninitialized.
   static ConcreteAsyncValue<T> *allocate(State state,
@@ -493,14 +491,21 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
         uint16_t(~0U))
       return;
     doTypeRegistration(&ConcreteAsyncValue<T>::staticTypeID,
-                       Detail::ConcreteAsyncValue<T>::destructorFnPtr);
+                       SomeConcreteAsyncValue::destructorFnPtr<T>);
   }
 
 private:
   ConcreteAsyncValue(State state, bool hasVTable, uint16_t typeID,
                      CompactRuntimePtr runtime)
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
-                               typeID, runtime) {}
+                               typeID, runtime) {
+    static_assert(offsetof(ConcreteAsyncValue<T>, payload) ==
+                      AsyncValue::kAsyncValueSize,
+                  "Offset of ConcreteAsyncValue::payload needs to be aligned");
+  }
+
+  // NOTE: destruction of the payload and error (if constructed) is handled by
+  // SomeConcreteAsyncValue destructor.
 
   /// This value in a 'constructed' AsyncValue is always "payload".  This value
   /// in a 'ready' AsyncValue may either be "payload" or "diagnostic".  Note
