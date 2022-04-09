@@ -16,15 +16,16 @@ std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
 // TypeID and Destructor related functionality
 //===----------------------------------------------------------------------===//
 
-using DestructorFn = Detail::SomeConcreteAsyncValue::DestructorFn;
+using ValueDestructorFn = Detail::SomeConcreteAsyncValue::ValueDestructorFn;
 
-static ConcurrentAppendingVector<DestructorFn> &getTypeInfoTableSingleton() {
+static ConcurrentAppendingVector<ValueDestructorFn> &
+getTypeInfoTableSingleton() {
   static auto *table =
-      new ConcurrentAppendingVector<DestructorFn>(/*initial capacity*/ 64);
+      new ConcurrentAppendingVector<ValueDestructorFn>(/*initial capacity*/ 64);
   return *table;
 }
 
-auto Detail::SomeConcreteAsyncValue::getDestructor() -> DestructorFn {
+auto Detail::SomeConcreteAsyncValue::getValueDestructor() -> ValueDestructorFn {
   auto &table = getTypeInfoTableSingleton();
   uint16_t typeID = getTypeID();
   assert(typeID != 0);
@@ -32,7 +33,7 @@ auto Detail::SomeConcreteAsyncValue::getDestructor() -> DestructorFn {
 }
 
 void Detail::SomeConcreteAsyncValue::doTypeRegistration(
-    std::atomic<uint16_t> *staticTypeID, DestructorFn destructor) {
+    std::atomic<uint16_t> *staticTypeID, ValueDestructorFn destructor) {
   size_t typeID = getTypeInfoTableSingleton().emplace_back(destructor) + 1;
   // Detect overflow.
   assert(typeID < std::numeric_limits<uint16_t>::max() &&
@@ -48,13 +49,22 @@ void Detail::SomeConcreteAsyncValue::doTypeRegistration(
 }
 
 //===----------------------------------------------------------------------===//
-// Construction
+// Destruction logic
 //===----------------------------------------------------------------------===//
 
+Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
+  auto s = getState();
+  // Destroy the error or value if constructed.
+  if (s == State::kError)
+    getDiagnosticPointer()->~EncodedDiagnostic();
+  else if (isConstructedOrAvailable(s))
+    getValueDestructor()(getPayloadPointer());
+}
+
 void AsyncValue::destroyWithRefCountZero() {
-  if (getSubclassKind() != SubclassKind::kIndirect) {
+  if (getSubclassKind() == SubclassKind::kConcrete) {
     auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
-    concrete->getDestructor()(concrete);
+    concrete->~SomeConcreteAsyncValue();
     M::alignedFree(this);
     return;
   }
@@ -242,17 +252,23 @@ AnyAsyncValueRef AsyncValue::createError(EncodedDiagnostic diagnostic) {
 /// Mark an "unconstructed" AsyncValue as an error.
 void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   if (getSubclassKind() == SubclassKind::kConcrete) {
-    assert(getState() == State::kUnconstructed &&
-           "cannot set an error to an indirect or already set up AsyncValue");
+    auto *concretePtr = static_cast<Detail::SomeConcreteAsyncValue *>(this);
+    State oldState = getState();
+    // If the value was already constructed, destroy it before setting the
+    // error.
+    if (oldState == State::kConstructed)
+      concretePtr->getValueDestructor()(concretePtr->getPayloadPointer());
+    else
+      assert(oldState == State::kUnconstructed &&
+             "cannot set an error to an indirect or already set up AsyncValue");
 
     // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
     // do the pointer arithmetic manually.
-    auto *diagPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this)
-                        ->getDiagnosticPointer();
+    auto *diagPtr = concretePtr->getDiagnosticPointer();
     new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
-    auto oldState = notifyReady(State::kError);
-    assert(oldState == State::kUnconstructed &&
-           "setting an erro to an AsyncValue that was already set up?");
+    oldState = notifyReady(State::kError);
+    assert(!isReady(oldState) &&
+           "AsyncValue transitioned to ready while we're changing to error?");
     (void)oldState;
   } else {
     resolveIndirect(createError(std::move(diagnostic)));
