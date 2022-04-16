@@ -272,6 +272,29 @@ LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
 // parallelForEachN
 //===----------------------------------------------------------------------===//
 
+namespace Detail {
+/// Struct containing various utilities used by the implementation of
+/// parallelForEachN.
+struct ParallelForEachNUtils {
+  /// A utility to build a tuple type containing the decay'd capture arguments
+  /// of the element function of a parallelForEachN. The only non-general aspect
+  /// of this is that it skips the first argument, which is the index of the
+  /// element.
+  template <typename... Ts>
+  struct ElementFnCapturesImplT;
+  template <typename FnTraitsT, size_t... Ns>
+  struct ElementFnCapturesImplT<FnTraitsT, std::index_sequence<Ns...>> {
+    using type =
+        std::tuple<std::decay_t<typename FnTraitsT::template arg_t<Ns + 1>>...>;
+  };
+  template <typename FnT>
+  using ElementFnCapturesT = typename ElementFnCapturesImplT<
+      llvm::function_traits<FnT>,
+      std::make_index_sequence<llvm::function_traits<FnT>::num_args - 1>>::type;
+};
+
+} // namespace Detail
+
 /// This method invokes the specified element function "N" times with indexes
 /// from [0 ..< N).  This function returns immediately after kicking off the
 /// work: all of the elements are processed on the Runtime's WorkQueue.
@@ -301,7 +324,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 
     /// This is the state captured by the computation, it is passed to both the
     /// per-element computation as well as to the completion function.
-    std::tuple<CaptureTys...> capturesList;
+    Detail::ParallelForEachNUtils::ElementFnCapturesT<ElementFn> capturesList;
   };
 
   // Allocate the parallel state on the heap since it will out-live the call to
