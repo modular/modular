@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
+#include <utility>
 
 namespace LLCL {
 
@@ -105,11 +106,7 @@ inline static void andThen(std::tuple<ValueTys...> values,
         return;
 
       // Invoke the completion function, since we're done.
-      llvm::apply_tuple(
-          [&](auto &&...args) {
-            state->completionFn(std::forward<ValueTys>(args)...);
-          },
-          state->values);
+      std::apply(state->completionFn, std::move(state->values));
 
       // All uses of the state are done, so we can deallocate it.
       delete state;
@@ -122,7 +119,7 @@ inline static void andThen(std::tuple<ValueTys...> values,
 
   // This magical incantation invokes `processAsyncValue` on each element of the
   // tuple.
-  llvm::apply_tuple(
+  std::apply(
       [&](auto &...elt) {
         (void)std::make_tuple(processAsyncValue(elt.getPointer())...);
       },
@@ -348,8 +345,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
         return;
 
       // Invoke the completion function, since we're done.
-      llvm::apply_tuple([&](auto &&...args) { state->completionFn(args...); },
-                        state->capturesList);
+      std::apply(state->completionFn, state->capturesList);
 
       // All uses of the state are done, so we can deallocate it.
       delete state;
