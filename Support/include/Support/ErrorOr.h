@@ -138,6 +138,8 @@ public:
     case StorageMode::kStaticError:
     case StorageMode::kMallocError:
       return errorStorage;
+    default:
+      llvm_unreachable("unsupported StorageMode");
     }
   }
 
@@ -148,12 +150,15 @@ public:
     case StorageMode::kValue:
       llvm::report_fatal_error("must hold an error");
     case StorageMode::kStaticError:
-    case StorageMode::kMallocError:
+    case StorageMode::kMallocError: {
       Error result;
       result.storageMode = storageMode;
       result.value = errorStorage;
       storageMode = StorageMode::kStaticError;
       return result;
+    }
+    default:
+      llvm_unreachable("unsupported StorageMode");
     }
   }
 
