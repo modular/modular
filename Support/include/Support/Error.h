@@ -57,7 +57,7 @@ public:
 
   ~Error() {
     if (storageMode == kMallocError)
-      free((void *)value);
+      free(const_cast<void *>(static_cast<const void *>(value)));
   }
 
   /// Return the message this contains as a nul-terminated string.
