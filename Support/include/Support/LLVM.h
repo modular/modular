@@ -167,6 +167,10 @@ struct OpRewritePattern;
 using DefaultTypeStorage = TypeStorage;
 using OpAsmSetValueNameFn = function_ref<void(Value, StringRef)>;
 namespace OpTrait {}
+namespace quant {
+class UniformQuantizedType;
+class UniformQuantizedPerAxisType;
+} // namespace quant
 } // namespace mlir
 
 // Import things we want into our namespace.
@@ -261,6 +265,9 @@ using mlir::Value;                     // NOLINT(misc-unused-using-decls)
 using mlir::ValueRange;                // NOLINT(misc-unused-using-decls)
 using mlir::VectorType;                // NOLINT(misc-unused-using-decls)
 using mlir::WalkResult;                // NOLINT(misc-unused-using-decls)
+using mlir::quant::
+    UniformQuantizedPerAxisType;         // NOLINT(misc-unused-using-decls)
+using mlir::quant::UniformQuantizedType; // NOLINT(misc-unused-using-decls)
 namespace OpTrait = mlir::OpTrait;
 } // namespace M
 
