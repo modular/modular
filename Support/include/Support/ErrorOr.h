@@ -132,20 +132,21 @@ public:
   const T &get() const { return const_cast<ErrorOr<T> *>(this)->get(); }
 
   const char *getError() const {
+    assert(storageMode <= StorageMode::kValue && "invalid storage mode");
     switch (storageMode) {
     case StorageMode::kValue:
       return nullptr;
     case StorageMode::kStaticError:
     case StorageMode::kMallocError:
       return errorStorage;
-    default:
-      llvm_unreachable("unsupported StorageMode");
     }
+    llvm_unreachable("unsupported StorageMode");
   }
 
   /// Move the error out of this ErrorOr, taking ownership of any heap allocated
   /// data.
   Error takeErrorStorage() {
+    assert(storageMode <= StorageMode::kValue && "invalid storage mode");
     switch (storageMode) {
     case StorageMode::kValue:
       llvm::report_fatal_error("must hold an error");
@@ -157,9 +158,8 @@ public:
       storageMode = StorageMode::kStaticError;
       return result;
     }
-    default:
-      llvm_unreachable("unsupported StorageMode");
     }
+    llvm_unreachable("unsupported StorageMode");
   }
 
   T *operator->() { return &get(); }
