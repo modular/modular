@@ -82,32 +82,14 @@ namespace LLCL {
 /// invoked.
 class WaiterListNode {
 public:
-  explicit WaiterListNode(llvm::unique_function<void()> waiter)
-      : waiterFn1(std::move(waiter)), nextAndIsFn2(nullptr, false) {}
   explicit WaiterListNode(
       llvm::unique_function<void(const AnyAsyncValueRef &)> waiter)
-      : waiterFn2(std::move(waiter)), nextAndIsFn2(nullptr, true) {}
+      : waiterFn(std::move(waiter)), next(nullptr) {}
 
-  ~WaiterListNode() {
-    if (hasClosureArgument())
-      waiterFn2.~unique_function();
-    else
-      waiterFn1.~unique_function();
-  }
+  void setNext(WaiterListNode *newNext) { next = newNext; }
 
-  union {
-    llvm::unique_function<void()> waiterFn1;
-    llvm::unique_function<void(const AnyAsyncValueRef &)> waiterFn2;
-  };
-
-  bool hasClosureArgument() const { return nextAndIsFn2.getInt(); }
-  void setNext(WaiterListNode *newNext) { nextAndIsFn2.setPointer(newNext); }
-
-  /// This is the next thing waiting on the AsyncValue, and a bit indicating
-  /// whether we are waiterFn2 (true) or waiterFn1 (false).
-  llvm::PointerIntPair<WaiterListNode *, 1, bool,
-                       AsyncValue::WaiterListNodePointerTraits>
-      nextAndIsFn2;
+  llvm::unique_function<void(const AnyAsyncValueRef &)> waiterFn;
+  WaiterListNode *next;
 
 private:
   WaiterListNode(const WaiterListNode &) = delete;
@@ -126,11 +108,9 @@ static void runWaitersAndDeallocate(AsyncValue *value, WaiterListNode *list) {
 
   while (list) {
     auto *node = list;
-    if (node->hasClosureArgument())
-      node->waiterFn2(rcThisRef);
-    else
-      node->waiterFn1();
-    list = node->nextAndIsFn2.getPointer();
+    node->waiterFn(rcThisRef);
+
+    list = node->next;
     delete node;
   }
 
@@ -174,19 +154,6 @@ void AsyncValue::andThenOutOfLine(WaiterListNode *node,
   // compare_exchange_weak succeeds. The oldValue must be in some non-ready
   // state.
   assert(!isReady(oldValue.getInt()));
-}
-
-/// This is the out-of-line portion of the `AsyncValue::andThen` method which is
-/// invoked when the value appears to be non-ready.
-///
-/// If the value is available or becomes available, this calls the closure
-/// immediately. Otherwise, the add closure to the waiter list where it will be
-/// called when the value becomes available.
-void AsyncValue::andThenOutOfLine(llvm::unique_function<void()> &&waiter,
-                                  WaitersAndState oldValue) {
-  // Create the node for our waiter.
-  auto *node = new WaiterListNode(std::move(waiter));
-  andThenOutOfLine(node, oldValue);
 }
 
 /// This is the out-of-line portion of the `AsyncValue::andThen` method which is

@@ -344,8 +344,6 @@ private:
 
 protected:
   void andThenOutOfLine(WaiterListNode *node, WaitersAndState oldValue);
-  void andThenOutOfLine(llvm::unique_function<void()> &&waiter,
-                        WaitersAndState oldValue);
   void andThenOutOfLine(
       llvm::unique_function<void(const AnyAsyncValueRef &)> &&waiter,
       WaitersAndState oldValue);
@@ -633,16 +631,9 @@ inline void AsyncValue::dropRef(uint16_t count) {
 template <typename WaiterT>
 inline auto AsyncValue::andThen(WaiterT &&waiter)
     -> decltype(waiter(), void()) {
-  // Clients generally want to use andThen without them each having to check
-  // to see if the value is present. Check for them, and immediately run the
-  // lambda if it is already here.
-  auto waitersAndStateValue = waitersAndState.load(std::memory_order_acquire);
-  if (isReady(waitersAndStateValue.getInt())) {
-    assert(waitersAndStateValue.getPointer() == nullptr);
-    waiter();
-    return;
-  }
-  andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+  andThen([waiter = std::move(waiter)](const AnyAsyncValueRef &) {
+    return waiter();
+  });
 }
 
 /// Call the specified closure if the value is ready.  Otherwise, add it
