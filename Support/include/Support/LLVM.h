@@ -91,15 +91,18 @@ class ConversionPattern;
 class ConversionPatternRewriter;
 class ConversionTarget;
 class DenseElementsAttr;
+class DenseIntElementsAttr;
 class Diagnostic;
 class Dialect;
 class DialectAsmParser;
 class DialectAsmPrinter;
+class DialectRegistry;
 class DictionaryAttr;
 class ElementsAttr;
 class FileLineColLoc;
 class FlatSymbolRefAttr;
 class FloatAttr;
+class FloatType;
 class FunctionType;
 class FusedLoc;
 class ImplicitLocOpBuilder;
@@ -128,6 +131,7 @@ class OwningModuleRef;
 class ParseResult;
 class Pass;
 class PatternRewriter;
+class RankedTensorType;
 class Region;
 class RewritePatternSet;
 class ShapedType;
@@ -163,11 +167,14 @@ template <typename T>
 class OperationPass;
 template <typename SourceOp>
 struct OpRewritePattern;
+template <typename OpTy>
+class OwningOpRef;
 
 using DefaultTypeStorage = TypeStorage;
 using OpAsmSetValueNameFn = function_ref<void(Value, StringRef)>;
 namespace OpTrait {}
 namespace quant {
+class QuantizedType;
 class UniformQuantizedType;
 class UniformQuantizedPerAxisType;
 } // namespace quant
@@ -195,10 +202,12 @@ using mlir::ConversionPatternRewriter; // NOLINT(misc-unused-using-decls)
 using mlir::ConversionTarget;          // NOLINT(misc-unused-using-decls)
 using mlir::DefaultTypeStorage;        // NOLINT(misc-unused-using-decls)
 using mlir::DenseElementsAttr;         // NOLINT(misc-unused-using-decls)
+using mlir::DenseIntElementsAttr;      // NOLINT(misc-unused-using-decls)
 using mlir::Diagnostic;                // NOLINT(misc-unused-using-decls)
 using mlir::Dialect;                   // NOLINT(misc-unused-using-decls)
 using mlir::DialectAsmParser;          // NOLINT(misc-unused-using-decls)
 using mlir::DialectAsmPrinter;         // NOLINT(misc-unused-using-decls)
+using mlir::DialectRegistry;           // NOLINT(misc-unused-using-decls)
 using mlir::DictionaryAttr;            // NOLINT(misc-unused-using-decls)
 using mlir::ElementsAttr;              // NOLINT(misc-unused-using-decls)
 using mlir::failed;                    // NOLINT(misc-unused-using-decls)
@@ -207,6 +216,7 @@ using mlir::FailureOr;                 // NOLINT(misc-unused-using-decls)
 using mlir::FileLineColLoc;            // NOLINT(misc-unused-using-decls)
 using mlir::FlatSymbolRefAttr;         // NOLINT(misc-unused-using-decls)
 using mlir::FloatAttr;                 // NOLINT(misc-unused-using-decls)
+using mlir::FloatType;                 // NOLINT(misc-unused-using-decls)
 using mlir::FunctionType;              // NOLINT(misc-unused-using-decls)
 using mlir::FusedLoc;                  // NOLINT(misc-unused-using-decls)
 using mlir::ImplicitLocOpBuilder;      // NOLINT(misc-unused-using-decls)
@@ -239,9 +249,11 @@ using mlir::OpOperand;                 // NOLINT(misc-unused-using-decls)
 using mlir::OpResult;                  // NOLINT(misc-unused-using-decls)
 using mlir::OpRewritePattern;          // NOLINT(misc-unused-using-decls)
 using mlir::OwningModuleRef;           // NOLINT(misc-unused-using-decls)
+using mlir::OwningOpRef;               // NOLINT(misc-unused-using-decls)
 using mlir::ParseResult;               // NOLINT(misc-unused-using-decls)
 using mlir::Pass;                      // NOLINT(misc-unused-using-decls)
 using mlir::PatternRewriter;           // NOLINT(misc-unused-using-decls)
+using mlir::RankedTensorType;          // NOLINT(misc-unused-using-decls)
 using mlir::Region;                    // NOLINT(misc-unused-using-decls)
 using mlir::RegionKind;                // NOLINT(misc-unused-using-decls)
 using mlir::RewritePatternSet;         // NOLINT(misc-unused-using-decls)
@@ -265,9 +277,11 @@ using mlir::Value;                     // NOLINT(misc-unused-using-decls)
 using mlir::ValueRange;                // NOLINT(misc-unused-using-decls)
 using mlir::VectorType;                // NOLINT(misc-unused-using-decls)
 using mlir::WalkResult;                // NOLINT(misc-unused-using-decls)
+using mlir::quant::QuantizedType;      // NOLINT(misc-unused-using-decls)
 using mlir::quant::
     UniformQuantizedPerAxisType;         // NOLINT(misc-unused-using-decls)
 using mlir::quant::UniformQuantizedType; // NOLINT(misc-unused-using-decls)
+
 namespace OpTrait = mlir::OpTrait;
 } // namespace M
 
