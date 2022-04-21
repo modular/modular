@@ -14,10 +14,8 @@ set(LLCL_INCLUDE_DIR ${LLCL_BINARY_DIR}/include)
 include_directories(${LLCL_INCLUDE_DIR})
 
 #add_subdirectory(include/LLCL)
+#add_subdirectory(integration_test)
 add_subdirectory(lib)
+#add_subdirectory(test)
 #add_subdirectory(tools)
 #add_subdirectory(unittests)
-#add_subdirectory(test)
-#add_subdirectory(integration_test)
-
-
