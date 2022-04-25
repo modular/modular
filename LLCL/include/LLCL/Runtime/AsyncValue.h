@@ -220,6 +220,20 @@ public:
     return getTypeID<T>() == typeID;
   }
 
+  /// If this AsyncValue is constructed with the specified C++ type, return a
+  /// pointer to the value, otherwise return null.
+  template <typename T>
+  const T *dyn_cast() const {
+    return isType<T>() ? &get<T>() : nullptr;
+  }
+
+  /// If this AsyncValue is constructed with the specified C++ type, return a
+  /// pointer to the value, otherwise return null.
+  template <typename T>
+  T *dyn_cast() {
+    return isType<T>() ? &get<T>() : nullptr;
+  }
+
   //===--------------------------------------------------------------------===//
   // Low Level Interfaces
   //===--------------------------------------------------------------------===//
