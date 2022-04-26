@@ -7,6 +7,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 
 #include "LLCL/Runtime/AsyncValue.h"
+#include "LLCL/Support/ConcurrentQueue.h"
 #include "Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 using namespace LLCL;
@@ -22,7 +23,7 @@ public:
   SingleThreadWorkQueue() {}
   ~SingleThreadWorkQueue() {
     // Complete any work that's still in-flight.
-    doWork({});
+    doWork([]() -> bool { return false; });
   }
 
   void addTask(TaskFunction work) override;
@@ -30,14 +31,16 @@ public:
   int getParallelismLevel() const override { return 1; }
 
 private:
-  void doWork(llvm::unique_function<bool()> stopPredicate);
-  std::vector<TaskFunction> workItems;
+  template <typename Callback>
+  void doWork(Callback &&stopPredicate);
+
+  ConcurrentQueue<TaskFunction> workItems;
 };
 } // end anonymous namespace
 
 /// Enqueue a block of work. This does not use synchronization since this
 void SingleThreadWorkQueue::addTask(TaskFunction work) {
-  workItems.push_back(std::move(work));
+  workItems.enqueue(std::move(work));
 }
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
@@ -57,32 +60,15 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
 /// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
 /// early if it returns true.
-void SingleThreadWorkQueue::doWork(
-    llvm::unique_function<bool()> stopPredicate) {
-
-  std::vector<TaskFunction> localWorkItems;
+template <typename T>
+void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
   while (!workItems.empty()) {
-    // Work items can add new items to the vector, and we generally want to run
-    // things in order, so make sure we explicitly pop the item off before a new
-    // one is added.
-    std::swap(localWorkItems, workItems);
-    for (auto &item : localWorkItems) {
-      // Check the stop predicate.
-      if (!stopPredicate || !stopPredicate()) {
-        item();
-        continue;
-      }
+    auto front = workItems.dequeue();
 
-      // If the stop predicate said to halt, then we need to take the left-over
-      // items from localWorkItems and put them back into our workItems.
-      size_t itemIdx = &item - localWorkItems.data();
-      workItems.insert(
-          workItems.begin(),
-          std::make_move_iterator(localWorkItems.begin() + itemIdx),
-          std::make_move_iterator(localWorkItems.end()));
-      return;
+    // Check the stop predicate first before invoking the callable:
+    if (!stopPredicate()) {
+      (std::move(*front))();
     }
-    localWorkItems.clear();
   }
 }
 
