@@ -125,6 +125,11 @@ public:
   /// Return false if there is an error.
   explicit operator bool() const { return storageMode == Error::kValue; }
 
+  /// Convert this ErrorOr into a LogicalResult.
+  /*implicit*/ operator LogicalResult() const {
+    return failure(storageMode != Error::kValue);
+  }
+
   T &get() {
     assert(storageMode == Error::kValue && "don't have a value!");
     return valueStorage;
