@@ -39,7 +39,7 @@ private:
   template <typename Callback>
   void doWork(Callback &&stopPredicate);
 
-  ConcurrentQueue workItems;
+  ConcurrentQueue<TaskFunctionBase> workItems;
 };
 } // end anonymous namespace
 

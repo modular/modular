@@ -13,8 +13,25 @@
 
 namespace LLCL {
 
+/// This class is a default item implementation for ConcurrentQueue, but clients
+/// of ConcurrentQueue may provide their own as well.  Implementations must
+/// provide a call method and have a next pointer.
+class WorkQueueItem {
+public:
+  explicit WorkQueueItem() : next(nullptr) {}
+  virtual ~WorkQueueItem() {}
+  virtual void call() = 0;
+
+  std::unique_ptr<WorkQueueItem> next;
+
+private:
+  WorkQueueItem(const WorkQueueItem &) = delete;
+  void operator=(const WorkQueueItem &) = delete;
+};
+
 /// This class provides a concurrent-safe ordered queue. Items in the queue
 /// cannot be re-ordered.
+template <typename ItemType = WorkQueueItem>
 class ConcurrentQueue {
 public:
   ConcurrentQueue() : head(nullptr), tail(nullptr) {}
@@ -22,40 +39,11 @@ public:
     assert(emptyImpl() && "Cannot destroy a non-empty queue!");
   }
 
-  /// Base class for representing an item in the queue.
-  /// Users should specifically allocate an instance of Item with a given
-  /// anonymous lambda function.
-  class ItemBase {
-  public:
-    explicit ItemBase() : next(nullptr) {}
-    virtual ~ItemBase() {}
-    virtual void call() = 0;
-
-    std::unique_ptr<ItemBase> next;
-
-  private:
-    ItemBase(const ItemBase &) = delete;
-    void operator=(const ItemBase &) = delete;
-  };
-
-  /// Templated ItemBase implementation class that holds a anonymous lambda
-  /// function.
-  template <typename CallableT>
-  class Item : public ItemBase {
-  public:
-    explicit Item(CallableT &&newCallable)
-        : ItemBase(), callable(std::move(newCallable)) {}
-
-    void call() override { callable(); }
-
-    CallableT callable;
-  };
-
   /// Enqueue takes ownership of the object and ties its lifetime to the
   /// lifetime of the queue.
-  void enqueue(ItemBase *item) {
+  void enqueue(ItemType *item) {
     assert(item != nullptr);
-    std::unique_ptr<ItemBase> newItem(item);
+    std::unique_ptr<ItemType> newItem(item);
 
     std::lock_guard lock(m);
 
@@ -71,7 +59,7 @@ public:
 
   /// Dequeue returns failure if the queue is empty, otherwise returns the
   /// stored value to the caller and relinquishes ownership.
-  std::unique_ptr<ItemBase> dequeue() {
+  std::unique_ptr<ItemType> dequeue() {
     std::lock_guard lock(m);
     if (emptyImpl())
       return nullptr;
@@ -95,8 +83,8 @@ private:
   bool emptyImpl() const { return head == nullptr && head.get() == tail; }
 
   std::mutex m;
-  std::unique_ptr<ItemBase> head;
-  ItemBase *tail;
+  std::unique_ptr<ItemType> head;
+  ItemType *tail;
 };
 
 } // namespace LLCL
