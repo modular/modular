@@ -13,26 +13,33 @@
 #define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "LLCL/ForwardDecls.h"
+#include "LLCL/Support/ConcurrentQueue.h"
 #include "Support/LLVM.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {
 class LLCLAllocator;
 
-using TaskFunction = llvm::unique_function<void()>;
+using TaskFunctionBase = ConcurrentQueue::ItemBase;
+
+template <typename T>
+using TaskFunction = ConcurrentQueue::Item<T>;
 
 /// This is an interface to various implementations of work queues: different
-/// execution methods which are often current.  These implementations may be
-/// very domain or host system specific, but the interface to them is kept
+/// execution methods which are often current. These implementations may be very
+/// domain or host system specific, but the interface to them is kept
 /// intentionally simple to just `addTask` (which adds a block of work to be
-/// done as a C++ lambda), and `await` which runs work items until some
-/// specific values are ready to go.
+/// done as a C++ lambda), and `await` which runs work items until some specific
+/// values are ready to go.
 class WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
   /// Enqueue a block of work. Thread-safe.
-  virtual void addTask(TaskFunction work) = 0;
+  template <typename CallableT>
+  void addTask(CallableT &&work) {
+    addTaskInternal(new TaskFunction<CallableT>(std::move(work)));
+  }
 
   /// Run work items until the specified values are ready, returning to the
   /// caller when they are ready (either as values or as errors).
@@ -46,6 +53,7 @@ public:
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();
+  virtual void addTaskInternal(TaskFunctionBase *work) = 0;
   WorkQueue(const WorkQueue &) = delete;
   void operator=(const WorkQueue &) = delete;
 };

@@ -28,7 +28,6 @@ class Error;
 namespace LLCL {
 class Allocator;
 class WorkQueue;
-using TaskFunction = llvm::unique_function<void()>;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, and a way of reporting errors.  This is

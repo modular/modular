@@ -27,26 +27,28 @@ public:
   /// Cleans up all threads in the thread pool cleanly.
   ~ThreadPoolWorkQueue() override;
 
-  void addTask(TaskFunction work) override {
-    taskList.enqueue(std::move(work));
-    syncState.sema.post();
-  }
-
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
   int getParallelismLevel() const final { return poolSize; }
 
+protected:
+  void addTaskInternal(TaskFunctionBase *work) override {
+    taskList.enqueue(work);
+    syncState.sema.post();
+  }
+
 private:
   /// Pop a single item off the queue and do the task.
-  static mlir::LogicalResult popAndDoWork(ConcurrentQueue<TaskFunction> &q) {
-    mlir::FailureOr<TaskFunction> frontOr = q.dequeue();
-    if (succeeded(frontOr))
-      (std::move(*frontOr))();
+  static mlir::LogicalResult popAndDoWork(ConcurrentQueue &q) {
+    auto item = q.dequeue();
+    if (!item)
+      return mlir::failure();
 
-    return frontOr;
+    item->call();
+    return mlir::success();
   }
 
   /// Loop around `popAndDoWork`, just do work until the queue is empty.
-  static void doWork(ConcurrentQueue<TaskFunction> &q) {
+  static void doWork(ConcurrentQueue &q) {
     while (succeeded(popAndDoWork(q)))
       ;
   }
@@ -62,17 +64,17 @@ private:
   /// thread pool.
   struct Thread {
     ThreadSyncState &sync;
-    ConcurrentQueue<TaskFunction> &taskList;
+    ConcurrentQueue &taskList;
 
     std::thread thread;
 
-    /// Create a `Thread` from a sync state reference and a reference to a task
-    /// list. This also starts the std::thread, so the sync state and task list
-    /// must be initialized by the time this is called.
-    Thread(ThreadSyncState &sync, ConcurrentQueue<TaskFunction> &taskList)
+    /// Create a `Thread` from a sync state reference and a reference to a
+    /// task list. This also starts the std::thread, so the sync state and
+    /// task list must be initialized by the time this is called.
+    Thread(ThreadSyncState &sync, ConcurrentQueue &taskList)
         : sync(sync), taskList(taskList), thread(&Thread::run, this) {}
-    /// Joins the thread. Asserts that `sync.done` is true because otherwise the
-    /// thread will never join.
+    /// Joins the thread. Asserts that `sync.done` is true because otherwise
+    /// the thread will never join.
     ~Thread() {
       assert(
           sync.done.load() &&
@@ -80,8 +82,9 @@ private:
       thread.join();
     }
 
-    /// Thread's main run function. Loops until (1) the work queue is empty, and
-    /// (2) `sync.done` is set to true, at which point it exits gracefully.
+    /// Thread's main run function. Loops until (1) the work queue is empty,
+    /// and (2) `sync.done` is set to true, at which point it exits
+    /// gracefully.
     void run();
   };
 
@@ -93,7 +96,7 @@ private:
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
   ThreadSyncState syncState;
-  ConcurrentQueue<TaskFunction> taskList;
+  ConcurrentQueue taskList;
 };
 } // end anonymous namespace
 
