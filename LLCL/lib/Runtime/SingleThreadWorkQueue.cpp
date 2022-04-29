@@ -26,22 +26,22 @@ public:
     doWork([]() -> bool { return false; });
   }
 
-  void addTask(TaskFunction work) override;
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
   int getParallelismLevel() const override { return 1; }
+
+protected:
+  /// Enqueue a block of work. This does not use synchronization since this
+  void addTaskInternal(TaskFunctionBase *work) override {
+    workItems.enqueue(work);
+  }
 
 private:
   template <typename Callback>
   void doWork(Callback &&stopPredicate);
 
-  ConcurrentQueue<TaskFunction> workItems;
+  ConcurrentQueue workItems;
 };
 } // end anonymous namespace
-
-/// Enqueue a block of work. This does not use synchronization since this
-void SingleThreadWorkQueue::addTask(TaskFunction work) {
-  workItems.enqueue(std::move(work));
-}
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // We are done when values_remaining drops to zero.
@@ -62,12 +62,9 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 /// early if it returns true.
 template <typename T>
 void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
-  while (!workItems.empty()) {
-    auto front = workItems.dequeue();
-
-    // Check the stop predicate first before invoking the callable:
+  while (auto item = workItems.dequeue()) {
     if (!stopPredicate()) {
-      (std::move(*front))();
+      item->call();
     }
   }
 }

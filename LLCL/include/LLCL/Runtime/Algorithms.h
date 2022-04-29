@@ -241,9 +241,11 @@ inline static void andThenMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
 
 /// Add some non-blocking work to the WorkQueue managed by the specified
 /// Runtime.
-inline static void addTask(Runtime &runtime,
-                           llvm::unique_function<void()> work) {
-  runtime.getWorkQueue()->addTask(std::move(work));
+/// TODO(kreeger): Unify this method and addTask:
+/// https://github.com/modularml/modular/issues/243
+template <typename Func>
+inline static void addTask(Runtime &runtime, Func &&f) {
+  runtime.getWorkQueue()->addTask(std::forward<Func>(f));
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
@@ -255,9 +257,10 @@ inline static void addTask(Runtime &runtime,
 ///
 template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
-LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
-                                                             FnTy work) {
+LLVM_NODISCARD inline static AsyncValueRef<ResultTy>
+addTaskFunc(Runtime &runtime, FnTy work) {
   auto result = AsyncValueRef<ResultTy>::allocate(runtime);
+
   addTask(runtime,
           [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
             result.emplace(work());
