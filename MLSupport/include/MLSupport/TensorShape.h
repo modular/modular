@@ -19,8 +19,14 @@
 #include "Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-
+#include "llvm/Support/raw_ostream.h"
 namespace M {
+
+template <size_t Rank>
+class FixedRankTensorShape;
+
+/// Print an array of dimensions as a shape.
+void printShape(ArrayRef<ssize_t> dimensions, raw_ostream &os);
 
 /// This is a common base class between TensorShape classes, providing a
 /// consistent API.  This is parameterized on `DimensionStorageType` which holds
@@ -79,20 +85,24 @@ public:
   TensorShape() = default;
   TensorShape(const TensorShape &) = default;
   TensorShape(TensorShape &&) = default;
-  TensorShape &operator=(const TensorShape &) = default;
   TensorShape &operator=(TensorShape &&) = default;
+
+  template <typename EltCollectionType>
+  TensorShape &operator=(const EltCollectionType &elements) {
+    storage.assign(elements.begin(), elements.end());
+    return *this;
+  }
 
   // Allow constructing from both 32/64-bit and signed/unsigned integer
   // elements.  These are defined explicitly (instead of as a template) so
   // implicit conversions from things like SmallVector will work.
-  /*implicit*/ TensorShape(ArrayRef<int32_t> elements) { assign(elements); }
-  /*implicit*/ TensorShape(ArrayRef<int64_t> elements) { assign(elements); }
-  /*implicit*/ TensorShape(ArrayRef<uint32_t> elements) { assign(elements); }
-  /*implicit*/ TensorShape(ArrayRef<uint64_t> elements) { assign(elements); }
-
-  template <typename EltType>
-  void assign(ArrayRef<EltType> elements) {
-    storage.assign(elements.begin(), elements.end());
+  /*implicit*/ TensorShape(ArrayRef<int32_t> elements) { *this = elements; }
+  /*implicit*/ TensorShape(ArrayRef<int64_t> elements) { *this = elements; }
+  /*implicit*/ TensorShape(ArrayRef<uint32_t> elements) { *this = elements; }
+  /*implicit*/ TensorShape(ArrayRef<uint64_t> elements) { *this = elements; }
+  template <size_t Rank>
+  /*implicit*/ TensorShape(const FixedRankTensorShape<Rank> &shape) {
+    *this = shape;
   }
 
   void print(raw_ostream &os) const;
@@ -107,7 +117,41 @@ inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
 // TODO: Add CompactTensorShape when/if we care about dense packing of 16-byte
 // values (e.g. when we have a native Tensor type).
 
-// TODO: Add FixedRankTensorShape.
+/// This class models a TensorShape with a fixed rank (e.g. for kernels that are
+/// working on 4D tensor values).  This allows them to be stored as those values
+/// without other overhead.  This representation is not compressed, so it should
+/// be used on the stack or in other places where size is not critical - not for
+/// long term storage.
+template <size_t Rank>
+class FixedRankTensorShape : public TensorShapeImpl<std::array<ssize_t, Rank>> {
+public:
+  // This class has value semantics, implementing standard constructors,
+  // assignment, copy construction etc.
+  FixedRankTensorShape() { this->storage.fill(0); }
+  FixedRankTensorShape(const FixedRankTensorShape &) = default;
+  FixedRankTensorShape(FixedRankTensorShape &&) = default;
+  FixedRankTensorShape &operator=(FixedRankTensorShape &&) = default;
+
+  template <typename EltCollectionType>
+  FixedRankTensorShape<Rank> &operator=(const EltCollectionType &elements) {
+    assert(std::distance(elements.begin(), elements.end()) == Rank &&
+           "incorrect rank for FixedRankTensorShape");
+    std::copy(elements.begin(), elements.end(), this->storage.begin());
+    return *this;
+  }
+
+  // Allow constructing from both 32/64-bit and signed/unsigned integer
+  // elements.  These are defined explicitly (instead of as a template) so
+  // implicit conversions from things like SmallVector will work.
+  /*implicit*/ FixedRankTensorShape(ArrayRef<int32_t> elts) { *this = elts; }
+  /*implicit*/ FixedRankTensorShape(ArrayRef<int64_t> elts) { *this = elts; }
+  /*implicit*/ FixedRankTensorShape(ArrayRef<uint32_t> elts) { *this = elts; }
+  /*implicit*/ FixedRankTensorShape(ArrayRef<uint64_t> elts) { *this = elts; }
+  /*implicit*/ FixedRankTensorShape(const TensorShape &elts) { *this = elts; }
+
+  void print(raw_ostream &os) const { printShape(this->storage, os); }
+  void dump() const { print(llvm::errs()); }
+};
 
 } // end namespace M
 

@@ -6,13 +6,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLSupport/TensorShape.h"
-#include "llvm/Support/raw_ostream.h"
 using namespace M;
 
-void TensorShape::print(raw_ostream &os) const {
+void M::printShape(ArrayRef<ssize_t> dimensions, raw_ostream &os) {
   os << '[';
-  llvm::interleaveComma(*this, os);
+  llvm::interleaveComma(dimensions, os);
   os << ']';
 }
 
+void TensorShape::print(raw_ostream &os) const { printShape(storage, os); }
 void TensorShape::dump() const { print(llvm::errs()); }
+
