@@ -10,7 +10,7 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
-#include "Support/LLVM.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <atomic>

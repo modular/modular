@@ -13,7 +13,7 @@
 #define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "LLCL/ForwardDecls.h"
-#include "Support/LLVM.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace LLCL {

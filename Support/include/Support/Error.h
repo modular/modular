@@ -11,7 +11,7 @@
 #ifndef SUPPORT_ERROR_H
 #define SUPPORT_ERROR_H
 
-#include "Support/LLVM.h"
+#include "Support/LLVMForwardDecls.h"
 
 namespace M {
 template <typename T>
