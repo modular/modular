@@ -81,6 +81,7 @@ class ArrayAttr;
 class AsmParser;
 class AsmPrinter;
 class Attribute;
+class BFloat16Type;
 class Block;
 class BlockAndValueMapping;
 class BlockArgument;
@@ -191,6 +192,7 @@ using mlir::ArrayAttr;                 // NOLINT(misc-unused-using-decls)
 using mlir::AsmParser;                 // NOLINT(misc-unused-using-decls)
 using mlir::AsmPrinter;                // NOLINT(misc-unused-using-decls)
 using mlir::Attribute;                 // NOLINT(misc-unused-using-decls)
+using mlir::BFloat16Type;              // NOLINT(misc-unused-using-decls)
 using mlir::Block;                     // NOLINT(misc-unused-using-decls)
 using mlir::BlockAndValueMapping;      // NOLINT(misc-unused-using-decls)
 using mlir::BlockArgument;             // NOLINT(misc-unused-using-decls)
