@@ -8,7 +8,7 @@
 
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Support/ConcurrentQueue.h"
-#include "Support/LLVM.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 using namespace LLCL;
 

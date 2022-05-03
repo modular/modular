@@ -13,7 +13,7 @@
 #define COMMONML_TENSORSHAPE_H
 
 #include "Support/ErrorOr.h"
-#include "Support/LLVM.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
