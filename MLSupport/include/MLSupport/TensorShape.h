@@ -153,13 +153,13 @@ public:
 };
 
 namespace Detail {
-/// This class implement a storage class to hold tensor shapes in a compact
+/// This class implements a storage class to hold tensor shapes in a compact
 /// 16-byte format that is suitable for long term storage on the heap.  It is
 /// carefully laid out to hold common tensor sizes inline without losing support
 /// for the full generality of tensor shapes.
 class CompactTensorShapeStorage {
   /// This supports two inline representations and an out of line one:
-  ///  1) k16 can hold up to 7 dimensions when they fit into 16-bits
+  ///  1) k16 can hold up to 7 dimensions when they fit into 16-bits.
   ///  2) k32 can hold up to 4 dimension where the first three fits in
   ///     32-bits and the last fits in 16 bits (typically channels or batch
   ///     size).
