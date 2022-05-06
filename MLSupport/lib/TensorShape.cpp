@@ -14,8 +14,8 @@ static void printShapeInternal(const Collection &dimensions, raw_ostream &os) {
   os << ']';
 }
 
-// This is used by the FixedRankTensorShape template so we don't have to
-// instantiate this code for every rank.
+/// This is used by the FixedRankTensorShape template so we don't have to
+/// instantiate this code for every rank.
 void M::printShape(ArrayRef<ssize_t> dimensions, raw_ostream &os) {
   printShapeInternal(dimensions, os);
 }
