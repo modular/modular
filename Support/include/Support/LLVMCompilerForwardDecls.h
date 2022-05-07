@@ -115,6 +115,7 @@ using DefaultTypeStorage = TypeStorage;
 using OpAsmSetValueNameFn = function_ref<void(Value, StringRef)>;
 namespace OpTrait {}
 namespace quant {
+class CalibratedQuantizedType;
 class QuantizedType;
 class UniformQuantizedType;
 class UniformQuantizedPerAxisType;
@@ -207,6 +208,7 @@ using mlir::Value;
 using mlir::ValueRange;
 using mlir::VectorType;
 using mlir::WalkResult;
+using mlir::quant::CalibratedQuantizedType;
 using mlir::quant::QuantizedType;
 using mlir::quant::UniformQuantizedPerAxisType;
 using mlir::quant::UniformQuantizedType;
