@@ -1,10 +1,10 @@
-//===- MLSupport/TensorShape.cpp ------------------------------------------===//
+//===- TensorShape.cpp ----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLSupport/TensorShape.h"
+#include "GenericML/Support/TensorShape.h"
 using namespace M;
 
 template <typename Collection>

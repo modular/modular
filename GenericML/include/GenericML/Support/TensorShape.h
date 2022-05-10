@@ -1,4 +1,4 @@
-//===- MLSupport/TensorShape.h --------------------------------------------===//
+//===- GenericML/Support/TensorShape.h ------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef COMMONML_TENSORSHAPE_H
-#define COMMONML_TENSORSHAPE_H
+#ifndef GENERICML_SUPPORT_TENSORSHAPE_H
+#define GENERICML_SUPPORT_TENSORSHAPE_H
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -415,4 +415,4 @@ static_assert(sizeof(CompactTensorShape) == 16, "TensorShape should not grow");
 
 } // end namespace M
 
-#endif // COMMONML_TENSORSHAPE_H
+#endif // GENERICML_SUPPORT_TENSORSHAPE_H
