@@ -7,6 +7,7 @@
 find_package(Threads)
 
 add_mlir_library(LLCLRuntime
+  AllocatorType.cpp
   AsyncValue.cpp
   DebuggingAllocators.cpp
   Location.cpp
@@ -14,7 +15,8 @@ add_mlir_library(LLCLRuntime
   Runtime.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
-  
+  WorkQueueType.cpp
+
   ADDITIONAL_HEADER_DIRS
 
   DEPENDS

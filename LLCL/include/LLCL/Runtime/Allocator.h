@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_ALLOCATOR_H
-#define LLCL_SUPPORT_ALLOCATOR_H
+#ifndef LLCL_RUNTIME_ALLOCATOR_H
+#define LLCL_RUNTIME_ALLOCATOR_H
 
 #include <memory>
 
@@ -90,4 +90,4 @@ createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 
 } // namespace LLCL
 
-#endif // LLCL_SUPPORT_ALLOCATOR_H
+#endif // LLCL_RUNTIME_ALLOCATOR_H
