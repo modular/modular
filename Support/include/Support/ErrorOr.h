@@ -50,7 +50,7 @@ namespace M {
 /// header dependencies because it only holds character strings.
 ///
 template <typename T>
-class ErrorOr {
+class LLVM_NODISCARD ErrorOr {
   using StorageMode = Error::StorageMode;
 
 public:
