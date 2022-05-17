@@ -35,7 +35,6 @@ class WorkQueue;
 ///
 class Runtime final {
 public:
-  // TODO: Diagnostics.
   Runtime(std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue);
   ~Runtime();

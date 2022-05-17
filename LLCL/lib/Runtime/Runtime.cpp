@@ -79,6 +79,11 @@ Runtime::~Runtime() {
   // Clear cancellation value if present.
   restartFromCancellation();
   allRuntimes[runtimeIndex] = nullptr;
+
+  // If we are the latest runtime index to be allocated, we can deallocate our
+  // ID (allowing it to be reused).  This is best-effort but not guaranteed.
+  uint8_t expected = runtimeIndex + 1;
+  (void)nextRuntimeIndex.compare_exchange_strong(expected, runtimeIndex);
 }
 
 /// Cancel the current BEF Execution. This transitions this Runtime to the
