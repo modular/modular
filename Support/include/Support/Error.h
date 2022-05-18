@@ -60,6 +60,12 @@ public:
       free(const_cast<void *>(static_cast<const void *>(value)));
   }
 
+  /// Support converting an Error into a logical result by checking if the
+  /// error's value string is statically empty.
+  /*implicit*/ operator LogicalResult() const {
+    return success(storageMode == kStaticError && strlen(value) == 0);
+  }
+
   /// Return the message this contains as a nul-terminated string.
   const char *get() const { return value; }
 
