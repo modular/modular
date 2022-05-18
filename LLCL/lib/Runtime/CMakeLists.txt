@@ -15,7 +15,7 @@ add_mlir_library(LLCLRuntime
   Runtime.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
-  WorkQueueType.cpp
+  WorkQueue.cpp
 
   ADDITIONAL_HEADER_DIRS
 
