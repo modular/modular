@@ -150,7 +150,7 @@ public:
 
   /// Move the error out of this ErrorOr, taking ownership of any heap allocated
   /// data.
-  Error takeErrorStorage() {
+  Error takeError() {
     assert(storageMode <= StorageMode::kValue && "invalid storage mode");
     switch (storageMode) {
     case StorageMode::kValue:
