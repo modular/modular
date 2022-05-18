@@ -130,6 +130,9 @@ public:
     return failure(storageMode != Error::kValue);
   }
 
+  /// Return true if this contains an error instead of a value.
+  bool isError() const { return storageMode != Error::kValue; }
+
   T &get() {
     assert(storageMode == Error::kValue && "don't have a value!");
     return valueStorage;
