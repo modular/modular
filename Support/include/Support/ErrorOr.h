@@ -128,6 +128,17 @@ public:
     return failure(storageMode != Error::kValue);
   }
 
+  /// Conversion to bool.  We allow conversion to bool, which allows testing
+  /// and early exits with patterns like:
+  ///
+  ///    if (auto error = someThingThatMayFail())
+  ///      return process(error);
+  ///
+  /// Compared to LogicalResult, there is lower chance of bool confusion here,
+  /// because something will call takeError() to get the error out and that will
+  /// crash if someone gets the logic wrong.
+  explicit operator bool() const { return storageMode != Error::kValue; }
+
   /// Return true if this contains an error instead of a value.
   bool isError() const { return storageMode != Error::kValue; }
 
@@ -199,6 +210,9 @@ public:
   using ErrorOr::ErrorOr;
   // This allows initialization from success().
   /*implicit*/ ErrorOrSuccess(SuccessType success) : ErrorOr(Detail::Empty()) {}
+
+  // Allow default initialization to success.
+  ErrorOrSuccess() : ErrorOr(Detail::Empty()) {}
 };
 
 } // namespace M
