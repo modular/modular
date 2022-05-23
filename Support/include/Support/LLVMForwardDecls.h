@@ -23,7 +23,7 @@
 
 // Can not forward declare inline functions with default arguments, so we
 // include the header directly.
-#include "mlir/Support/LogicalResult.h"
+#include "Support/LogicalResult.h"
 
 // Forward declarations of LLVM classes to be imported in to the M (Modular)
 // namespace.
@@ -55,18 +55,13 @@ using mlir::DenseMapInfo;
 using mlir::DenseSet;
 using mlir::dyn_cast;
 using mlir::dyn_cast_or_null;
-using mlir::failed;
-using mlir::failure;
-using mlir::FailureOr;
 using mlir::function_ref;
 using mlir::isa;
 using mlir::isa_and_nonnull;
 using mlir::iterator_range;
-using mlir::LogicalResult;
 using mlir::MutableArrayRef;
 using mlir::None;
 using mlir::Optional;
-using mlir::ParseResult;
 using mlir::PointerUnion;
 using mlir::raw_ostream;
 using mlir::SmallPtrSet;
@@ -77,11 +72,10 @@ using mlir::SmallVectorImpl;
 using mlir::StringLiteral;
 using mlir::StringRef;
 using mlir::StringSet;
-using mlir::succeeded;
-using mlir::success;
 using mlir::TinyPtrVector;
 using mlir::Twine;
 using mlir::TypeSwitch;
+
 } // namespace M
 
 #endif // SUPPORT_LLVM_FORWARD_DECLS_H
