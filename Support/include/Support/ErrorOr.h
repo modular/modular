@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the M::ErrorOr type and related support logic.
+// This file declares the ErrorOr and ErrorOrSuccess types, along with related
+// support logic.
 //
 //===----------------------------------------------------------------------===//
 
@@ -185,6 +186,19 @@ private:
     const char *errorStorage;
   };
   StorageMode storageMode : 2;
+};
+
+namespace Detail {
+class Empty {};
+} // namespace Detail
+
+/// This type is used for APIs that either succeed (with no result value) or can
+/// return an Error.
+class LLVM_NODISCARD ErrorOrSuccess : public ErrorOr<Detail::Empty> {
+public:
+  using ErrorOr::ErrorOr;
+  // This allows initialization from success().
+  /*implicit*/ ErrorOrSuccess(SuccessType success) : ErrorOr(Detail::Empty()) {}
 };
 
 } // namespace M
