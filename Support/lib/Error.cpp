@@ -16,6 +16,7 @@ using namespace M;
 Error::Error(llvm::Twine message) : storageMode(kMallocError) {
   llvm::SmallVector<char, 128> tmp;
   llvm::StringRef str = message.toStringRef(tmp);
+  assert(!str.empty() && "empty error strings are not allowed");
   auto *ptr = (char *)malloc(str.size() + 1);
   memcpy(ptr, str.data(), str.size());
   ptr[str.size()] = 0;

@@ -35,7 +35,9 @@ class LLVM_NODISCARD Error final {
 public:
   /// Construct an Error with a static error string.
   template <size_t n>
-  Error(const char (&message)[n]) : value(message), storageMode(kStaticError) {}
+  Error(const char (&message)[n]) : value(message), storageMode(kStaticError) {
+    static_assert(n > 1, "empty errors are not allowed");
+  }
 
   /// Construct an Error with a dynamic Twine value (including std::string,
   /// const char *, etc).
@@ -44,6 +46,7 @@ public:
   /// Construct an Error with a known-static string that doesn't need lifetime
   /// management.
   static Error getStaticString(const char *message) {
+    assert(message && *message && "empty error strings are not allowed");
     Error result;
     result.value = message;
     result.storageMode = kStaticError;
@@ -58,12 +61,6 @@ public:
   ~Error() {
     if (storageMode == kMallocError)
       free(const_cast<void *>(static_cast<const void *>(value)));
-  }
-
-  /// Support converting an Error into a logical result by checking if the
-  /// error's value string is statically empty.
-  /*implicit*/ operator LogicalResult() const {
-    return success(storageMode == kStaticError && strlen(value) == 0);
   }
 
   /// Return the message this contains as a nul-terminated string.
