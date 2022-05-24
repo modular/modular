@@ -145,8 +145,8 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
     value->andThen([&numRemaining, &allValuesDone]() {
-      --numRemaining;
       allValuesDone.post();
+      --numRemaining;
     });
 
   // Donate the client thread to doing useful work until there's no more useful
@@ -158,8 +158,9 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   //   there's more work to be done.
   while (numRemaining.load() > 0)
     if (mlir::failed(popAndDoWork(taskList)))
-      for (size_t i = 0, e = values.size(); i < e; ++i)
-        allValuesDone.wait();
+      for (auto &value : values)
+        if (!value->isValueAvailable() && !value->isError())
+          allValuesDone.wait();
 }
 
 //===----------------------------------------------------------------------===//
