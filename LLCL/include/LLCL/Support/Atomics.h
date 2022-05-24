@@ -11,6 +11,8 @@
 #ifndef LLCL_SUPPORT_ATOMICS_H
 #define LLCL_SUPPORT_ATOMICS_H
 
+#include <atomic>
+
 namespace LLCL {
 
 /// This method atomically updates 'maxValue' to 'value' if it is less than it
