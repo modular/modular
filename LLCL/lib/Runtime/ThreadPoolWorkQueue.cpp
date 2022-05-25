@@ -159,7 +159,7 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   while (numRemaining.load() > 0)
     if (mlir::failed(popAndDoWork(taskList)))
       for (auto &value : values)
-        if (!value->isValueAvailable() && !value->isError())
+        if (!value->isReady())
           allValuesDone.wait();
 }
 
