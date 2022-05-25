@@ -63,6 +63,10 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&
          "Created too many Runtimes");
   allRuntimes[runtimeIndex] = this;
+
+  // Register the C scalar types as async value types.
+  AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
+                            uint32_t, int64_t, uint64_t, float, double>();
 }
 
 Runtime::~Runtime() {
