@@ -156,11 +156,10 @@ public:
   ///        or neither are.
   ///     2) The payload type does not use multiple inheritance.
   ///
-  /// The above conditions are required since we store only the offset of the
-  /// payload type in AsyncValue as data_traits_.buf_offset. Violation of either
-  /// 1) or 2) requires additional pointer adjustments to get the proper pointer
-  /// for the base type, which we do not have sufficient information to perform
-  /// at runtime.
+  /// The above conditions are required since we store the value at a fixed
+  /// from the start of AsyncValue. Violation of either 1) or 2) requires
+  /// additional pointer adjustments to get the proper pointer for the base
+  /// type, which we do not have sufficient information to perform at runtime.
   template <typename T>
   const T &get() const;
 
@@ -170,9 +169,15 @@ public:
     return const_cast<T &>(static_cast<const AsyncValue *>(this)->get<T>());
   }
 
-  /// Return true if `get()` will work and produce a value.
+  /// Return true if this AsyncValue is "Ready" and filled with a concrete
+  /// value.   get() will return a value in this state.
   bool isValueAvailable() const { return getState() == State::kAvailable; }
 
+  /// Return true if the AsyncValue is "Ready" and either filled with a concrete
+  /// value or an error.
+  bool isReady() const { return isReady(getState()); }
+
+  /// Return true if the AsyncValue is fulfilled with an error state.
   bool isError() const { return getState() == State::kError; }
 
   /// Return the Diagnostic in this AsyncValue, aborting if it isn't an error.
