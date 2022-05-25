@@ -58,6 +58,10 @@ public:
   template <typename T>
   static void registerType();
 
+  /// Helper function that calls registerType() for each type in the list.
+  template <typename... Ts>
+  static void registerTypes();
+
   //===--------------------------------------------------------------------===//
   // Static creation methods for AsyncValue's
   //===--------------------------------------------------------------------===//
@@ -608,6 +612,12 @@ class IndirectAsyncValue : public AsyncValue {
 template <typename T>
 void AsyncValue::registerType() {
   Detail::ConcreteAsyncValue<T>::registerType();
+}
+
+/// Helper function that calls registerType() for each type in the list.
+template <typename... Ts>
+void AsyncValue::registerTypes() {
+  (AsyncValue::registerType<Ts>(), ...);
 }
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
