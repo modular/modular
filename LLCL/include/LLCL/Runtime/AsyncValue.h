@@ -545,9 +545,14 @@ private:
                      CompactRuntimePtr runtime)
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
                                typeID, runtime) {
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
     static_assert(offsetof(ConcreteAsyncValue<T>, payload) ==
                       AsyncValue::kAsyncValueSize,
                   "Offset of ConcreteAsyncValue::payload needs to be aligned");
+#pragma GCC diagnostic pop
+#endif
   }
 
   // NOTE: destruction of the payload and error (if constructed) is handled by
