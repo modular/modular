@@ -12,8 +12,9 @@
 #ifndef LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 #define LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 
+#include <cstdlib>
 #include <mutex>
-#include <vector>
+#include <utility>
 
 namespace LLCL {
 
@@ -38,30 +39,29 @@ namespace LLCL {
 ///
 /// Both readers and writers are allowed to be concurrent.
 ///
-/// TODO: This could be much more efficient by getting rid of the std::vector's.
-/// We could instead maintain our array of `std::pair<T*, size_t>` records
-/// that contain allocated space and capacity, replacing allAllocatedVectors.
-/// We could then make append be completely lock-free in the common case where
-/// a reallocation isn't required.
-///
 template <typename T>
 class ConcurrentAppendingVector {
 public:
   // Initialize the vector with the given initial_capapcity
   explicit ConcurrentAppendingVector(size_t initialCapacity) : state(0ull) {
-    // We need to keep track of all of the vectors we allocate over time so we
-    // can destroy them in our destructor.  This does not support inserting more
+    // We need to keep track of all the arrays we allocate over time so we can
+    // destroy them in our destructor.  This does not support inserting more
     // than 2^32 elements.
-    allAllocatedVectors.reserve(32);
-    allAllocatedVectors.emplace_back();
-    auto &v = allAllocatedVectors.back();
-    v.reserve(std::max(static_cast<size_t>(1), initialCapacity));
+    size_t capacity = std::max(static_cast<size_t>(1), initialCapacity);
+    T *initialStorage = (T *)malloc(capacity * sizeof(T));
+    allocatedVectors[0] = std::pair<T *, size_t>{initialStorage, capacity};
+  }
+
+  ~ConcurrentAppendingVector() {
+    auto curState = getState(std::memory_order_relaxed);
+    for (size_t i = 0; i <= curState.lastAllocated; ++i)
+      free(allocatedVectors[i]);
   }
 
   const T &operator[](size_t index) const {
     auto curState = getState(std::memory_order_acquire);
     assert(index < curState.size && "invalid index");
-    return allAllocatedVectors[curState.lastAllocated][index];
+    return allocatedVectors[curState.lastAllocated].first[index];
   }
 
   // Return the number of elements currently valid in this vector.  The vector
@@ -78,15 +78,14 @@ public:
   size_t emplace_back(Args &&...args) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto &last = allAllocatedVectors.back();
+    auto curState = getState(std::memory_order_relaxed);
+    auto &last = allocatedVectors[curState.lastAllocated];
 
-    if (last.size() < last.capacity()) {
+    if (curState.size < last.second) {
       // There is still room in the current vector without reallocation. Just
       // add the new element there.
-      last.emplace_back(std::forward<Args>(args)...);
-
+      new (last.first + curState.size) T(std::forward<Args>(args)...);
       // Increment the size of the concurrent vector.
-      auto curState = getState(std::memory_order_relaxed);
       curState.size += 1;
       state.store(curState.encode(), std::memory_order_release);
 
@@ -97,19 +96,18 @@ public:
     // Allocate a new vector with twice as much capacity, copy the elements
     // from the previous vector, and set elements_ to point to the data of the
     // new vector.
-    allAllocatedVectors.emplace_back();
-    auto &newLast = allAllocatedVectors.back();
-    auto &prev = *(allAllocatedVectors.rbegin() + 1);
-    newLast.reserve(prev.capacity() * 2);
-    assert(prev.size() == prev.capacity());
-
+    size_t newCapacity = last.second * 2;
+    T *newStorage = (T *)malloc(newCapacity * sizeof(T));
     // Copy over the previous vector to the new vector.
-    newLast.insert(newLast.begin(), prev.begin(), prev.end());
-    newLast.emplace_back(std::forward<Args>(args)...);
+    std::uninitialized_copy(newStorage, last.first, last.first + last.second);
+    std::pair<T *, size_t> newLast =
+        std::pair<T *, size_t>{newStorage, newCapacity};
+    new (newStorage + curState.size) T(std::forward<Args>(args)...);
+    allocatedVectors[curState.lastAllocated + 1] = newLast;
+    assert(curState.size == last.second);
 
     // Increment the size of the concurrent vector and index of the last
     // allocated vector.
-    auto curState = getState(std::memory_order_relaxed);
     curState.lastAllocated += 1;
     curState.size += 1;
     state.store(curState.encode(), std::memory_order_release);
@@ -140,7 +138,7 @@ private:
 
   /// This mutex protects allAllocatedVectors.
   std::mutex mutex;
-  std::vector<std::vector<T>> allAllocatedVectors;
+  std::pair<T *, size_t> allocatedVectors[32];
 };
 
 } // namespace LLCL
