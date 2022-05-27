@@ -146,6 +146,7 @@ public:
     assert(storageMode == Error::kValue && "don't have a value!");
     return valueStorage;
   }
+
   const T &get() const { return const_cast<ErrorOr<T> *>(this)->get(); }
 
   /// Given an ErrorOr with a value, take ownership of the underlying value away
