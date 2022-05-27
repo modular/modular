@@ -148,6 +148,10 @@ public:
   }
   const T &get() const { return const_cast<ErrorOr<T> *>(this)->get(); }
 
+  /// Given an ErrorOr with a value, take ownership of the underlying value away
+  /// from the ErrorOr.
+  T takeValue() { return std::move(get()); }
+
   const char *getError() const {
     assert(storageMode <= StorageMode::kValue && "invalid storage mode");
     switch (storageMode) {
