@@ -51,7 +51,7 @@ private:
   explicit CompactRuntimePtr(uint8_t index) : index{index} {
     assert(index < kInvalidIndex && "Too many Runtime instances created");
   }
-  const uint8_t index = kInvalidIndex;
+  uint8_t index = kInvalidIndex;
 };
 
 } // namespace LLCL

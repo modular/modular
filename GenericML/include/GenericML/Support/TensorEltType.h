@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_TensorEltType_H
-#define GENERICML_SUPPORT_TensorEltType_H
+#ifndef GENERICML_SUPPORT_TENSORELTTYPE_H
+#define GENERICML_SUPPORT_TENSORELTTYPE_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Optional.h"
@@ -419,4 +419,4 @@ TensorEltType::dispatch(void *bufferPtr) const {
 
 } // end namespace M
 
-#endif // GENERICML_SUPPORT_TensorEltType_H
+#endif // GENERICML_SUPPORT_TENSORELTTYPE_H
