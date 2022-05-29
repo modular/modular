@@ -1,5 +1,4 @@
-//===- GenericML/Support/TensorEltType.h
-//------------------------------------===//
+//===- GenericML/Support/TensorEltType.h ----------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
