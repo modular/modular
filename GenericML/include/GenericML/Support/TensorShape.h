@@ -158,36 +158,43 @@ namespace Detail {
 /// carefully laid out to hold common tensor sizes inline without losing support
 /// for the full generality of tensor shapes.
 class CompactTensorShapeStorage {
-  /// This supports two inline representations and an out of line one:
-  ///  1) k16 can hold up to 7 dimensions when they fit into 16-bits.
+  /// This supports two inline representations and an out-of-line one:
+  ///  1) k16 can hold up to 6 dimensions when they fit into 16-bits.
   ///  2) k32 can hold up to 4 dimension where the first three fits in
-  ///     32-bits and the last fits in 16 bits (typically channels or batch
+  ///     32-bits and the last fits in 8 bits (typically channels or batch
   ///     size).
   ///  3) kOutOfLine is used for the general case.
   ///
   /// Important: Identical shapes have the same representation kind to allow
   /// efficient shape comparison with memcmp for k16 and k32.
+  ///
+  /// Each representation has an additional 8 bits of unused "auxillary"
+  /// storage.  This is used to hold a TensorEltType for TensorSpec.
   enum class RepKind : uint8_t { k16, k32, kOutOfLine };
 
   struct Rep16 {
-    int16_t dims[7];
+    int16_t dims[6];
+    uint8_t unused;
     RepKind kind;
     uint8_t rank;
+    uint8_t auxillary;
   };
   struct Rep32 {
     int32_t dims[3];
-    int16_t dim3;
+    int8_t dim3;
     RepKind kind;
     uint8_t rank;
+    uint8_t auxillary;
   };
 
   struct RepOutOfLine {
     ssize_t *dims;
     // FIXME: This isn't correct for big endian systems, but we check with
     // static_assert below.
-    uint8_t padding[14 - sizeof(void *)];
+    uint8_t padding[13 - sizeof(void *)];
     RepKind kind;
     uint8_t rank;
+    uint8_t auxillary;
   };
 
   union {
@@ -201,6 +208,7 @@ public:
   CompactTensorShapeStorage() {
     representation.rep16.kind = RepKind::k16;
     representation.rep16.rank = 0;
+    representation.rep16.auxillary = 0;
   }
   ~CompactTensorShapeStorage() {
     if (getRepKind() == RepKind::kOutOfLine)
@@ -243,11 +251,23 @@ public:
   size_t size() const {
     static_assert(offsetof(Rep16, rank) == offsetof(Rep32, rank) &&
                       offsetof(Rep16, rank) == offsetof(RepOutOfLine, rank),
-                  "Layout mismatch inside of TensorShape");
+                  "Layout mismatch inside of CompactTensorShape");
     // Because all of the representations store their rank in the same place, we
     // can just access an arbitrary one.
     return representation.rep16.rank;
   }
+
+  // Provide access to the auxillary storage.
+  uint8_t getAuxillary() const {
+    static_assert(offsetof(Rep16, auxillary) == offsetof(Rep32, auxillary) &&
+                      offsetof(Rep16, auxillary) ==
+                          offsetof(RepOutOfLine, auxillary),
+                  "Layout mismatch inside of CompactTensorShape");
+    // Because all of the representations store their auxillary in the same
+    // place, we can just access an arbitrary one.
+    return representation.rep16.auxillary;
+  }
+  void setAuxillary(uint8_t value) { representation.rep16.auxillary = value; }
 
   /// Provides random access iteration, but only a read-only version.
   class iterator : public llvm::iterator_facade_base<
@@ -371,7 +391,7 @@ private:
     // Check the representations line up.
     static_assert(offsetof(Rep16, kind) == offsetof(Rep32, kind) &&
                       offsetof(Rep16, kind) == offsetof(RepOutOfLine, kind),
-                  "Layout mismatch inside of TensorShape");
+                  "Layout mismatch inside of CompactTensorShape");
     // Because all of the representations store their kind in the same place, we
     // can just access an arbitrary one.
     return representation.rep16.kind;
@@ -407,6 +427,10 @@ public:
   /*implicit*/ CompactTensorShape(const FixedRankTensorShape<Rank> &shape) {
     *this = shape;
   }
+
+  uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
+  void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
+
   void print(raw_ostream &os) const;
   void dump() const;
 };
