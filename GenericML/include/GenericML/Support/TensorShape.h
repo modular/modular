@@ -169,7 +169,9 @@ class CompactTensorShapeStorage {
   /// efficient shape comparison with memcmp for k16 and k32.
   ///
   /// Each representation has an additional 8 bits of unused "auxillary"
-  /// storage.  This is used to hold a TensorEltType for TensorSpec.
+  /// storage.  This is used to hold a TensorEltType for TensorSpec.  We keep
+  /// this at the end of the storage so we can efficiently omit it from
+  /// memset/memcpy operations.
   enum class RepKind : uint8_t { k16, k32, kOutOfLine };
 
   struct Rep16 {
@@ -315,7 +317,8 @@ public:
       delete[] representation.repOutOfLine.dims;
 
     // Zero-initialize to ensure the representation value is determinsitic.
-    memset(&representation, 0, sizeof(representation));
+    // We do not zero out the auxillary field.
+    memset(&representation, 0, sizeof(representation) - 1);
 
     // Get and set the rank, regardless of the representation.
     size_t rank = std::distance(beginIt, endIt);
@@ -362,8 +365,8 @@ public:
       }
     }
 
-    // Virtually everything else will fit into 7 dimensions.
-    if (rank <= 7) {
+    // Virtually everything else will fit into 6 dimensions.
+    if (rank <= 6) {
       size_t i;
       // Copy the iterator in case things don't work out.
       auto beginItCopy = beginIt;
