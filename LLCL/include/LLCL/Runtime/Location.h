@@ -61,6 +61,7 @@ public:
   EncodedLocation(intptr_t data, RCRef<LocationDecoder> decoder)
       : data(data), decoder(std::move(decoder)) {}
   EncodedLocation(EncodedLocation &&other) = default;
+  EncodedLocation &operator=(EncodedLocation &&other) = default;
 
   /// Decode the location information in this object into a DecodedLocation.
   DecodedLocation decode() const;
@@ -76,11 +77,13 @@ public:
   /// Return a copy of this EncodedLocation.
   EncodedLocation copy() const { return EncodedLocation(data, decoder.copy()); }
 
-  /// Opaque implementation details of this location, only interpretable by the
-  /// location handler.
-  const intptr_t data;
+  intptr_t getData() const { return data; }
 
 private:
+  /// Opaque implementation details of this location, only interpretable by the
+  /// location handler.
+  intptr_t data;
+
   /// This is an implementation class that can turn the intptr_t token into a
   /// decoded `Location` object.
   RCRef<LocationDecoder> decoder;
