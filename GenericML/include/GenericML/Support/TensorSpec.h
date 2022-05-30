@@ -50,22 +50,28 @@ private:
 class CompactTensorSpec : public TensorSpecImpl<CompactTensorSpec>,
                           public CompactTensorShape {
 public:
-  CompactTensorSpec() = default;
-  CompactTensorSpec(const TensorSpec &other)
-      : CompactTensorShape(other), eltType(other.getEltType()) {}
+  CompactTensorSpec() : CompactTensorShape() {
+    setEltType(TensorEltType::invalid);
+  }
+  CompactTensorSpec(const TensorSpec &other) : CompactTensorShape(other) {
+    setEltType(other.getEltType());
+  }
   template <typename ShapeType>
   CompactTensorSpec(const ShapeType &shape, TensorEltType eltType)
-      : CompactTensorShape(shape), eltType(eltType) {}
+      : CompactTensorShape(shape) {
+    setEltType(eltType);
+  }
 
-  TensorEltType getEltType() const { return eltType; }
-  void setEltType(TensorEltType type) { eltType = type; }
-
-private:
-  TensorEltType eltType;
+  // This class stores the ElementType in the auxillary storage field of the
+  // underlying CompactTensorShape.
+  TensorEltType getEltType() const {
+    return TensorEltType(getAuxillaryStorage());
+  }
+  void setEltType(TensorEltType type) { setAuxillaryStorage(type.getValue()); }
 };
 
-// FIXME: This should eventually be 16 bytes.
-static_assert(sizeof(void *) != 8 || sizeof(CompactTensorSpec) == 24);
+// CompactTensorSpec should always be two words, the same as CompactTensorSpec.
+static_assert(sizeof(void *) != 8 || sizeof(CompactTensorSpec) == 16);
 
 inline TensorSpec::TensorSpec(const CompactTensorSpec &spec)
     : TensorShape(spec), eltType(spec.getEltType()) {}
