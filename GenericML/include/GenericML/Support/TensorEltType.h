@@ -388,7 +388,7 @@ public:
   }
 
   /// Invoke the specified lambda with integer, float and bool element types.
-  ///  This passes the pointer in with the correct C++ type, so it is usually
+  /// This passes the pointer in with the correct C++ type, so it is usually
   /// best to use a generic lambda:
   ///
   ///  eltType.dispatch<ResultType>(ptr)
