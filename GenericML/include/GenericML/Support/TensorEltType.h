@@ -389,6 +389,22 @@ public:
         std::forward<CallableT>(elementFn));
   }
 
+  /// Invoke the specified lambda with integer, float and bool element types.
+  ///  This passes the pointer in with the correct C++ type, so it is usually
+  /// best to use a generic lambda:
+  ///
+  ///  eltType.dispatch<ResultType>(ptr)
+  ///     .whenCXXType([&](auto *ptr) { use ptr generically })
+  ///
+  /// TODO: Add long double when sizeof(long double) != sizeof(double).
+  template <typename CallableT>
+  TensorEltTypeSwitch &whenCXXType(CallableT &&elementFn) {
+    return this->whenCXXInt(std::forward<CallableT>(elementFn))
+        .whenCXXFP(std::forward<CallableT>(elementFn))
+        .template when<TensorEltType::kBool>(
+            std::forward<CallableT>(elementFn));
+  }
+
   LLVM_NODISCARD
   operator ResultType() {
     assert(result && "Fell off the end of a TensorEltTypeSwitch");
