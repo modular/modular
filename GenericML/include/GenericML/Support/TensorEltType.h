@@ -22,7 +22,7 @@ namespace M {
 template <typename ResultType>
 class TensorEltTypeSwitch;
 
-/// This classes represents the storage type for values in a tensor.  This is
+/// This class represents the storage type for values in a tensor.  This is
 /// encoded in a specific way intended to allow efficient analysis and
 /// transformation of a type.
 ///
@@ -85,9 +85,7 @@ public:
 
     //===--- Floating point types -----------------------------------------===//
 
-    /// Bits 2+ indicate the kind of FP value.  The initial values are IEEE
-    /// floating point with their FPKind value encoding the width of the float
-    /// in bytes (logarithmic).
+    /// Bits 0 through 3 indicate the kind of FP value.
     f8 = 0 | mIsFloat,
     f16 = 1 | mIsFloat,
     f32 = 2 | mIsFloat,
