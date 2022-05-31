@@ -172,7 +172,7 @@ public:
 
   /// Return the width in bits of this type, assuming it is an integer type.
   size_t getIntegerWidthInBits() const {
-    return 1 << getIntegerWidthInLogBits();
+    return size_t(1) << getIntegerWidthInLogBits();
   }
 
   /// Return the width in bits of this type, assuming it is an integer type.
