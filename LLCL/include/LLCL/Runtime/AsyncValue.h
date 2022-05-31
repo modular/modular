@@ -759,7 +759,8 @@ inline void AsyncValue::construct(Args &&...args) {
 template <typename T, typename... Args>
 inline void AsyncValue::emplace(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
-         getState() == State::kUnconstructed &&
+         "Cannot 'emplace' an IndirectValue, use 'emplaceIndirect' instead");
+  assert(getState() == State::kUnconstructed &&
          "cannot emplace an indirect or already set up AsyncValue");
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
 
