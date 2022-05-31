@@ -208,9 +208,9 @@ class CompactTensorShapeStorage {
 public:
   // Default construct to zero-D shape.
   CompactTensorShapeStorage() {
-    representation.rep16.kind = RepKind::k16;
-    representation.rep16.rank = 0;
-    representation.rep16.auxillary = 0;
+    representation.rep32.kind = RepKind::k32;
+    representation.rep32.rank = 0;
+    representation.rep32.auxillary = 0;
   }
   ~CompactTensorShapeStorage() {
     if (getRepKind() == RepKind::kOutOfLine)
@@ -218,11 +218,11 @@ public:
   }
 
   CompactTensorShapeStorage(const CompactTensorShapeStorage &other) {
-    representation.rep16.kind = RepKind::k16;
+    representation.rep32.kind = RepKind::k32;
     operator=(other);
   }
   CompactTensorShapeStorage(CompactTensorShapeStorage &&other) {
-    representation.rep16.kind = RepKind::k16;
+    representation.rep32.kind = RepKind::k32;
     operator=(other);
   }
   void operator=(const CompactTensorShapeStorage &other) {
@@ -241,9 +241,11 @@ public:
 
   /// Read out element.
   ssize_t operator[](size_t idx) const {
+    assert(idx < size() && "invalid dimension #");
     auto rep = getRepKind();
     if (rep == RepKind::k32)
-      return representation.rep32.dims[idx];
+      return idx != 3 ? representation.rep32.dims[idx]
+                      : representation.rep32.dim3;
     if (rep == RepKind::k16)
       return representation.rep16.dims[idx];
     return representation.repOutOfLine.dims[idx];
@@ -371,7 +373,7 @@ public:
       // Copy the iterator in case things don't work out.
       auto beginItCopy = beginIt;
       for (i = 0; i < rank; ++i) {
-        ssize_t dim = *beginItCopy;
+        ssize_t dim = *beginItCopy++;
         representation.rep16.dims[i] = dim;
         if (representation.rep16.dims[i] != dim)
           break;
