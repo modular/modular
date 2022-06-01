@@ -26,6 +26,7 @@ class CompactRuntimePtr {
 public:
   CompactRuntimePtr() = default;
   CompactRuntimePtr(const CompactRuntimePtr &) = default;
+  CompactRuntimePtr &operator=(const CompactRuntimePtr &) = default;
 
   // Implicitly convert Runtime* to CompactRuntimePtr.
   /*implicit*/ CompactRuntimePtr(Runtime *runtime);
