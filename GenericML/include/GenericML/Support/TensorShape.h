@@ -292,7 +292,7 @@ public:
       dimIdx -= n;
       return *this;
     }
-    Base::difference_type operator-(iterator rhs) {
+    Base::difference_type operator-(iterator rhs) const {
       assert(shape == rhs.shape && "iterators from different shapes!");
       return Base::difference_type(dimIdx - rhs.dimIdx);
     }
