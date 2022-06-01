@@ -4,10 +4,6 @@
 #
 #===------------------------------------------------------------------------===#
 
-if (NOT BUILD_BENCHMARKS)
-  # The target is disabled if not built with benchmarking support
-  return()
-endif (NOT BUILD_BENCHMARKS)
 
 add_mlir_library(MSupportBenchmark
   QuerySampleLibrary.cpp
@@ -20,5 +16,5 @@ add_mlir_library(MSupportBenchmark
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
-  mlperf_loadgen
+  mlperf-loadgen
 )
