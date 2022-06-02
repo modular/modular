@@ -8,20 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Runtime/Location.h"
-#include "LLCL/Runtime/AsyncValue.h"
+#include "LLCL/Support/Location.h"
 using namespace LLCL;
 
 void LocationDecoder::VtableAnchor() {}
-
-/// Create an error AsyncValue at this location with the specified message.
-/// For consistency, the error message should start with a lower case letter
-/// and not end with a period.
-AnyAsyncValueRef EncodedLocation::createErrorValue(CompactRuntimePtr runtime,
-                                                   M::Error message) const {
-  return AsyncValue::createError(runtime,
-                                 EncodedDiagnostic{std::move(message), copy()});
-}
 
 /// Decode the location information in this object into a DecodedLocation.
 DecodedLocation EncodedLocation::decode() const {

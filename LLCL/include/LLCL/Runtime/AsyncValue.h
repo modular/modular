@@ -13,7 +13,7 @@
 #define LLCL_RUNTIME_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
-#include "LLCL/Runtime/Diagnostic.h"
+#include "LLCL/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"

@@ -1,4 +1,4 @@
-//===- LLCL/Runtime/Diagnostic.h ------------------------------------------===//
+//===- LLCL/Support/Diagnostic.h ------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_DIAGNOSTIC_H
-#define LLCL_RUNTIME_DIAGNOSTIC_H
+#ifndef LLCL_SUPPORT_DIAGNOSTIC_H
+#define LLCL_SUPPORT_DIAGNOSTIC_H
 
-#include "LLCL/Runtime/Location.h"
+#include "LLCL/Support/Location.h"
 #include "Support/Error.h"
 
 namespace LLCL {
@@ -43,4 +43,4 @@ private:
 
 } // namespace LLCL
 
-#endif // LLCL_RUNTIME_DIAGNOSTIC_H
+#endif // LLCL_SUPPORT_DIAGNOSTIC_H

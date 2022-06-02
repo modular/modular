@@ -10,7 +10,6 @@ add_mlir_library(LLCLRuntime
   AllocatorType.cpp
   AsyncValue.cpp
   DebuggingAllocators.cpp
-  Location.cpp
   MallocAllocator.cpp
   Runtime.cpp
   SingleThreadWorkQueue.cpp

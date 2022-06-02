@@ -19,6 +19,7 @@ if (APPLE)
 endif ()
 
 add_mlir_library(LLCLSupport
+  Location.cpp
   ReferenceCounted.cpp
   Semaphore.cpp
 
