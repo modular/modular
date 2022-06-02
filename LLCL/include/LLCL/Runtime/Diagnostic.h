@@ -33,8 +33,6 @@ public:
   const EncodedLocation &getLocation() const { return location; }
   EncodedLocation &getLocation() { return location; }
 
-  Runtime &getRuntime() const { return location.getRuntime(); }
-
   /// Decode the compressed location into a `DecodedLocation` for rendering.
   DecodedLocation decodeLocation() const { return location.decode(); }
 

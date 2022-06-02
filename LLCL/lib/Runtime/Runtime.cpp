@@ -94,7 +94,8 @@ Runtime::~Runtime() {
 /// canceled state, which causes all asynchronously executing threads to be
 /// canceled when they check the cancellation state (e.g. in BEFExecutor).
 void Runtime::cancelExecution(EncodedDiagnostic message) {
-  AnyAsyncValueRef messageVal = AsyncValue::createError(std::move(message));
+  AnyAsyncValueRef messageVal =
+      AsyncValue::createError(*this, std::move(message));
 
   AsyncValue *expectedValue = nullptr;
   // Use memory_order_release for the success case so that error_value is
