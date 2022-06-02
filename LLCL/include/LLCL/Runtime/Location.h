@@ -7,6 +7,7 @@
 #ifndef LLCL_RUNTIME_LOCATION_H
 #define LLCL_RUNTIME_LOCATION_H
 
+#include "CompactRuntimePtr.h"
 #include "LLCL/Support/RCRef.h"
 #include <string>
 
@@ -37,9 +38,6 @@ public:
 /// `EncodedLocation`s, showing how to decode them.
 class LocationDecoder {
 public:
-  /// Return the runtime corresponding to this decoder.
-  virtual Runtime &getRuntime() const = 0;
-
   virtual DecodedLocation decode(const EncodedLocation &loc) const = 0;
 
   /// Add a new reference to this object.
@@ -66,13 +64,11 @@ public:
   /// Decode the location information in this object into a DecodedLocation.
   DecodedLocation decode() const;
 
-  /// Return the runtime corresponding to this decoder.
-  Runtime &getRuntime() const { return decoder->getRuntime(); }
-
   /// Create an error AsyncValue at this location with the specified message.
   /// For consistency, the error message should start with a lower case letter
   /// and not end with a period.
-  AnyAsyncValueRef createErrorValue(M::Error message) const;
+  AnyAsyncValueRef createErrorValue(CompactRuntimePtr runtime,
+                                    M::Error message) const;
 
   /// Return a copy of this EncodedLocation.
   EncodedLocation copy() const { return EncodedLocation(data, decoder.copy()); }

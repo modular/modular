@@ -17,8 +17,10 @@ void LocationDecoder::VtableAnchor() {}
 /// Create an error AsyncValue at this location with the specified message.
 /// For consistency, the error message should start with a lower case letter
 /// and not end with a period.
-AnyAsyncValueRef EncodedLocation::createErrorValue(M::Error message) const {
-  return AsyncValue::createError(EncodedDiagnostic{std::move(message), copy()});
+AnyAsyncValueRef EncodedLocation::createErrorValue(CompactRuntimePtr runtime,
+                                                   M::Error message) const {
+  return AsyncValue::createError(runtime,
+                                 EncodedDiagnostic{std::move(message), copy()});
 }
 
 /// Decode the location information in this object into a DecodedLocation.

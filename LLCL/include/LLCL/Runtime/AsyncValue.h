@@ -90,7 +90,8 @@ public:
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
-  static AnyAsyncValueRef createError(EncodedDiagnostic diagnostic);
+  static AnyAsyncValueRef createError(CompactRuntimePtr runtime,
+                                      EncodedDiagnostic diagnostic);
 
   //===--------------------------------------------------------------------===//
   // State change methods.

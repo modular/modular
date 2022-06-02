@@ -178,9 +178,10 @@ EncodedDiagnostic *AsyncValue::getDiagnosticIfPresent() {
 
 /// Create an AsyncValue that has already been turned into an error with the
 /// specified message.
-AnyAsyncValueRef AsyncValue::createError(EncodedDiagnostic diagnostic) {
-  auto *result = Detail::ConcreteAsyncValue<Chain>::allocate(
-      State::kError, diagnostic.getRuntime());
+AnyAsyncValueRef AsyncValue::createError(CompactRuntimePtr runtime,
+                                         EncodedDiagnostic diagnostic) {
+  auto *result =
+      Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
   new (&result->diagnostic) EncodedDiagnostic(std::move(diagnostic));
   return takeRCRef(result);
 }
@@ -207,7 +208,7 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
            "AsyncValue transitioned to ready while we're changing to error?");
     (void)oldState;
   } else {
-    resolveIndirect(createError(std::move(diagnostic)));
+    resolveIndirect(createError(getRuntime(), std::move(diagnostic)));
   }
 }
 
