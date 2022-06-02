@@ -1,13 +1,12 @@
-//===- LLCL/Runtime/Location.h --------------------------------------------===//
+//===- LLCL/Support/Location.h --------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_LOCATION_H
-#define LLCL_RUNTIME_LOCATION_H
+#ifndef LLCL_SUPPORT_LOCATION_H
+#define LLCL_SUPPORT_LOCATION_H
 
-#include "CompactRuntimePtr.h"
 #include "LLCL/Support/RCRef.h"
 #include <string>
 
@@ -16,11 +15,8 @@ class Error;
 }
 
 namespace LLCL {
-class AsyncValue;
 class EncodedLocation;
 class EncodedDiagnostic;
-class Runtime;
-using AnyAsyncValueRef = RCRef<AsyncValue>;
 
 /// This represents a "decoded" location that is usable for diagnostic emission
 /// and other processing.  This object is relatively heavy-weight that is
@@ -64,12 +60,6 @@ public:
   /// Decode the location information in this object into a DecodedLocation.
   DecodedLocation decode() const;
 
-  /// Create an error AsyncValue at this location with the specified message.
-  /// For consistency, the error message should start with a lower case letter
-  /// and not end with a period.
-  AnyAsyncValueRef createErrorValue(CompactRuntimePtr runtime,
-                                    M::Error message) const;
-
   /// Return a copy of this EncodedLocation.
   EncodedLocation copy() const { return EncodedLocation(data, decoder.copy()); }
 
@@ -87,4 +77,4 @@ private:
 
 } // namespace LLCL
 
-#endif // LLCL_RUNTIME_LOCATION_H
+#endif // LLCL_SUPPORT_LOCATION_H
