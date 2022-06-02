@@ -1,8 +1,8 @@
-#===- CMakeLists.txt -------------------------------------------*- cmake -*-===#
+#===- CMakeLists.txt ------------------------------------------*- cmake -*-===##
 #
 # This file is Modular Inc proprietary.
 #
-#===------------------------------------------------------------------------===#
+#===-----------------------------------------------------------------------===##
 
 set(LLCL_SOURCE_DIR ${MODULAR_SOURCE_DIR}/LLCL)
 set(LLCL_BINARY_DIR ${MODULAR_BINARY_DIR}/LLCL)
