@@ -18,6 +18,12 @@
 namespace M {
 class CompactTensorSpec;
 
+// Implementation details of TensorSpecImpl.
+void printTensorSpec(ArrayRef<ssize_t> dims, TensorEltType eltType,
+                     raw_ostream &os);
+std::string getTensorSpecAsString(ArrayRef<ssize_t> dims,
+                                  TensorEltType eltType);
+
 ///  This class provides helper API that is common to all *TensorSpec classes.
 template <typename FinalClass>
 class TensorSpecImpl {
@@ -25,6 +31,17 @@ public:
   size_t getSizeInBytes() const {
     auto *finalThis = static_cast<const FinalClass *>(this);
     return finalThis->getEltType().getSizeInBytes(finalThis->getNumElements());
+  }
+
+  void print(raw_ostream &os) const {
+    auto *finalThis = static_cast<const FinalClass *>(this);
+    M::printTensorSpec(finalThis->getDims(), finalThis->getEltType(), os);
+  }
+
+  std::string getAsString() const {
+    auto *finalThis = static_cast<const FinalClass *>(this);
+    return M::getTensorSpecAsString(finalThis->getDims(),
+                                    finalThis->getEltType());
   }
 };
 
@@ -40,6 +57,16 @@ public:
 
   TensorEltType getEltType() const { return eltType; }
   void setEltType(TensorEltType type) { eltType = type; }
+
+  using TensorSpecImpl::getAsString;
+  using TensorSpecImpl::print;
+  void dump() const;
+
+  bool operator==(const TensorSpec &rhs) const {
+    return eltType == rhs.getEltType() && TensorShape::operator==(rhs);
+  }
+
+  bool operator!=(const TensorSpec &rhs) const { return !(*this == rhs); }
 
 private:
   TensorEltType eltType;
@@ -68,6 +95,16 @@ public:
     return TensorEltType(getAuxillaryStorage());
   }
   void setEltType(TensorEltType type) { setAuxillaryStorage(type.getValue()); }
+
+  using TensorSpecImpl::getAsString;
+  using TensorSpecImpl::print;
+  void dump() const;
+
+  bool operator==(const CompactTensorSpec &rhs) const {
+    return storage.equalsIncludingAux(rhs.storage);
+  }
+
+  bool operator!=(const TensorSpec &rhs) const { return !(*this == rhs); }
 };
 
 // CompactTensorSpec should always be two words, the same as CompactTensorSpec.

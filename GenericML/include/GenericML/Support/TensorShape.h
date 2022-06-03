@@ -16,15 +16,15 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/raw_ostream.h"
 namespace M {
 
 template <size_t Rank>
 class FixedRankTensorShape;
 class CompactTensorShape;
 
-/// Print an array of dimensions as a shape.
-void printShape(ArrayRef<ssize_t> dimensions, raw_ostream &os);
+// Implementation details of TensorShapeImpl.
+void printTensorShape(ArrayRef<ssize_t> dims, raw_ostream &os);
+std::string getTensorShapeAsString(ArrayRef<ssize_t> dims);
 
 /// This is a common base class between TensorShape classes, providing a
 /// consistent API.  This is parameterized on `DimensionStorageType` which holds
@@ -57,10 +57,35 @@ public:
   const ssize_t &operator[](size_t i) const { return storage[i]; }
   ssize_t &operator[](size_t i) { return storage[i]; }
 
+  bool operator==(const TensorShapeImpl &rhs) const {
+    return storage == rhs.storage;
+  }
+
+  bool operator!=(const TensorShapeImpl &rhs) const { return !(*this == rhs); }
+
+  /// Return the dimensions as an unpacked SmallVector.
+  SmallVector<ssize_t, 5> getDims() const {
+    return SmallVector<ssize_t, 5>(begin(), end());
+  }
+
+  void print(raw_ostream &os) const { M::printTensorShape(getDims(), os); }
+
+  std::string getAsString() const {
+    return M::getTensorShapeAsString(getDims());
+  }
+
 protected:
   TensorShapeImpl() {} // Derived class must choose to expose this (or not).
   DimensionStorageType storage;
 };
+
+template <typename DimensionStorageType>
+inline raw_ostream &
+operator<<(raw_ostream &os,
+           const TensorShapeImpl<DimensionStorageType> &value) {
+  value.print(os);
+  return os;
+}
 
 /// This class represents a concrete (non-symbolic) shape of a Tensor value (for
 /// use in a runtime) with standardized accessors and convenient methods
@@ -104,14 +129,8 @@ public:
   }
   /*implicit*/ TensorShape(const CompactTensorShape &elts) { *this = elts; }
 
-  void print(raw_ostream &os) const;
   void dump() const;
 };
-
-inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
-  value.print(os);
-  return os;
-}
 
 /// This class models a TensorShape with a fixed rank (e.g. for kernels that are
 /// working on 4D tensor values).  This allows them to be stored as those values
@@ -147,9 +166,6 @@ public:
   /*implicit*/ FixedRankTensorShape(const CompactTensorShape &elts) {
     *this = elts;
   }
-
-  void print(raw_ostream &os) const { printShape(this->storage, os); }
-  void dump() const { print(llvm::errs()); }
 };
 
 namespace Detail {
@@ -390,6 +406,11 @@ public:
     std::copy(beginIt, endIt, representation.repOutOfLine.dims);
   }
 
+  bool equalsIncludingAux(const CompactTensorShapeStorage &rhs) const {
+    return memcmp(&representation, &rhs.representation,
+                  sizeof(representation)) == 0;
+  }
+
 private:
   // Return the storage representation for this TensorShape.
   RepKind getRepKind() const {
@@ -436,7 +457,6 @@ public:
   uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
   void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
 
-  void print(raw_ostream &os) const;
   void dump() const;
 };
 

@@ -5,30 +5,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "GenericML/Support/TensorShape.h"
+#include "llvm/Support/raw_ostream.h"
 using namespace M;
 
-template <typename Collection>
-static void printShapeInternal(const Collection &dimensions, raw_ostream &os) {
-  os << '[';
-  llvm::interleaveComma(dimensions, os);
-  os << ']';
+void M::printTensorShape(ArrayRef<ssize_t> dims, raw_ostream &os) {
+  llvm::interleave(dims, os, "x");
 }
 
-/// This is used by the FixedRankTensorShape template so we don't have to
-/// instantiate this code for every rank.
-void M::printShape(ArrayRef<ssize_t> dimensions, raw_ostream &os) {
-  printShapeInternal(dimensions, os);
+std::string M::getTensorShapeAsString(ArrayRef<ssize_t> dims) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  printTensorShape(dims, os);
+  return os.str();
 }
 
-void TensorShape::print(raw_ostream &os) const { printShape(storage, os); }
+//===----------------------------------------------------------------------===//
+// Dump methods
+//===----------------------------------------------------------------------===//
+
 void TensorShape::dump() const { print(llvm::errs()); }
-
-//===----------------------------------------------------------------------===//
-// CompactTensorShape
-//===----------------------------------------------------------------------===//
-
-void CompactTensorShape::print(raw_ostream &os) const {
-  printShapeInternal(*this, os);
-}
-
 void CompactTensorShape::dump() const { print(llvm::errs()); }
+
