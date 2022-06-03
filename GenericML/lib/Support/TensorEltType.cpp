@@ -6,6 +6,7 @@
 
 #include "GenericML/Support/TensorEltType.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 using namespace M;
 
@@ -111,3 +112,6 @@ std::string TensorEltType::getAsString() const {
     return "eltType<unknown" + llvm::utostr(getValue()) + ">";
   }
 }
+
+void TensorEltType::print(raw_ostream &os) const { os << getAsString(); }
+void TensorEltType::dump() const { print(llvm::errs()); }

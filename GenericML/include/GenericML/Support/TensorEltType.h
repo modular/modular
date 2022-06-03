@@ -206,11 +206,19 @@ public:
   /// messages.
   std::string getAsString() const;
 
+  void print(raw_ostream &os) const;
+  void dump() const;
+
 private:
   Cases value;
 };
 
 static_assert(sizeof(TensorEltType) == 1, "TensorEltType should not grow");
+
+inline raw_ostream &operator<<(raw_ostream &os, TensorEltType value) {
+  value.print(os);
+  return os;
+}
 
 //===----------------------------------------------------------------------===//
 // Method implementation for constexpr methods.
