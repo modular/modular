@@ -34,7 +34,7 @@ struct UnwrapErrorOr<M::ErrorOr<T>> {
 };
 
 template <typename F>
-using ResultType = typename UnwrapErrorOr<std::result_of_t<F()>>::type;
+using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F()>>::type;
 } // namespace Detail
 
 //===----------------------------------------------------------------------===//
