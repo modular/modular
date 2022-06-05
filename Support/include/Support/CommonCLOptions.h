@@ -8,6 +8,7 @@
 #define SUPPORT_COMMONCLOPTIONS_H
 
 #include "Support/CommandLine.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/MemoryBuffer.h"
 
@@ -45,6 +46,25 @@ struct CommonCLOptions {
       exit(1);
     }
     return errorOrInputFile.takeValue();
+  }
+
+  /// This method creates an MLIR context and configures it for diagnostic
+  /// printing based on the setting of the -verify-diagnostics flag.  This
+  /// invokes the `bodyFn` callable with the MLIRContext that is set up.
+  template <typename Body>
+  LogicalResult configureMLIRContextAndExecute(llvm::SourceMgr &sourceMgr,
+                                               Body &&bodyFn) const {
+    mlir::MLIRContext context;
+    if (verifyDiagnostics) {
+      mlir::SourceMgrDiagnosticVerifierHandler sourceMgrHandler(sourceMgr,
+                                                                &context);
+      bodyFn(&context);
+      return sourceMgrHandler.verify();
+    }
+
+    mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
+    bodyFn(&context);
+    return success();
   }
 };
 
