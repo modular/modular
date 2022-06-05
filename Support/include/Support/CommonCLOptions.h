@@ -7,18 +7,17 @@
 #ifndef SUPPORT_COMMONCLOPTIONS_H
 #define SUPPORT_COMMONCLOPTIONS_H
 
+#include "Support/CommandLine.h"
 #include "mlir/Support/FileUtilities.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 namespace M {
-using llvm::cl::opt;
 
 /// Contains command-line options that are shared among most of our binaries.
 struct CommonCLOptions {
   // Specify the input file for a given binary
-  cl::opt<std::string> inputFilename{cl::Positional, cl::desc("<input file>"),
-                                     cl::init("-")};
+  cl::opt<std::string> inputFilename{llvm::cl::Positional,
+                                     cl::desc("<input file>"), cl::init("-")};
 
   cl::opt<bool> verifyDiagnostics{
       "verify-diagnostics",
@@ -42,7 +41,7 @@ struct CommonCLOptions {
   openInputFileOrExit(const char *toolName) {
     auto errorOrInputFile = openInputFile();
     if (failed(errorOrInputFile)) {
-      errs() << toolName << ": " << errorOrInputFile.takeError() << '\n';
+      llvm::errs() << toolName << ": " << errorOrInputFile.takeError() << '\n';
       exit(1);
     }
     return errorOrInputFile.takeValue();
