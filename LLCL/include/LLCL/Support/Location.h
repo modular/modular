@@ -37,10 +37,10 @@ public:
   virtual DecodedLocation decode(const EncodedLocation &loc) const = 0;
 
   /// Add a new reference to this object.
-  virtual void addRef() = 0;
+  virtual void addRef() const = 0;
 
   /// Add a new reference to this object.
-  virtual void dropRef() = 0;
+  virtual void dropRef() const = 0;
 
   virtual ~LocationDecoder() {}
 
