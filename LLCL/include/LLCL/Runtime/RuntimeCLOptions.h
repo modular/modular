@@ -14,33 +14,33 @@
 
 #include "LLCL/Runtime/AllocatorType.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "llvm/Support/CommandLine.h"
-
-using namespace llvm;
+#include "Support/CommandLine.h"
 
 namespace LLCL {
 
 /// Contains a number of command-line options that are shared among most of our
 /// binaries
 struct RuntimeCLOptions {
+
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
   // work queue is using a thread pool. The default number of threads is the
   // result of std::thread::hardware_concurrency().
-  cl::opt<size_t> numThreads{
+  llvm::cl::opt<size_t> numThreads{
       "num-threads",
-      cl::desc("Specify the number of threads in the threadpool"), cl::init(0)};
+      llvm::cl::desc("Specify the number of threads in the threadpool"),
+      llvm::cl::init(0)};
 
   // Enable HostAllocator types to be specified on the command line.
-  cl::opt<AllocatorType> allocatorType{
-      "allocator", cl::desc("Specify allocator type:"),
-      cl::values(
+  llvm::cl::opt<AllocatorType> allocatorType{
+      "allocator", llvm::cl::desc("Specify allocator type:"),
+      llvm::cl::values(
           clEnumValN(AllocatorType::kMalloc, "malloc", "System malloc/free"),
           clEnumValN(AllocatorType::kLeakChecker, "leak-checker",
                      "Allocator with leak checking"),
           clEnumValN(AllocatorType::kProfiler, "profiler",
                      "Allocator with profiling and leak checking")),
-      cl::init(AllocatorType::kLeakChecker)};
+      llvm::cl::init(AllocatorType::kLeakChecker)};
 
   Runtime createRuntime() const {
     return Runtime(getAllocator(allocatorType), getWorkQueue(numThreads));
