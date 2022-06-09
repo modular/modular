@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the TensorSpec and CompactTensorSpec classes, which hold a
+// This file declares the TensorSpec and TensorSpec classes, which hold a
 // TensorShape and TensorDType together in one value.
 //
 //===----------------------------------------------------------------------===//
@@ -17,21 +17,19 @@
 
 namespace M {
 
-/// CompactTensorSpec is a memory efficient representation of a shape and
-/// element type, implemented using CompactTensorShape.
-class CompactTensorSpec : public CompactTensorShape {
+/// TensorSpec is a memory efficient representation of a shape and
+/// element type, implemented using TensorShape.
+class TensorSpec : public TensorShape {
 public:
-  CompactTensorSpec() : CompactTensorShape() {
-    setEltType(TensorEltType::invalid);
-  }
+  TensorSpec() : TensorShape() { setEltType(TensorEltType::invalid); }
   template <typename ShapeType>
-  CompactTensorSpec(const ShapeType &shape, TensorEltType eltType)
-      : CompactTensorShape(shape) {
+  TensorSpec(const ShapeType &shape, TensorEltType eltType)
+      : TensorShape(shape) {
     setEltType(eltType);
   }
 
   // This class stores the ElementType in the auxillary storage field of the
-  // underlying CompactTensorShape.
+  // underlying TensorShape.
   TensorEltType getEltType() const {
     return TensorEltType(getAuxillaryStorage());
   }
@@ -45,16 +43,14 @@ public:
   std::string getAsString() const;
   void dump() const;
 
-  bool operator==(const CompactTensorSpec &rhs) const {
+  bool operator==(const TensorSpec &rhs) const {
     return storage.equalsIncludingAux(rhs.storage);
   }
-  bool operator!=(const CompactTensorSpec &rhs) const {
-    return !(*this == rhs);
-  }
+  bool operator!=(const TensorSpec &rhs) const { return !(*this == rhs); }
 };
 
-// CompactTensorSpec should always be two words, the same as CompactTensorSpec.
-static_assert(sizeof(void *) != 8 || sizeof(CompactTensorSpec) == 16);
+// TensorSpec should always be two words, the same as TensorSpec.
+static_assert(sizeof(void *) != 8 || sizeof(TensorSpec) == 16);
 
 } // namespace M
 
