@@ -178,7 +178,8 @@ public:
   iterator end() const { return iterator(this, getRank()); }
 
   /// Bulk reassignment of elements.
-  void assign(ArrayRef<ssize_t> elements);
+  /// TODO: Forcing dimensions to 64-bit is suboptimal on 32-bit hosts.
+  void assign(ArrayRef<int64_t> elements);
 
   bool equalsIncludingAux(const TensorShapeStorage &rhs) const {
     if (isOutOfLine())
@@ -226,12 +227,10 @@ public:
   // Allow constructing from both 32/64-bit and signed/unsigned integer
   // elements.  These are defined explicitly (instead of as a template) so
   // implicit conversions from things like SmallVector will work.
-  /*implicit*/ TensorShape(ArrayRef<int32_t> e) { assign(e.begin(), e.end()); }
-  /*implicit*/ TensorShape(ArrayRef<int64_t> e) { assign(e.begin(), e.end()); }
-  /*implicit*/ TensorShape(ArrayRef<uint32_t> e) { assign(e.begin(), e.end()); }
-  /*implicit*/ TensorShape(ArrayRef<uint64_t> e) { assign(e.begin(), e.end()); }
-  /*implicit*/ TensorShape(ArrayRef<ssize_t> elts) { this->operator=(elts); }
-  /*implicit*/ TensorShape(ArrayRef<size_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<int32_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { this->operator=(elts); }
 
   // Allow converting from a range of integer type, with elements that can be
   // converted to ssize_t.
@@ -240,20 +239,27 @@ public:
     assign(begin, end);
   }
 
-  TensorShape &operator=(ArrayRef<ssize_t> elements) {
+  TensorShape &operator=(ArrayRef<int64_t> elements) {
     storage.assign(elements);
     return *this;
   }
-  TensorShape &operator=(ArrayRef<size_t> elements) {
+  TensorShape &operator=(ArrayRef<uint64_t> elements) {
     // Pointer cast to avoid copying the elements.
     ArrayRef<ssize_t> castedElts((const ssize_t *)elements.data(),
                                  elements.size());
     return operator=(castedElts);
   }
 
+  /// Allow assigning from 32-bit and other element widths as well.
+  template <typename ElementType>
+  TensorShape &operator=(ArrayRef<ElementType> elements) {
+    assign(elements.begin(), elements.end());
+    return *this;
+  }
+
   template <typename IteratorType>
   void assign(IteratorType begin, IteratorType end) {
-    operator=(SmallVector<ssize_t, 6>(begin, end));
+    operator=(SmallVector<int64_t, 6>(begin, end));
   }
 
   uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
