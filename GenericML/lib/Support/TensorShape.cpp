@@ -24,10 +24,8 @@ bool Detail::TensorShapeStorage::equalsExcludingAuxOOL(
 }
 
 /// Bulk reassignment of elements.
-void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
-  auto beginIt = elements.begin();
-  auto endIt = elements.end();
-
+/// TODO: Forcing dimensions to 64-bit is suboptimal on 32-bit hosts.
+void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
   if (getRepKind() == RepKind::kOutOfLine)
     delete[] representation.repOutOfLine.dims;
 
@@ -36,7 +34,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   memset(&representation, 0, sizeof(representation) - 1);
 
   // Get and set the rank, regardless of the representation.
-  size_t rank = std::distance(beginIt, endIt);
+  size_t rank = elements.size();
   representation.repOutOfLine.rank = rank;
   assert(representation.repOutOfLine.rank == rank &&
          "can only handle rank up to 255");
@@ -46,30 +44,30 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   if (rank <= 4) {
     ssize_t dim;
     // Copy the iterator in case things don't work out.
-    auto endItCopy = endIt;
+    auto endIt = elements.end();
     switch (rank) {
     default:
       assert(0 && "unreachable");
     case 4:
-      dim = *--endItCopy;
+      dim = *--endIt;
       representation.rep32.dim3 = dim;
       if (representation.rep32.dim3 != dim)
         break; // Check for dimension too large.
       LLVM_FALLTHROUGH;
     case 3:
-      dim = *--endItCopy;
+      dim = *--endIt;
       representation.rep32.dims[2] = dim;
       if (representation.rep32.dims[2] != dim)
         break; // Check for dimension too large.
       LLVM_FALLTHROUGH;
     case 2:
-      dim = *--endItCopy;
+      dim = *--endIt;
       representation.rep32.dims[1] = dim;
       if (representation.rep32.dims[1] != dim)
         break; // Check for dimension too large.
       LLVM_FALLTHROUGH;
     case 1:
-      dim = *--endItCopy;
+      dim = *--endIt;
       representation.rep32.dims[0] = dim;
       if (representation.rep32.dims[0] != dim)
         break; // Check for dimension too large.
@@ -84,9 +82,9 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   if (rank <= 6) {
     size_t i;
     // Copy the iterator in case things don't work out.
-    auto beginItCopy = beginIt;
+    auto beginIt = elements.begin();
     for (i = 0; i < rank; ++i) {
-      ssize_t dim = *beginItCopy++;
+      ssize_t dim = *beginIt++;
       representation.rep16.dims[i] = dim;
       if (representation.rep16.dims[i] != dim)
         break;
@@ -100,7 +98,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   // Otherwise go out of line.
   representation.repOutOfLine.kind = RepKind::kOutOfLine;
   representation.repOutOfLine.dims = new ssize_t[rank];
-  std::copy(beginIt, endIt, representation.repOutOfLine.dims);
+  std::copy(elements.begin(), elements.end(), representation.repOutOfLine.dims);
 }
 
 //===----------------------------------------------------------------------===//
