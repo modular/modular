@@ -78,7 +78,7 @@ public:
     representation.rep32.auxillary = 0;
   }
   ~TensorShapeStorage() {
-    if (getRepKind() == RepKind::kOutOfLine)
+    if (isOutOfLine())
       delete[] representation.repOutOfLine.dims;
   }
 
@@ -92,7 +92,7 @@ public:
   }
   void operator=(const TensorShapeStorage &other) {
     memcpy(&representation, &other.representation, sizeof(representation));
-    if (getRepKind() == RepKind::kOutOfLine) {
+    if (isOutOfLine()) {
       representation.repOutOfLine.dims = new ssize_t[getRank()];
       memcpy(representation.repOutOfLine.dims,
              other.representation.repOutOfLine.dims, getRank() * sizeof(ssize_t));
@@ -177,90 +177,28 @@ public:
   iterator begin() const { return iterator(this, 0); }
   iterator end() const { return iterator(this, getRank()); }
 
-  // We do support bulk assignment.
-  template <typename IteratorType>
-  void assign(const IteratorType &beginIt, const IteratorType &endIt) {
-    if (getRepKind() == RepKind::kOutOfLine)
-      delete[] representation.repOutOfLine.dims;
-
-    // Zero-initialize to ensure the representation value is determinsitic.
-    // We do not zero out the auxillary field.
-    memset(&representation, 0, sizeof(representation) - 1);
-
-    // Get and set the rank, regardless of the representation.
-    size_t rank = std::distance(beginIt, endIt);
-    representation.repOutOfLine.rank = rank;
-    assert(representation.repOutOfLine.rank == rank &&
-           "can only handle rank up to 255");
-
-    // Decide which representation we can use and initialize the elements.  The
-    // most common case should fit into 4 dimensions.
-    if (rank <= 4) {
-      ssize_t dim;
-      // Copy the iterator in case things don't work out.
-      auto endItCopy = endIt;
-      switch (rank) {
-      default:
-        assert(0 && "unreachable");
-      case 4:
-        dim = *--endItCopy;
-        representation.rep32.dim3 = dim;
-        if (representation.rep32.dim3 != dim)
-          break; // Check for dimension too large.
-        LLVM_FALLTHROUGH;
-      case 3:
-        dim = *--endItCopy;
-        representation.rep32.dims[2] = dim;
-        if (representation.rep32.dims[2] != dim)
-          break; // Check for dimension too large.
-        LLVM_FALLTHROUGH;
-      case 2:
-        dim = *--endItCopy;
-        representation.rep32.dims[1] = dim;
-        if (representation.rep32.dims[1] != dim)
-          break; // Check for dimension too large.
-        LLVM_FALLTHROUGH;
-      case 1:
-        dim = *--endItCopy;
-        representation.rep32.dims[0] = dim;
-        if (representation.rep32.dims[0] != dim)
-          break; // Check for dimension too large.
-        LLVM_FALLTHROUGH;
-      case 0:
-        representation.rep32.kind = RepKind::k32;
-        return; // Success
-      }
-    }
-
-    // Virtually everything else will fit into 6 dimensions.
-    if (rank <= 6) {
-      size_t i;
-      // Copy the iterator in case things don't work out.
-      auto beginItCopy = beginIt;
-      for (i = 0; i < rank; ++i) {
-        ssize_t dim = *beginItCopy++;
-        representation.rep16.dims[i] = dim;
-        if (representation.rep16.dims[i] != dim)
-          break;
-      }
-      if (i == rank) {
-        representation.rep16.kind = RepKind::k16;
-        return; // Success
-      }
-    }
-
-    // Otherwise go out of line.
-    representation.repOutOfLine.kind = RepKind::kOutOfLine;
-    representation.repOutOfLine.dims = new ssize_t[rank];
-    std::copy(beginIt, endIt, representation.repOutOfLine.dims);
-  }
+  /// Bulk reassignment of elements.
+  void assign(ArrayRef<ssize_t> elements);
 
   bool equalsIncludingAux(const TensorShapeStorage &rhs) const {
+    if (isOutOfLine())
+      return equalsIncludingAuxOOL(rhs);
     return memcmp(&representation, &rhs.representation,
                   sizeof(representation)) == 0;
   }
 
+  bool equalsExcludingAux(const TensorShapeStorage &rhs) const {
+    if (isOutOfLine())
+      return equalsExcludingAuxOOL(rhs);
+    // The aux field is the last byte of the representation.
+    return memcmp(&representation, &rhs.representation,
+                  sizeof(representation) - 1) == 0;
+  }
+
 private:
+  bool equalsIncludingAuxOOL(const TensorShapeStorage &rhs) const;
+  bool equalsExcludingAuxOOL(const TensorShapeStorage &rhs) const;
+
   // Return the storage representation for this TensorShape.
   RepKind getRepKind() const {
     // Check the representations line up.
@@ -271,6 +209,8 @@ private:
     // can just access an arbitrary one.
     return representation.rep16.kind;
   }
+
+  bool isOutOfLine() const { return getRepKind() == RepKind::kOutOfLine; }
 };
 } // namespace Detail
 
@@ -283,19 +223,38 @@ public:
   TensorShape(TensorShape &&) = default;
   TensorShape &operator=(TensorShape &&) = default;
 
-  template <typename EltCollectionType>
-  TensorShape &operator=(const EltCollectionType &elements) {
-    storage.assign(elements.begin(), elements.end());
-    return *this;
-  }
-
   // Allow constructing from both 32/64-bit and signed/unsigned integer
   // elements.  These are defined explicitly (instead of as a template) so
   // implicit conversions from things like SmallVector will work.
-  /*implicit*/ TensorShape(ArrayRef<int32_t> elts) { *this = elts; }
-  /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { *this = elts; }
-  /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { *this = elts; }
-  /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { *this = elts; }
+  /*implicit*/ TensorShape(ArrayRef<int32_t> e) { assign(e.begin(), e.end()); }
+  /*implicit*/ TensorShape(ArrayRef<int64_t> e) { assign(e.begin(), e.end()); }
+  /*implicit*/ TensorShape(ArrayRef<uint32_t> e) { assign(e.begin(), e.end()); }
+  /*implicit*/ TensorShape(ArrayRef<uint64_t> e) { assign(e.begin(), e.end()); }
+  /*implicit*/ TensorShape(ArrayRef<ssize_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<size_t> elts) { this->operator=(elts); }
+
+  // Allow converting from a range of integer type, with elements that can be
+  // converted to ssize_t.
+  template <typename IteratorType>
+  TensorShape(IteratorType begin, IteratorType end) {
+    assign(begin, end);
+  }
+
+  TensorShape &operator=(ArrayRef<ssize_t> elements) {
+    storage.assign(elements);
+    return *this;
+  }
+  TensorShape &operator=(ArrayRef<size_t> elements) {
+    // Pointer cast to avoid copying the elements.
+    ArrayRef<ssize_t> castedElts((const ssize_t *)elements.data(),
+                                 elements.size());
+    return operator=(castedElts);
+  }
+
+  template <typename IteratorType>
+  void assign(IteratorType begin, IteratorType end) {
+    operator=(SmallVector<ssize_t, 6>(begin, end));
+  }
 
   uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
   void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
@@ -326,6 +285,11 @@ public:
   SmallVector<ssize_t, 5> getDims() const {
     return SmallVector<ssize_t, 5>(begin(), end());
   }
+
+  bool operator==(const TensorShape &rhs) const {
+    return storage.equalsExcludingAux(rhs.storage);
+  }
+  bool operator!=(const TensorShape &rhs) const { return !(*this == rhs); }
 
   std::string getAsString() const;
   void print(raw_ostream &os) const;
