@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the CompactTensorShape class.
+// This file declares the TensorShape class.
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,7 +17,7 @@
 #include "llvm/ADT/SmallVector.h"
 namespace M {
 
-class CompactTensorShape;
+class TensorShape;
 
 // Implementation details of TensorShapeImpl.
 void printTensorShape(ArrayRef<ssize_t> dims, raw_ostream &os);
@@ -89,7 +89,7 @@ namespace Detail {
 /// 16-byte format that is suitable for long term storage on the heap.  It is
 /// carefully laid out to hold common tensor sizes inline without losing support
 /// for the full generality of tensor shapes.
-class CompactTensorShapeStorage {
+class TensorShapeStorage {
   /// This supports two inline representations and an out-of-line one:
   ///  1) k16 can hold up to 6 dimensions when they fit into 16-bits.
   ///  2) k32 can hold up to 4 dimension where the first three fits in
@@ -139,25 +139,25 @@ class CompactTensorShapeStorage {
 
 public:
   // Default construct to zero-D shape.
-  CompactTensorShapeStorage() {
+  TensorShapeStorage() {
     representation.rep32.kind = RepKind::k32;
     representation.rep32.rank = 0;
     representation.rep32.auxillary = 0;
   }
-  ~CompactTensorShapeStorage() {
+  ~TensorShapeStorage() {
     if (getRepKind() == RepKind::kOutOfLine)
       delete[] representation.repOutOfLine.dims;
   }
 
-  CompactTensorShapeStorage(const CompactTensorShapeStorage &other) {
+  TensorShapeStorage(const TensorShapeStorage &other) {
     representation.rep32.kind = RepKind::k32;
     operator=(other);
   }
-  CompactTensorShapeStorage(CompactTensorShapeStorage &&other) {
+  TensorShapeStorage(TensorShapeStorage &&other) {
     representation.rep32.kind = RepKind::k32;
     operator=(other);
   }
-  void operator=(const CompactTensorShapeStorage &other) {
+  void operator=(const TensorShapeStorage &other) {
     memcpy(&representation, &other.representation, sizeof(representation));
     if (getRepKind() == RepKind::kOutOfLine) {
       representation.repOutOfLine.dims = new ssize_t[size()];
@@ -165,7 +165,7 @@ public:
              other.representation.repOutOfLine.dims, size() * sizeof(ssize_t));
     }
   }
-  void operator=(CompactTensorShapeStorage &&other) {
+  void operator=(TensorShapeStorage &&other) {
     memcpy(&representation, &other.representation, sizeof(representation));
     // Take ownership of an out-of-line pointer if present.
     other.representation.repOutOfLine.kind = RepKind::k16;
@@ -187,7 +187,7 @@ public:
   size_t size() const {
     static_assert(offsetof(Rep16, rank) == offsetof(Rep32, rank) &&
                       offsetof(Rep16, rank) == offsetof(RepOutOfLine, rank),
-                  "Layout mismatch inside of CompactTensorShape");
+                  "Layout mismatch inside of TensorShape");
     // Because all of the representations store their rank in the same place, we
     // can just access an arbitrary one.
     return representation.rep16.rank;
@@ -198,7 +198,7 @@ public:
     static_assert(offsetof(Rep16, auxillary) == offsetof(Rep32, auxillary) &&
                       offsetof(Rep16, auxillary) ==
                           offsetof(RepOutOfLine, auxillary),
-                  "Layout mismatch inside of CompactTensorShape");
+                  "Layout mismatch inside of TensorShape");
     // Because all of the representations store their auxillary in the same
     // place, we can just access an arbitrary one.
     return representation.rep16.auxillary;
@@ -213,7 +213,7 @@ public:
         llvm::iterator_facade_base<iterator, std::random_access_iterator_tag,
                                    ssize_t>;
 
-    iterator(const CompactTensorShapeStorage *shape, size_t dimIdx)
+    iterator(const TensorShapeStorage *shape, size_t dimIdx)
         : shape(shape), dimIdx(dimIdx) {}
 
     iterator &operator+=(Base::difference_type n) {
@@ -235,7 +235,7 @@ public:
     ssize_t operator*() const { return (*shape)[dimIdx]; }
 
   private:
-    const CompactTensorShapeStorage *shape;
+    const TensorShapeStorage *shape;
     size_t dimIdx;
   };
 
@@ -322,7 +322,7 @@ public:
     std::copy(beginIt, endIt, representation.repOutOfLine.dims);
   }
 
-  bool equalsIncludingAux(const CompactTensorShapeStorage &rhs) const {
+  bool equalsIncludingAux(const TensorShapeStorage &rhs) const {
     return memcmp(&representation, &rhs.representation,
                   sizeof(representation)) == 0;
   }
@@ -333,7 +333,7 @@ private:
     // Check the representations line up.
     static_assert(offsetof(Rep16, kind) == offsetof(Rep32, kind) &&
                       offsetof(Rep16, kind) == offsetof(RepOutOfLine, kind),
-                  "Layout mismatch inside of CompactTensorShape");
+                  "Layout mismatch inside of TensorShape");
     // Because all of the representations store their kind in the same place, we
     // can just access an arbitrary one.
     return representation.rep16.kind;
@@ -341,18 +341,17 @@ private:
 };
 } // namespace Detail
 
-class CompactTensorShape
-    : public TensorShapeImpl<Detail::CompactTensorShapeStorage> {
+class TensorShape : public TensorShapeImpl<Detail::TensorShapeStorage> {
 public:
   // This class has value semantics, implementing standard constructors,
   // assignment, copy construction etc.
-  CompactTensorShape() {}
-  CompactTensorShape(const CompactTensorShape &) = default;
-  CompactTensorShape(CompactTensorShape &&) = default;
-  CompactTensorShape &operator=(CompactTensorShape &&) = default;
+  TensorShape() {}
+  TensorShape(const TensorShape &) = default;
+  TensorShape(TensorShape &&) = default;
+  TensorShape &operator=(TensorShape &&) = default;
 
   template <typename EltCollectionType>
-  CompactTensorShape &operator=(const EltCollectionType &elements) {
+  TensorShape &operator=(const EltCollectionType &elements) {
     storage.assign(elements.begin(), elements.end());
     return *this;
   }
@@ -360,10 +359,10 @@ public:
   // Allow constructing from both 32/64-bit and signed/unsigned integer
   // elements.  These are defined explicitly (instead of as a template) so
   // implicit conversions from things like SmallVector will work.
-  /*implicit*/ CompactTensorShape(ArrayRef<int32_t> elts) { *this = elts; }
-  /*implicit*/ CompactTensorShape(ArrayRef<int64_t> elts) { *this = elts; }
-  /*implicit*/ CompactTensorShape(ArrayRef<uint32_t> elts) { *this = elts; }
-  /*implicit*/ CompactTensorShape(ArrayRef<uint64_t> elts) { *this = elts; }
+  /*implicit*/ TensorShape(ArrayRef<int32_t> elts) { *this = elts; }
+  /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { *this = elts; }
+  /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { *this = elts; }
+  /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { *this = elts; }
 
   uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
   void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
@@ -371,7 +370,7 @@ public:
   void dump() const;
 };
 
-static_assert(sizeof(CompactTensorShape) == 16, "TensorShape should not grow");
+static_assert(sizeof(TensorShape) == 16, "TensorShape should not grow");
 
 } // end namespace M
 

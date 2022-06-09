@@ -8,14 +8,14 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace M;
 
-void CompactTensorSpec::print(raw_ostream &os) const {
+void TensorSpec::print(raw_ostream &os) const {
   llvm::interleave(getDims(), os, "x");
   if (getRank() != 0)
     os << 'x';
   os << getEltType();
 }
 
-std::string CompactTensorSpec::getAsString() const {
+std::string TensorSpec::getAsString() const {
   std::string str;
   llvm::raw_string_ostream os(str);
   print(os);
@@ -26,4 +26,4 @@ std::string CompactTensorSpec::getAsString() const {
 // Dump methods
 //===----------------------------------------------------------------------===//
 
-void CompactTensorSpec::dump() const { print(llvm::errs()); }
+void TensorSpec::dump() const { print(llvm::errs()); }
