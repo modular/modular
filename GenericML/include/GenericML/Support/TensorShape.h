@@ -17,73 +17,6 @@
 #include "llvm/ADT/SmallVector.h"
 namespace M {
 
-class TensorShape;
-
-// Implementation details of TensorShapeImpl.
-void printTensorShape(ArrayRef<ssize_t> dims, raw_ostream &os);
-std::string getTensorShapeAsString(ArrayRef<ssize_t> dims);
-
-/// This is a common base class between TensorShape classes, providing a
-/// consistent API.  This is parameterized on `DimensionStorageType` which holds
-/// the dimension list itself.  This type is expected to have basic API for
-/// iteration, size, and subscripting - modeled by things like SmallVector,
-/// std::array, and custom storage types.
-template <typename DimensionStorageType>
-class TensorShapeImpl {
-public:
-  /// Return the number of dimensions in this shape.
-  size_t getRank() const { return storage.size(); }
-
-  /// Return the total number of elements in this tensor, which is the product
-  /// of all the dimension sizes.
-  size_t getNumElements() const {
-    size_t result = 1;
-    for (auto dim : *this)
-      result *= dim;
-    return result;
-  }
-
-  // Support the typical iteration and subscripting operations.
-  using iterator = typename DimensionStorageType::iterator;
-  iterator begin() { return storage.begin(); }
-  iterator end() { return storage.end(); }
-  using const_iterator = typename DimensionStorageType::const_iterator;
-  const_iterator begin() const { return storage.begin(); }
-  const_iterator end() const { return storage.end(); }
-
-  const ssize_t &operator[](size_t i) const { return storage[i]; }
-  ssize_t &operator[](size_t i) { return storage[i]; }
-
-  bool operator==(const TensorShapeImpl &rhs) const {
-    return storage == rhs.storage;
-  }
-
-  bool operator!=(const TensorShapeImpl &rhs) const { return !(*this == rhs); }
-
-  /// Return the dimensions as an unpacked SmallVector.
-  SmallVector<ssize_t, 5> getDims() const {
-    return SmallVector<ssize_t, 5>(begin(), end());
-  }
-
-  void print(raw_ostream &os) const { M::printTensorShape(getDims(), os); }
-
-  std::string getAsString() const {
-    return M::getTensorShapeAsString(getDims());
-  }
-
-protected:
-  TensorShapeImpl() {} // Derived class must choose to expose this (or not).
-  DimensionStorageType storage;
-};
-
-template <typename DimensionStorageType>
-inline raw_ostream &
-operator<<(raw_ostream &os,
-           const TensorShapeImpl<DimensionStorageType> &value) {
-  value.print(os);
-  return os;
-}
-
 namespace Detail {
 /// This class implements a storage class to hold tensor shapes in a compact
 /// 16-byte format that is suitable for long term storage on the heap.  It is
@@ -160,9 +93,9 @@ public:
   void operator=(const TensorShapeStorage &other) {
     memcpy(&representation, &other.representation, sizeof(representation));
     if (getRepKind() == RepKind::kOutOfLine) {
-      representation.repOutOfLine.dims = new ssize_t[size()];
+      representation.repOutOfLine.dims = new ssize_t[getRank()];
       memcpy(representation.repOutOfLine.dims,
-             other.representation.repOutOfLine.dims, size() * sizeof(ssize_t));
+             other.representation.repOutOfLine.dims, getRank() * sizeof(ssize_t));
     }
   }
   void operator=(TensorShapeStorage &&other) {
@@ -173,7 +106,7 @@ public:
 
   /// Read out element.
   ssize_t operator[](size_t idx) const {
-    assert(idx < size() && "invalid dimension #");
+    assert(idx < getRank() && "invalid dimension #");
     auto rep = getRepKind();
     if (rep == RepKind::k32)
       return idx != 3 ? representation.rep32.dims[idx]
@@ -184,7 +117,7 @@ public:
   }
 
   // Returns the rank.
-  size_t size() const {
+  size_t getRank() const {
     static_assert(offsetof(Rep16, rank) == offsetof(Rep32, rank) &&
                       offsetof(Rep16, rank) == offsetof(RepOutOfLine, rank),
                   "Layout mismatch inside of TensorShape");
@@ -242,7 +175,7 @@ public:
   // We cannot support mutation through the iterator.
   using const_iterator = iterator;
   iterator begin() const { return iterator(this, 0); }
-  iterator end() const { return iterator(this, size()); }
+  iterator end() const { return iterator(this, getRank()); }
 
   // We do support bulk assignment.
   template <typename IteratorType>
@@ -341,7 +274,7 @@ private:
 };
 } // namespace Detail
 
-class TensorShape : public TensorShapeImpl<Detail::TensorShapeStorage> {
+class TensorShape {
 public:
   // This class has value semantics, implementing standard constructors,
   // assignment, copy construction etc.
@@ -367,10 +300,47 @@ public:
   uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
   void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
 
+  /// Return the number of dimensions in this shape.
+  size_t getRank() const { return storage.getRank(); }
+
+  /// Return the total number of elements in this tensor, which is the product
+  /// of all the dimension sizes.
+  size_t getNumElements() const {
+    size_t result = 1;
+    for (auto dim : *this)
+      result *= dim;
+    return result;
+  }
+
+  // Support the typical iteration and subscripting operations.
+  using iterator = typename Detail::TensorShapeStorage::iterator;
+  iterator begin() { return storage.begin(); }
+  iterator end() { return storage.end(); }
+  using const_iterator = typename Detail::TensorShapeStorage::const_iterator;
+  const_iterator begin() const { return storage.begin(); }
+  const_iterator end() const { return storage.end(); }
+
+  ssize_t operator[](size_t i) const { return storage[i]; }
+
+  /// Return the dimensions as an unpacked SmallVector.
+  SmallVector<ssize_t, 5> getDims() const {
+    return SmallVector<ssize_t, 5>(begin(), end());
+  }
+
+  std::string getAsString() const;
+  void print(raw_ostream &os) const;
   void dump() const;
+
+protected:
+  Detail::TensorShapeStorage storage;
 };
 
 static_assert(sizeof(TensorShape) == 16, "TensorShape should not grow");
+
+inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
+  value.print(os);
+  return os;
+}
 
 } // end namespace M
 

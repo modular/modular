@@ -8,19 +8,15 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace M;
 
-void M::printTensorShape(ArrayRef<ssize_t> dims, raw_ostream &os) {
-  llvm::interleave(dims, os, "x");
+void TensorShape::print(raw_ostream &os) const {
+  llvm::interleave(getDims(), os, "x");
 }
 
-std::string M::getTensorShapeAsString(ArrayRef<ssize_t> dims) {
+std::string TensorShape::getAsString() const {
   std::string str;
   llvm::raw_string_ostream os(str);
-  printTensorShape(dims, os);
+  print(os);
   return os.str();
 }
-
-//===----------------------------------------------------------------------===//
-// Dump methods
-//===----------------------------------------------------------------------===//
 
 void TensorShape::dump() const { print(llvm::errs()); }
