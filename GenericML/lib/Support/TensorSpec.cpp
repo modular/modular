@@ -8,19 +8,17 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace M;
 
-void M::printTensorSpec(ArrayRef<ssize_t> dims, TensorEltType eltType,
-                        raw_ostream &os) {
-  llvm::interleave(dims, os, "x");
-  if (!dims.empty())
+void CompactTensorSpec::print(raw_ostream &os) const {
+  llvm::interleave(getDims(), os, "x");
+  if (getRank() != 0)
     os << 'x';
-  os << eltType;
+  os << getEltType();
 }
 
-std::string M::getTensorSpecAsString(ArrayRef<ssize_t> dims,
-                                     TensorEltType eltType) {
+std::string CompactTensorSpec::getAsString() const {
   std::string str;
   llvm::raw_string_ostream os(str);
-  printTensorSpec(dims, eltType, os);
+  print(os);
   return os.str();
 }
 
@@ -28,5 +26,4 @@ std::string M::getTensorSpecAsString(ArrayRef<ssize_t> dims,
 // Dump methods
 //===----------------------------------------------------------------------===//
 
-void TensorSpec::dump() const { print(llvm::errs()); }
 void CompactTensorSpec::dump() const { print(llvm::errs()); }

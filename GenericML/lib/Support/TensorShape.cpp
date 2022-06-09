@@ -23,6 +23,4 @@ std::string M::getTensorShapeAsString(ArrayRef<ssize_t> dims) {
 // Dump methods
 //===----------------------------------------------------------------------===//
 
-void TensorShape::dump() const { print(llvm::errs()); }
 void CompactTensorShape::dump() const { print(llvm::errs()); }
-
