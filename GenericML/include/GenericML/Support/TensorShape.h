@@ -11,7 +11,6 @@
 #ifndef GENERICML_SUPPORT_TENSORSHAPE_H
 #define GENERICML_SUPPORT_TENSORSHAPE_H
 
-#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
