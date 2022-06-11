@@ -18,6 +18,12 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+namespace M {
+namespace KGEN {
+class ParamDeclAttr;
+}
+} // namespace M
+
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.h.inc"
 

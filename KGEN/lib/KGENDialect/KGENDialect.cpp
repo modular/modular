@@ -32,6 +32,8 @@ using namespace KGEN;
 #include "KGEN/KGENDialect/KGENDialect.cpp.inc"
 
 void KGENDialect::initialize() {
+  registerAttributes();
+
   // Register operations.
   addOperations<
 #define GET_OP_LIST
