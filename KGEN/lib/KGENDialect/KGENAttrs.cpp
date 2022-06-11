@@ -105,7 +105,7 @@ static LogicalResult collectParameterUses(
 
   // Reject errant parameter decls.
   if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
-    op->emitError("invalid ParamDeclAttr outside of parameterDecls attribute ")
+    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
         << paramDecl;
     return failure();
   }
@@ -153,7 +153,7 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
   // to find the definitions and uses of parameters.
 
   // Parameter definitions, if any are present, should all be in a single
-  // `parameterDecls` attribute on an operation.  We restrict where declarations
+  // `paramDecls` attribute on an operation.  We restrict where declarations
   // can be found to make them easier to identify and work with.  Keep track of
   // all the parameters we find by their name, this allows detecting
   // redefinitions with different types.
@@ -175,8 +175,8 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // We handle parameterDecls below specially.
-      if (namedAttr.getName().strref() == "parameterDecls")
+      // We handle paramDecls below specially.
+      if (namedAttr.getName().strref() == "paramDecls")
         continue;
       // Scan the attribute tree looking or parameter uses and reject unexpected
       // parameter definitions.
@@ -190,7 +190,7 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
     }
 
     // Ok, check for parameter declarations as well.
-    auto arrayAttr = bodyOp->getAttrOfType<ArrayAttr>("parameterDecls");
+    auto arrayAttr = bodyOp->getAttrOfType<ArrayAttr>("paramDecls");
     if (!arrayAttr)
       return;
 
@@ -198,8 +198,7 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
       // All the members of this array must be ParamDeclAttr's.
       auto param = attr.dyn_cast<ParamDeclAttr>();
       if (!param) {
-        bodyOp->emitError("unknown attribute kind in parameterDecls list ")
-            << attr;
+        bodyOp->emitError("unknown attribute kind in paramDecls list ") << attr;
         hadError = true;
         return;
       }

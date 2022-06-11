@@ -25,7 +25,7 @@ void GeneratorOp::build(OpBuilder &builder, OperationState &state,
                         StringAttr name, ArrayAttr parameters,
                         ArrayRef<Type> inputTypes, ArrayRef<Type> resultTypes,
                         ArrayRef<NamedAttribute> attrs) {
-  state.addAttribute("parameterDecls", parameters);
+  state.addAttribute("paramDecls", parameters);
   buildWithEntryBlock(builder, state, name,
                       builder.getFunctionType(inputTypes, resultTypes), attrs,
                       inputTypes);
@@ -90,7 +90,7 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
                              isVariadic, resultTypes, resultAttrs))
     return failure();
 
-  result.addAttribute("parameterDecls", builder.getArrayAttr(parameters));
+  result.addAttribute("paramDecls", builder.getArrayAttr(parameters));
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -171,13 +171,13 @@ void GeneratorOp::print(OpAsmPrinter &p) {
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
 
-  printParameterList(op->getAttrOfType<ArrayAttr>("parameterDecls"), p);
+  printParameterList(op->getAttrOfType<ArrayAttr>("paramDecls"), p);
 
   ArrayRef<Type> argTypes = getArgumentTypes();
   ArrayRef<Type> resultTypes = getResultTypes();
   printFunctionSignature(p, *this, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(p, *this, argTypes.size(), resultTypes.size(),
-                          {visibilityAttrName, "parameterDecls"});
+                          {visibilityAttrName, "paramDecls"});
 
   p << ' ';
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
