@@ -22,7 +22,7 @@ def GeneratorOp
                          SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Kernel generator definition";
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$parameterDecls);
+                       ParamDeclArrayAttr:$paramDecls);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -44,7 +44,7 @@ def GeneratorOp
   let builders = [
     /// Create a new kgen.invokable with an empty body.
     OpBuilder<(ins "StringAttr":$name,
-                   "ArrayAttr":$parameterDecls,
+                   "ArrayAttr":$paramDecls,
                    "ArrayRef<Type>":$inputTypes,
                    "ArrayRef<Type>":$resultTypes,
                    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
