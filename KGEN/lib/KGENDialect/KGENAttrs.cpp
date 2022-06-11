@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -57,4 +58,27 @@ Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
 
 void ParamDeclAttr::print(AsmPrinter &p) const {
   p << "<" << getName() << ": " << getType() << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// ParamDeclRefAttr
+//===----------------------------------------------------------------------===//
+
+Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
+  StringAttr name;
+  if (p.parseLess() || p.parseAttribute(name, p.getBuilder().getNoneType()))
+    return {};
+
+  // If we have no contextual type then it must be present.
+  if (!type && p.parseColonType(type))
+    return {};
+
+  if (p.parseGreater())
+    return {};
+
+  return ParamDeclRefAttr::get(name, type);
+}
+
+void ParamDeclRefAttr::print(AsmPrinter &p) const {
+  p << "<" << getName() << ">";
 }
