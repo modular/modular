@@ -52,8 +52,17 @@ void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
-  llvm::errs() << "Should never parse raw\n";
-  abort();
+  if (type) {
+    p.emitError(p.getNameLoc(), "unexpected contextual type in attribute");
+    return {};
+  }
+
+  StringAttr name;
+  if (p.parseLess() || p.parseAttribute(name, p.getBuilder().getNoneType()) ||
+      p.parseColonType(type) || p.parseGreater())
+    return {};
+
+  return ParamDeclAttr::get(name, type);
 }
 
 void ParamDeclAttr::print(AsmPrinter &p) const {
@@ -81,4 +90,160 @@ Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
 
 void ParamDeclRefAttr::print(AsmPrinter &p) const {
   p << "<" << getName() << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// Parameter Verification
+//===----------------------------------------------------------------------===//
+
+/// Scan the specified attribute and its recursive uses, diagnosing incorrect
+/// parameter declarations and collecting parameter uses.
+static LogicalResult collectParameterUses(
+    Attribute attr, Operation *op,
+    SmallVectorImpl<std::pair<ParamDeclRefAttr, Operation *>> &parameterUses,
+    llvm::SmallDenseSet<Attribute> &parameterLessAttrs) {
+
+  // Reject errant parameter decls.
+  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
+    op->emitError("invalid ParamDeclAttr outside of parameterDecls attribute ")
+        << paramDecl;
+    return failure();
+  }
+
+  // Collect parameter references.
+  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+    parameterUses.push_back({paramRef, op});
+    return success();
+  }
+
+  // If this attribute has no sub-attributes or we have already scanned it an
+  // know that it has no parameters in it, return early.
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr, TypeAttr>() ||
+      // TODO: Handle TypeAttr for parameterized types.
+      parameterLessAttrs.count(attr))
+    return success();
+
+  // Otherwise we need to recursively process attributes that we know about.
+  size_t oldSize = parameterUses.size();
+  if (auto array = attr.dyn_cast<ArrayAttr>()) {
+    for (auto elt : array)
+      if (failed(
+              collectParameterUses(elt, op, parameterUses, parameterLessAttrs)))
+        return failure();
+  } else {
+    // FIXME: hard coding specific attributes is really problematic, doesn't
+    // MLIR have a generic way to walk sub-attributes?
+    return op->emitError("unknown attribute for parameterization: ") << attr;
+    return failure();
+  }
+
+  // If the attribute had no uses, remember that so we don't have to re-scan it
+  // in the future.
+  if (oldSize == parameterUses.size())
+    parameterLessAttrs.insert(attr);
+
+  return success();
+}
+
+/// Scan the body of the specified operation checking invariants on
+/// parameters, diagnosing errors and returning failure if so.  This is used
+/// by verifiers for ops with bodies, like kgen.generator.
+LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
+  // Start by doing a pass over the operation and all the operations in its body
+  // to find the definitions and uses of parameters.
+
+  // Parameter definitions, if any are present, should all be in a single
+  // `parameterDecls` attribute on an operation.  We restrict where declarations
+  // can be found to make them easier to identify and work with.  Keep track of
+  // all the parameters we find by their name, this allows detecting
+  // redefinitions with different types.
+  SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> paramDecls;
+
+  // Parameter uses can occur in any attribute and even in in types.  We collect
+  // all the uses we see by their operation.  Remember that attributes are
+  // uniqued, so the same ParamDeclRefAttr can be used by multiple operations,
+  // or even multiple times in the same operation.
+  SmallVector<std::pair<ParamDeclRefAttr, Operation *>> parameterUses;
+
+  // This is slow and expensive so we need to memoize the attributes and types
+  // we've already checked.
+  llvm::SmallDenseSet<Attribute> parameterLessAttrs;
+  // TODO: parameterLessTypes.
+
+  bool hadError = false;
+  topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+    // Scan all the attributes and types to look for uses of parameters.  We let
+    // the walker scan the region hierarchy.
+    for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
+      // We handle parameterDecls below specially.
+      if (namedAttr.getName().strref() == "parameterDecls")
+        continue;
+      // Scan the attribute tree looking or parameter uses and reject unexpected
+      // parameter definitions.
+      if (failed(collectParameterUses(namedAttr.getValue(), bodyOp,
+                                      parameterUses, parameterLessAttrs))) {
+        hadError = true;
+        break;
+      }
+
+      // TODO: Look into types when we support parameterized types.
+    }
+
+    // Ok, check for parameter declarations as well.
+    auto arrayAttr = bodyOp->getAttrOfType<ArrayAttr>("parameterDecls");
+    if (!arrayAttr)
+      return;
+
+    for (Attribute attr : arrayAttr) {
+      // All the members of this array must be ParamDeclAttr's.
+      auto param = attr.dyn_cast<ParamDeclAttr>();
+      if (!param) {
+        bodyOp->emitError("unknown attribute kind in parameterDecls list ")
+            << attr;
+        hadError = true;
+        return;
+      }
+
+      // We cannot have any redefinitions.
+      auto &opAndDeclAttr = paramDecls[param.getName()];
+      if (opAndDeclAttr.first) {
+        auto diag = bodyOp->emitError("redeclaration of parameter ")
+                    << param.getName();
+        diag.attachNote(opAndDeclAttr.first->getLoc())
+            << "previous declaration here";
+        hadError = true;
+        return;
+      }
+      opAndDeclAttr = {bodyOp, param};
+    }
+  });
+
+  if (hadError)
+    return failure();
+
+  // Ok, now that we know the set of parameters we have to process, verify that
+  // the uses match up and that we have a proper partial order relationship
+  // between of definitions and uses.
+  for (auto &[paramRefAttr, usingOp] : parameterUses) {
+    // Check the use is referring to a parameter that was defined.
+    auto decl = paramDecls[paramRefAttr.getName()];
+    if (!decl.first) {
+      usingOp->emitError("invalid use of parameter with no declaration ")
+          << paramRefAttr.getName();
+      return failure();
+    }
+
+    // Check that the types of the uses match the defs.
+    if (decl.second.getType().getValue() != paramRefAttr.getType()) {
+      auto diag = usingOp->emitError("invalid reference to parameter ")
+                  << paramRefAttr;
+      diag.attachNote(decl.first->getLoc())
+          << "parameter defined as " << decl.second;
+      return failure();
+    }
+
+    // FIXME: Check partial ordering.
+  }
+
+  return success();
 }

@@ -25,7 +25,7 @@ void GeneratorOp::build(OpBuilder &builder, OperationState &state,
                         StringAttr name, ArrayAttr parameters,
                         ArrayRef<Type> inputTypes, ArrayRef<Type> resultTypes,
                         ArrayRef<NamedAttribute> attrs) {
-  state.addAttribute("parameters", parameters);
+  state.addAttribute("parameterDecls", parameters);
   buildWithEntryBlock(builder, state, name,
                       builder.getFunctionType(inputTypes, resultTypes), attrs,
                       inputTypes);
@@ -90,7 +90,7 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
                              isVariadic, resultTypes, resultAttrs))
     return failure();
 
-  result.addAttribute("parameters", builder.getArrayAttr(parameters));
+  result.addAttribute("parameterDecls", builder.getArrayAttr(parameters));
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -171,13 +171,13 @@ void GeneratorOp::print(OpAsmPrinter &p) {
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
 
-  printParameterList(op->getAttrOfType<ArrayAttr>("parameters"), p);
+  printParameterList(op->getAttrOfType<ArrayAttr>("parameterDecls"), p);
 
   ArrayRef<Type> argTypes = getArgumentTypes();
   ArrayRef<Type> resultTypes = getResultTypes();
   printFunctionSignature(p, *this, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(p, *this, argTypes.size(), resultTypes.size(),
-                          {visibilityAttrName, "parameters"});
+                          {visibilityAttrName, "parameterDecls"});
 
   p << ' ';
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
@@ -185,7 +185,11 @@ void GeneratorOp::print(OpAsmPrinter &p) {
 }
 
 LogicalResult GeneratorOp::verifyRegions() {
-  return getReturnOp().checkArgumentTypes(getResultTypes());
+  if (failed(getReturnOp().checkArgumentTypes(getResultTypes())) ||
+      failed(checkParametersInOpBody(*this)))
+    return failure();
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
