@@ -5,6 +5,7 @@
 #===-----------------------------------------------------------------------===##
 
 add_mlir_library(KGENDialect
+  KGENAttrs.cpp
   KGENDialect.cpp
   KGENOps.cpp
 

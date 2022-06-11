@@ -18,6 +18,7 @@ include "KGEN/KGENDialect/KGENDialect.td"
 class KGENOp<string mnemonic, list<Trait> traits = []> :
     Op<KGENDialect, mnemonic, traits>;
 
+include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENOps.td"
 
 #endif // KGEN_TD

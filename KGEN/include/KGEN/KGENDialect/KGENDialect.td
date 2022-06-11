@@ -24,6 +24,17 @@ def KGENDialect : Dialect {
 
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
+
+
+  let extraClassDeclaration = [{
+    /// Register all HW attributes.
+    void registerAttributes();
+
+    mlir::Attribute parseAttribute(mlir::DialectAsmParser &p,
+                                   mlir::Type type) const override;
+    void printAttribute(mlir::Attribute attr, 
+                        mlir::DialectAsmPrinter &p) const override;
+   }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENDIALECT_TD
