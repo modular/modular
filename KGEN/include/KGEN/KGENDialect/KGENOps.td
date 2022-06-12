@@ -73,13 +73,18 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
     ```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+  let arguments = (ins ParamBindArrayAttr:$parameters,
+                       Variadic<AnyType>:$operands);
+  let assemblyFormat = [{
+    custom<ParameterBindings>($parameters) attr-dict
+    ($operands^ `:` type($operands))?
+  }];
 
   let extraClassDeclaration = [{
     /// Verify that the operands of this ReturnOp match the specified set of
     /// types.
-    LogicalResult checkArgumentTypes(TypeRange types);
+    LogicalResult checkArgumentTypes(ArrayRef<Attribute> paramDecls,
+                                     TypeRange types);
   }];
 }
 

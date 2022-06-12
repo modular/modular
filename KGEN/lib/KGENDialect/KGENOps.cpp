@@ -18,6 +18,50 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// custom<ParameterBindings>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParameterBindings(OpAsmParser &parser,
+                                          ArrayAttr &value) {
+  SmallVector<Attribute> elts;
+  if (parser.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
+            std::string name;
+            Type type;
+            Attribute value;
+            if (parser.parseKeywordOrString(&name) ||
+                parseColonTypeOrSI64(parser, type) || parser.parseEqual() ||
+                parser.parseAttribute(value, type))
+              return failure();
+            elts.push_back(ParamBindAttr::get(name, type, value));
+            return success();
+          }))
+    return failure();
+
+  value = parser.getBuilder().getArrayAttr(elts);
+  return success();
+}
+
+static void printParameterBindings(OpAsmPrinter &p, Operation *op,
+                                   ArrayAttr value) {
+  if (value.empty())
+    return;
+  p << '<';
+
+  auto printParamBinding = [&](Attribute attr) {
+    auto bind = attr.cast<ParamBindAttr>();
+    p.printKeywordOrString(bind.getName());
+    if (!bind.getType().isSignedInteger(64))
+      p << ": " << bind.getType();
+    p << " = ";
+    p.printAttributeWithoutType(bind.getValue());
+  };
+
+  llvm::interleaveComma(value, p, printParamBinding);
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
@@ -45,14 +89,9 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
   auto parseParamDecl = [&]() -> ParseResult {
     std::string name;
     Type type;
-    if (parser.parseKeywordOrString(&name))
+    if (parser.parseKeywordOrString(&name) ||
+        parseColonTypeOrSI64(parser, type))
       return failure();
-    if (succeeded(parser.parseOptionalColon())) {
-      if (parser.parseType(type))
-        return failure();
-    } else {
-      type = parser.getBuilder().getIntegerType(64, /*isSigned=*/true);
-    }
     paramDecls.push_back(ParamDeclAttr::get(name, type));
     return success();
   };
@@ -172,8 +211,8 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
 
   auto printParamDecl = [&](Attribute param) {
     auto paramAttr = param.cast<ParamDeclAttr>();
-    p << paramAttr.getName().getValue();
-    if (!paramAttr.getType().getValue().isSignedInteger(64))
+    p.printKeywordOrString(paramAttr.getName().getValue());
+    if (!paramAttr.getType().isSignedInteger(64))
       p << ": " << paramAttr.getType();
   };
 
@@ -181,13 +220,12 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
   if (numInputs == 0) {
     p << "()";
   } else {
-    llvm::interleaveComma(
-        llvm::drop_end(parameters, parameters.size() - numInputs), p,
-        printParamDecl);
+    llvm::interleaveComma(parameters.getValue().take_front(numInputs), p,
+                          printParamDecl);
   }
   if (numInputs != parameters.size()) {
     p << " -> ";
-    llvm::interleaveComma(llvm::drop_begin(parameters, numInputs), p,
+    llvm::interleaveComma(parameters.getValue().drop_front(numInputs), p,
                           printParamDecl);
   }
 
@@ -211,8 +249,7 @@ void GeneratorOp::print(OpAsmPrinter &p) {
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
 
-  printParameterList(op->getAttrOfType<ArrayAttr>("paramDecls"),
-                     getNumInputParameters(), p);
+  printParameterList(getParamDecls(), getNumInputParameters(), p);
 
   ArrayRef<Type> argTypes = getArgumentTypes();
   ArrayRef<Type> resultTypes = getResultTypes();
@@ -227,7 +264,9 @@ void GeneratorOp::print(OpAsmPrinter &p) {
 }
 
 LogicalResult GeneratorOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(getResultTypes())) ||
+  if (failed(getReturnOp().checkArgumentTypes(
+          getParamDecls().getValue().drop_front(getNumInputParameters()),
+          getResultTypes())) ||
       failed(checkParametersInOpBody(*this)))
     return failure();
 
@@ -240,7 +279,26 @@ LogicalResult GeneratorOp::verifyRegions() {
 
 /// Containers verify that the operands of this ReturnOp match the specified set
 /// of types.
-LogicalResult ReturnOp::checkArgumentTypes(TypeRange types) {
+LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Attribute> paramDecls,
+                                           TypeRange types) {
+  // Check the parameters match up.
+  auto returnedParams = getParameters();
+  if (returnedParams.size() != paramDecls.size())
+    return emitOpError("expected ")
+           << paramDecls.size() << " parameters for enclosing op";
+
+  for (size_t i = 0, e = returnedParams.size(); i != e; ++i) {
+    auto returned = returnedParams[i].cast<ParamBindAttr>();
+    auto decl = paramDecls[i].cast<ParamDeclAttr>();
+    if (returned.getName() != decl.getName())
+      return emitOpError("parameter #")
+             << i << " is named " << returned.getName() << " but should be "
+             << decl.getName();
+    if (returned.getType() != decl.getType())
+      return emitOpError("parameter #") << i << " has type " << returned
+                                        << " but should be " << decl.getType();
+  }
+
   // Verify our result types match up with the enclosing result type.
   if (getNumOperands() != types.size())
     return emitOpError("expected ")

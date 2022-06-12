@@ -19,6 +19,10 @@ namespace M::KGEN {
 /// diagnosing errors and returning failure if so.  This is used by verifiers
 /// for ops with bodies, like kgen.generator.
 LogicalResult checkParametersInOpBody(Operation *op);
+
+/// Parse a "colon type" production if present or default to si64 if not.  This
+/// is commonly used in our parameter representation.
+ParseResult parseColonTypeOrSI64(OpAsmParser &parser, Type &type);
 } // namespace M::KGEN
 
 #endif // KGEN_KGENATTRIBUTES_H
