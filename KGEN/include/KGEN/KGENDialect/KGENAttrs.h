@@ -23,6 +23,15 @@ LogicalResult checkParametersInOpBody(Operation *op);
 /// Parse a "colon type" production if present or default to si64 if not.  This
 /// is commonly used in our parameter representation.
 ParseResult parseColonTypeOrSI64(OpAsmParser &parser, Type &type);
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the printed syntax easier to grok.
+void printParameterValue(OpAsmPrinter &p, Attribute value, Type type);
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the parsed syntax easier to grok.
+ParseResult parseParameterValue(OpAsmParser &p, Type type, Attribute &value);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENATTRIBUTES_H

@@ -58,6 +58,39 @@ void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ParameterValue printing and parsing.
+//===----------------------------------------------------------------------===//
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the parsed syntax easier to grok.
+ParseResult KGEN::parseParameterValue(OpAsmParser &p, Type type,
+                                      Attribute &value) {
+  std::string bareword;
+  // barewords are implicitly parameter declaration references.
+  if (succeeded(p.parseOptionalKeywordOrString(&bareword))) {
+    value = ParamDeclRefAttr::get(bareword, type);
+    return success();
+  }
+
+  // Otherwise, we support other typed attributes as well, including dialect
+  // define attributes, integers, etc.
+  return p.parseAttribute(value, type);
+}
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the printed syntax easier to grok.
+void KGEN::printParameterValue(OpAsmPrinter &p, Attribute value, Type type) {
+  assert(type && "parameter's should always have a contextual type!");
+  if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
+    assert(type == declRef.getType() && "type mismatch in emission?");
+    p.printKeywordOrString(declRef.getName());
+    return;
+  }
+
+  p.printAttributeWithoutType(value);
+}
+
+//===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
 
