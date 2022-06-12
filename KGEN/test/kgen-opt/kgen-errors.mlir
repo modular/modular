@@ -3,7 +3,7 @@
 kgen.generator @test() {
   // expected-error @+1 {{invalid use of parameter with no declaration "p"}}
   "someop" () {
-    attr = #kgen.param.decl.ref<"p" : i1>
+    attr = #kgen.param.decl.ref<"p"> : i1
   } : () -> ()
   kgen.return
 }

@@ -12,5 +12,9 @@ set(LLVM_TARGET_DEFINITIONS KGEN.td)
 mlir_tablegen(KGENAttrs.h.inc -gen-attrdef-decls -dialect=kgen)
 mlir_tablegen(KGENAttrs.cpp.inc -gen-attrdef-defs -dialect=kgen)
 add_public_tablegen_target(MLIRKGENAttrsIncGen)
-
 add_dependencies(MLIRKGENIncGen MLIRKGENAttrsIncGen)
+
+mlir_tablegen(KGENEnums.h.inc -gen-enum-decls)
+mlir_tablegen(KGENEnums.cpp.inc -gen-enum-defs)
+add_public_tablegen_target(MLIRKGENEnumsIncGen)
+add_dependencies(MLIRKGENIncGen MLIRKGENEnumsIncGen)

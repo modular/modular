@@ -14,6 +14,9 @@
 using namespace M;
 using namespace M::KGEN;
 
+// Provide implementations for the enums we use.
+#include "KGEN/KGENDialect/KGENEnums.cpp.inc"
+
 /// Parse a "colon type" production if present or default to si64 if not.  This
 /// is commonly used in our parameter representation.
 ParseResult KGEN::parseColonTypeOrSI64(OpAsmParser &parser, Type &type) {
@@ -34,8 +37,28 @@ void KGEN::printColonTypeOrSI64(OpAsmPrinter &p, Type type) {
 // ODS Boilerplate
 //===----------------------------------------------------------------------===//
 
+namespace mlir {
+/// Parse an attribute.
+template <>
+struct FieldParser<PEO> {
+  static FailureOr<PEO> parse(AsmParser &parser) {
+    StringRef value;
+    if (parser.parseKeyword(&value))
+      return failure();
+    auto result = symbolizePEO(value);
+    if (result.hasValue())
+      return *result;
+    return failure();
+  }
+};
+} // namespace mlir
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// KGENDialect attribute support
+//===----------------------------------------------------------------------===//
 
 void KGENDialect::registerAttributes() {
   addAttributes<
@@ -142,10 +165,10 @@ void ParamDeclAttr::print(AsmPrinter &p) const {
 
 Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
   std::string name;
-  if (p.parseLess() || p.parseKeywordOrString(&name))
+  if (p.parseLess() || p.parseKeywordOrString(&name) || p.parseGreater())
     return {};
 
-  // If we have no contextual type then it must be present.
+  // If no type was present, parse it now.
   if (!type) {
     if (p.parseColonType(type))
       return {};
@@ -165,14 +188,11 @@ Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
     }
   }
 
-  if (p.parseGreater())
-    return {};
-
   return ParamDeclRefAttr::get(name, type);
 }
 
 void ParamDeclRefAttr::print(AsmPrinter &p) const {
-  p << "<" << getName() << ": " << getType() << ">";
+  p << "<" << getName() << ">";
 }
 
 //===----------------------------------------------------------------------===//
@@ -194,6 +214,31 @@ void ParamBindAttr::print(AsmPrinter &p) const {
   p << "<" << getName() << ": " << getType() << " = ";
   p.printAttributeWithoutType(getValue());
   p << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// ParamExprAttr
+//===----------------------------------------------------------------------===//
+
+/// Build a parameter expression.  This automatically canonicalizes and
+/// folds, so it may not necessarily return a ParamExprAttr.
+Attribute ParamExprAttr::get(PEO opcode, ArrayRef<Attribute> operandsIn) {
+  assert(!operandsIn.empty() && "Cannot have expr with no operands");
+  // All operands must have the same type, which is the type of the result.
+  auto type = operandsIn.front().getType();
+  assert(llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == type; }));
+
+  return Base::get(operandsIn[0].getContext(), opcode, operandsIn, type);
+}
+
+/// Builder used by the generic parser.
+Attribute ParamExprAttr::get(MLIRContext *ctx, PEO opcode,
+                             ArrayRef<Attribute> operands, Type type) {
+  auto result = get(opcode, operands);
+  assert((!type || result.getType() == type) && "unexpected types");
+  assert(ctx == result.getContext());
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -230,14 +275,21 @@ static LogicalResult collectParameterUses(
   // Otherwise we need to recursively process attributes that we know about.
   size_t oldSize = parameterUses.size();
   if (auto array = attr.dyn_cast<ArrayAttr>()) {
-    for (auto elt : array)
+    for (auto elt : array) {
       if (failed(
               collectParameterUses(elt, op, parameterUses, parameterLessAttrs)))
         return failure();
+    }
   } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
     if (failed(collectParameterUses(bind.getValue(), op, parameterUses,
                                     parameterLessAttrs)))
       return failure();
+  } else if (auto expr = attr.dyn_cast<ParamExprAttr>()) {
+    for (auto operand : expr.getOperands()) {
+      if (failed(collectParameterUses(operand, op, parameterUses,
+                                      parameterLessAttrs)))
+        return failure();
+    }
   } else {
     // FIXME: hard coding specific attributes is really problematic, doesn't
     // MLIR have a generic way to walk sub-attributes?
