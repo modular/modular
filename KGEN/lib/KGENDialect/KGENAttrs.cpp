@@ -24,6 +24,12 @@ ParseResult KGEN::parseColonTypeOrSI64(OpAsmParser &parser, Type &type) {
   return success();
 }
 
+/// print `: <type>` or elide it entirely if type is an si64.
+void KGEN::printColonTypeOrSI64(OpAsmPrinter &p, Type type) {
+  if (!type.isSignedInteger(64))
+    p << ": " << type;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
 //===----------------------------------------------------------------------===//
@@ -58,13 +64,12 @@ void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterValue printing and parsing.
+// ParamValue printing and parsing.
 //===----------------------------------------------------------------------===//
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult KGEN::parseParameterValue(OpAsmParser &p, Type type,
-                                      Attribute &value) {
+ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
   std::string bareword;
   // barewords are implicitly parameter declaration references.
   if (succeeded(p.parseOptionalKeywordOrString(&bareword))) {
@@ -79,7 +84,7 @@ ParseResult KGEN::parseParameterValue(OpAsmParser &p, Type type,
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParameterValue(OpAsmPrinter &p, Attribute value, Type type) {
+void KGEN::printParamValue(OpAsmPrinter &p, Attribute value, Type type) {
   assert(type && "parameter's should always have a contextual type!");
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
     assert(type == declRef.getType() && "type mismatch in emission?");
@@ -88,6 +93,25 @@ void KGEN::printParameterValue(OpAsmPrinter &p, Attribute value, Type type) {
   }
 
   p.printAttributeWithoutType(value);
+}
+
+//===----------------------------------------------------------------------===//
+// TypedParamValue printing and parsing.
+//===----------------------------------------------------------------------===//
+
+ParseResult KGEN::parseTypedParamValue(OpAsmParser &p, Attribute &value,
+                                       Type &resultType) {
+  if (parseColonTypeOrSI64(p, resultType) || p.parseEqual() ||
+      parseParamValue(p, value, resultType))
+    return failure();
+  return success();
+}
+
+void KGEN::printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
+                                Type resultType) {
+  printColonTypeOrSI64(p, resultType);
+  p << " = ";
+  printParamValue(p, value, resultType);
 }
 
 //===----------------------------------------------------------------------===//

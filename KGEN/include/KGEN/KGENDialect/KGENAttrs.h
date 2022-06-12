@@ -24,13 +24,21 @@ LogicalResult checkParametersInOpBody(Operation *op);
 /// is commonly used in our parameter representation.
 ParseResult parseColonTypeOrSI64(OpAsmParser &parser, Type &type);
 
+/// print `: <type>` or elide it entirely if type is an si64.
+void printColonTypeOrSI64(OpAsmPrinter &p, Type type);
+
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParameterValue(OpAsmPrinter &p, Attribute value, Type type);
+void printParamValue(OpAsmPrinter &p, Attribute value, Type type);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParameterValue(OpAsmParser &p, Type type, Attribute &value);
+ParseResult parseParamValue(OpAsmParser &p, Attribute &value, Type type);
+
+ParseResult parseTypedParamValue(OpAsmParser &p, Attribute &value,
+                                 Type &resultType);
+void printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
+                          Type resultType);
 
 } // namespace M::KGEN
 
