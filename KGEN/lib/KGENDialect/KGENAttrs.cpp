@@ -119,25 +119,6 @@ void KGEN::printParamValue(OpAsmPrinter &p, Attribute value, Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// TypedParamValue printing and parsing.
-//===----------------------------------------------------------------------===//
-
-ParseResult KGEN::parseTypedParamValue(OpAsmParser &p, Attribute &value,
-                                       Type &resultType) {
-  if (parseColonTypeOrSI64(p, resultType) || p.parseEqual() ||
-      parseParamValue(p, value, resultType))
-    return failure();
-  return success();
-}
-
-void KGEN::printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
-                                Type resultType) {
-  printColonTypeOrSI64(p, resultType);
-  p << " = ";
-  printParamValue(p, value, resultType);
-}
-
-//===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
 

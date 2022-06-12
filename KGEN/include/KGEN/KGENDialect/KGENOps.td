@@ -66,7 +66,7 @@ def ParamValueOp : KGENOp<"param.value",
   let arguments = (ins AnyAttr:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat =
-     "custom<TypedParamValue>($value, qualified(type($result))) attr-dict";
+     "custom<ParamValueOpValue>($value, qualified(type($result))) attr-dict";
   let hasFolder = true;
 }
 

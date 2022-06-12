@@ -18,26 +18,46 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// custom<ParamValueOpValue>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamValueOpValue(OpAsmParser &p, Attribute &value,
+                                          Type &resultType) {
+  if (parseColonTypeOrSI64(p, resultType) || p.parseEqual() || p.parseLess() ||
+      parseParamValue(p, value, resultType) || p.parseGreater())
+    return failure();
+  return success();
+}
+
+static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
+                                   Attribute value, Type type) {
+  printColonTypeOrSI64(p, type);
+  p << " = <";
+  printParamValue(p, value, type);
+  p << ">";
+}
+
+//===----------------------------------------------------------------------===//
 // custom<ParameterBindings>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParameterBindings(OpAsmParser &parser,
-                                          ArrayAttr &value) {
+static ParseResult parseParameterBindings(OpAsmParser &p, ArrayAttr &value) {
   SmallVector<Attribute> elts;
-  if (parser.parseCommaSeparatedList(
+  if (p.parseCommaSeparatedList(
           OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
             std::string name;
             Type type;
             Attribute value;
-            if (parser.parseKeywordOrString(&name) ||
-                parseTypedParamValue(parser, value, type))
+            if (p.parseKeywordOrString(&name) ||
+                parseColonTypeOrSI64(p, type) || p.parseEqual() ||
+                parseParamValue(p, value, type))
               return failure();
             elts.push_back(ParamBindAttr::get(name, type, value));
             return success();
           }))
     return failure();
 
-  value = parser.getBuilder().getArrayAttr(elts);
+  value = p.getBuilder().getArrayAttr(elts);
   return success();
 }
 
@@ -46,14 +66,13 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
   if (value.empty())
     return;
   p << '<';
-
-  auto printParamBinding = [&](Attribute attr) {
+  llvm::interleaveComma(value, p, [&](Attribute attr) {
     auto bind = attr.cast<ParamBindAttr>();
     p.printKeywordOrString(bind.getName());
-    printTypedParamValue(p, op, bind.getValue(), bind.getType());
-  };
-
-  llvm::interleaveComma(value, p, printParamBinding);
+    printColonTypeOrSI64(p, bind.getType());
+    p << " = ";
+    printParamValue(p, bind.getValue(), bind.getType());
+  });
   p << '>';
 }
 

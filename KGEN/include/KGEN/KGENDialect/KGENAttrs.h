@@ -39,11 +39,6 @@ void printParamValue(OpAsmPrinter &p, Attribute value, Type type);
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(OpAsmParser &p, Attribute &value, Type type);
 
-ParseResult parseTypedParamValue(OpAsmParser &p, Attribute &value,
-                                 Type &resultType);
-void printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
-                          Type resultType);
-
 } // namespace M::KGEN
 
 #define GET_ATTRDEF_CLASSES
