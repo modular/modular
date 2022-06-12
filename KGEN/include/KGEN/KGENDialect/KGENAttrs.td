@@ -26,7 +26,7 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
   /// ParamDeclAttr's always have a `name` and `type`: an omitted type in the 
   /// asmsyntax defaults to si64.
   let parameters = (ins "::mlir::StringAttr":$name,
-                        "::mlir::Type":$type);
+                        AttributeSelfTypeParameter<"">:$type);
   let mnemonic = "param.decl";
 
   let hasCustomAssemblyFormat = 1;
@@ -64,7 +64,7 @@ def ParamDeclArrayAttr
 def ParamBindAttr : AttrDef<KGENDialect, "ParamBind"> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "::mlir::StringAttr":$name,
-                        "::mlir::Type":$type,
+                        AttributeSelfTypeParameter<"">:$type,
                         "::mlir::Attribute":$value);
   let mnemonic = "param.bind";
   let hasCustomAssemblyFormat = 1;

@@ -142,21 +142,22 @@ void KGEN::printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
 //===----------------------------------------------------------------------===//
 
 Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
-  if (type) {
-    p.emitError(p.getNameLoc(), "unexpected contextual type in attribute");
+  if (!type) {
+    p.emitError(p.getNameLoc(), "parmeter declaration requires a type");
     return {};
   }
 
-  StringAttr name;
-  if (p.parseLess() || p.parseAttribute(name, p.getBuilder().getNoneType()) ||
-      p.parseColonType(type) || p.parseGreater())
+  std::string name;
+  if (p.parseLess() || p.parseKeywordOrString(&name) || p.parseGreater())
     return {};
 
   return ParamDeclAttr::get(name, type);
 }
 
 void ParamDeclAttr::print(AsmPrinter &p) const {
-  p << "<" << getName() << ": " << getType() << ">";
+  p << "<";
+  p.printKeywordOrString(getName());
+  p << ">";
 }
 
 //===----------------------------------------------------------------------===//
@@ -164,35 +165,22 @@ void ParamDeclAttr::print(AsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
+  if (!type) {
+    p.emitError(p.getNameLoc(), "parmeter declaration requires a type");
+    return {};
+  }
+
   std::string name;
   if (p.parseLess() || p.parseKeywordOrString(&name) || p.parseGreater())
     return {};
-
-  // If no type was present, parse it now.
-  if (!type) {
-    if (p.parseColonType(type))
-      return {};
-  } else {
-    // Otherwise it may be present, but must agree.
-    Type explicitType;
-    auto loc = p.getCurrentLocation();
-    if (succeeded(p.parseOptionalColon())) {
-      if (p.parseType(explicitType))
-        return {};
-      if (type != explicitType) {
-        p.emitError(loc, "param decl ref '")
-            << name << "' type " << explicitType
-            << " didn't agree with contextual type" << type;
-        return {};
-      }
-    }
-  }
 
   return ParamDeclRefAttr::get(name, type);
 }
 
 void ParamDeclRefAttr::print(AsmPrinter &p) const {
-  p << "<" << getName() << ">";
+  p << "<";
+  p.printKeywordOrString(getName());
+  p << ">";
 }
 
 //===----------------------------------------------------------------------===//
