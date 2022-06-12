@@ -73,8 +73,19 @@ def ParamDeclRefAttr : AttrDef<KGENDialect, "ParamDeclRef"> {
                                         "::mlir::Type":$type), [{
       return get(name.getContext(), name, type);
     }]>,
-
+    AttrBuilderWithInferredContext<(ins "::mlir::StringRef":$name,
+                                         "::mlir::Type":$type),
+      "return get(StringAttr::get(type.getContext(), name), type);">,
   ];
 
   let hasCustomAssemblyFormat = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ParamRefArrayAttr
+//===----------------------------------------------------------------------===//
+
+/// An array of ParamDeclRefAttr's typically used on a kgen.generator for the
+/// result parameter values.
+def ParamRefArrayAttr
+  : TypedArrayAttrBase<ParamDeclRefAttr, "parameter reference array attribute">;
