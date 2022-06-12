@@ -31,7 +31,7 @@ static ParseResult parseParameterBindings(OpAsmParser &parser,
             Attribute value;
             if (parser.parseKeywordOrString(&name) ||
                 parseColonTypeOrSI64(parser, type) || parser.parseEqual() ||
-                parser.parseAttribute(value, type))
+                parseParameterValue(parser, type, value))
               return failure();
             elts.push_back(ParamBindAttr::get(name, type, value));
             return success();
@@ -54,7 +54,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
     if (!bind.getType().isSignedInteger(64))
       p << ": " << bind.getType();
     p << " = ";
-    p.printAttributeWithoutType(bind.getValue());
+    printParameterValue(p, bind.getValue(), bind.getType());
   };
 
   llvm::interleaveComma(value, p, printParamBinding);
