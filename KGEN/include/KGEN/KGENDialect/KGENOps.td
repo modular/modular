@@ -21,8 +21,13 @@ def GeneratorOp
                          Symbol, IsolatedFromAbove,
                          SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Kernel generator definition";
+
+  /// input and result parameters are stored in a single flat array named
+  /// `paramDecls` and the `numInputParameters` field indicates which are input
+  /// and which are result parameters.
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls);
+                       ParamDeclArrayAttr:$paramDecls,
+                       I32Attr:$numInputParameters);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -40,15 +45,6 @@ def GeneratorOp
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
-
-  let builders = [
-    /// Create a new kgen.invokable with an empty body.
-    OpBuilder<(ins "StringAttr":$name,
-                   "ArrayAttr":$paramDecls,
-                   "ArrayRef<Type>":$inputTypes,
-                   "ArrayRef<Type>":$resultTypes,
-                   CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-  ];
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;

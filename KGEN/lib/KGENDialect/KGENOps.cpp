@@ -21,42 +21,70 @@ using namespace KGEN;
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-void GeneratorOp::build(OpBuilder &builder, OperationState &state,
-                        StringAttr name, ArrayAttr parameters,
-                        ArrayRef<Type> inputTypes, ArrayRef<Type> resultTypes,
-                        ArrayRef<NamedAttribute> attrs) {
-  state.addAttribute("paramDecls", parameters);
-  buildWithEntryBlock(builder, state, name,
-                      builder.getFunctionType(inputTypes, resultTypes), attrs,
-                      inputTypes);
-}
-
 ReturnOp GeneratorOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
 
 /// Parse an parameter list if present.
-/// parameter-list ::= `<` parameter-decl (`,` parameter-decl)* `>`
-/// parameter-decl ::= identifier (`:` type)?
-///
+/// parameter-decl   ::= identifier (`:` type)?
+/// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
+/// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 static ParseResult parseOptionalParameters(OpAsmParser &parser,
-                                           SmallVector<Attribute> &parameters) {
-  return parser.parseCommaSeparatedList(
-      OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
-        std::string name;
-        Type type;
-        if (parser.parseKeywordOrString(&name))
-          return failure();
-        if (succeeded(parser.parseOptionalColon())) {
-          if (parser.parseType(type))
-            return failure();
-        } else {
-          type = parser.getBuilder().getIntegerType(64, /*isSigned=*/true);
-        }
+                                           OperationState &result) {
+  // If there is no parameter list, or if it is empty, we're done.
+  if (failed(parser.parseOptionalLess()) ||
+      succeeded(parser.parseOptionalGreater())) {
+    result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
+    result.addAttribute("numInputParameters",
+                        parser.getBuilder().getI32IntegerAttr(0));
+    return success();
+  }
 
-        parameters.push_back(ParamDeclAttr::get(name, type));
-        return success();
-      });
+  SmallVector<Attribute> paramDecls;
+  // Handle the parameter-decl/parameter-result productions.
+  auto parseParamDecl = [&]() -> ParseResult {
+    std::string name;
+    Type type;
+    if (parser.parseKeywordOrString(&name))
+      return failure();
+    if (succeeded(parser.parseOptionalColon())) {
+      if (parser.parseType(type))
+        return failure();
+    } else {
+      type = parser.getBuilder().getIntegerType(64, /*isSigned=*/true);
+    }
+    paramDecls.push_back(ParamDeclAttr::get(name, type));
+    return success();
+  };
+
+  // Handle the parameter-list production.
+  auto parseParamList = [&]() -> ParseResult {
+    // Check to see if we have the () syntax instead of arguments.
+    if (succeeded(parser.parseOptionalLParen())) {
+      return parser.parseRParen();
+    }
+    // Otherwise, parse the parameters, we know there is at least one.
+    return parser.parseCommaSeparatedList(OpAsmParser::Delimiter::None,
+                                          parseParamDecl);
+  };
+
+  // Parse the input list.
+  if (parseParamList())
+    return failure();
+
+  unsigned numInputs = paramDecls.size();
+
+  // Check to see if we have results and parse them if so.
+  if (succeeded(parser.parseOptionalArrow())) {
+    if (parseParamList())
+      return failure();
+  }
+
+  result.addAttribute("paramDecls",
+                      parser.getBuilder().getArrayAttr(paramDecls));
+  result.addAttribute("numInputParameters",
+                      parser.getBuilder().getI32IntegerAttr(numInputs));
+  return parser.parseGreater();
 }
 
 /// Parses a KGEN Generator.
@@ -83,14 +111,11 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // Parse the function signature.
   bool isVariadic = false;
-  SmallVector<Attribute> parameters;
 
-  if (parseOptionalParameters(parser, parameters) ||
+  if (parseOptionalParameters(parser, result) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs))
     return failure();
-
-  result.addAttribute("paramDecls", builder.getArrayAttr(parameters));
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -140,17 +165,32 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 /// Print a parameter list for a module or instance.
-static void printParameterList(ArrayAttr parameters, OpAsmPrinter &p) {
+static void printParameterList(ArrayAttr parameters, unsigned numInputs,
+                               OpAsmPrinter &p) {
   if (parameters.empty())
     return;
 
-  p << '<';
-  llvm::interleaveComma(parameters, p, [&](Attribute param) {
+  auto printParamDecl = [&](Attribute param) {
     auto paramAttr = param.cast<ParamDeclAttr>();
     p << paramAttr.getName().getValue();
     if (!paramAttr.getType().getValue().isSignedInteger(64))
       p << ": " << paramAttr.getType();
-  });
+  };
+
+  p << '<';
+  if (numInputs == 0) {
+    p << "()";
+  } else {
+    llvm::interleaveComma(
+        llvm::drop_end(parameters, parameters.size() - numInputs), p,
+        printParamDecl);
+  }
+  if (numInputs != parameters.size()) {
+    p << " -> ";
+    llvm::interleaveComma(llvm::drop_begin(parameters, numInputs), p,
+                          printParamDecl);
+  }
+
   p << '>';
 }
 
@@ -171,13 +211,15 @@ void GeneratorOp::print(OpAsmPrinter &p) {
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
 
-  printParameterList(op->getAttrOfType<ArrayAttr>("paramDecls"), p);
+  printParameterList(op->getAttrOfType<ArrayAttr>("paramDecls"),
+                     getNumInputParameters(), p);
 
   ArrayRef<Type> argTypes = getArgumentTypes();
   ArrayRef<Type> resultTypes = getResultTypes();
   printFunctionSignature(p, *this, argTypes, /*isVariadic=*/false, resultTypes);
-  printFunctionAttributes(p, *this, argTypes.size(), resultTypes.size(),
-                          {visibilityAttrName, "paramDecls"});
+  printFunctionAttributes(
+      p, *this, argTypes.size(), resultTypes.size(),
+      {visibilityAttrName, "paramDecls", "numInputParameters"});
 
   p << ' ';
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
