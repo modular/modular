@@ -11,6 +11,7 @@
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // GeneratorOp
@@ -48,6 +49,25 @@ def GeneratorOp
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ParamValueOp
+//===----------------------------------------------------------------------===//
+
+def ParamValueOp : KGENOp<"param.value",
+                          [FirstAttrDerivedResultType, NoSideEffect,
+                           ConstantLike]> {
+  let summary = [{
+    Return the value of a parameter expression as an SSA value that may be used
+    by other ops.
+  }];
+
+  let arguments = (ins AnyAttr:$value);
+  let results = (outs AnyType:$result);
+  let assemblyFormat =
+     "custom<TypedParamValue>($value, qualified(type($result))) attr-dict";
+  let hasFolder = true;
 }
 
 //===----------------------------------------------------------------------===//

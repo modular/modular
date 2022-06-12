@@ -30,8 +30,7 @@ static ParseResult parseParameterBindings(OpAsmParser &parser,
             Type type;
             Attribute value;
             if (parser.parseKeywordOrString(&name) ||
-                parseColonTypeOrSI64(parser, type) || parser.parseEqual() ||
-                parseParameterValue(parser, type, value))
+                parseTypedParamValue(parser, value, type))
               return failure();
             elts.push_back(ParamBindAttr::get(name, type, value));
             return success();
@@ -51,10 +50,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
   auto printParamBinding = [&](Attribute attr) {
     auto bind = attr.cast<ParamBindAttr>();
     p.printKeywordOrString(bind.getName());
-    if (!bind.getType().isSignedInteger(64))
-      p << ": " << bind.getType();
-    p << " = ";
-    printParameterValue(p, bind.getValue(), bind.getType());
+    printTypedParamValue(p, op, bind.getValue(), bind.getType());
   };
 
   llvm::interleaveComma(value, p, printParamBinding);
@@ -212,8 +208,7 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
   auto printParamDecl = [&](Attribute param) {
     auto paramAttr = param.cast<ParamDeclAttr>();
     p.printKeywordOrString(paramAttr.getName().getValue());
-    if (!paramAttr.getType().isSignedInteger(64))
-      p << ": " << paramAttr.getType();
+    printColonTypeOrSI64(p, paramAttr.getType());
   };
 
   p << '<';
@@ -271,6 +266,15 @@ LogicalResult GeneratorOp::verifyRegions() {
     return failure();
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamValueOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult ParamValueOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.empty() && "kgen.param.value has no operands");
+  return getValueAttr();
 }
 
 //===----------------------------------------------------------------------===//
