@@ -44,3 +44,26 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
   // expected-error @+1 {{parameter #0 is named "r7" but should be "r1"}}
   kgen.return<r7: i4 = 7>
 }
+
+// -----
+
+kgen.generator @param_expr1<p1, p2>()  {
+  "someop" () {
+    use1 = #kgen.param.expr<add,
+    // expected-error @+2 {{failed to parse ParamExprAttr parameter}}
+    // expected-error @+1 {{parameter reference requires a type}}
+                            #kgen.param.decl.ref<"p1">, 42 : si64>
+  } : () -> ()
+  kgen.return 
+}
+
+// -----
+
+kgen.generator @param_expr1<p1, p2>()  {
+ "someop" () {
+    // expected-error @+1 {{parameter declaration requires a type}}
+    paramDecls = [#kgen.param.decl<"p3">]
+  } : () -> ()
+  kgen.return 
+}
+
