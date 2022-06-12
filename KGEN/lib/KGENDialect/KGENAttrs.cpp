@@ -14,6 +14,16 @@
 using namespace M;
 using namespace M::KGEN;
 
+/// Parse a "colon type" production if present or default to si64 if not.  This
+/// is commonly used in our parameter representation.
+ParseResult KGEN::parseColonTypeOrSI64(OpAsmParser &parser, Type &type) {
+  if (succeeded(parser.parseOptionalColon()))
+    return parser.parseType(type);
+
+  type = parser.getBuilder().getIntegerType(64, /*isSigned=*/true);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
 //===----------------------------------------------------------------------===//
@@ -74,13 +84,29 @@ void ParamDeclAttr::print(AsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
-  StringAttr name;
-  if (p.parseLess() || p.parseAttribute(name, p.getBuilder().getNoneType()))
+  std::string name;
+  if (p.parseLess() || p.parseKeywordOrString(&name))
     return {};
 
   // If we have no contextual type then it must be present.
-  if (!type && p.parseColonType(type))
-    return {};
+  if (!type) {
+    if (p.parseColonType(type))
+      return {};
+  } else {
+    // Otherwise it may be present, but must agree.
+    Type explicitType;
+    auto loc = p.getCurrentLocation();
+    if (succeeded(p.parseOptionalColon())) {
+      if (p.parseType(explicitType))
+        return {};
+      if (type != explicitType) {
+        p.emitError(loc, "param decl ref '")
+            << name << "' type " << explicitType
+            << " didn't agree with contextual type" << type;
+        return {};
+      }
+    }
+  }
 
   if (p.parseGreater())
     return {};
@@ -89,7 +115,28 @@ Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
 }
 
 void ParamDeclRefAttr::print(AsmPrinter &p) const {
-  p << "<" << getName() << ">";
+  p << "<" << getName() << ": " << getType() << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// ParamBindAttr
+//===----------------------------------------------------------------------===//
+
+Attribute ParamBindAttr::parse(AsmParser &p, Type type) {
+  std::string name;
+  Attribute value;
+  if (p.parseLess() || p.parseKeywordOrString(&name) ||
+      p.parseColonType(type) || p.parseEqual() ||
+      p.parseAttribute(value, type) || p.parseGreater())
+    return {};
+
+  return ParamBindAttr::get(name, type, value);
+}
+
+void ParamBindAttr::print(AsmPrinter &p) const {
+  p << "<" << getName() << ": " << getType() << " = ";
+  p.printAttributeWithoutType(getValue());
+  p << ">";
 }
 
 //===----------------------------------------------------------------------===//
@@ -130,6 +177,10 @@ static LogicalResult collectParameterUses(
       if (failed(
               collectParameterUses(elt, op, parameterUses, parameterLessAttrs)))
         return failure();
+  } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
+    if (failed(collectParameterUses(bind.getValue(), op, parameterUses,
+                                    parameterLessAttrs)))
+      return failure();
   } else {
     // FIXME: hard coding specific attributes is really problematic, doesn't
     // MLIR have a generic way to walk sub-attributes?
@@ -233,7 +284,7 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
     }
 
     // Check that the types of the uses match the defs.
-    if (decl.second.getType().getValue() != paramRefAttr.getType()) {
+    if (decl.second.getType() != paramRefAttr.getType()) {
       auto diag = usingOp->emitError("invalid reference to parameter ")
                   << paramRefAttr;
       diag.attachNote(decl.first->getLoc())

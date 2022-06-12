@@ -38,3 +38,9 @@ kgen.generator @test<p1>() {
   kgen.return
 }
 
+// -----
+
+kgen.generator @parameter_results<p1 -> r1: i4>() {
+  // expected-error @+1 {{parameter #0 is named "r7" but should be "r1"}}
+  kgen.return<r7: i4 = 7>
+}

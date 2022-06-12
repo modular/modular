@@ -26,7 +26,7 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
   /// ParamDeclAttr's always have a `name` and `type`: an omitted type in the 
   /// asmsyntax defaults to si64.
   let parameters = (ins "::mlir::StringAttr":$name,
-                        "::mlir::TypeAttr":$type);
+                        "::mlir::Type":$type);
   let mnemonic = "param.decl";
 
   let hasCustomAssemblyFormat = 1;
@@ -34,8 +34,7 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
   let builders = [
     AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
                                          "::mlir::Type":$type),
-      "auto *context = type.getContext();\n"
-      "return $_get(context, name, TypeAttr::get(type));">,
+      "return $_get(type.getContext(), name, type);">,
     AttrBuilderWithInferredContext<(ins "::mlir::StringRef":$name,
                                          "::mlir::Type":$type),
       "return get(StringAttr::get(type.getContext(), name), type);">,
@@ -82,10 +81,34 @@ def ParamDeclRefAttr : AttrDef<KGENDialect, "ParamDeclRef"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamRefArrayAttr
+// ParamBindAttr
 //===----------------------------------------------------------------------===//
 
-/// An array of ParamDeclRefAttr's typically used on a kgen.generator for the
-/// result parameter values.
-def ParamRefArrayAttr
-  : TypedArrayAttrBase<ParamDeclRefAttr, "parameter reference array attribute">;
+/// This attribute binds a concrete value to a named parameter, for example a
+/// kgen.return uses it to bind returned parameters the the enclosing generators
+/// parameter declarations.
+def ParamBindAttr : AttrDef<KGENDialect, "ParamBind"> {
+  let summary = "Bind a value to a parameter declaration.";
+  let parameters = (ins "::mlir::StringAttr":$name,
+                        "::mlir::Type":$type,
+                        "::mlir::Attribute":$value);
+  let mnemonic = "param.bind";
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
+                                        "::mlir::Type":$type,
+                                        "::mlir::Attribute":$value), [{
+      return get(name.getContext(), name, type, value);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "::llvm::StringRef":$name,
+                                        "::mlir::Type":$type,
+                                        "::mlir::Attribute":$value), [{
+      return get(StringAttr::get(type.getContext(), name), type, value);
+    }]>,
+  ];
+}
+
+/// An array of ParamBindAttr's.
+def ParamBindArrayAttr
+  : TypedArrayAttrBase<ParamBindAttr, "parameter binding array attribute">;
