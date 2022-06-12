@@ -11,10 +11,14 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-#define GET_ATTRDEF_CLASSES
-#include "KGEN/KGENDialect/KGENAttrs.h.inc"
+// Pull in all enum type definitions and utility function declarations.
+#include "KGEN/KGENDialect/KGENEnums.h.inc"
 
 namespace M::KGEN {
+inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
+  return os << stringifyEnum(opcode);
+}
+
 /// Scan the body of the specified operation checking invariants on parameters,
 /// diagnosing errors and returning failure if so.  This is used by verifiers
 /// for ops with bodies, like kgen.generator.
@@ -41,5 +45,8 @@ void printTypedParamValue(OpAsmPrinter &p, Operation *, Attribute value,
                           Type resultType);
 
 } // namespace M::KGEN
+
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/KGENDialect/KGENAttrs.h.inc"
 
 #endif // KGEN_KGENATTRIBUTES_H
