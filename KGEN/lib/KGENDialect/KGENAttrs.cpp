@@ -124,7 +124,7 @@ void KGEN::printParamValue(OpAsmPrinter &p, Attribute value, Type type) {
 
 Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
   if (!type) {
-    p.emitError(p.getNameLoc(), "parmeter declaration requires a type");
+    p.emitError(p.getNameLoc(), "parameter declaration requires a type");
     return {};
   }
 
@@ -147,7 +147,7 @@ void ParamDeclAttr::print(AsmPrinter &p) const {
 
 Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
   if (!type) {
-    p.emitError(p.getNameLoc(), "parmeter declaration requires a type");
+    p.emitError(p.getNameLoc(), "parameter reference requires a type");
     return {};
   }
 
