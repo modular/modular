@@ -14,6 +14,10 @@
 // Pull in all enum type definitions and utility function declarations.
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
 
+namespace M {
+class TensorEltType;
+}
+
 namespace M::KGEN {
 inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
   return os << stringifyEnum(opcode);

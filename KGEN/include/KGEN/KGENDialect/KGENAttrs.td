@@ -205,4 +205,9 @@ def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
 
   let assemblyFormat = "`<` $value `>`";
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Return the TensorEltType for the value we contain.
+    TensorEltType getTensorEltType();
+  }];
 }

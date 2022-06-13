@@ -184,6 +184,19 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
     return;
   }
 
+  // If this is a dtype constant with simple syntax, we can print it as a
+  // keyword.
+  if (auto dtypeConstant = value.dyn_cast<DTypeConstantAttr>()) {
+    auto eltType = dtypeConstant.getTensorEltType();
+    std::string stringRep = eltType.getAsString();
+    // Don't allow things like complex<f64>.  We can extend this in the future
+    // if there is a reason to of course.
+    if (!StringRef(stringRep).contains('<')) {
+      p << stringRep;
+      return;
+    }
+  }
+
   if (auto expr = value.dyn_cast<ParamExprAttr>()) {
     p << stringifyEnum(expr.getOpcode()) << '(';
     llvm::interleaveComma(expr.getOperands(), p, [&](Attribute operand) {
@@ -677,6 +690,11 @@ LogicalResult DTypeConstantAttr::verify(
   if (!type || !type.isa<DTypeType>())
     return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
   return success();
+}
+
+/// Return the TensorEltType for the value we contain.
+TensorEltType DTypeConstantAttr::getTensorEltType() {
+  return TensorEltType(getValue().getValue().getZExtValue());
 }
 
 //===----------------------------------------------------------------------===//
