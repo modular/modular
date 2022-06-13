@@ -332,8 +332,14 @@ public:
   TensorEltTypeSwitch &when(CallableT &&caseFn) {
     using CXXType = typename CXXTypeForTensorEltType<CaseValue>::CXXType;
     // Check to see if any of the types apply to 'value'.
-    if (!result && this->value.getValue() == CaseValue)
-      result = caseFn(static_cast<CXXType *>(bufferPtr));
+    if (!result && this->value.getValue() == CaseValue) {
+      if constexpr (std::is_void_v<ResultType>) {
+        caseFn(static_cast<CXXType *>(bufferPtr));
+        result = EmptyType{};
+      } else {
+        result = caseFn(static_cast<CXXType *>(bufferPtr));
+      }
+    }
     return *this;
   }
 
@@ -368,8 +374,14 @@ public:
   /// As a default, invoke the given callable within the root value.
   template <typename CallableT>
   TensorEltTypeSwitch &otherwise(CallableT &&defaultFn) {
-    if (!result)
-      result = defaultFn();
+    if (!result) {
+      if constexpr (std::is_void_v<ResultType>) {
+        defaultFn();
+        result = EmptyType{};
+      } else {
+        result = defaultFn();
+      }
+    }
     return *this;
   }
 
@@ -425,6 +437,11 @@ public:
   }
 
 private:
+  struct EmptyType {};
+  using CallableReturnType =
+      std::conditional_t<std::is_void_v<ResultType>, llvm::Optional<EmptyType>,
+                         llvm::Optional<ResultType>>;
+
   /// TensorEltTypeSwitch is not a value.
   TensorEltTypeSwitch(const TensorEltTypeSwitch &) = delete;
   TensorEltTypeSwitch(TensorEltTypeSwitch &&other) = delete;
@@ -435,7 +452,7 @@ private:
   const TensorEltType value; /// The value we are switching on.
 
   /// The result of this switch statement, once known, None before that.
-  llvm::Optional<ResultType> result;
+  CallableReturnType result;
 };
 
 /// Perform a eltType dispatch to delegate to a lambda or other callable, see
