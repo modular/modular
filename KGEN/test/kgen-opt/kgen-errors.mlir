@@ -94,3 +94,13 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 // expected-error @+1 {{integer literal not valid for specified type}}
 kgen.param.value : !kgen.dtype = <mul(1, 4)>
+
+// -----
+
+// expected-error @+1 {{kgen.dtype.constant requires i8 value}}
+kgen.param.value : !kgen.dtype = <#kgen.dtype.constant<66 : i94>>
+
+// -----
+
+// expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
+kgen.param.value : i8 = <#kgen.dtype.constant<66 : i8>>
