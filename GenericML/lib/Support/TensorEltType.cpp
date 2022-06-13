@@ -77,6 +77,64 @@ ssize_t TensorEltType::getSizeInBytes(size_t numElements) const {
   return result;
 }
 
+/// Return a complex type if it is valid, otherwise fail.
+FailureOr<TensorEltType>
+TensorEltType::getComplexChecked(TensorEltType eltType) {
+  if (eltType.getWidthInBits() < 8 || eltType.isComplex())
+    return failure();
+  return getComplex(eltType);
+}
+
+/// This turns the printed form of a dtype back into a TensorEltType or
+/// returns None if it is an unrecognized name.
+FailureOr<TensorEltType> TensorEltType::getFromString(StringRef str) {
+  if (str.empty())
+    return failure();
+  switch (str[0]) {
+  case 'f':
+    if (str == "f32")
+      return TensorEltType(f32);
+    if (str == "f64")
+      return TensorEltType(f64);
+    if (str == "f16")
+      return TensorEltType(f16);
+    if (str == "f80")
+      return TensorEltType(f80);
+    if (str == "f8")
+      return TensorEltType(f8);
+    if (str == "f128")
+      return TensorEltType(f128);
+    return failure();
+  case 'u':
+  case 's':
+    if (str.size() > 3 && str[1] == 'i') {
+      unsigned width = 0;
+      if (str.drop_front(2).getAsInteger(10, width))
+        return failure();
+      return getInt(width, /*isSigned=*/str[0] == 's');
+    }
+    return failure();
+
+  case 'b':
+    if (str == "bool")
+      return TensorEltType(kBool);
+    if (str == "bf16")
+      return TensorEltType(bf16);
+    return failure();
+  case 'c':
+    if (str.startswith("complex<") && str.back() == '>') {
+      auto elt = getFromString(str.drop_front(8).drop_back());
+      if (failed(elt))
+        return failure();
+      return getComplexChecked(elt.getValue());
+    }
+    return failure();
+  default:
+    // TODO: Could handle the eltType<unknown42> syntax if we wanted to.
+    return failure();
+  }
+}
+
 /// Return a string form of this eltType suitable for printing and error
 /// messages.
 std::string TensorEltType::getAsString() const {

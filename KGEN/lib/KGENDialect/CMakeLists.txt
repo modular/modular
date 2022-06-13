@@ -19,5 +19,6 @@ add_mlir_library(KGENDialect
   Support
 
   LINK_LIBS PUBLIC
+  GenericMLSupport
   MLIRIR
 )

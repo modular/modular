@@ -124,6 +124,10 @@ public:
   /*implicit*/ constexpr TensorEltType(Cases v) : value(v) {}
   explicit constexpr TensorEltType(uint8_t v) : value((Cases)v) {}
 
+  /// This turns the printed form of a dtype back into a TensorEltType or
+  /// returns None if it is an unrecognized name.
+  static FailureOr<TensorEltType> getFromString(StringRef str);
+
   /// This returns the underlying integer value for the enum.
   constexpr uint8_t getValue() const { return value; }
 
@@ -152,6 +156,9 @@ public:
            "cannot construct a complex type with complex type as element");
     return TensorEltType(eltType.getValue() | mIsComplex);
   }
+
+  /// Return a complex type if it is valid, otherwise fail.
+  static FailureOr<TensorEltType> getComplexChecked(TensorEltType eltType);
 
   // Integer handling.
 

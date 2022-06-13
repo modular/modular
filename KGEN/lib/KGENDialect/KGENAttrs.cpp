@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -76,8 +77,7 @@ void KGENDialect::registerAttributes() {
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringRef name) {
   // If this will conflict with a TensorEltType keyword, rename it.
-  // TODO: Use a parser in TensorEltType so they stay in sync.
-  if (name == "f32") {
+  if (succeeded(TensorEltType::getFromString(name))) {
     p << '"' << name << '"';
     return;
   }
