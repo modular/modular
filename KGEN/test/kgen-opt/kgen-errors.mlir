@@ -104,3 +104,8 @@ kgen.param.value : !kgen.dtype = <#kgen.dtype.constant<66 : i94>>
 
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
 kgen.param.value : i8 = <#kgen.dtype.constant<66 : i8>>
+
+// -----
+
+// expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
+kgen.param.value : i8 = <f32>
