@@ -23,12 +23,16 @@ public:
   /// Initialize the thread pool and start up the worker threads. By the time
   /// the constructor finishes, all the worker threads have started and shall
   /// only be cancelled by the destructor.
-  explicit ThreadPoolWorkQueue(size_t numThreads);
+  explicit ThreadPoolWorkQueue(size_t numWorkerThreads);
   /// Cleans up all threads in the thread pool cleanly.
   ~ThreadPoolWorkQueue() override;
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
-  int getParallelismLevel() const final { return poolSize; }
+  /// `poolSize` is set to the number of worker threads that are created by the
+  /// work queue. However, we expect to have an external "main" thread that
+  /// has an access to the work queue by calling "await". Therefore, we return
+  /// `poolSize + 1` here.
+  int getParallelismLevel() const final { return poolSize + 1; }
 
 protected:
   void addTaskInternal(TaskFunctionBase *work) override {
@@ -105,8 +109,8 @@ private:
 // ThreadPoolWorkQueue function implementations
 //===----------------------------------------------------------------------===//
 
-ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numThreads)
-    : poolSize(numThreads),
+ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads)
+    : poolSize(numWorkerThreads),
       pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}} {
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
@@ -188,6 +192,11 @@ void ThreadPoolWorkQueue::Thread::run() {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue> LLCL::createThreadPoolWorkQueue(size_t numThreads) {
-  return std::make_unique<ThreadPoolWorkQueue>(
-      numThreads == 0 ? std::thread::hardware_concurrency() : numThreads);
+  if (numThreads == 0)
+    numThreads = std::thread::hardware_concurrency();
+  // We expect `numThreads` to be the total numbers of threads that are
+  // accessing the work queue. As there will be an external thread that will
+  // access the work queue and take items from it by calling `await`, we create
+  // `numThreads - 1` worker threads from the thread pool work queue.
+  return std::make_unique<ThreadPoolWorkQueue>(numThreads - 1);
 }
