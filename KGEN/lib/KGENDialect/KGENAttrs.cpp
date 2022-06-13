@@ -73,6 +73,12 @@ void KGENDialect::registerAttributes() {
 // "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
 
+// Parameters are complex nested expressions.  While they have a generic
+// printing syntax that is supported in full generality, they often appear in
+// tightly controlled situations, e.g. in return operations, in types, or when
+// invoking a generator. In these cases we can use a much nicer and more compact
+// syntax so we as compiler engineers don't go bonkers looking at IR dumps.
+
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringRef name) {
@@ -87,32 +93,57 @@ void KGEN::printParamName(AsmPrinter &p, StringRef name) {
   p.printKeywordOrString(name);
 }
 
-// Parameters are complex nested expressions.  While they have a generic
-// printing syntax that is supported in full generality, they often appear in
-// tightly controlled situations, e.g. in return operations, in types, or when
-// invoking a generator. In these cases we can use a much nicer and more compact
-// syntax so we as compiler engineers don't go bonkers looking at IR dumps.
+/// Parse a bareword (a keyword in MLIR terminology) or double quoted string
+/// into "result", returning "isBareword=true" in the former case and false in
+/// the later case.
+static ParseResult parseOptionalParamKeywordOrString(OpAsmParser &p,
+                                                     std::string *result,
+                                                     bool &isBareWord) {
+  StringRef keyword;
+  if (succeeded(p.parseOptionalKeyword(&keyword))) {
+    isBareWord = true;
+    *result = keyword.str();
+    return success();
+  }
+  isBareWord = false;
+  return p.parseOptionalString(result);
+}
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
   assert(type && "always have a contextual type");
-  std::string bareword;
-  // barewords are implicitly parameter declaration references or the start of
+  llvm::SMLoc loc = p.getCurrentLocation();
+
+  // keyword are implicitly parameter declaration references or the start of
   // a expression in function form.
-  if (succeeded(p.parseOptionalKeywordOrString(&bareword))) {
+  std::string keyword;
+  bool isBareword;
+  if (succeeded(parseOptionalParamKeywordOrString(p, &keyword, isBareword))) {
+    // If this is a KGEN keyword (a bareword with a known identifier), process
+    // it.
+    if (isBareword) {
+      auto dtype = TensorEltType::getFromString(keyword);
+      if (succeeded(dtype)) {
+        auto cst = p.getBuilder().getI8IntegerAttr(dtype.getValue().getValue());
+
+        value = DTypeConstantAttr::getChecked(p.getEncodedSourceLoc(loc),
+                                              cst.getContext(), cst, type);
+        return success(value != Attribute());
+      }
+    }
+
     // Just a bareword with no trailing `(`?  Must be a parameter reference.
     if (failed(p.parseOptionalLParen())) {
-      value = ParamDeclRefAttr::get(bareword, type);
+      value = ParamDeclRefAttr::get(keyword, type);
       return success();
     }
 
     // Otherwise it's a function expression, decode the name as an operation
     // code.
-    auto opcode = symbolizePEO(bareword);
-    auto loc = p.getCurrentLocation();
+    auto opcode = symbolizePEO(keyword);
     if (!opcode.hasValue())
-      return p.emitError(loc, "unknown expression ") << bareword;
+      return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
     SmallVector<Attribute> operands;
 
