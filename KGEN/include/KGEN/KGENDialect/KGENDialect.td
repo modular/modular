@@ -1,4 +1,4 @@
-//===- KGENDialect.td --------------------------------------*- tablegen -*-===//
+//===- KGENDialect.td -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -24,17 +24,13 @@ def KGENDialect : Dialect {
 
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
-
+  let useDefaultTypePrinterParser = 1;
+  let useDefaultAttributePrinterParser = 1;
 
   let extraClassDeclaration = [{
-    /// Register all HW attributes.
+    /// Register all KGEN attributes.
     void registerAttributes();
-
-    mlir::Attribute parseAttribute(mlir::DialectAsmParser &p,
-                                   mlir::Type type) const override;
-    void printAttribute(mlir::Attribute attr, 
-                        mlir::DialectAsmPrinter &p) const override;
-   }];
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENDIALECT_TD

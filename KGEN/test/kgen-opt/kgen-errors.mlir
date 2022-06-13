@@ -90,3 +90,7 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 // expected-error @+1 {{operator requires a signful integer type}}
 %0 = kgen.param.value : i32 = <shl(1, 2)>
 
+// -----
+
+// expected-error @+1 {{integer literal not valid for specified type}}
+kgen.param.value : !kgen.dtype = <mul(1, 4)>

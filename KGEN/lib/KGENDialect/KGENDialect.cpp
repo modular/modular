@@ -10,8 +10,10 @@
 
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -33,6 +35,12 @@ using namespace KGEN;
 
 void KGENDialect::initialize() {
   registerAttributes();
+
+  // Register types.
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "KGEN/KGENDialect/KGENTypes.cpp.inc"
+      >();
 
   // Register operations.
   addOperations<

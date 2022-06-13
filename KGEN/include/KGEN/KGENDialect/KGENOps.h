@@ -28,7 +28,4 @@ class ParamDeclAttr;
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.h.inc"
 
-#define GET_TYPEDEF_CLASSES
-#include "KGEN/KGENDialect/KGENTypes.h.inc"
-
 #endif // KGEN_KGENDIALECT_KGENOPS_H

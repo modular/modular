@@ -67,25 +67,6 @@ void KGENDialect::registerAttributes() {
       >();
 }
 
-Attribute KGENDialect::parseAttribute(DialectAsmParser &p, Type type) const {
-  StringRef attrName;
-  Attribute attr;
-  if (p.parseKeyword(&attrName))
-    return Attribute();
-  auto parseResult = generatedAttributeParser(p, attrName, type, attr);
-  if (parseResult.hasValue())
-    return attr;
-
-  p.emitError(p.getNameLoc(), "Unexpected kgen attribute '" + attrName + "'");
-  return {};
-}
-
-void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
-  if (succeeded(generatedAttributePrinter(attr, p)))
-    return;
-  llvm_unreachable("Unexpected attribute");
-}
-
 //===----------------------------------------------------------------------===//
 // "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
