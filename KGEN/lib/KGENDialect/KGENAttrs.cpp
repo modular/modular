@@ -72,6 +72,21 @@ void KGENDialect::registerAttributes() {
 // "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
 
+/// Print a parameter name correctly, using a double quoted syntax if it
+/// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
+void KGEN::printParamName(AsmPrinter &p, StringRef name) {
+  // If this will conflict with a TensorEltType keyword, rename it.
+  // TODO: Use a parser in TensorEltType so they stay in sync.
+  if (name == "f32") {
+    p << '"' << name << '"';
+    return;
+  }
+
+  // Otherwise, allow MLIR to decide if the name will conflict with its keywords
+  // and avoid it if so.
+  p.printKeywordOrString(name);
+}
+
 // Parameters are complex nested expressions.  While they have a generic
 // printing syntax that is supported in full generality, they often appear in
 // tightly controlled situations, e.g. in return operations, in types, or when
@@ -130,11 +145,11 @@ ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParamValue(OpAsmPrinter &p, Attribute value, Type type) {
+void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
   assert(type && "parameter's should always have a contextual type!");
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
     assert(type == declRef.getType() && "type mismatch in emission?");
-    p.printKeywordOrString(declRef.getName());
+    printParamName(p, declRef.getName());
     return;
   }
 
@@ -169,7 +184,7 @@ Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
 
 void ParamDeclAttr::print(AsmPrinter &p) const {
   p << "<";
-  p.printKeywordOrString(getName());
+  printParamName(p, getName());
   p << ">";
 }
 
@@ -192,7 +207,7 @@ Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
 
 void ParamDeclRefAttr::print(AsmPrinter &p) const {
   p << "<";
-  p.printKeywordOrString(getName());
+  printParamName(p, getName());
   p << ">";
 }
 

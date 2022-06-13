@@ -68,7 +68,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
   p << '<';
   llvm::interleaveComma(value, p, [&](Attribute attr) {
     auto bind = attr.cast<ParamBindAttr>();
-    p.printKeywordOrString(bind.getName());
+    printParamName(p, bind.getName());
     printColonTypeOrSI64(p, bind.getType());
     p << " = ";
     printParamValue(p, bind.getValue(), bind.getType());
@@ -226,7 +226,7 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
 
   auto printParamDecl = [&](Attribute param) {
     auto paramAttr = param.cast<ParamDeclAttr>();
-    p.printKeywordOrString(paramAttr.getName().getValue());
+    printParamName(p, paramAttr.getName().getValue());
     printColonTypeOrSI64(p, paramAttr.getType());
   };
 

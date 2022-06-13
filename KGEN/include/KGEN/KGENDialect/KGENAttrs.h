@@ -31,9 +31,13 @@ ParseResult parseColonTypeOrSI64(OpAsmParser &parser, Type &type);
 /// print `: <type>` or elide it entirely if type is an si64.
 void printColonTypeOrSI64(OpAsmPrinter &p, Type type);
 
+/// Print a parameter name correctly, using a double quoted syntax if it
+/// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
+void printParamName(AsmPrinter &p, StringRef name);
+
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParamValue(OpAsmPrinter &p, Attribute value, Type type);
+void printParamValue(AsmPrinter &p, Attribute value, Type type);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
