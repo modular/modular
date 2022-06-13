@@ -87,12 +87,19 @@ void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamValue printing and parsing.
+// "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
+
+// Parameters are complex nested expressions.  While they have a generic
+// printing syntax that is supported in full generality, they often appear in
+// tightly controlled situations, e.g. in return operations, in types, or when
+// invoking a generator. In these cases we can use a much nicer and more compact
+// syntax so we as compiler engineers don't go bonkers looking at IR dumps.
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
+  assert(type && "always have a contextual type");
   std::string bareword;
   // barewords are implicitly parameter declaration references.
   if (succeeded(p.parseOptionalKeywordOrString(&bareword))) {
@@ -188,6 +195,39 @@ void ParamBindAttr::print(AsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 // ParamExprAttr
 //===----------------------------------------------------------------------===//
+
+LogicalResult
+ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                      PEO opcode, ArrayRef<Attribute> operands, Type type) {
+  // All the operand types and result type must match.
+  if (!llvm::all_of(operands, [&](auto op) {
+        return op.getType() == operands.front().getType();
+      }))
+    return emitError() << "operand type mismatch";
+
+  // Check invariants on the expression.
+  switch (opcode) {
+  case PEO::Add:
+  case PEO::Mul:
+  case PEO::And:
+  case PEO::Or:
+  case PEO::Xor:
+    if (operands.size() < 1)
+      return emitError()
+             << "associative operator must have at least one operand";
+    break;
+
+  // Binary expressions.
+  case PEO::Shl:
+  case PEO::Shr:
+  case PEO::Div:
+  case PEO::Mod:
+    if (operands.size() != 2)
+      return emitError() << "binary operators must have two operands";
+    break;
+  }
+  return success();
+}
 
 /// Build a parameter expression.  This automatically canonicalizes and
 /// folds, so it may not necessarily return a ParamExprAttr.

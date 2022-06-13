@@ -67,3 +67,23 @@ kgen.generator @param_expr1<p1, p2>()  {
   kgen.return 
 }
 
+// -----
+
+kgen.generator @param_expr1<p1, p2>()  {
+  "someop" () {
+    // expected-error @+1 {{binary operators must have two operands}}
+    use1 = #kgen.param.expr<shl, 1 : si32, 2 : si32, 3 : si32>
+  } : () -> ()
+  kgen.return 
+}
+
+
+// -----
+
+kgen.generator @param_expr1<p1, p2>()  {
+  "someop" () {
+    // expected-error @+1 {{operand type mismatch}}
+    use1 = #kgen.param.expr<shl, 1 : si32, 2 : ui32>
+  } : () -> ()
+  kgen.return 
+}

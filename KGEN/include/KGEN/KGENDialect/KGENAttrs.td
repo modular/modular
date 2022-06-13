@@ -182,6 +182,5 @@ def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr"> {
   }];
 
   let assemblyFormat = "`<` $opcode `,` $operands `>`";
-
- // let hasCustomAssemblyFormat = 1;
+  let genVerifyDecl = 1;  // Generate getChecked/verify.
 }
