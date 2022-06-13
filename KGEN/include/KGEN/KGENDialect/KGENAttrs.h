@@ -28,12 +28,12 @@ inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
 /// for ops with bodies, like kgen.generator.
 LogicalResult checkParametersInOpBody(Operation *op);
 
-/// Parse a "colon type" production if present or default to si64 if not.  This
-/// is commonly used in our parameter representation.
-ParseResult parseColonTypeOrSI64(OpAsmParser &parser, Type &type);
+/// Parse a "colon type" production if present or default to `index` type if
+/// not.  This is commonly used in our parameter representation.
+ParseResult parseColonTypeOrIndex(OpAsmParser &parser, Type &type);
 
-/// print `: <type>` or elide it entirely if type is an si64.
-void printColonTypeOrSI64(OpAsmPrinter &p, Type type);
+/// print `: <type>` or elide it entirely if type is an `index` type.
+void printColonTypeOrIndex(OpAsmPrinter &p, Type type);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.

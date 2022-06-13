@@ -87,7 +87,7 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 // -----
 
-// expected-error @+1 {{operator requires a signful integer type}}
+// expected-error @+1 {{operator requires an index type}}
 %0 = kgen.param.value : i32 = <shl(1, 2)>
 
 // -----
