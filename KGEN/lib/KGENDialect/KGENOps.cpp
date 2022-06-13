@@ -23,7 +23,7 @@ using namespace KGEN;
 
 static ParseResult parseParamValueOpValue(OpAsmParser &p, Attribute &value,
                                           Type &resultType) {
-  if (parseColonTypeOrSI64(p, resultType) || p.parseEqual() || p.parseLess() ||
+  if (parseColonTypeOrIndex(p, resultType) || p.parseEqual() || p.parseLess() ||
       parseParamValue(p, value, resultType) || p.parseGreater())
     return failure();
   return success();
@@ -31,7 +31,7 @@ static ParseResult parseParamValueOpValue(OpAsmParser &p, Attribute &value,
 
 static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
                                    Attribute value, Type type) {
-  printColonTypeOrSI64(p, type);
+  printColonTypeOrIndex(p, type);
   p << " = <";
   printParamValue(p, value, type);
   p << ">";
@@ -49,7 +49,7 @@ static ParseResult parseParameterBindings(OpAsmParser &p, ArrayAttr &value) {
             Type type;
             Attribute value;
             if (p.parseKeywordOrString(&name) ||
-                parseColonTypeOrSI64(p, type) || p.parseEqual() ||
+                parseColonTypeOrIndex(p, type) || p.parseEqual() ||
                 parseParamValue(p, value, type))
               return failure();
             elts.push_back(ParamBindAttr::get(name, type, value));
@@ -69,7 +69,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
   llvm::interleaveComma(value, p, [&](Attribute attr) {
     auto bind = attr.cast<ParamBindAttr>();
     printParamName(p, bind.getName());
-    printColonTypeOrSI64(p, bind.getType());
+    printColonTypeOrIndex(p, bind.getType());
     p << " = ";
     printParamValue(p, bind.getValue(), bind.getType());
   });
@@ -105,7 +105,7 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
     std::string name;
     Type type;
     if (parser.parseKeywordOrString(&name) ||
-        parseColonTypeOrSI64(parser, type))
+        parseColonTypeOrIndex(parser, type))
       return failure();
     paramDecls.push_back(ParamDeclAttr::get(name, type));
     return success();
@@ -227,7 +227,7 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
   auto printParamDecl = [&](Attribute param) {
     auto paramAttr = param.cast<ParamDeclAttr>();
     printParamName(p, paramAttr.getName().getValue());
-    printColonTypeOrSI64(p, paramAttr.getType());
+    printColonTypeOrIndex(p, paramAttr.getType());
   };
 
   p << '<';

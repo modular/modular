@@ -19,19 +19,19 @@ using namespace M::KGEN;
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
 
-/// Parse a "colon type" production if present or default to si64 if not.  This
+/// Parse a "colon type" production if present or default to index if not.  This
 /// is commonly used in our parameter representation.
-ParseResult KGEN::parseColonTypeOrSI64(OpAsmParser &parser, Type &type) {
+ParseResult KGEN::parseColonTypeOrIndex(OpAsmParser &parser, Type &type) {
   if (succeeded(parser.parseOptionalColon()))
     return parser.parseType(type);
 
-  type = parser.getBuilder().getIntegerType(64, /*isSigned=*/true);
+  type = parser.getBuilder().getIndexType();
   return success();
 }
 
-/// print `: <type>` or elide it entirely if type is an si64.
-void KGEN::printColonTypeOrSI64(OpAsmPrinter &p, Type type) {
-  if (!type.isSignedInteger(64))
+/// print `: <type>` or elide it entirely if type is an `index` type.
+void KGEN::printColonTypeOrIndex(OpAsmPrinter &p, Type type) {
+  if (!type.isIndex())
     p << ": " << type;
 }
 
@@ -300,8 +300,8 @@ ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
       return emitError()
              << "associative operator must have at least one operand";
     type = operands[0].getType();
-    if (!type.isSignedInteger() && !type.isUnsignedInteger())
-      return emitError() << "operator requires a signful integer type";
+    if (!type.isIndex())
+      return emitError() << "operator requires an index type";
     break;
 
   // Binary expressions.
@@ -312,8 +312,8 @@ ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
     if (operands.size() != 2)
       return emitError() << "binary operators must have two operands";
     type = operands[0].getType();
-    if (!type.isSignedInteger() && !type.isUnsignedInteger())
-      return emitError() << "operator requires a signful integer type";
+    if (!type.isIndex())
+      return emitError() << "operator requires an index type";
     break;
   }
   return success();
@@ -456,7 +456,8 @@ static std::pair<Attribute, Attribute> decomposeAddend(Attribute operand) {
 }
 
 static Attribute getOneOfType(Type type) {
-  return IntegerAttr::get(type, APInt(type.getIntOrFloatBitWidth(), 1));
+  size_t width = type.isIndex() ? 64 : type.getIntOrFloatBitWidth();
+  return IntegerAttr::get(type, APInt(width, 1));
 }
 
 static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
