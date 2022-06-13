@@ -29,7 +29,8 @@ struct RuntimeCLOptions {
   // result of std::thread::hardware_concurrency().
   llvm::cl::opt<size_t> numThreads{
       "num-threads",
-      llvm::cl::desc("Specify the number of threads in the threadpool"),
+      llvm::cl::desc(
+          "Specify the number of threads to run the work queue items."),
       llvm::cl::init(0)};
 
   // Enable HostAllocator types to be specified on the command line.
