@@ -85,3 +85,8 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 // expected-error @+1 {{'kgen.param.value' unknown expression invalid_op}}
 %0 = kgen.param.value = <invalid_op(p1, p2, p3)>
 
+// -----
+
+// expected-error @+1 {{operator requires a signful integer type}}
+%0 = kgen.param.value : i32 = <shl(1, 2)>
+
