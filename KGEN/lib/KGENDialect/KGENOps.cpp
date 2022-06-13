@@ -38,6 +38,33 @@ static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
+// custom<ParamBindOpValue>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamBindOpValue(OpAsmParser &p, Attribute &paramDecls,
+                                         Attribute &value) {
+  std::string varname;
+  Type valTy;
+  if (p.parseKeywordOrString(&varname) || parseColonTypeOrSI64(p, valTy) ||
+      p.parseEqual() || p.parseLess() || parseParamValue(p, value, valTy) ||
+      p.parseGreater())
+    return failure();
+
+  paramDecls = p.getBuilder().getArrayAttr(ParamDeclAttr::get(varname, valTy));
+  return success();
+}
+
+static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
+                                  ArrayAttr paramDecls, Attribute value) {
+  ParamDeclAttr variable = paramDecls.begin()->cast<ParamDeclAttr>();
+  printParamName(p, variable.getName().getValue());
+  printColonTypeOrSI64(p, variable.getType());
+  p << " = <";
+  printParamValue(p, value, value.getType());
+  p << ">";
+}
+
+//===----------------------------------------------------------------------===//
 // custom<ParameterBindings>
 //===----------------------------------------------------------------------===//
 

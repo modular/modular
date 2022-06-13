@@ -71,6 +71,29 @@ def ParamValueOp : KGENOp<"param.value",
 }
 
 //===----------------------------------------------------------------------===//
+// ParamBindOp
+//===----------------------------------------------------------------------===//
+
+def ParamBindOp : KGENOp<"param.bind", [NoSideEffect]> {
+  let summary = [{
+    Bind a parameter name to a temporary variable.
+  }];
+
+  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls, AnyAttr:$value);
+  let results = (outs);
+  let assemblyFormat =
+     "custom<ParamBindOpValue>($paramDecls, $value) attr-dict";
+
+  let extraClassDeclaration = [{
+    Attribute getParamDecl() {
+      assert(getParamDecls().size() == 1 &&
+             "ParamBindOp only allows a single parameter decl.");
+      return *getParamDecls().begin();
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
