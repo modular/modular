@@ -54,6 +54,14 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
 def ParamDeclArrayAttr
   : TypedArrayAttrBase<ParamDeclAttr, "parameter array attribute">;
 
+/// An array of ParamDeclAttr of size 1.
+def ParamDeclSize1ArrayAttr
+  : TypedArrayAttrBase<ParamDeclAttr, "single parameter array attribute"> {
+  let predicate = And<[
+    ParamDeclArrayAttr.predicate, CPred<"$_self.cast<ArrayAttr>().size() == 1">
+  ]>;
+}
+
 //===----------------------------------------------------------------------===//
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
