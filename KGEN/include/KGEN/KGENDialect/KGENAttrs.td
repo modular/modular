@@ -184,3 +184,25 @@ def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr"> {
   let assemblyFormat = "`<` $opcode `,` $operands `>`";
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 }
+
+//===----------------------------------------------------------------------===//
+// DTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+/// This is a value of !kgen.dtype with a constant value from 0...255.
+def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
+  let summary = "Constant !kgen.dtype value";
+  let description = [{
+    This is constant value for a dtype, whose elements correspond to
+    TensorEltType.
+  }];
+
+  /// The value of a DTypeConstantAttr is always signless i8 constant value
+  /// and the type is always !kgen.dtype.
+  let parameters = (ins "::mlir::IntegerAttr":$value,
+                        AttributeSelfTypeParameter<"">:$type);
+  let mnemonic = "dtype.constant";
+
+  let assemblyFormat = "`<` $value `>`";
+  let genVerifyDecl = 1;
+}

@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -619,6 +620,20 @@ Attribute ParamExprAttr::get(MLIRContext *ctx, PEO opcode,
 }
 
 //===----------------------------------------------------------------------===//
+// DTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult DTypeConstantAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, IntegerAttr value,
+    Type type) {
+  if (!value.getType().isSignlessInteger(8))
+    return emitError() << "kgen.dtype.constant requires i8 value";
+  if (!type || !type.isa<DTypeType>())
+    return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // Parameter Verification
 //===----------------------------------------------------------------------===//
 
@@ -644,7 +659,8 @@ static LogicalResult collectParameterUses(
 
   // If this attribute has no sub-attributes or we have already scanned it an
   // know that it has no parameters in it, return early.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr, TypeAttr>() ||
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
+               DTypeConstantAttr, TypeAttr>() ||
       // TODO: Handle TypeAttr for parameterized types.
       parameterLessAttrs.count(attr))
     return success();
