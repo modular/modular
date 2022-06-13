@@ -47,43 +47,41 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 // -----
 
-kgen.generator @param_expr1<p1, p2>()  {
-  "someop" () {
-    use1 = #kgen.param.expr<add,
-    // expected-error @+2 {{failed to parse ParamExprAttr parameter}}
-    // expected-error @+1 {{parameter reference requires a type}}
-                            #kgen.param.decl.ref<"p1">, 42 : si64>
-  } : () -> ()
-  kgen.return 
-}
+"someop" () {
+  use1 = #kgen.param.expr<add,
+  // expected-error @+2 {{failed to parse ParamExprAttr parameter}}
+  // expected-error @+1 {{parameter reference requires a type}}
+                          #kgen.param.decl.ref<"p1">, 42 : si64>
+} : () -> ()
 
 // -----
 
-kgen.generator @param_expr1<p1, p2>()  {
- "someop" () {
-    // expected-error @+1 {{parameter declaration requires a type}}
-    paramDecls = [#kgen.param.decl<"p3">]
-  } : () -> ()
-  kgen.return 
-}
+"someop" () {
+  // expected-error @+1 {{parameter declaration requires a type}}
+  paramDecls = [#kgen.param.decl<"p3">]
+} : () -> ()
 
 // -----
 
-kgen.generator @param_expr1<p1, p2>()  {
-  "someop" () {
-    // expected-error @+1 {{binary operators must have two operands}}
-    use1 = #kgen.param.expr<shl, 1 : si32, 2 : si32, 3 : si32>
-  } : () -> ()
-  kgen.return 
-}
-
+"someop" () {
+  // expected-error @+1 {{binary operators must have two operands}}
+  use1 = #kgen.param.expr<shl, 1 : si32, 2 : si32, 3 : si32>
+} : () -> ()
 
 // -----
 
-kgen.generator @param_expr1<p1, p2>()  {
-  "someop" () {
-    // expected-error @+1 {{operand type mismatch}}
-    use1 = #kgen.param.expr<shl, 1 : si32, 2 : ui32>
-  } : () -> ()
-  kgen.return 
-}
+"someop" () {
+  // expected-error @+1 {{operand type mismatch}}
+  use1 = #kgen.param.expr<shl, 1 : si32, 2 : ui32>
+} : () -> ()
+
+// -----
+
+// expected-error @+1 {{'kgen.param.value' binary operators must have two operands}}
+%0 = kgen.param.value = <shl(p1, p2, p3)>
+
+// -----
+
+// expected-error @+1 {{'kgen.param.value' unknown expression invalid_op}}
+%0 = kgen.param.value = <invalid_op(p1, p2, p3)>
+

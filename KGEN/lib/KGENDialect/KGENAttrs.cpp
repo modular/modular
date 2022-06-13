@@ -101,9 +101,43 @@ void KGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
 ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
   assert(type && "always have a contextual type");
   std::string bareword;
-  // barewords are implicitly parameter declaration references.
+  // barewords are implicitly parameter declaration references or the start of
+  // a expression in function form.
   if (succeeded(p.parseOptionalKeywordOrString(&bareword))) {
-    value = ParamDeclRefAttr::get(bareword, type);
+    // Just a bareword with no trailing `(`?  Must be a parameter reference.
+    if (failed(p.parseOptionalLParen())) {
+      value = ParamDeclRefAttr::get(bareword, type);
+      return success();
+    }
+
+    // Otherwise it's a function expression, decode the name as an operation
+    // code.
+    auto opcode = symbolizePEO(bareword);
+    auto loc = p.getCurrentLocation();
+    if (!opcode.hasValue())
+      return p.emitError(loc, "unknown expression ") << bareword;
+    // If it is a known opcode, parse the operand list.
+    SmallVector<Attribute> operands;
+
+    // The element type of a function is currently always the same type
+    // as the expression itself.
+    Type operandType = type;
+    if (failed(p.parseOptionalRParen())) {
+      if (p.parseCommaSeparatedList([&]() -> ParseResult {
+            return parseParamValue(p, operands.emplace_back(Attribute()),
+                                   operandType);
+          }) ||
+          p.parseRParen())
+        return failure();
+    }
+
+    // Okay, we parsed the operands, see if this is a valid expression.
+    if (failed(ParamExprAttr::verify(
+            [&]() -> mlir::InFlightDiagnostic { return p.emitError(loc); },
+            *opcode, operands, type)))
+      return failure();
+    // all is good, lets move!
+    value = ParamExprAttr::get(*opcode, operands);
     return success();
   }
 
@@ -119,6 +153,15 @@ void KGEN::printParamValue(OpAsmPrinter &p, Attribute value, Type type) {
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
     assert(type == declRef.getType() && "type mismatch in emission?");
     p.printKeywordOrString(declRef.getName());
+    return;
+  }
+
+  if (auto expr = value.dyn_cast<ParamExprAttr>()) {
+    p << stringifyEnum(expr.getOpcode()) << '(';
+    llvm::interleaveComma(expr.getOperands(), p, [&](Attribute operand) {
+      printParamValue(p, operand, type);
+    });
+    p << ')';
     return;
   }
 
