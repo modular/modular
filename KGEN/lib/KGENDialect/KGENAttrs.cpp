@@ -736,7 +736,10 @@ struct ParameterVerifier final {
 private:
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses.
-  LogicalResult collectParameterUsesFromAttr(Attribute attr, Operation *op);
+  void collectParameterUsesFromAttr(Attribute attr, Operation *op);
+
+  /// This is set to true if we find a problem during the collect phase.
+  bool hadError = false;
 
   // Parameter definitions, if any are present, should all be in a single
   // `paramDecls` attribute on an operation.  We restrict where declarations
@@ -763,8 +766,6 @@ private:
 /// definitions in invalid positions as well.
 LogicalResult
 ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
-  bool hadError = false;
-
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
@@ -776,10 +777,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
         continue;
       // Scan the attribute tree looking or parameter uses and reject unexpected
       // parameter definitions.
-      if (failed(collectParameterUsesFromAttr(namedAttr.getValue(), bodyOp))) {
-        hadError = true;
-        break;
-      }
+      collectParameterUsesFromAttr(namedAttr.getValue(), bodyOp);
 
       // TODO: Look into types when we support parameterized types.
     }
@@ -817,20 +815,20 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-LogicalResult ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
-                                                              Operation *op) {
+void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
+                                                     Operation *op) {
 
   // Reject errant parameter decls.
   if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
     op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
         << paramDecl;
-    return failure();
+    return;
   }
 
   // Collect parameter references.
   if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
     parameterUses.push_back({paramRef, op});
-    return success();
+    return;
   }
 
   // If this attribute has no sub-attributes or we have already scanned it an
@@ -839,35 +837,29 @@ LogicalResult ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
                DTypeConstantAttr, TypeAttr>() ||
       // TODO: Handle TypeAttr for parameterized types.
       parameterLessAttrs.count(attr))
-    return success();
+    return;
 
   // Otherwise we need to recursively process attributes that we know about.
   size_t oldSize = parameterUses.size();
   if (auto array = attr.dyn_cast<ArrayAttr>()) {
-    for (auto elt : array) {
-      if (failed(collectParameterUsesFromAttr(elt, op)))
-        return failure();
-    }
+    for (auto elt : array)
+      collectParameterUsesFromAttr(elt, op);
   } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
-    if (failed(collectParameterUsesFromAttr(bind.getValue(), op)))
-      return failure();
+    collectParameterUsesFromAttr(bind.getValue(), op);
   } else if (auto expr = attr.dyn_cast<ParamExprAttr>()) {
-    for (auto operand : expr.getOperands()) {
-      if (failed(collectParameterUsesFromAttr(operand, op)))
-        return failure();
-    }
+    for (auto operand : expr.getOperands())
+      collectParameterUsesFromAttr(operand, op);
   } else {
     // FIXME: hard coding specific attributes is really problematic, doesn't
     // MLIR have a generic way to walk sub-attributes?
-    return op->emitError("unknown attribute for parameterization: ") << attr;
+    op->emitError("unknown attribute for parameterization: ") << attr;
+    return;
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
   if (oldSize == parameterUses.size())
     parameterLessAttrs.insert(attr);
-
-  return success();
 }
 
 /// Once all the defs and uses of parameters are collected, verify that the
