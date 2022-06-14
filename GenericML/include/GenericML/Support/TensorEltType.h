@@ -18,8 +18,11 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <tuple>
+
 namespace M {
-template <typename ResultType>
+
+template <typename ResultType, typename... ParamPtrTypes>
 class TensorEltTypeSwitch;
 
 /// This class represents the storage type for values in a tensor.  This is
@@ -206,8 +209,9 @@ public:
 
   /// Perform a eltType dispatch to delegate to a lambda or other callable, see
   /// the definition of `TensorEltTypeSwitch` below.
-  template <typename ResultType>
-  TensorEltTypeSwitch<ResultType> dispatch(void *bufferPtr) const;
+  template <typename ResultType, typename... ParamPtrTypes>
+  TensorEltTypeSwitch<ResultType, ParamPtrTypes...>
+  dispatch(ParamPtrTypes... paramPtrs) const;
 
   /// Return a string form of this eltType suitable for printing and error
   /// messages.
@@ -312,19 +316,22 @@ DECLARE_TYPE_MAPPING(f64, double);
 /// convenients helpers for things like "C++ floating point types" and "integer
 /// types ignoring sign" etc.  This should be used like:
 ///
-///   someTensorEltType.dispatch<>(bufferPtr)  // pass in void*
-///      .when<TensorEltType::f24>([](void *buf) { ... invoked when f24 ... })
-///      .when([](bool *bufPtr) { ... invoked when kBool ... })
-///      .whenCXXFP([](auto *bufPtr) { ... invoked with correct pointer type ...
-///      .otherwise([]() { ... invoked otherwise ... });
+///   someTensorEltType.dispatch<>(paramPtrs...)  // pass in void* / const void*
+///      .when<TensorEltType::f24>([](void *... buf) { ... invoked when f24 ...
+///      }) .when([](bool *... bufPtr) { ... invoked when kBool ... })
+///      .whenCXXFP([](auto *... bufPtr) { ... invoked with correct pointer type
+///      ... .otherwise([]() { ... invoked otherwise ... });
 ///
-/// TODO: Generalize this to taking more than one pointer, casting all of them
-/// at the same time!
-template <typename ResultType>
+template <typename ResultType, typename... ParamPtrTypes>
 class TensorEltTypeSwitch {
 public:
-  TensorEltTypeSwitch(TensorEltType value, void *bufferPtr)
-      : bufferPtr(bufferPtr), value(value) {}
+  TensorEltTypeSwitch(TensorEltType value, ParamPtrTypes... paramPtrs)
+      : paramPtrs(std::forward_as_tuple(paramPtrs...)), value(value) {
+    static_assert(
+        ((std::is_same_v<ParamPtrTypes, void *> ||
+          std::is_same_v<ParamPtrTypes, const void *>)&&...),
+        "Input pointers to type dispatch should be void*/const void*");
+  }
   ~TensorEltTypeSwitch() = default;
 
   /// Add a case on the given type.
@@ -334,10 +341,20 @@ public:
     // Check to see if any of the types apply to 'value'.
     if (!result && this->value.getValue() == CaseValue) {
       if constexpr (std::is_void_v<ResultType>) {
-        caseFn(static_cast<CXXType *>(bufferPtr));
+        std::apply(
+            [&](ParamPtrTypes... args) {
+              caseFn(constPreservingCast<CXXType *>(
+                  std::forward<ParamPtrTypes>(args))...);
+            },
+            paramPtrs);
         result = EmptyType{};
       } else {
-        result = caseFn(static_cast<CXXType *>(bufferPtr));
+        result = std::apply(
+            [&](ParamPtrTypes... args) {
+              return caseFn(constPreservingCast<CXXType *>(
+                  std::forward<ParamPtrTypes>(args))...);
+            },
+            paramPtrs);
       }
     }
     return *this;
@@ -389,8 +406,8 @@ public:
   /// to 64 bits in both signed and unsigned forms.  This passes the pointer in
   /// with the correct C++ type, so it is usually best to use a generic lambda:
   ///
-  ///  eltType.dispatch<ResultType>(ptr)
-  ///     .whenCXXInt([&](auto *ptr) { use ptr generically })
+  ///  eltType.dispatch<ResultType>(ptr...)
+  ///     .whenCXXInt([&](auto *... ptr) { use ptr generically })
   ///
   template <typename CallableT>
   TensorEltTypeSwitch &whenCXXInt(CallableT &&elementFn) {
@@ -404,8 +421,8 @@ public:
   /// pointer in with the correct C++ type, so it is usually best to use a
   /// generic lambda:
   ///
-  ///  eltType.dispatch<ResultType>(ptr)
-  ///     .whenCXXInt([&](auto *ptr) { use ptr generically })
+  ///  eltType.dispatch<ResultType>(ptr...)
+  ///     .whenCXXInt([&](auto *... ptr) { use ptr generically })
   ///
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
@@ -418,8 +435,8 @@ public:
   /// This passes the pointer in with the correct C++ type, so it is usually
   /// best to use a generic lambda:
   ///
-  ///  eltType.dispatch<ResultType>(ptr)
-  ///     .whenCXXType([&](auto *ptr) { use ptr generically })
+  ///  eltType.dispatch<ResultType>(ptr...)
+  ///     .whenCXXType([&](auto *... ptr) { use ptr generically })
   ///
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
@@ -437,6 +454,15 @@ public:
   }
 
 private:
+  template <typename To, typename From>
+  decltype(auto) constPreservingCast(From *arg) {
+    if constexpr (std::is_const_v<From>) {
+      return static_cast<const To>(const_cast<std::decay_t<From> *>(arg));
+    } else {
+      return static_cast<To>(arg);
+    }
+  }
+
   struct EmptyType {};
   using CallableReturnType =
       std::conditional_t<std::is_void_v<ResultType>, llvm::Optional<EmptyType>,
@@ -448,7 +474,9 @@ private:
   void operator=(const TensorEltTypeSwitch &) = delete;
   void operator=(TensorEltTypeSwitch &&other) = delete;
 
-  void *const bufferPtr;     /// The buffer pointer that we're casting.
+  /// The parameter pointers that we're casting.
+  std::tuple<ParamPtrTypes...> paramPtrs;
+
   const TensorEltType value; /// The value we are switching on.
 
   /// The result of this switch statement, once known, None before that.
@@ -457,10 +485,11 @@ private:
 
 /// Perform a eltType dispatch to delegate to a lambda or other callable, see
 /// the definition of `TensorEltTypeSwitch` below.
-template <typename ResultType>
-inline TensorEltTypeSwitch<ResultType>
-TensorEltType::dispatch(void *bufferPtr) const {
-  return TensorEltTypeSwitch<ResultType>(*this, bufferPtr);
+template <typename ResultType, typename... ParamPtrTypes>
+inline TensorEltTypeSwitch<ResultType, ParamPtrTypes...>
+TensorEltType::dispatch(ParamPtrTypes... paramPtrs) const {
+  return TensorEltTypeSwitch<ResultType, ParamPtrTypes...>(
+      *this, std::forward<ParamPtrTypes>(paramPtrs)...);
 }
 
 } // end namespace M
