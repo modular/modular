@@ -45,9 +45,8 @@ static ParseResult parseParamBindOpValue(OpAsmParser &p, Attribute &paramDecls,
                                          Attribute &value) {
   std::string varname;
   Type valTy;
-  if (p.parseKeywordOrString(&varname) || parseColonTypeOrIndex(p, valTy) ||
-      p.parseEqual() || p.parseLess() || parseParamValue(p, value, valTy) ||
-      p.parseGreater())
+  if (p.parseKeywordOrString(&varname) ||
+      parseParamValueOpValue(p, value, valTy))
     return failure();
 
   paramDecls = p.getBuilder().getArrayAttr(ParamDeclAttr::get(varname, valTy));
@@ -58,10 +57,7 @@ static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
                                   ArrayAttr paramDecls, Attribute value) {
   ParamDeclAttr variable = paramDecls.begin()->cast<ParamDeclAttr>();
   printParamName(p, variable.getName().getValue());
-  printColonTypeOrIndex(p, variable.getType());
-  p << " = <";
-  printParamValue(p, value, value.getType());
-  p << ">";
+  printParamValueOpValue(p, nullptr, value, value.getType());
 }
 
 //===----------------------------------------------------------------------===//
