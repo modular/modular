@@ -16,11 +16,12 @@ llvm_update_compile_flags(kgen-opt)
 target_link_libraries(kgen-opt
   PRIVATE
   KGENDialect
+  MetaDialect
   GRTDialect
-  
+
   MLIRIR
   MLIROptLib
   MLIRParser
   MLIRSupport
   MLIRTransforms
-  )
+)

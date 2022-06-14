@@ -20,35 +20,6 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// custom<ParamDTypeValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamDTypeValue(AsmParser &p,
-                                        FailureOr<Attribute> &value) {
-  Attribute retValue;
-  if (failed(parseParamValue(p, retValue, p.getBuilder().getType<DTypeType>())))
-    return failure();
-  value = retValue;
-  return success();
-}
-
-static void printParamDTypeValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value, value.getType());
-}
-
-//===----------------------------------------------------------------------===//
-// ScalarType
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                   Attribute dtype) {
-  if (!dtype.getType().isa<DTypeType>())
-    return emitError() << "parameter for scalar type must be a !kgen.dtype";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // Dialect Type Parsing and Printing
 //===----------------------------------------------------------------------===//
 
