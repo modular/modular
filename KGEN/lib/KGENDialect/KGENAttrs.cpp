@@ -19,22 +19,6 @@ using namespace M::KGEN;
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
 
-/// Parse a "colon type" production if present or default to index if not.  This
-/// is commonly used in our parameter representation.
-ParseResult KGEN::parseColonTypeOrIndex(OpAsmParser &parser, Type &type) {
-  if (succeeded(parser.parseOptionalColon()))
-    return parser.parseType(type);
-
-  type = parser.getBuilder().getIndexType();
-  return success();
-}
-
-/// print `: <type>` or elide it entirely if type is an `index` type.
-void KGEN::printColonTypeOrIndex(OpAsmPrinter &p, Type type) {
-  if (!type.isIndex())
-    p << ": " << type;
-}
-
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
 //===----------------------------------------------------------------------===//
@@ -96,7 +80,7 @@ void KGEN::printParamName(AsmPrinter &p, StringRef name) {
 /// Parse a bareword (a keyword in MLIR terminology) or double quoted string
 /// into "result", returning "isBareword=true" in the former case and false in
 /// the later case.
-static ParseResult parseOptionalParamKeywordOrString(OpAsmParser &p,
+static ParseResult parseOptionalParamKeywordOrString(AsmParser &p,
                                                      std::string *result,
                                                      bool &isBareWord) {
   StringRef keyword;
@@ -111,7 +95,7 @@ static ParseResult parseOptionalParamKeywordOrString(OpAsmParser &p,
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult KGEN::parseParamValue(OpAsmParser &p, Attribute &value, Type type) {
+ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
   assert(type && "always have a contextual type");
   llvm::SMLoc loc = p.getCurrentLocation();
 
@@ -209,6 +193,39 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
   p.printAttributeWithoutType(value);
 }
 
+/// Parse a "colon type" production if present or default to index if not.  This
+/// is commonly used in our parameter representation.
+ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
+  if (succeeded(parser.parseOptionalColon())) {
+    // In addition to standard types, we support 'dtype' as a sugared form of
+    // !kgen.dtype.
+    if (succeeded(parser.parseOptionalKeyword("dtype"))) {
+      type = parser.getBuilder().getType<DTypeType>();
+      return success();
+    }
+
+    return parser.parseType(type);
+  }
+
+  type = parser.getBuilder().getIndexType();
+  return success();
+}
+
+/// print `: <type>` or elide it entirely if type is an `index` type.
+void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+  // Index type is the default so it doesn't print.
+  if (type.isIndex())
+    return;
+  p << ": ";
+
+  // Handle other special cases for parameters here: we support `dtype` as a
+  // bareword for `!kgen.dtype`.
+  if (type.isa<DTypeType>())
+    p << "dtype";
+  else
+    p << type;
+}
+
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
@@ -263,7 +280,7 @@ Attribute ParamBindAttr::parse(AsmParser &p, Type type) {
   std::string name;
   Attribute value;
   if (p.parseLess() || p.parseKeywordOrString(&name) ||
-      p.parseColonType(type) || p.parseEqual() ||
+      parseColonTypeOrIndex(p, type) || p.parseEqual() ||
       p.parseAttribute(value, type) || p.parseGreater())
     return {};
 
@@ -271,7 +288,9 @@ Attribute ParamBindAttr::parse(AsmParser &p, Type type) {
 }
 
 void ParamBindAttr::print(AsmPrinter &p) const {
-  p << "<" << getName() << ": " << getType() << " = ";
+  p << "<" << getName();
+  printColonTypeOrIndex(p, getType());
+  p << " = ";
   p.printAttributeWithoutType(getValue());
   p << ">";
 }

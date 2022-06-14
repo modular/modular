@@ -30,10 +30,10 @@ LogicalResult checkParametersInOpBody(Operation *op);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
-ParseResult parseColonTypeOrIndex(OpAsmParser &parser, Type &type);
+ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
 /// print `: <type>` or elide it entirely if type is an `index` type.
-void printColonTypeOrIndex(OpAsmPrinter &p, Type type);
+void printColonTypeOrIndex(AsmPrinter &p, Type type);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
@@ -45,7 +45,7 @@ void printParamValue(AsmPrinter &p, Attribute value, Type type);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParamValue(OpAsmParser &p, Attribute &value, Type type);
+ParseResult parseParamValue(AsmParser &p, Attribute &value, Type type);
 
 } // namespace M::KGEN
 
