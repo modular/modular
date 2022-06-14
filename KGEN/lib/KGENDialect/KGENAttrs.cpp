@@ -296,6 +296,13 @@ void ParamBindAttr::print(AsmPrinter &p) const {
   p << ">";
 }
 
+void ParamBindAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getName());
+  walkAttrsFn(getValue());
+}
+
 //===----------------------------------------------------------------------===//
 // ParamExprAttr
 //===----------------------------------------------------------------------===//
@@ -699,6 +706,13 @@ Attribute ParamExprAttr::get(MLIRContext *ctx, PEO opcode,
   return result;
 }
 
+void ParamExprAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (auto operand : getOperands())
+    walkAttrsFn(operand);
+}
+
 //===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
@@ -857,8 +871,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
 
   // If this attribute has no sub-attributes or we have already scanned it an
   // know that it has no parameters in it, return early.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DTypeConstantAttr>() ||
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr>() ||
       parameterLessAttrs.contains(attr))
     return;
 
@@ -874,22 +887,19 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
   // Otherwise we haven't processed this, check the attribute's type.
   collectParameterUsesFromType(attr.getType(), op);
 
-  // Otherwise we need to recursively process attributes that we know about.
-  if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
-    collectParameterUsesFromType(typeAttr.getValue(), op);
-  } else if (auto array = attr.dyn_cast<ArrayAttr>()) {
-    for (auto elt : array)
-      collectParameterUsesFromAttr(elt, op);
-  } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
-    collectParameterUsesFromAttr(bind.getValue(), op);
-  } else if (auto expr = attr.dyn_cast<ParamExprAttr>()) {
-    for (auto operand : expr.getOperands())
-      collectParameterUsesFromAttr(operand, op);
+  // Recursively check for any nested types/attributes, e.g. the elements of an
+  // array attribute.
+  if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
+    itf.walkSubElements(
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, op); },
+        [&](Type type) { collectParameterUsesFromType(type, op); });
+  } else if (attr.isa<DTypeConstantAttr>()) {
+    // This attribute doesn't participate with SubElementAttrInterface but we
+    // know it doesn't have any subelements.
   } else {
-    // FIXME: hard coding specific attributes is really problematic, doesn't
-    // MLIR have a generic way to walk sub-attributes?
+    // Conservatively reject unknown attributes, we don't want someone to forget
+    // to conform to SubElementAttrInterface.
     op->emitError("unknown attribute for parameterization scan: ") << attr;
-    return;
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -917,12 +927,11 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
   } else {
     // These are known leaf types that don't participate with
     // SubElementTypeInterface.
-    if (type.isa<IntegerType, FloatType, NoneType>())
-      return;
-
-    // Conservatively reject unknown types, we don't want someone to forget to
-    // conform to SubElementTypeInterface.
-    op->emitError("unknown attribute for parameterization scan: ") << type;
+    if (!type.isa<IntegerType, FloatType, NoneType>()) {
+      // Conservatively reject unknown types, we don't want someone to forget to
+      // conform to SubElementTypeInterface.
+      op->emitError("unknown attribute for parameterization scan: ") << type;
+    }
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it

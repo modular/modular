@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "mlir/IR/EnumAttr.td"
+include "mlir/IR/SubElementInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
@@ -69,7 +70,8 @@ def ParamDeclSize1ArrayAttr
 /// This attribute binds a concrete value to a named parameter, for example a
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
-def ParamBindAttr : AttrDef<KGENDialect, "ParamBind"> {
+def ParamBindAttr : AttrDef<KGENDialect, "ParamBind",
+              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type,
@@ -161,7 +163,8 @@ def PEOAttr  : I32EnumAttr<"PEO", "Parameter Expression Opcode",
                             PEO_Shl, PEO_Shr, PEO_Div, PEO_Mod]>;
 }
 
-def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr"> {
+def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr",
+              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Parameter expression";
   let parameters = (ins "PEO":$opcode,
                         ArrayRefParameter<"::mlir::Attribute">:$operands,
