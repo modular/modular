@@ -968,10 +968,11 @@ LogicalResult ParameterVerifier::checkParameterUses() {
 
     // Check that the types of the uses match the defs.
     if (decl.second.getType() != paramRefAttr.getType()) {
-      auto diag = usingOp->emitError("invalid reference to parameter ")
-                  << paramRefAttr;
+      auto diag = usingOp->emitError("reference to parameter ")
+                  << paramRefAttr.getName() << " with incorrect type "
+                  << paramRefAttr.getType();
       diag.attachNote(decl.first->getLoc())
-          << "parameter defined as " << decl.second;
+          << "parameter defined with type " << decl.second.getType();
       return failure();
     }
 

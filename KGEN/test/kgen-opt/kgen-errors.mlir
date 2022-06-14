@@ -134,8 +134,8 @@ kgen.generator @dtype_params() {
  
  // -----
 
-// expected-note @+2 {{parameter defined as #kgen.param.decl<n> : ui32}}
-// expected-error @+1 {{invalid reference to parameter #kgen.param.decl.ref<n> : index}}
+// expected-note @+2 {{parameter defined with type 'ui32'}}
+// expected-error @+1 {{reference to parameter "n" with incorrect type 'index'}}
 kgen.generator @scalar_params_verbose<n : ui32>(%x : !meta.buffer<n, f32>) {
   kgen.return
 }
