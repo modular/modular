@@ -50,6 +50,12 @@ ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
   return success();
 }
 
+void ScalarType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getDtype());
+}
+
 //===----------------------------------------------------------------------===//
 // Dialect Type Parsing and Printing
 //===----------------------------------------------------------------------===//

@@ -120,7 +120,14 @@ kgen.generator @scalar_params_verbose<n>(%x :
   
 // -----
 
-// TODO: diagnose incorrect parameter usage.
+// expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
 kgen.generator @scalar_params_verbose(%x : !meta.scalar<abc>) {
   kgen.return
 }
+
+// -----
+kgen.generator @dtype_params() {
+  // expected-error @+1 {{invalid use of parameter with no declaration "type"}}
+  %y = "someop" () {} : () -> !meta.scalar<type>
+  kgen.return
+ }

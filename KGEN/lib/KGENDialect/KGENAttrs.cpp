@@ -11,6 +11,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/SubElementInterfaces.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -738,6 +739,10 @@ private:
   /// parameter declarations and collecting parameter uses.
   void collectParameterUsesFromAttr(Attribute attr, Operation *op);
 
+  /// Scan the specified type and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses.
+  void collectParameterUsesFromType(Type type, Operation *op);
+
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
 
@@ -754,10 +759,12 @@ private:
   // or even multiple times in the same operation.
   SmallVector<std::pair<ParamDeclRefAttr, Operation *>> parameterUses;
 
-  // This is slow and expensive so we need to memoize the attributes and types
-  // we've already checked.
+  // Attributes and types are memoized and exist in tree structures with reuse:
+  // naively scanning them can lead to exponential compile time behavior.  As
+  // such, we memoize the attributes and types we've already checked that we
+  // know have no parameters in them.
   llvm::SmallDenseSet<Attribute> parameterLessAttrs;
-  // TODO: parameterLessTypes.
+  llvm::SmallDenseSet<Type> parameterLessTypes;
 };
 } // end anonymous namespace.
 
@@ -769,23 +776,47 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+    Attribute paramDeclsAttr;
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // We handle paramDecls below specially.
-      if (namedAttr.getName().strref() == "paramDecls")
+      // We handle paramDecls below specially, just remember it for then.
+      if (namedAttr.getName().strref() == "paramDecls") {
+        paramDeclsAttr = namedAttr.getValue();
         continue;
+      }
       // Scan the attribute tree looking or parameter uses and reject unexpected
       // parameter definitions.
       collectParameterUsesFromAttr(namedAttr.getValue(), bodyOp);
-
-      // TODO: Look into types when we support parameterized types.
     }
 
-    // Ok, check for parameter declarations as well.
-    auto arrayAttr = bodyOp->getAttrOfType<ArrayAttr>("paramDecls");
-    if (!arrayAttr)
+    // Check the types of results to find any parameters embedded in their
+    // types.  We don't have to check operands because they are always checked
+    // when being defined.
+    for (Type type : bodyOp->getResultTypes())
+      collectParameterUsesFromType(type, bodyOp);
+
+    // Scan the region list if present.  The walker will automatically recurse
+    // for us, but we have to check the block arguments.
+    if (bodyOp->getNumRegions()) { // Microoptimization: getRegions() is slow.
+      for (auto &region : bodyOp->getRegions()) {
+        for (auto &block : region)
+          for (Value arg : block.getArguments())
+            collectParameterUsesFromType(arg.getType(), bodyOp);
+      }
+    }
+
+    // Ok, check parameter declarations if present.
+    if (!paramDeclsAttr)
       return;
+
+    auto arrayAttr = paramDeclsAttr.dyn_cast<ArrayAttr>();
+    if (!arrayAttr) {
+      bodyOp->emitError("paramDecls attribute should be an array ")
+          << paramDeclsAttr;
+      hadError = true;
+      return;
+    }
 
     for (Attribute attr : arrayAttr) {
       // All the members of this array must be ParamDeclAttr's.
@@ -818,13 +849,6 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
 void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
                                                      Operation *op) {
 
-  // Reject errant parameter decls.
-  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
-    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
-        << paramDecl;
-    return;
-  }
-
   // Collect parameter references.
   if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
     parameterUses.push_back({paramRef, op});
@@ -834,14 +858,26 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
   // If this attribute has no sub-attributes or we have already scanned it an
   // know that it has no parameters in it, return early.
   if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DTypeConstantAttr, TypeAttr>() ||
-      // TODO: Handle TypeAttr for parameterized types.
-      parameterLessAttrs.count(attr))
+               DTypeConstantAttr>() ||
+      parameterLessAttrs.contains(attr))
     return;
 
-  // Otherwise we need to recursively process attributes that we know about.
+  // Reject errant parameter decls.
+  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
+    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
+        << paramDecl;
+    return;
+  }
+
   size_t oldSize = parameterUses.size();
-  if (auto array = attr.dyn_cast<ArrayAttr>()) {
+
+  // Otherwise we haven't processed this, check the attribute's type.
+  collectParameterUsesFromType(attr.getType(), op);
+
+  // Otherwise we need to recursively process attributes that we know about.
+  if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
+    collectParameterUsesFromType(typeAttr.getValue(), op);
+  } else if (auto array = attr.dyn_cast<ArrayAttr>()) {
     for (auto elt : array)
       collectParameterUsesFromAttr(elt, op);
   } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
@@ -852,7 +888,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
   } else {
     // FIXME: hard coding specific attributes is really problematic, doesn't
     // MLIR have a generic way to walk sub-attributes?
-    op->emitError("unknown attribute for parameterization: ") << attr;
+    op->emitError("unknown attribute for parameterization scan: ") << attr;
     return;
   }
 
@@ -860,6 +896,39 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
   // in the future.
   if (oldSize == parameterUses.size())
     parameterLessAttrs.insert(attr);
+}
+
+/// Scan the specified type and its recursive uses, diagnosing incorrect
+/// parameter declarations and collecting parameter uses.
+void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
+  // Ignore common trivial types we know are never parameterized, and types we
+  // have already scanned.
+  if (parameterLessTypes.count(type))
+    return;
+
+  size_t oldSize = parameterUses.size();
+
+  // Recursively check for any nested types, e.g. the input/outputs of a
+  // function type.  This also handles types like !meta.scalar etc.
+  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+    itf.walkSubElements(
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, op); },
+        [&](Type type) { collectParameterUsesFromType(type, op); });
+  } else {
+    // These are known leaf types that don't participate with
+    // SubElementTypeInterface.
+    if (type.isa<IntegerType, FloatType, NoneType>())
+      return;
+
+    // Conservatively reject unknown types, we don't want someone to forget to
+    // conform to SubElementTypeInterface.
+    op->emitError("unknown attribute for parameterization scan: ") << type;
+  }
+
+  // If the attribute had no uses, remember that so we don't have to re-scan it
+  // in the future.
+  if (oldSize == parameterUses.size())
+    parameterLessTypes.insert(type);
 }
 
 /// Once all the defs and uses of parameters are collected, verify that the
