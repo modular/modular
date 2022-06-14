@@ -54,6 +54,11 @@ public:
   static ErrorOr<TensorSpec> get(BEFType type);
 };
 
+inline raw_ostream &operator<<(raw_ostream &os, const TensorSpec &value) {
+  value.print(os);
+  return os;
+}
+
 // TensorSpec should always be two words, the same as TensorSpec.
 static_assert(sizeof(void *) != 8 || sizeof(TensorSpec) == 16);
 
