@@ -14,6 +14,8 @@
 
 #include "GenericML/Support/TensorEltType.h"
 #include "GenericML/Support/TensorShape.h"
+#include "GraphRT/BEF/BEFTypes.h"
+#include "Support/ErrorOr.h"
 
 namespace M {
 
@@ -47,6 +49,9 @@ public:
     return storage.equalsIncludingAux(rhs.storage);
   }
   bool operator!=(const TensorSpec &rhs) const { return !(*this == rhs); }
+
+  /// Helper method to decode a BEFType into a TensorSpec, if possible.
+  static ErrorOr<TensorSpec> get(BEFType type);
 };
 
 // TensorSpec should always be two words, the same as TensorSpec.
