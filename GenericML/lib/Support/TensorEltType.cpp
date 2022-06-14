@@ -107,7 +107,7 @@ FailureOr<TensorEltType> TensorEltType::getFromString(StringRef str) {
     return failure();
   case 'u':
   case 's':
-    if (str.size() > 3 && str[1] == 'i') {
+    if (str.size() >= 3 && str[1] == 'i') {
       unsigned width = 0;
       if (str.drop_front(2).getAsInteger(10, width))
         return failure();

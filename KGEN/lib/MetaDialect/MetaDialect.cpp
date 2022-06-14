@@ -9,10 +9,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MetaDialect/MetaDialect.h"
-#include "KGEN/MetaDialect/MetaTypes.h"
-//#include "mlir/IR/BuiltinOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/MetaDialect/MetaTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -53,6 +52,27 @@ ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 void ScalarType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getDtype());
+}
+
+//===----------------------------------------------------------------------===//
+// BufferType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+BufferType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                   Attribute size, Attribute dtype) {
+  if (!size.getType().isIndex())
+    return emitError() << "size parameter for buffer must have type `index`";
+  if (!dtype.getType().isa<DTypeType>())
+    return emitError() << "type parameter for buffer must be a !kgen.dtype";
+  return success();
+}
+
+void BufferType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getSize());
   walkAttrsFn(getDtype());
 }
 
