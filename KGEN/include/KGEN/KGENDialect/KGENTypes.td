@@ -21,3 +21,17 @@ def DTypeType : KGENType<"DType"> {
   let mnemonic = "dtype";
   let parameters = (ins);
 }
+
+// A parameterized scalar type.
+def ScalarType : KGENType<"Scalar"> {
+  let summary = "parameterized scalar type";
+  let description = [{
+    Type type can be parameterized with an arbitrary !kgen.dtype type.
+  }];
+
+  let mnemonic = "scalar";
+  let parameters = (ins "::mlir::Attribute":$dtype);
+  let assemblyFormat = "`<` custom<ParamDTypeValue>($dtype) `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}

@@ -109,3 +109,19 @@ kgen.param.value : i8 = <#kgen.dtype.constant<66 : i8>>
 
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
 kgen.param.value : i8 = <f32>
+
+// -----
+
+kgen.generator @scalar_params_verbose<n>(%x :
+// expected-error @+1 {{expected '!kgen.dtype', but got 'index'}}
+           !kgen.scalar<#kgen.param.decl.ref<"n"> : index>) {
+  kgen.return
+}
+  
+// -----
+
+// TODO: diagnose incorrect parameter usage.
+kgen.generator @scalar_params_verbose(%x : !kgen.scalar<abc>) {
+  kgen.return
+}
+  
