@@ -94,7 +94,8 @@ public:
     if (isOutOfLine()) {
       representation.repOutOfLine.dims = new ssize_t[getRank()];
       memcpy(representation.repOutOfLine.dims,
-             other.representation.repOutOfLine.dims, getRank() * sizeof(ssize_t));
+             other.representation.repOutOfLine.dims,
+             getRank() * sizeof(ssize_t));
     }
   }
   void operator=(TensorShapeStorage &&other) {

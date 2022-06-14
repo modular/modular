@@ -49,9 +49,6 @@ public:
     return storage.equalsIncludingAux(rhs.storage);
   }
   bool operator!=(const TensorSpec &rhs) const { return !(*this == rhs); }
-
-  /// Helper method to decode a BEFType into a TensorSpec, if possible.
-  static ErrorOr<TensorSpec> get(BEFType type);
 };
 
 inline raw_ostream &operator<<(raw_ostream &os, const TensorSpec &value) {
