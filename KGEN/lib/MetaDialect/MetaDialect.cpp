@@ -56,6 +56,27 @@ void ScalarType::walkImmediateSubElements(
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+SIMDType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                 Attribute size, Attribute dtype) {
+  if (!size.getType().isIndex())
+    return emitError() << "size parameter for simd must have type `index`";
+  if (!dtype.getType().isa<DTypeType>())
+    return emitError() << "type parameter for simd must be a !kgen.dtype";
+  return success();
+}
+
+void SIMDType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getSize());
+  walkAttrsFn(getDtype());
+}
+
+//===----------------------------------------------------------------------===//
 // BufferType
 //===----------------------------------------------------------------------===//
 

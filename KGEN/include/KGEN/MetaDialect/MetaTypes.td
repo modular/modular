@@ -15,7 +15,10 @@ include "mlir/IR/SubElementInterfaces.td"
 class MetaType<string name, list<Trait> traits = []>
   : TypeDef<MetaDialect, name, traits> { }
 
-// A parameterized scalar type.
+//===----------------------------------------------------------------------===//
+// ScalarType
+//===----------------------------------------------------------------------===//
+
 def ScalarType : MetaType<"Scalar",
       [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "parameterized scalar type";
@@ -30,7 +33,30 @@ def ScalarType : MetaType<"Scalar",
   let skipDefaultBuilders = 1;
 }
 
-// A parameterized buffer type.
+//===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+def SIMDType : MetaType<"SIMD",
+      [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "parameterized SIMD vector type";
+  let description = [{
+    This type is parameterized with a size and a !kgen.dtype type.
+  }];
+
+  let mnemonic = "simd";
+  let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
+  let assemblyFormat = [{
+    `<` custom<IndexParamValue>($size) `,` custom<ParamDTypeValue>($dtype) `>`
+  }];
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BufferType
+//===----------------------------------------------------------------------===//
+
 def BufferType : MetaType<"Buffer",
       [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "parameterized buffer type";
@@ -41,8 +67,7 @@ def BufferType : MetaType<"Buffer",
   let mnemonic = "buffer";
   let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
   let assemblyFormat = [{
-    `<` custom<IndexParamValue>($size) `,` 
-        custom<ParamDTypeValue>($dtype) `>`
+    `<` custom<IndexParamValue>($size) `,` custom<ParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
