@@ -1,8 +1,8 @@
-# ===- CMakeLists.txt ------------------------------------------*- cmake -*-===##
+#===- CMakeLists.txt ------------------------------------------*- cmake -*-===##
 #
 # This file is Modular Inc proprietary.
 #
-# ===-----------------------------------------------------------------------===##
+#===-----------------------------------------------------------------------===##
 
 # Generating Meta filename prefix into the "kgen" C++ namespace.
 add_mlir_dialect(Meta meta)
