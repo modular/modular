@@ -47,6 +47,12 @@ void printParamValue(AsmPrinter &p, Attribute value, Type type);
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(AsmParser &p, Attribute &value, Type type);
 
+/// Print a parameter value that is known to be an index type.
+void printIndexParamValue(AsmPrinter &p, Attribute value);
+
+/// Parse a parameter value that is known to be an index type.
+ParseResult parseIndexParamValue(AsmParser &p, FailureOr<Attribute> &value);
+
 } // namespace M::KGEN
 
 #define GET_ATTRDEF_CLASSES

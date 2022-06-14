@@ -63,6 +63,20 @@ void KGENDialect::registerAttributes() {
 // tightly controlled situations, e.g. in return operations, in types, or when
 // invoking a generator. In these cases we can use a much nicer and more compact
 // syntax so we as compiler engineers don't go bonkers looking at IR dumps.
+/// Print a parameter value that is known to be an index type.
+void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, value, IndexType::get(value.getContext()));
+}
+
+/// Parse a parameter value that is known to be an index type.
+ParseResult KGEN::parseIndexParamValue(AsmParser &p,
+                                       FailureOr<Attribute> &result) {
+  Attribute value;
+  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
+    return failure();
+  result = value;
+  return success();
+}
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
@@ -927,10 +941,10 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
   } else {
     // These are known leaf types that don't participate with
     // SubElementTypeInterface.
-    if (!type.isa<IntegerType, FloatType, NoneType>()) {
+    if (!type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>()) {
       // Conservatively reject unknown types, we don't want someone to forget to
       // conform to SubElementTypeInterface.
-      op->emitError("unknown attribute for parameterization scan: ") << type;
+      op->emitError("unknown type for parameterization scan: ") << type;
     }
   }
 
