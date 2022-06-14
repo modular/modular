@@ -20,6 +20,7 @@ target_link_libraries(kgen-opt
   GRTDialect
 
   MLIRIR
+  MLIRArithmetic
   MLIROptLib
   MLIRParser
   MLIRSupport
