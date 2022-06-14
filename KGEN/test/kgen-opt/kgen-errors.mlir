@@ -124,4 +124,3 @@ kgen.generator @scalar_params_verbose<n>(%x :
 kgen.generator @scalar_params_verbose(%x : !meta.scalar<abc>) {
   kgen.return
 }
-  

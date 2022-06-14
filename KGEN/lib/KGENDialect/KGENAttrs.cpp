@@ -721,73 +721,22 @@ TensorEltType DTypeConstantAttr::getTensorEltType() {
 // Parameter Verification
 //===----------------------------------------------------------------------===//
 
-/// Scan the specified attribute and its recursive uses, diagnosing incorrect
-/// parameter declarations and collecting parameter uses.
-static LogicalResult collectParameterUses(
-    Attribute attr, Operation *op,
-    SmallVectorImpl<std::pair<ParamDeclRefAttr, Operation *>> &parameterUses,
-    llvm::SmallDenseSet<Attribute> &parameterLessAttrs) {
+namespace {
+struct ParameterVerifier final {
 
-  // Reject errant parameter decls.
-  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
-    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
-        << paramDecl;
-    return failure();
-  }
+  /// Walk the operation and all the operations in its body to find the
+  /// definitions and uses of parameters.  This diagnoses and rejects parameter
+  /// definitions in invalid positions as well.
+  LogicalResult collectParameterDefsAndUses(Operation *topLevelOp);
 
-  // Collect parameter references.
-  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
-    parameterUses.push_back({paramRef, op});
-    return success();
-  }
+  /// Once all the defs and uses of parameters are collected, verify that the
+  /// uses are correct.
+  LogicalResult checkParameterUses();
 
-  // If this attribute has no sub-attributes or we have already scanned it an
-  // know that it has no parameters in it, return early.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DTypeConstantAttr, TypeAttr>() ||
-      // TODO: Handle TypeAttr for parameterized types.
-      parameterLessAttrs.count(attr))
-    return success();
-
-  // Otherwise we need to recursively process attributes that we know about.
-  size_t oldSize = parameterUses.size();
-  if (auto array = attr.dyn_cast<ArrayAttr>()) {
-    for (auto elt : array) {
-      if (failed(
-              collectParameterUses(elt, op, parameterUses, parameterLessAttrs)))
-        return failure();
-    }
-  } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
-    if (failed(collectParameterUses(bind.getValue(), op, parameterUses,
-                                    parameterLessAttrs)))
-      return failure();
-  } else if (auto expr = attr.dyn_cast<ParamExprAttr>()) {
-    for (auto operand : expr.getOperands()) {
-      if (failed(collectParameterUses(operand, op, parameterUses,
-                                      parameterLessAttrs)))
-        return failure();
-    }
-  } else {
-    // FIXME: hard coding specific attributes is really problematic, doesn't
-    // MLIR have a generic way to walk sub-attributes?
-    return op->emitError("unknown attribute for parameterization: ") << attr;
-    return failure();
-  }
-
-  // If the attribute had no uses, remember that so we don't have to re-scan it
-  // in the future.
-  if (oldSize == parameterUses.size())
-    parameterLessAttrs.insert(attr);
-
-  return success();
-}
-
-/// Scan the body of the specified operation checking invariants on
-/// parameters, diagnosing errors and returning failure if so.  This is used
-/// by verifiers for ops with bodies, like kgen.generator.
-LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
-  // Start by doing a pass over the operation and all the operations in its body
-  // to find the definitions and uses of parameters.
+private:
+  /// Scan the specified attribute and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses.
+  LogicalResult collectParameterUsesFromAttr(Attribute attr, Operation *op);
 
   // Parameter definitions, if any are present, should all be in a single
   // `paramDecls` attribute on an operation.  We restrict where declarations
@@ -806,8 +755,18 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
   // we've already checked.
   llvm::SmallDenseSet<Attribute> parameterLessAttrs;
   // TODO: parameterLessTypes.
+};
+} // end anonymous namespace.
 
+/// Walk the operation and all the operations in its body to find the
+/// definitions and uses of parameters.  This diagnoses and rejects parameter
+/// definitions in invalid positions as well.
+LogicalResult
+ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   bool hadError = false;
+
+  // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
+  // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
@@ -817,8 +776,7 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
         continue;
       // Scan the attribute tree looking or parameter uses and reject unexpected
       // parameter definitions.
-      if (failed(collectParameterUses(namedAttr.getValue(), bodyOp,
-                                      parameterUses, parameterLessAttrs))) {
+      if (failed(collectParameterUsesFromAttr(namedAttr.getValue(), bodyOp))) {
         hadError = true;
         break;
       }
@@ -854,12 +812,67 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
     }
   });
 
-  if (hadError)
-    return failure();
+  return failure(hadError);
+}
 
-  // Ok, now that we know the set of parameters we have to process, verify that
-  // the uses match up and that we have a proper partial order relationship
-  // between of definitions and uses.
+/// Scan the specified attribute and its recursive uses, diagnosing incorrect
+/// parameter declarations and collecting parameter uses.
+LogicalResult ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
+                                                              Operation *op) {
+
+  // Reject errant parameter decls.
+  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
+    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
+        << paramDecl;
+    return failure();
+  }
+
+  // Collect parameter references.
+  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+    parameterUses.push_back({paramRef, op});
+    return success();
+  }
+
+  // If this attribute has no sub-attributes or we have already scanned it an
+  // know that it has no parameters in it, return early.
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
+               DTypeConstantAttr, TypeAttr>() ||
+      // TODO: Handle TypeAttr for parameterized types.
+      parameterLessAttrs.count(attr))
+    return success();
+
+  // Otherwise we need to recursively process attributes that we know about.
+  size_t oldSize = parameterUses.size();
+  if (auto array = attr.dyn_cast<ArrayAttr>()) {
+    for (auto elt : array) {
+      if (failed(collectParameterUsesFromAttr(elt, op)))
+        return failure();
+    }
+  } else if (auto bind = attr.dyn_cast<ParamBindAttr>()) {
+    if (failed(collectParameterUsesFromAttr(bind.getValue(), op)))
+      return failure();
+  } else if (auto expr = attr.dyn_cast<ParamExprAttr>()) {
+    for (auto operand : expr.getOperands()) {
+      if (failed(collectParameterUsesFromAttr(operand, op)))
+        return failure();
+    }
+  } else {
+    // FIXME: hard coding specific attributes is really problematic, doesn't
+    // MLIR have a generic way to walk sub-attributes?
+    return op->emitError("unknown attribute for parameterization: ") << attr;
+  }
+
+  // If the attribute had no uses, remember that so we don't have to re-scan it
+  // in the future.
+  if (oldSize == parameterUses.size())
+    parameterLessAttrs.insert(attr);
+
+  return success();
+}
+
+/// Once all the defs and uses of parameters are collected, verify that the
+/// uses are correct.
+LogicalResult ParameterVerifier::checkParameterUses() {
   for (auto &[paramRefAttr, usingOp] : parameterUses) {
     // Check the use is referring to a parameter that was defined.
     auto decl = paramDecls[paramRefAttr.getName()];
@@ -880,6 +893,22 @@ LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
 
     // FIXME: Check partial ordering.
   }
-
   return success();
+}
+
+/// Scan the body of the specified operation checking invariants on
+/// parameters, diagnosing errors and returning failure if so.  This is used
+/// by verifiers for ops with bodies, like kgen.generator.
+LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
+  ParameterVerifier verifier;
+
+  // Start by doing a pass over the operation and all the operations in its body
+  // to find the definitions and uses of parameters.
+  if (failed(verifier.collectParameterDefsAndUses(topLevelOp)))
+    return failure();
+
+  // Ok, now that we know the set of parameters we have to process, verify that
+  // the uses match up and that we have a proper partial order relationship
+  // between of definitions and uses.
+  return verifier.checkParameterUses();
 }
