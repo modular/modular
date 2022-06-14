@@ -5,7 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "GenericML/Support/QuantSpec.h"
+#include "GraphRT/BEF/BEFTypes.h"
+#include "Support/ErrorOr.h"
 #include "llvm/Support/raw_ostream.h"
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//

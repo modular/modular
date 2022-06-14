@@ -14,8 +14,6 @@
 
 #include "GenericML/Support/TensorEltType.h"
 #include "GenericML/Support/TensorShape.h"
-#include "GraphRT/BEF/BEFTypes.h"
-#include "Support/ErrorOr.h"
 
 namespace M {
 
