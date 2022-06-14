@@ -8,6 +8,10 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace M;
 
+//===----------------------------------------------------------------------===//
+// Stringification and printing methods
+//===----------------------------------------------------------------------===//
+
 void TensorSpec::print(raw_ostream &os) const {
   llvm::interleave(getDims(), os, "x");
   if (getRank() != 0)
@@ -22,8 +26,17 @@ std::string TensorSpec::getAsString() const {
   return os.str();
 }
 
+void TensorSpec::dump() const { print(llvm::errs()); }
+
 //===----------------------------------------------------------------------===//
-// Dump methods
+// Static helpers
 //===----------------------------------------------------------------------===//
 
-void TensorSpec::dump() const { print(llvm::errs()); }
+ErrorOr<TensorSpec> TensorSpec::get(BEFType type) {
+  SmallVector<int64_t> dims;
+  if (auto tensorType = dyn_cast<BEFTensorType>(type)) {
+    auto eltType = tensorType->decode(dims).getKind();
+    return TensorSpec(dims, eltType);
+  }
+  return Error("BEFType cannot be cast to BEFTensorType");
+}
