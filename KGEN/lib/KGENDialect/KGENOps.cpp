@@ -311,6 +311,46 @@ LogicalResult GeneratorOp::verifyRegions() {
 }
 
 //===----------------------------------------------------------------------===//
+// GenerateOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GenerateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Check that the callee attribute was specified.
+  auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
+  if (!calleeAttr)
+    return emitOpError("requires a 'callee' symbol reference attribute");
+  auto generator =
+      symbolTable.lookupNearestSymbolFrom<GeneratorOp>(*this, calleeAttr);
+  if (!generator)
+    return emitError() << "'" << calleeAttr.getValue()
+                       << "' does not reference a valid generator";
+
+  // Verify that the operand and result types match the callee.
+  auto fnType = generator.getFunctionType();
+  if (fnType.getNumInputs() != getNumOperands())
+    return emitError("incorrect number of operands for generator");
+
+  for (unsigned i = 0, e = fnType.getNumInputs(); i != e; ++i)
+    if (getOperand(i).getType() != fnType.getInput(i))
+      return emitError("operand type mismatch: expected operand type ")
+             << fnType.getInput(i) << ", but provided "
+             << getOperand(i).getType() << " for operand number " << i;
+
+  if (fnType.getNumResults() != getNumResults())
+    return emitError("incorrect number of results for callee");
+
+  for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    if (getResult(i).getType() != fnType.getResult(i)) {
+      auto diag = emitError("result type mismatch at index ") << i;
+      diag.attachNote() << "      op result types: " << getResultTypes();
+      diag.attachNote() << "function result types: " << fnType.getResults();
+      return diag;
+    }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ParamValueOp
 //===----------------------------------------------------------------------===//
 
