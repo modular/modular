@@ -39,7 +39,7 @@ protected:
     // enqueue fails if `taskList` is full. If so, take an item from the queue
     // and run it.
     while (!taskList->enqueue(work))
-      popAndDoWork(*taskList);
+      [[maybe_unused]] auto r = popAndDoWork(*taskList);
     syncState.sema.post();
   }
 
