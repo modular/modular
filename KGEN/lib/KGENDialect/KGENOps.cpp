@@ -100,25 +100,34 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
-// GeneratorOp
+// Logic shared between KernelOp and GeneratorOp
 //===----------------------------------------------------------------------===//
-
-ReturnOp GeneratorOp::getReturnOp() {
-  return cast<ReturnOp>(getBodyBlock()->getTerminator());
-}
 
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 static ParseResult parseOptionalParameters(OpAsmParser &parser,
-                                           OperationState &result) {
+                                           OperationState &result,
+                                           bool isGenerator) {
+  bool hasLessThan = succeeded(parser.parseOptionalLess());
+
+  // kgen.kernel's are not allowed to have parameter lists and don't get
+  // parameter attributes.  If we see one (even an empty <>), diagnose with
+  // a helpful error.
+  if (hasLessThan && !isGenerator)
+    return parser.emitError(parser.getCurrentLocation(),
+                            "parameters not allowed in kgen.kernel, use "
+                            "kgen.generator instead");
+
   // If there is no parameter list, or if it is empty, we're done.
-  if (failed(parser.parseOptionalLess()) ||
-      succeeded(parser.parseOptionalGreater())) {
-    result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
-    result.addAttribute("numInputParameters",
-                        parser.getBuilder().getI32IntegerAttr(0));
+  if (!hasLessThan || succeeded(parser.parseOptionalGreater())) {
+    // kgen.kernel's don't get paramDecl related attributes.
+    if (isGenerator) {
+      result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
+      result.addAttribute("numInputParameters",
+                          parser.getBuilder().getI32IntegerAttr(0));
+    }
     return success();
   }
 
@@ -164,12 +173,11 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
   return parser.parseGreater();
 }
 
-/// Parses a KGEN Generator.
-///
-/// operation ::=
-/// `kgen.generator` function-signature function-attributes? function-body
-///
-ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
+/// Parse either a kgen.generator or kgen.kernel declaration, depending on what
+/// `isGenerator` is set to.
+static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
+                                          OperationState &result,
+                                          bool isGenerator) {
   using namespace mlir::function_interface_impl;
 
   SmallVector<OpAsmParser::Argument> entryArgs;
@@ -189,7 +197,8 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
   // Parse the function signature.
   bool isVariadic = false;
 
-  if (parseOptionalParameters(parser, result) ||
+  if (parseOptionalParameters(parser, result, isGenerator) ||
+      // Both have a normal signature of course.
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs))
     return failure();
@@ -224,20 +233,17 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
   assert(resultAttrs.size() == resultTypes.size());
   addArgAndResultAttrs(builder, result, entryArgs, resultAttrs);
 
-  // Parse the optional function body. The printer will not print the body if
-  // its empty, so disallow parsing of empty body in the parser.
+  // Parse the required function body.
   auto *body = result.addRegion();
   llvm::SMLoc loc = parser.getCurrentLocation();
-  mlir::OptionalParseResult parseResult =
-      parser.parseOptionalRegion(*body, entryArgs,
-                                 /*enableNameShadowing=*/false);
-  if (parseResult.hasValue()) {
-    if (failed(*parseResult))
-      return failure();
-    // Function body was parsed, make sure its not empty.
-    if (body->empty())
-      return parser.emitError(loc, "expected non-empty function body");
-  }
+  if (parser.parseRegion(*body, entryArgs,
+                         /*enableNameShadowing=*/false))
+    return failure();
+
+  // Function body was parsed, make sure its not empty.
+  if (body->empty())
+    return parser.emitError(loc, "expected non-empty function body");
+
   return success();
 }
 
@@ -269,11 +275,9 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
   p << '>';
 }
 
-// Print the GeneratorOp. Collects argument and result types and passes them to
-// helper functions. Drops "void" result since it cannot be parsed back.
-void GeneratorOp::print(OpAsmPrinter &p) {
+static void printGeneratorOrKernel(OpAsmPrinter &p,
+                                   mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
-  Operation *op = getOperation();
 
   // Print the operation and the function name.
   auto funcName =
@@ -286,24 +290,73 @@ void GeneratorOp::print(OpAsmPrinter &p) {
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
 
-  printParameterList(getParamDecls(), getNumInputParameters(), p);
+  if (auto paramDecls = op->getAttrOfType<ArrayAttr>("paramDecls")) {
+    auto numInputs = op->getAttrOfType<IntegerAttr>("numInputParameters");
+    printParameterList(paramDecls, numInputs.getValue().getZExtValue(), p);
+  }
 
-  ArrayRef<Type> argTypes = getArgumentTypes();
-  ArrayRef<Type> resultTypes = getResultTypes();
-  printFunctionSignature(p, *this, argTypes, /*isVariadic=*/false, resultTypes);
+  ArrayRef<Type> argTypes = op.getArgumentTypes();
+  ArrayRef<Type> resultTypes = op.getResultTypes();
+  printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(
-      p, *this, argTypes.size(), resultTypes.size(),
+      p, op, argTypes.size(), resultTypes.size(),
       {visibilityAttrName, "paramDecls", "numInputParameters"});
 
   p << ' ';
-  p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
+  p.printRegion(op.getBody(), /*printEntryBlockArgs=*/false,
                 /*printBlockTerminators=*/true);
 }
+
+//===----------------------------------------------------------------------===//
+// GeneratorOp
+//===----------------------------------------------------------------------===//
+
+ReturnOp GeneratorOp::getReturnOp() {
+  return cast<ReturnOp>(getBodyBlock()->getTerminator());
+}
+
+/// Parses a KGEN Generator.
+ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseGeneratorOrKernel(parser, result, /*isGenerator=*/true);
+}
+
+// Print the GeneratorOp using the shared printing logic.
+void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult GeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(
           getParamDecls().getValue().drop_front(getNumInputParameters()),
           getResultTypes())) ||
+      failed(checkParametersInOpBody(*this)))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// KernelOp
+//===----------------------------------------------------------------------===//
+
+ReturnOp KernelOp::getReturnOp() {
+  return cast<ReturnOp>(getBodyBlock()->getTerminator());
+}
+
+/// Parses a concrete KGEN Kernel.
+///
+/// operation ::=
+///   `kgen.kernel` function-signature function-attributes? function-body
+///
+ParseResult KernelOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseGeneratorOrKernel(parser, result, /*isGenerator=*/false);
+}
+
+/// Print the KernelOp. We use a shared printer with the GeneratorOp since it is
+/// a superset of what a kernel is.
+void KernelOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
+
+LogicalResult KernelOp::verifyRegions() {
+  if (failed(getReturnOp().checkArgumentTypes(/*no parameters*/ {},
+                                              getResultTypes())) ||
       failed(checkParametersInOpBody(*this)))
     return failure();
 

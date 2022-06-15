@@ -15,6 +15,39 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
+// KernelOp
+//===----------------------------------------------------------------------===//
+
+def KernelOp
+  : KGENOp<"kernel", [HasParent<"ModuleOp">, FunctionOpInterface,
+                      Symbol, IsolatedFromAbove,
+                      SingleBlockImplicitTerminator<"ReturnOp">]> {
+  let summary = "Concrete kernel definition";
+  
+  let arguments = (ins TypeAttrOf<FunctionType>:$function_type);
+  let regions = (region SizedRegion<1>:$body);
+
+  let extraClassDeclaration = [{
+    using FunctionOpInterfaceTrait::getBody;
+    using FunctionOpInterfaceTrait::front;
+    Block *getBodyBlock() {
+      return &getBody().front();
+    }
+
+    ReturnOp getReturnOp();
+
+    /// Returns the argument types of this invokable.
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+    /// Returns the result types of this invokable.
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+  }];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
