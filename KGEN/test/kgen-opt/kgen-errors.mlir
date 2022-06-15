@@ -147,13 +147,19 @@ kgen.generate @undefined() : () -> ()
 
 // -----
 
-
 kgen.generator @g1(%x : i32) {
   // expected-error @+1 {{incorrect number of operands for generator}}
   kgen.generate @g2(%x) : (i32) -> ()
   kgen.return
 }
-
 kgen.generator @g2<>() {
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{'kgen.kernel' parameters not allowed in kgen.kernel, use kgen.generator instead}}
+kgen.kernel @bad_kernel_param<>() {
+  kgen.return
+}
+
