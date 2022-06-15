@@ -1,0 +1,156 @@
+//===- LockFreeRingBuffer.h -----------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLCL_SUPPORT_LOCKFREERINGBUFFER_H
+#define LLCL_SUPPORT_LOCKFREERINGBUFFER_H
+
+#include "llvm/Support/MathExtras.h"
+
+#include <atomic>
+#include <cassert>
+
+namespace LLCL {
+
+/// This class provides a lock-free ring buffer for concurrent access.
+/// NOTE: Currently the size of the ring buffer is fixed at the construction
+/// time. We may want to implement resize.
+template <typename ItemType>
+class LockFreeRingBuffer {
+
+public:
+  LockFreeRingBuffer(size_t size = DEFAULT_SIZE)
+      : size(llvm::NextPowerOf2(size)),
+        buffer(std::make_unique<std::unique_ptr<ItemType>[]>(this->size)) {}
+
+  ~LockFreeRingBuffer() {
+    assert(readIndex.load() == writeIndex.load() &&
+           "Cannot destroy a non-empty ring buffer!");
+  }
+
+  /// Enqueue adds the object to the circular buffer and takes ownership of the
+  /// object. Returns false if the object couldn't added because the buffer is
+  /// full, returns true otherwise.
+  bool enqueue(ItemType *item) {
+    // Make sure that the buffer is not full.
+    uint64_t curConsumed = consumed.load(std::memory_order_acquire);
+    uint64_t curWriteIndex = writeIndex.load(std::memory_order_acquire);
+    if (curWriteIndex - curConsumed >= size)
+      return false;
+
+#ifdef MODULAR_DEBUG
+    // This is not technically an overflow yet, but will result overflow by
+    // the next enqueue. This is close enough to invalidate the underlying
+    // assumption that the total number of enqueues will never exceed the
+    // uint64_t max value. We check the overflow for `curWriteIndex` as this
+    // moves ahead of all other atomic variables.
+    assert(curWriteIndex < std::numeric_limits<uint64_t>::max() &&
+           "Index overflow.");
+#endif
+
+    // Claim the ownership of `curWriteIndex`. If `compare_exchange_weak`
+    // succeeds, we can make sure that 1) writing to `buffer[curWriteIndex %
+    // size] does not overwrite any unconsumed item, and 2) no other threads
+    // will write to `buffer[curWriteIndex % size]` simultaneously.
+    while (!writeIndex.compare_exchange_weak(curWriteIndex, curWriteIndex + 1,
+                                             std::memory_order_acq_rel)) {
+      // New `curWriteIndex` needs to be compared against `consumed` again.
+      if (curWriteIndex - consumed.load(std::memory_order_acquire) >= size)
+        return false;
+    }
+
+    // Now we can safely write to `buffer[curWriteIndex % size]`.
+    buffer[curWriteIndex % size] = std::unique_ptr<ItemType>(item);
+
+    // Update `published` to indicate that the value is actually written and
+    // ready to consume. Check that the value of `published` is same as
+    // `curWriteIndex`, to make sure that the values are published in order.
+    while (published.load(std::memory_order_acquire) != curWriteIndex)
+      ;
+    published.store(curWriteIndex + 1, std::memory_order_release);
+    return true;
+  }
+
+  /// Dequeue returns the stored item to the caller and release the ownership of
+  /// the item. Returns nullptr if the buffer is empty.
+  std::unique_ptr<ItemType> dequeue() {
+    // Make sure that the buffer is not empty.
+    uint64_t curPublished = published.load(std::memory_order_acquire);
+    uint64_t curReadIndex = readIndex.load(std::memory_order_acquire);
+    if (curPublished <= curReadIndex)
+      return nullptr;
+
+    // Claim the ownership of `consumed`. If `compare_exchange_weak` succeedes,
+    // we can make suere that 1) `buffer[curConsumed % size]` contains a valid
+    // item, and 2) no other threads is taking the item from `buffer[curConsumed
+    // % size]`.
+    while (!readIndex.compare_exchange_weak(curReadIndex, curReadIndex + 1,
+                                            std::memory_order_acq_rel)) {
+      // Check again if we have enough values published.
+      if (published.load(std::memory_order_acquire) <= curReadIndex)
+        return nullptr;
+    }
+
+    // Now we can safely read from `buffer[curReadIndex % size]`.
+    auto ret = std::move(buffer[curReadIndex % size]);
+
+    // Update `consumed` to tell writing threads that the slot
+    // `buffer[consumed % size]` can be overwritten. Check the value of
+    // `consumed` is same as `curReadIndex`, to make sure that the slots became
+    // available in order.
+    while (consumed.load(std::memory_order_acquire) != curReadIndex)
+      ;
+    consumed.store(curReadIndex + 1, std::memory_order_release);
+    return ret;
+  }
+
+private:
+  static constexpr size_t DEFAULT_SIZE = 128;
+#ifdef __cpp_lib_hardware_interference_size
+  using std::hardware_destructive_interference_size;
+#else
+  static constexpr std::size_t hardware_destructive_interference_size = 64;
+#endif
+
+  LockFreeRingBuffer(const LockFreeRingBuffer &other) = delete;
+  LockFreeRingBuffer &operator=(const LockFreeRingBuffer &other) = delete;
+
+  const size_t size;
+  std::unique_ptr<std::unique_ptr<ItemType>[]> buffer;
+
+  /// The ring buffer is implemented with 4 atomic variables. `writeIndex`
+  /// maintains the next slot to be written while `readIndex` maintains the next
+  /// slot to be read. `published` follows `writeIndex` when an item is actually
+  /// written to `buffer[writeIndex % size]`, and `consumed` follows `readIndex`
+  /// when an item is finished read from `buffer[readIndex % size]`. So the
+  /// logic for `enqueue` is
+  ///
+  /// 1. Take the ownership of next `writeIndex` and atomically increases
+  /// `writeIndex` by 1.
+  /// 2. Write an item to `writeIndex % size`.
+  /// 3. Update `published` to the new `writeIndex`.
+  ///
+  /// If we only have `writeIndex` but not `published`, we cannot block other
+  /// threads to access the slot during the transient state between a thread
+  /// having an ownership of `writeIndex` but not finished writing the item
+  /// yet. Same applies to `dequeue` operation.
+  ///
+  /// The atomic variables are monotonically increasing. This may
+  /// encounter overflow issue, but with uint64_t, even when we add 2^20
+  /// elements per second, it takes ~557844 years for the overflow to happen.
+  /// They are aligned with cache line size to avoid false sharing.
+  /// TODO: Make the implementation handle the overflow.
+  alignas(hardware_destructive_interference_size)
+      std::atomic<uint64_t> readIndex = 0;
+  alignas(hardware_destructive_interference_size)
+      std::atomic<uint64_t> writeIndex = 0;
+  alignas(hardware_destructive_interference_size)
+      std::atomic<uint64_t> consumed = 0;
+  alignas(hardware_destructive_interference_size)
+      std::atomic<uint64_t> published = 0;
+};
+} // namespace LLCL
+
+#endif // LLCL_SUPPORT_LOCKFREERINGBUFFER_H
