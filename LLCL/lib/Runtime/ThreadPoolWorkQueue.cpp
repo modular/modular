@@ -7,7 +7,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 
 #include "LLCL/Runtime/AsyncValue.h"
-#include "LLCL/Support/ConcurrentQueue.h"
+#include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
 #include "llvm/ADT/ArrayRef.h"
 
@@ -36,14 +36,17 @@ public:
 
 protected:
   void addTaskInternal(TaskFunctionBase *work) override {
-    taskList.enqueue(work);
+    // enqueue fails if `taskList` is full. If so, take an item from the queue
+    // and run it.
+    while (!taskList->enqueue(work))
+      popAndDoWork(*taskList);
     syncState.sema.post();
   }
 
 private:
   /// Pop a single item off the queue and do the task.
   static mlir::LogicalResult
-  popAndDoWork(ConcurrentQueue<TaskFunctionBase> &q) {
+  popAndDoWork(LockFreeRingBuffer<TaskFunctionBase> &q) {
     auto item = q.dequeue();
     if (!item)
       return mlir::failure();
@@ -53,7 +56,7 @@ private:
   }
 
   /// Loop around `popAndDoWork`, just do work until the queue is empty.
-  static void doWork(ConcurrentQueue<TaskFunctionBase> &q) {
+  static void doWork(LockFreeRingBuffer<TaskFunctionBase> &q) {
     while (succeeded(popAndDoWork(q)))
       ;
   }
@@ -69,14 +72,15 @@ private:
   /// thread pool.
   struct Thread {
     ThreadSyncState &sync;
-    ConcurrentQueue<TaskFunctionBase> &taskList;
+    LockFreeRingBuffer<TaskFunctionBase> &taskList;
 
     std::thread thread;
 
     /// Create a `Thread` from a sync state reference and a reference to a
     /// task list. This also starts the std::thread, so the sync state and
     /// task list must be initialized by the time this is called.
-    Thread(ThreadSyncState &sync, ConcurrentQueue<TaskFunctionBase> &taskList)
+    Thread(ThreadSyncState &sync,
+           LockFreeRingBuffer<TaskFunctionBase> &taskList)
         : sync(sync), taskList(taskList), thread(&Thread::run, this) {}
     /// Joins the thread. Asserts that `sync.done` is true because otherwise
     /// the thread will never join.
@@ -101,7 +105,7 @@ private:
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
   ThreadSyncState syncState;
-  ConcurrentQueue<TaskFunctionBase> taskList;
+  std::unique_ptr<LockFreeRingBuffer<TaskFunctionBase>> taskList;
 };
 } // end anonymous namespace
 
@@ -112,14 +116,15 @@ private:
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads)
     : poolSize(numWorkerThreads),
       pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}} {
+  taskList = std::make_unique<LockFreeRingBuffer<TaskFunctionBase>>();
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
-    new (&pool[i]) Thread(syncState, taskList);
+    new (&pool[i]) Thread(syncState, *taskList);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // Donate the client thread to help empty the queue if there's anything left.
-  doWork(taskList);
+  doWork(*taskList);
 
   // Now we can tell all the threads to exit.
   syncState.done.store(true, std::memory_order_release);
@@ -161,7 +166,7 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   //   work, this thread currently has no way of waking up to check again if
   //   there's more work to be done.
   while (numRemaining.load() > 0)
-    if (mlir::failed(popAndDoWork(taskList)))
+    if (mlir::failed(popAndDoWork(*taskList)))
       for (auto &value : values)
         if (!value->isReady())
           allValuesDone.wait();
