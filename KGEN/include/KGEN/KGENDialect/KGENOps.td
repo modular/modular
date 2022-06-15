@@ -10,6 +10,7 @@
 
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -49,6 +50,43 @@ def GeneratorOp
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// GenerateOp
+//===----------------------------------------------------------------------===//
+
+def GenerateOp
+  : KGENOp<"generate", [
+      CallOpInterface,
+      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+
+  let summary = "Kernel generator invocation";
+
+  // TODO: Parameter decls and bindings.
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>);
+
+  let extraClassDeclaration = [{
+    FunctionType getCalleeType();
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() {
+      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+    }
+  }];
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
 }
 
 //===----------------------------------------------------------------------===//

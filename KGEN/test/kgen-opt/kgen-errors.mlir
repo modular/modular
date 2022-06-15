@@ -132,10 +132,28 @@ kgen.generator @dtype_params() {
   kgen.return
  }
  
- // -----
+// -----
 
 // expected-note @+2 {{parameter defined with type 'ui32'}}
 // expected-error @+1 {{reference to parameter "n" with incorrect type 'index'}}
 kgen.generator @scalar_params_verbose<n : ui32>(%x : !meta.buffer<n, f32>) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{'undefined' does not reference a valid generator}}
+kgen.generate @undefined() : () -> ()
+
+// -----
+
+
+kgen.generator @g1(%x : i32) {
+  // expected-error @+1 {{incorrect number of operands for generator}}
+  kgen.generate @g2(%x) : (i32) -> ()
+  kgen.return
+}
+
+kgen.generator @g2<>() {
   kgen.return
 }
