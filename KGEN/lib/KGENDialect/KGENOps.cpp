@@ -364,24 +364,24 @@ LogicalResult KernelOp::verifyRegions() {
 }
 
 //===----------------------------------------------------------------------===//
-// GenerateOp
+// CallOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult GenerateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
   auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
-  auto generator =
-      symbolTable.lookupNearestSymbolFrom<GeneratorOp>(*this, calleeAttr);
-  if (!generator)
+  mlir::FunctionOpInterface callee =
+      symbolTable.lookupNearestSymbolFrom(*this, calleeAttr);
+  if (!callee || !isa<GeneratorOp, KernelOp>(callee))
     return emitError() << "'" << calleeAttr.getValue()
-                       << "' does not reference a valid generator";
+                       << "' does not reference a valid callee";
 
   // Verify that the operand and result types match the callee.
-  auto fnType = generator.getFunctionType();
+  auto fnType = callee.getFunctionType().cast<FunctionType>();
   if (fnType.getNumInputs() != getNumOperands())
-    return emitError("incorrect number of operands for generator");
+    return emitError("incorrect number of operands for callee");
 
   for (unsigned i = 0, e = fnType.getNumInputs(); i != e; ++i)
     if (getOperand(i).getType() != fnType.getInput(i))

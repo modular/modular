@@ -86,15 +86,14 @@ def GeneratorOp
 }
 
 //===----------------------------------------------------------------------===//
-// GenerateOp
+// CallOp
 //===----------------------------------------------------------------------===//
 
-def GenerateOp
-  : KGENOp<"generate", [
-      CallOpInterface,
-      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def CallOp
+  : KGENOp<"call", [CallOpInterface,
+                    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
 
-  let summary = "Kernel generator invocation";
+  let summary = "Call a kernel or generator";
 
   // TODO: Parameter decls and bindings.
   let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);

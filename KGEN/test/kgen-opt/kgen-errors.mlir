@@ -142,14 +142,14 @@ kgen.generator @scalar_params_verbose<n : ui32>(%x : !meta.buffer<n, f32>) {
 
 // -----
 
-// expected-error @+1 {{'undefined' does not reference a valid generator}}
-kgen.generate @undefined() : () -> ()
+// expected-error @+1 {{'undefined' does not reference a valid callee}}
+kgen.call @undefined() : () -> ()
 
 // -----
 
 kgen.generator @g1(%x : i32) {
-  // expected-error @+1 {{incorrect number of operands for generator}}
-  kgen.generate @g2(%x) : (i32) -> ()
+  // expected-error @+1 {{incorrect number of operands for callee}}
+  kgen.call @g2(%x) : (i32) -> ()
   kgen.return
 }
 kgen.generator @g2<>() {
