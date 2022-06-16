@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <new>
 
 namespace LLCL {
 
@@ -108,7 +109,7 @@ public:
 
 private:
   static constexpr size_t DEFAULT_SIZE = 128;
-#ifdef __cpp_lib_hardware_interference_size
+#if defined(__cpp_lib_hardware_interference_size) && !defined(_MSC_VER)
   using std::hardware_destructive_interference_size;
 #else
   static constexpr std::size_t hardware_destructive_interference_size = 64;
