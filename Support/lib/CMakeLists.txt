@@ -6,7 +6,7 @@
 
 add_subdirectory(Benchmark)
 
-add_mlir_library(MSupport
+add_modular_library(MSupport
   AlignedAlloc.cpp
   Error.cpp
 
