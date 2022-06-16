@@ -4,7 +4,7 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_mlir_library(MetaDialect
+add_modular_library(MetaDialect
   MetaDialect.cpp
 
   ADDITIONAL_HEADER_DIRS

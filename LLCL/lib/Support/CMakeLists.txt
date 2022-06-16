@@ -18,7 +18,7 @@ if (APPLE)
   list(APPEND LIBS System)
 endif ()
 
-add_mlir_library(LLCLSupport
+add_modular_library(LLCLSupport
   Location.cpp
   ReferenceCounted.cpp
   Semaphore.cpp

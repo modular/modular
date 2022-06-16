@@ -8,13 +8,9 @@ set(LLVM_LINK_COMPONENTS
   Support
   )
 
-add_llvm_tool(kgen-opt
+add_modular_tool(kgen-opt
   kgen-opt.cpp
-)
-llvm_update_compile_flags(kgen-opt)
-
-target_link_libraries(kgen-opt
-  PRIVATE
+  LINK_LIBS PRIVATE
   KGENDialect
   MetaDialect
   GRTDialect
@@ -25,4 +21,4 @@ target_link_libraries(kgen-opt
   MLIRParser
   MLIRSupport
   MLIRTransforms
-)
+  )

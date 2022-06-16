@@ -6,7 +6,7 @@
 
 find_package(Threads)
 
-add_mlir_library(LLCLRuntime
+add_modular_library(LLCLRuntime
   AllocatorType.cpp
   AsyncValue.cpp
   DebuggingAllocators.cpp
