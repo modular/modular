@@ -13,6 +13,7 @@
 #ifndef GENERICML_SUPPORT_TENSORELTTYPE_H
 #define GENERICML_SUPPORT_TENSORELTTYPE_H
 
+#include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -339,24 +340,15 @@ public:
   TensorEltTypeSwitch &when(CallableT &&caseFn) {
     using CXXType = typename CXXTypeForTensorEltType<CaseValue>::CXXType;
     // Check to see if any of the types apply to 'value'.
-    if (!result && this->value.getValue() == CaseValue) {
-      if constexpr (std::is_void_v<ResultType>) {
-        std::apply(
-            [&](ParamPtrTypes... args) {
-              caseFn(constPreservingCast<CXXType *>(
-                  std::forward<ParamPtrTypes>(args))...);
-            },
-            paramPtrs);
-        result = EmptyType{};
-      } else {
-        result = std::apply(
-            [&](ParamPtrTypes... args) {
-              return caseFn(constPreservingCast<CXXType *>(
-                  std::forward<ParamPtrTypes>(args))...);
-            },
-            paramPtrs);
-      }
-    }
+    if (!result && this->value.getValue() == CaseValue)
+      result = std::apply(
+          [&](ParamPtrTypes... args) {
+            return invokeWithDefaultResultType<EmptyReturnType>(
+                std::forward<CallableT>(caseFn),
+                constPreservingCast<CXXType *>(
+                    std::forward<ParamPtrTypes>(args))...);
+          },
+          paramPtrs);
     return *this;
   }
 
@@ -392,12 +384,8 @@ public:
   template <typename CallableT>
   TensorEltTypeSwitch &otherwise(CallableT &&defaultFn) {
     if (!result) {
-      if constexpr (std::is_void_v<ResultType>) {
-        defaultFn();
-        result = EmptyType{};
-      } else {
-        result = defaultFn();
-      }
+      result = invokeWithDefaultResultType<EmptyReturnType>(
+          std::forward<CallableT>(defaultFn));
     }
     return *this;
   }
@@ -456,17 +444,19 @@ public:
 private:
   template <typename To, typename From>
   decltype(auto) constPreservingCast(From *arg) {
-    if constexpr (std::is_const_v<From>) {
+    if constexpr (std::is_const_v<From>)
       return static_cast<const To>(const_cast<std::decay_t<From> *>(arg));
-    } else {
+    else
       return static_cast<To>(arg);
-    }
   }
 
-  struct EmptyType {};
+  // EmptyReturnType is used when the result type is void.
+  struct EmptyReturnType {
+    static EmptyReturnType get() { return EmptyReturnType{}; }
+  };
   using CallableReturnType =
-      std::conditional_t<std::is_void_v<ResultType>, llvm::Optional<EmptyType>,
-                         llvm::Optional<ResultType>>;
+      llvm::Optional<std::conditional_t<std::is_void_v<ResultType>,
+                                        EmptyReturnType, ResultType>>;
 
   /// TensorEltTypeSwitch is not a value.
   TensorEltTypeSwitch(const TensorEltTypeSwitch &) = delete;
