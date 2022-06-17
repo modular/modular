@@ -62,6 +62,21 @@ struct CommonCLOptions {
     return configureMLIRContextAndExecute(sourceMgr, std::move(bodyFn));
   }
 
+  /// This method creates an MLIR context with the specified memory buffer as
+  /// the primary file configured in the source mgr.  It configures it for
+  /// diagnostic printing based on the setting of the -verify-diagnostics flag.
+  /// This invokes the `bodyFn` callable with the MLIRContext and SourceMgr that
+  /// is set up.
+  template <typename BodyFn>
+  LogicalResult configureMLIRContextAndSourceMgrAndExecute(
+      std::unique_ptr<llvm::MemoryBuffer> &&buffer, BodyFn &&bodyFn) const {
+    llvm::SourceMgr sourceMgr;
+    sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+    return configureMLIRContextAndExecute(
+        sourceMgr, [&sourceMgr, bodyFn = std::move(bodyFn)](
+                       mlir::MLIRContext *ctx) { bodyFn(ctx, sourceMgr); });
+  }
+
   /// This method creates an MLIR context and configures it for diagnostic
   /// printing based on the setting of the -verify-diagnostics flag.  This
   /// invokes the `bodyFn` callable with the MLIRContext that is set up.
