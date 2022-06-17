@@ -383,10 +383,9 @@ public:
   /// As a default, invoke the given callable within the root value.
   template <typename CallableT>
   TensorEltTypeSwitch &otherwise(CallableT &&defaultFn) {
-    if (!result) {
+    if (!result)
       result = invokeWithDefaultResultType<EmptyReturnType>(
           std::forward<CallableT>(defaultFn));
-    }
     return *this;
   }
 
