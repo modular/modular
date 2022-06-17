@@ -20,7 +20,8 @@
 
 namespace LLCL {
 class LLCLAllocator;
-class TaskFunctionBase; // Defined below.
+
+using TaskFunction = llvm::unique_function<void()>;
 
 /// This is an interface to various implementations of work queues: different
 /// execution methods which are often current. These implementations may be very
@@ -33,8 +34,7 @@ public:
   virtual ~WorkQueue() = default;
 
   /// Enqueue a block of work. Thread-safe.
-  template <typename CallableT>
-  void addTask(CallableT &&work);
+  virtual void addTask(TaskFunction work) = 0;
 
   /// Run work items until the specified values are ready, returning to the
   /// caller when they are ready (either as values or as errors).
@@ -48,46 +48,9 @@ public:
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();
-  virtual void addTaskInternal(TaskFunctionBase *work) = 0;
   WorkQueue(const WorkQueue &) = delete;
   void operator=(const WorkQueue &) = delete;
 };
-
-/// This is a non-templated base class that can be passed into implementations
-/// of workqueue.  It is subclassed by TaskFunction to hold a callable as a more
-/// efficient way to type erase it than std::function or comparable (which has a
-/// fixed size buffer but then overflows to a separate allocation).
-class TaskFunctionBase {
-public:
-  explicit TaskFunctionBase() : next(nullptr) {}
-  virtual ~TaskFunctionBase() {}
-  virtual void call() = 0;
-
-  std::unique_ptr<TaskFunctionBase> next;
-
-private:
-  TaskFunctionBase(const TaskFunctionBase &) = delete;
-  void operator=(const TaskFunctionBase &) = delete;
-};
-
-/// Templated ItemBase implementation class that holds a anonymous lambda
-/// function.
-template <typename CallableT>
-class TaskFunction final : public TaskFunctionBase {
-public:
-  explicit TaskFunction(CallableT newCallable)
-      : callable(std::move(newCallable)) {}
-
-  void call() override { callable(); }
-
-  CallableT callable;
-};
-
-/// Enqueue a block of work. Thread-safe.
-template <typename CallableT>
-inline void WorkQueue::addTask(CallableT &&work) {
-  addTaskInternal(new TaskFunction<CallableT>(std::move(work)));
-}
 
 /// Create a thread pool that only uses the host donor thread, involving no
 /// synchronization.

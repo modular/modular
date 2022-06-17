@@ -24,7 +24,10 @@ class LockFreeRingBuffer {
 public:
   LockFreeRingBuffer(size_t size = DEFAULT_SIZE)
       : size(llvm::NextPowerOf2(size)),
-        buffer(std::make_unique<std::unique_ptr<ItemType>[]>(this->size)) {}
+        buffer(std::make_unique<ItemType[]>(this->size)) {
+    assert(llvm::isPowerOf2_64(this->size) &&
+           "Ring buffer size is not power of 2.");
+  }
 
   ~LockFreeRingBuffer() {
     assert(readIndex.load() == writeIndex.load() &&
@@ -34,7 +37,7 @@ public:
   /// Enqueue adds the object to the circular buffer and takes ownership of the
   /// object. Returns false if the object couldn't added because the buffer is
   /// full, returns true otherwise.
-  bool enqueue(ItemType *item) {
+  bool enqueue(ItemType &&item) {
     // Make sure that the buffer is not full.
     uint64_t curConsumed = consumed.load(std::memory_order_acquire);
     uint64_t curWriteIndex = writeIndex.load(std::memory_order_acquire);
@@ -62,8 +65,9 @@ public:
         return false;
     }
 
-    // Now we can safely write to `buffer[curWriteIndex % size]`.
-    buffer[curWriteIndex % size] = std::unique_ptr<ItemType>(item);
+    // Now we can safely write to `buffer[curWriteIndex & (size - 1)]`, which is
+    // effectively `buffer[curWriteIndex % size]` when size is power of 2..
+    buffer[curWriteIndex & (size - 1)] = std::move(item);
 
     // Update `published` to indicate that the value is actually written and
     // ready to consume. Check that the value of `published` is same as
@@ -76,7 +80,7 @@ public:
 
   /// Dequeue returns the stored item to the caller and release the ownership of
   /// the item. Returns nullptr if the buffer is empty.
-  std::unique_ptr<ItemType> dequeue() {
+  ItemType dequeue() {
     // Make sure that the buffer is not empty.
     uint64_t curPublished = published.load(std::memory_order_acquire);
     uint64_t curReadIndex = readIndex.load(std::memory_order_acquire);
@@ -94,8 +98,9 @@ public:
         return nullptr;
     }
 
-    // Now we can safely read from `buffer[curReadIndex % size]`.
-    auto ret = std::move(buffer[curReadIndex % size]);
+    // Now we can safely read from `buffer[curReadIndex & (size - 1)]`, which
+    // is effectively `buffer[curReadIndex % size]` when size is power of 2.
+    auto ret = std::move(buffer[curReadIndex & (size - 1)]);
 
     // Update `consumed` to tell writing threads that the slot
     // `buffer[consumed % size]` can be overwritten. Check the value of
@@ -119,7 +124,7 @@ private:
   LockFreeRingBuffer &operator=(const LockFreeRingBuffer &other) = delete;
 
   const size_t size;
-  std::unique_ptr<std::unique_ptr<ItemType>[]> buffer;
+  std::unique_ptr<ItemType[]> buffer;
 
   /// The ring buffer is implemented with 4 atomic variables. `writeIndex`
   /// maintains the next slot to be written while `readIndex` maintains the next

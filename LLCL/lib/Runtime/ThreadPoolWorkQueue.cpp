@@ -27,6 +27,12 @@ public:
   /// Cleans up all threads in the thread pool cleanly.
   ~ThreadPoolWorkQueue() override;
 
+  void addTask(TaskFunction work) override {
+    while (!taskList->enqueue(std::move(work)))
+      [[maybe_unused]] auto r = popAndDoWork(*taskList);
+    syncState.sema.post();
+  }
+
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
   /// `poolSize` is set to the number of worker threads that are created by the
   /// work queue. However, we expect to have an external "main" thread that
@@ -34,29 +40,19 @@ public:
   /// `poolSize + 1` here.
   int getParallelismLevel() const final { return poolSize + 1; }
 
-protected:
-  void addTaskInternal(TaskFunctionBase *work) override {
-    // enqueue fails if `taskList` is full. If so, take an item from the queue
-    // and run it.
-    while (!taskList->enqueue(work))
-      [[maybe_unused]] auto r = popAndDoWork(*taskList);
-    syncState.sema.post();
-  }
-
 private:
   /// Pop a single item off the queue and do the task.
-  static mlir::LogicalResult
-  popAndDoWork(LockFreeRingBuffer<TaskFunctionBase> &q) {
-    auto item = q.dequeue();
-    if (!item)
+  static mlir::LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q) {
+    auto callable = q.dequeue();
+    if (!callable)
       return mlir::failure();
 
-    item->call();
+    callable();
     return mlir::success();
   }
 
   /// Loop around `popAndDoWork`, just do work until the queue is empty.
-  static void doWork(LockFreeRingBuffer<TaskFunctionBase> &q) {
+  static void doWork(LockFreeRingBuffer<TaskFunction> &q) {
     while (succeeded(popAndDoWork(q)))
       ;
   }
@@ -72,15 +68,14 @@ private:
   /// thread pool.
   struct Thread {
     ThreadSyncState &sync;
-    LockFreeRingBuffer<TaskFunctionBase> &taskList;
+    LockFreeRingBuffer<TaskFunction> &taskList;
 
     std::thread thread;
 
     /// Create a `Thread` from a sync state reference and a reference to a
     /// task list. This also starts the std::thread, so the sync state and
     /// task list must be initialized by the time this is called.
-    Thread(ThreadSyncState &sync,
-           LockFreeRingBuffer<TaskFunctionBase> &taskList)
+    Thread(ThreadSyncState &sync, LockFreeRingBuffer<TaskFunction> &taskList)
         : sync(sync), taskList(taskList), thread(&Thread::run, this) {}
     /// Joins the thread. Asserts that `sync.done` is true because otherwise
     /// the thread will never join.
@@ -105,7 +100,7 @@ private:
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
   ThreadSyncState syncState;
-  std::unique_ptr<LockFreeRingBuffer<TaskFunctionBase>> taskList;
+  std::unique_ptr<LockFreeRingBuffer<TaskFunction>> taskList;
 };
 } // end anonymous namespace
 
@@ -116,7 +111,7 @@ private:
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads)
     : poolSize(numWorkerThreads),
       pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}} {
-  taskList = std::make_unique<LockFreeRingBuffer<TaskFunctionBase>>();
+  taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
     new (&pool[i]) Thread(syncState, *taskList);
