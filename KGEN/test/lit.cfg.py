@@ -56,6 +56,6 @@ config.excludes = [
 llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
 
 tool_dirs = [config.modular_tools_dir, config.mlir_tools_dir, config.llvm_tools_dir]
-tools = ["kgen-opt"]
+tools = ["kgen-opt", "kgen-generate"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
