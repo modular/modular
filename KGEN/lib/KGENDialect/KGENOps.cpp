@@ -100,7 +100,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
-// Logic shared between KernelOp and GeneratorOp
+// Logic shared between KernelOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
 
 enum class GeneratorOrKernelKind {
@@ -108,14 +108,120 @@ enum class GeneratorOrKernelKind {
   generator,
   interface,
 };
+/// Parse a parameter list if present.
+/// parameter-decl   ::= identifier (`:` type)?
+/// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
+
+/// if isBinding:
+///   parameter-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
+/// else:
+///   parameter-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
+static ParseResult parseParamList(OpAsmParser &p,
+                                  SmallVector<Attribute> &paramDecls,
+                                  bool isBinding) {
+
+  // Handle the parameter-decl/parameter-result productions.
+  auto parseParamDecl = [&]() -> ParseResult {
+    std::string name;
+    Type type;
+
+    if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type))
+      return failure();
+    if (isBinding) {
+      Attribute value;
+      if (p.parseEqual() || parseParamValue(p, value, type))
+        return failure();
+      paramDecls.emplace_back(ParamBindAttr::get(name, type, value));
+    } else {
+      paramDecls.emplace_back(ParamDeclAttr::get(name, type));
+    }
+    return success();
+  };
+
+  // Check to see if we have the () syntax instead of arguments.
+  if (succeeded(p.parseOptionalLParen()))
+    return p.parseRParen();
+
+  // Otherwise, parse the parameters, we know there is at least one.
+  return p.parseCommaSeparatedList(OpAsmParser::Delimiter::None,
+                                   parseParamDecl);
+}
+
+//===----------------------------------------------------------------------===//
+// custom<CallOpParams>
+//===----------------------------------------------------------------------===//
+
+/// Parse the parameter spec for a call op.
+/// parameter-decl   ::= identifier (`:` type)?
+/// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
+
+/// param-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
+/// param-bind-list  ::= parameter-bind (`,` parameter-bind)* | `(` `)`
+
+/// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
+static ParseResult parseCallOpParams(OpAsmParser &p, ArrayAttr &paramValues,
+                                     ArrayAttr &paramDecls) {
+
+  if (p.parseOptionalLess()) {
+    // If there is no <, then the params of the call op are empty, so set
+    // paramValues and paramDecls to empty and return.
+    paramValues = p.getBuilder().getArrayAttr({});
+    paramDecls = p.getBuilder().getArrayAttr({});
+    return success();
+  }
+
+  SmallVector<Attribute> vals;
+  // Parse the input list
+  if (parseParamList(p, vals, /*isBinding=*/true))
+    return failure();
+
+  // Check to see if we have results and parse them if so.
+  // paramDecls will be empty if there is no arrow.
+  SmallVector<Attribute> decls;
+  if (succeeded(p.parseOptionalArrow())) {
+    if (parseParamList(p, decls, /*isBinding=*/false))
+      return failure();
+  }
+
+  paramValues = p.getBuilder().getArrayAttr(vals);
+  paramDecls = p.getBuilder().getArrayAttr(decls);
+
+  return p.parseGreater();
+}
+
+static void printCallOpParams(OpAsmPrinter &p, Operation *op,
+                              ArrayAttr paramValues, ArrayAttr paramDecls) {
+  if (paramValues.empty() && paramDecls.empty())
+    return;
+  p << "<";
+  llvm::interleaveComma(paramValues, p, [&](Attribute attr) {
+    auto bind = attr.cast<ParamBindAttr>();
+    printParamName(p, bind.getName().getValue());
+    printColonTypeOrIndex(p, bind.getType());
+    p << " = ";
+    printParamValue(p, bind.getValue(), bind.getType());
+  });
+  if (paramValues.empty())
+    p << "()";
+
+  if (!paramDecls.empty()) {
+    p << " -> ";
+    llvm::interleaveComma(paramDecls, p, [&](Attribute attr) {
+      auto ref = attr.cast<ParamDeclAttr>();
+      printParamName(p, ref.getName().getValue());
+      printColonTypeOrIndex(p, ref.getType());
+    });
+  }
+  p << ">";
+}
 
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
-static ParseResult parseOptionalParameters(OpAsmParser &parser,
-                                           OperationState &result,
-                                           GeneratorOrKernelKind opKind) {
+static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
+                                              OperationState &result,
+                                              GeneratorOrKernelKind opKind) {
   bool hasLessThan = succeeded(parser.parseOptionalLess());
 
   // kgen.kernel's are not allowed to have parameter lists and don't get
@@ -139,37 +245,16 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
   }
 
   SmallVector<Attribute> paramDecls;
-  // Handle the parameter-decl/parameter-result productions.
-  auto parseParamDecl = [&]() -> ParseResult {
-    std::string name;
-    Type type;
-    if (parser.parseKeywordOrString(&name) ||
-        parseColonTypeOrIndex(parser, type))
-      return failure();
-    paramDecls.push_back(ParamDeclAttr::get(name, type));
-    return success();
-  };
-
-  // Handle the parameter-list production.
-  auto parseParamList = [&]() -> ParseResult {
-    // Check to see if we have the () syntax instead of arguments.
-    if (succeeded(parser.parseOptionalLParen())) {
-      return parser.parseRParen();
-    }
-    // Otherwise, parse the parameters, we know there is at least one.
-    return parser.parseCommaSeparatedList(OpAsmParser::Delimiter::None,
-                                          parseParamDecl);
-  };
 
   // Parse the input list.
-  if (parseParamList())
+  if (parseParamList(parser, paramDecls, /*isBinding=*/false))
     return failure();
 
   unsigned numInputs = paramDecls.size();
 
   // Check to see if we have results and parse them if so.
   if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamList())
+    if (parseParamList(parser, paramDecls, /*isBinding=*/false))
       return failure();
   }
 
@@ -204,7 +289,7 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
   // Parse the function signature.
   bool isVariadic = false;
 
-  if (parseOptionalParameters(parser, result, opKind) ||
+  if (parseOptionalParameterSpec(parser, result, opKind) ||
       // Both have a normal signature of course.
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs))

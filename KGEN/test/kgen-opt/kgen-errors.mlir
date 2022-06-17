@@ -117,7 +117,7 @@ kgen.generator @scalar_params_verbose<n>(%x :
            !meta.scalar<#kgen.param.decl.ref<"n"> : index>) {
   kgen.return
 }
-  
+
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
@@ -126,12 +126,13 @@ kgen.generator @scalar_params_verbose(%x : !meta.scalar<abc>) {
 }
 
 // -----
+
 kgen.generator @dtype_params() {
   // expected-error @+1 {{invalid use of parameter with no declaration "type"}}
   %y = "someop" () {} : () -> !meta.scalar<type>
   kgen.return
  }
- 
+
 // -----
 
 // expected-note @+2 {{parameter defined with type 'ui32'}}
@@ -163,3 +164,13 @@ kgen.kernel @bad_kernel_param<>() {
   kgen.return
 }
 
+// -----
+
+kgen.generator @g1(%x : i32) {
+  // expected-error @+1 {{expected '('}}
+  kgen.call @g2<()> : (i32) -> ()
+  kgen.return
+}
+kgen.generator @g2<()>() {
+  kgen.return
+}
