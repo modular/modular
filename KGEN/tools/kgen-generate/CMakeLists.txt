@@ -8,22 +8,18 @@ set(LLVM_LINK_COMPONENTS
   Support
 )
 
-add_llvm_tool(kgen-generate
+add_modular_tool(kgen-generate
   GenerateKernels.cpp
   kgen-generate.cpp
-)
-llvm_update_compile_flags(kgen-generate)
 
-target_link_libraries(kgen-generate
-  PRIVATE
+  LINK_LIBS PRIVATE
   KGENDialect
   MetaDialect
-  MSupport
-
-  MLIRIR
   MLIRArithmetic
+  MLIRIR
   MLIROptLib
   MLIRParser
   MLIRSupport
   MLIRTransforms
+  MSupport
 )

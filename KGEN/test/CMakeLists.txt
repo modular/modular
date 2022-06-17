@@ -17,4 +17,5 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-kgen
   TOOLS
-  kgen-opt kgen-generate)
+  kgen-opt
+  kgen-generate)
