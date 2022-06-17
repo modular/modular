@@ -103,31 +103,38 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 // Logic shared between KernelOp and GeneratorOp
 //===----------------------------------------------------------------------===//
 
+enum class GeneratorOrKernelKind {
+  kernel,
+  generator,
+  interface,
+};
+
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 static ParseResult parseOptionalParameters(OpAsmParser &parser,
                                            OperationState &result,
-                                           bool isGenerator) {
+                                           GeneratorOrKernelKind opKind) {
   bool hasLessThan = succeeded(parser.parseOptionalLess());
 
   // kgen.kernel's are not allowed to have parameter lists and don't get
   // parameter attributes.  If we see one (even an empty <>), diagnose with
   // a helpful error.
-  if (hasLessThan && !isGenerator)
-    return parser.emitError(parser.getCurrentLocation(),
-                            "parameters not allowed in kgen.kernel, use "
-                            "kgen.generator instead");
+  if (opKind == GeneratorOrKernelKind::kernel) {
+    if (hasLessThan)
+      return parser.emitError(parser.getCurrentLocation(),
+                              "parameters not allowed in kgen.kernel, use "
+                              "kgen.generator instead");
+    // kgen.kernel's don't get paramDecl related attributes.
+    return success();
+  }
 
   // If there is no parameter list, or if it is empty, we're done.
   if (!hasLessThan || succeeded(parser.parseOptionalGreater())) {
-    // kgen.kernel's don't get paramDecl related attributes.
-    if (isGenerator) {
-      result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
-      result.addAttribute("numInputParameters",
-                          parser.getBuilder().getI32IntegerAttr(0));
-    }
+    result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
+    result.addAttribute("numInputParameters",
+                        parser.getBuilder().getI32IntegerAttr(0));
     return success();
   }
 
@@ -177,7 +184,7 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
 /// `isGenerator` is set to.
 static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
                                           OperationState &result,
-                                          bool isGenerator) {
+                                          GeneratorOrKernelKind opKind) {
   using namespace mlir::function_interface_impl;
 
   SmallVector<OpAsmParser::Argument> entryArgs;
@@ -197,7 +204,7 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
   // Parse the function signature.
   bool isVariadic = false;
 
-  if (parseOptionalParameters(parser, result, isGenerator) ||
+  if (parseOptionalParameters(parser, result, opKind) ||
       // Both have a normal signature of course.
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs))
@@ -235,6 +242,11 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
 
   // Parse the required function body.
   auto *body = result.addRegion();
+
+  // If this is a generator interface, no body block is allowed.
+  if (opKind == GeneratorOrKernelKind::interface)
+    return success();
+
   llvm::SMLoc loc = parser.getCurrentLocation();
   if (parser.parseRegion(*body, entryArgs,
                          /*enableNameShadowing=*/false))
@@ -303,8 +315,10 @@ static void printGeneratorOrKernel(OpAsmPrinter &p,
       {visibilityAttrName, "paramDecls", "numInputParameters"});
 
   p << ' ';
-  p.printRegion(op.getBody(), /*printEntryBlockArgs=*/false,
-                /*printBlockTerminators=*/true);
+  if (!op.getBody().empty()) {
+    p.printRegion(op.getBody(), /*printEntryBlockArgs=*/false,
+                  /*printBlockTerminators=*/true);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -317,7 +331,8 @@ ReturnOp GeneratorOp::getReturnOp() {
 
 /// Parses a KGEN Generator.
 ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrKernel(parser, result, /*isGenerator=*/true);
+  return parseGeneratorOrKernel(parser, result,
+                                GeneratorOrKernelKind::generator);
 }
 
 // Print the GeneratorOp using the shared printing logic.
@@ -347,7 +362,7 @@ ReturnOp KernelOp::getReturnOp() {
 ///   `kgen.kernel` function-signature function-attributes? function-body
 ///
 ParseResult KernelOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrKernel(parser, result, /*isGenerator=*/false);
+  return parseGeneratorOrKernel(parser, result, GeneratorOrKernelKind::kernel);
 }
 
 /// Print the KernelOp. We use a shared printer with the GeneratorOp since it is
@@ -364,6 +379,22 @@ LogicalResult KernelOp::verifyRegions() {
 }
 
 //===----------------------------------------------------------------------===//
+// GeneratorInterfaceOp
+//===----------------------------------------------------------------------===//
+
+/// Parses a KGEN generator interface.
+ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
+                                        OperationState &result) {
+  return parseGeneratorOrKernel(parser, result,
+                                GeneratorOrKernelKind::interface);
+}
+
+// Print the GeneratorInterfaceOp using the shared printing logic.
+void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
+  printGeneratorOrKernel(p, *this);
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
@@ -372,14 +403,15 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
-  mlir::FunctionOpInterface callee =
-      symbolTable.lookupNearestSymbolFrom(*this, calleeAttr);
-  if (!callee || !isa<GeneratorOp, KernelOp>(callee))
+  Operation *callee = symbolTable.lookupNearestSymbolFrom(*this, calleeAttr);
+  if (!isa_and_nonnull<GeneratorOp, KernelOp, GeneratorInterfaceOp>(callee))
     return emitError() << "'" << calleeAttr.getValue()
                        << "' does not reference a valid callee";
 
   // Verify that the operand and result types match the callee.
-  auto fnType = callee.getFunctionType().cast<FunctionType>();
+  auto fnType = callee->getAttrOfType<TypeAttr>("function_type")
+                    .getValue()
+                    .cast<FunctionType>();
   if (fnType.getNumInputs() != getNumOperands())
     return emitError("incorrect number of operands for callee");
 
