@@ -24,7 +24,7 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
     kgen.generator instances or other things that produce new attributes.
   }];
 
-  /// ParamDeclAttr's always have a `name` and `type`: an omitted type in the 
+  /// ParamDeclAttr's always have a `name` and `type`: an omitted type in the
   /// asmsyntax defaults to si64.
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -174,7 +174,7 @@ def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr",
   // Force all clients to go through our building logic so we can canonicalize
   // during building.
   let skipDefaultBuilders = 1;
- 
+
   let extraClassDeclaration = [{
     /// Build a parameter expression.  This automatically canonicalizes and
     /// folds, so it may not necessarily return a ParamExprAttr.

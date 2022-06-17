@@ -23,7 +23,7 @@ def KernelOp
                       Symbol, IsolatedFromAbove,
                       SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Concrete kernel definition";
-  
+
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type);
   let regions = (region SizedRegion<1>:$body);
 
@@ -128,7 +128,8 @@ def CallOp
   let summary = "Call a kernel or generator";
 
   // TODO: Parameter decls and bindings.
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, ArrayAttr:$paramValues,
+                   ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
 
   let extraClassDeclaration = [{
@@ -147,9 +148,9 @@ def CallOp
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
   }];
-
   let assemblyFormat = [{
-    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+    $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
+    attr-dict `:` functional-type($operands, results)
   }];
 }
 
@@ -232,4 +233,3 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
                                      TypeRange types);
   }];
 }
-
