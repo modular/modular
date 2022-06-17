@@ -86,6 +86,38 @@ def GeneratorOp
 }
 
 //===----------------------------------------------------------------------===//
+// GeneratorInterfaceOp
+//===----------------------------------------------------------------------===//
+
+def GeneratorInterfaceOp
+  : KGENOp<"generator.interface", 
+           [HasParent<"ModuleOp">, FunctionOpInterface, Symbol,
+            IsolatedFromAbove]> {
+  let summary = "Generator interface definition";
+
+  /// input and result parameters are stored in a single flat array named
+  /// `paramDecls` and the `numInputParameters` field indicates which are input
+  /// and which are result parameters.
+  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+                       ParamDeclArrayAttr:$paramDecls,
+                       I32Attr:$numInputParameters);
+
+  // We want to work with the FunctionOpInterface, which always requires a body
+  // region.  We are declaration like though, so ours never has a block.
+  let regions = (region SizedRegion<0>:$body);
+
+  let extraClassDeclaration = [{
+    /// Returns the argument types of this invokable.
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+    /// Returns the result types of this invokable.
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+  }];
+
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
