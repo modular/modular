@@ -26,20 +26,19 @@ public:
     doWork([]() -> bool { return false; });
   }
 
+  /// Enqueue a block of work. This does not use synchronization since this
+  void addTask(TaskFunction work) override {
+    workItems.enqueue(std::move(work));
+  }
+
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
   int getParallelismLevel() const override { return 1; }
-
-protected:
-  /// Enqueue a block of work. This does not use synchronization since this
-  void addTaskInternal(TaskFunctionBase *work) override {
-    workItems.enqueue(work);
-  }
 
 private:
   template <typename Callback>
   void doWork(Callback &&stopPredicate);
 
-  ConcurrentQueue<TaskFunctionBase> workItems;
+  ConcurrentQueue<TaskFunction> workItems;
 };
 } // end anonymous namespace
 
@@ -62,9 +61,9 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 /// early if it returns true.
 template <typename T>
 void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
-  while (auto item = workItems.dequeue()) {
+  while (auto callable = workItems.dequeue()) {
     if (!stopPredicate()) {
-      item->call();
+      callable();
     }
   }
 }
