@@ -8,10 +8,11 @@
 #define SUPPORT_COMMONCLOPTIONS_H
 
 #include "Support/CommandLine.h"
+#include "Support/ErrorOr.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/MemoryBuffer.h"
-
+#include "llvm/Support/SourceMgr.h"
 namespace M {
 
 /// Contains command-line options that are shared among most of our binaries.
@@ -48,12 +49,25 @@ struct CommonCLOptions {
     return errorOrInputFile.takeValue();
   }
 
+  /// This method creates an MLIR context with the specified memory buffer as
+  /// the primary file configured in the source mgr.  It configures it for
+  /// diagnostic printing based on the setting of the -verify-diagnostics flag.
+  /// This invokes the `bodyFn` callable with the MLIRContext that is set up.
+  template <typename BodyFn>
+  LogicalResult
+  configureMLIRContextAndExecute(std::unique_ptr<llvm::MemoryBuffer> &&buffer,
+                                 BodyFn &&bodyFn) const {
+    llvm::SourceMgr sourceMgr;
+    sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+    return configureMLIRContextAndExecute(sourceMgr, std::move(bodyFn));
+  }
+
   /// This method creates an MLIR context and configures it for diagnostic
   /// printing based on the setting of the -verify-diagnostics flag.  This
   /// invokes the `bodyFn` callable with the MLIRContext that is set up.
-  template <typename Body>
+  template <typename BodyFn>
   LogicalResult configureMLIRContextAndExecute(llvm::SourceMgr &sourceMgr,
-                                               Body &&bodyFn) const {
+                                               BodyFn &&bodyFn) const {
     mlir::MLIRContext context;
     if (verifyDiagnostics) {
       mlir::SourceMgrDiagnosticVerifierHandler sourceMgrHandler(sourceMgr,
