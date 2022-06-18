@@ -517,6 +517,93 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       return diag;
     }
 
+  // Verify that the callee/caller parameters match.  The parameter names on the
+  // results don't need to match, but the parameter names on the argument
+  // bindings do.  The types always need to match.
+  ArrayRef<Attribute> calleeParams;
+  unsigned calleeNumInputParams = 0;
+  if (isa<KernelOp>(callee)) {
+    // Fully defined kernels never have parameters.
+    calleeNumInputParams = 0;
+  } else {
+    assert((isa<GeneratorOp, GeneratorInterfaceOp>(callee)) &&
+           "unknown callee");
+    calleeParams = callee->getAttrOfType<ArrayAttr>("paramDecls").getValue();
+    calleeNumInputParams =
+        callee->getAttrOfType<IntegerAttr>("numInputParameters")
+            .getValue()
+            .getZExtValue();
+    assert(calleeNumInputParams <= calleeParams.size());
+  }
+
+  // Check the parameter values specified to the input parameters.
+  ArrayRef<Attribute> callerInputParams = getParamValues().getValue();
+  ArrayRef<Attribute> calleeInputParamDecls =
+      calleeParams.take_front(calleeNumInputParams);
+  if (callerInputParams.size() != calleeInputParamDecls.size()) {
+    auto diag = emitError("call has ")
+                << callerInputParams.size()
+                << " input parameters, but callee expects "
+                << calleeInputParamDecls.size();
+    diag.attachNote(callee->getLoc()) << "callee declared here";
+    return failure();
+  }
+
+  // Input argument names and types need to match.
+  unsigned paramNum = 0;
+  for (auto [caller, calleeVal] :
+       llvm::zip(callerInputParams, calleeInputParamDecls)) {
+    auto callerBind = caller.cast<ParamBindAttr>();
+    auto calleeDecl = calleeVal.cast<ParamDeclAttr>();
+    if (callerBind.getName() != calleeDecl.getName()) {
+      auto diag = emitError("call input parameter #")
+                  << paramNum << " has name " << callerBind.getName()
+                  << " but callee expects " << calleeDecl.getName();
+      diag.attachNote(callee->getLoc()) << "callee declared here";
+      return failure();
+    }
+
+    if (callerBind.getType() != calleeDecl.getType()) {
+      auto diag = emitError("call input parameter ")
+                  << callerBind.getName() << " passes parameter of type "
+                  << callerBind.getType() << " but callee parameter has type "
+                  << calleeDecl.getType();
+      diag.attachNote(callee->getLoc()) << "callee declared here";
+      return failure();
+    }
+    ++paramNum;
+  }
+
+  /// Check the parameter result values.
+  ArrayRef<Attribute> callerOutputParamDecls = getParamDecls().getValue();
+  ArrayRef<Attribute> calleeOutputParamDecls =
+      calleeParams.drop_front(calleeNumInputParams);
+  if (callerOutputParamDecls.size() != calleeOutputParamDecls.size()) {
+    auto diag = emitError("call has ")
+                << callerOutputParamDecls.size()
+                << " result parameters when callee expects "
+                << calleeOutputParamDecls.size();
+    diag.attachNote(callee->getLoc()) << "callee declared here";
+    return diag;
+  }
+
+  // The result names don't need to match up, but the result types do.
+  paramNum = 0;
+  for (auto [callerDeclAttr, calleeDeclAttr] :
+       llvm::zip(callerOutputParamDecls, calleeOutputParamDecls)) {
+    auto callerDecl = callerDeclAttr.cast<ParamDeclAttr>();
+    auto calleeDecl = calleeDeclAttr.cast<ParamDeclAttr>();
+
+    if (callerDecl.getType() != calleeDecl.getType()) {
+      auto diag = emitError("result parameter #")
+                  << paramNum << " has type " << calleeDecl.getType()
+                  << " but caller parameter has type " << callerDecl.getType();
+      diag.attachNote(callee->getLoc()) << "callee declared here";
+      return failure();
+    }
+    ++paramNum;
+  }
+
   return success();
 }
 
