@@ -174,3 +174,29 @@ kgen.generator @g1(%x : i32) {
 kgen.generator @g2<()>() {
   kgen.return
 }
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @only_returns<p1 -> p2>() {
+  kgen.return <p2 = p1>
+}
+
+kgen.kernel @test_only_returns() {
+  // expected-error @+1 {{call has 0 input parameters, but callee expects 1}}
+  kgen.call @only_returns<()->p2>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @only_returns<() -> p2: i4>() {
+  kgen.return <p2: i4 = 2>
+}
+
+kgen.kernel @test_only_returns() {
+  // expected-error @+1 {{result parameter #0 has type 'i4' but caller parameter has type 'index'}}
+  kgen.call @only_returns<()->p2>() : () -> ()
+  kgen.return
+}
