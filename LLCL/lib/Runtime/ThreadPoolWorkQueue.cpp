@@ -15,6 +15,9 @@
 using namespace LLCL;
 
 namespace {
+
+using namespace mlir;
+
 /// This class provides a thread-pool that implements the WorkQueue interface.
 /// It starts a dynamic number of threads and distributes work to it by means of
 /// a concurrent-safe queue.
@@ -42,19 +45,45 @@ public:
 
 private:
   /// Pop a single item off the queue and do the task.
-  static mlir::LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q) {
+  static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q) {
     auto callable = q.dequeue();
     if (!callable)
-      return mlir::failure();
+      return failure();
 
     callable();
-    return mlir::success();
+    return success();
   }
 
   /// Loop around `popAndDoWork`, just do work until the queue is empty.
   static void doWork(LockFreeRingBuffer<TaskFunction> &q) {
     while (succeeded(popAndDoWork(q)))
       ;
+  }
+
+  /// Performs busy-waiting until `cond()` returns mlir::success(). If that
+  /// doesn't happen for `busyWait` duration, start passive-waiting with
+  /// the semaphore `sema`.
+  template <typename CondFn, typename DurationT>
+  static void busyWaitThenBlock(Semaphore &sema, DurationT busyWait,
+                                CondFn cond) {
+    if (succeeded(cond()))
+      return;
+
+    // Busy-wait for a given duration.
+    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
+    // from the loop, which may perform expensive operations in its
+    // implementation that make busy-waiting not working as expected.
+    // https://github.com/modularml/modular/issues/1092 for monitoring this.
+    if (busyWait != DurationT::zero()) {
+      auto busyWaitUntil =
+          std::chrono::steady_clock::now() + DurationT(busyWait);
+      while (busyWaitUntil > std::chrono::steady_clock::now())
+        if (succeeded(cond()))
+          return;
+    }
+
+    // Start passive waiting.
+    sema.wait();
   }
 
   /// Provides the state needed to synchronize the threads in the thread pool
@@ -137,6 +166,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 }
 
 void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+  using namespace std::chrono_literals;
   // We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
@@ -160,11 +190,17 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   //   client thread is now sleeping on its semaphore. If someone else adds more
   //   work, this thread currently has no way of waking up to check again if
   //   there's more work to be done.
+  auto busyWaitFor = 0ms;
+  auto busyWaitCond = [this, &numRemaining]() {
+    if (numRemaining.load() == 0 || succeeded(popAndDoWork(*taskList)))
+      return success();
+    return failure();
+  };
   while (numRemaining.load() > 0)
-    if (mlir::failed(popAndDoWork(*taskList)))
+    if (failed(popAndDoWork(*taskList)))
       for (auto &value : values)
         if (!value->isReady())
-          allValuesDone.wait();
+          busyWaitThenBlock(allValuesDone, busyWaitFor, busyWaitCond);
 }
 
 //===----------------------------------------------------------------------===//
@@ -172,14 +208,17 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 void ThreadPoolWorkQueue::Thread::run() {
+  using namespace std::chrono_literals;
   // While we haven't been told to finish up, attempt to dequeue and execute
   // work.
   while (true) {
     // Wait for any work that might be on its way in. If there's no work, then
     // this thread will be slept by the kernel.
-    sync.sema.wait();
+    auto busyWaitFor = 0ms;
+    busyWaitThenBlock(sync.sema, busyWaitFor,
+                      [this]() { return popAndDoWork(taskList); });
 
-    if (mlir::succeeded(popAndDoWork(taskList)))
+    if (succeeded(popAndDoWork(taskList)))
       continue;
 
     if (sync.done.load(std::memory_order_acquire))
