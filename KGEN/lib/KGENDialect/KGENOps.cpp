@@ -215,6 +215,10 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
   p << ">";
 }
 
+//===----------------------------------------------------------------------===//
+// Logic shared between kernels, generators, and generator interfaces
+//===----------------------------------------------------------------------===//
+
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
@@ -308,11 +312,20 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
 
+  // If this is a generator, see if it is an implementation of a generator
+  // interface.
+  if (opKind == GeneratorOrKernelKind::generator &&
+      succeeded(parser.parseOptionalKeyword("implements"))) {
+    ::mlir::FlatSymbolRefAttr implementsAttr;
+    if (parser.parseAttribute(implementsAttr,
+                              parser.getBuilder().getType<::mlir::NoneType>(),
+                              "implements", result.attributes))
+      return failure();
+  }
+
   // Disallow attributes that are inferred from elsewhere in the attribute
   // dictionary.
-  for (StringRef disallowed :
-       {SymbolTable::getVisibilityAttrName(), SymbolTable::getSymbolAttrName(),
-        getTypeAttrName()}) {
+  for (StringRef disallowed : GeneratorOp::getAttributeNames()) {
     if (parsedAttributes.get(disallowed))
       return parser.emitError(attributeDictLocation, "'")
              << disallowed
@@ -395,9 +408,13 @@ static void printGeneratorOrKernel(OpAsmPrinter &p,
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
   printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
-  printFunctionAttributes(
-      p, op, argTypes.size(), resultTypes.size(),
-      {visibilityAttrName, "paramDecls", "numInputParameters"});
+  printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
+                          GeneratorOp::getAttributeNames());
+
+  // If this is a generator implementing a generator.interface, include the
+  // symbol for the generator interface.
+  if (auto implementsAttr = op->getAttrOfType<FlatSymbolRefAttr>("implements"))
+    p << "\n  implements " << implementsAttr;
 
   p << ' ';
   if (!op.getBody().empty()) {
@@ -430,6 +447,37 @@ LogicalResult GeneratorOp::verifyRegions() {
       failed(checkParametersInOpBody(*this)))
     return failure();
 
+  return success();
+}
+
+LogicalResult
+GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // If the generator is implementing a generator interface, check that they
+  // line up correctly.
+  FlatSymbolRefAttr interfaceSym = getImplementsAttr();
+  if (!interfaceSym)
+    return success();
+
+  // Check that the callee attribute was specified.
+  GeneratorInterfaceOp interface = dyn_cast_or_null<GeneratorInterfaceOp>(
+      symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
+  if (!interface)
+    return emitError() << "'" << interfaceSym.getValue()
+                       << "' does not reference a generator interface";
+
+  // Right now we require an exact match on everything.
+  if (getFunctionTypeAttr() != interface.getFunctionTypeAttr())
+    return emitError("generator has type ")
+           << getFunctionTypeAttr() << " but interface " << interfaceSym
+           << " expects " << interface.getFunctionTypeAttr();
+  if (getParamDeclsAttr() != interface.getParamDeclsAttr())
+    return emitError("generator has parameters ")
+           << getParamDeclsAttr() << " but interface " << interfaceSym
+           << " expects " << interface.getParamDeclsAttr();
+  if (getNumInputParameters() != interface.getNumInputParameters())
+    return emitError("generator has ")
+           << getNumInputParameters() << " input parameters, but interface "
+           << interfaceSym << " expects " << interface.getNumInputParameters();
   return success();
 }
 
