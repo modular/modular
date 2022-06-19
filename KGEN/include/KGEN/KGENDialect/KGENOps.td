@@ -54,15 +54,19 @@ def KernelOp
 def GeneratorOp
   : KGENOp<"generator", [HasParent<"ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
-                         SingleBlockImplicitTerminator<"ReturnOp">]> {
+                         SingleBlockImplicitTerminator<"ReturnOp">,
+                         DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Kernel generator definition";
 
   /// input and result parameters are stored in a single flat array named
   /// `paramDecls` and the `numInputParameters` field indicates which are input
-  /// and which are result parameters.
+  /// and which are result parameters.  If the `implements` attribute is present
+  /// then this generator is an implementation of the specified
+  /// generator.interface.
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       I32Attr:$numInputParameters);
+                       I32Attr:$numInputParameters,
+                       OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
