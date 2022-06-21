@@ -64,19 +64,6 @@ void KGENDialect::registerAttributes() {
 // invoking a generator. In these cases we can use a much nicer and more compact
 // syntax so we as compiler engineers don't go bonkers looking at IR dumps.
 /// Print a parameter value that is known to be an index type.
-void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value, IndexType::get(value.getContext()));
-}
-
-/// Parse a parameter value that is known to be an index type.
-ParseResult KGEN::parseIndexParamValue(AsmParser &p,
-                                       FailureOr<Attribute> &result) {
-  Attribute value;
-  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
-    return failure();
-  result = value;
-  return success();
-}
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
@@ -239,6 +226,42 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
     p << "dtype";
   else
     p << type;
+}
+
+/// Print an attribute value that is known to have index type.
+void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, value, IndexType::get(value.getContext()));
+}
+
+/// Parse a parameter value that is known to be an index type.
+ParseResult KGEN::parseIndexParamValue(AsmParser &p,
+                                       FailureOr<Attribute> &result) {
+  Attribute value;
+  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
+    return failure();
+  result = value;
+  return success();
+}
+
+/// Print a parameter value that either has an index type or is null (which
+/// prints as a `?`).
+void KGEN::printOptionalIndexParamValue(AsmPrinter &p, Attribute value) {
+  if (!value) {
+    p << '?';
+    return;
+  }
+  printIndexParamValue(p, value);
+}
+
+/// Parse a parameter value that is known to be an index type or a `?` which
+/// results in a null attribute.
+ParseResult KGEN::parseOptionalIndexParamValue(AsmParser &p,
+                                               FailureOr<Attribute> &result) {
+  if (succeeded(p.parseOptionalQuestion())) {
+    result = Attribute();
+    return success();
+  }
+  return parseIndexParamValue(p, result);
 }
 
 //===----------------------------------------------------------------------===//

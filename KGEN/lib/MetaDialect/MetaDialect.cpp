@@ -62,6 +62,8 @@ void ScalarType::walkImmediateSubElements(
 LogicalResult
 SIMDType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                  Attribute size, Attribute dtype) {
+  if (!size)
+    return emitError() << "size parameter for simd is required";
   if (!size.getType().isIndex())
     return emitError() << "size parameter for simd must have type `index`";
   if (!dtype.getType().isa<DTypeType>())
@@ -83,7 +85,7 @@ void SIMDType::walkImmediateSubElements(
 LogicalResult
 BufferType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                    Attribute size, Attribute dtype) {
-  if (!size.getType().isIndex())
+  if (size && !size.getType().isIndex())
     return emitError() << "size parameter for buffer must have type `index`";
   if (!dtype.getType().isa<DTypeType>())
     return emitError() << "type parameter for buffer must be a !kgen.dtype";

@@ -53,6 +53,15 @@ void printIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to be an index type.
 ParseResult parseIndexParamValue(AsmParser &p, FailureOr<Attribute> &value);
 
+/// Print a parameter value that either has an index type or is null (which
+/// prints as a `?`).
+void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
+
+/// Parse a parameter value that is known to be an index type or a `?` which
+/// results in a null attribute.
+ParseResult parseOptionalIndexParamValue(AsmParser &p,
+                                         FailureOr<Attribute> &result);
+
 } // namespace M::KGEN
 
 #define GET_ATTRDEF_CLASSES
