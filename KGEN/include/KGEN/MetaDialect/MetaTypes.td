@@ -47,7 +47,7 @@ def SIMDType : MetaType<"SIMD",
   let mnemonic = "simd";
   let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
   let assemblyFormat = [{
-    `<` custom<IndexParamValue>($size) `,` custom<ParamDTypeValue>($dtype) `>`
+    `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;

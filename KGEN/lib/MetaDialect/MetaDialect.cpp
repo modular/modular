@@ -11,6 +11,7 @@
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -140,5 +141,10 @@ void MetaDialect::initialize() {
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "KGEN/MetaDialect/MetaTypes.cpp.inc"
+      >();
+  // Register operations.
+  addOperations<
+#define GET_OP_LIST
+#include "KGEN/MetaDialect/Meta.cpp.inc"
       >();
 }
