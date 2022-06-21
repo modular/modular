@@ -25,16 +25,37 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseParamDTypeValue(AsmParser &p,
-                                        FailureOr<Attribute> &value) {
+                                        FailureOr<Attribute> &result) {
   Attribute retValue;
   if (failed(parseParamValue(p, retValue, p.getBuilder().getType<DTypeType>())))
     return failure();
-  value = retValue;
+  result = retValue;
   return success();
 }
 
 static void printParamDTypeValue(AsmPrinter &p, Attribute value) {
   printParamValue(p, value, value.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// custom<OptionalParamDTypeValue>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseOptionalParamDTypeValue(AsmParser &p,
+                                                FailureOr<Attribute> &result) {
+  if (succeeded(p.parseOptionalQuestion())) {
+    result = Attribute();
+    return success();
+  }
+  return parseParamDTypeValue(p, result);
+}
+
+static void printOptionalParamDTypeValue(AsmPrinter &p, Attribute value) {
+  if (!value) {
+    p << '?';
+    return;
+  }
+  printParamDTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -62,8 +83,8 @@ void ScalarType::walkImmediateSubElements(
 LogicalResult
 SIMDType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                  Attribute size, Attribute dtype) {
-  if (!size)
-    return emitError() << "size parameter for simd is required";
+  if (!size || !dtype)
+    return emitError() << "simd type requires size and dtype";
   if (!size.getType().isIndex())
     return emitError() << "size parameter for simd must have type `index`";
   if (!dtype.getType().isa<DTypeType>())
@@ -87,7 +108,7 @@ BufferType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                    Attribute size, Attribute dtype) {
   if (size && !size.getType().isIndex())
     return emitError() << "size parameter for buffer must have type `index`";
-  if (!dtype.getType().isa<DTypeType>())
+  if (dtype && !dtype.getType().isa<DTypeType>())
     return emitError() << "type parameter for buffer must be a !kgen.dtype";
   return success();
 }
