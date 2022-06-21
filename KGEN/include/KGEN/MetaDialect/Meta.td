@@ -19,5 +19,6 @@ class MetaOp<string mnemonic, list<Trait> traits = []> :
     Op<MetaDialect, mnemonic, traits>;
 
 include "KGEN/MetaDialect/MetaTypes.td"
+include "KGEN/MetaDialect/MetaOps.td"
 
 #endif // KGEN_TD
