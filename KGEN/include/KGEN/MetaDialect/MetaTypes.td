@@ -63,14 +63,15 @@ def BufferType : MetaType<"Buffer",
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.  The size
     field is optional (may be null) in which case this is a buffer with an
-    unknown size.
+    unknown size.  The dtype type is also optional, in which case this is a
+    buffer with unknown element type.
   }];
 
   let mnemonic = "buffer";
   let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
   let assemblyFormat = [{
     `<` custom<OptionalIndexParamValue>($size) `,` ` `
-        custom<ParamDTypeValue>($dtype) `>`
+        custom<OptionalParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
