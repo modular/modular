@@ -74,7 +74,6 @@ private:
   /// decoded `Location` object.
   RCRef<LocationDecoder> decoder;
 };
-
 } // namespace LLCL
 
 #endif // LLCL_SUPPORT_LOCATION_H

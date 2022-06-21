@@ -19,6 +19,7 @@ if (APPLE)
 endif ()
 
 add_modular_library(LLCLSupport
+  FileLocationDecoder.cpp
   Location.cpp
   ReferenceCounted.cpp
   Semaphore.cpp
