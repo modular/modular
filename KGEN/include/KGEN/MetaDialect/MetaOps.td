@@ -75,3 +75,49 @@ def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
   let assemblyFormat = "$buffer `:` qualified(type($buffer)) `to` qualified(type($result)) attr-dict";
   let hasVerifier = true;
 }
+
+//===----------------------------------------------------------------------===//
+// MetaSimdSizeOp
+//===----------------------------------------------------------------------===//
+
+def MetaSimdSizeOp : MetaOp<"simd.size", [NoSideEffect]> {
+
+  let summary = [{
+    Return the size of a meta.simd as an SSA value (of type `index`) that may
+    be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = meta.simd.size %arg0 : meta.simd<3xf32>
+    ```
+  }];
+
+  let arguments = (ins SIMDType:$value);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
+  let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// MetaSimdDTypeOp
+//===----------------------------------------------------------------------===//
+
+def MetaSimdDTypeOp : MetaOp<"simd.dtype", [NoSideEffect]> {
+
+  let summary = [{
+    Return the dtype of a meta.simd as an SSA value (of type `dtype`) that may
+    be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = meta.simd.dtype %arg0 : meta.simd<3xf32>
+    ```
+  }];
+
+  let arguments = (ins SIMDType:$value);
+  let results = (outs DTypeType:$dtype);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
+  let hasFolder = true;
+}
