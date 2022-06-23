@@ -75,4 +75,18 @@ def BufferType : MetaType<"Buffer",
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+
+  let extraClassDeclaration = [{
+    /// Return the TensorEltType of the dtype.
+    /// Returns TensorEltType::invalid if dtype is null
+    /// (indicating dtype is unknown)
+    TensorEltType getTensorEltType() {
+      DTypeConstantAttr buf_dtype =
+          getDtype().dyn_cast_or_null<DTypeConstantAttr>();
+      if (!buf_dtype)
+        return TensorEltType::invalid;
+
+      return buf_dtype.getTensorEltType();
+    };
+  }];
 }
