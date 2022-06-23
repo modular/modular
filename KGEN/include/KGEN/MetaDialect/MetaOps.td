@@ -32,3 +32,20 @@ def MetaBufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
   let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
   let hasFolder = true;
 }
+
+def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
+  let summary = [{
+    Cast the input buffer to a buffer of the specified type.
+
+    Example:
+
+    ```mlir
+    %0 = meta.buffer.cast %unknown: !buffer<?x?> to !buffer<?xf32>
+    %1 = meta.buffer.cast %other: !buffer<1023xf32> to !buffer<?xf32>
+  }];
+
+  let arguments = (ins BufferType:$buffer);
+  let results = (outs BufferType:$result);
+  let assemblyFormat = "$buffer `:` qualified(type($buffer)) `to` qualified(type($result)) attr-dict";
+  let hasVerifier = true;
+}
