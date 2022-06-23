@@ -195,6 +195,20 @@ kgen.kernel @meta_buffer_size(%arg0: i32) -> index {
   %0 = meta.buffer.size %arg0 : i32
   kgen.return %0 : index
 }
+// -----
+
+kgen.kernel @bad_cast_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
+  // expected-error @+1 {{'meta.buffer.cast' op expected the size of the input buffer (42 : index) to be equal to the size you are casting it to (1 : index), or one of them to be unknown.}}
+  %0 = meta.buffer.cast %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
+  kgen.return %0 : !meta.buffer<1, f32>
+}
+
+// -----
+kgen.kernel @bad_cast_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
+  // expected-error @+1 {{'meta.buffer.cast' op expected the dtype of the input buffer (#kgen.dtype.constant<66 : i8> : !kgen.dtype) to the same as to the dtype you are casting to (#kgen.dtype.constant<67 : i8> : !kgen.dtype), or one of them to be unknown.}}
+  %0 = meta.buffer.cast %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
+  kgen.return %0 : !meta.buffer<42, f64>
+}
 
 // -----
 

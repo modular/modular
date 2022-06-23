@@ -9,6 +9,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MetaDialect/MetaOps.h"
+
+#include "GenericML/Support/TensorEltType.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 
@@ -24,6 +29,44 @@ OpFoldResult MetaBufferSizeOp::fold(ArrayRef<Attribute> constants) {
   if (!getValue())
     return {};
   return getValue().getType().cast<BufferType>().getSize();
+}
+
+//===----------------------------------------------------------------------===//
+// MetaBufferCastOp
+//===----------------------------------------------------------------------===//
+
+/// Verifies that casting the input buffer to the result buffer is OK.
+/// Allows casting to occur if
+/// inpDtype == ? || resDtype == ? || inpDtype == resDtype
+/// and
+/// inpSize == ? || resSize == ? || inpSize == resSize
+LogicalResult MetaBufferCastOp::verify() {
+  BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
+  BufferType resultBufTy = getResult().getType().cast<BufferType>();
+
+  Attribute inputDtype = inputBufTy.getDtype();
+  Attribute resultDtype = resultBufTy.getDtype();
+
+  if (inputDtype != resultDtype)
+    if (inputDtype && resultDtype)
+      // A null dtype indicates a buffer with unknown dtype.
+      // TODO: Print the string version of the dtypes instead of a number.
+      return emitOpError()
+             << "expected the dtype of the input buffer (" << inputDtype
+             << ") to the same as to the dtype you are casting to ("
+             << resultDtype << "), or one of them to be unknown.";
+
+  Attribute inputSize = inputBufTy.getSize();
+  Attribute resultSize = resultBufTy.getSize();
+
+  if (inputSize != resultSize)
+    if (inputSize && resultSize)
+      // A null size indicates a buffer with unknown size.
+      return emitOpError()
+             << "expected the size of the input buffer (" << inputSize
+             << ") to be equal to the size you are casting it to ("
+             << resultSize << "), or one of them to be unknown.";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

@@ -11,6 +11,7 @@
 #ifndef KGEN_METADIALECT_METATYPES_H
 #define KGEN_METADIALECT_METATYPES_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 
 #define GET_TYPEDEF_CLASSES
