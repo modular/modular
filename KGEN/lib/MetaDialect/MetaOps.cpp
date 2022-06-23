@@ -83,24 +83,6 @@ LogicalResult MetaBufferCastOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// MetaSimdSizeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult MetaSimdSizeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.empty() && "meta.simd.size has no operands");
-  return getValue().getType().cast<SIMDType>().getSize();
-}
-
-//===----------------------------------------------------------------------===//\
-// MetaBufferDTypeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult MetaSimdDTypeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.empty() && "meta.simd.dtype has no operands");
-  return getValue().getType().cast<SIMDType>().getDtype();
-}
-
-//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
