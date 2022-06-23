@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_METAOPS_H
 
 #include "GenericML/Support/TensorEltType.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"

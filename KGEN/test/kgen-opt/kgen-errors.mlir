@@ -212,6 +212,14 @@ kgen.kernel @bad_cast_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f
 
 // -----
 
+kgen.kernel @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
+  // expected-error @+1 {{'meta.buffer.dtype' op operand #0 must be parameterized buffer type, but got 'i32'}}
+  %0 = meta.buffer.dtype %arg0 : i32
+  kgen.return %0 : !kgen.dtype
+}
+
+// -----
+
 // expected-note @+1 {{callee declared here}}
 kgen.generator @only_returns<() -> p2: i4>() {
   kgen.return <p2: i4 = 2>

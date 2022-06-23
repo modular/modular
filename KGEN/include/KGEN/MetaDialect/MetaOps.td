@@ -8,6 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/KGENDialect/KGENDialect.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -33,13 +35,37 @@ def MetaBufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
   let hasFolder = true;
 }
 
-def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
+//===----------------------------------------------------------------------===//
+// MetaBufferDTypeOp
+//===----------------------------------------------------------------------===//
+
+def MetaBufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
+
   let summary = [{
-    Cast the input buffer to a buffer of the specified type.
+    Return the dtype of a meta.buffer as an SSA value (of type `dtype`) that may
+    be used by other ops.
 
     Example:
 
     ```mlir
+    %0 = meta.buffer.dtype %arg0 : meta.buffer<3xf32>
+    ```
+  }];
+
+  let arguments = (ins BufferType:$value);
+  let results = (outs DTypeType:$dtype);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
+  let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// MetaBufferCastOp
+//===----------------------------------------------------------------------===//
+
+def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
+  let summary = [{
+    Cast the input buffer to a buffer of the specified type.
+
     %0 = meta.buffer.cast %unknown: !buffer<?x?> to !buffer<?xf32>
     %1 = meta.buffer.cast %other: !buffer<1023xf32> to !buffer<?xf32>
   }];
