@@ -23,6 +23,11 @@
 namespace M {
 namespace KGEN {
 class ParamDeclAttr;
+class GeneratorInterfaceOp;
+
+LogicalResult verifyDeclMatchesInterface(
+    const char *originatorName, mlir::FunctionOpInterface originatorDecl,
+    const char *interfaceName, GeneratorInterfaceOp interfaceDecl);
 }
 } // namespace M
 
