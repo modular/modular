@@ -80,7 +80,7 @@ we will have the equivalent for that.  In order to work with dynamic shapes,
 we need to be able to extract the only-known-at-runtime values with some
 operations that produce SSA values.  These are:
 
-```
+```mlir
 kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
   // This returns a SSA value of type `!kgen.dtype`.
   %dtype = meta.buffer.dtype %dest: !meta.buffer<?, ?>
@@ -92,19 +92,21 @@ kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
 ```
 
 Note that we do *not* support dynamic shapes or dtypes for the `!meta.scalar` or
-`!meta.simd` types.  These may be parameterized with arithmetic that determines
-the vector length, but it may not be dynamic (i.e., there is no `?` allowed).
+`!meta.simd` types.  These may be *parameterized* with arithmetic that
+determines the vector length or element, but it may not be dynamic (i.e., there
+is no `?` allowed) - parameters are always resolved to static values as part of
+the code generation process.
 This is because these are register-equivalent types, not memory-equivalent
 types.  In the case of the runtime representation of a buffer, the size and
 dtype doesn't affect how the buffer value itself is codegen'd: it is always a
 tuple of `{void*, numElements, dtype}` at runtime.
 
-Because the SIMD/Scalar types do not support dynamic shapes or dtypes, they also
-do not need operations like `meta.simd.size`: for any SIMD type, you either have
+Because the SIMD/scalar types do not support dynamic shapes or dtypes, they also
+do not need operations like `meta.simd.size`. For any SIMD type, you either have
 an integer constant in the IR or a parameter expression.  You can materialize
-either of this into an SSA value with `kgen.param.value`:
+either of these into an SSA value with `kgen.param.value`:
 
-```
+```mlir
 kgen.generator @algo<veclen>(%src: !meta.simd<mul(veclen,veclen), f32>) {
   // This does not need to exist!
   %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), f32>
