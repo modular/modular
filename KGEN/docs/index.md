@@ -107,12 +107,14 @@ an integer constant in the IR or a parameter expression.  You can materialize
 either of these into an SSA value with `kgen.param.value`:
 
 ```mlir
-kgen.generator @algo<veclen>(%src: !meta.simd<mul(veclen,veclen), f32>) {
-  // This does not need to exist!
-  %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), f32>
+kgen.generator @algo<veclen, dt: dtype>(%src: !meta.simd<mul(veclen,veclen), dt>) {
+  // These do not need to exist!
+  %dtypeSSAValue = meta.simd.dtype %src: !meta.simd<mul(veclen,veclen), dt>
+  %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
-  %veclenSSAValue = kgen.param.value = <mul(veclen,veclen), f32>
+  %dtypeSSAValue = kgen.param.value : dtype = <dt>
+  %veclenSSAValue = kgen.param.value = <mul(veclen,veclen)>
 }
 ```
 
