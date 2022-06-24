@@ -470,7 +470,7 @@ static ParseResult verifyMatchingLists(
 
 /// Check that the specified generator/interfaces matches signature information
 /// with the other interface.
-static LogicalResult verifyDeclMatchesInterface(
+LogicalResult KGEN::verifyDeclMatchesInterface(
     const char *originatorName, mlir::FunctionOpInterface originatorDecl,
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
 

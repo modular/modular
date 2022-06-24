@@ -80,6 +80,7 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   ctx->appendDialectRegistry(getDialects());
   ctx->loadAllAvailableDialects();
   ctx->allowUnregisteredDialects(true);
+  ctx->printOpOnDiagnostic(false);
 
   // Open the input file.
   OwningOpRef<ModuleOp> module(mlir::parseSourceFile<ModuleOp>(sourceMgr, ctx));

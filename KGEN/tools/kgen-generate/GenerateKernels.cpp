@@ -36,33 +36,6 @@ private:
 };
 } // end anonymous namespace
 
-/// Given a generator interface that is declared in both the primary module and
-/// the library module, check to see if they agree on all signature components.
-/// If not, emit an error indicating the problem.
-static LogicalResult
-diagnoseGeneratorInterfaceMismatches(GeneratorInterfaceOp primaryItf,
-                                     GeneratorInterfaceOp libraryItf) {
-  // Check the SSA arguments line up.
-  if (primaryItf.getFunctionTypeAttr() != libraryItf.getFunctionTypeAttr())
-    return primaryItf.emitError("interface declared with type ")
-           << primaryItf.getFunctionTypeAttr() << " but library expects type "
-           << libraryItf.getFunctionTypeAttr();
-
-  // Check the parameters line up.
-  if (primaryItf.getParamDeclsAttr() != libraryItf.getParamDeclsAttr())
-    return primaryItf.emitError("interface declared with parameters ")
-           << primaryItf.getParamDeclsAttr() << " but library expects "
-           << libraryItf.getParamDeclsAttr();
-
-  if (primaryItf.getNumInputParameters() != libraryItf.getNumInputParameters())
-    return primaryItf.emitError("generator has ")
-           << primaryItf.getNumInputParameters()
-           << " input parameters, but library expects "
-           << libraryItf.getNumInputParameters();
-
-  return success();
-}
-
 /// Scan the primary and library module to collect all the interfaces,
 /// verifying that any common interfaces are the same.
 ParseResult KernelGenerator::collectInterfaces() {
@@ -87,7 +60,8 @@ ParseResult KernelGenerator::collectInterfaces() {
     auto it = libraryInterfaces.find(itf.getNameAttr());
     if (it == libraryInterfaces.end())
       continue;
-    if (failed(diagnoseGeneratorInterfaceMismatches(itf, it->second)))
+    if (failed(verifyDeclMatchesInterface("interface", itf, "library",
+                                          it->second)))
       return failure();
   }
 
