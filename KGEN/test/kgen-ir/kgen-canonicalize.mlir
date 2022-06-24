@@ -20,18 +20,20 @@ kgen.kernel @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
 }
 
 // CHECK-LABEL: kgen.kernel @buffer_cast_folds
-kgen.kernel @buffer_cast_folds(%arg0: !meta.buffer<?, ?>)
- -> (!meta.buffer<?, ?>, !meta.buffer<?, ?>) {
-  // TODO: Should fold this away.
-  // CHECK: %0 = meta.buffer.cast %arg0
+kgen.kernel @buffer_cast_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
+ -> (!meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>) {
+  // Noop casts get folded away.
   %0 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, ?>
 
-  // TODO: Should fold this away.
-  // CHECK: %1 = meta.buffer.cast %arg0
+  // A-B-A cast.
   %1 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  // CHECK: %2 = meta.buffer.cast %1
   %2 = meta.buffer.cast %1 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
 
-  // CHECK: kgen.return %0, %2
-  kgen.return %0, %2 : !meta.buffer<?, ?>, !meta.buffer<?, ?>
+  // A-B-C cast.
+  // CHECK:  %0 = meta.buffer.cast %arg1 : !meta.buffer<10, f32> to !meta.buffer<?, ?>
+  %3 = meta.buffer.cast %arg1 : !meta.buffer<10, f32> to !meta.buffer<?, f32>
+  %4 = meta.buffer.cast %3 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
+
+  // CHECK: kgen.return %arg0, %arg0, %0
+  kgen.return %0, %2, %4 : !meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>
 }

@@ -72,6 +72,10 @@ def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
 
   let arguments = (ins BufferType:$buffer);
   let results = (outs BufferType:$result);
-  let assemblyFormat = "$buffer `:` qualified(type($buffer)) `to` qualified(type($result)) attr-dict";
+  let assemblyFormat = [{
+    $buffer `:` qualified(type($buffer)) `to`
+     qualified(type($result)) attr-dict
+  }];
   let hasVerifier = true;
+  let hasFolder = true;
 }

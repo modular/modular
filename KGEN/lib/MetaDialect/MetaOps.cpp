@@ -82,6 +82,22 @@ LogicalResult MetaBufferCastOp::verify() {
   return success();
 }
 
+OpFoldResult MetaBufferCastOp::fold(ArrayRef<Attribute> constants) {
+  // Fold cast x to same type.
+  if (getOperand().getType() == getType())
+    return getOperand();
+  // Fold A->B->C casts into a cast of the original cast's operand.
+  if (auto castOperand = getOperand().getDefiningOp<MetaBufferCastOp>()) {
+    // A->B->A doesn't need a cast at all.
+    if (castOperand.getOperand().getType() == getType())
+      return castOperand.getOperand();
+    setOperand(castOperand.getOperand());
+    return getResult();
+  }
+
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
