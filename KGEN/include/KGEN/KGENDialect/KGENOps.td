@@ -107,7 +107,7 @@ def GeneratorInterfaceOp
                        I32Attr:$numInputParameters);
 
   // We want to work with the FunctionOpInterface, which always requires a body
-  // region.  We are declaration like though, so ours never has a block.
+  // region.  We are "declaration like" though, so ours never has a block.
   let regions = (region SizedRegion<0>:$body);
 
   let extraClassDeclaration = [{

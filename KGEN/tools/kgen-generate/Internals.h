@@ -12,7 +12,7 @@
 namespace M {
 /// Generate kernels in the specified module, incorporating implementation logic
 /// from the specified library.
-LogicalResult generateKernels(ModuleOp module, ModuleOp library);
+LogicalResult generateKernels(ModuleOp primary, ModuleOp library);
 } // namespace M
 
 #endif // INTERNALS_H
