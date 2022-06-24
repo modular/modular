@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Internals.h"
 #include "KGEN/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
@@ -12,10 +13,6 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/ToolOutputFile.h"
 using namespace M;
-
-namespace M {
-LogicalResult generateKernels(ModuleOp module, ModuleOp library);
-}
 
 static DialectRegistry getDialects() {
   DialectRegistry registry;
@@ -93,8 +90,8 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   std::unique_ptr<llvm::MemoryBuffer> libraryFile =
       options.openLibraryFileOrExit();
   OwningOpRef<ModuleOp> library(
-      mlir::parseSourceFile<ModuleOp>(libraryFile->getBuffer(), ctx));
-  if (!module)
+      mlir::parseSourceString<ModuleOp>(libraryFile->getBuffer(), ctx));
+  if (!library)
     exit(1);
 
   if (failed(generateKernels(module.get(), library.get())))
