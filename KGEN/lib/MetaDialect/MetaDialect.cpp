@@ -154,20 +154,15 @@ void MetaDialect::initialize() {
 /// op that is folded.
 Operation *MetaDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                             Type type, Location loc) {
-  // TODO: Integer constants can materialize into something specific.
-  // What should our primitive arithmetic ops be, arith?
+  // Integer constants can materialize into something specific.  We need this
+  // for ops that fold in the context of kgen.kernel.
+  // TODO: What should our primitive arithmetic ops be, arith?  It doesn't
+  // support signful math well.
   // if (auto intType = type.dyn_cast<IntegerType>())
-  //  if (auto attrValue = value.dyn_cast<IntegerAttr>())
-  //    return builder.create<ConstantOp>(loc, type, attrValue);
+  //   if (auto attrValue = value.dyn_cast<IntegerAttr>())
+  //     return builder.create<ConstantOp>(loc, type, attrValue);
 
-  if (type.isIndex() || type.isa<DTypeType>()) {
-    // Parameter expressions materialize into kgen.param.value.
-    // TODO: check that this is an expression and it is valid in this context.
-    // auto parentOp = builder.getBlock()->getParentOp();
-    // while (parentOp && !isParameterizedContainer(parentOp))
-    //  parentOp->getParentOp();
-    // if (parentOp && isValidParameterExpression(value, parentOp))
+  if (isValidParameterExpr(value))
     return builder.create<ParamValueOp>(loc, type, value);
-  }
   return nullptr;
 }

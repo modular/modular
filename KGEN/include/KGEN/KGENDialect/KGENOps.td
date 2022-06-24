@@ -132,8 +132,9 @@ def CallOp
   let summary = "Call a kernel or generator";
 
   // TODO: Parameter decls and bindings.
-  let arguments = (ins FlatSymbolRefAttr:$callee, ArrayAttr:$paramValues,
-                   ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
+  let arguments =
+   (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
+        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
 
   let extraClassDeclaration = [{
@@ -170,7 +171,7 @@ def ParamValueOp : KGENOp<"param.value",
     by other ops.
   }];
 
-  let arguments = (ins AnyAttr:$value);
+  let arguments = (ins ParameterExprAttr:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat =
      "custom<ParamValueOpValue>($value, qualified(type($result))) attr-dict";
@@ -186,7 +187,8 @@ def ParamBindOp : KGENOp<"param.bind", [NoSideEffect]> {
     Bind a parameter name to a temporary variable.
   }];
 
-  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls, AnyAttr:$value);
+  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
+                       ParameterExprAttr:$value);
   let results = (outs);
   let assemblyFormat =
      "custom<ParamBindOpValue>($paramDecls, $value) attr-dict";

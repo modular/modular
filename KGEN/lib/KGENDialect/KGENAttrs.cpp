@@ -773,6 +773,23 @@ TensorEltType DTypeConstantAttr::getTensorEltType() {
 // Parameter Verification
 //===----------------------------------------------------------------------===//
 
+/// Return true if the attribute is a valid parameter expression.
+bool KGEN::isValidParameterExpr(Attribute value) {
+  // Leaf constants and references to parameter declarations are valid.
+  if (value.isa<IntegerAttr, DTypeConstantAttr, ParamDeclRefAttr>())
+    return true;
+
+  // Expressions composed of other expressions are valid.
+  if (auto expr = value.dyn_cast<ParamExprAttr>()) {
+    return llvm::all_of(expr.getOperands(), [](Attribute operand) -> bool {
+      return isValidParameterExpr(operand);
+    });
+  }
+
+  // Nothing else is.
+  return false;
+}
+
 namespace {
 struct ParameterVerifier final {
 

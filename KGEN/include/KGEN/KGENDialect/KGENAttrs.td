@@ -11,6 +11,18 @@
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/SubElementInterfaces.td"
 
+/// This is an attribute that is formed of valid nodes in a parameter
+/// expression.
+def ParameterExprAttr
+  : Confined<AnyAttr, [AttrConstraint<
+      CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
+    >]>;
+
+/// An array of ParameterExprAttr.
+def ParameterExprArrayAttr
+  : TypedArrayAttrBase<ParameterExprAttr,
+                       "array of parameter expression attributes">;
+
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//

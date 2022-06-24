@@ -23,6 +23,9 @@ inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
   return os << stringifyEnum(opcode);
 }
 
+/// Return true if the attribute is a valid parameter expression.
+bool isValidParameterExpr(Attribute value);
+
 /// Scan the body of the specified operation checking invariants on parameters,
 /// diagnosing errors and returning failure if so.  This is used by verifiers
 /// for ops with bodies, like kgen.generator.
