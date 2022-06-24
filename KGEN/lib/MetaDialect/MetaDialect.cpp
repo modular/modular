@@ -10,6 +10,7 @@
 
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
@@ -147,4 +148,26 @@ void MetaDialect::initialize() {
 #define GET_OP_LIST
 #include "KGEN/MetaDialect/Meta.cpp.inc"
       >();
+}
+
+/// Registered hook to materialize a constant operation from a "meta" dialect
+/// op that is folded.
+Operation *MetaDialect::materializeConstant(OpBuilder &builder, Attribute value,
+                                            Type type, Location loc) {
+  // TODO: Integer constants can materialize into something specific.
+  // What should our primitive arithmetic ops be, arith?
+  // if (auto intType = type.dyn_cast<IntegerType>())
+  //  if (auto attrValue = value.dyn_cast<IntegerAttr>())
+  //    return builder.create<ConstantOp>(loc, type, attrValue);
+
+  if (type.isIndex() || type.isa<DTypeType>()) {
+    // Parameter expressions materialize into kgen.param.value.
+    // TODO: check that this is an expression and it is valid in this context.
+    // auto parentOp = builder.getBlock()->getParentOp();
+    // while (parentOp && !isParameterizedContainer(parentOp))
+    //  parentOp->getParentOp();
+    // if (parentOp && isValidParameterExpression(value, parentOp))
+    return builder.create<ParamValueOp>(loc, type, value);
+  }
+  return nullptr;
 }
