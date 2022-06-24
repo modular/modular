@@ -28,6 +28,7 @@ def MetaDialect : Dialect {
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let useDefaultTypePrinterParser = 1;
+  let hasConstantMaterializer = 1;
 }
 
 #endif // KGEN_METADIALECT_METADIALECT_TD
