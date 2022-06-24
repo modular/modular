@@ -795,7 +795,7 @@ bool KGEN::isValidParameterExpr(Attribute value) {
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
 /// result parameters.  A concrete kernel will always return empty arrays.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
-KGEN::getCalleeParameterInfo(Operation *callee) {
+KGEN::getDeclParameterInfo(Operation *callee) {
   // Fully defined kernels never have parameters.
   if (isa<KernelOp>(callee))
     return std::make_pair(ArrayRef<Attribute>(), ArrayRef<Attribute>());

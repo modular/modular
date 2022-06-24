@@ -226,7 +226,7 @@ kgen.generator @only_returns<() -> p2: i4>() {
 }
 
 kgen.kernel @test_only_returns() {
-  // expected-error @+1 {{caller output parameter #0 has type 'index' but caller expected type 'i4'}}
+  // expected-error @+1 {{caller output parameter #0 has type 'index' but callee expected type 'i4'}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
 }
@@ -239,7 +239,7 @@ kgen.generator @fn<p2>() {
 }
 
 kgen.kernel @input_param_name() {
-  // expected-error @+1 {{caller input parameter #0 has name "p1" but caller expected name "p2"}}
+  // expected-error @+1 {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
   kgen.call @fn<p1 = 42>() : () -> ()
   kgen.return
 }
@@ -252,16 +252,17 @@ kgen.generator @fn(%a: i1) -> i1 {
 }
 
 kgen.kernel @result_type(%a: i1) {
-  // expected-error @+1 {{caller result #0 has type 'f32' but caller expected type 'i1'}}
+  // expected-error @+1 {{caller result #0 has type 'f32' but callee expected type 'i1'}}
   kgen.call @fn(%a) : (i1) -> f32
   kgen.return
 }
 
 // -----
 
+// expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf<size>(si32) -> si32
 
-// expected-error @+1 {{generator has parameters [#kgen.param.decl<size> : index, #kgen.param.decl<size2> : index] but interface @itf expects [#kgen.param.decl<size> : index]}}
+// expected-error @+1 {{generator has 2 input parameters but interface expects 1}}
 kgen.generator @bad<size, size2>(%arg0: si32) -> si32
   implements @itf {
   kgen.return %arg0 : si32
@@ -269,9 +270,10 @@ kgen.generator @bad<size, size2>(%arg0: si32) -> si32
 
 // -----
 
+// expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf<size>(si32, si32) -> si32
 
-// expected-error @+1 {{generator has type (ui32, si32) -> si32 but interface @itf expects (si32, si32) -> si32}}
+// expected-error @+1 {{generator argument #0 has type 'ui32' but interface expected type 'si32'}}
 kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
   implements @itf {
   kgen.return %arg1 : si32
@@ -279,12 +281,32 @@ kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
 
 // -----
 
+// expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf<size>(si32) -> si32
 
-// expected-error @+1 {{generator has 0 input parameters, but interface @itf expects 1}}
-kgen.generator @bad<() -> size>(%arg0: si32) -> si32
-  implements @itf {
+// expected-error @+1 {{generator has 0 input parameters but interface expects 1}}
+kgen.generator @bad<() -> size>(%arg0: si32) -> si32 implements @itf {
   kgen.return<size = 42> %arg0 : si32
+}
+
+// -----
+
+// expected-note @+1 {{interface declared here}}
+kgen.generator.interface @itf<size>()
+
+// expected-error @+1 {{generator input parameter #0 has name "barf" but interface expected name "size"}}
+kgen.generator @bad<barf>() implements @itf {
+  kgen.return
+}
+
+// -----
+
+// expected-note @+1 {{interface declared here}}
+kgen.generator.interface @itf<() -> result>(si32)
+
+// expected-error @+1 {{generator result parameter #0 has name "size" but interface expected name "result"}}
+kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
+  kgen.return<size:i8 = 42> 
 }
 
 // -----

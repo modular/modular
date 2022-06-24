@@ -33,7 +33,7 @@ bool isValidParameterExpr(Attribute value);
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
 /// result parameters.  A concrete kernel will always return empty arrays.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
-getCalleeParameterInfo(Operation *callee);
+getDeclParameterInfo(Operation *decl);
 
 /// Scan the body of the specified operation checking invariants on parameters,
 /// diagnosing errors and returning failure if so.  This is used by verifiers
