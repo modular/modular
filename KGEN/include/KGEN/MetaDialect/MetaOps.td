@@ -13,11 +13,10 @@ include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
-// MetaBufferSizeOp
+// BufferSizeOp
 //===----------------------------------------------------------------------===//
 
-def MetaBufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
-
+def BufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
   let summary = [{
     Return the size of a meta.buffer as an SSA value (of type `index`) that may
     be used by other ops.
@@ -36,11 +35,10 @@ def MetaBufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// MetaBufferDTypeOp
+// BufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-def MetaBufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
-
+def BufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
   let summary = [{
     Return the dtype of a meta.buffer as an SSA value (of type `dtype`) that may
     be used by other ops.
@@ -59,10 +57,10 @@ def MetaBufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// MetaBufferCastOp
+// BufferCastOp
 //===----------------------------------------------------------------------===//
 
-def MetaBufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
+def BufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
   let summary = [{
     Cast the input buffer to a buffer of the specified type.
 

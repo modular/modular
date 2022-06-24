@@ -21,10 +21,10 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// MetaBufferSizeOp
+// BufferSizeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult MetaBufferSizeOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult BufferSizeOp::fold(ArrayRef<Attribute> constants) {
   assert(constants.size() == 1 && "meta.buffer.size has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
@@ -33,10 +33,10 @@ OpFoldResult MetaBufferSizeOp::fold(ArrayRef<Attribute> constants) {
 }
 
 //===----------------------------------------------------------------------===//\
-// MetaBufferDTypeOp
+// BufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult MetaBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
   assert(constants.size() == 1 && "meta.buffer.dtype has one operand");
   // A null dtype indicates ? dtype (unknown dtype). Since returning null
   // indicates that we don't fold anything, we don't need to check if
@@ -45,7 +45,7 @@ OpFoldResult MetaBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
 }
 
 //===----------------------------------------------------------------------===//
-// MetaBufferCastOp
+// BufferCastOp
 //===----------------------------------------------------------------------===//
 
 /// Verifies that casting the input buffer to the result buffer is OK.
@@ -53,7 +53,7 @@ OpFoldResult MetaBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
 /// inpDtype == ? || resDtype == ? || inpDtype == resDtype
 /// and
 /// inpSize == ? || resSize == ? || inpSize == resSize
-LogicalResult MetaBufferCastOp::verify() {
+LogicalResult BufferCastOp::verify() {
   BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
   BufferType resultBufTy = getResult().getType().cast<BufferType>();
 
@@ -82,12 +82,12 @@ LogicalResult MetaBufferCastOp::verify() {
   return success();
 }
 
-OpFoldResult MetaBufferCastOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
   // Fold cast x to same type.
   if (getOperand().getType() == getType())
     return getOperand();
   // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = getOperand().getDefiningOp<MetaBufferCastOp>()) {
+  if (auto castOperand = getOperand().getDefiningOp<BufferCastOp>()) {
     // A->B->A doesn't need a cast at all.
     if (castOperand.getOperand().getType() == getType())
       return castOperand.getOperand();
