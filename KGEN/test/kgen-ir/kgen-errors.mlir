@@ -260,3 +260,8 @@ kgen.generator @bad<() -> size>(%arg0: si32) -> si32
   implements @itf {
   kgen.return<size = 42> %arg0 : si32
 }
+
+// -----
+
+// expected-error @+1 {{failed to satisfy constraint: any attribute valid parameter expression}}
+%0 = kgen.param.value : i32 = <[]>
