@@ -25,7 +25,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 OpFoldResult MetaBufferSizeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.empty() && "meta.buffer.size has no operands");
+  assert(constants.size() == 1 && "meta.buffer.size has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
   // size is null.
@@ -37,7 +37,7 @@ OpFoldResult MetaBufferSizeOp::fold(ArrayRef<Attribute> constants) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult MetaBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.empty() && "meta.buffer.dtype has no operands");
+  assert(constants.size() == 1 && "meta.buffer.dtype has one operand");
   // A null dtype indicates ? dtype (unknown dtype). Since returning null
   // indicates that we don't fold anything, we don't need to check if
   // dtype is null.
