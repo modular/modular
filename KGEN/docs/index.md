@@ -69,3 +69,48 @@ Parameter list syntax:
 This design is a consequence of why you only see parens for empty argument
 lists, and why (if you're working on the compiler parser itself) we should
 support parens in the result type parser.
+
+## Support for dynamic shapes
+
+The kgen infrastructure natively supports kernels that work with dynamic shapes
+and dynamic dtypes, currently with the `!meta.buffer<?, ?>` type.  This allows
+extracting the size/dtype as SSA values, which can then be switched over, or
+have other calculations done at runtime.  When kgen supports Nd-arrays (tensors)
+we will have the equivalent for that.  In order to work with dynamic shapes,
+we need to be able to extract the only-known-at-runtime values with some
+operations that produce SSA values.  These are:
+
+```
+kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
+  // This returns a SSA value of type `!kgen.dtype`.
+  %dtype = meta.buffer.dtype %dest: !meta.buffer<?, ?>
+
+  // This returns a SSA value of type `index`.
+  %size = meta.buffer.size %dest: !meta.buffer<?, ?>
+  ...
+}
+```
+
+Note that we do *not* support dynamic shapes or dtypes for the `!meta.scalar` or
+`!meta.simd` types.  These may be parameterized with arithmetic that determines
+the vector length, but it may not be dynamic (i.e., there is no `?` allowed).
+This is because these are register-equivalent types, not memory-equivalent
+types.  In the case of the runtime representation of a buffer, the size and
+dtype doesn't affect how the buffer value itself is codegen'd: it is always a
+tuple of `{void*, numElements, dtype}` at runtime.
+
+Because the SIMD/Scalar types do not support dynamic shapes or dtypes, they also
+do not need operations like `meta.simd.size`: for any SIMD type, you either have
+an integer constant in the IR or a parameter expression.  You can materialize
+either of this into an SSA value with `kgen.param.value`:
+
+```
+kgen.generator @algo<veclen>(%src: !meta.simd<mul(veclen,veclen), f32>) {
+  // This does not need to exist!
+  %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), f32>
+
+  // Use this instead:
+  %veclenSSAValue = kgen.param.value = <mul(veclen,veclen), f32>
+}
+```
+
