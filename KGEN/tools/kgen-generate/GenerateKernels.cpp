@@ -8,14 +8,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Internals.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 using namespace M;
 
-namespace M {
-LogicalResult generateKernels(ModuleOp module, ModuleOp library);
-}
-
+/// Generate kernels in the specified module, incorporating implementation logic
+/// from the specified library.
 LogicalResult M::generateKernels(ModuleOp module, ModuleOp library) {
   // TODO!
   return success();

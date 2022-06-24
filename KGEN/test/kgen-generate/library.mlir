@@ -3,13 +3,15 @@
 
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect -o /dev/null
 
-kgen.generator @kernel1(%arg0: si32) -> si32 {
-  "someop" () : () -> ()
+// CHECK-LABEL: kgen.generator.interface @unary_add<size>(si32) -> si32
+kgen.generator.interface @unary_add<size>(si32) -> si32
+
+kgen.generator @unary_add_library_impl1<size>(%arg0: si32) -> si32
+  implements @unary_add {
+
+  // Silly op so we know when something used this.
+  "unary_add_library_impl1"() : () -> ()
+
+  // TODO: Do something with <size>
   kgen.return %arg0 : si32
 }
-
-kgen.generator @kernel2(%arg0: si32) -> si32 {
-  "someop" () : () -> ()
-  kgen.return %arg0 : si32
-}
-
