@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -770,7 +771,7 @@ TensorEltType DTypeConstantAttr::getTensorEltType() {
 }
 
 //===----------------------------------------------------------------------===//
-// Parameter Verification
+// Parameter Helper Functions
 //===----------------------------------------------------------------------===//
 
 /// Return true if the attribute is a valid parameter expression.
@@ -789,6 +790,31 @@ bool KGEN::isValidParameterExpr(Attribute value) {
   // Nothing else is.
   return false;
 }
+
+/// Given a kernel, generator, or generator interface operation, return an array
+/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
+/// result parameters.  A concrete kernel will always return empty arrays.
+std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+KGEN::getCalleeParameterInfo(Operation *callee) {
+  // Fully defined kernels never have parameters.
+  if (isa<KernelOp>(callee))
+    return std::make_pair(ArrayRef<Attribute>(), ArrayRef<Attribute>());
+
+  assert((isa<GeneratorOp, GeneratorInterfaceOp>(callee)) && "unknown callee");
+  ArrayRef<Attribute> calleeParams =
+      callee->getAttrOfType<ArrayAttr>("paramDecls").getValue();
+  size_t calleeNumInputParams =
+      callee->getAttrOfType<IntegerAttr>("numInputParameters")
+          .getValue()
+          .getZExtValue();
+  assert(calleeNumInputParams <= calleeParams.size());
+  return std::make_pair(calleeParams.take_front(calleeNumInputParams),
+                        calleeParams.drop_front(calleeNumInputParams));
+}
+
+//===----------------------------------------------------------------------===//
+// Parameter Verification
+//===----------------------------------------------------------------------===//
 
 namespace {
 struct ParameterVerifier final {

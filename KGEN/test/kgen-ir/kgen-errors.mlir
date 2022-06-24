@@ -149,11 +149,11 @@ kgen.call @undefined() : () -> ()
 // -----
 
 kgen.generator @g1(%x : i32) {
-  // expected-error @+1 {{incorrect number of operands for callee}}
+  // expected-error @+1 {{caller has 1 input but callee expects 0}}
   kgen.call @g2(%x) : (i32) -> ()
   kgen.return
 }
-kgen.generator @g2<>() {
+kgen.generator @g2<>() { // expected-note {{callee declared here}}
   kgen.return
 }
 
@@ -183,7 +183,7 @@ kgen.generator @only_returns<p1 -> p2>() {
 }
 
 kgen.kernel @test_only_returns() {
-  // expected-error @+1 {{call has 0 input parameters, but callee expects 1}}
+  // expected-error @+1 {{caller has 0 input parameters but callee expects 1}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
 }
@@ -226,8 +226,34 @@ kgen.generator @only_returns<() -> p2: i4>() {
 }
 
 kgen.kernel @test_only_returns() {
-  // expected-error @+1 {{result parameter #0 has type 'i4' but caller parameter has type 'index'}}
+  // expected-error @+1 {{caller output parameter #0 has type 'index' but caller expected type 'i4'}}
   kgen.call @only_returns<()->p2>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @fn<p2>() {
+  kgen.return
+}
+
+kgen.kernel @input_param_name() {
+  // expected-error @+1 {{caller input parameter #0 has name "p1" but caller expected name "p2"}}
+  kgen.call @fn<p1 = 42>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @fn(%a: i1) -> i1 {
+  kgen.return %a : i1
+}
+
+kgen.kernel @result_type(%a: i1) {
+  // expected-error @+1 {{caller result #0 has type 'f32' but caller expected type 'i1'}}
+  kgen.call @fn(%a) : (i1) -> f32
   kgen.return
 }
 

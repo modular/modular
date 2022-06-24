@@ -18,11 +18,6 @@ def ParameterExprAttr
       CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
     >]>;
 
-/// An array of ParameterExprAttr.
-def ParameterExprArrayAttr
-  : TypedArrayAttrBase<ParameterExprAttr,
-                       "array of parameter expression attributes">;
-
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
