@@ -11,7 +11,8 @@
 
 namespace M {
 /// Generate kernels in the specified module, incorporating implementation logic
-/// from the specified library.
+/// from the specified library.  On error, diagnostics are emitted and the
+/// primary file isn't completely lowered.
 LogicalResult generateKernels(ModuleOp primary, ModuleOp library);
 } // namespace M
 

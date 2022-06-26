@@ -38,23 +38,6 @@ struct CLOptions : public CommonCLOptions {
 
   cl::opt<std::string> libraryFilename{"library", cl::desc("<input file>")};
 
-  /// Open the filename specified on the command line and return a memory
-  /// buffer, or an error message on failure.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openLibraryFile() const {
-    std::string errorMsg;
-    auto result = mlir::openInputFile(libraryFilename, &errorMsg);
-    if (result)
-      return result;
-    return Error(errorMsg);
-  }
-
-  std::unique_ptr<llvm::MemoryBuffer> openLibraryFileOrExit() const {
-    auto result = openLibraryFile();
-    if (failed(result))
-      exit(reportError(result.getError()));
-    return result.takeValue();
-  }
-
   //===--------------------------------------------------------------------===//
   // Emission Options
 
@@ -83,23 +66,24 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   ctx->printOpOnDiagnostic(false);
 
   // Open the input file.
-  OwningOpRef<ModuleOp> module(mlir::parseSourceFile<ModuleOp>(sourceMgr, ctx));
-  if (!module)
+  OwningOpRef<ModuleOp> primaryModule(
+      mlir::parseSourceFile<ModuleOp>(sourceMgr, ctx));
+  if (!primaryModule)
     exit(1);
 
-  // Open the library file.
-  std::unique_ptr<llvm::MemoryBuffer> libraryFile =
-      options.openLibraryFileOrExit();
-  OwningOpRef<ModuleOp> library(
-      mlir::parseSourceString<ModuleOp>(libraryFile->getBuffer(), ctx));
-  if (!library)
+  OwningOpRef<ModuleOp> libraryModule(
+      mlir::parseSourceFile<ModuleOp>(options.libraryFilename, ctx));
+  if (!libraryModule)
     exit(1);
 
-  if (failed(generateKernels(module.get(), library.get())))
-    exit(1);
+  // Generate kernels for the primary module.  If any errors are emitted, we let
+  // the current diagnostic handler decide what to do with them.
+  // -verify-diagnostics doesn't consider errors to be a tool failure if they
+  // are matched correctly.
+  (void)generateKernels(primaryModule.get(), libraryModule.get());
 
   std::unique_ptr<llvm::ToolOutputFile> outputFile = options.getOutputFile();
-  module->print(outputFile->os());
+  primaryModule->print(outputFile->os());
   outputFile->keep();
 }
 
