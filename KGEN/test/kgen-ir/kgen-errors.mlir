@@ -49,7 +49,7 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 "someop" () {
   use1 = #kgen.param.expr<add,
-  // expected-error @+2 {{failed to parse ParamExprAttr parameter}}
+  // expected-error @+2 {{failed to parse ParamOperatorAttr parameter}}
   // expected-error @+1 {{parameter reference requires a type}}
                           #kgen.param.decl.ref<"p1">, 42 : si64>
 } : () -> ()

@@ -29,12 +29,12 @@ using namespace M::KGEN;
 namespace mlir {
 /// Parse an attribute.
 template <>
-struct FieldParser<PEO> {
-  static FailureOr<PEO> parse(AsmParser &parser) {
+struct FieldParser<POC> {
+  static FailureOr<POC> parse(AsmParser &parser) {
     StringRef value;
     if (parser.parseKeyword(&value))
       return failure();
-    auto result = symbolizePEO(value);
+    auto result = symbolizePOC(value);
     if (result.hasValue())
       return *result;
     return failure();
@@ -129,7 +129,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
 
     // Otherwise it's a function expression, decode the name as an operation
     // code.
-    auto opcode = symbolizePEO(keyword);
+    auto opcode = symbolizePOC(keyword);
     if (!opcode.hasValue())
       return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
@@ -148,12 +148,12 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
     }
 
     // Okay, we parsed the operands, see if this is a valid expression.
-    if (failed(ParamExprAttr::verify(
+    if (failed(ParamOperatorAttr::verify(
             [&]() -> mlir::InFlightDiagnostic { return p.emitError(loc); },
             *opcode, operands, type)))
       return failure();
     // all is good, lets move!
-    value = ParamExprAttr::get(*opcode, operands);
+    value = ParamOperatorAttr::get(*opcode, operands);
     return success();
   }
 
@@ -185,7 +185,7 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
     }
   }
 
-  if (auto expr = value.dyn_cast<ParamExprAttr>()) {
+  if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
     p << stringifyEnum(expr.getOpcode()) << '(';
     llvm::interleaveComma(expr.getOperands(), p, [&](Attribute operand) {
       printParamValue(p, operand, type);
@@ -343,12 +343,12 @@ void ParamBindAttr::walkImmediateSubElements(
 }
 
 //===----------------------------------------------------------------------===//
-// ParamExprAttr
+// ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                      PEO opcode, ArrayRef<Attribute> operands, Type type) {
+LogicalResult ParamOperatorAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
+    ArrayRef<Attribute> operands, Type type) {
   // All the operand types and result type must match.
   if (!llvm::all_of(operands, [&](auto op) {
         return op.getType() == operands.front().getType();
@@ -357,11 +357,11 @@ ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 
   // Check invariants on the expression.
   switch (opcode) {
-  case PEO::Add:
-  case PEO::Mul:
-  case PEO::And:
-  case PEO::Or:
-  case PEO::Xor:
+  case POC::Add:
+  case POC::Mul:
+  case POC::And:
+  case POC::Or:
+  case POC::Xor:
     if (operands.size() < 1)
       return emitError()
              << "associative operator must have at least one operand";
@@ -371,10 +371,10 @@ ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
     break;
 
   // Binary expressions.
-  case PEO::Shl:
-  case PEO::Shr:
-  case PEO::Div:
-  case PEO::Mod:
+  case POC::Shl:
+  case POC::Shr:
+  case POC::Div:
+  case POC::Mod:
     if (operands.size() != 2)
       return emitError() << "binary operators must have two operands";
     type = operands[0].getType();
@@ -385,10 +385,10 @@ ParamExprAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// If the specified attribute is a ParamExprAttr with the specified opcode,
+/// If the specified attribute is a ParamOperatorAttr with the specified opcode,
 /// return it.  Otherwise return null.
-static ParamExprAttr dyn_castPE(PEO opcode, Attribute value) {
-  if (auto expr = value.dyn_cast<ParamExprAttr>())
+static ParamOperatorAttr dyn_castPE(POC opcode, Attribute value) {
+  if (auto expr = value.dyn_cast<ParamOperatorAttr>())
     if (expr.getOpcode() == opcode)
       return expr;
   return {};
@@ -427,11 +427,12 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
     return false;
 
   // The only thing left are nested expressions.
-  auto lhsExpr = lhs.cast<ParamExprAttr>(), rhsExpr = rhs.cast<ParamExprAttr>();
+  auto lhsExpr = lhs.cast<ParamOperatorAttr>(),
+       rhsExpr = rhs.cast<ParamOperatorAttr>();
   // Sort by the string form of the opcode, e.g. add, .. mul,... then xor.
   if (lhsExpr.getOpcode() != rhsExpr.getOpcode())
-    return stringifyPEO(lhsExpr.getOpcode()) <
-           stringifyPEO(rhsExpr.getOpcode());
+    return stringifyPOC(lhsExpr.getOpcode()) <
+           stringifyPOC(rhsExpr.getOpcode());
 
   // If they are the same opcode, then sort by arity: more complex to the left.
   ArrayRef<Attribute> lhsOperands = lhsExpr.getOperands(),
@@ -456,7 +457,7 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
 /// constant operands and move them to the right.  If the whole expression is
 /// constant, then return that, otherwise update the operands list.
 static Attribute simplifyAssocOp(
-    PEO opcode, SmallVector<Attribute, 4> &operands,
+    POC opcode, SmallVector<Attribute, 4> &operands,
     llvm::function_ref<APInt(const APInt &, const APInt &)> calculateFn,
     llvm::function_ref<bool(const APInt &)> identityConstantFn,
     llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {}) {
@@ -513,9 +514,10 @@ static Attribute simplifyAssocOp(
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
 /// null as the second (standin for "multiplication by 1").
 static std::pair<Attribute, Attribute> decomposeAddend(Attribute operand) {
-  if (auto mul = dyn_castPE(PEO::Mul, operand))
+  if (auto mul = dyn_castPE(POC::Mul, operand))
     if (auto cst = mul.getOperands().back().dyn_cast<IntegerAttr>()) {
-      auto nonCst = ParamExprAttr::get(PEO::Mul, mul.getOperands().drop_back());
+      auto nonCst =
+          ParamOperatorAttr::get(POC::Mul, mul.getOperands().drop_back());
       return {nonCst, cst};
     }
   return {operand, Attribute()};
@@ -528,7 +530,7 @@ static Attribute getOneOfType(Type type) {
 
 static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
   if (auto result = simplifyAssocOp(
-          PEO::Add, operands, [](auto a, auto b) { return a + b; },
+          POC::Add, operands, [](auto a, auto b) { return a + b; },
           /*identityCst*/ [](auto cst) { return cst.isZero(); }))
     return result;
 
@@ -565,10 +567,10 @@ static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
         c2 = getOneOfType(type);
       // Re-add the "a"*(c1+c2) expression to the operand list and
       // re-canonicalize.
-      auto constant = ParamExprAttr::get(PEO::Add, c1, c2);
-      auto mulCst = ParamExprAttr::get(PEO::Mul, mulOperand, constant);
+      auto constant = ParamOperatorAttr::get(POC::Add, c1, c2);
+      auto mulCst = ParamOperatorAttr::get(POC::Mul, mulOperand, constant);
       operands.push_back(mulCst);
-      return ParamExprAttr::get(PEO::Add, operands);
+      return ParamOperatorAttr::get(POC::Add, operands);
     }
   }
 
@@ -577,7 +579,7 @@ static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
 
 static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
   if (auto result = simplifyAssocOp(
-          PEO::Mul, operands, [](auto a, auto b) { return a * b; },
+          POC::Mul, operands, [](auto a, auto b) { return a * b; },
           /*identityCst*/ [](auto cst) { return cst.isOne(); },
           /*destructiveCst*/ [](auto cst) { return cst.isZero(); }))
     return result;
@@ -585,7 +587,7 @@ static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
   // We always build a sum-of-products representation, so if we see an addition
   // as a subexpr, we need to pull it out: (a+b)*c*d ==> (a*c*d + b*c*d).
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
-    if (auto addSubExpr = dyn_castPE(PEO::Add, operands[i])) {
+    if (auto addSubExpr = dyn_castPE(POC::Add, operands[i])) {
       // Pull the `c*d` operands out - it is whatever operands remain after
       // removing the `(a+b)` term.
       operands.erase(operands.begin() + i);
@@ -594,11 +596,11 @@ static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
       SmallVector<Attribute> addOperands;
       for (auto addOperand : addSubExpr.getOperands()) {
         operands.push_back(addOperand);
-        addOperands.push_back(ParamExprAttr::get(PEO::Mul, operands));
+        addOperands.push_back(ParamOperatorAttr::get(POC::Mul, operands));
         operands.pop_back();
       }
       // Canonicalize and form the add expression.
-      return ParamExprAttr::get(PEO::Add, addOperands);
+      return ParamOperatorAttr::get(POC::Add, addOperands);
     }
   }
 
@@ -607,21 +609,21 @@ static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
 
 static Attribute simplifyAnd(SmallVector<Attribute, 4> &operands) {
   return simplifyAssocOp(
-      PEO::And, operands, [](auto a, auto b) { return a & b; },
+      POC::And, operands, [](auto a, auto b) { return a & b; },
       /*identityCst*/ [](auto cst) { return cst.isAllOnes(); },
       /*destructiveCst*/ [](auto cst) { return cst.isZero(); });
 }
 
 static Attribute simplifyOr(SmallVector<Attribute, 4> &operands) {
   return simplifyAssocOp(
-      PEO::Or, operands, [](auto a, auto b) { return a | b; },
+      POC::Or, operands, [](auto a, auto b) { return a | b; },
       /*identityCst*/ [](auto cst) { return cst.isZero(); },
       /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); });
 }
 
 static Attribute simplifyXor(SmallVector<Attribute, 4> &operands) {
   return simplifyAssocOp(
-      PEO::Xor, operands, [](auto a, auto b) { return a ^ b; },
+      POC::Xor, operands, [](auto a, auto b) { return a ^ b; },
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
 }
 
@@ -647,8 +649,8 @@ static Attribute simplifyShl(SmallVector<Attribute, 4> &operands) {
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
     auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
                                       rhs.getValue().getZExtValue());
-    return ParamExprAttr::get(PEO::Mul, operands[0],
-                              IntegerAttr::get(rhs.getType(), rhsCst));
+    return ParamOperatorAttr::get(POC::Mul, operands[0],
+                                  IntegerAttr::get(rhs.getType(), rhsCst));
   }
   return {};
 }
@@ -687,8 +689,8 @@ static Attribute simplifyMod(SmallVector<Attribute, 4> &operands) {
 }
 
 /// Build a parameter expression.  This automatically canonicalizes and
-/// folds, so it may not necessarily return a ParamExprAttr.
-Attribute ParamExprAttr::get(PEO opcode, ArrayRef<Attribute> operandsIn) {
+/// folds, so it may not necessarily return a ParamOperatorAttr.
+Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type, which is the type of the result.
   auto type = operandsIn.front().getType();
@@ -700,31 +702,31 @@ Attribute ParamExprAttr::get(PEO opcode, ArrayRef<Attribute> operandsIn) {
   // Verify and canonicalize parameter expressions.
   Attribute result;
   switch (opcode) {
-  case PEO::Add:
+  case POC::Add:
     result = simplifyAdd(operands);
     break;
-  case PEO::Mul:
+  case POC::Mul:
     result = simplifyMul(operands);
     break;
-  case PEO::And:
+  case POC::And:
     result = simplifyAnd(operands);
     break;
-  case PEO::Or:
+  case POC::Or:
     result = simplifyOr(operands);
     break;
-  case PEO::Xor:
+  case POC::Xor:
     result = simplifyXor(operands);
     break;
-  case PEO::Shl:
+  case POC::Shl:
     result = simplifyShl(operands);
     break;
-  case PEO::Shr:
+  case POC::Shr:
     result = simplifyShr(operands);
     break;
-  case PEO::Div:
+  case POC::Div:
     result = simplifyDiv(operands);
     break;
-  case PEO::Mod:
+  case POC::Mod:
     result = simplifyMod(operands);
     break;
   }
@@ -737,15 +739,15 @@ Attribute ParamExprAttr::get(PEO opcode, ArrayRef<Attribute> operandsIn) {
 }
 
 /// Builder used by the generic parser.
-Attribute ParamExprAttr::get(MLIRContext *ctx, PEO opcode,
-                             ArrayRef<Attribute> operands, Type type) {
+Attribute ParamOperatorAttr::get(MLIRContext *ctx, POC opcode,
+                                 ArrayRef<Attribute> operands, Type type) {
   auto result = get(opcode, operands);
   assert((!type || result.getType() == type) && "unexpected types");
   assert(ctx == result.getContext());
   return result;
 }
 
-void ParamExprAttr::walkImmediateSubElements(
+void ParamOperatorAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   for (auto operand : getOperands())
@@ -782,7 +784,7 @@ bool KGEN::isValidParameterExpr(Attribute value) {
     return true;
 
   // Expressions composed of other expressions are valid.
-  if (auto expr = value.dyn_cast<ParamExprAttr>()) {
+  if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
     return llvm::all_of(expr.getOperands(), [](Attribute operand) -> bool {
       return isValidParameterExpr(operand);
     });
