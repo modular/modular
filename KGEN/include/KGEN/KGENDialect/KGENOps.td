@@ -194,11 +194,8 @@ def ParamBindOp : KGENOp<"param.bind", [NoSideEffect]> {
      "custom<ParamBindOpValue>($paramDecls, $value) attr-dict";
 
   let extraClassDeclaration = [{
-    Attribute getParamDecl() {
-      assert(getParamDecls().size() == 1 &&
-             "ParamBindOp only allows a single parameter decl.");
-      return *getParamDecls().begin();
-    }
+    /// Return the single parameter declaration as a well typed attribute.
+    ParamDeclAttr getParamDecl();
   }];
 }
 
