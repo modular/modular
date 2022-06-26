@@ -313,3 +313,32 @@ kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
 
 // expected-error @+1 {{failed to satisfy constraint: any attribute valid parameter expression}}
 %0 = kgen.param.value : i32 = <[]>
+
+// -----
+
+kgen.generator.interface @take_and_return<p1 -> r1>()
+
+// expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
+kgen.kernel @self_cyclic() {
+  // Uses r1 and defines r1
+  kgen.call @take_and_return<p1 = r1 -> r1>() : () -> ()
+  // expected-note @-1 {{this operation uses parameter "r1", which is defined by itself}}
+  kgen.return
+}
+
+// -----
+
+kgen.generator.interface @take_and_return<p1 -> r1>()
+
+// expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
+kgen.kernel @mutually_recursive() {
+  // Uses r2 and defines r1
+  kgen.call @take_and_return<p1 = r2 -> r1>() : () -> ()
+  // expected-note @-1 {{this operation uses parameter "r2", which is defined by the first operation}}
+
+  // Uses r1 and defines r2
+  kgen.call @take_and_return<p1 = r1 -> r2>() : () -> ()
+  // expected-note @-1 {{this operation uses parameter "r1", which is defined by:}}
+
+  kgen.return
+}
