@@ -539,8 +539,12 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 LogicalResult GeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(
           getParamDecls().getValue().drop_front(getNumInputParameters()),
-          getResultTypes())) ||
-      failed(checkParametersInOpBody(*this)))
+          getResultTypes())))
+    return failure();
+
+  // See if the parameter definitions and uses within the generator are
+  // structured correctly.
+  if (!ParameterDeclsAndUses::calculate(*this).hasValue())
     return failure();
 
   return success();
@@ -589,8 +593,12 @@ void KernelOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult KernelOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(/*no parameters*/ {},
-                                              getResultTypes())) ||
-      failed(checkParametersInOpBody(*this)))
+                                              getResultTypes())))
+    return failure();
+
+  // See if the parameter definitions and uses within the kernel are
+  // structured correctly.
+  if (!ParameterDeclsAndUses::calculate(*this).hasValue())
     return failure();
 
   return success();

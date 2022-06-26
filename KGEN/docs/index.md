@@ -118,3 +118,30 @@ kgen.generator @algo<veclen, dt: dtype>(%src: !meta.simd<mul(veclen,veclen), dt>
 }
 ```
 
+## Structure of parameter definitions and uses.
+
+The kgen dialect and system is defined in a way that makes it moderately open
+for extension, but for that to work, operations need to follow some conventions
+for their parameter declarations and uses.
+
+Any operation is allowed to declare new parameters with a `ParamDeclAttr`.  This
+node contains the `StringAttr` name for the parameter as well as its type.  The
+key requirement is that `ParamDeclAttr`s may only occur in one place on an
+operation: the operation must have them in a `paramDecls` attribute: if present,
+that attribute must be an `ArrayAttr` of `ParamDeclAttr`s.  This means the
+`paramDecls` attribute name is reserved for this purpose in kgen compatible
+dialects.
+
+Parameter uses, on the other hand, are far more flexible.  Parameters
+expressions may occur anywhere in an operation -- including in types of values
+referred to or returned by an operation.  This allows parameterized types,
+allows an open and expressive set of operators that use parameters (e.g. to
+pass to invoked generators, to materialize as SSA values, to return from the
+function) etc.  There are no limitations on where they occur.
+
+Parameter definitions and uses do not follow the standard dominance structure of
+SSA or the MLIR region tree.  Instead, their requirement is that operations
+that define and use parameter must have *some DAG ordering* that respects the
+parameters definitions and uses within a kernel or kernel generator context.  By
+convention, the location of the operation in the MLIR graph typically
+represents an insertion point, not the order of execution of the metaprogram.

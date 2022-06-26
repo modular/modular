@@ -12,9 +12,11 @@
 #ifndef KGEN_KGENPARAMETERS_H
 #define KGEN_KGENPARAMETERS_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 
 namespace M::KGEN {
+class ParamDeclAttr;
+class ParamDeclRefAttr;
 
 /// Return true if the attribute is a valid parameter expression.
 bool isValidParameterExpr(Attribute value);
@@ -25,10 +27,32 @@ bool isValidParameterExpr(Attribute value);
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
 getDeclParameterInfo(Operation *decl);
 
-/// Scan the body of the specified operation checking invariants on parameters,
-/// diagnosing errors and returning failure if so.  This is used by verifiers
-/// for ops with bodies, like kgen.generator.
-LogicalResult checkParametersInOpBody(Operation *op);
+/// This class holds descriptions about parameter definitions and uses in a
+/// kernel or kernel generator context.
+class ParameterDeclsAndUses {
+public:
+  ParameterDeclsAndUses(ParameterDeclsAndUses &&other) = default;
+
+  /// Collect information about the parameter definitions and uses in the
+  /// specified operation.  This emits an error and returns `None` on an IR
+  /// verification error.
+  static Optional<ParameterDeclsAndUses> calculate(Operation *op);
+
+  /// This defines the operation and the ParamDeclAttr inside of it that defines
+  /// a parameter of a specified name.
+  SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> decls;
+
+  /// Parameter uses can occur in any attribute and even in in types.  We
+  /// collect all the uses we see by their operation.  Remember that attributes
+  /// are uniqued, so the same ParamDeclRefAttr can be used by multiple
+  /// operations, or even multiple times in the same operation.
+  SmallVector<std::pair<Operation *, ParamDeclRefAttr>, 8> uses;
+
+private:
+  ParameterDeclsAndUses() {}
+  ParameterDeclsAndUses(const ParameterDeclsAndUses &) = delete;
+  void operator=(const ParameterDeclsAndUses &) = delete;
+};
 
 } // namespace M::KGEN
 
