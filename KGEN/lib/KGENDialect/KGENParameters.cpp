@@ -24,6 +24,8 @@ using namespace M::KGEN;
 
 namespace {
 struct ParameterVerifier final {
+  ParameterVerifier(ParameterDeclsAndUses &parameters)
+      : parameters(parameters) {}
 
   /// Walk the operation and all the operations in its body to find the
   /// definitions and uses of parameters.  This diagnoses and rejects parameter
@@ -46,18 +48,8 @@ private:
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
 
-  /// Parameter definitions, if any are present, should all be in a single
-  /// `paramDecls` attribute on an operation.  We restrict where declarations
-  /// can be found to make them easier to identify and work with.  Keep track of
-  /// all the parameters we find by their name, this allows detecting
-  /// redefinitions with different types.
-  SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> paramDecls;
-
-  /// Parameter uses can occur in any attribute and even in in types.  We
-  /// collect all the uses we see by their operation.  Remember that attributes
-  /// are uniqued, so the same ParamDeclRefAttr can be used by multiple
-  /// operations, or even multiple times in the same operation.
-  SmallVector<std::pair<ParamDeclRefAttr, Operation *>> parameterUses;
+  /// This is the parameter information that we're building.
+  ParameterDeclsAndUses &parameters;
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
@@ -80,7 +72,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // We handle paramDecls below specially, just remember it for then.
+      // We handle the `paramDecls` attribute specially, remember it for below.
       if (namedAttr.getName().strref() == "paramDecls") {
         paramDeclsAttr = namedAttr.getValue();
         continue;
@@ -128,7 +120,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       }
 
       // We cannot have any redefinitions.
-      auto &opAndDeclAttr = paramDecls[param.getName()];
+      auto &opAndDeclAttr = parameters.decls[param.getName()];
       if (opAndDeclAttr.first) {
         auto diag = bodyOp->emitError("redeclaration of parameter ")
                     << param.getName();
@@ -151,7 +143,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
 
   // Collect parameter references.
   if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
-    parameterUses.push_back({paramRef, op});
+    parameters.uses.push_back({op, paramRef});
     return;
   }
 
@@ -168,7 +160,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
     return;
   }
 
-  size_t oldSize = parameterUses.size();
+  size_t oldSize = parameters.uses.size();
 
   // Otherwise we haven't processed this, check the attribute's type.
   collectParameterUsesFromType(attr.getType(), op);
@@ -190,7 +182,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == parameterUses.size())
+  if (oldSize == parameters.uses.size())
     parameterLessAttrs.insert(attr);
 }
 
@@ -202,7 +194,7 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
   if (parameterLessTypes.count(type))
     return;
 
-  size_t oldSize = parameterUses.size();
+  size_t oldSize = parameters.uses.size();
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type.  This also handles types like !meta.scalar etc.
@@ -222,16 +214,16 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == parameterUses.size())
+  if (oldSize == parameters.uses.size())
     parameterLessTypes.insert(type);
 }
 
 /// Once all the defs and uses of parameters are collected, verify that the
 /// uses are correct.
 LogicalResult ParameterVerifier::checkParameterUses() {
-  for (auto &[paramRefAttr, usingOp] : parameterUses) {
+  for (auto [usingOp, paramRefAttr] : parameters.uses) {
     // Check the use is referring to a parameter that was defined.
-    auto decl = paramDecls[paramRefAttr.getName()];
+    auto decl = parameters.decls[paramRefAttr.getName()];
     if (!decl.first) {
       usingOp->emitError("invalid use of parameter with no declaration ")
           << paramRefAttr.getName();
@@ -253,19 +245,24 @@ LogicalResult ParameterVerifier::checkParameterUses() {
   return success();
 }
 
-/// Scan the body of the specified operation checking invariants on
-/// parameters, diagnosing errors and returning failure if so.  This is used
-/// by verifiers for ops with bodies, like kgen.generator.
-LogicalResult KGEN::checkParametersInOpBody(Operation *topLevelOp) {
-  ParameterVerifier verifier;
+/// Collect information about the parameter definitions and uses in the
+/// specified operation.  This emits an error and returns `None` on an IR
+/// verification error.
+Optional<ParameterDeclsAndUses>
+ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
+  ParameterDeclsAndUses result;
+  ParameterVerifier verifier(result);
 
   // Start by doing a pass over the operation and all the operations in its body
   // to find the definitions and uses of parameters.
   if (failed(verifier.collectParameterDefsAndUses(topLevelOp)))
-    return failure();
+    return None;
 
   // Ok, now that we know the set of parameters we have to process, verify that
   // the uses match up and that we have a proper partial order relationship
   // between of definitions and uses.
-  return verifier.checkParameterUses();
+  if (failed(verifier.checkParameterUses()))
+    return None;
+
+  return std::move(result);
 }
