@@ -142,6 +142,12 @@ private:
 };
 } // end anonymous namespace
 
+static std::string getString(Attribute attr) {
+  std::string str;
+  llvm::raw_string_ostream(str) << attr;
+  return str;
+}
+
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
@@ -158,14 +164,27 @@ ErrorOr<Attribute> ParameterRewriter::simplifyParameterExpr(Attribute expr) {
     return value;
   }
 
-  // TODO: Generalize :-)
-  // FIXME: 'index' folding should require target information to simplify things
-  // like div.
+  // Simplify operators by recursively simplifying their operands, then
+  // refolding the expression.
+  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
+    SmallVector<Attribute> simplifiedOperands;
+    for (auto value : oper.getOperands()) {
+      auto simplified = simplifyParameterExpr(value);
+      if (simplified.isError())
+        return simplified;
+      simplifiedOperands.push_back(simplified.takeValue());
+    }
 
-  std::string attrStr;
-  llvm::raw_string_ostream(attrStr) << expr;
+    // FIXME: 'index' folding should require target information to simplify
+    // things like div.
+    auto result = ParamOperatorAttr::get(oper.getOpcode(), simplifiedOperands);
+    if (!isSimpleConstant(result))
+      return Error("could not simplify operator " + getString(expr));
+    return result;
+  }
 
-  return Error("unknown expression to fold: " + attrStr);
+  // Otherwise, we don't know how to simplify this attribute, it's an error.
+  return Error("unknown expression to fold: " + getString(expr));
 }
 
 LogicalResult ParameterRewriter::processOp(Operation *op) {
