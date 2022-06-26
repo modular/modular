@@ -42,11 +42,23 @@ public:
   /// a parameter of a specified name.
   SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> decls;
 
-  /// A single operation may use multiple parameter declarations, either
-  /// directly or through types on attributes and SSA operands/results.  This
-  /// keeps track of all of the uses that happen anywhere within an operation.
-  /// Each operation will only have a single entry in this list.
-  SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8> uses;
+  /// A single operation may define and use multiple parameter declarations,
+  /// either directly or through types on attributes and SSA operands/results.
+  ///
+  /// This list keeps track of all of the operations that define and use
+  /// parameter declarations.  It is ordered in a topological order "top down"
+  /// in the parameter dependence graph.  Each operation will only have a single
+  /// entry in this list.
+  ///
+  /// This provides a handy list of parameter uses that the operation refers to,
+  /// which will be empty if the operation just defines parameters but doesn't
+  /// use any.  You can get its parameter declarations directly from its
+  /// attribute list.
+  ///
+  /// Note that operations that use parameter expressions but not a
+  /// ParamDeclRefAttr will not appear in this list.
+  SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8>
+      usersAndDeclarers;
 
 private:
   ParameterDeclsAndUses() {}
