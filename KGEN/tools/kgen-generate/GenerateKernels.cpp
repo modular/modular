@@ -10,6 +10,8 @@
 
 #include "Internals.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 using namespace M;
@@ -103,9 +105,126 @@ void KernelGenerator::removeGenerators() {
 // Core Kernel Generator Algorithm
 //===----------------------------------------------------------------------===//
 
+/// We expect all parameter expressions to simplify down to concrete constants,
+/// we don't want anything left as a ParamOperatorAttr or ParamDeclRefAttr.
+static bool isSimpleConstant(Attribute attr) {
+  return attr.isa<FloatAttr, IntegerAttr, DTypeConstantAttr>();
+}
+
+namespace {
+/// This class keeps a set of defined parameter values and is used to evaluate
+/// and simplify operations based on those values.
+class ParameterRewriter {
+public:
+  /// Process an operation that needs to be rewritten/lowered based on the
+  /// context of the parameter values we know are defined.
+  LogicalResult processOp(Operation *op);
+
+  /// Set a value for the specified parameter declaration to the specified
+  /// simplified value.
+  void setParameterValue(ParamDeclAttr decl, Attribute value) {
+    assert(!paramValues.count(decl.getName()) && "parameter already declared!");
+    assert(isSimpleConstant(value) && "expression isn't simplified");
+    paramValues[decl.getName()] = value;
+  }
+
+  /// Given a generic parameter expression, simplify it by folding the
+  /// expression according to known parameter values.  This returns an error if
+  /// the expression cannot be folded for one reason or another.
+  ErrorOr<Attribute> simplifyParameterExpr(Attribute expr);
+
+private:
+  void processParamBindOp(ParamBindOp op);
+  void processParamValueOp(ParamValueOp op);
+
+  /// These are the b
+  DenseMap<StringAttr, Attribute> paramValues;
+};
+} // end anonymous namespace
+
+/// Given a generic parameter expression, simplify it by folding the
+/// expression according to known parameter values.  This returns an error if
+/// the expression cannot be folded for one reason or another.
+ErrorOr<Attribute> ParameterRewriter::simplifyParameterExpr(Attribute expr) {
+  // Simple constants don't need simplification.
+  if (isSimpleConstant(expr))
+    return expr;
+
+  // We can directly substitute declaration references given our known table of
+  // bindings.
+  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
+    auto value = paramValues[declRef.getName()];
+    assert(value && "Verifier should check that all parameters are defined");
+    return value;
+  }
+
+  // TODO: Generalize :-)
+  // FIXME: 'index' folding should require target information to simplify things
+  // like div.
+
+  std::string attrStr;
+  llvm::raw_string_ostream(attrStr) << expr;
+
+  return Error("unknown expression to fold: " + attrStr);
+}
+
+LogicalResult ParameterRewriter::processOp(Operation *op) {
+  if (auto bind = dyn_cast<ParamBindOp>(op))
+    processParamBindOp(bind);
+  else if (auto value = dyn_cast<ParamValueOp>(op))
+    processParamValueOp(value);
+  else
+    return op->emitError("unknown operator in GenerateKernels");
+  return success();
+}
+
+void ParameterRewriter::processParamBindOp(ParamBindOp op) {
+  // Simplify the input expression.
+  auto errorOrValue = simplifyParameterExpr(op.getValue());
+  if (errorOrValue.isError()) {
+    op->emitError(errorOrValue.getError());
+    return;
+  }
+
+  // Bind it to the parameter declaration it is setting.
+  setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
+
+  // The param.bind operation serves no other purpose, so we can remove it.
+  op->erase();
+}
+
+void ParameterRewriter::processParamValueOp(ParamValueOp op) {
+  // ParamValueOp projects a parameter expression into an SSA value.  We can
+  // eventually lower this into lower level operators in the target set, but
+  // for now we just simplify their operand.
+  auto errorOrValue = simplifyParameterExpr(op.getValue());
+  if (errorOrValue.isError()) {
+    op->emitError(errorOrValue.getError());
+    return;
+  }
+
+  op.setValueAttr(errorOrValue.takeValue());
+}
+
 /// Concretize a kernel in the primary file.
 ParseResult KernelGenerator::processKernel(KernelOp kernel) {
-  // TODO: Implement.
+  /// Get a partial ordering of parameter definitions and uses that is listed
+  /// "top down" in our evaluation order.
+  auto paramInfo = *ParameterDeclsAndUses::calculate(kernel);
+
+  // TODO: When handling generators, we should bind input parameter values.
+  ParameterRewriter rewriter;
+
+  // Process each def/use in order.
+  for (auto &user : paramInfo.usersAndDeclarers) {
+    if (failed(rewriter.processOp(user.first)))
+      return failure();
+  }
+
+  // TODO: Scan for operations that we want to lower that use parameter
+  // expression that happen to not be DeclRefAttrs.  For example a call that
+  // passes 42 as an argument.
+
   return success();
 }
 

@@ -1,4 +1,4 @@
-// RUN: kgen-generate %s -library=%S/library.mlir | FileCheck %s
+// RUN: kgen-generate %s -library=%S/library.mlir -verify-diagnostics | FileCheck %s
 
 // CHECK-NOT: kgen.generator @trivial_generator
 kgen.generator @trivial_generator(%arg0: si32) -> si32 {
@@ -27,9 +27,37 @@ kgen.kernel @test0() -> index {
   kgen.return %0 : index
 }
 
+// CHECK-LABEL: kgen.kernel @parameter_use_chain()
+kgen.kernel @parameter_use_chain() {
+  // Uses r2 and defines r1
+  kgen.param.bind r1 = <r2>  // TODO: <add(r2, 1)>
+  // CHECK-NEXT: %0 = kgen.param.value = <42>
+  %0 = kgen.param.value = <r1>
+
+  // Uses 42 and defines r2
+  kgen.param.bind r2 = <42>
+  // CHECK-NEXT: %1 = kgen.param.value = <42> 
+  %1 = kgen.param.value = <r2>
+
+  // Uses r1 and defines r3
+  kgen.param.bind r3 = <r1>  // TODO: <mul(r1, 4)>
+
+  // CHECK-NEXT: %2 = kgen.param.value = <42> 
+  %2 = kgen.param.value = <r3>
+  
+  // Defines a dtype value and uses it.
+  kgen.param.bind type1 : !kgen.dtype = <f32>
+  // CHECK-NEXT: %3 = kgen.param.value : dtype = <f32>
+  %3 = kgen.param.value : !kgen.dtype = <type1>
+
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+
 
 // TODO: enable this as a kernel test eventually.
-kgen.generator @test1(%arg0: si32, %arg1: si32) -> (si32, si32, si32) {
+kgen.generator @test_xx(%arg0: si32, %arg1: si32) -> (si32, si32, si32) {
   // Can invoke the generator directly.
   %0 = kgen.call @trivial_generator(%arg0) : (si32) -> si32
 
@@ -40,4 +68,19 @@ kgen.generator @test1(%arg0: si32, %arg1: si32) -> (si32, si32, si32) {
   %2 = kgen.call @unary_add_impl1<size = 12>(%arg0) : (si32) -> si32
 
   kgen.return %0, %1, %2 : si32, si32, si32
+}
+
+kgen.generator.interface @take_and_return<p1 -> r1>()
+
+kgen.generator @parameter_call_use_chain() {
+  // Uses r2 and defines r1
+  kgen.call @take_and_return<p1 = r2 -> r1>() { someAttr = 1 } : () -> ()
+
+  // Uses 42 and defines r2
+  kgen.call @take_and_return<p1 = 42 -> r2>() { someAttr = 2 }: () -> ()
+
+  // Uses r1 and defines r3
+  kgen.call @take_and_return<p1 = r1 -> r3>() { someAttr = 3 }: () -> ()
+
+  kgen.return
 }
