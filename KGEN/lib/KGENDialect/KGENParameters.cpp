@@ -14,9 +14,27 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 using namespace M;
 using namespace M::KGEN;
+
+namespace llvm {
+
+/// Make `ParamDeclRefAttr` behave like a `Attribute` in terms of
+/// pointer-likeness.
+template <>
+struct PointerLikeTypeTraits<ParamDeclRefAttr>
+    : PointerLikeTypeTraits<mlir::Attribute> {
+  static inline void *getAsVoidPointer(ParamDeclRefAttr v) {
+    return const_cast<void *>(v.getAsOpaquePointer());
+  }
+  static inline ParamDeclRefAttr getFromVoidPointer(void *p) {
+    return ParamDeclRefAttr::getFromOpaquePointer(p);
+  }
+};
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // Parameter Verification
@@ -34,7 +52,23 @@ struct ParameterVerifier final {
 
   /// Once all the defs and uses of parameters are collected, verify that the
   /// uses are correct.
-  LogicalResult checkParameterUses();
+  LogicalResult checkParameterUses(Operation *topLevelOp);
+
+  /// Verify that the parameter use-def graph has a partial ordering, diagnosing
+  /// any cycles that are present.
+  LogicalResult checkParameterUseDefGraph(Operation *topLevelOp);
+
+  /// Return the set of uses for the specified operation.
+  ArrayRef<ParamDeclRefAttr> getUsesForOperation(Operation *op) const {
+    assert(op);
+    auto it = opIndexInUses.find(op);
+    if (it == opIndexInUses.end())
+      return {};
+    return parameters.uses[it->second].second;
+  }
+
+  /// This is the parameter information that we're building.
+  ParameterDeclsAndUses &parameters;
 
 private:
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
@@ -54,8 +88,10 @@ private:
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
 
-  /// This is the parameter information that we're building.
-  ParameterDeclsAndUses &parameters;
+  /// A single operation may use multiple parameter declarations, either
+  /// directly or through types on attributes and SSA operands/results.  This
+  /// keeps track of all of the uses that happen anywhere within an operation.
+  DenseMap<Operation *, size_t> opIndexInUses;
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
@@ -109,7 +145,8 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     }
 
     // If this operation had any parameter uses, remember them.
-    parameters.uses.push_back({bodyOp, paramUses});
+    if (!paramUses.empty())
+      parameters.uses.push_back({bodyOp, std::move(paramUses)});
 
     // Ok, check parameter declarations if present.
     if (!paramDeclsAttr)
@@ -208,7 +245,7 @@ void ParameterVerifier::collectParameterUsesFromType(
   if (parameterLessTypes.count(type))
     return;
 
-  size_t oldSize = parameters.uses.size();
+  size_t oldSize = uses.size();
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type.  This also handles types like !meta.scalar etc.
@@ -228,15 +265,16 @@ void ParameterVerifier::collectParameterUsesFromType(
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == parameters.uses.size())
+  if (oldSize == uses.size())
     parameterLessTypes.insert(type);
 }
 
 /// Once all the defs and uses of parameters are collected, verify that the
 /// uses are correct.
-LogicalResult ParameterVerifier::checkParameterUses() {
+LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
   // Take a look at all the parameter uses to verify they are referencing
   // defined parameters and that they are used with the correct type.
+  size_t usesIndex = 0;
   for (auto &[usingOp, paramRefAttrArray] : parameters.uses) {
     for (auto paramRefAttr : paramRefAttrArray) {
       // Check the use is referring to a parameter that was defined.
@@ -257,9 +295,12 @@ LogicalResult ParameterVerifier::checkParameterUses() {
         return failure();
       }
     }
+
+    // Build the `opIndexInUses` map so the graph iterator can be efficient.
+    assert(usingOp && "null operations shouldn't appear here");
+    opIndexInUses[usingOp] = usesIndex++;
   }
 
-  // FIXME: Check partial ordering.
   return success();
 }
 
@@ -271,16 +312,264 @@ ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
   ParameterDeclsAndUses result;
   ParameterVerifier verifier(result);
 
-  // Start by doing a pass over the operation and all the operations in its body
-  // to find the definitions and uses of parameters.
-  if (failed(verifier.collectParameterDefsAndUses(topLevelOp)))
-    return None;
-
-  // Ok, now that we know the set of parameters we have to process, verify that
-  // the uses match up and that we have a proper partial order relationship
-  // between of definitions and uses.
-  if (failed(verifier.checkParameterUses()))
+  // Start by doing a pass over the operation and all the operations in its
+  // body to find the definitions and uses of parameters.
+  if (failed(verifier.collectParameterDefsAndUses(topLevelOp)) ||
+      // Next, now that we know the set of parameters we have to process, verify
+      // that the uses match up.
+      failed(verifier.checkParameterUses(topLevelOp)) ||
+      // Verify that there are no cycles in the graph.
+      failed(verifier.checkParameterUseDefGraph(topLevelOp)))
     return None;
 
   return std::move(result);
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterUseDefGraph Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ParameterUseDefGraphNodeIterator;
+
+/// This class defines a "node iterator" in the graph of operations that use and
+/// define parameters.  Each node in this graph is an operation.  Each edge
+/// between the nodes is a parameter use-def edge.
+///
+/// This uses a null `op` as a special representation for the root node.  This
+/// node acts like it points to all the using operations.
+class ParameterUseDefGraphNode {
+public:
+  ParameterUseDefGraphNode(const ParameterVerifier *verifier, Operation *op)
+      : verifier(verifier), op(op) {}
+
+  bool operator==(const ParameterUseDefGraphNode &rhs) const {
+    assert(verifier == rhs.verifier && "node from different graphs?");
+    return op == rhs.op;
+  }
+  bool operator!=(const ParameterUseDefGraphNode &rhs) const {
+    return !(*this == rhs);
+  }
+
+  /// return the operation this node corresponds to.
+  Operation *getOperation() const { return op; }
+  const ParameterVerifier *getVerifier() const { return verifier; }
+
+  /// Given a normal node (not the entry node) return the parameter uses.
+  ArrayRef<ParamDeclRefAttr> getUsesForOperation() const {
+    assert(op && "entry node doesn't have uses");
+    return verifier->getUsesForOperation(op);
+  }
+
+  ParameterUseDefGraphNodeIterator begin() const;
+  ParameterUseDefGraphNodeIterator end() const;
+
+private:
+  friend class ParameterUseDefGraphNodeIterator;
+  friend struct llvm::DenseMapInfo<ParameterUseDefGraphNode>;
+  const ParameterVerifier *verifier;
+  Operation *op;
+};
+} // end anonymous namespace
+
+namespace llvm {
+template <>
+struct DenseMapInfo<ParameterUseDefGraphNode> {
+  static inline ParameterUseDefGraphNode getEmptyKey() {
+    return {nullptr, DenseMapInfo<Operation *>::getEmptyKey()};
+  }
+  static inline ParameterUseDefGraphNode getTombstoneKey() {
+    return {nullptr, DenseMapInfo<Operation *>::getTombstoneKey()};
+  }
+  static unsigned getHashValue(const ParameterUseDefGraphNode &node) {
+    return DenseMapInfo<Operation *>::getHashValue(node.op);
+  }
+
+  static bool isEqual(const ParameterUseDefGraphNode &lhs,
+                      const ParameterUseDefGraphNode &rhs) {
+    return lhs.op == rhs.op;
+  }
+};
+} // namespace llvm
+
+namespace {
+class ParameterUseDefGraphNodeIterator
+    : public llvm::iterator_facade_base<ParameterUseDefGraphNodeIterator,
+                                        std::forward_iterator_tag,
+                                        ParameterUseDefGraphNode> {
+public:
+  ParameterUseDefGraphNodeIterator(const ParameterUseDefGraphNode &node,
+                                   unsigned useNumber)
+      : node(node), useNumber(useNumber) {}
+
+  bool operator==(const ParameterUseDefGraphNodeIterator &rhs) const {
+    return node == rhs.node && useNumber == rhs.useNumber;
+  }
+
+  ParameterUseDefGraphNode operator*() const {
+    auto *verifier = node.getVerifier();
+    // The entry node of the graph is a virtual node designated with a null
+    // Operator* which indexes all of the nodes in the graph.
+    if (node.getOperation() == nullptr)
+      return {verifier, verifier->parameters.uses[useNumber].first};
+
+    // Otherwise we index into the 'usesByOp' array in the verifier.
+    StringAttr paramName = getParameterName();
+    auto it = verifier->parameters.decls.find(paramName);
+    assert(it != verifier->parameters.decls.end() &&
+           "already checked that used parameters are defined");
+    // Get the operation defining the parameter.
+    return {verifier, it->second.first};
+  }
+
+  ParameterUseDefGraphNodeIterator operator++() {
+    ++useNumber;
+    return *this;
+  }
+  ParameterUseDefGraphNodeIterator operator++(int) {
+    ParameterUseDefGraphNodeIterator tmp = *this;
+    ++*this;
+    return tmp;
+  }
+
+  const ParameterUseDefGraphNode &getSourceNode() const { return node; }
+
+  StringAttr getParameterName() const {
+    assert(node.getOperation() != nullptr && "entry node cannot be cyclic");
+    return node.getUsesForOperation()[useNumber].getName();
+  }
+
+private:
+  ParameterUseDefGraphNode node;
+  unsigned useNumber;
+};
+} // end anonymous namespace
+
+ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::begin() const {
+  return ParameterUseDefGraphNodeIterator(*this, 0);
+}
+
+ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
+  assert(verifier && "cannot get children of invalid node");
+  unsigned endIndex;
+  if (op == nullptr) {
+    // Handle the special case of the virtual root node: the end index is the
+    // end of the array of operators using parameters.
+    endIndex = verifier->parameters.uses.size();
+  } else {
+    endIndex = getUsesForOperation().size();
+  }
+
+  return ParameterUseDefGraphNodeIterator(*this, endIndex);
+}
+
+/// The ParameterVerifier graph is defined with `ParameterUseDefGraphNode` nodes
+/// and `ParameterUseDefGraphNodeIterator` iterators.
+namespace llvm {
+template <>
+struct GraphTraits<ParameterVerifier *> {
+  using NodeRef = ParameterUseDefGraphNode;
+  using ChildIteratorType = ParameterUseDefGraphNodeIterator;
+
+  /// The "entry node" is a virtual node with a null Operation* that acts like
+  /// it points to all the using operations.
+  static NodeRef getEntryNode(const ParameterVerifier *verifier) {
+    return ParameterUseDefGraphNode(verifier, nullptr);
+  }
+
+  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
+  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
+};
+} // namespace llvm
+
+/// Given a cycle in the operation parameter use graph, determine if it is an
+/// error and diagnose it if so.  This returns success() in cases where the
+/// cycle is tolerable.
+static LogicalResult diagnoseCycle(ArrayRef<ParameterUseDefGraphNode> nodes,
+                                   Operation *topLevelOp) {
+  // Ignore self cycle in the top level op itself, this is because it is
+  // defining parameters and using those parameters in its own argument
+  // types.
+  if (nodes.size() == 1 && nodes[0].getOperation() == topLevelOp)
+    return success();
+
+  // Build a set of the nodes in the SCC so we can do efficient queries.
+  SmallPtrSet<Operation *, 4> opsInSCC;
+  for (auto node : nodes)
+    opsInSCC.insert(node.getOperation());
+
+  // Emit the error on the container operation with notes indicating the
+  // problem.
+  auto diag =
+      topLevelOp->emitError("invalid cyclic reference between operations "
+                            "defining and using parameters");
+
+  // An SCC may contain multiple different cyclic paths.  We diagnose the first
+  // one we see by walking the graph - always staying within the SCC, until we
+  // reach a node we've already seen.  Given this is an SCC, we know that we
+  // will eventually reach one of the nodes in the path.
+  SmallVector<ParameterUseDefGraphNodeIterator> path;
+  SmallPtrSet<Operation *, 4> opsInPath;
+  ParameterUseDefGraphNode nextNode = nodes.front();
+
+  // Loop until we find a backrefence.
+  while (opsInPath.insert(nextNode.getOperation()).second) {
+    // Find an iterator from this node to another within this SCC.
+    auto it = nextNode.begin();
+    while (!opsInSCC.count((*it).getOperation())) {
+      // Advance past edges to nodes outside the SCC.
+      ++it;
+      assert(it != nextNode.end() && "SCC means we should find an edge");
+    }
+
+    path.push_back(it);
+    nextNode = *it;
+  }
+
+  // Okay, we found a path through the SCC that loops back to 'nextNode'.  Note
+  // that it may not be a cycle though, because we may have found a path like
+  // A->B->C->D->C.  In this case, we want to just diagnose C->D->C.  Handle
+  // this by trimming off the beginning of the path until we find `C`.
+  while (path.front().getSourceNode() != nextNode)
+    path.erase(path.begin());
+
+  // Okay, we found a path, diagnose it.
+  for (auto &edge : path) {
+    const char *nextDiag = ", which is defined by:";
+    if (path.size() == 1)
+      nextDiag = ", which is defined by itself";
+    else if (&edge == &path.back())
+      nextDiag = ", which is defined by the first operation";
+
+    diag.attachNote(edge.getSourceNode().getOperation()->getLoc())
+        << "this operation uses parameter " << edge.getParameterName()
+        << nextDiag;
+  }
+  return failure();
+}
+
+/// Verify that the parameter use-def graph has a partial ordering, diagnosing
+/// any cycles that are present.
+LogicalResult
+ParameterVerifier::checkParameterUseDefGraph(Operation *topLevelOp) {
+  // Now that we've verified simple properties, check that there is a
+  // defininable partial order between operations that define an use parameters.
+  // We do this by using LLVM's SCC iterator to walk the graph imposed by these
+  // nodes. It naturally provides a post-order traversal, makes it easy to balk
+  // at cyclic references, and is non-recursive.
+  for (auto sccIt = llvm::scc_begin(this); !sccIt.isAtEnd(); ++sccIt) {
+    // If this node has a cycle detected in it, then we have an unrecoverable
+    // error.  Emit the error on the containiner with notes on every problematic
+    // operation.
+    if (sccIt.hasCycle() && failed(diagnoseCycle(*sccIt, topLevelOp)))
+      return failure();
+
+    assert(sccIt->size() == 1 &&
+           "Should only have a single node in non-cyclic regions");
+
+    // TODO: Rearrange the uses list in a predictable "top down" order for
+    // clients to use.
+  }
+
+  return success();
 }
