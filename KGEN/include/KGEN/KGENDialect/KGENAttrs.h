@@ -25,9 +25,25 @@ class TensorEltType;
 }
 
 namespace M::KGEN {
+class ParamDeclAttr;
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
 }
+
+/// Given a kernel, generator, or generator interface operation, return an array
+/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
+/// result parameters.  A concrete kernel will always return empty arrays.
+std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+getDeclParameterInfo(Operation *decl);
+
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.
+ArrayRef<Attribute> getParamDecls(Operation *op);
+
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.  This handles casting each
+/// element of the attribute list, which requires building a new SmallVector.
+SmallVector<ParamDeclAttr, 4> getParamDeclsCasted(Operation *op);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
