@@ -60,7 +60,7 @@ ParseResult KernelGenerator::collectInterfaces() {
     auto it = libraryInterfaces.find(itf.getNameAttr());
     if (it == libraryInterfaces.end())
       continue;
-    if (failed(verifyDeclMatchesInterface("interface", itf, "library",
+    if (failed(verifyDeclMatchesInterface("interface", itf, "library interface",
                                           it->second)))
       return failure();
   }

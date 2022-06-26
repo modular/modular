@@ -4,6 +4,8 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect -o /dev/null
 
 // CHECK-LABEL: kgen.generator.interface @unary_add<size>(si32) -> si32
+
+// expected-note @+1 {{library interface}}
 kgen.generator.interface @unary_add<size>(si32) -> si32
 
 kgen.generator @unary_add_library_impl1<size>(%arg0: si32) -> si32
