@@ -3,6 +3,12 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This file defines the core KGEN attribute classes, provides implementation
+// logic for working with them, and helpers for defining operations that take
+// them.
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef KGEN_KGENATTRIBUTES_H
 #define KGEN_KGENATTRIBUTES_H
@@ -22,23 +28,6 @@ namespace M::KGEN {
 inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
   return os << stringifyEnum(opcode);
 }
-
-//===----------------------------------------------------------------------===//
-// Parameter Helper Functions
-
-/// Return true if the attribute is a valid parameter expression.
-bool isValidParameterExpr(Attribute value);
-
-/// Given a kernel, generator, or generator interface operation, return an array
-/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always return empty arrays.
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
-getDeclParameterInfo(Operation *decl);
-
-/// Scan the body of the specified operation checking invariants on parameters,
-/// diagnosing errors and returning failure if so.  This is used by verifiers
-/// for ops with bodies, like kgen.generator.
-LogicalResult checkParametersInOpBody(Operation *op);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
