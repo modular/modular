@@ -58,13 +58,11 @@ struct ParameterVerifier final {
   /// any cycles that are present.
   LogicalResult checkParameterUseDefGraph(Operation *topLevelOp);
 
-  /// Return the set of uses for the specified operation.
-  ArrayRef<ParamDeclRefAttr> getUsesForOperation(Operation *op) const {
-    assert(op);
+  /// Return the set of parameter uses for the specified operation.
+  SmallVector<ParamDeclRefAttr> &getUsesForOperation(Operation *op) const {
     auto it = opIndexInUses.find(op);
-    if (it == opIndexInUses.end())
-      return {};
-    return parameters.uses[it->second].second;
+    assert(op && it != opIndexInUses.end());
+    return parameters.usersAndDeclarers[it->second].second;
   }
 
   /// This is the parameter information that we're building.
@@ -110,21 +108,28 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    Attribute paramDeclsAttr;
+    ArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // We handle the `paramDecls` attribute specially, remember it for below.
-      if (namedAttr.getName().strref() == "paramDecls") {
-        paramDeclsAttr = namedAttr.getValue();
+      // For normal attributes, we scan the attribute tree looking or parameter
+      // uses and reject unexpected parameter definitions.
+      if (namedAttr.getName().strref() != "paramDecls") {
+        collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
+                                     bodyOp->getLoc());
         continue;
       }
-      // Scan the attribute tree looking or parameter uses and reject unexpected
-      // parameter definitions.
-      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
-                                   bodyOp->getLoc());
+
+      // We handle the `paramDecls` attribute specially, remember it for below.
+      paramDeclsAttr = namedAttr.getValue().dyn_cast<ArrayAttr>();
+      if (!paramDeclsAttr) {
+        bodyOp->emitError("paramDecls attribute should be an array ")
+            << namedAttr.getValue();
+        hadError = true;
+        return;
+      }
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -144,23 +149,15 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       }
     }
 
-    // If this operation had any parameter uses, remember them.
-    if (!paramUses.empty())
-      parameters.uses.push_back({bodyOp, std::move(paramUses)});
+    // If this operation had any parameter uses or decls, remember them.
+    if (!paramUses.empty() || paramDeclsAttr)
+      parameters.usersAndDeclarers.push_back({bodyOp, std::move(paramUses)});
 
     // Ok, check parameter declarations if present.
     if (!paramDeclsAttr)
       return;
 
-    auto arrayAttr = paramDeclsAttr.dyn_cast<ArrayAttr>();
-    if (!arrayAttr) {
-      bodyOp->emitError("paramDecls attribute should be an array ")
-          << paramDeclsAttr;
-      hadError = true;
-      return;
-    }
-
-    for (Attribute attr : arrayAttr) {
+    for (Attribute attr : paramDeclsAttr) {
       // All the members of this array must be ParamDeclAttr's.
       auto param = attr.dyn_cast<ParamDeclAttr>();
       if (!param) {
@@ -274,8 +271,8 @@ void ParameterVerifier::collectParameterUsesFromType(
 LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
   // Take a look at all the parameter uses to verify they are referencing
   // defined parameters and that they are used with the correct type.
-  size_t usesIndex = 0;
-  for (auto &[usingOp, paramRefAttrArray] : parameters.uses) {
+  size_t usersAndDeclarersIndex = 0;
+  for (auto &[usingOp, paramRefAttrArray] : parameters.usersAndDeclarers) {
     for (auto paramRefAttr : paramRefAttrArray) {
       // Check the use is referring to a parameter that was defined.
       auto decl = parameters.decls[paramRefAttr.getName()];
@@ -298,7 +295,7 @@ LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
 
     // Build the `opIndexInUses` map so the graph iterator can be efficient.
     assert(usingOp && "null operations shouldn't appear here");
-    opIndexInUses[usingOp] = usesIndex++;
+    opIndexInUses[usingOp] = usersAndDeclarersIndex++;
   }
 
   return success();
@@ -411,7 +408,8 @@ public:
     // The entry node of the graph is a virtual node designated with a null
     // Operator* which indexes all of the nodes in the graph.
     if (node.getOperation() == nullptr)
-      return {verifier, verifier->parameters.uses[useNumber].first};
+      return {verifier,
+              verifier->parameters.usersAndDeclarers[useNumber].first};
 
     // Otherwise we index into the 'usesByOp' array in the verifier.
     StringAttr paramName = getParameterName();
@@ -455,7 +453,7 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
   if (op == nullptr) {
     // Handle the special case of the virtual root node: the end index is the
     // end of the array of operators using parameters.
-    endIndex = verifier->parameters.uses.size();
+    endIndex = verifier->parameters.usersAndDeclarers.size();
   } else {
     endIndex = getUsesForOperation().size();
   }
@@ -557,6 +555,7 @@ ParameterVerifier::checkParameterUseDefGraph(Operation *topLevelOp) {
   // We do this by using LLVM's SCC iterator to walk the graph imposed by these
   // nodes. It naturally provides a post-order traversal, makes it easy to balk
   // at cyclic references, and is non-recursive.
+  SmallVector<Operation *, 16> newOrder;
   for (auto sccIt = llvm::scc_begin(this); !sccIt.isAtEnd(); ++sccIt) {
     // If this node has a cycle detected in it, then we have an unrecoverable
     // error.  Emit the error on the containiner with notes on every problematic
@@ -566,10 +565,19 @@ ParameterVerifier::checkParameterUseDefGraph(Operation *topLevelOp) {
 
     assert(sccIt->size() == 1 &&
            "Should only have a single node in non-cyclic regions");
-
-    // TODO: Rearrange the uses list in a predictable "top down" order for
-    // clients to use.
+    // Remember the partial ordering we have.
+    newOrder.push_back(sccIt->front().getOperation());
   }
 
+  // Build a new `usersAndDeclarers` list in the correct order defined by the
+  // SCC iterators post-order traversal.
+  SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8>
+      usersAndDeclarers;
+  usersAndDeclarers.reserve(parameters.usersAndDeclarers.size());
+  for (Operation *op : newOrder) {
+    if (op)
+      usersAndDeclarers.push_back({op, std::move(getUsesForOperation(op))});
+  }
+  parameters.usersAndDeclarers = std::move(usersAndDeclarers);
   return success();
 }
