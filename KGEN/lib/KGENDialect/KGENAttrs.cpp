@@ -794,6 +794,27 @@ bool KGEN::isValidParameterExpr(Attribute value) {
   return false;
 }
 
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.
+ArrayRef<Attribute> KGEN::getParamDecls(Operation *op) {
+  auto paramDeclsArray = op->getAttrOfType<ArrayAttr>("paramDecls");
+  if (!paramDeclsArray)
+    return {};
+  return paramDeclsArray.getValue();
+}
+
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.  This handles casting each
+/// element of the attribute list, which requires building a new SmallVector.
+SmallVector<ParamDeclAttr, 4> KGEN::getParamDeclsCasted(Operation *op) {
+  SmallVector<ParamDeclAttr, 4> result;
+  auto paramDecls = getParamDecls(op);
+  result.reserve(paramDecls.size());
+  for (auto decl : paramDecls)
+    result.push_back(decl.cast<ParamDeclAttr>());
+  return result;
+}
+
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
 /// result parameters.  A concrete kernel will always return empty arrays.
@@ -804,8 +825,7 @@ KGEN::getDeclParameterInfo(Operation *callee) {
     return std::make_pair(ArrayRef<Attribute>(), ArrayRef<Attribute>());
 
   assert((isa<GeneratorOp, GeneratorInterfaceOp>(callee)) && "unknown callee");
-  ArrayRef<Attribute> calleeParams =
-      callee->getAttrOfType<ArrayAttr>("paramDecls").getValue();
+  ArrayRef<Attribute> calleeParams = getParamDecls(callee);
   size_t calleeNumInputParams =
       callee->getAttrOfType<IntegerAttr>("numInputParameters")
           .getValue()

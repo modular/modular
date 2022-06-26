@@ -21,12 +21,6 @@ class ParamDeclRefAttr;
 /// Return true if the attribute is a valid parameter expression.
 bool isValidParameterExpr(Attribute value);
 
-/// Given a kernel, generator, or generator interface operation, return an array
-/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always return empty arrays.
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
-getDeclParameterInfo(Operation *decl);
-
 /// This class holds descriptions about parameter definitions and uses in a
 /// kernel or kernel generator context.
 class ParameterDeclsAndUses {
