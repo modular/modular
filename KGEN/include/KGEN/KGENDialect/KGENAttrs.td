@@ -131,17 +131,17 @@ def ParamDeclRefAttr : AttrDef<KGENDialect, "ParamDeclRef"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamExprAttr
+// ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
-// ParamExprAttr forms the core of the expression grammar for parameter
+// ParamOperatorAttr forms the core of the expression grammar for parameter
 // expressions.  Its operators have been designed so that expression building
 // force a deterministic canonical form on expression trees.  This ensures that
 // `(x+1)*4` and `(x*4)+4` canonicalize into the same pointer value.
 //
 // For this reason, we should never have unary negate or subtract. `(x-y)` is
-// modeled as `(x+-y)` => `(x + -1*y)`.  The ParamExprAttr class does provide
-// convenience methods for these aggregate operations.
+// modeled as `(x+-y)` => `(x + -1*y)`.  The ParamOperatorAttr class does
+// provide convenience methods for these aggregate operations.
 //
 // The design of these operators assumes signful types like si64, and the fully
 // associative operations are take arbitrary arity, also to make
@@ -151,29 +151,30 @@ def ParamDeclRefAttr : AttrDef<KGENDialect, "ParamDeclRef"> {
 let cppNamespace = "M::KGEN" in {
 
 /// Fully associative variadic expressions.
-def PEO_Add : I32EnumAttrCase<"Add", 0, "add">;
-def PEO_Mul : I32EnumAttrCase<"Mul", 1, "mul">;
-def PEO_And : I32EnumAttrCase<"And", 2, "and">;
-def PEO_Or  : I32EnumAttrCase<"Or",  3, "or">;
-def PEO_Xor : I32EnumAttrCase<"Xor", 4, "xor">;
+def POC_Add : I32EnumAttrCase<"Add", 0, "add">;
+def POC_Mul : I32EnumAttrCase<"Mul", 1, "mul">;
+def POC_And : I32EnumAttrCase<"And", 2, "and">;
+def POC_Or  : I32EnumAttrCase<"Or",  3, "or">;
+def POC_Xor : I32EnumAttrCase<"Xor", 4, "xor">;
 
 // Binary expressions.
-def PEO_Shl : I32EnumAttrCase<"Shl", 5, "shl">;
-def PEO_Shr : I32EnumAttrCase<"Shr", 6, "shr">;
-def PEO_Div : I32EnumAttrCase<"Div", 7, "div">;
-def PEO_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
+def POC_Shl : I32EnumAttrCase<"Shl", 5, "shl">;
+def POC_Shr : I32EnumAttrCase<"Shr", 6, "shr">;
+def POC_Div : I32EnumAttrCase<"Div", 7, "div">;
+def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 
 // TODO: Can add compares, string concat, etc as needed.
 
-def PEOAttr  : I32EnumAttr<"PEO", "Parameter Expression Opcode",
-                           [PEO_Add, PEO_Mul, PEO_And, PEO_Or, PEO_Xor,
-                            PEO_Shl, PEO_Shr, PEO_Div, PEO_Mod]>;
+/// This defines the Parameter Operator Code enum attribute.
+def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
+                           [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
+                            POC_Shl, POC_Shr, POC_Div, POC_Mod]>;
 }
 
-def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr",
+def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Parameter expression";
-  let parameters = (ins "PEO":$opcode,
+  let parameters = (ins "POC":$opcode,
                         ArrayRefParameter<"::mlir::Attribute">:$operands,
                         AttributeSelfTypeParameter<"">:$type);
   let mnemonic = "param.expr";
@@ -184,16 +185,16 @@ def ParamExprAttr : AttrDef<KGENDialect, "ParamExpr",
 
   let extraClassDeclaration = [{
     /// Build a parameter expression.  This automatically canonicalizes and
-    /// folds, so it may not necessarily return a ParamExprAttr.
-    static Attribute get(PEO opcode, mlir::ArrayRef<mlir::Attribute> operands);
+    /// folds, so it may not necessarily return a ParamOperatorAttr.
+    static Attribute get(POC opcode, mlir::ArrayRef<mlir::Attribute> operands);
 
     /// Builder used by the generic parser.
-    static Attribute get(MLIRContext *ctx, PEO opcode,
+    static Attribute get(MLIRContext *ctx, POC opcode,
                          mlir::ArrayRef<mlir::Attribute> operands,
                          mlir::Type type);
 
     /// Build a binary parameter expression for convenience.
-    static Attribute get(PEO opcode, mlir::Attribute lhs, mlir::Attribute rhs) {
+    static Attribute get(POC opcode, mlir::Attribute lhs, mlir::Attribute rhs) {
       Attribute operands[] = { lhs, rhs };
       return get(opcode, operands);
     }

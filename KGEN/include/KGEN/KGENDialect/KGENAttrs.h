@@ -25,7 +25,7 @@ class TensorEltType;
 }
 
 namespace M::KGEN {
-inline raw_ostream &operator<<(raw_ostream &os, PEO opcode) {
+inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
 }
 
