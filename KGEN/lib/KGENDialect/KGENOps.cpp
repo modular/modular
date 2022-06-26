@@ -101,6 +101,16 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
+// ParamBindOp
+//===----------------------------------------------------------------------===//
+
+ParamDeclAttr ParamBindOp::getParamDecl() {
+  assert(getParamDecls().size() == 1 &&
+         "ParamBindOp only allows a single parameter decl.");
+  return (*getParamDecls().begin()).cast<ParamDeclAttr>();
+}
+
+//===----------------------------------------------------------------------===//
 // Logic shared between KernelOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
 
