@@ -38,12 +38,18 @@ struct ParameterVerifier final {
 
 private:
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses.
-  void collectParameterUsesFromAttr(Attribute attr, Operation *op);
+  /// parameter declarations and collecting parameter uses into `uses`.  This
+  /// emits errors at the specified location.
+  void collectParameterUsesFromAttr(Attribute attr,
+                                    SmallVector<ParamDeclRefAttr> &uses,
+                                    Location loc);
 
   /// Scan the specified type and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses.
-  void collectParameterUsesFromType(Type type, Operation *op);
+  /// parameter declarations and collecting parameter uses into `uses`.  This
+  /// emits errors at the specified location.
+  void collectParameterUsesFromType(Type type,
+                                    SmallVector<ParamDeclRefAttr> &uses,
+                                    Location loc);
 
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
@@ -69,6 +75,8 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     Attribute paramDeclsAttr;
+    SmallVector<ParamDeclRefAttr> paramUses;
+
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
@@ -79,14 +87,15 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       }
       // Scan the attribute tree looking or parameter uses and reject unexpected
       // parameter definitions.
-      collectParameterUsesFromAttr(namedAttr.getValue(), bodyOp);
+      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
+                                   bodyOp->getLoc());
     }
 
     // Check the types of results to find any parameters embedded in their
     // types.  We don't have to check operands because they are always checked
     // when being defined.
     for (Type type : bodyOp->getResultTypes())
-      collectParameterUsesFromType(type, bodyOp);
+      collectParameterUsesFromType(type, paramUses, bodyOp->getLoc());
 
     // Scan the region list if present.  The walker will automatically recurse
     // for us, but we have to check the block arguments.
@@ -94,9 +103,13 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       for (auto &region : bodyOp->getRegions()) {
         for (auto &block : region)
           for (Value arg : block.getArguments())
-            collectParameterUsesFromType(arg.getType(), bodyOp);
+            collectParameterUsesFromType(arg.getType(), paramUses,
+                                         bodyOp->getLoc());
       }
     }
+
+    // If this operation had any parameter uses, remember them.
+    parameters.uses.push_back({bodyOp, paramUses});
 
     // Ok, check parameter declarations if present.
     if (!paramDeclsAttr)
@@ -138,12 +151,12 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
-                                                     Operation *op) {
+void ParameterVerifier::collectParameterUsesFromAttr(
+    Attribute attr, SmallVector<ParamDeclRefAttr> &uses, Location loc) {
 
   // Collect parameter references.
   if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
-    parameters.uses.push_back({op, paramRef});
+    uses.push_back(paramRef);
     return;
   }
 
@@ -155,40 +168,41 @@ void ParameterVerifier::collectParameterUsesFromAttr(Attribute attr,
 
   // Reject errant parameter decls.
   if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
-    op->emitError("invalid ParamDeclAttr outside of paramDecls attribute ")
+    emitError(loc, "invalid ParamDeclAttr outside of paramDecls attribute ")
         << paramDecl;
     return;
   }
 
-  size_t oldSize = parameters.uses.size();
+  size_t oldSize = uses.size();
 
   // Otherwise we haven't processed this, check the attribute's type.
-  collectParameterUsesFromType(attr.getType(), op);
+  collectParameterUsesFromType(attr.getType(), uses, loc);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
     itf.walkSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, op); },
-        [&](Type type) { collectParameterUsesFromType(type, op); });
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
+        [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
   } else if (attr.isa<DTypeConstantAttr>()) {
     // This attribute doesn't participate with SubElementAttrInterface but we
     // know it doesn't have any subelements.
   } else {
     // Conservatively reject unknown attributes, we don't want someone to forget
     // to conform to SubElementAttrInterface.
-    op->emitError("unknown attribute for parameterization scan: ") << attr;
+    emitError(loc, "unknown attribute for parameterization scan: ") << attr;
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == parameters.uses.size())
+  if (oldSize == uses.size())
     parameterLessAttrs.insert(attr);
 }
 
 /// Scan the specified type and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
+void ParameterVerifier::collectParameterUsesFromType(
+    Type type, SmallVector<ParamDeclRefAttr> &uses, Location loc) {
   // Ignore common trivial types we know are never parameterized, and types we
   // have already scanned.
   if (parameterLessTypes.count(type))
@@ -200,15 +214,15 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
   // function type.  This also handles types like !meta.scalar etc.
   if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
     itf.walkSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, op); },
-        [&](Type type) { collectParameterUsesFromType(type, op); });
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
+        [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
   } else {
     // These are known leaf types that don't participate with
     // SubElementTypeInterface.
     if (!type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>()) {
       // Conservatively reject unknown types, we don't want someone to forget to
       // conform to SubElementTypeInterface.
-      op->emitError("unknown type for parameterization scan: ") << type;
+      emitError(loc, "unknown type for parameterization scan: ") << type;
     }
   }
 
@@ -221,27 +235,31 @@ void ParameterVerifier::collectParameterUsesFromType(Type type, Operation *op) {
 /// Once all the defs and uses of parameters are collected, verify that the
 /// uses are correct.
 LogicalResult ParameterVerifier::checkParameterUses() {
-  for (auto [usingOp, paramRefAttr] : parameters.uses) {
-    // Check the use is referring to a parameter that was defined.
-    auto decl = parameters.decls[paramRefAttr.getName()];
-    if (!decl.first) {
-      usingOp->emitError("invalid use of parameter with no declaration ")
-          << paramRefAttr.getName();
-      return failure();
-    }
+  // Take a look at all the parameter uses to verify they are referencing
+  // defined parameters and that they are used with the correct type.
+  for (auto &[usingOp, paramRefAttrArray] : parameters.uses) {
+    for (auto paramRefAttr : paramRefAttrArray) {
+      // Check the use is referring to a parameter that was defined.
+      auto decl = parameters.decls[paramRefAttr.getName()];
+      if (!decl.first) {
+        usingOp->emitError("invalid use of parameter with no declaration ")
+            << paramRefAttr.getName();
+        return failure();
+      }
 
-    // Check that the types of the uses match the defs.
-    if (decl.second.getType() != paramRefAttr.getType()) {
-      auto diag = usingOp->emitError("reference to parameter ")
-                  << paramRefAttr.getName() << " with incorrect type "
-                  << paramRefAttr.getType();
-      diag.attachNote(decl.first->getLoc())
-          << "parameter defined with type " << decl.second.getType();
-      return failure();
+      // Check that the types of the uses match the defs.
+      if (decl.second.getType() != paramRefAttr.getType()) {
+        auto diag = usingOp->emitError("reference to parameter ")
+                    << paramRefAttr.getName() << " with incorrect type "
+                    << paramRefAttr.getType();
+        diag.attachNote(decl.first->getLoc())
+            << "parameter defined with type " << decl.second.getType();
+        return failure();
+      }
     }
-
-    // FIXME: Check partial ordering.
   }
+
+  // FIXME: Check partial ordering.
   return success();
 }
 

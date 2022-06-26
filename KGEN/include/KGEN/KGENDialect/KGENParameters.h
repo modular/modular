@@ -42,11 +42,11 @@ public:
   /// a parameter of a specified name.
   SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> decls;
 
-  /// Parameter uses can occur in any attribute and even in in types.  We
-  /// collect all the uses we see by their operation.  Remember that attributes
-  /// are uniqued, so the same ParamDeclRefAttr can be used by multiple
-  /// operations, or even multiple times in the same operation.
-  SmallVector<std::pair<Operation *, ParamDeclRefAttr>, 8> uses;
+  /// A single operation may use multiple parameter declarations, either
+  /// directly or through types on attributes and SSA operands/results.  This
+  /// keeps track of all of the uses that happen anywhere within an operation.
+  /// Each operation will only have a single entry in this list.
+  SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8> uses;
 
 private:
   ParameterDeclsAndUses() {}
