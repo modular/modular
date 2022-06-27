@@ -5,8 +5,8 @@
 #===-----------------------------------------------------------------------===##
 
 # Generating Meta filename prefix into the "kgen" C++ namespace.
-add_mlir_dialect(Meta meta)
-add_modular_doc(Meta -gen-dialect-doc MetaDialect KGEN/docs/)
+add_mlir_dialect(Meta meta -dialect=meta)
+add_modular_doc(Meta -gen-dialect-doc MetaDialect KGEN/docs/ -dialect=meta)
 
 # set(LLVM_TARGET_DEFINITIONS KGEN.td)
 # mlir_tablegen(KGENAttrs.h.inc -gen-attrdef-decls -dialect=kgen)
