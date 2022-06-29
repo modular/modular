@@ -131,7 +131,6 @@ def CallOp
 
   let summary = "Call a kernel or generator";
 
-  // TODO: Parameter decls and bindings.
   let arguments =
    (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
@@ -153,6 +152,7 @@ def CallOp
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
   }];
+  
   let assemblyFormat = [{
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
     attr-dict `:` functional-type($operands, results)

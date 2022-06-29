@@ -152,7 +152,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
             [&]() -> mlir::InFlightDiagnostic { return p.emitError(loc); },
             *opcode, operands, type)))
       return failure();
-    // all is good, lets move!
+    // All is good, let's move!
     value = ParamOperatorAttr::get(*opcode, operands);
     return success();
   }
