@@ -28,9 +28,9 @@ public:
   ParameterDeclsAndUses(ParameterDeclsAndUses &&other) = default;
 
   /// Collect information about the parameter definitions and uses in the
-  /// specified operation.  This emits an error and returns `None` on an IR
+  /// specified operation.  This emits an error and returns failure on an IR
   /// verification error.
-  static Optional<ParameterDeclsAndUses> calculate(Operation *op);
+  static FailureOr<ParameterDeclsAndUses> calculate(Operation *op);
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
   /// a parameter of a specified name.

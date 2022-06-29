@@ -304,7 +304,7 @@ LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
 /// Collect information about the parameter definitions and uses in the
 /// specified operation.  This emits an error and returns `None` on an IR
 /// verification error.
-Optional<ParameterDeclsAndUses>
+FailureOr<ParameterDeclsAndUses>
 ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
   ParameterDeclsAndUses result;
   ParameterVerifier verifier(result);
@@ -317,7 +317,7 @@ ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
       failed(verifier.checkParameterUses(topLevelOp)) ||
       // Verify that there are no cycles in the graph.
       failed(verifier.checkParameterUseDefGraph(topLevelOp)))
-    return None;
+    return failure();
 
   return std::move(result);
 }
@@ -406,7 +406,7 @@ public:
   ParameterUseDefGraphNode operator*() const {
     auto *verifier = node.getVerifier();
     // The entry node of the graph is a virtual node designated with a null
-    // Operator* which indexes all of the nodes in the graph.
+    // Operation* which indexes all of the nodes in the graph.
     if (node.getOperation() == nullptr)
       return {verifier,
               verifier->parameters.usersAndDeclarers[useNumber].first};

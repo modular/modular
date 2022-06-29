@@ -554,10 +554,7 @@ LogicalResult GeneratorOp::verifyRegions() {
 
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  if (!ParameterDeclsAndUses::calculate(*this).hasValue())
-    return failure();
-
-  return success();
+  return ParameterDeclsAndUses::calculate(*this);
 }
 
 LogicalResult
@@ -608,10 +605,7 @@ LogicalResult KernelOp::verifyRegions() {
 
   // See if the parameter definitions and uses within the kernel are
   // structured correctly.
-  if (!ParameterDeclsAndUses::calculate(*this).hasValue())
-    return failure();
-
-  return success();
+  return ParameterDeclsAndUses::calculate(*this);
 }
 
 //===----------------------------------------------------------------------===//
