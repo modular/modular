@@ -104,6 +104,12 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 // ParamBindOp
 //===----------------------------------------------------------------------===//
 
+void ParamBindOp::build(OpBuilder &builder, OperationState &result,
+                        ParamDeclAttr decl, Attribute value) {
+  build(builder, result, /*no result types*/ TypeRange{},
+        builder.getArrayAttr(decl), value);
+}
+
 ParamDeclAttr ParamBindOp::getParamDecl() {
   assert(getParamDecls().size() == 1 &&
          "ParamBindOp only allows a single parameter decl.");
@@ -533,6 +539,11 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
+std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+GeneratorOp::getParameterInfo() {
+  return getDeclParameterInfo(getOperation());
+}
+
 ReturnOp GeneratorOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
@@ -581,6 +592,34 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // KernelOp
 //===----------------------------------------------------------------------===//
 
+/// Create a kernel with no body block.  The caller must create it and fill
+/// it in.
+void KernelOp::build(OpBuilder &builder, OperationState &result,
+                     StringAttr name, FunctionType signature) {
+  // Add an attribute for the name and function_type attributes.
+  result.addAttribute(SymbolTable::getSymbolAttrName(), name);
+  result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
+  result.addRegion();
+}
+
+/// Create a kernel with an empty body, `argLocs` specifies the locations for
+/// all the block arguments.
+void KernelOp::build(OpBuilder &builder, OperationState &result,
+                     StringAttr name, FunctionType signature,
+                     ArrayRef<Location> argLocs) {
+  build(builder, result, name, signature);
+
+  // Create a block for the body.
+  auto *bodyRegion = result.regions[0].get();
+  Block *body = new Block();
+  bodyRegion->push_back(body);
+
+  // Add arguments to the body block.
+  assert(signature.getInputs().size() == argLocs.size() &&
+         "incorrect number of arg locs");
+  body->addArguments(signature.getInputs(), argLocs);
+}
+
 ReturnOp KernelOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
@@ -611,6 +650,11 @@ LogicalResult KernelOp::verifyRegions() {
 //===----------------------------------------------------------------------===//
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
+
+std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+GeneratorInterfaceOp::getParameterInfo() {
+  return getDeclParameterInfo(getOperation());
+}
 
 /// Parses a KGEN generator interface.
 ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
@@ -703,6 +747,15 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return failure();
 
   return success();
+}
+
+void CallOp::build(OpBuilder &builder, OperationState &state,
+                   TypeRange resultTypes, StringAttr callee,
+                   ArrayRef<Attribute> inputParams,
+                   ArrayRef<Attribute> resultParams, OperandRange operands) {
+  build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
+        builder.getArrayAttr(inputParams), builder.getArrayAttr(resultParams),
+        operands);
 }
 
 //===----------------------------------------------------------------------===//

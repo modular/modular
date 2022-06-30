@@ -45,6 +45,16 @@ def KernelOp
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
+
+  let builders = [
+    // Create a kernel with a region but no body block.  The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature)>,
+    // Create a kernel with an empty body, `argLocs` specifies the locations for
+    // all the block arguments.
+    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
+                   "ArrayRef<Location>":$argLocs)>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -83,6 +93,11 @@ def GeneratorOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    /// Given a kernel, generator, or generator interface operation, return an
+    /// array of `ParamDeclAttr`s for the inputs and the array of
+    /// `ParamDeclAttr`s for the result parameters.
+    std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -116,6 +131,11 @@ def GeneratorInterfaceOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    /// Given a kernel, generator, or generator interface operation, return an
+    /// array of `ParamDeclAttr`s for the inputs and the array of
+    /// `ParamDeclAttr`s for the result parameters.
+    std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -157,6 +177,13 @@ def CallOp
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
     attr-dict `:` functional-type($operands, results)
   }];
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$resultTypes, "StringAttr":$callee,
+                   "ArrayRef<Attribute>":$inputParams,
+                   "ArrayRef<Attribute>":$resultParams,
+                   "OperandRange":$operands)>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -192,6 +219,10 @@ def ParamBindOp : KGENOp<"param.bind", [NoSideEffect]> {
   let results = (outs);
   let assemblyFormat =
      "custom<ParamBindOpValue>($paramDecls, $value) attr-dict";
+
+   let builders = [
+    OpBuilder<(ins "ParamDeclAttr":$decl, "Attribute":$value)>,
+  ];
 
   let extraClassDeclaration = [{
     /// Return the single parameter declaration as a well typed attribute.
