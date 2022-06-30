@@ -9,15 +9,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "Internals.h"
+
+#include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Verifier.h"
 
 using namespace M;
 using namespace KGEN;
+
+/// We expect all parameter expressions to simplify down to concrete constants,
+/// we don't want anything left as a ParamOperatorAttr or ParamDeclRefAttr.
+static bool isSimpleConstant(Attribute attr) {
+  return attr.isa<FloatAttr, IntegerAttr, DTypeConstantAttr>();
+}
 
 //===----------------------------------------------------------------------===//
 // KernelGenerator class definition
@@ -48,10 +57,13 @@ public:
   }
 
   /// Specialize a kernel generator with the specified input parameters and
-  /// return the symbol name to use for the result.
+  /// return the symbol name to use for the result.  `insertionPoint` is always
+  /// a point in the primary module where a new kernel should be placed if
+  /// necessary.
   std::pair<StringAttr, SmallVector<Attribute>>
   getSpecializedGenerator(GeneratorOp generator,
-                          ArrayRef<Attribute> inputParamValues);
+                          ArrayRef<Attribute> inputParamValues,
+                          Operation *insertionPoint);
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
@@ -121,30 +133,65 @@ void KernelGenerator::removeGenerators() {
 // Core Kernel Generator Algorithm
 //===----------------------------------------------------------------------===//
 
+/// This returns a name to use when the specified generator is specialized
+/// with the specified input parameters.
+static StringAttr mangleParameterValues(GeneratorOp generator,
+                                        ArrayRef<Attribute> inputParamValues) {
+  Builder b(generator.getContext());
+  if (inputParamValues.empty())
+    return b.getStringAttr(generator.getName() + "_kernel");
+
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << generator.getName();
+
+  auto inputParamDecls = generator.getParameterInfo().first;
+  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
+    os << ',' << inputDecl.cast<ParamDeclAttr>().getName().str() << '=';
+
+    if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
+      os << intAttr.getValue();
+    } else if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
+      SmallString<32> str;
+      floatAttr.getValue().toString(str);
+      os << str;
+    } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
+      os << dtypeAttr.getTensorEltType();
+    } else {
+      assert(!isSimpleConstant(value) && "not handling all simple constants");
+      os << "??";
+    }
+  }
+  return b.getStringAttr(result);
+}
+
 /// Specialize a kernel generator with the specified input parameters and
 /// return the symbol name to use for the result.
 std::pair<StringAttr, SmallVector<Attribute>>
 KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
-                                         ArrayRef<Attribute> inputParamValues) {
+                                         ArrayRef<Attribute> inputParamValues,
+                                         Operation *insertionPoint) {
   // TODO: Cache these so multiple uses of the same kernel don't get separate
   // instantiations.
 
   // We insert specializations of the generator immediately before the generator
-  // if it is defined in the primary module.  Otherwise put at the top of the
-  // primary file.
-  // TODO: If it is from the library, it would be better to insert it before the
-  // first client that needed it (make tests easier to write).
-  Operation *insertPt = generator;
-  if (generator->getParentOp() != primaryModule)
-    insertPt = &primaryModule.getBody()->front();
-  OpBuilder b(insertPt);
+  // if it is defined in the primary module.  Otherwise if it is from the
+  // library, it would be better to insert it before the first client that
+  // needed it (make tests easier to write).
+  if (generator->getParentOp() == primaryModule) {
+    insertionPoint = generator;
+  } else {
+    assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
+  }
+  OpBuilder b(insertionPoint);
 
   // TODO (high prio): Mangle the inputParam values into the symbol name to make
   // it more nice and more stable.
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   auto newKernel = b.create<KernelOp>(
-      generator.getLoc(), generator.getNameAttr(), generator.getFunctionType());
+      generator.getLoc(), mangleParameterValues(generator, inputParamValues),
+      generator.getFunctionType());
 
   // Insert the newKernel into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -171,18 +218,17 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
   // recursively process it.
 
   // TODO: Handle output parameters.
+
+  // Check that the thing we just built is correct!
+  if (failed(verify(newKernel)))
+    return std::make_pair(StringAttr(), SmallVector<Attribute>());
+
   return std::make_pair(newKernel.getNameAttr(), SmallVector<Attribute>());
 }
 
 //===----------------------------------------------------------------------===//
 // Core Kernel Generator Algorithm
 //===----------------------------------------------------------------------===//
-
-/// We expect all parameter expressions to simplify down to concrete constants,
-/// we don't want anything left as a ParamOperatorAttr or ParamDeclRefAttr.
-static bool isSimpleConstant(Attribute attr) {
-  return attr.isa<FloatAttr, IntegerAttr, DTypeConstantAttr>();
-}
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
@@ -339,8 +385,13 @@ void ParameterRewriter::processCallOp(CallOp call) {
     return;
   }
 
-  auto [newCallee, outputParams] =
-      kernelGenerator.getSpecializedGenerator(generator, boundInputParameters);
+  auto [newCallee, outputParams] = kernelGenerator.getSpecializedGenerator(
+      generator, boundInputParameters, call->getParentOfType<KernelOp>());
+
+  // If kernel generation failed for some reason, bail out.  The error will
+  // already be reported.
+  if (!newCallee)
+    return;
 
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
