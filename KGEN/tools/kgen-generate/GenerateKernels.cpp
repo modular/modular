@@ -13,7 +13,9 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
+
 using namespace M;
 using namespace KGEN;
 
@@ -25,7 +27,7 @@ namespace {
 class KernelGenerator {
 public:
   KernelGenerator(ModuleOp primary, ModuleOp library)
-      : primaryModule(primary), libraryModule(library) {}
+      : primaryModule(primary), libraryModule(library), symbolTable(primary) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
@@ -40,10 +42,24 @@ public:
   /// Remove generators and generator interfaces from the file to clean it up.
   void removeGenerators();
 
+  /// Return the operation that defines the specified symbol.
+  Operation *lookupCallee(StringAttr symbolName) const {
+    return symbolTable.lookup(symbolName);
+  }
+
+  /// Specialize a kernel generator with the specified input parameters and
+  /// return the symbol name to use for the result.
+  std::pair<StringAttr, SmallVector<Attribute>>
+  getSpecializedGenerator(GeneratorOp generator,
+                          ArrayRef<Attribute> inputParamValues);
+
 private:
   /// These are the two modules we start with.  The primary module is mutated by
   /// our algorithm, the library module is immutable.
   ModuleOp primaryModule, libraryModule;
+
+  /// This symbol table allows efficient lookups in the primary module.
+  SymbolTable symbolTable;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -105,6 +121,63 @@ void KernelGenerator::removeGenerators() {
 // Core Kernel Generator Algorithm
 //===----------------------------------------------------------------------===//
 
+/// Specialize a kernel generator with the specified input parameters and
+/// return the symbol name to use for the result.
+std::pair<StringAttr, SmallVector<Attribute>>
+KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
+                                         ArrayRef<Attribute> inputParamValues) {
+  // TODO: Cache these so multiple uses of the same kernel don't get separate
+  // instantiations.
+
+  // We insert specializations of the generator immediately before the generator
+  // if it is defined in the primary module.  Otherwise put at the top of the
+  // primary file.
+  // TODO: If it is from the library, it would be better to insert it before the
+  // first client that needed it (make tests easier to write).
+  Operation *insertPt = generator;
+  if (generator->getParentOp() != primaryModule)
+    insertPt = &primaryModule.getBody()->front();
+  OpBuilder b(insertPt);
+
+  // TODO (high prio): Mangle the inputParam values into the symbol name to make
+  // it more nice and more stable.
+  // TODO (low prio): Some day we could mangle "instantiated from here"
+  // information into the location.
+  auto newKernel = b.create<KernelOp>(
+      generator.getLoc(), generator.getNameAttr(), generator.getFunctionType());
+
+  // Insert the newKernel into the symbol table which will then know about it,
+  // but it will also auto-rename the symbol for us in the case of conflicts.
+  symbolTable.insert(newKernel);
+
+  // Clone the body of the generator over.
+  BlockAndValueMapping mapper;
+  generator.getBody().cloneInto(&newKernel.getBody(), mapper);
+
+  // Provide definitions of the input parameters in the body block as bound
+  // constants.
+  auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
+  assert(inputParamValues.size() == inputParamDecls.size() &&
+         "incorrect # input parameter values");
+
+  b.setInsertionPoint(&newKernel.getBodyBlock()->front());
+  for (auto [inputDecl, inputValue] :
+       llvm::zip(inputParamDecls, inputParamValues)) {
+    b.create<ParamBindOp>(generator.getLoc(), inputDecl.cast<ParamDeclAttr>(),
+                          inputValue);
+  }
+
+  // TODO: Need to run the ParameterRewriter over the body of this to
+  // recursively process it.
+
+  // TODO: Handle output parameters.
+  return std::make_pair(newKernel.getNameAttr(), SmallVector<Attribute>());
+}
+
+//===----------------------------------------------------------------------===//
+// Core Kernel Generator Algorithm
+//===----------------------------------------------------------------------===//
+
 /// We expect all parameter expressions to simplify down to concrete constants,
 /// we don't want anything left as a ParamOperatorAttr or ParamDeclRefAttr.
 static bool isSimpleConstant(Attribute attr) {
@@ -116,6 +189,9 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
+  ParameterRewriter(KernelGenerator &kernelGenerator)
+      : kernelGenerator(kernelGenerator) {}
+
   /// Process an operation that needs to be rewritten/lowered based on the
   /// context of the parameter values we know are defined.
   LogicalResult processOp(Operation *op);
@@ -136,8 +212,12 @@ public:
 private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
+  void processCallOp(CallOp op);
 
-  /// These are the b
+  // This is maintains global information about the file we're generating into.
+  KernelGenerator &kernelGenerator;
+
+  /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
 };
 } // end anonymous namespace
@@ -192,8 +272,14 @@ LogicalResult ParameterRewriter::processOp(Operation *op) {
     processParamBindOp(bind);
   else if (auto value = dyn_cast<ParamValueOp>(op))
     processParamValueOp(value);
+  else if (auto call = dyn_cast<CallOp>(op))
+    processCallOp(call);
+  else if (getParamDecls(op).empty())
+    return op->emitError("unknown parameter-using operator in GenerateKernels");
   else
-    return op->emitError("unknown operator in GenerateKernels");
+    return op->emitError(
+        "unknown parameter defining operator in GenerateKernels");
+
   return success();
 }
 
@@ -225,6 +311,54 @@ void ParameterRewriter::processParamValueOp(ParamValueOp op) {
   op.setValueAttr(errorOrValue.takeValue());
 }
 
+void ParameterRewriter::processCallOp(CallOp call) {
+  // If this is a direct call to an existing kernel (not a generator or
+  // interface) then we have nothing to do.  It cannot be parameterized, and it
+  // must already be in the primary module.
+  auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
+  if (isa<KernelOp>(callee))
+    return;
+
+  // Otherwise, if it is a generator or generator interface we need to
+  // specialize it if it isn't already.  Start by evaluating the input
+  // parameters.
+  SmallVector<Attribute> boundInputParameters;
+  for (auto param : call.getParamValues()) {
+    auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
+    if (value.isError()) {
+      call->emitError(value.getError());
+      return;
+    }
+    boundInputParameters.push_back(value.takeValue());
+  }
+
+  auto generator = dyn_cast<GeneratorOp>(callee);
+  if (!generator) {
+    // TODO: Handle generator interfaces.
+    call->emitError("cannot handle this yet");
+    return;
+  }
+
+  auto [newCallee, outputParams] =
+      kernelGenerator.getSpecializedGenerator(generator, boundInputParameters);
+
+  OpBuilder b(call);
+  auto newCall = b.create<CallOp>(
+      call.getLoc(), call.getResultTypes(), newCallee,
+      /*input params*/ ArrayRef<Attribute>(),
+      /*output params*/ ArrayRef<Attribute>(), call.getOperands());
+
+  // The SSA results of the old call go directly to the new call.
+  call->getResults().replaceAllUsesWith(newCall);
+
+  // Bind the result parameters to the output parameter decls.
+  for (auto [decl, value] : llvm::zip(call.getParamDecls(), outputParams))
+    setParameterValue(decl.cast<ParamDeclAttr>(), value);
+
+  // The old call is resolved and dead now.
+  call->erase();
+}
+
 /// Concretize a kernel in the primary file.
 ParseResult KernelGenerator::processKernel(KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
@@ -232,17 +366,13 @@ ParseResult KernelGenerator::processKernel(KernelOp kernel) {
   auto paramInfo = *ParameterDeclsAndUses::calculate(kernel);
 
   // TODO: When handling generators, we should bind input parameter values.
-  ParameterRewriter rewriter;
+  ParameterRewriter rewriter(*this);
 
   // Process each def/use in order.
   for (auto &user : paramInfo.usersAndDeclarers) {
     if (failed(rewriter.processOp(user.first)))
       return failure();
   }
-
-  // TODO: Scan for operations that we want to lower that use parameter
-  // expression that happen to not be DeclRefAttrs.  For example a call that
-  // passes 42 as an argument.
 
   return success();
 }
