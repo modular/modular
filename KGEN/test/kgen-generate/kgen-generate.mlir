@@ -1,40 +1,6 @@
 // RUN: kgen-generate %s -library=%S/library.mlir -verify-diagnostics | FileCheck %s
 
-// CHECK-NOT: kgen.generator @trivial_generator
-// This gets "specialized" into a kernel.
-kgen.generator @trivial_generator(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
-}
-
-// CHECK-LABEL: kgen.kernel @trivial_generator_0(%arg0: si32) -> si32 {
-// CHECK-NEXT:    kgen.return %arg0 : si32
-// CHECK-NEXT: }
-
-// CHECK-NOT: kgen.generator.interface @unary_add
-kgen.generator.interface @unary_add<size>(si32) -> si32
-
-kgen.generator @unary_add_impl1<size>(%arg0: si32) -> si32
-  implements @unary_add {
-
-  // Silly op so we know when something used this.
-  "unary_add_impl1"() { value = #kgen.param.decl.ref<"size"> : index} : () -> ()
-
-  // TODO: Do something with <size>
-  kgen.return %arg0 : si32
-}
-
-// CHECK-LABEL: kgen.kernel @unary_add_impl1_1(%arg0: si32) -> si32 {
-// CHECK-NEXT:   kgen.param.bind size = <42>
-// CHECK-NEXT:   "unary_add_impl1"() {value = #kgen.param.decl.ref<size> : index}
-// CHECK-NEXT:   kgen.return  %arg0 : si32
-// CHECK-NEXT: }
-
-// CHECK-LABEL: kgen.kernel @unary_add_impl1_2(%arg0: si32) -> si32 {
-// CHECK-NEXT:    kgen.param.bind size = <19>
-// CHECK-NEXT:    "unary_add_impl1"() {value = #kgen.param.decl.ref<size> : index} : () -> ()
-// CHECK-NEXT:    kgen.return  %arg0 : si32
-// CHECK-NEXT:  }
-
+// This is left untouched.
 // CHECK-LABEL: kgen.kernel @test0() -> index {
 // CHECK-NEXT: %0 = kgen.param.value = <1>
 // CHECK-NEXT:  kgen.return %0 : index
@@ -70,29 +36,80 @@ kgen.kernel @parameter_use_chain() {
   kgen.return
 }
 
+// CHECK-NOT: kgen.generator @trivial_generator
+// This gets "specialized" into a kernel.
+kgen.generator @trivial_generator(%arg0: si32) -> si32 {
+  kgen.return %arg0 : si32
+}
+// CHECK-LABEL: kgen.kernel @trivial_generator_kernel(%arg0: si32) -> si32 {
+// CHECK-NEXT:    kgen.return %arg0 : si32
+// CHECK-NEXT: }
+
+kgen.generator @unary_add_impl1<size, type: dtype, val: f32>(%arg0: si32) -> si32 {
+
+  // Silly op so we know when something used this.
+  "unary_add_impl1"() { value = #kgen.param.decl.ref<"size"> : index} : () -> ()
+
+  // TODO: Do something with <size>
+  kgen.return %arg0 : si32
+}
+// CHECK-LABEL: kgen.kernel @"unary_add_impl1,size=42,type=f32,val=2"(%arg0: si32) -> si32 {
+// CHECK-NEXT:   kgen.param.bind size = <42>
+// CHECK-NEXT:   kgen.param.bind type: dtype = <f32> 
+// CHECK-NEXT:   kgen.param.bind val: f32 = <2.000000e+00> 
+// CHECK-NEXT:   "unary_add_impl1"() {value = #kgen.param.decl.ref<size> : index}
+// CHECK-NEXT:   kgen.return  %arg0 : si32
+// CHECK-NEXT: }
+
+// CHECK-LABEL: kgen.kernel @"unary_add_impl1,size=19,type=si8,val=1.5"(%arg0: si32) -> si32 {
+// CHECK-NEXT:    kgen.param.bind size = <19>
+// CHECK-NEXT:    kgen.param.bind type: dtype = <si8> 
+// CHECK-NEXT:    kgen.param.bind val: f32 = <1.500000e+00> 
+// CHECK-NEXT:    "unary_add_impl1"() {value = #kgen.param.decl.ref<size> : index} : () -> ()
+// CHECK-NEXT:    kgen.return  %arg0 : si32
+// CHECK-NEXT:  }
+
 // CHECK-LABEL: kgen.kernel @call_generator_test
 kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32) -> (si32, si32, si32) {
   // Can invoke the generator directly.
   %0 = kgen.call @trivial_generator(%arg0) : (si32) -> si32
-  // CHECK-NEXT: %0 = kgen.call @trivial_generator_0(%arg0)
+  // CHECK-NEXT: %0 = kgen.call @trivial_generator_kernel(%arg0)
 
   // CHECK-NOT: kgen.param.bind
   kgen.param.bind our_size = <42>
 
   // Can invoke parameterized generators directly.
-  %1 = kgen.call @unary_add_impl1<size = our_size>(%arg0) : (si32) -> si32
-  // CHECK-NEXT: %1 = kgen.call @unary_add_impl1_1(%arg0) : (si32) -> si32
+  %1 = kgen.call @unary_add_impl1<size = our_size, type : dtype = f32, val : f32 = 2.0>(%arg0) : (si32) -> si32
+  // CHECK-NEXT: %1 = kgen.call @"unary_add_impl1,size=42,type=f32,val=2"(%arg0) : (si32) -> si32
 
-
-  %2 = kgen.call @unary_add_impl1<size = 19>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %2 = kgen.call @unary_add_impl1_2(%arg1) : (si32) -> si32
-
-
-  // Can invoke the interface, binding a parameter.
-  // TODO: %3 = kgen.call @unary_add<size = our_size>(%arg0) : (si32) -> si32
+  %2 = kgen.call @unary_add_impl1<size = 19, type : dtype = si8, val : f32 = 1.5>(%arg1) : (si32) -> si32
+  // CHECK-NEXT: %2 = kgen.call @"unary_add_impl1,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
 
   kgen.return %0, %1, %2 : si32, si32, si32
 }
+
+
+// CHECK-NOT: kgen.generator.interface @unary_add
+kgen.generator.interface @unary_add<size>(si32) -> si32
+
+kgen.generator @unary_add_impl2<size>(%arg0: si32) -> si32
+  implements @unary_add {
+
+  // Silly op so we know when something used this.
+  "unary_add_impl2"() { value = #kgen.param.decl.ref<"size"> : index} : () -> ()
+
+  // TODO: Do something with <size>
+  kgen.return %arg0 : si32
+}
+
+
+
+
+
+
+
+// Can invoke the interface, binding a parameter.
+// TODO: %3 = kgen.call @unary_add<size = our_size>(%arg0) : (si32) -> si32
 
 kgen.generator.interface @take_and_return<p1 -> r1>()
 

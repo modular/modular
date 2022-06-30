@@ -780,7 +780,7 @@ TensorEltType DTypeConstantAttr::getTensorEltType() {
 /// Return true if the attribute is a valid parameter expression.
 bool KGEN::isValidParameterExpr(Attribute value) {
   // Leaf constants and references to parameter declarations are valid.
-  if (value.isa<IntegerAttr, DTypeConstantAttr, ParamDeclRefAttr>())
+  if (value.isa<IntegerAttr, FloatAttr, DTypeConstantAttr, ParamDeclRefAttr>())
     return true;
 
   // Expressions composed of other expressions are valid.

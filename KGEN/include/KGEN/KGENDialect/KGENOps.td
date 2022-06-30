@@ -94,8 +94,7 @@ def GeneratorOp
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
 
-    /// Given a kernel, generator, or generator interface operation, return an
-    /// array of `ParamDeclAttr`s for the inputs and the array of
+    /// Return an array of `ParamDeclAttr`s for the inputs and the array of
     /// `ParamDeclAttr`s for the result parameters.
     std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
   }];
@@ -132,8 +131,7 @@ def GeneratorInterfaceOp
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
 
-    /// Given a kernel, generator, or generator interface operation, return an
-    /// array of `ParamDeclAttr`s for the inputs and the array of
+    /// Return an array of `ParamDeclAttr`s for the inputs and the array of
     /// `ParamDeclAttr`s for the result parameters.
     std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
   }];
