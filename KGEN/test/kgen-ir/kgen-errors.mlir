@@ -306,7 +306,7 @@ kgen.generator.interface @itf<() -> result>(si32)
 
 // expected-error @+1 {{generator result parameter #0 has name "size" but interface expected name "result"}}
 kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
-  kgen.return<size:i8 = 42> 
+  kgen.return<size:i8 = 42>
 }
 
 // -----
@@ -340,5 +340,45 @@ kgen.kernel @mutually_recursive() {
   kgen.call @take_and_return<p1 = r1 -> r2>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r1", which is defined by:}}
 
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
+  // expected-error @+1 {{'meta.cast_to_builtin' op result #0 must be integer or floating-point or vector of any type values, but got '!meta.scalar<f32>'}}
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to !meta.scalar<f32>
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
+  // expected-error @+1 {{'meta.cast_to_builtin' op does not support casting <block argument> of type '!meta.scalar<f32>' at index: 0 to 'i8'.}}
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to i8
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
+  // expected-error @+1 {{'meta.cast_to_builtin' op does not support casting <block argument> of type '!meta.scalar<f32>' at index: 0 to 'f64'.}}
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to f64
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @cast_from_meta_type(%arg0: !meta.scalar<f32>) {
+  // expected-error @+1 {{'meta.cast_from_builtin' op operand #0 must be integer or floating-point or vector of any type values, but got '!meta.scalar<f32>'}}
+  %0 = meta.cast_from_builtin %arg0: !meta.scalar<f32> to !meta.scalar<f32>
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @cast_from_meta_type(%arg0: f64) {
+  // expected-error @+1 {{'meta.cast_from_builtin' op does not support casting <block argument> of type 'f64' at index: 0 to '!meta.scalar<f32>'.}}
+  %0 = meta.cast_from_builtin %arg0: f64 to !meta.scalar<f32>
   kgen.return
 }

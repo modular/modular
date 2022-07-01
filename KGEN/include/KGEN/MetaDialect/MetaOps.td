@@ -64,8 +64,11 @@ def BufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
   let summary = [{
     Cast the input buffer to a buffer of the specified type.
 
+    Example:
+    ```mlir
     %0 = meta.buffer.cast %unknown: !buffer<?x?> to !buffer<?xf32>
     %1 = meta.buffer.cast %other: !buffer<1023xf32> to !buffer<?xf32>
+    ```
   }];
 
   let arguments = (ins BufferType:$buffer);
@@ -73,6 +76,64 @@ def BufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
   let assemblyFormat = [{
     $buffer `:` qualified(type($buffer)) `to`
      qualified(type($result)) attr-dict
+  }];
+  let hasVerifier = true;
+  let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// MetaCastToBuiltinOp
+//===----------------------------------------------------------------------===//
+
+def MetaCastToBuiltinOp : MetaOp<"cast_to_builtin", [NoSideEffect]> {
+  let summary = [{
+    Cast the input scalar / simd to the corresponding MLIR standard type.
+
+    // TODO: Update comment when this supports SIMD
+    For now, this op only supports scalar types, but it will eventually need to
+    support SIMD types as well.
+
+    Example:
+    ```mlir
+    % 0 = meta.cast_to_builtin % scalar: !scalar<f32> to f32
+    ```
+  }];
+
+  let arguments = (ins AnyTypeOf<[ScalarType, SIMDType]> : $scalarOrSIMD);
+  let results = (outs AnyTypeOf<[AnyInteger, AnyFloat, AnyVector]>:
+                      $standardType);
+  let assemblyFormat = [{
+    $scalarOrSIMD `:` qualified(type($scalarOrSIMD)) `to` type($standardType)
+    attr-dict
+  }];
+  let hasVerifier = true;
+  let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// MetaCastFromBuiltinOp
+//===----------------------------------------------------------------------===//
+
+def MetaCastFromBuiltinOp : MetaOp<"cast_from_builtin", [NoSideEffect]> {
+  let summary = [{
+    Cast the input standard MLIR type to the corresponding !meta type.
+
+    // TODO: Update comment when this supports SIMD
+    For now, this op only supports scalar types, but it will eventually need to
+    support SIMD types as well.
+
+    Example:
+    ```mlir
+    % 0 = meta.cast_from_builtin % scalar: f32 to !scalar<f32>
+    ```
+  }];
+
+  let arguments = (ins AnyTypeOf<[AnyInteger, AnyFloat, AnyVector]>:
+                       $standardType);
+  let results = (outs AnyTypeOf<[ScalarType, SIMDType]>: $scalarOrSIMD);
+
+  let assemblyFormat = [{
+    $standardType `:` type($standardType) `to` type($scalarOrSIMD) attr-dict
   }];
   let hasVerifier = true;
   let hasFolder = true;
