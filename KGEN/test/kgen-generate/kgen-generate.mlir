@@ -45,30 +45,31 @@ kgen.generator @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %arg0 : si32
 // CHECK-NEXT: }
 
-kgen.generator @unary_add_impl1<size, type: dtype, val: f32>(%arg0: si32) -> si32 {
-
-  // Silly op so we know when something used this.
-  // TODO: Support generic operations with type and attribute references.
-  //"unary_add_impl1"() { value = #kgen.param.decl.ref<"size"> : index} : () -> ()
+kgen.generator @genA<size, type: dtype, val: f32>(%arg0: si32) -> si32 {
 
   %0 = kgen.param.value = <add(size, 4)>
   %1 = kgen.param.value : dtype = <type>
   %2 = kgen.param.value : f32 = <val>
 
+  // Silly op so we know when something used this.
+  "unary_add_impl1"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !meta.scalar<type>
+
   // TODO: Do something with <size>
   kgen.return %arg0 : si32
 }
-// CHECK-LABEL: kgen.kernel @"unary_add_impl1,size=42,type=f32,val=2"(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.kernel @"genA,size=42,type=f32,val=2"(%arg0: si32) -> si32 {
 // CHECK-NEXT:   %0 = kgen.param.value  = <46>
 // CHECK-NEXT:   %1 = kgen.param.value : dtype = <f32>
 // CHECK-NEXT:   %2 = kgen.param.value : f32 = <2.000000e+00>
+// CHECK-NEXT:   %3 = "unary_add_impl1"() {value = 42 : index} : () -> !meta.scalar<f32>
 // CHECK-NEXT:   kgen.return  %arg0 : si32
 // CHECK-NEXT: }
 
-// CHECK-LABEL: kgen.kernel @"unary_add_impl1,size=19,type=si8,val=1.5"(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.kernel @"genA,size=19,type=si8,val=1.5"(%arg0: si32) -> si32 {
 // CHECK-NEXT:    %0 = kgen.param.value  = <23>
 // CHECK-NEXT:    %1 = kgen.param.value : dtype = <si8>
 // CHECK-NEXT:    %2 = kgen.param.value : f32 = <1.500000e+00>
+// CHECK-NEXT:    %3 = "unary_add_impl1"() {value = 19 : index} : () -> !meta.scalar<si8>
 // CHECK-NEXT:    kgen.return  %arg0 : si32
 // CHECK-NEXT:  }
 
@@ -82,11 +83,11 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32) -> (si32, si32, si32)
   kgen.param.bind our_size = <42>
 
   // Can invoke parameterized generators directly.
-  %1 = kgen.call @unary_add_impl1<size = our_size, type : dtype = f32, val : f32 = 2.0>(%arg0) : (si32) -> si32
-  // CHECK-NEXT: %1 = kgen.call @"unary_add_impl1,size=42,type=f32,val=2"(%arg0) : (si32) -> si32
+  %1 = kgen.call @genA<size = our_size, type : dtype = f32, val : f32 = 2.0>(%arg0) : (si32) -> si32
+  // CHECK-NEXT: %1 = kgen.call @"genA,size=42,type=f32,val=2"(%arg0) : (si32) -> si32
 
-  %2 = kgen.call @unary_add_impl1<size = 19, type : dtype = si8, val : f32 = 1.5>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %2 = kgen.call @"unary_add_impl1,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
+  %2 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5>(%arg1) : (si32) -> si32
+  // CHECK-NEXT: %2 = kgen.call @"genA,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
 
   kgen.return %0, %1, %2 : si32, si32, si32
 }

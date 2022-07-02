@@ -210,6 +210,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
   size_t oldSize = uses.size();
 
   // Otherwise we haven't processed this, check the attribute's type.
+  // TODO(jeff): MLIR attribute should not carry types!
   collectParameterUsesFromType(attr.getType(), uses, loc);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
@@ -237,8 +238,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 /// parameter declarations and collecting parameter uses.
 void ParameterVerifier::collectParameterUsesFromType(
     Type type, SmallVector<ParamDeclRefAttr> &uses, Location loc) {
-  // Ignore common trivial types we know are never parameterized, and types we
-  // have already scanned.
+  // Ignore types we have already scanned.
   if (parameterLessTypes.count(type))
     return;
 
@@ -277,14 +277,14 @@ LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
       // Check the use is referring to a parameter that was defined.
       auto decl = parameters.decls[paramRefAttr.getName()];
       if (!decl.first) {
-        usingOp->emitError("invalid use of parameter with no declaration ")
+        usingOp->emitOpError("invalid use of parameter with no declaration ")
             << paramRefAttr.getName();
         return failure();
       }
 
       // Check that the types of the uses match the defs.
       if (decl.second.getType() != paramRefAttr.getType()) {
-        auto diag = usingOp->emitError("reference to parameter ")
+        auto diag = usingOp->emitOpError("reference to parameter ")
                     << paramRefAttr.getName() << " with incorrect type "
                     << paramRefAttr.getType();
         diag.attachNote(decl.first->getLoc())
