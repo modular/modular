@@ -342,6 +342,17 @@ void ParamBindAttr::walkImmediateSubElements(
   walkAttrsFn(getValue());
 }
 
+mlir::SubElementAttrInterface ParamBindAttr::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  Attribute attrs[2] = {getName(), getValue()};
+
+  for (auto entry : replacements) {
+    assert(entry.first < 2);
+    attrs[entry.first] = entry.second;
+  }
+  return ParamBindAttr::get(attrs[0].cast<StringAttr>(), getType(), attrs[1]);
+}
+
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
@@ -752,6 +763,16 @@ void ParamOperatorAttr::walkImmediateSubElements(
     function_ref<void(Type)> walkTypesFn) const {
   for (auto operand : getOperands())
     walkAttrsFn(operand);
+}
+
+mlir::SubElementAttrInterface ParamOperatorAttr::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  SmallVector<Attribute> attrs(getOperands().begin(), getOperands().end());
+
+  for (auto entry : replacements)
+    attrs[entry.first] = entry.second;
+
+  return ParamOperatorAttr::get(getOpcode(), attrs);
 }
 
 //===----------------------------------------------------------------------===//
