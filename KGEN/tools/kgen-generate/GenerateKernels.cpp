@@ -58,10 +58,11 @@ public:
   }
 
   /// Specialize a kernel generator with the specified input parameters and
-  /// return the symbol name to use for the result.  `insertionPoint` is always
-  /// a point in the primary module where a new kernel should be placed if
+  /// return the symbol name to use for the result, along with an array of
+  /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
+  /// point in the primary module where a new kernel should be placed if
   /// necessary.
-  std::pair<StringAttr, SmallVector<Attribute>>
+  std::pair<StringAttr, ArrayAttr>
   getSpecializedGenerator(GeneratorOp generator,
                           ArrayRef<Attribute> inputParamValues,
                           Operation *insertionPoint);
@@ -77,6 +78,13 @@ private:
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
   DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
+
+  /// This is a cache of already-instantiated generators.  The key is the
+  /// generator and input parameters (as an array), the result is the name of
+  /// the generated kernel along with the concrete values for the result
+  /// parameters.
+  DenseMap<std::pair<GeneratorOp, ArrayAttr>, std::pair<StringAttr, ArrayAttr>>
+      generatedKernels;
 };
 } // end anonymous namespace
 
@@ -374,8 +382,9 @@ void ParameterRewriter::processCallOp(CallOp call) {
   call->getResults().replaceAllUsesWith(newCall);
 
   // Bind the result parameters to the output parameter decls.
-  for (auto [decl, value] : llvm::zip(call.getParamDecls(), outputParams))
-    setParameterValue(decl.cast<ParamDeclAttr>(), value);
+  for (auto [decl, bindValue] : llvm::zip(call.getParamDecls(), outputParams))
+    setParameterValue(decl.cast<ParamDeclAttr>(),
+                      bindValue.cast<ParamBindAttr>().getValue());
 
   // The old call is resolved and dead now.
   call->erase();
@@ -543,13 +552,23 @@ ParseResult KernelGenerator::processKernels() {
 //===----------------------------------------------------------------------===//
 
 /// Specialize a kernel generator with the specified input parameters and
-/// return the symbol name to use for the result.
-std::pair<StringAttr, SmallVector<Attribute>>
+/// return the symbol name to use for the result, along with an array of
+/// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
+/// point in the primary module where a new kernel should be placed if
+/// necessary.
+std::pair<StringAttr, ArrayAttr>
 KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
                                          ArrayRef<Attribute> inputParamValues,
                                          Operation *insertionPoint) {
-  // TODO: Cache these so multiple uses of the same kernel don't get separate
-  // instantiations.
+  ArrayAttr inputParamValuesKey =
+      ArrayAttr::get(generator.getContext(), inputParamValues);
+
+  // Check the cache these so multiple uses of the same kernel don't get
+  // separate instantiations.
+  auto &cacheEntry =
+      generatedKernels[std::make_pair(generator, inputParamValuesKey)];
+  if (cacheEntry.first)
+    return cacheEntry;
 
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
@@ -598,18 +617,15 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
   // The return op will have had the output parameter expressions simplified
   // like any other generic op, so we just take the attributes there for our
   // result parameter values.
-  SmallVector<Attribute> resultParams;
   auto returnOp = newKernel.getReturnOp();
-  for (auto result : returnOp.getParameters())
-    resultParams.push_back(result.cast<ParamBindAttr>().getValue());
-
+  auto resultParams = returnOp.getParameters();
   returnOp.setParametersAttr(b.getArrayAttr({}));
 
   // Check that the thing we just built is correct!
   if (failed(verify(newKernel)))
     return {};
 
-  return std::make_pair(newKernel.getNameAttr(), resultParams);
+  return cacheEntry = std::make_pair(newKernel.getNameAttr(), resultParams);
 }
 
 //===----------------------------------------------------------------------===//
