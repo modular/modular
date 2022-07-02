@@ -20,7 +20,8 @@ class MetaType<string name, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def ScalarType : MetaType<"Scalar",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
+                                   ["replaceImmediateSubAttribute"]>]> {
   let summary = "parameterized scalar type";
   let description = [{
     This type is parameterized with a value of !kgen.dtype type.
@@ -31,6 +32,12 @@ def ScalarType : MetaType<"Scalar",
   let assemblyFormat = "`<` custom<ParamDTypeValue>($dtype) `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Attribute":$parameter), [{
+      return $_get(parameter.getContext(), parameter);
+    }]>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -38,7 +45,8 @@ def ScalarType : MetaType<"Scalar",
 //===----------------------------------------------------------------------===//
 
 def SIMDType : MetaType<"SIMD",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
+                                   ["replaceImmediateSubAttribute"]>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -51,6 +59,12 @@ def SIMDType : MetaType<"SIMD",
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{
+      return $_get(size.getContext(), size, ty);
+    }]>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -58,7 +72,8 @@ def SIMDType : MetaType<"SIMD",
 //===----------------------------------------------------------------------===//
 
 def BufferType : MetaType<"Buffer",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
+                                   ["replaceImmediateSubAttribute"]>]> {
   let summary = "parameterized buffer type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.  The size
@@ -75,6 +90,12 @@ def BufferType : MetaType<"Buffer",
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{
+      return $_get(size.getContext(), size, ty);
+    }]>,
+  ];
 
   let extraClassDeclaration = [{
     /// Return the TensorEltType of the dtype.

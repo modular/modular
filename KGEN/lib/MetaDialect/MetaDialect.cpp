@@ -79,6 +79,15 @@ void ScalarType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
+mlir::SubElementTypeInterface ScalarType::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  if (replacements.empty())
+    return *this;
+  assert(replacements.size() == 1 && replacements[0].first == 0 &&
+         "only have one sub-attribute");
+  return ScalarType::get(replacements[0].second);
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
@@ -102,6 +111,17 @@ void SIMDType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
+mlir::SubElementTypeInterface SIMDType::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  Attribute attrs[2] = {getSize(), getDtype()};
+
+  for (auto entry : replacements) {
+    assert(entry.first < 2);
+    attrs[entry.first] = entry.second;
+  }
+  return SIMDType::get(attrs[0], attrs[1]);
+}
+
 //===----------------------------------------------------------------------===//
 // BufferType
 //===----------------------------------------------------------------------===//
@@ -121,6 +141,17 @@ void BufferType::walkImmediateSubElements(
     function_ref<void(Type)> walkTypesFn) const {
   walkAttrsFn(getSize());
   walkAttrsFn(getDtype());
+}
+
+mlir::SubElementTypeInterface BufferType::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  Attribute attrs[2] = {getSize(), getDtype()};
+
+  for (auto entry : replacements) {
+    assert(entry.first < 2);
+    attrs[entry.first] = entry.second;
+  }
+  return BufferType::get(attrs[0], attrs[1]);
 }
 
 //===----------------------------------------------------------------------===//
