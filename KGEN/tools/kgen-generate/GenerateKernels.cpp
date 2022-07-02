@@ -165,67 +165,6 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   return b.getStringAttr(result);
 }
 
-/// Specialize a kernel generator with the specified input parameters and
-/// return the symbol name to use for the result.
-std::pair<StringAttr, SmallVector<Attribute>>
-KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
-                                         ArrayRef<Attribute> inputParamValues,
-                                         Operation *insertionPoint) {
-  // TODO: Cache these so multiple uses of the same kernel don't get separate
-  // instantiations.
-
-  // We insert specializations of the generator immediately before the generator
-  // if it is defined in the primary module.  Otherwise if it is from the
-  // library, it would be better to insert it before the first client that
-  // needed it (make tests easier to write).
-  if (generator->getParentOp() == primaryModule) {
-    insertionPoint = generator;
-  } else {
-    assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
-  }
-  OpBuilder b(insertionPoint);
-
-  // TODO (high prio): Mangle the inputParam values into the symbol name to make
-  // it more nice and more stable.
-  // TODO (low prio): Some day we could mangle "instantiated from here"
-  // information into the location.
-  auto newKernel = b.create<KernelOp>(
-      generator.getLoc(), mangleParameterValues(generator, inputParamValues),
-      generator.getFunctionType());
-
-  // Insert the newKernel into the symbol table which will then know about it,
-  // but it will also auto-rename the symbol for us in the case of conflicts.
-  symbolTable.insert(newKernel);
-
-  // Clone the body of the generator over.
-  BlockAndValueMapping mapper;
-  generator.getBody().cloneInto(&newKernel.getBody(), mapper);
-
-  // Provide definitions of the input parameters in the body block as bound
-  // constants.
-  auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
-  assert(inputParamValues.size() == inputParamDecls.size() &&
-         "incorrect # input parameter values");
-
-  b.setInsertionPoint(&newKernel.getBodyBlock()->front());
-  for (auto [inputDecl, inputValue] :
-       llvm::zip(inputParamDecls, inputParamValues)) {
-    b.create<ParamBindOp>(generator.getLoc(), inputDecl.cast<ParamDeclAttr>(),
-                          inputValue);
-  }
-
-  // TODO: Need to run the ParameterRewriter over the body of this to
-  // recursively process it.
-
-  // TODO: Handle output parameters.
-
-  // Check that the thing we just built is correct!
-  if (failed(verify(newKernel)))
-    return std::make_pair(StringAttr(), SmallVector<Attribute>());
-
-  return std::make_pair(newKernel.getNameAttr(), SmallVector<Attribute>());
-}
-
 //===----------------------------------------------------------------------===//
 // Core Kernel Generator Algorithm
 //===----------------------------------------------------------------------===//
@@ -237,6 +176,9 @@ class ParameterRewriter {
 public:
   ParameterRewriter(KernelGenerator &kernelGenerator)
       : kernelGenerator(kernelGenerator) {}
+
+  /// Process the body of a kernel.
+  LogicalResult processKernelBody(KernelOp kernel);
 
   /// Process an operation that needs to be rewritten/lowered based on the
   /// context of the parameter values we know are defined.
@@ -267,6 +209,23 @@ private:
   DenseMap<StringAttr, Attribute> paramValues;
 };
 } // end anonymous namespace
+
+/// Process the body of a kernel.
+LogicalResult ParameterRewriter::processKernelBody(KernelOp kernel) {
+  /// Get a partial ordering of parameter definitions and uses that is listed
+  /// "top down" in our evaluation order.
+  auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
+  if (failed(paramInfo))
+    return kernel->emitError("verification error for kernel");
+
+  // Process each def/use in order.
+  for (auto &user : paramInfo->usersAndDeclarers) {
+    if (failed(processOp(user.first)))
+      return failure();
+  }
+
+  return success();
+}
 
 static std::string getString(Attribute attr) {
   std::string str;
@@ -412,20 +371,8 @@ void ParameterRewriter::processCallOp(CallOp call) {
 
 /// Concretize a kernel in the primary file.
 ParseResult KernelGenerator::processKernel(KernelOp kernel) {
-  /// Get a partial ordering of parameter definitions and uses that is listed
-  /// "top down" in our evaluation order.
-  auto paramInfo = *ParameterDeclsAndUses::calculate(kernel);
-
-  // TODO: When handling generators, we should bind input parameter values.
   ParameterRewriter rewriter(*this);
-
-  // Process each def/use in order.
-  for (auto &user : paramInfo.usersAndDeclarers) {
-    if (failed(rewriter.processOp(user.first)))
-      return failure();
-  }
-
-  return success();
+  return rewriter.processKernelBody(kernel);
 }
 
 ParseResult KernelGenerator::processKernels() {
@@ -443,6 +390,72 @@ ParseResult KernelGenerator::processKernels() {
     didFail |= failed(processKernel(kernel));
 
   return failure(didFail);
+}
+
+//===----------------------------------------------------------------------===//
+// KernelGenerator::getSpecializedGenerator
+//===----------------------------------------------------------------------===//
+
+/// Specialize a kernel generator with the specified input parameters and
+/// return the symbol name to use for the result.
+std::pair<StringAttr, SmallVector<Attribute>>
+KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
+                                         ArrayRef<Attribute> inputParamValues,
+                                         Operation *insertionPoint) {
+  // TODO: Cache these so multiple uses of the same kernel don't get separate
+  // instantiations.
+
+  // We insert specializations of the generator immediately before the generator
+  // if it is defined in the primary module.  Otherwise if it is from the
+  // library, it would be better to insert it before the first client that
+  // needed it (make tests easier to write).
+  if (generator->getParentOp() == primaryModule) {
+    insertionPoint = generator;
+  } else {
+    assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
+  }
+
+  // TODO (low prio): Some day we could mangle "instantiated from here"
+  // information into the location.
+  OpBuilder b(insertionPoint);
+  auto newKernel = b.create<KernelOp>(
+      generator.getLoc(), mangleParameterValues(generator, inputParamValues),
+      generator.getFunctionType());
+
+  // Insert the newKernel into the symbol table which will then know about it,
+  // but it will also auto-rename the symbol for us in the case of conflicts.
+  symbolTable.insert(newKernel);
+
+  // Clone the body of the generator over.
+  BlockAndValueMapping mapper;
+  generator.getBody().cloneInto(&newKernel.getBody(), mapper);
+
+  // Provide definitions of the input parameters in the body block as bound
+  // constants.
+  auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
+  assert(inputParamValues.size() == inputParamDecls.size() &&
+         "incorrect # input parameter values");
+
+  b.setInsertionPoint(&newKernel.getBodyBlock()->front());
+  for (auto [inputDecl, inputValue] :
+       llvm::zip(inputParamDecls, inputParamValues)) {
+    b.create<ParamBindOp>(generator.getLoc(), inputDecl.cast<ParamDeclAttr>(),
+                          inputValue);
+  }
+
+  // Now that we have a new synthesized generic kernel, run the rewriter over it
+  // to specialize its body.
+  ParameterRewriter rewriter(*this);
+  if (failed(rewriter.processKernelBody(newKernel)))
+    return {};
+
+  // TODO: Handle output parameters.
+
+  // Check that the thing we just built is correct!
+  if (failed(verify(newKernel)))
+    return {};
+
+  return std::make_pair(newKernel.getNameAttr(), SmallVector<Attribute>());
 }
 
 //===----------------------------------------------------------------------===//
