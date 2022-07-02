@@ -89,13 +89,20 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
   %2 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeB>(%arg1) : (si32) -> si32
   // CHECK-NEXT: %2 = kgen.call @"genA,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
 
-  %3 = kgen.param.value = <resultSizeA>
-  // CHECK-NEXT: %3 = kgen.param.value = <84>
+  %3 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeC>(%arg1) : (si32) -> si32
+  // CHECK-NEXT: %3 = kgen.call @"genA,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
 
-  %4 = kgen.param.value = <resultSizeB>
-  // CHECK-NEXT: %4 = kgen.param.value = <38>
 
-  kgen.return %0, %1, %2, %3, %4 : si32, si32, si32, index, index
+  %4 = kgen.param.value = <resultSizeA>
+  // CHECK-NEXT: %4 = kgen.param.value = <84>
+
+  %5 = kgen.param.value = <resultSizeB>
+  // CHECK-NEXT: %5 = kgen.param.value = <38>
+
+  %6 = kgen.param.value = <resultSizeC>
+  // CHECK-NEXT: %6 = kgen.param.value = <38>
+
+  kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
 }
 
 
