@@ -13,6 +13,7 @@
 #include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BlockAndValueMapping.h"
@@ -201,12 +202,26 @@ private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp op);
+  void processGenericOp(Operation *op);
+
+  /// Get the specified attribute with any nested parameter expressions
+  /// rewritten.
+  Attribute getReboundAttribute(Attribute attr, Location loc);
+
+  /// Get the specified type with any nested parameter expressions rewritten.
+  Type getReboundType(Type type, Location loc);
 
   // This is maintains global information about the file we're generating into.
   KernelGenerator &kernelGenerator;
 
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
+
+  /// This caches attributes and Types with parameter references rebound, and
+  /// remembers complex attributes that don't have parameter subexprs (noted as
+  /// being rebound to themselves).
+  DenseMap<Attribute, Attribute> rewrittenAttrs;
+  DenseMap<Type, Type> rewrittenTypes;
 };
 } // end anonymous namespace
 
@@ -279,11 +294,8 @@ LogicalResult ParameterRewriter::processOp(Operation *op) {
     processParamValueOp(value);
   else if (auto call = dyn_cast<CallOp>(op))
     processCallOp(call);
-  else if (getParamDecls(op).empty())
-    return op->emitError("unknown parameter-using operator in GenerateKernels");
   else
-    return op->emitError(
-        "unknown parameter defining operator in GenerateKernels");
+    processGenericOp(op);
 
   return success();
 }
@@ -367,6 +379,140 @@ void ParameterRewriter::processCallOp(CallOp call) {
 
   // The old call is resolved and dead now.
   call->erase();
+}
+
+/// Get the specified attribute with any nested parameter expressions
+/// rewritten.
+Attribute ParameterRewriter::getReboundAttribute(Attribute attr, Location loc) {
+  // These are common leaf attributes that we know are never parameterized.
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
+               DTypeConstantAttr>())
+    return attr;
+
+  // If we've already processed this attribute, just reuse the memoized result.
+  auto iter = rewrittenAttrs.find(attr);
+  if (iter != rewrittenAttrs.end())
+    return iter->second;
+
+  // TODO(jeff): MLIR attribute should not carry types!
+  if (getReboundType(attr.getType(), loc) != attr.getType()) {
+    emitError(loc, "unsupported parameterized type in attribute ") << attr;
+    return rewrittenAttrs[attr] = attr;
+  }
+
+  // If this is a foldable parameter expression, do it.
+  Attribute result = attr;
+  if (attr.isa<ParamDeclRefAttr, ParamOperatorAttr>()) {
+    auto newVal = simplifyParameterExpr(attr);
+    if (!newVal.isError())
+      result = newVal.takeValue();
+
+  } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
+    SmallVector<std::pair<size_t, Attribute>> newAttrs;
+    bool changedType = false;
+    size_t attrNo = 0;
+    itf.walkSubElements(
+        [&](Attribute attr) {
+          auto newAttr = getReboundAttribute(attr, loc);
+          if (newAttr != attr)
+            newAttrs.push_back(std::make_pair(attrNo, newAttr));
+          ++attrNo;
+        },
+        [&](Type type) { changedType = type != getReboundType(type, loc); });
+    if (changedType) {
+      // TODO: Improve SubElementTypeInterface:
+      // https://github.com/llvm/llvm-project/issues/56355
+      emitError(loc, "don't know how to rebind parameterized subtypes in ")
+          << attr;
+    } else if (!newAttrs.empty()) {
+      result = itf.replaceImmediateSubAttribute(newAttrs);
+    }
+  } else {
+    emitError(loc, "unknown attribute in parameterized operation ") << attr;
+  }
+
+  return rewrittenAttrs[attr] = result;
+}
+
+/// Get the specified type with any nested parameter expressions rewritten.
+Type ParameterRewriter::getReboundType(Type type, Location loc) {
+  // These are known leaf types that don't participate with
+  // SubElementTypeInterface and have no attributes or types within them.
+  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>())
+    return type;
+
+  // If we've already processed this type, just reuse the memoized result.
+  auto iter = rewrittenTypes.find(type);
+  if (iter != rewrittenTypes.end())
+    return iter->second;
+
+  Type result = type;
+  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+    SmallVector<std::pair<size_t, Attribute>> newAttrs;
+    bool changedType = false;
+    size_t attrNo = 0;
+    itf.walkSubElements(
+        [&](Attribute attr) {
+          auto newAttr = getReboundAttribute(attr, loc);
+          if (newAttr != attr)
+            newAttrs.push_back(std::make_pair(attrNo, newAttr));
+          ++attrNo;
+        },
+        [&](Type type) { changedType = type != getReboundType(type, loc); });
+    if (changedType) {
+      // TODO: Improve SubElementTypeInterface:
+      // https://github.com/llvm/llvm-project/issues/56355
+      emitError(loc, "don't know how to rebind parameterized subtypes in ")
+          << type;
+    } else if (!newAttrs.empty()) {
+      result = itf.replaceImmediateSubAttribute(newAttrs);
+    }
+  } else {
+    emitError(loc, "unknown type in parameterized operation ") << type;
+  }
+
+  return rewrittenTypes[type] = result;
+}
+
+/// Unknown operations are allowed to use types and attributes with parameter
+/// references.  Substitute in concrete values for their references.
+void ParameterRewriter::processGenericOp(Operation *op) {
+  // We can rewrite generic references and /uses/ of parameters, but we don't
+  // don't know how to calculate the new value for a defined parameter.  If
+  // there is a reason to allow open extension of operations that define
+  // parameters, we could genericize this into a op interface.
+  if (!getParamDecls(op).empty()) {
+    op->emitError("unknown parameter-defining operator in GenerateKernels");
+    return;
+  }
+
+  // Scan all the attributes and types to look for uses of parameters.  We let
+  // the walker scan the region hierarchy.
+  SmallVector<NamedAttribute> newAttrs;
+  bool changedAttrs = false;
+  for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    newAttrs.push_back(NamedAttribute(
+        namedAttr.getName(),
+        getReboundAttribute(namedAttr.getValue(), op->getLoc())));
+    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  }
+  if (changedAttrs)
+    op->setAttrs(newAttrs);
+
+  // Check the types of results to find any parameters embedded in their
+  // types.  We don't have to check operands because they are always checked
+  // when being defined.
+  for (OpResult result : op->getResults())
+    result.setType(getReboundType(result.getType(), op->getLoc()));
+
+  // Scan the region list if present.  The walker will automatically recurse
+  // for us, but we have to check the block arguments.
+  if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
+    for (auto &region : op->getRegions())
+      for (auto &block : region)
+        for (Value arg : block.getArguments())
+          arg.setType(getReboundType(arg.getType(), op->getLoc()));
+  }
 }
 
 /// Concretize a kernel in the primary file.
