@@ -411,7 +411,7 @@ Attribute ParameterRewriter::getReboundAttribute(Attribute attr, Location loc) {
     SmallVector<std::pair<size_t, Attribute>> newAttrs;
     bool changedType = false;
     size_t attrNo = 0;
-    itf.walkSubElements(
+    itf.walkImmediateSubElements(
         [&](Attribute attr) {
           auto newAttr = getReboundAttribute(attr, loc);
           if (newAttr != attr)
@@ -451,7 +451,7 @@ Type ParameterRewriter::getReboundType(Type type, Location loc) {
     SmallVector<std::pair<size_t, Attribute>> newAttrs;
     bool changedType = false;
     size_t attrNo = 0;
-    itf.walkSubElements(
+    itf.walkImmediateSubElements(
         [&](Attribute attr) {
           auto newAttr = getReboundAttribute(attr, loc);
           if (newAttr != attr)
@@ -595,13 +595,21 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
   if (failed(rewriter.processKernelBody(newKernel)))
     return {};
 
-  // TODO: Handle output parameters.
+  // The return op will have had the output parameter expressions simplified
+  // like any other generic op, so we just take the attributes there for our
+  // result parameter values.
+  SmallVector<Attribute> resultParams;
+  auto returnOp = newKernel.getReturnOp();
+  for (auto result : returnOp.getParameters())
+    resultParams.push_back(result.cast<ParamBindAttr>().getValue());
+
+  returnOp.setParametersAttr(b.getArrayAttr({}));
 
   // Check that the thing we just built is correct!
   if (failed(verify(newKernel)))
     return {};
 
-  return std::make_pair(newKernel.getNameAttr(), SmallVector<Attribute>());
+  return std::make_pair(newKernel.getNameAttr(), resultParams);
 }
 
 //===----------------------------------------------------------------------===//

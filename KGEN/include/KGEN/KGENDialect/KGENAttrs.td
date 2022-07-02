@@ -78,7 +78,8 @@ def ParamDeclSize1ArrayAttr
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
 def ParamBindAttr : AttrDef<KGENDialect, "ParamBind",
-              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+              [DeclareAttrInterfaceMethods<SubElementAttrInterface,
+                                           ["replaceImmediateSubAttribute"]>]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type,
@@ -172,7 +173,8 @@ def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
 }
 
 def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
-              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+              [DeclareAttrInterfaceMethods<SubElementAttrInterface,
+                                           ["replaceImmediateSubAttribute"]>]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
                         ArrayRefParameter<"::mlir::Attribute">:$operands,
