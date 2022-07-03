@@ -13,7 +13,7 @@
 #define GENERICML_SUPPORT_TENSORSPEC_H
 
 #include "GenericML/Support/TensorShape.h"
-#include "Support/DataType.h"
+#include "Support/DType.h"
 
 namespace M {
 

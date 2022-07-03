@@ -1,18 +1,18 @@
-//===- Support/DataType.h -------------------------------------------------===//
+//===- Support/DType.h ----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares `DataType` which is a standardized type to represent the
+// This file declares `DType` which is a standardized type to represent the
 // storage format of things like tensors.  This is intended to fit in a single
 // byte and be extensible by clients with new enumerators, but isn't suitable
 // for things like quantization information.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_DATATYPE_H
-#define SUPPORT_DATATYPE_H
+#ifndef SUPPORT_DTYPE_H
+#define SUPPORT_DTYPE_H
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
@@ -478,4 +478,4 @@ DType::dispatch(ParamPtrTypes... paramPtrs) const {
 
 } // end namespace M
 
-#endif // SUPPORT_DATATYPE_H
+#endif // SUPPORT_DTYPE_H
