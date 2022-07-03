@@ -13,7 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
-#include "Support/DataType.h"
+#include "Support/DType.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BlockAndValueMapping.h"

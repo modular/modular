@@ -8,7 +8,7 @@ add_subdirectory(Benchmark)
 
 add_modular_library(MSupport
   AlignedAlloc.cpp
-  DataType.cpp
+  DType.cpp
   Error.cpp
 
   ADDITIONAL_HEADER_DIRS
