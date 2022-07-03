@@ -52,7 +52,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
   %2 = kgen.param.value : f32 = <val>
 
   // Silly op so we know when something used this.
-  "unary_add_impl1"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !meta.scalar<type>
+  "genA op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !meta.scalar<type>
 
   kgen.return<out = mul(size, 2)> %arg0 : si32
 }
@@ -60,7 +60,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   %0 = kgen.param.value  = <46>
 // CHECK-NEXT:   %1 = kgen.param.value : dtype = <f32>
 // CHECK-NEXT:   %2 = kgen.param.value : f32 = <2.000000e+00>
-// CHECK-NEXT:   %3 = "unary_add_impl1"() {value = 42 : index} : () -> !meta.scalar<f32>
+// CHECK-NEXT:   %3 = "genA op"() {value = 42 : index} : () -> !meta.scalar<f32>
 // CHECK-NEXT:   kgen.return  %arg0 : si32
 // CHECK-NEXT: }
 
@@ -68,7 +68,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:    %0 = kgen.param.value  = <23>
 // CHECK-NEXT:    %1 = kgen.param.value : dtype = <si8>
 // CHECK-NEXT:    %2 = kgen.param.value : f32 = <1.500000e+00>
-// CHECK-NEXT:    %3 = "unary_add_impl1"() {value = 19 : index} : () -> !meta.scalar<si8>
+// CHECK-NEXT:    %3 = "genA op"() {value = 19 : index} : () -> !meta.scalar<si8>
 // CHECK-NEXT:    kgen.return  %arg0 : si32
 // CHECK-NEXT:  }
 
@@ -106,39 +106,26 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
 }
 
 
-// CHECK-NOT: kgen.generator.interface @unary_add
-kgen.generator.interface @unary_add<size>(si32) -> si32
+// CHECK-NOT: kgen.generator.interface @genItf
+kgen.generator.interface @genItf<x -> y>(si32) -> si32
 
-kgen.generator @unary_add_impl2<size>(%arg0: si32) -> si32
-  implements @unary_add {
-
-  // Silly op so we know when something used this.
-  "unary_add_impl2"() { value = #kgen.param.decl.ref<"size"> : index} : () -> ()
-
-  // TODO: Do something with <size>
-  kgen.return %arg0 : si32
+kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
+  implements @genItf {
+  "unary_add_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
+kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
+  implements @genItf {
+  "unary_add_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  kgen.return<y = mul(x, 2)> %arg0 : si32
+}
 
-
-
-
-
-
-// Can invoke the interface, binding a parameter.
-// TODO: %3 = kgen.call @unary_add<size = our_size>(%arg0) : (si32) -> si32
-
-kgen.generator.interface @take_and_return<p1 -> r1>()
-
-kgen.generator @parameter_call_use_chain() {
-  // Uses r2 and defines r1
-  kgen.call @take_and_return<p1 = r2 -> r1>() { someAttr = 1 } : () -> ()
-
+/// HECK-LABEL: kgen.kernel @use_interface(
+kgen.generator @use_interface(%arg0: si32) -> index {
   // Uses 42 and defines r2
-  kgen.call @take_and_return<p1 = 42 -> r2>() { someAttr = 2 }: () -> ()
+  %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
 
-  // Uses r1 and defines r3
-  kgen.call @take_and_return<p1 = r1 -> r3>() { someAttr = 3 }: () -> ()
-
-  kgen.return
+  %1 = kgen.param.value = <out>
+  kgen.return %1 : index
 }
