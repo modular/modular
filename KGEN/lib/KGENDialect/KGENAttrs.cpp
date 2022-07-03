@@ -838,20 +838,19 @@ SmallVector<ParamDeclAttr, 4> KGEN::getParamDeclsCasted(Operation *op) {
 
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always return empty arrays.
+/// result parameters.  A concrete kernel will always never have input params.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
-KGEN::getDeclParameterInfo(Operation *callee) {
-  // Fully defined kernels never have parameters.
-  if (isa<KernelOp>(callee))
-    return std::make_pair(ArrayRef<Attribute>(), ArrayRef<Attribute>());
-
-  assert((isa<GeneratorOp, GeneratorInterfaceOp>(callee)) && "unknown callee");
-  ArrayRef<Attribute> calleeParams = getParamDecls(callee);
-  size_t calleeNumInputParams =
-      callee->getAttrOfType<IntegerAttr>("numInputParameters")
-          .getValue()
-          .getZExtValue();
-  assert(calleeNumInputParams <= calleeParams.size());
-  return std::make_pair(calleeParams.take_front(calleeNumInputParams),
-                        calleeParams.drop_front(calleeNumInputParams));
+KGEN::getDeclParameterInfo(Operation *decl) {
+  assert((isa<KernelOp, GeneratorOp, GeneratorInterfaceOp>(decl)) &&
+         "unknown declaration");
+  ArrayRef<Attribute> declParams = getParamDecls(decl);
+  size_t numInputParams = 0;
+  // Kernels never have input parameters, but they can have output parameters.
+  if (isa<GeneratorOp, GeneratorInterfaceOp>(decl))
+    numInputParams = decl->getAttrOfType<IntegerAttr>("numInputParameters")
+                         .getValue()
+                         .getZExtValue();
+  assert(numInputParams <= declParams.size());
+  return std::make_pair(declParams.take_front(numInputParams),
+                        declParams.drop_front(numInputParams));
 }

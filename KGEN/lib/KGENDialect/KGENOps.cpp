@@ -244,31 +244,20 @@ enum class GeneratorOrKernelKind {
 static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
                                               OperationState &result,
                                               GeneratorOrKernelKind opKind) {
-  bool hasLessThan = succeeded(parser.parseOptionalLess());
-
-  // kgen.kernel's are not allowed to have parameter lists and don't get
-  // parameter attributes.  If we see one (even an empty <>), diagnose with
-  // a helpful error.
-  if (opKind == GeneratorOrKernelKind::kernel) {
-    if (hasLessThan)
-      return parser.emitError(parser.getCurrentLocation(),
-                              "parameters not allowed in kgen.kernel, use "
-                              "kgen.generator instead");
-    // kgen.kernel's don't get paramDecl related attributes.
-    return success();
-  }
-
   // If there is no parameter list, or if it is empty, we're done.
-  if (!hasLessThan || succeeded(parser.parseOptionalGreater())) {
+  if (failed(parser.parseOptionalLess()) ||
+      succeeded(parser.parseOptionalGreater())) {
     result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
-    result.addAttribute("numInputParameters",
-                        parser.getBuilder().getI32IntegerAttr(0));
+    if (opKind != GeneratorOrKernelKind::kernel)
+      result.addAttribute("numInputParameters",
+                          parser.getBuilder().getI32IntegerAttr(0));
     return success();
   }
 
   SmallVector<Attribute> paramDecls;
 
   // Parse the input list.
+  auto loc = parser.getCurrentLocation();
   if (parseParamList(parser, paramDecls, /*isBinding=*/false))
     return failure();
 
@@ -282,8 +271,15 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
 
   result.addAttribute("paramDecls",
                       parser.getBuilder().getArrayAttr(paramDecls));
-  result.addAttribute("numInputParameters",
-                      parser.getBuilder().getI32IntegerAttr(numInputs));
+
+  // kgen.kernel's are not allowed to have input parameter lists.
+  if (opKind == GeneratorOrKernelKind::kernel && numInputs)
+    return parser.emitError(
+        loc, "kgen.kernel only allows output parameters, not input parameters");
+
+  if (opKind != GeneratorOrKernelKind::kernel)
+    result.addAttribute("numInputParameters",
+                        parser.getBuilder().getI32IntegerAttr(numInputs));
   return parser.parseGreater();
 }
 
@@ -310,9 +306,7 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
 
   // Parse the function signature.
   bool isVariadic = false;
-
   if (parseOptionalParameterSpec(parser, result, opKind) ||
-      // Both have a normal signature of course.
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs))
     return failure();
@@ -375,10 +369,11 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
   return success();
 }
 
-/// Print a parameter list for a module or instance.
-static void printParameterList(ArrayAttr parameters, unsigned numInputs,
-                               OpAsmPrinter &p) {
-  if (parameters.empty())
+/// Print a parameter list for a generator, kernel or interface.
+static void printParameterList(Operation *decl, OpAsmPrinter &p) {
+  auto [inputParams, outputParams] = getDeclParameterInfo(decl);
+
+  if (inputParams.empty() && outputParams.empty())
     return;
 
   auto printParamDecl = [&](Attribute param) {
@@ -388,18 +383,15 @@ static void printParameterList(ArrayAttr parameters, unsigned numInputs,
   };
 
   p << '<';
-  if (numInputs == 0) {
+  if (inputParams.empty())
     p << "()";
-  } else {
-    llvm::interleaveComma(parameters.getValue().take_front(numInputs), p,
-                          printParamDecl);
-  }
-  if (numInputs != parameters.size()) {
-    p << " -> ";
-    llvm::interleaveComma(parameters.getValue().drop_front(numInputs), p,
-                          printParamDecl);
-  }
+  else
+    llvm::interleaveComma(inputParams, p, printParamDecl);
 
+  if (!outputParams.empty()) {
+    p << " -> ";
+    llvm::interleaveComma(outputParams, p, printParamDecl);
+  }
   p << '>';
 }
 
@@ -417,11 +409,7 @@ static void printGeneratorOrKernel(OpAsmPrinter &p,
   if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
-
-  if (auto paramDecls = op->getAttrOfType<ArrayAttr>("paramDecls")) {
-    auto numInputs = op->getAttrOfType<IntegerAttr>("numInputParameters");
-    printParameterList(paramDecls, numInputs.getValue().getZExtValue(), p);
-  }
+  printParameterList(op, p);
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
@@ -454,7 +442,7 @@ static ParseResult verifyMatchingLists(
       std::distance(originatorRange.begin(), originatorRange.end());
   size_t numTarget = std::distance(targetRange.begin(), targetRange.end());
   if (numOriginator != numTarget) {
-    auto diag = originator->emitError(originatorName)
+    auto diag = originator->emitOpError(originatorName)
                 << " has " << numOriginator << " " << itemName
                 << (numOriginator != 1 ? "s" : "") << " but " << targetName
                 << " expects " << numTarget;
@@ -595,10 +583,12 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 /// Create a kernel with no body block.  The caller must create it and fill
 /// it in.
 void KernelOp::build(OpBuilder &builder, OperationState &result,
-                     StringAttr name, FunctionType signature) {
+                     StringAttr name, FunctionType signature,
+                     ArrayRef<Attribute> outputParams) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
+  result.addAttribute("paramDecls", builder.getArrayAttr(outputParams));
   result.addRegion();
 }
 
@@ -606,8 +596,9 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
 /// all the block arguments.
 void KernelOp::build(OpBuilder &builder, OperationState &result,
                      StringAttr name, FunctionType signature,
+                     ArrayRef<Attribute> outputParams,
                      ArrayRef<Location> argLocs) {
-  build(builder, result, name, signature);
+  build(builder, result, name, signature, outputParams);
 
   // Create a block for the body.
   auto *bodyRegion = result.regions[0].get();
@@ -638,7 +629,7 @@ ParseResult KernelOp::parse(OpAsmParser &parser, OperationState &result) {
 void KernelOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult KernelOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(/*no parameters*/ {},
+  if (failed(getReturnOp().checkArgumentTypes(getOutputParameters(),
                                               getResultTypes())))
     return failure();
 

@@ -24,7 +24,8 @@ def KernelOp
                       SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Concrete kernel definition";
 
-  let arguments = (ins TypeAttrOf<FunctionType>:$function_type);
+  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+                       ParamDeclArrayAttr:$paramDecls);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -41,6 +42,12 @@ def KernelOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    /// Return an array of `ParamDeclAttr`s the result parameters.  kgen.kernel
+    /// implementations never have input parameters.
+    ArrayRef<Attribute> getOutputParameters() {
+      return getParamDecls().getValue();
+    }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -49,10 +56,12 @@ def KernelOp
   let builders = [
     // Create a kernel with a region but no body block.  The caller must create
     // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature)>,
+    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
+                   "ArrayRef<Attribute>":$outputParams)>,
     // Create a kernel with an empty body, `argLocs` specifies the locations for
     // all the block arguments.
     OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
+                   "ArrayRef<Attribute>":$outputParams,
                    "ArrayRef<Location>":$argLocs)>,
   ];
 }

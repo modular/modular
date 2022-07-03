@@ -1,4 +1,4 @@
-// RUN: kgen-generate %s -library=%S/library.mlir -verify-diagnostics | FileCheck %s
+// RUN: kgen-generate %s -library=%S/library.mlir | FileCheck %s
 
 // This is left untouched.
 // CHECK-LABEL: kgen.kernel @test0() -> index {
@@ -56,20 +56,20 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 
   kgen.return<out = mul(size, 2)> %arg0 : si32
 }
-// CHECK-LABEL: kgen.kernel @"genA,size=42,type=f32,val=2"(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.kernel @"genA,size=42,type=f32,val=2"<() -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   %0 = kgen.param.value  = <46>
 // CHECK-NEXT:   %1 = kgen.param.value : dtype = <f32>
 // CHECK-NEXT:   %2 = kgen.param.value : f32 = <2.000000e+00>
 // CHECK-NEXT:   %3 = "genA op"() {value = 42 : index} : () -> !meta.scalar<f32>
-// CHECK-NEXT:   kgen.return  %arg0 : si32
+// CHECK-NEXT:   kgen.return <out = 84> %arg0 : si32
 // CHECK-NEXT: }
 
-// CHECK-LABEL: kgen.kernel @"genA,size=19,type=si8,val=1.5"(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.kernel @"genA,size=19,type=si8,val=1.5"<() -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:    %0 = kgen.param.value  = <23>
 // CHECK-NEXT:    %1 = kgen.param.value : dtype = <si8>
 // CHECK-NEXT:    %2 = kgen.param.value : f32 = <1.500000e+00>
 // CHECK-NEXT:    %3 = "genA op"() {value = 19 : index} : () -> !meta.scalar<si8>
-// CHECK-NEXT:    kgen.return  %arg0 : si32
+// CHECK-NEXT:    kgen.return <out = 38> %arg0 : si32
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.kernel @call_generator_test
@@ -84,13 +84,13 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
 
   // Can invoke parameterized generators directly.
   %1 = kgen.call @genA<size = our_size, type : dtype = f32, val : f32 = 2.0 -> resultSizeA>(%arg0) : (si32) -> si32
-  // CHECK-NEXT: %1 = kgen.call @"genA,size=42,type=f32,val=2"(%arg0) : (si32) -> si32
+  // CHECK-NEXT: %1 = kgen.call @"genA,size=42,type=f32,val=2"<() -> resultSizeA>(%arg0) : (si32) -> si32
 
   %2 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeB>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %2 = kgen.call @"genA,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
+  // CHECK-NEXT: %2 = kgen.call @"genA,size=19,type=si8,val=1.5"<() -> resultSizeB>(%arg1) : (si32) -> si32
 
   %3 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeC>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %3 = kgen.call @"genA,size=19,type=si8,val=1.5"(%arg1) : (si32) -> si32
+  // CHECK-NEXT: %3 = kgen.call @"genA,size=19,type=si8,val=1.5"<() -> resultSizeC>(%arg1) : (si32) -> si32
 
 
   %4 = kgen.param.value = <resultSizeA>
