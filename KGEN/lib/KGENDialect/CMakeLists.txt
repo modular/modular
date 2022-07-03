@@ -20,6 +20,6 @@ add_modular_dialect_library(KGENDialect
   Support
 
   LINK_LIBS PUBLIC
-  GenericMLSupport
+  MSupport
   MLIRIR
 )

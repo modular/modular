@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/DataType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"

@@ -12,8 +12,8 @@
 #ifndef GENERICML_SUPPORT_TENSORSPEC_H
 #define GENERICML_SUPPORT_TENSORSPEC_H
 
-#include "GenericML/Support/TensorEltType.h"
 #include "GenericML/Support/TensorShape.h"
+#include "Support/DataType.h"
 
 namespace M {
 

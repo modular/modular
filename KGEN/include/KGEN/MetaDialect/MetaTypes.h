@@ -13,6 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
+#include "Support/DataType.h"
 
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/MetaDialect/MetaTypes.h.inc"

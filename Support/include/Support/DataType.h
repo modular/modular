@@ -1,4 +1,4 @@
-//===- GenericML/Support/TensorEltType.h ----------------------------------===//
+//===- Support/DataType.h -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_TENSORELTTYPE_H
-#define GENERICML_SUPPORT_TENSORELTTYPE_H
+#ifndef SUPPORT_DATATYPE_H
+#define SUPPORT_DATATYPE_H
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
@@ -483,4 +483,4 @@ TensorEltType::dispatch(ParamPtrTypes... paramPtrs) const {
 
 } // end namespace M
 
-#endif // GENERICML_SUPPORT_TENSORELTTYPE_H
+#endif // SUPPORT_DATATYPE_H

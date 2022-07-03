@@ -10,10 +10,10 @@
 
 #include "KGEN/MetaDialect/MetaOps.h"
 
-#include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/DataType.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/FunctionImplementation.h"
