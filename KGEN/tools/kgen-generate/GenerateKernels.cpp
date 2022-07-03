@@ -10,10 +10,10 @@
 
 #include "Internals.h"
 
-#include "GenericML/Support/TensorEltType.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/DataType.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BlockAndValueMapping.h"

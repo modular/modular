@@ -1,10 +1,10 @@
-//===- TensorEltType.cpp --------------------------------------------------===//
+//===- DataType.cpp -------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "GenericML/Support/TensorEltType.h"
+#include "Support/DataType.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
