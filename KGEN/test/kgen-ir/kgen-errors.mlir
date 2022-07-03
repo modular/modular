@@ -159,8 +159,8 @@ kgen.generator @g2<>() { // expected-note {{callee declared here}}
 
 // -----
 
-// expected-error @+1 {{'kgen.kernel' parameters not allowed in kgen.kernel, use kgen.generator instead}}
-kgen.kernel @bad_kernel_param<>() {
+// expected-error @+1 {{kgen.kernel only allows output parameters, not input parameters}}
+kgen.kernel @bad_kernel_param<x>() {
   kgen.return
 }
 

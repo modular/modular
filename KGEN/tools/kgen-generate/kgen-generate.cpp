@@ -9,6 +9,7 @@
 #include "Support/CommonCLOptions.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/AsmState.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "llvm/Support/InitLLVM.h"
@@ -91,7 +92,10 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   // the current diagnostic handler decide what to do with them.
   // -verify-diagnostics doesn't consider errors to be a tool failure if they
   // are matched correctly.
-  (void)generateKernels(primaryModule.get(), libraryModule.get());
+  if (succeeded(generateKernels(primaryModule.get(), libraryModule.get()))) {
+    // If the generator thought it succeeded, double check that the IR is valid.
+    (void)verify(primaryModule.get());
+  }
 
   primaryModule->print(outputStream);
 }

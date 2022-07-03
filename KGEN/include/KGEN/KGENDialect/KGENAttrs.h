@@ -32,7 +32,8 @@ inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
 
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always return empty arrays.
+/// result parameters.  A concrete kernel will always never have input
+/// parameters.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
 getDeclParameterInfo(Operation *decl);
 
