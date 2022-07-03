@@ -13,7 +13,7 @@ using namespace M;
 /// Return the in-memory size for an array of the specified type with the
 /// specified number of elements, or -1 for non-numeric types or too large
 /// values.  This supports densely packed sub-byte types like i1, i2, i4.
-ssize_t TensorEltType::getSizeInBytes(size_t numElements) const {
+ssize_t DType::getSizeInBytes(size_t numElements) const {
   // Handle complex separately from per-element types below.
   if (isComplex()) {
     ssize_t size = stripComplex().getSizeInBytes(numElements) * 2;
@@ -47,22 +47,22 @@ ssize_t TensorEltType::getSizeInBytes(size_t numElements) const {
   }
 
     // Handle other types.
-  case TensorEltType::f8:
-  case TensorEltType::kBool:
+  case DType::f8:
+  case DType::kBool:
     widthShift = 0;
     break;
-  case TensorEltType::f16:
-  case TensorEltType::bf16:
+  case DType::f16:
+  case DType::bf16:
     widthShift = 1;
     break;
-  case TensorEltType::f32:
-  case TensorEltType::tf32:
+  case DType::f32:
+  case DType::tf32:
     widthShift = 2;
     break;
-  case TensorEltType::f64:
+  case DType::f64:
     widthShift = 3;
     break;
-  case TensorEltType::f80: {
+  case DType::f80: {
     ssize_t result = numElements * 10;
     if (result / 10 != ssize_t(numElements))
       return -1;
@@ -78,32 +78,32 @@ ssize_t TensorEltType::getSizeInBytes(size_t numElements) const {
 }
 
 /// Return a complex type if it is valid, otherwise fail.
-FailureOr<TensorEltType>
-TensorEltType::getComplexChecked(TensorEltType eltType) {
+FailureOr<DType>
+DType::getComplexChecked(DType eltType) {
   if (eltType.getWidthInBits() < 8 || eltType.isComplex())
     return failure();
   return getComplex(eltType);
 }
 
-/// This turns the printed form of a dtype back into a TensorEltType or
+/// This turns the printed form of a dtype back into a DType or
 /// returns None if it is an unrecognized name.
-FailureOr<TensorEltType> TensorEltType::getFromString(StringRef str) {
+FailureOr<DType> DType::getFromString(StringRef str) {
   if (str.empty())
     return failure();
   switch (str[0]) {
   case 'f':
     if (str == "f32")
-      return TensorEltType(f32);
+      return DType(f32);
     if (str == "f64")
-      return TensorEltType(f64);
+      return DType(f64);
     if (str == "f16")
-      return TensorEltType(f16);
+      return DType(f16);
     if (str == "f80")
-      return TensorEltType(f80);
+      return DType(f80);
     if (str == "f8")
-      return TensorEltType(f8);
+      return DType(f8);
     if (str == "f128")
-      return TensorEltType(f128);
+      return DType(f128);
     return failure();
   case 'u':
   case 's':
@@ -117,9 +117,9 @@ FailureOr<TensorEltType> TensorEltType::getFromString(StringRef str) {
 
   case 'b':
     if (str == "bool")
-      return TensorEltType(kBool);
+      return DType(kBool);
     if (str == "bf16")
-      return TensorEltType(bf16);
+      return DType(bf16);
     return failure();
   case 'c':
     if (str.startswith("complex<") && str.back() == '>') {
@@ -137,7 +137,7 @@ FailureOr<TensorEltType> TensorEltType::getFromString(StringRef str) {
 
 /// Return a string form of this eltType suitable for printing and error
 /// messages.
-std::string TensorEltType::getAsString() const {
+std::string DType::getAsString() const {
   if (isComplex())
     return "complex<" + stripComplex().getAsString() + ">";
   if (isUInt())
@@ -171,5 +171,5 @@ std::string TensorEltType::getAsString() const {
   }
 }
 
-void TensorEltType::print(raw_ostream &os) const { os << getAsString(); }
-void TensorEltType::dump() const { print(llvm::errs()); }
+void DType::print(raw_ostream &os) const { os << getAsString(); }
+void DType::dump() const { print(llvm::errs()); }

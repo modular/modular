@@ -70,8 +70,8 @@ void KGENDialect::registerAttributes() {
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringRef name) {
-  // If this will conflict with a TensorEltType keyword, rename it.
-  if (succeeded(TensorEltType::getFromString(name))) {
+  // If this will conflict with a DType keyword, rename it.
+  if (succeeded(DType::getFromString(name))) {
     p << '"' << name << '"';
     return;
   }
@@ -111,7 +111,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
     // If this is a KGEN keyword (a bareword with a known identifier), process
     // it.
     if (isBareword) {
-      auto dtype = TensorEltType::getFromString(keyword);
+      auto dtype = DType::getFromString(keyword);
       if (succeeded(dtype)) {
         auto cst = p.getBuilder().getI8IntegerAttr(dtype.getValue().getValue());
 
@@ -175,7 +175,7 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
   // If this is a dtype constant with simple syntax, we can print it as a
   // keyword.
   if (auto dtypeConstant = value.dyn_cast<DTypeConstantAttr>()) {
-    auto eltType = dtypeConstant.getTensorEltType();
+    auto eltType = dtypeConstant.getDType();
     std::string stringRep = eltType.getAsString();
     // Don't allow things like complex<f64>.  We can extend this in the future
     // if there is a reason to of course.
@@ -789,9 +789,9 @@ LogicalResult DTypeConstantAttr::verify(
   return success();
 }
 
-/// Return the TensorEltType for the value we contain.
-TensorEltType DTypeConstantAttr::getTensorEltType() {
-  return TensorEltType(getValue().getValue().getZExtValue());
+/// Return the DType for the value we contain.
+DType DTypeConstantAttr::getDType() {
+  return DType(getValue().getValue().getZExtValue());
 }
 
 //===----------------------------------------------------------------------===//

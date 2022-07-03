@@ -4,9 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the TensorEltType which is a standardized type to
-// represent the storage EltType of tensors.  This does not hold quantization
-// information.
+// This file declares `DataType` which is a standardized type to represent the
+// storage format of things like tensors.  This is intended to fit in a single
+// byte and be extensible by clients with new enumerators, but isn't suitable
+// for things like quantization information.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,20 +25,20 @@
 namespace M {
 
 template <typename ResultType, typename... ParamPtrTypes>
-class TensorEltTypeSwitch;
+class DTypeSwitch;
 
-/// This class represents the storage type for values in a tensor.  This is
-/// encoded in a specific way intended to allow efficient analysis and
-/// transformation of a type.
+/// This class represents common datatypes, e.g. for clients like the storage
+/// format of elements in a tensor.  This is encoded in a specific way intended
+/// to allow efficient analysis and transformation.
 ///
-/// Note that this class is designed to allow open extension by ML frameworks by
-/// subclassing it and adding "mOther" types.  This acknowledges that frameworks
-/// will want to do weird things within their type system, e.g. have string or
-/// ragged tensors (which ...aren't tensors!), have "resources", etc.  Given
-/// this reality, we don't want to have conversions back and forth between enum
-/// types all the time.  Extensibility allows use of this generic type for those
-/// framework defined cases as well.
-class TensorEltType {
+/// Note that this class is designed to allow open extension by clients, which
+/// can subclass it and adding new enumerators. For example, frameworks want to
+/// do weird things within their type system, e.g. have string or ragged tensors
+/// (which ...aren't tensors!), have "resources", etc.  Given this reality, we
+/// don't want to have conversions back and forth between enum types all the
+/// time.  Extensibility allows use of this generic type for those framework
+/// defined cases as well.
+class DType {
 public:
   /// Note that many of these should be interpreted as type classes, i.e. the
   /// enum represents a mask, not a concrete enumerator.  These enum values
@@ -124,13 +125,13 @@ public:
     kMaxElementSizeInBytes = kMaxElementSizeInBits / 8
   };
 
-  /*implicit*/ constexpr TensorEltType() : value(invalid) {}
-  /*implicit*/ constexpr TensorEltType(Cases v) : value(v) {}
-  explicit constexpr TensorEltType(uint8_t v) : value((Cases)v) {}
+  /*implicit*/ constexpr DType() : value(invalid) {}
+  /*implicit*/ constexpr DType(Cases v) : value(v) {}
+  explicit constexpr DType(uint8_t v) : value((Cases)v) {}
 
-  /// This turns the printed form of a dtype back into a TensorEltType or
+  /// This turns the printed form of a dtype back into a DType or
   /// returns None if it is an unrecognized name.
-  static FailureOr<TensorEltType> getFromString(StringRef str);
+  static FailureOr<DType> getFromString(StringRef str);
 
   /// This returns the underlying integer value for the enum.
   constexpr uint8_t getValue() const { return value; }
@@ -148,35 +149,33 @@ public:
 
   /// If the current type is a complex type, remove the complex marker to get
   /// the underlying element type, otherwise return it unmodified.
-  constexpr TensorEltType stripComplex() const {
-    return TensorEltType(value & ~mIsComplex);
-  }
+  constexpr DType stripComplex() const { return DType(value & ~mIsComplex); }
 
   /// Given a valid element type for a complex number, return the complex type.
   /// We do not support sub-byte element types in order to simplify clients.
-  constexpr static TensorEltType getComplex(TensorEltType eltType) {
+  constexpr static DType getComplex(DType eltType) {
     assert(eltType.getWidthInBits() >= 8 && "invalid element type for complex");
     assert(!eltType.isComplex() &&
            "cannot construct a complex type with complex type as element");
-    return TensorEltType(eltType.getValue() | mIsComplex);
+    return DType(eltType.getValue() | mIsComplex);
   }
 
   /// Return a complex type if it is valid, otherwise fail.
-  static FailureOr<TensorEltType> getComplexChecked(TensorEltType eltType);
+  static FailureOr<DType> getComplexChecked(DType eltType);
 
   // Integer handling.
 
-  /// This returns a TensorEltType for an integer with the specified width and
+  /// This returns a DType for an integer with the specified width and
   /// signedness, or `invalid` if it cannot be represented.
-  static FailureOr<TensorEltType> getInt(unsigned widthInBits, bool isSigned) {
+  static FailureOr<DType> getInt(unsigned widthInBits, bool isSigned) {
     if (!llvm::isPowerOf2_32(widthInBits) ||
         // Disallow large numbers by policy, because we don't want clients to
         // have to worry about memory allocation for arbitrarily large values.
         widthInBits > kMaxElementSizeInBits / 2)
       return failure();
     unsigned widthEncoding = llvm::countTrailingZeros(widthInBits);
-    return TensorEltType((widthEncoding << kIntWidthShift) | mIsInteger |
-                         (isSigned ? mIsSigned : 0));
+    return DType((widthEncoding << kIntWidthShift) | mIsInteger |
+                 (isSigned ? mIsSigned : 0));
   }
 
   /// Return the width in bits of this type, assuming it is an integer type.
@@ -205,13 +204,13 @@ public:
 
   constexpr bool operator==(uint8_t v) const { return value == v; }
   constexpr bool operator!=(uint8_t v) const { return value != v; }
-  constexpr bool operator==(TensorEltType v) const { return value == v.value; }
-  constexpr bool operator!=(TensorEltType v) const { return value != v.value; }
+  constexpr bool operator==(DType v) const { return value == v.value; }
+  constexpr bool operator!=(DType v) const { return value != v.value; }
 
   /// Perform a eltType dispatch to delegate to a lambda or other callable, see
-  /// the definition of `TensorEltTypeSwitch` below.
+  /// the definition of `DTypeSwitch` below.
   template <typename ResultType, typename... ParamPtrTypes>
-  TensorEltTypeSwitch<ResultType, ParamPtrTypes...>
+  DTypeSwitch<ResultType, ParamPtrTypes...>
   dispatch(ParamPtrTypes... paramPtrs) const;
 
   /// Return a string form of this eltType suitable for printing and error
@@ -225,9 +224,9 @@ private:
   Cases value;
 };
 
-static_assert(sizeof(TensorEltType) == 1, "TensorEltType should not grow");
+static_assert(sizeof(DType) == 1, "DType should not grow");
 
-inline raw_ostream &operator<<(raw_ostream &os, TensorEltType value) {
+inline raw_ostream &operator<<(raw_ostream &os, DType value) {
   value.print(os);
   return os;
 }
@@ -238,7 +237,7 @@ inline raw_ostream &operator<<(raw_ostream &os, TensorEltType value) {
 
 /// Return the width of this element in bits.  This returns 0 for unknown
 /// width values.
-inline constexpr ssize_t TensorEltType::getWidthInBits() const {
+inline constexpr ssize_t DType::getWidthInBits() const {
   // Handle complex separately from per-element types below.  We know that
   // complex element types are always at least a byte in size.
   if (isComplex())
@@ -250,47 +249,47 @@ inline constexpr ssize_t TensorEltType::getWidthInBits() const {
   default:
     return isInt() ? getIntegerWidthInBits() : -1;
     // Handle other types.
-  case TensorEltType::f8:
-  case TensorEltType::kBool:
+  case DType::f8:
+  case DType::kBool:
     return 8;
-  case TensorEltType::f16:
-  case TensorEltType::bf16:
+  case DType::f16:
+  case DType::bf16:
     return 16;
-  case TensorEltType::f32:
-  case TensorEltType::tf32:
+  case DType::f32:
+  case DType::tf32:
     return 32;
-  case TensorEltType::f64:
+  case DType::f64:
     return 64;
-  case TensorEltType::f80:
+  case DType::f80:
     return 80;
   }
 }
 
 //===----------------------------------------------------------------------===//
-// TensorEltTypeForCXXType CXXTypeForTensorEltType
+// DTypeForCXXType CXXTypeForDType
 //===----------------------------------------------------------------------===//
 
 /// Provide a mapping from C++ types to the corresponding EltType kinds.
 template <typename CXXType>
-struct TensorEltTypeForCXXType {
+struct DTypeForCXXType {
   // Default mapping allows a static_assert instead of template substitution
   // failure to catch invalid cases.
-  static constexpr TensorEltType kind = TensorEltType::invalid;
+  static constexpr DType kind = DType::invalid;
 };
 
-/// Provide a mapping from TensorEltType enums to C++ types.
-template <unsigned TensorEltType>
-struct CXXTypeForTensorEltType {
+/// Provide a mapping from DType enums to C++ types.
+template <unsigned DType>
+struct CXXTypeForDType {
   using CXXType = void;
 };
 
 #define DECLARE_TYPE_MAPPING(ELTTYPE_KIND, CXXTYPE)                            \
   template <>                                                                  \
-  struct TensorEltTypeForCXXType<CXXTYPE> {                                    \
-    static constexpr TensorEltType kind = TensorEltType::ELTTYPE_KIND;         \
+  struct DTypeForCXXType<CXXTYPE> {                                            \
+    static constexpr DType kind = DType::ELTTYPE_KIND;                         \
   };                                                                           \
   template <>                                                                  \
-  struct CXXTypeForTensorEltType<TensorEltType::ELTTYPE_KIND> {                \
+  struct CXXTypeForDType<DType::ELTTYPE_KIND> {                                \
     using CXXType = CXXTYPE;                                                   \
   };
 
@@ -309,36 +308,36 @@ DECLARE_TYPE_MAPPING(f64, double);
 #undef DECLARE_TYPE_MAPPING
 
 //===----------------------------------------------------------------------===//
-// TensorEltTypeSwitch
+// DTypeSwitch
 //===----------------------------------------------------------------------===//
 
-/// This class is used to implement switch-like dispatch for TensorEltType
+/// This class is used to implement switch-like dispatch for DType
 /// values. In addition to allowing checks of enumerator values, it provides
 /// convenients helpers for things like "C++ floating point types" and "integer
 /// types ignoring sign" etc.  This should be used like:
 ///
-///   someTensorEltType.dispatch<>(paramPtrs...)  // pass in void* / const void*
-///      .when<TensorEltType::f24>([](void *... buf) { ... invoked when f24 ...
+///   someDType.dispatch<>(paramPtrs...)  // pass in void* / const void*
+///      .when<DType::f24>([](void *... buf) { ... invoked when f24 ...
 ///      }) .when([](bool *... bufPtr) { ... invoked when kBool ... })
 ///      .whenCXXFP([](auto *... bufPtr) { ... invoked with correct pointer type
 ///      ... .otherwise([]() { ... invoked otherwise ... });
 ///
 template <typename ResultType, typename... ParamPtrTypes>
-class TensorEltTypeSwitch {
+class DTypeSwitch {
 public:
-  TensorEltTypeSwitch(TensorEltType value, ParamPtrTypes... paramPtrs)
+  DTypeSwitch(DType value, ParamPtrTypes... paramPtrs)
       : paramPtrs(std::forward_as_tuple(paramPtrs...)), value(value) {
     static_assert(
         ((std::is_same_v<ParamPtrTypes, void *> ||
           std::is_same_v<ParamPtrTypes, const void *>)&&...),
         "Input pointers to type dispatch should be void*/const void*");
   }
-  ~TensorEltTypeSwitch() = default;
+  ~DTypeSwitch() = default;
 
   /// Add a case on the given type.
   template <uint8_t CaseValue, typename CallableT>
-  TensorEltTypeSwitch &when(CallableT &&caseFn) {
-    using CXXType = typename CXXTypeForTensorEltType<CaseValue>::CXXType;
+  DTypeSwitch &when(CallableT &&caseFn) {
+    using CXXType = typename CXXTypeForDType<CaseValue>::CXXType;
     // Check to see if any of the types apply to 'value'.
     if (!result && this->value.getValue() == CaseValue)
       result = std::apply(
@@ -357,14 +356,13 @@ public:
   /// Note: This inference rules for this overload are very simple: strip
   ///       pointers and references.
   template <typename CallableT>
-  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG TensorEltTypeSwitch &
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG DTypeSwitch &
   when(CallableT &&caseFn) {
     using Traits = llvm::function_traits<std::decay_t<CallableT>>;
     using ElementType = std::remove_cv_t<std::remove_pointer_t<
         std::remove_reference_t<typename Traits::template arg_t<0>>>>;
-    constexpr auto kind = TensorEltTypeForCXXType<ElementType>::kind.getValue();
-    static_assert(kind != TensorEltType::invalid,
-                  "unknown C++ pointer type in lambda");
+    constexpr auto kind = DTypeForCXXType<ElementType>::kind.getValue();
+    static_assert(kind != DType::invalid, "unknown C++ pointer type in lambda");
     return this->when<kind>(std::forward<CallableT>(caseFn));
   }
 
@@ -372,17 +370,17 @@ public:
   template <uint8_t CaseV1, uint8_t CaseV2, uint8_t... CaseVs,
             typename CallableT>
   // This is marked always_inline and nodebug so it doesn't show up in stack
-  // traces at -O0 (or other optimization levels).  Large TensorEltTypeSwitch's
+  // traces at -O0 (or other optimization levels).  Large DTypeSwitch's
   // are common, are equivalent to a switch, and don't add any value to stack
   // traces.
-  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG TensorEltTypeSwitch &
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG DTypeSwitch &
   when(CallableT &&caseFn) {
     return when<CaseV1>(caseFn).template when<CaseV2, CaseVs...>(caseFn);
   }
 
   /// As a default, invoke the given callable within the root value.
   template <typename CallableT>
-  TensorEltTypeSwitch &otherwise(CallableT &&defaultFn) {
+  DTypeSwitch &otherwise(CallableT &&defaultFn) {
     if (!result)
       result = invokeWithDefaultResultType<EmptyReturnType>(
           std::forward<CallableT>(defaultFn));
@@ -397,10 +395,9 @@ public:
   ///     .whenCXXInt([&](auto *... ptr) { use ptr generically })
   ///
   template <typename CallableT>
-  TensorEltTypeSwitch &whenCXXInt(CallableT &&elementFn) {
-    return when<TensorEltType::si8, TensorEltType::ui8, TensorEltType::si16,
-                TensorEltType::ui16, TensorEltType::si32, TensorEltType::ui32,
-                TensorEltType::si64, TensorEltType::ui64>(
+  DTypeSwitch &whenCXXInt(CallableT &&elementFn) {
+    return when<DType::si8, DType::ui8, DType::si16, DType::ui16, DType::si32,
+                DType::ui32, DType::si64, DType::ui64>(
         std::forward<CallableT>(elementFn));
   }
 
@@ -413,9 +410,8 @@ public:
   ///
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
-  TensorEltTypeSwitch &whenCXXFP(CallableT &&elementFn) {
-    return when<TensorEltType::f32, TensorEltType::f64>(
-        std::forward<CallableT>(elementFn));
+  DTypeSwitch &whenCXXFP(CallableT &&elementFn) {
+    return when<DType::f32, DType::f64>(std::forward<CallableT>(elementFn));
   }
 
   /// Invoke the specified lambda with integer, float and bool element types.
@@ -427,16 +423,15 @@ public:
   ///
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
-  TensorEltTypeSwitch &whenCXXType(CallableT &&elementFn) {
+  DTypeSwitch &whenCXXType(CallableT &&elementFn) {
     return this->whenCXXInt(std::forward<CallableT>(elementFn))
         .whenCXXFP(std::forward<CallableT>(elementFn))
-        .template when<TensorEltType::kBool>(
-            std::forward<CallableT>(elementFn));
+        .template when<DType::kBool>(std::forward<CallableT>(elementFn));
   }
 
   LLVM_NODISCARD
   operator ResultType() {
-    assert(result && "Fell off the end of a TensorEltTypeSwitch");
+    assert(result && "Fell off the end of a DTypeSwitch");
     return std::move(*result);
   }
 
@@ -457,27 +452,27 @@ private:
       llvm::Optional<std::conditional_t<std::is_void_v<ResultType>,
                                         EmptyReturnType, ResultType>>;
 
-  /// TensorEltTypeSwitch is not a value.
-  TensorEltTypeSwitch(const TensorEltTypeSwitch &) = delete;
-  TensorEltTypeSwitch(TensorEltTypeSwitch &&other) = delete;
-  void operator=(const TensorEltTypeSwitch &) = delete;
-  void operator=(TensorEltTypeSwitch &&other) = delete;
+  /// DTypeSwitch is not a value.
+  DTypeSwitch(const DTypeSwitch &) = delete;
+  DTypeSwitch(DTypeSwitch &&other) = delete;
+  void operator=(const DTypeSwitch &) = delete;
+  void operator=(DTypeSwitch &&other) = delete;
 
   /// The parameter pointers that we're casting.
   std::tuple<ParamPtrTypes...> paramPtrs;
 
-  const TensorEltType value; /// The value we are switching on.
+  const DType value; /// The value we are switching on.
 
   /// The result of this switch statement, once known, None before that.
   CallableReturnType result;
 };
 
 /// Perform a eltType dispatch to delegate to a lambda or other callable, see
-/// the definition of `TensorEltTypeSwitch` below.
+/// the definition of `DTypeSwitch` below.
 template <typename ResultType, typename... ParamPtrTypes>
-inline TensorEltTypeSwitch<ResultType, ParamPtrTypes...>
-TensorEltType::dispatch(ParamPtrTypes... paramPtrs) const {
-  return TensorEltTypeSwitch<ResultType, ParamPtrTypes...>(
+inline DTypeSwitch<ResultType, ParamPtrTypes...>
+DType::dispatch(ParamPtrTypes... paramPtrs) const {
+  return DTypeSwitch<ResultType, ParamPtrTypes...>(
       *this, std::forward<ParamPtrTypes>(paramPtrs)...);
 }
 

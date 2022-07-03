@@ -106,7 +106,7 @@ OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
 /// Types are compatible if the types are the same, and the bit widths are the
 /// same. Allows conversions from signed to unsigned, but does not allow
 /// conversion from bf to fp.
-static bool typesAreCompatible(Type builtinTy, TensorEltType eltTy) {
+static bool typesAreCompatible(Type builtinTy, DType eltTy) {
   auto builtinWidth = builtinTy.getIntOrFloatBitWidth();
   auto eltWidth = eltTy.getWidthInBits();
   if (eltTy.isInt())
@@ -116,13 +116,13 @@ static bool typesAreCompatible(Type builtinTy, TensorEltType eltTy) {
     // bf16 and fp16 are not convertible, but are both floats and have  the same
     // bit width, so we have to make sure we're not converting fp16 to bf16 and
     // vice versa.
-    if (eltTy == TensorEltType::bf16) {
+    if (eltTy == DType::bf16) {
       return builtinTy.isa<BFloat16Type>();
     }
-    if (eltTy == TensorEltType::f16) {
+    if (eltTy == DType::f16) {
       return builtinTy.isa<Float16Type>() && (builtinWidth == eltWidth);
     }
-    if (eltTy == TensorEltType::tf32) {
+    if (eltTy == DType::tf32) {
       // There is no builtin tf32 type, so we can't do the conversion.
       return false;
     }
@@ -150,7 +150,7 @@ LogicalResult MetaCastToBuiltinOp::verify() {
 
   if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
     if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      TensorEltType eltTy = dtype.getTensorEltType();
+      DType eltTy = dtype.getDType();
       if (!typesAreCompatible(standardTy, eltTy))
         return emitOpError() << "does not support casting " << getOperand()
                              << " to " << standardTy << ".";
@@ -191,7 +191,7 @@ LogicalResult MetaCastFromBuiltinOp::verify() {
 
   if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
     if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      TensorEltType eltTy = dtype.getTensorEltType();
+      DType eltTy = dtype.getDType();
       if (!typesAreCompatible(standardTy, eltTy))
         return emitOpError() << "does not support casting " << getOperand()
                              << " to " << scalarOrSIMDTy << ".";

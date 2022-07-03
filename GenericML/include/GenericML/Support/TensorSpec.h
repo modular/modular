@@ -21,19 +21,16 @@ namespace M {
 /// element type, implemented using TensorShape.
 class TensorSpec : public TensorShape {
 public:
-  TensorSpec() : TensorShape() { setEltType(TensorEltType::invalid); }
+  TensorSpec() : TensorShape() { setEltType(DType::invalid); }
   template <typename ShapeType>
-  TensorSpec(const ShapeType &shape, TensorEltType eltType)
-      : TensorShape(shape) {
+  TensorSpec(const ShapeType &shape, DType eltType) : TensorShape(shape) {
     setEltType(eltType);
   }
 
   // This class stores the ElementType in the auxillary storage field of the
   // underlying TensorShape.
-  TensorEltType getEltType() const {
-    return TensorEltType(getAuxillaryStorage());
-  }
-  void setEltType(TensorEltType type) { setAuxillaryStorage(type.getValue()); }
+  DType getEltType() const { return DType(getAuxillaryStorage()); }
+  void setEltType(DType type) { setAuxillaryStorage(type.getValue()); }
 
   size_t getSizeInBytes() const {
     return getEltType().getSizeInBytes(getNumElements());

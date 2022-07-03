@@ -33,7 +33,7 @@ class TensorShapeStorage {
   /// efficient shape comparison with memcmp for k16 and k32.
   ///
   /// Each representation has an additional 8 bits of unused "auxillary"
-  /// storage.  This is used to hold a TensorEltType for TensorSpec.  We keep
+  /// storage.  This is used to hold a DType for TensorSpec.  We keep
   /// this at the end of the storage so we can efficiently omit it from
   /// memset/memcpy operations.
   enum class RepKind : uint8_t { k16, k32, kOutOfLine };

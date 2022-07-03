@@ -21,7 +21,7 @@
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
 
 namespace M {
-class TensorEltType;
+class DType;
 }
 
 namespace M::KGEN {
