@@ -12,9 +12,9 @@
 class KGENType<string name> : TypeDef<KGENDialect, name> { }
 
 def DTypeType : KGENType<"DType"> {
-  let summary = "8-bit integer TensorEltType type";
+  let summary = "8-bit integer DType type";
   let description = [{
-    This type corresponds to the TensorEltType runtime class, representing an
+    This type corresponds to the DType runtime class, representing an
     element type (aka "dtype") specifier for a data storage types.
   }];
 

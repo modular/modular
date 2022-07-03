@@ -98,16 +98,16 @@ def BufferType : MetaType<"Buffer",
   ];
 
   let extraClassDeclaration = [{
-    /// Return the TensorEltType of the dtype.
-    /// Returns TensorEltType::invalid if dtype is null
+    /// Return the DType of the dtype.
+    /// Returns DType::invalid if dtype is null
     /// (indicating dtype is unknown)
-    TensorEltType getTensorEltType() {
+    DType getDType() {
       DTypeConstantAttr buf_dtype =
           getDtype().dyn_cast_or_null<DTypeConstantAttr>();
       if (!buf_dtype)
-        return TensorEltType::invalid;
+        return DType::invalid;
 
-      return buf_dtype.getTensorEltType();
+      return buf_dtype.getDType();
     };
   }];
 }

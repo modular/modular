@@ -165,7 +165,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       floatAttr.getValue().toString(str);
       os << str;
     } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
-      os << dtypeAttr.getTensorEltType();
+      os << dtypeAttr.getDType();
     } else {
       assert(!isSimpleConstant(value) && "not handling all simple constants");
       os << "??";

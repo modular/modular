@@ -215,7 +215,7 @@ def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
     This is constant value for a dtype, whose elements correspond to
-    TensorEltType.
+    DType.
   }];
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value
@@ -228,7 +228,7 @@ def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Return the TensorEltType for the value we contain.
-    TensorEltType getTensorEltType();
+    /// Return the DType for the value we contain.
+    DType getDType();
   }];
 }
