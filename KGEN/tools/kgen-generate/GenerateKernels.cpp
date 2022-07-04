@@ -54,9 +54,10 @@ public:
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  KernelOp getSpecializedGenerator(GeneratorOp generator,
-                                   ArrayRef<Attribute> inputParamValues,
-                                   Operation *insertionPoint);
+  const SmallVector<KernelOp> &
+  getSpecializedGenerator(GeneratorOp generator,
+                          ArrayRef<Attribute> inputParamValues,
+                          Operation *insertionPoint);
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
@@ -71,8 +72,10 @@ private:
   DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
 
   /// This is a cache of already-instantiated generators.  The key is the
-  /// generator and input parameters (as an array).
-  DenseMap<std::pair<GeneratorOp, ArrayAttr>, KernelOp> generatedKernels;
+  /// generator and input parameters, the result are all-possible kernels that
+  /// could be generated from this.
+  DenseMap<std::pair<GeneratorOp, ArrayAttr>, SmallVector<KernelOp>>
+      generatedKernels;
 };
 } // end anonymous namespace
 
@@ -171,9 +174,9 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
-  ParameterRewriter(KernelGenerator &kernelGenerator,
+  ParameterRewriter(KernelGenerator &kernelGenerator, KernelOp kernel,
                     SmallVector<Operation *> opsToRewrite)
-      : kernelGenerator(kernelGenerator),
+      : kernelGenerator(kernelGenerator), kernel(kernel),
         opsToRewrite(std::move(opsToRewrite)) {}
 
   LogicalResult rewriteOps();
@@ -200,7 +203,6 @@ private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp op);
-  KernelOp processGeneratorCallOp(CallOp call, GeneratorOp generator);
   void processGenericOp(Operation *op);
 
   /// Get the specified attribute with any nested parameter expressions
@@ -212,6 +214,9 @@ private:
 
   // This is maintains global information about the file we're generating into.
   KernelGenerator &kernelGenerator;
+
+  /// This is the kernel we're working on.
+  KernelOp kernel;
 
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
@@ -250,7 +255,7 @@ static SmallVector<KernelOp> concretizeKernel(KernelGenerator &kernelGenerator,
   std::reverse(opsToRewrite.begin(), opsToRewrite.end());
 
   // Process each def/use in order.
-  ParameterRewriter rewriter(kernelGenerator, std::move(opsToRewrite));
+  ParameterRewriter rewriter(kernelGenerator, kernel, std::move(opsToRewrite));
   if (succeeded(rewriter.rewriteOps())) {
     SmallVector<KernelOp> results;
     results.push_back(kernel);
@@ -267,7 +272,9 @@ LogicalResult ParameterRewriter::rewriteOps() {
     if (failed(processOp(opsToRewrite.pop_back_val())))
       return failure();
   }
-  return success();
+
+  // Check that the thing we just built is correct!
+  return verify(kernel);
 }
 
 static std::string getString(Attribute attr) {
@@ -359,21 +366,31 @@ void ParameterRewriter::processParamValueOp(ParamValueOp op) {
 }
 
 void ParameterRewriter::processCallOp(CallOp call) {
-  // If this is a direct call to an existing kernel (not a generator or
-  // interface) then we have nothing to do.  It cannot be parameterized, and it
-  // must already be in the primary module.
-  auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
-  KernelOp result;
   auto callParamDecls = call.getParamDecls();
+
+  // Evaluating any input parameters.
+  SmallVector<Attribute> boundInputParams;
+  for (auto param : call.getParamValues()) {
+    auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
+    if (value.isError()) {
+      call->emitError(value.getError());
+      return;
+    }
+    boundInputParams.push_back(value.takeValue());
+  }
 
   // Resolve the callee into a KernelOp, depending on what the callee is.  This
   // will replace/invalidate the `call` op in some cases.
+  auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
+
+  SmallVector<KernelOp> newCallees;
   if (auto kernel = dyn_cast<KernelOp>(callee)) {
     // FIXME: This isn't correct.  One kernel could turn into many different
-    // variants, which multivariants the using kernel.
-    result = kernel;
+    // variants, which multivariants this kernel just like a generator would.
+    newCallees.push_back(kernel);
   } else if (auto generator = dyn_cast<GeneratorOp>(callee)) {
-    result = processGeneratorCallOp(call, generator);
+    newCallees = kernelGenerator.getSpecializedGenerator(
+        generator, boundInputParams, kernel);
   } else {
     // TODO: Handle generator interfaces.
     call->emitError("cannot handle this yet");
@@ -382,52 +399,29 @@ void ParameterRewriter::processCallOp(CallOp call) {
 
   // If kernel generation failed for some reason, bail out.  The error will
   // already be reported.
-  if (!result)
+  if (newCallees.empty())
     return;
 
-  // Bind the result parameters to the output parameter decls.
-  for (auto [decl, bindValue] :
-       llvm::zip(callParamDecls, result.getReturnOp().getParameters()))
-    setParameterValue(decl.cast<ParamDeclAttr>(),
-                      bindValue.cast<ParamBindAttr>().getValue());
-}
+  assert(newCallees.size() == 1 && "Multiversion not implemented yet");
+  KernelOp newCallee = newCallees[0];
 
-KernelOp ParameterRewriter::processGeneratorCallOp(CallOp call,
-                                                   GeneratorOp generator) {
-  // Otherwise, if it is a generator or generator interface we need to
-  // specialize it if it isn't already.  Start by evaluating the input
-  // parameters.
-  SmallVector<Attribute> boundInputParameters;
-  for (auto param : call.getParamValues()) {
-    auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
-    if (value.isError()) {
-      call->emitError(value.getError());
-      return {};
-    }
-    boundInputParameters.push_back(value.takeValue());
-  }
-
-  auto newCallee = kernelGenerator.getSpecializedGenerator(
-      generator, boundInputParameters, call->getParentOfType<KernelOp>());
-
-  // If kernel generation failed for some reason, bail out.  The error will
-  // already be reported.
-  if (!newCallee)
-    return {};
-
+  // If we resolved the call to a new thing, build a new call to replace the old
+  // one.
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
       call.getLoc(), call.getResultTypes(), newCallee.getNameAttr(),
       /*input params*/ ArrayRef<Attribute>(),
       /*output params*/ call.getParamDecls().getValue(), call.getOperands());
 
-  // The SSA results of the old call go directly to the new call.
+  // The SSA results of the old call go directly to the new call and remove it.
   call->getResults().replaceAllUsesWith(newCall);
-
-  // The old call is resolved and dead now.
   call->erase();
 
-  return newCallee;
+  // Bind the result parameters to the output parameter decls.
+  for (auto [decl, bindValue] :
+       llvm::zip(callParamDecls, newCallee.getReturnOp().getParameters()))
+    setParameterValue(decl.cast<ParamDeclAttr>(),
+                      bindValue.cast<ParamBindAttr>().getValue());
 }
 
 /// Get the specified attribute with any nested parameter expressions
@@ -573,7 +567,7 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
-KernelOp
+const SmallVector<KernelOp> &
 KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
                                          ArrayRef<Attribute> inputParamValues,
                                          Operation *insertionPoint) {
@@ -582,10 +576,10 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
 
   // Check the cache these so multiple uses of the same kernel don't get
   // separate instantiations.
-  auto &cacheEntry =
-      generatedKernels[std::make_pair(generator, inputParamValuesKey)];
-  if (cacheEntry)
-    return cacheEntry;
+  auto cacheKey = std::make_pair(generator, inputParamValuesKey);
+  auto cacheIt = generatedKernels.find(cacheKey);
+  if (cacheIt != generatedKernels.end())
+    return cacheIt->second;
 
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
@@ -628,17 +622,9 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
   // Now that we have a new synthesized generic kernel, run the rewriter over it
   // to specialize its body.
   SmallVector<KernelOp> results = concretizeKernel(*this, newKernel);
-  if (results.empty())
-    return {};
-
-  assert(results.size() == 1 && "cannot handle multi-generation yet");
-  newKernel = results[0];
-
-  // Check that the thing we just built is correct!
-  if (failed(verify(newKernel)))
-    return {};
-
-  return cacheEntry = newKernel;
+  auto &cacheEntry = generatedKernels[cacheKey];
+  cacheEntry = std::move(results);
+  return cacheEntry;
 }
 
 //===----------------------------------------------------------------------===//
