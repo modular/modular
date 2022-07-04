@@ -177,11 +177,16 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
-  ParameterRewriter(KernelGenerator &kernelGenerator)
-      : kernelGenerator(kernelGenerator) {}
+  /// Take a kernel that may have parameterized body and transform it into
+  /// concrete values.
+  static LogicalResult processKernelBody(KernelGenerator &kernelGenerator,
+                                         KernelOp kernel);
 
-  /// Process the body of a kernel.
-  LogicalResult processKernelBody(KernelOp kernel);
+private:
+  ParameterRewriter(KernelGenerator &kernelGenerator,
+                    SmallVector<Operation *> opsToRewrite)
+      : kernelGenerator(kernelGenerator),
+        opsToRewrite(std::move(opsToRewrite)) {}
 
   /// Process an operation that needs to be rewritten/lowered based on the
   /// context of the parameter values we know are defined.
@@ -201,6 +206,8 @@ public:
   ErrorOr<Attribute> simplifyParameterExpr(Attribute expr);
 
 private:
+  LogicalResult rewriteOps();
+
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp op);
@@ -216,6 +223,9 @@ private:
   // This is maintains global information about the file we're generating into.
   KernelGenerator &kernelGenerator;
 
+  /// These are the operations we still need to visit to complete our rewrite.
+  SmallVector<Operation *> opsToRewrite;
+
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
 
@@ -228,19 +238,37 @@ private:
 } // end anonymous namespace
 
 /// Process the body of a kernel.
-LogicalResult ParameterRewriter::processKernelBody(KernelOp kernel) {
+LogicalResult
+ParameterRewriter::processKernelBody(KernelGenerator &kernelGenerator,
+                                     KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
-  auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
-  if (failed(paramInfo))
-    return kernel->emitError("verification error for kernel");
+  SmallVector<Operation *> opsToRewrite;
+  {
+    auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
+    if (failed(paramInfo))
+      return kernel->emitError("verification error for kernel");
 
-  // Process each def/use in order.
-  for (auto &user : paramInfo->usersAndDeclarers) {
-    if (failed(processOp(user.first)))
-      return failure();
+    opsToRewrite = paramInfo->getUsingAndDeclaringOps();
   }
 
+  // We are going to use opsToRewrite as a worklist, so reverse it for efficient
+  // pop_back.
+  std::reverse(opsToRewrite.begin(), opsToRewrite.end());
+
+  // Process each def/use in order.
+  ParameterRewriter rewriter(kernelGenerator, std::move(opsToRewrite));
+  return rewriter.rewriteOps();
+}
+
+/// Work the `opsToRewrite` worklist.
+LogicalResult ParameterRewriter::rewriteOps() {
+  /// We use a worklist for this so cloned versions of ParameterRewriter can
+  /// be created and known where to pick up from.
+  while (!opsToRewrite.empty()) {
+    if (failed(processOp(opsToRewrite.pop_back_val())))
+      return failure();
+  }
   return success();
 }
 
@@ -523,8 +551,7 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 
 /// Concretize a kernel in the primary file.
 ParseResult KernelGenerator::processKernel(KernelOp kernel) {
-  ParameterRewriter rewriter(*this);
-  return rewriter.processKernelBody(kernel);
+  return ParameterRewriter::processKernelBody(*this, kernel);
 }
 
 ParseResult KernelGenerator::processKernels() {
@@ -607,8 +634,7 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
 
   // Now that we have a new synthesized generic kernel, run the rewriter over it
   // to specialize its body.
-  ParameterRewriter rewriter(*this);
-  if (failed(rewriter.processKernelBody(newKernel)))
+  if (failed(ParameterRewriter::processKernelBody(*this, newKernel)))
     return {};
 
   // Check that the thing we just built is correct!
