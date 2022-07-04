@@ -220,6 +220,29 @@ public:
   ErrorOrSuccess() : ErrorOr(Detail::Empty()) {}
 };
 
+/// Given an expression that returns an `ErrorOrSuccess` (or `ErrorOr`):
+///  1) evaluate the expression
+///  2) if it contains an `Error`, `return` it, exiting this function/lambda
+///  3) otherwise discard the normal value returned.
+#define RETURN_ERROR(EXPRESSION)                                               \
+  if (auto err = (EXPRESSION)) {                                               \
+    return err.takeError();                                                    \
+  }
+
+/// Given an expression that returns an `ErrorOr`:
+///  1) evaluate the expression
+///  2) if it contains an `Error`, `return` it, exiting this function/lambda
+///  3) otherwise bind the normal value to a new local variable named `VARIABLE`
+///
+/// WARNING: This macro contains multiple statements, so it should not be used
+/// in the body of an if statement without braces.  Such a thing doesn't make
+/// sense anyway though, because why would you want to bind the result name?
+#define UNWRAP_ERROR(VARIABLE, EXPRESSION)                                     \
+  auto VARIABLE##OrError = (EXPRESSION);                                       \
+  if (VARIABLE##OrError.isError())                                             \
+    return VARIABLE##OrError.takeError();                                      \
+  auto VARIABLE = VARIABLE##OrError.takeValue();
+
 } // namespace M
 
 #endif // SUPPORT_ERROR_OR_H
