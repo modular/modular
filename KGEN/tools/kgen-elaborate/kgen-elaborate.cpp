@@ -1,4 +1,4 @@
-//===- kgen-generate.cpp - The kgen-generate driver -----------------------===//
+//===- kgen-elaborate.cpp - The kgen-elaborate driver ---------------------===//
 //
 // This file is Modular Inc proprietary.
 //

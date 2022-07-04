@@ -1,4 +1,4 @@
-// RUN: kgen-generate %s -library=%S/library.mlir | FileCheck %s
+// RUN: kgen-elaborate %s -library=%S/library.mlir | FileCheck %s
 
 // This is left untouched.
 // CHECK-LABEL: kgen.kernel @test0<() -> outParam>() -> index {
