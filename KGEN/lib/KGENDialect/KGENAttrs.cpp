@@ -373,7 +373,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::And:
   case POC::Or:
   case POC::Xor:
-    if (operands.size() < 1)
+    if (operands.empty())
       return emitError()
              << "associative operator must have at least one operand";
     type = operands[0].getType();
