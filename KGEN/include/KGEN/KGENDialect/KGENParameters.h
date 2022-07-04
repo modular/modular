@@ -59,7 +59,7 @@ public:
   SmallVector<Operation *> getUsingAndDeclaringOps() const {
     SmallVector<Operation *> result;
     result.reserve(usersAndDeclarers.size());
-    for (auto elt : usersAndDeclarers)
+    for (const auto &elt : usersAndDeclarers)
       result.push_back(elt.first);
     return result;
   }
