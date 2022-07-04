@@ -356,13 +356,13 @@ private:
   /// and stored in a templated subclass.
   class WaiterListNodeBase {
   public:
-    explicit WaiterListNodeBase() : next(nullptr) {}
-    virtual ~WaiterListNodeBase() {}
+    explicit WaiterListNodeBase() = default;
+    virtual ~WaiterListNodeBase() = default;
     virtual void call(const AnyAsyncValueRef &arg) = 0;
 
     void setNext(WaiterListNodeBase *newNext) { next = newNext; }
 
-    WaiterListNodeBase *next;
+    WaiterListNodeBase *next{nullptr};
 
   private:
     WaiterListNodeBase(const WaiterListNodeBase &) = delete;
@@ -596,7 +596,7 @@ class IndirectAsyncValue : public AsyncValue {
       : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
                    /*hasVTable=*/false,
                    /*typeID=*/uint16_t(~0U), runtime) {}
-  ~IndirectAsyncValue() {}
+  ~IndirectAsyncValue() = default;
 
   AnyAsyncValueRef value;
 };
@@ -695,7 +695,7 @@ inline void AsyncValue::dropRef(uint16_t count) {
 template <typename WaiterT>
 inline auto AsyncValue::andThen(WaiterT &&waiter)
     -> decltype(waiter(), void()) {
-  andThen([waiter = std::move(waiter)](const AnyAsyncValueRef &) {
+  andThen([waiter = std::forward<WaiterT>(waiter)](const AnyAsyncValueRef &) {
     return waiter();
   });
 }
@@ -724,8 +724,9 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
     return;
   }
 
-  andThenOutOfLine(new AsyncValue::WaiterListNode(std::move(waiter)),
-                   waitersAndStateValue);
+  andThenOutOfLine(
+      new AsyncValue::WaiterListNode(std::forward<WaiterT>(waiter)),
+      waitersAndStateValue);
 }
 
 /// Construct the payload of a ConcreteAsyncValue and change its state to

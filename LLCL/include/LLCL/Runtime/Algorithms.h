@@ -45,7 +45,7 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 /// are ready.
 inline static void await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0]->getRuntime().get()->getWorkQueue()->await(values);
+    values[0]->getRuntime()->getWorkQueue()->await(values);
 }
 
 template <typename T>

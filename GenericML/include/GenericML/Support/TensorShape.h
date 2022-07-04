@@ -219,7 +219,7 @@ class TensorShape {
 public:
   // This class has value semantics, implementing standard constructors,
   // assignment, copy construction etc.
-  TensorShape() {}
+  TensorShape() = default;
   TensorShape(const TensorShape &) = default;
   TensorShape(TensorShape &&) = default;
   TensorShape &operator=(TensorShape &&) = default;
