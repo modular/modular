@@ -68,6 +68,19 @@ private:
                       ArrayRef<Attribute> inputParamValues,
                       Operation *insertionPoint);
 
+  /// Specialize a kernel interface with the specified input parameters and
+  /// return the generated kernel.  `insertionPoint` is always a point in the
+  /// primary module where a new kernel should be placed if necessary.
+  SmallVector<KernelOp>
+  specializeInterface(GeneratorInterfaceOp itf,
+                      ArrayRef<Attribute> inputParamValues,
+                      Operation *insertionPoint);
+
+  ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
+    auto it = interfaceImpls.find(itf.getNameAttr());
+    return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  }
+
 private:
   /// These are the two modules we start with.  The primary module is mutated by
   /// our algorithm, the library module is immutable.
@@ -612,6 +625,27 @@ KernelGenerator::specializeGenerator(GeneratorOp generator,
   return concretizeKernel(*this, newKernel);
 }
 
+/// Specialize a kernel interface with the specified input parameters and
+/// return the generated kernel.  `insertionPoint` is always a point in the
+/// primary module where a new kernel should be placed if necessary.
+SmallVector<KernelOp>
+KernelGenerator::specializeInterface(GeneratorInterfaceOp itf,
+                                     ArrayRef<Attribute> inputParamValues,
+                                     Operation *insertionPoint) {
+  // An interface is an abstraction over multiple generators.  Invoke each of
+  // them, collecting the results together into a single result.
+  ArrayRef<GeneratorOp> interfaceImpls = getGeneratorsImplementing(itf);
+  if (interfaceImpls.empty())
+    return {};
+
+  SmallVector<KernelOp> result;
+  for (GeneratorOp gen : interfaceImpls) {
+    // Make sure to go through getAllInstantiations so generators are cached.
+    result.append(getAllInstantiations(gen, inputParamValues, insertionPoint));
+  }
+  return result;
+}
+
 /// Return all instantiations of the specified declaration (a kernel,
 /// generator, or interface) with teh specified input parameter values.
 /// `insertionPoint` is always a point in the primary module where a new
@@ -637,6 +671,8 @@ KernelGenerator::getAllInstantiations(Operation *decl,
     newCallees.push_back(kernel);
   } else if (auto generator = dyn_cast<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(generator, inputParamValues, kernel);
+  } else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl)) {
+    newCallees = specializeInterface(interface, inputParamValues, kernel);
   } else {
     // TODO: Handle generator interfaces.
     decl->emitError("cannot handle this yet");
