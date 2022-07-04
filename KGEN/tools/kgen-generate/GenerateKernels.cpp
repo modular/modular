@@ -43,12 +43,6 @@ public:
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
 
-  /// Concretize a kernel in the primary file.
-  ParseResult processKernel(KernelOp kernel);
-
-  /// Concretize all kernels in the primary file.
-  ParseResult processKernels();
-
   /// Remove generators and generator interfaces from the file to clean it up.
   void removeGenerators();
 
@@ -177,17 +171,14 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
-  /// Take a kernel that may have parameterized body and transform it into
-  /// concrete values.
-  static LogicalResult processKernelBody(KernelGenerator &kernelGenerator,
-                                         KernelOp kernel);
-
-private:
   ParameterRewriter(KernelGenerator &kernelGenerator,
                     SmallVector<Operation *> opsToRewrite)
       : kernelGenerator(kernelGenerator),
         opsToRewrite(std::move(opsToRewrite)) {}
 
+  LogicalResult rewriteOps();
+
+private:
   /// Process an operation that needs to be rewritten/lowered based on the
   /// context of the parameter values we know are defined.
   LogicalResult processOp(Operation *op);
@@ -206,8 +197,6 @@ private:
   ErrorOr<Attribute> simplifyParameterExpr(Attribute expr);
 
 private:
-  LogicalResult rewriteOps();
-
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp op);
@@ -238,17 +227,20 @@ private:
 };
 } // end anonymous namespace
 
-/// Process the body of a kernel.
-LogicalResult
-ParameterRewriter::processKernelBody(KernelGenerator &kernelGenerator,
-                                     KernelOp kernel) {
+/// Given a kernel whose body may be parameterized, transform it into one or
+/// more concrete kernels.  Note that the original kernel may be removed.
+/// TODO: We may want to eventually return up "why" a generator failed.
+static SmallVector<KernelOp> concretizeKernel(KernelGenerator &kernelGenerator,
+                                              KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
   SmallVector<Operation *> opsToRewrite;
   {
     auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
-    if (failed(paramInfo))
-      return kernel->emitError("verification error for kernel");
+    if (failed(paramInfo)) {
+      kernel->emitError("verification error for kernel");
+      return {};
+    }
 
     opsToRewrite = paramInfo->getUsingAndDeclaringOps();
   }
@@ -259,7 +251,12 @@ ParameterRewriter::processKernelBody(KernelGenerator &kernelGenerator,
 
   // Process each def/use in order.
   ParameterRewriter rewriter(kernelGenerator, std::move(opsToRewrite));
-  return rewriter.rewriteOps();
+  if (succeeded(rewriter.rewriteOps())) {
+    SmallVector<KernelOp> results;
+    results.push_back(kernel);
+    return results;
+  }
+  return {};
 }
 
 /// Work the `opsToRewrite` worklist.
@@ -372,6 +369,8 @@ void ParameterRewriter::processCallOp(CallOp call) {
   // Resolve the callee into a KernelOp, depending on what the callee is.  This
   // will replace/invalidate the `call` op in some cases.
   if (auto kernel = dyn_cast<KernelOp>(callee)) {
+    // FIXME: This isn't correct.  One kernel could turn into many different
+    // variants, which multivariants the using kernel.
     result = kernel;
   } else if (auto generator = dyn_cast<GeneratorOp>(callee)) {
     result = processGeneratorCallOp(call, generator);
@@ -565,28 +564,6 @@ void ParameterRewriter::processGenericOp(Operation *op) {
   }
 }
 
-/// Concretize a kernel in the primary file.
-ParseResult KernelGenerator::processKernel(KernelOp kernel) {
-  return ParameterRewriter::processKernelBody(*this, kernel);
-}
-
-ParseResult KernelGenerator::processKernels() {
-  bool didFail = false;
-  SmallVector<KernelOp, 16> kernelsToGenerate;
-
-  // Collect all the kernels to generate in a prepass, because we will be
-  // creating new kernels in the primary file that are already concretized and
-  // we don't want to reprocess them.
-  for (auto kernel : primaryModule.getOps<KernelOp>())
-    kernelsToGenerate.push_back(kernel);
-
-  // Process each kernel.
-  for (auto kernel : kernelsToGenerate)
-    didFail |= failed(processKernel(kernel));
-
-  return failure(didFail);
-}
-
 //===----------------------------------------------------------------------===//
 // KernelGenerator::getSpecializedGenerator
 //===----------------------------------------------------------------------===//
@@ -650,8 +627,12 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
 
   // Now that we have a new synthesized generic kernel, run the rewriter over it
   // to specialize its body.
-  if (failed(ParameterRewriter::processKernelBody(*this, newKernel)))
+  SmallVector<KernelOp> results = concretizeKernel(*this, newKernel);
+  if (results.empty())
     return {};
+
+  assert(results.size() == 1 && "cannot handle multi-generation yet");
+  newKernel = results[0];
 
   // Check that the thing we just built is correct!
   if (failed(verify(newKernel)))
@@ -677,7 +658,51 @@ LogicalResult M::generateKernels(ModuleOp primary, ModuleOp library) {
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
-  if (generator.collectInterfaces() || generator.processKernels())
+  if (generator.collectInterfaces())
+    return failure();
+
+  // Concretize all the kernels at the top-level.
+  bool didFail = false;
+  SmallVector<KernelOp, 16> kernelsToGenerate;
+
+  // Collect all the kernels to generate in a prepass, because we will be
+  // creating new kernels in the primary file that are already concretized and
+  // we don't want to reprocess them.
+  // FIXME: This isn't correct at all: kernels can call kernels which can lead
+  // to them getting deleted.
+
+  // TODO: When expanding a kernel we need to pass in history of prior expansion
+  // bindings, which constrains/defines future expansions of the same thing, and
+  // we need to return up novel bindings that are done.  For each multi-version
+  // we need to track /which way/ we're resolving an ambiguity.  For something
+  // like this:
+  //    kernel @foo() {
+  //      call @someInterface()        // has 5 implementations
+  //    }
+  //
+  //    kernel @bar() { call @foo() }  // has 5 implementations
+  //
+  //    kernel @baz() {
+  //      call @foo()
+  //      call @foo()
+  //      call @bar()
+  //    }
+  //
+  // We should process @bar before recursing down to @foo.  We should only
+  // generate 5 copies of @bar, each of which resolves the call to
+  // foo->someInterface in the same direction.  We should not generate 5*5*5
+  // copies of @bar that has all pairs of foo/someInterface resolutions.
+  for (auto kernel : primary.getOps<KernelOp>())
+    kernelsToGenerate.push_back(kernel);
+
+  // Process each kernel.
+  for (auto kernel : kernelsToGenerate) {
+    SmallVector<KernelOp> results = concretizeKernel(generator, kernel);
+    didFail |= results.empty();
+  }
+
+  // If we failed to expand any kernel, propagate that failure.
+  if (didFail)
     return failure();
 
   generator.removeGenerators();
