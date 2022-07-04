@@ -24,7 +24,7 @@ class LLCLAllocator;
 ///
 class Allocator {
 public:
-  virtual ~Allocator() {}
+  virtual ~Allocator() = default;
 
   /// Allocate the specified number of bytes with the specified alignment.
   virtual void *allocateBytes(size_t size, size_t alignment) = 0;

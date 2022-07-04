@@ -42,7 +42,7 @@ public:
   /// Add a new reference to this object.
   virtual void dropRef() const = 0;
 
-  virtual ~LocationDecoder() {}
+  virtual ~LocationDecoder() = default;
 
 private:
   virtual void VtableAnchor();

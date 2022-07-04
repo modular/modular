@@ -78,8 +78,7 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
 }
 
 /// Return a complex type if it is valid, otherwise fail.
-FailureOr<DType>
-DType::getComplexChecked(DType eltType) {
+FailureOr<DType> DType::getComplexChecked(DType eltType) {
   if (eltType.getWidthInBits() < 8 || eltType.isComplex())
     return failure();
   return getComplex(eltType);

@@ -59,7 +59,8 @@ struct CommonCLOptions {
                                  BodyFn &&bodyFn) const {
     llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
-    return configureMLIRContextAndExecute(sourceMgr, std::move(bodyFn));
+    return configureMLIRContextAndExecute(sourceMgr,
+                                          std::forward<BodyFn>(bodyFn));
   }
 
   /// This method creates an MLIR context with the specified memory buffer as
@@ -73,7 +74,7 @@ struct CommonCLOptions {
     llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
     return configureMLIRContextAndExecute(
-        sourceMgr, [&sourceMgr, bodyFn = std::move(bodyFn)](
+        sourceMgr, [&sourceMgr, bodyFn = std::forward<BodyFn>(bodyFn)](
                        mlir::MLIRContext *ctx) { bodyFn(ctx, sourceMgr); });
   }
 

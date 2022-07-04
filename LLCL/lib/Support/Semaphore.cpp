@@ -174,7 +174,7 @@ Semaphore::Semaphore() : impl(std::make_unique<Semaphore::Impl>()) {}
 
 // Empty destructor needed here so we can forward declare Semaphore::Impl into
 // the header.
-Semaphore::~Semaphore() {}
+Semaphore::~Semaphore() = default;
 
 void Semaphore::post() { impl->post(); }
 

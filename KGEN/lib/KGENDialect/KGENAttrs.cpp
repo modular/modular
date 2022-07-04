@@ -649,7 +649,7 @@ foldBinaryOp(ArrayRef<Attribute> operands,
     if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
       auto result = (lhs.getType().isSignedInteger() ? signedFn : unsignedfn)(
           lhs.getValue(), rhs.getValue());
-      return IntegerAttr::get(lhs.getType(), std::move(result));
+      return IntegerAttr::get(lhs.getType(), result);
     }
   return {};
 }

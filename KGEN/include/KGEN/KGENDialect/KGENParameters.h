@@ -55,7 +55,7 @@ public:
       usersAndDeclarers;
 
 private:
-  ParameterDeclsAndUses() {}
+  ParameterDeclsAndUses() = default;
   ParameterDeclsAndUses(const ParameterDeclsAndUses &) = delete;
   void operator=(const ParameterDeclsAndUses &) = delete;
 };

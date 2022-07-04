@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <memory>
 #include <new>
 
 namespace LLCL {
