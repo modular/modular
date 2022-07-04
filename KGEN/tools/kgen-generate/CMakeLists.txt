@@ -9,6 +9,7 @@ set(LLVM_LINK_COMPONENTS
 )
 
 add_modular_tool(kgen-generate
+  BetterCloning.cpp
   GenerateKernels.cpp
   kgen-generate.cpp
 
