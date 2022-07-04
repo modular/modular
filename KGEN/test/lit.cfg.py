@@ -60,6 +60,6 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["kgen-opt", "kgen-generate"]
+tools = ["kgen-opt", "kgen-elaborate"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

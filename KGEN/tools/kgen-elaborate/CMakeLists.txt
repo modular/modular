@@ -8,10 +8,10 @@ set(LLVM_LINK_COMPONENTS
   Support
 )
 
-add_modular_tool(kgen-generate
+add_modular_tool(kgen-elaborate
   BetterCloning.cpp
   KernelElaborator.cpp
-  kgen-generate.cpp
+  kgen-elaborate.cpp
 
   LINK_LIBS PRIVATE
   KGENDialect

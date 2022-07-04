@@ -4,5 +4,5 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_subdirectory(kgen-generate)
+add_subdirectory(kgen-elaborate)
 add_subdirectory(kgen-opt)
