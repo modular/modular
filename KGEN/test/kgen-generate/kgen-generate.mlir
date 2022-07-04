@@ -1,13 +1,13 @@
 // RUN: kgen-generate %s -library=%S/library.mlir | FileCheck %s
 
 // This is left untouched.
-// CHECK-LABEL: kgen.kernel @test0() -> index {
+// CHECK-LABEL: kgen.kernel @test0<() -> outParam>() -> index {
 // CHECK-NEXT: %0 = kgen.param.value = <1>
-// CHECK-NEXT:  kgen.return %0 : index
+// CHECK-NEXT:  kgen.return <outParam = 123456> %0 : index
 // CHECK-NEXT: }
-kgen.kernel @test0() -> index {
+kgen.kernel @test0<() -> outParam>() -> index {
   %0 = kgen.param.value = <1>
-  kgen.return %0 : index
+  kgen.return <outParam = 123456> %0 : index
 }
 
 // CHECK-LABEL: kgen.kernel @parameter_use_chain()
@@ -102,9 +102,14 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
   %6 = kgen.param.value = <resultSizeC>
   // CHECK-NEXT: %6 = kgen.param.value = <38>
 
+  %7 = kgen.call @test0<() -> kernelResult>() : () -> index
+  // CHECK-NEXT: %7 = kgen.call @test0<() -> kernelResult>()
+
+  %8 = kgen.param.value = <kernelResult>
+  // CHECK-NEXT: %8 = kgen.param.value = <123456>
+
   kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
 }
-
 
 // CHECK-NOT: kgen.generator.interface @genItf
 kgen.generator.interface @genItf<x -> y>(si32) -> si32

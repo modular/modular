@@ -211,6 +211,7 @@ private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp op);
+  KernelOp processGeneratorCallOp(CallOp call, GeneratorOp generator);
   void processGenericOp(Operation *op);
 
   /// Get the specified attribute with any nested parameter expressions
@@ -365,9 +366,35 @@ void ParameterRewriter::processCallOp(CallOp call) {
   // interface) then we have nothing to do.  It cannot be parameterized, and it
   // must already be in the primary module.
   auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
-  if (isa<KernelOp>(callee))
+  KernelOp result;
+  auto callParamDecls = call.getParamDecls();
+
+  // Resolve the callee into a KernelOp, depending on what the callee is.  This
+  // will replace/invalidate the `call` op in some cases.
+  if (auto kernel = dyn_cast<KernelOp>(callee)) {
+    result = kernel;
+  } else if (auto generator = dyn_cast<GeneratorOp>(callee)) {
+    result = processGeneratorCallOp(call, generator);
+  } else {
+    // TODO: Handle generator interfaces.
+    call->emitError("cannot handle this yet");
+    return;
+  }
+
+  // If kernel generation failed for some reason, bail out.  The error will
+  // already be reported.
+  if (!result)
     return;
 
+  // Bind the result parameters to the output parameter decls.
+  for (auto [decl, bindValue] :
+       llvm::zip(callParamDecls, result.getReturnOp().getParameters()))
+    setParameterValue(decl.cast<ParamDeclAttr>(),
+                      bindValue.cast<ParamBindAttr>().getValue());
+}
+
+KernelOp ParameterRewriter::processGeneratorCallOp(CallOp call,
+                                                   GeneratorOp generator) {
   // Otherwise, if it is a generator or generator interface we need to
   // specialize it if it isn't already.  Start by evaluating the input
   // parameters.
@@ -376,16 +403,9 @@ void ParameterRewriter::processCallOp(CallOp call) {
     auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
     if (value.isError()) {
       call->emitError(value.getError());
-      return;
+      return {};
     }
     boundInputParameters.push_back(value.takeValue());
-  }
-
-  auto generator = dyn_cast<GeneratorOp>(callee);
-  if (!generator) {
-    // TODO: Handle generator interfaces.
-    call->emitError("cannot handle this yet");
-    return;
   }
 
   auto newCallee = kernelGenerator.getSpecializedGenerator(
@@ -394,7 +414,7 @@ void ParameterRewriter::processCallOp(CallOp call) {
   // If kernel generation failed for some reason, bail out.  The error will
   // already be reported.
   if (!newCallee)
-    return;
+    return {};
 
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
@@ -405,14 +425,10 @@ void ParameterRewriter::processCallOp(CallOp call) {
   // The SSA results of the old call go directly to the new call.
   call->getResults().replaceAllUsesWith(newCall);
 
-  // Bind the result parameters to the output parameter decls.
-  for (auto [decl, bindValue] :
-       llvm::zip(call.getParamDecls(), newCallee.getReturnOp().getParameters()))
-    setParameterValue(decl.cast<ParamDeclAttr>(),
-                      bindValue.cast<ParamBindAttr>().getValue());
-
   // The old call is resolved and dead now.
   call->erase();
+
+  return newCallee;
 }
 
 /// Get the specified attribute with any nested parameter expressions
