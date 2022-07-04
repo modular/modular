@@ -51,13 +51,22 @@ public:
     return symbolTable.lookup(symbolName);
   }
 
+  /// Return all instantiations of the specified declaration (a kernel,
+  /// generator, or interface) with teh specified input parameter values.
+  /// `insertionPoint` is always a point in the primary module where a new
+  /// kernel should be placed if necessary.
+  const SmallVector<KernelOp> &
+  getAllInstantiations(Operation *decl, ArrayRef<Attribute> inputParamValues,
+                       Operation *insertionPoint);
+
+private:
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  const SmallVector<KernelOp> &
-  getSpecializedGenerator(GeneratorOp generator,
-                          ArrayRef<Attribute> inputParamValues,
-                          Operation *insertionPoint);
+  SmallVector<KernelOp>
+  specializeGenerator(GeneratorOp generator,
+                      ArrayRef<Attribute> inputParamValues,
+                      Operation *insertionPoint);
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
@@ -71,10 +80,10 @@ private:
   /// interfaces, across both the primary module and the library.
   DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
 
-  /// This is a cache of already-instantiated generators.  The key is the
-  /// generator and input parameters, the result are all-possible kernels that
-  /// could be generated from this.
-  DenseMap<std::pair<GeneratorOp, ArrayAttr>, SmallVector<KernelOp>>
+  /// This is a cache of already-instantiated declarations.  The key is the
+  /// kernel/generator/interface and input parameters, the result are
+  /// all-possible kernels that could be generated from this.
+  DenseMap<std::pair<Operation *, ArrayAttr>, SmallVector<KernelOp>>
       generatedKernels;
 };
 } // end anonymous namespace
@@ -383,19 +392,8 @@ void ParameterRewriter::processCallOp(CallOp call) {
   // will replace/invalidate the `call` op in some cases.
   auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
 
-  SmallVector<KernelOp> newCallees;
-  if (auto kernel = dyn_cast<KernelOp>(callee)) {
-    // FIXME: This isn't correct.  One kernel could turn into many different
-    // variants, which multivariants this kernel just like a generator would.
-    newCallees.push_back(kernel);
-  } else if (auto generator = dyn_cast<GeneratorOp>(callee)) {
-    newCallees = kernelGenerator.getSpecializedGenerator(
-        generator, boundInputParams, kernel);
-  } else {
-    // TODO: Handle generator interfaces.
-    call->emitError("cannot handle this yet");
-    return;
-  }
+  SmallVector<KernelOp> newCallees =
+      kernelGenerator.getAllInstantiations(callee, boundInputParams, kernel);
 
   // If kernel generation failed for some reason, bail out.  The error will
   // already be reported.
@@ -559,7 +557,7 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// KernelGenerator::getSpecializedGenerator
+// KernelGenerator::getAllInstantiations
 //===----------------------------------------------------------------------===//
 
 /// Specialize a kernel generator with the specified input parameters and
@@ -567,20 +565,10 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
-const SmallVector<KernelOp> &
-KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
-                                         ArrayRef<Attribute> inputParamValues,
-                                         Operation *insertionPoint) {
-  ArrayAttr inputParamValuesKey =
-      ArrayAttr::get(generator.getContext(), inputParamValues);
-
-  // Check the cache these so multiple uses of the same kernel don't get
-  // separate instantiations.
-  auto cacheKey = std::make_pair(generator, inputParamValuesKey);
-  auto cacheIt = generatedKernels.find(cacheKey);
-  if (cacheIt != generatedKernels.end())
-    return cacheIt->second;
-
+SmallVector<KernelOp>
+KernelGenerator::specializeGenerator(GeneratorOp generator,
+                                     ArrayRef<Attribute> inputParamValues,
+                                     Operation *insertionPoint) {
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
   // library, it would be better to insert it before the first client that
@@ -621,10 +609,41 @@ KernelGenerator::getSpecializedGenerator(GeneratorOp generator,
 
   // Now that we have a new synthesized generic kernel, run the rewriter over it
   // to specialize its body.
-  SmallVector<KernelOp> results = concretizeKernel(*this, newKernel);
-  auto &cacheEntry = generatedKernels[cacheKey];
-  cacheEntry = std::move(results);
-  return cacheEntry;
+  return concretizeKernel(*this, newKernel);
+}
+
+/// Return all instantiations of the specified declaration (a kernel,
+/// generator, or interface) with teh specified input parameter values.
+/// `insertionPoint` is always a point in the primary module where a new
+/// kernel should be placed if necessary.
+const SmallVector<KernelOp> &
+KernelGenerator::getAllInstantiations(Operation *decl,
+                                      ArrayRef<Attribute> inputParamValues,
+                                      Operation *insertionPoint) {
+
+  // Check the cache these so multiple uses of the same kernel don't get
+  // separate instantiations.
+  auto inputParamKey = ArrayAttr::get(decl->getContext(), inputParamValues);
+  auto cacheKey = std::make_pair(decl, inputParamKey);
+  auto cacheIt = generatedKernels.find(cacheKey);
+  if (cacheIt != generatedKernels.end())
+    return cacheIt->second;
+
+  SmallVector<KernelOp> newCallees;
+  if (auto kernel = dyn_cast<KernelOp>(decl)) {
+    // FIXME: This isn't correct.  One kernel could turn into many different
+    // variants, which multivariants this kernel just like a generator would.
+    // FIXME: We need to run the concretize logic here to handle this.
+    newCallees.push_back(kernel);
+  } else if (auto generator = dyn_cast<GeneratorOp>(decl)) {
+    newCallees = specializeGenerator(generator, inputParamValues, kernel);
+  } else {
+    // TODO: Handle generator interfaces.
+    decl->emitError("cannot handle this yet");
+  }
+  auto &result = generatedKernels[cacheKey];
+  result = std::move(newCallees);
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
