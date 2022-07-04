@@ -59,6 +59,9 @@ public:
   getAllInstantiations(Operation *decl, ArrayRef<Attribute> inputParamValues,
                        Operation *insertionPoint);
 
+  /// Insert a variant of an existing kernel into the primary file.
+  void insertKernelVariant(KernelOp existing, KernelOp newKernel);
+
 private:
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
@@ -100,6 +103,13 @@ private:
       generatedKernels;
 };
 } // end anonymous namespace
+
+/// Insert a variant of an existing kernel into the primary file.
+void KernelGenerator::insertKernelVariant(KernelOp existing,
+                                          KernelOp newKernel) {
+  auto insertPt = Block::iterator(existing.getOperation());
+  symbolTable.insert(newKernel, /*insertionPoint*/ ++insertPt);
+}
 
 //===----------------------------------------------------------------------===//
 // collectInterfaces and cleanup helpers
@@ -201,13 +211,16 @@ public:
       : kernelGenerator(kernelGenerator), kernel(kernel),
         opsToRewrite(std::move(opsToRewrite)) {}
 
-  LogicalResult rewriteOps();
+  /// Create a clone of this rewriter, but refer with a clone of the kernel.
+  /// This uses operationMap to remap our state onto the newly created kernel.
+  ParameterRewriter(const ParameterRewriter &existing,
+                    DenseMap<Operation *, Operation *> &operationMap);
+
+  /// Process all the `opsToRewrite`, simplifying this kernel.  If new variants
+  /// of this kernel are necessary, they are added to rewriterWorklist.
+  LogicalResult rewriteOps(SmallVector<ParameterRewriter, 2> &rewriterWorklist);
 
 private:
-  /// Process an operation that needs to be rewritten/lowered based on the
-  /// context of the parameter values we know are defined.
-  LogicalResult processOp(Operation *op);
-
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(ParamDeclAttr decl, Attribute value) {
@@ -224,7 +237,11 @@ private:
 private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
-  void processCallOp(CallOp op);
+  void processCallOp(CallOp call,
+                     SmallVector<ParameterRewriter, 2> &rewriterWorklist);
+  void completeCallOpProcessing(CallOp call, KernelOp newCallee);
+  void spawnNewKernelClone(CallOp call, KernelOp callee,
+                           SmallVector<ParameterRewriter, 2> &rewriterWorklist);
   void processGenericOp(Operation *op);
 
   /// Get the specified attribute with any nested parameter expressions
@@ -254,6 +271,27 @@ private:
 };
 } // end anonymous namespace
 
+/// Create a clone of this rewriter, but refer with a clone of the kernel.
+/// This uses operationMap to remap our state onto the newly created kernel.
+ParameterRewriter::ParameterRewriter(
+    const ParameterRewriter &existing,
+    DenseMap<Operation *, Operation *> &operationMap)
+    : kernelGenerator(existing.kernelGenerator),
+      paramValues(existing.paramValues),
+      rewrittenAttrs(existing.rewrittenAttrs),
+      rewrittenTypes(existing.rewrittenTypes) {
+  // Remap the kernel itself.
+  kernel = cast<KernelOp>(operationMap[existing.kernel]);
+  assert(kernel && "didn't remap kernel correctly");
+
+  // Remap the operation worklist.
+  opsToRewrite.reserve(existing.opsToRewrite.size());
+  for (Operation *op : existing.opsToRewrite) {
+    opsToRewrite.push_back(operationMap[op]);
+    assert(opsToRewrite.back() && "didn't clone operation correctly?");
+  }
+}
+
 /// Given a kernel whose body may be parameterized, transform it into one or
 /// more concrete kernels.  Note that the original kernel may be removed.
 /// TODO: We may want to eventually return up "why" a generator failed.
@@ -276,23 +314,42 @@ static SmallVector<KernelOp> concretizeKernel(KernelGenerator &kernelGenerator,
   // pop_back.
   std::reverse(opsToRewrite.begin(), opsToRewrite.end());
 
-  // Process each def/use in order.
-  ParameterRewriter rewriter(kernelGenerator, kernel, std::move(opsToRewrite));
-  if (succeeded(rewriter.rewriteOps())) {
-    SmallVector<KernelOp> results;
-    results.push_back(kernel);
-    return results;
+  // Start by rewriting this kernel.
+  SmallVector<ParameterRewriter, 2> rewriterWorklist;
+  rewriterWorklist.emplace_back(kernelGenerator, kernel,
+                                std::move(opsToRewrite));
+
+  // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
+  // until we converge.
+  SmallVector<KernelOp> results;
+  while (!rewriterWorklist.empty()) {
+    auto rewriter = rewriterWorklist.pop_back_val();
+    if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
+      results.push_back(kernel);
   }
-  return {};
+  return results;
 }
 
 /// Work the `opsToRewrite` worklist.
-LogicalResult ParameterRewriter::rewriteOps() {
+LogicalResult ParameterRewriter::rewriteOps(
+    SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
   /// We use a worklist for this so cloned versions of ParameterRewriter can
   /// be created and known where to pick up from.
   while (!opsToRewrite.empty()) {
-    if (failed(processOp(opsToRewrite.pop_back_val())))
-      return failure();
+    auto op = opsToRewrite.pop_back_val();
+
+    /// Process an operation that needs to be rewritten/lowered based on the
+    /// context of the parameter values we know are defined.
+    if (auto bind = dyn_cast<ParamBindOp>(op))
+      processParamBindOp(bind);
+    else if (auto value = dyn_cast<ParamValueOp>(op))
+      processParamValueOp(value);
+    else if (auto call = dyn_cast<CallOp>(op))
+      processCallOp(call, rewriterWorklist);
+    else if (isa<KernelOp>(op))
+      /*kernels can define parameters, nothing need be done with them*/;
+    else
+      processGenericOp(op);
   }
 
   // Check that the thing we just built is correct!
@@ -344,21 +401,6 @@ ErrorOr<Attribute> ParameterRewriter::simplifyParameterExpr(Attribute expr) {
   return Error("unknown expression to fold: " + getString(expr));
 }
 
-LogicalResult ParameterRewriter::processOp(Operation *op) {
-  if (auto bind = dyn_cast<ParamBindOp>(op))
-    processParamBindOp(bind);
-  else if (auto value = dyn_cast<ParamValueOp>(op))
-    processParamValueOp(value);
-  else if (auto call = dyn_cast<CallOp>(op))
-    processCallOp(call);
-  else if (isa<KernelOp>(op))
-    /*kernels can define parameters, nothing need be done with them*/;
-  else
-    processGenericOp(op);
-
-  return success();
-}
-
 void ParameterRewriter::processParamBindOp(ParamBindOp op) {
   // Simplify the input expression.
   auto errorOrValue = simplifyParameterExpr(op.getValue());
@@ -387,9 +429,8 @@ void ParameterRewriter::processParamValueOp(ParamValueOp op) {
   op.setValueAttr(errorOrValue.takeValue());
 }
 
-void ParameterRewriter::processCallOp(CallOp call) {
-  auto callParamDecls = call.getParamDecls();
-
+void ParameterRewriter::processCallOp(
+    CallOp call, SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
   // Evaluating any input parameters.
   SmallVector<Attribute> boundInputParams;
   for (auto param : call.getParamValues()) {
@@ -401,21 +442,29 @@ void ParameterRewriter::processCallOp(CallOp call) {
     boundInputParams.push_back(value.takeValue());
   }
 
-  // Resolve the callee into a KernelOp, depending on what the callee is.  This
-  // will replace/invalidate the `call` op in some cases.
+  // Instantiate the callee into one or more KernelOp's, depending on what the
+  // callee is.
   auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
-
   SmallVector<KernelOp> newCallees =
       kernelGenerator.getAllInstantiations(callee, boundInputParams, kernel);
 
-  // If kernel generation failed for some reason, bail out.  The error will
+  // If kernel instantiation failed for some reason, bail out.  The error will
   // already be reported.
   if (newCallees.empty())
     return;
 
-  assert(newCallees.size() == 1 && "Multiversion not implemented yet");
-  KernelOp newCallee = newCallees[0];
+  // If we found more than one callee to produce then we need to spawn multiple
+  // versions of the kernel we are currently constructing, each which get a
+  // different callee.
+  for (KernelOp callee : llvm::drop_begin(newCallees))
+    spawnNewKernelClone(call, callee, rewriterWorklist);
 
+  // Finally, we can handle the first one as our continued progress here.
+  completeCallOpProcessing(call, newCallees[0]);
+}
+
+void ParameterRewriter::completeCallOpProcessing(CallOp call,
+                                                 KernelOp newCallee) {
   // If we resolved the call to a new thing, build a new call to replace the old
   // one.
   OpBuilder b(call);
@@ -429,10 +478,37 @@ void ParameterRewriter::processCallOp(CallOp call) {
   call->erase();
 
   // Bind the result parameters to the output parameter decls.
-  for (auto [decl, bindValue] :
-       llvm::zip(callParamDecls, newCallee.getReturnOp().getParameters()))
+  for (auto [decl, bindValue] : llvm::zip(
+           newCall.getParamDecls(), newCallee.getReturnOp().getParameters()))
     setParameterValue(decl.cast<ParamDeclAttr>(),
                       bindValue.cast<ParamBindAttr>().getValue());
+}
+
+/// Sometimes when we expand a call, we find that there are multiple viable
+/// callees that we can generate.  We handle this by spawning new parameter
+/// rewriters with state copied from the current one, but which resolve the call
+/// to different callees.  This spawns a new rewriter with the specified call
+/// resolving to the specified callee.
+void ParameterRewriter::spawnNewKernelClone(
+    CallOp call, KernelOp callee,
+    SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
+
+  // Start by cloning the current WIP kernel to a new copy of it.
+  BlockAndValueMapping blocksAndValues;
+  DenseMap<Operation *, Operation *> operationMap;
+  auto newKernel =
+      cast<KernelOp>(cloneOperation(kernel, blocksAndValues, operationMap));
+
+  // Insert the kernel into the output file and auto-unique the symbol.
+  kernelGenerator.insertKernelVariant(kernel, newKernel);
+
+  // Generate the new rewriter which will process this.
+  auto &newRewriter = rewriterWorklist.emplace_back(*this, operationMap);
+
+  // Change the future of this kernel by resolving the call in the new kernel to
+  // the specifed callee.
+  auto newCall = cast<CallOp>(operationMap[call]);
+  newRewriter.completeCallOpProcessing(newCall, callee);
 }
 
 /// Get the specified attribute with any nested parameter expressions
