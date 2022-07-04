@@ -1,10 +1,11 @@
-//===- GenerateKernels.cpp - Kernel generator driver ----------------------===//
+//===- KernelElaborator.cpp - Core kernel elaborator algorithm ------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains logic to lower a file full of kernel generators into
+// This file contains logic to lower a file full of kernel into concrete
+// implementations of the kernels.
 //
 //===----------------------------------------------------------------------===//
 
@@ -30,21 +31,18 @@ static bool isSimpleConstant(Attribute attr) {
 }
 
 //===----------------------------------------------------------------------===//
-// KernelGenerator class definition
+// Elaborator class definition
 //===----------------------------------------------------------------------===//
 
 namespace {
-class KernelGenerator {
+class Elaborator {
 public:
-  KernelGenerator(ModuleOp primary, ModuleOp library)
+  Elaborator(ModuleOp primary, ModuleOp library)
       : primaryModule(primary), libraryModule(library), symbolTable(primary) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
-
-  /// Remove generators and generator interfaces from the file to clean it up.
-  void removeGenerators();
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(StringAttr symbolName) const {
@@ -105,8 +103,7 @@ private:
 } // end anonymous namespace
 
 /// Insert a variant of an existing kernel into the primary file.
-void KernelGenerator::insertKernelVariant(KernelOp existing,
-                                          KernelOp newKernel) {
+void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
   auto insertPt = Block::iterator(existing.getOperation());
   symbolTable.insert(newKernel, /*insertionPoint*/ ++insertPt);
 }
@@ -117,7 +114,7 @@ void KernelGenerator::insertKernelVariant(KernelOp existing,
 
 /// Scan the primary and library module to collect all the interfaces,
 /// verifying that any common interfaces are the same.
-ParseResult KernelGenerator::collectInterfaces() {
+ParseResult Elaborator::collectInterfaces() {
   // Collect all the generator interfaces in the library module, which will
   // allow cross checking them below.
   DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
@@ -153,52 +150,8 @@ ParseResult KernelGenerator::collectInterfaces() {
   return success();
 }
 
-/// Remove generators and generator interfaces from the file to clean it up.
-void KernelGenerator::removeGenerators() {
-  for (Operation &op : llvm::make_early_inc_range(primaryModule.getOps())) {
-    if (isa<GeneratorOp, GeneratorInterfaceOp>(op))
-      op.erase();
-  }
-}
-
 //===----------------------------------------------------------------------===//
-// Core Kernel Generator Algorithm
-//===----------------------------------------------------------------------===//
-
-/// This returns a name to use when the specified generator is specialized
-/// with the specified input parameters.
-static StringAttr mangleParameterValues(GeneratorOp generator,
-                                        ArrayRef<Attribute> inputParamValues) {
-  Builder b(generator.getContext());
-  if (inputParamValues.empty())
-    return b.getStringAttr(generator.getName() + "_kernel");
-
-  std::string result;
-  llvm::raw_string_ostream os(result);
-  os << generator.getName();
-
-  auto inputParamDecls = generator.getParameterInfo().first;
-  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
-    os << ',' << inputDecl.cast<ParamDeclAttr>().getName().str() << '=';
-
-    if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
-      os << intAttr.getValue();
-    } else if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
-      SmallString<32> str;
-      floatAttr.getValue().toString(str);
-      os << str;
-    } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
-      os << dtypeAttr.getDType();
-    } else {
-      assert(!isSimpleConstant(value) && "not handling all simple constants");
-      os << "??";
-    }
-  }
-  return b.getStringAttr(result);
-}
-
-//===----------------------------------------------------------------------===//
-// Core Kernel Generator Algorithm
+// Elaborator Algorithm for one Kernel
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -206,9 +159,9 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
-  ParameterRewriter(KernelGenerator &kernelGenerator, KernelOp kernel,
+  ParameterRewriter(Elaborator &Elaborator, KernelOp kernel,
                     SmallVector<Operation *> opsToRewrite)
-      : kernelGenerator(kernelGenerator), kernel(kernel),
+      : Elaborator(Elaborator), kernel(kernel),
         opsToRewrite(std::move(opsToRewrite)) {}
 
   /// Create a clone of this rewriter, but refer with a clone of the kernel.
@@ -252,7 +205,7 @@ private:
   Type getReboundType(Type type, Location loc);
 
   // This is maintains global information about the file we're generating into.
-  KernelGenerator &kernelGenerator;
+  Elaborator &Elaborator;
 
   /// This is the kernel we're working on.
   KernelOp kernel;
@@ -276,8 +229,7 @@ private:
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : kernelGenerator(existing.kernelGenerator),
-      paramValues(existing.paramValues),
+    : Elaborator(existing.Elaborator), paramValues(existing.paramValues),
       rewrittenAttrs(existing.rewrittenAttrs),
       rewrittenTypes(existing.rewrittenTypes) {
   // Remap the kernel itself.
@@ -295,7 +247,7 @@ ParameterRewriter::ParameterRewriter(
 /// Given a kernel whose body may be parameterized, transform it into one or
 /// more concrete kernels.  Note that the original kernel may be removed.
 /// TODO: We may want to eventually return up "why" a generator failed.
-static SmallVector<KernelOp> concretizeKernel(KernelGenerator &kernelGenerator,
+static SmallVector<KernelOp> concretizeKernel(Elaborator &Elaborator,
                                               KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
@@ -316,8 +268,7 @@ static SmallVector<KernelOp> concretizeKernel(KernelGenerator &kernelGenerator,
 
   // Start by rewriting this kernel.
   SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(kernelGenerator, kernel,
-                                std::move(opsToRewrite));
+  rewriterWorklist.emplace_back(Elaborator, kernel, std::move(opsToRewrite));
 
   // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
   // until we converge.
@@ -444,9 +395,9 @@ void ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
-  auto callee = kernelGenerator.lookupCallee(call.getCalleeAttr().getAttr());
+  auto callee = Elaborator.lookupCallee(call.getCalleeAttr().getAttr());
   SmallVector<KernelOp> newCallees =
-      kernelGenerator.getAllInstantiations(callee, boundInputParams, kernel);
+      Elaborator.getAllInstantiations(callee, boundInputParams, kernel);
 
   // If kernel instantiation failed for some reason, bail out.  The error will
   // already be reported.
@@ -500,7 +451,7 @@ void ParameterRewriter::spawnNewKernelClone(
       cast<KernelOp>(cloneOperation(kernel, blocksAndValues, operationMap));
 
   // Insert the kernel into the output file and auto-unique the symbol.
-  kernelGenerator.insertKernelVariant(kernel, newKernel);
+  Elaborator.insertKernelVariant(kernel, newKernel);
 
   // Generate the new rewriter which will process this.
   auto &newRewriter = rewriterWorklist.emplace_back(*this, operationMap);
@@ -646,8 +597,40 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// KernelGenerator::getAllInstantiations
+// Elaborator::getAllInstantiations
 //===----------------------------------------------------------------------===//
+
+/// This returns a name to use when the specified generator is specialized
+/// with the specified input parameters.
+static StringAttr mangleParameterValues(GeneratorOp generator,
+                                        ArrayRef<Attribute> inputParamValues) {
+  Builder b(generator.getContext());
+  if (inputParamValues.empty())
+    return b.getStringAttr(generator.getName() + "_kernel");
+
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << generator.getName();
+
+  auto inputParamDecls = generator.getParameterInfo().first;
+  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
+    os << ',' << inputDecl.cast<ParamDeclAttr>().getName().str() << '=';
+
+    if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
+      os << intAttr.getValue();
+    } else if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
+      SmallString<32> str;
+      floatAttr.getValue().toString(str);
+      os << str;
+    } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
+      os << dtypeAttr.getDType();
+    } else {
+      assert(!isSimpleConstant(value) && "not handling all simple constants");
+      os << "??";
+    }
+  }
+  return b.getStringAttr(result);
+}
 
 /// Specialize a kernel generator with the specified input parameters and
 /// return the symbol name to use for the result, along with an array of
@@ -655,9 +638,9 @@ void ParameterRewriter::processGenericOp(Operation *op) {
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
 SmallVector<KernelOp>
-KernelGenerator::specializeGenerator(GeneratorOp generator,
-                                     ArrayRef<Attribute> inputParamValues,
-                                     Operation *insertionPoint) {
+Elaborator::specializeGenerator(GeneratorOp generator,
+                                ArrayRef<Attribute> inputParamValues,
+                                Operation *insertionPoint) {
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
   // library, it would be better to insert it before the first client that
@@ -705,9 +688,9 @@ KernelGenerator::specializeGenerator(GeneratorOp generator,
 /// return the generated kernel.  `insertionPoint` is always a point in the
 /// primary module where a new kernel should be placed if necessary.
 SmallVector<KernelOp>
-KernelGenerator::specializeInterface(GeneratorInterfaceOp itf,
-                                     ArrayRef<Attribute> inputParamValues,
-                                     Operation *insertionPoint) {
+Elaborator::specializeInterface(GeneratorInterfaceOp itf,
+                                ArrayRef<Attribute> inputParamValues,
+                                Operation *insertionPoint) {
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
   ArrayRef<GeneratorOp> interfaceImpls = getGeneratorsImplementing(itf);
@@ -727,9 +710,9 @@ KernelGenerator::specializeInterface(GeneratorInterfaceOp itf,
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
 const SmallVector<KernelOp> &
-KernelGenerator::getAllInstantiations(Operation *decl,
-                                      ArrayRef<Attribute> inputParamValues,
-                                      Operation *insertionPoint) {
+Elaborator::getAllInstantiations(Operation *decl,
+                                 ArrayRef<Attribute> inputParamValues,
+                                 Operation *insertionPoint) {
 
   // Check the cache these so multiple uses of the same kernel don't get
   // separate instantiations.
@@ -762,16 +745,16 @@ KernelGenerator::getAllInstantiations(Operation *decl,
 // generateKernels Driver
 //===----------------------------------------------------------------------===//
 
-/// Generate kernels in the specified module, incorporating implementation logic
-/// from the specified library.
-LogicalResult M::generateKernels(ModuleOp primary, ModuleOp library) {
+/// Elaborate kernels in the specified module, incorporating implementation
+/// logic from the specified library.
+LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   // We currently rely on pointer equivalence between attributes etc when
   // matching across modules, so the modules must be in the same context.  We
   // could relax this restriction in the future if there were a reason to.
   if (primary.getContext() != library.getContext())
     return primary.emitError() << "Cannot generate kernels when primary and "
                                   "library are in different MLIR contexts";
-  KernelGenerator generator(primary, library);
+  Elaborator generator(primary, library);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -822,6 +805,12 @@ LogicalResult M::generateKernels(ModuleOp primary, ModuleOp library) {
   if (didFail)
     return failure();
 
-  generator.removeGenerators();
+  // On success, we remove generators and generator interfaces from the file to
+  // clean it up.
+  for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
+    if (isa<GeneratorOp, GeneratorInterfaceOp>(op))
+      op.erase();
+  }
+
   return success();
 }

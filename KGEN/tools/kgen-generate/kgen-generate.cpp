@@ -88,11 +88,11 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   if (!libraryModule)
     exit(1);
 
-  // Generate kernels for the primary module.  If any errors are emitted, we let
-  // the current diagnostic handler decide what to do with them.
+  // Elaborate kernels for the primary module.  If any errors are emitted, we
+  // let the current diagnostic handler decide what to do with them.
   // -verify-diagnostics doesn't consider errors to be a tool failure if they
   // are matched correctly.
-  if (succeeded(generateKernels(primaryModule.get(), libraryModule.get()))) {
+  if (succeeded(elaborateKernels(primaryModule.get(), libraryModule.get()))) {
     // If the generator thought it succeeded, double check that the IR is valid.
     (void)verify(primaryModule.get());
   }
