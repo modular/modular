@@ -114,21 +114,33 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
 // CHECK-NOT: kgen.generator.interface @genItf
 kgen.generator.interface @genItf<x -> y>(si32) -> si32
 
+// CHECK-LABEL: kgen.kernel @"genItf_impl1,x=42"<() -> y>(
+// CHECK-NEXT:   "unary_add_impl1"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   kgen.return <y = 43> %arg0 : si32
+// CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
   implements @genItf {
   "unary_add_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
-//kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
-//  implements @genItf {
-//  "unary_add_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
-//  kgen.return<y = mul(x, 2)> %arg0 : si32
-//}
+// CHECK-LABEL: kgen.kernel @"genItf_impl2,x=42"<() -> y>(
+// CHECK-NEXT:   "unary_add_impl2"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   kgen.return <y = 84> %arg0 : si32
+// CHECK-NEXT: }
+kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
+  implements @genItf {
+  "unary_add_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  kgen.return<y = mul(x, 2)> %arg0 : si32
+}
 
 // CHECK-LABEL: kgen.kernel @use_interface(
 // CHECK-NEXT: %0 = kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0)
 // CHECK-NEXT: %1 = kgen.param.value = <43>
+
+// CHECK-LABEL: kgen.kernel @use_interface_0(%arg0: si32) -> index {
+// CHECK-NEXT:    %0 = kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0) : (si32) -> si32
+// CHECK-NEXT:     %1 = kgen.param.value = <84>
 kgen.kernel @use_interface(%arg0: si32) -> index {
   %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
   %1 = kgen.param.value = <out>
