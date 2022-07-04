@@ -54,6 +54,16 @@ public:
   SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8>
       usersAndDeclarers;
 
+  /// Return a list containing just the operations that are using and defining
+  /// parameters in the analyzed region.
+  SmallVector<Operation *> getUsingAndDeclaringOps() const {
+    SmallVector<Operation *> result;
+    result.reserve(usersAndDeclarers.size());
+    for (auto elt : usersAndDeclarers)
+      result.push_back(elt.first);
+    return result;
+  }
+
 private:
   ParameterDeclsAndUses() = default;
   ParameterDeclsAndUses(const ParameterDeclsAndUses &) = delete;
