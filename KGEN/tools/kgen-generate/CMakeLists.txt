@@ -10,7 +10,7 @@ set(LLVM_LINK_COMPONENTS
 
 add_modular_tool(kgen-generate
   BetterCloning.cpp
-  GenerateKernels.cpp
+  KernelElaborator.cpp
   kgen-generate.cpp
 
   LINK_LIBS PRIVATE
