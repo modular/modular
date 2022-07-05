@@ -61,6 +61,11 @@ public:
   void insertKernelVariant(KernelOp existing, KernelOp newKernel);
 
 private:
+  /// Specialize a kernel body, generating one variant or each viable
+  /// instantiation of that body.  Kernels do not have parameters, but they can
+  /// invoke interfaces etc which can cause them to produce multiple variants.
+  SmallVector<KernelOp> specializeKernel(KernelOp kernel);
+
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
@@ -173,6 +178,9 @@ public:
   /// of this kernel are necessary, they are added to rewriterWorklist.
   LogicalResult rewriteOps(SmallVector<ParameterRewriter, 2> &rewriterWorklist);
 
+  /// Return the kernel we're generating into.
+  KernelOp getKernel() const { return kernel; }
+
 private:
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -244,50 +252,13 @@ ParameterRewriter::ParameterRewriter(
   }
 }
 
-/// Given a kernel whose body may be parameterized, transform it into one or
-/// more concrete kernels.  Note that the original kernel may be removed.
-/// TODO: We may want to eventually return up "why" a generator failed.
-static SmallVector<KernelOp> concretizeKernel(Elaborator &Elaborator,
-                                              KernelOp kernel) {
-  /// Get a partial ordering of parameter definitions and uses that is listed
-  /// "top down" in our evaluation order.
-  SmallVector<Operation *> opsToRewrite;
-  {
-    auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
-    if (failed(paramInfo)) {
-      kernel->emitError("verification error for kernel");
-      return {};
-    }
-
-    opsToRewrite = paramInfo->getUsingAndDeclaringOps();
-  }
-
-  // We are going to use opsToRewrite as a worklist, so reverse it for efficient
-  // pop_back.
-  std::reverse(opsToRewrite.begin(), opsToRewrite.end());
-
-  // Start by rewriting this kernel.
-  SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(Elaborator, kernel, std::move(opsToRewrite));
-
-  // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
-  // until we converge.
-  SmallVector<KernelOp> results;
-  while (!rewriterWorklist.empty()) {
-    auto rewriter = rewriterWorklist.pop_back_val();
-    if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
-      results.push_back(kernel);
-  }
-  return results;
-}
-
 /// Work the `opsToRewrite` worklist.
 LogicalResult ParameterRewriter::rewriteOps(
     SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
   /// We use a worklist for this so cloned versions of ParameterRewriter can
   /// be created and known where to pick up from.
   while (!opsToRewrite.empty()) {
-    auto op = opsToRewrite.pop_back_val();
+    Operation *op = opsToRewrite.pop_back_val();
 
     /// Process an operation that needs to be rewritten/lowered based on the
     /// context of the parameter values we know are defined.
@@ -632,6 +603,41 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   return b.getStringAttr(result);
 }
 
+/// Specialize a kernel body, generating one variant or each viable
+/// instantiation of that body.  Kernels do not have parameters, but they can
+/// invoke interfaces etc which can cause them to produce multiple variants.
+SmallVector<KernelOp> Elaborator::specializeKernel(KernelOp kernel) {
+  /// Get a partial ordering of parameter definitions and uses that is listed
+  /// "top down" in our evaluation order.
+  SmallVector<Operation *> opsToRewrite;
+  {
+    auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
+    if (failed(paramInfo)) {
+      kernel->emitError("verification error for kernel");
+      return {};
+    }
+    opsToRewrite = paramInfo->getUsingAndDeclaringOps();
+  }
+
+  // We are going to use opsToRewrite as a worklist, so reverse it for efficient
+  // pop_back.
+  std::reverse(opsToRewrite.begin(), opsToRewrite.end());
+
+  // Start by rewriting this kernel.
+  SmallVector<ParameterRewriter, 2> rewriterWorklist;
+  rewriterWorklist.emplace_back(*this, kernel, std::move(opsToRewrite));
+
+  // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
+  // until we converge.
+  SmallVector<KernelOp> results;
+  while (!rewriterWorklist.empty()) {
+    auto rewriter = rewriterWorklist.pop_back_val();
+    if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
+      results.push_back(rewriter.getKernel());
+  }
+  return results;
+}
+
 /// Specialize a kernel generator with the specified input parameters and
 /// return the symbol name to use for the result, along with an array of
 /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
@@ -681,7 +687,7 @@ Elaborator::specializeGenerator(GeneratorOp generator,
 
   // Now that we have a new synthesized generic kernel, run the rewriter over it
   // to specialize its body.
-  return concretizeKernel(*this, newKernel);
+  return specializeKernel(newKernel);
 }
 
 /// Specialize a kernel interface with the specified input parameters and
@@ -723,19 +729,15 @@ Elaborator::getAllInstantiations(Operation *decl,
     return cacheIt->second;
 
   SmallVector<KernelOp> newCallees;
-  if (auto kernel = dyn_cast<KernelOp>(decl)) {
-    // FIXME: This isn't correct.  One kernel could turn into many different
-    // variants, which multivariants this kernel just like a generator would.
-    // FIXME: We need to run the concretize logic here to handle this.
-    newCallees.push_back(kernel);
-  } else if (auto generator = dyn_cast<GeneratorOp>(decl)) {
+  if (auto kernel = dyn_cast<KernelOp>(decl))
+    newCallees = specializeKernel(kernel);
+  else if (auto generator = dyn_cast<GeneratorOp>(decl))
     newCallees = specializeGenerator(generator, inputParamValues, kernel);
-  } else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl)) {
+  else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl))
     newCallees = specializeInterface(interface, inputParamValues, kernel);
-  } else {
-    // TODO: Handle generator interfaces.
+  else
     decl->emitError("cannot handle this yet");
-  }
+
   auto &result = generatedKernels[cacheKey];
   result = std::move(newCallees);
   return result;
@@ -797,7 +799,8 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
 
   // Process each kernel.
   for (auto kernel : kernelsToGenerate) {
-    SmallVector<KernelOp> results = concretizeKernel(generator, kernel);
+    SmallVector<KernelOp> results =
+        generator.getAllInstantiations(kernel, {}, kernel);
     didFail |= results.empty();
   }
 
