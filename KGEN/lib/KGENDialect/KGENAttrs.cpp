@@ -749,15 +749,6 @@ Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   return Base::get(operandsIn[0].getContext(), opcode, operands, type);
 }
 
-/// Builder used by the generic parser.
-Attribute ParamOperatorAttr::get(MLIRContext *ctx, POC opcode,
-                                 ArrayRef<Attribute> operands, Type type) {
-  auto result = get(opcode, operands);
-  assert((!type || result.getType() == type) && "unexpected types");
-  assert(ctx == result.getContext());
-  return result;
-}
-
 void ParamOperatorAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {

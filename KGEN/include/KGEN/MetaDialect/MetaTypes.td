@@ -31,7 +31,6 @@ def ScalarType : MetaType<"Scalar",
   let parameters = (ins "::mlir::Attribute":$dtype);
   let assemblyFormat = "`<` custom<ParamDTypeValue>($dtype) `>`";
   let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Attribute":$parameter), [{
@@ -58,7 +57,6 @@ def SIMDType : MetaType<"SIMD",
     `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{
@@ -89,7 +87,6 @@ def BufferType : MetaType<"Buffer",
         custom<OptionalParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{

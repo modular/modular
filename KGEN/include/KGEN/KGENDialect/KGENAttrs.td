@@ -183,17 +183,15 @@ def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
 
   // Force all clients to go through our building logic so we can canonicalize
   // during building.
-  let skipDefaultBuilders = 1;
+  // FIXME: https://reviews.llvm.org/D128555 enforced default builders with
+  // assembly format, We should re-skip when that check is reverted (we don't 
+  // want default builders here).
+  // let skipDefaultBuilders = 1;
 
   let extraClassDeclaration = [{
     /// Build a parameter expression.  This automatically canonicalizes and
     /// folds, so it may not necessarily return a ParamOperatorAttr.
     static Attribute get(POC opcode, mlir::ArrayRef<mlir::Attribute> operands);
-
-    /// Builder used by the generic parser.
-    static Attribute get(MLIRContext *ctx, POC opcode,
-                         mlir::ArrayRef<mlir::Attribute> operands,
-                         mlir::Type type);
 
     /// Build a binary parameter expression for convenience.
     static Attribute get(POC opcode, mlir::Attribute lhs, mlir::Attribute rhs) {
