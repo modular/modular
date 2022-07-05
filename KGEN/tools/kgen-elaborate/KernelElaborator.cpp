@@ -53,9 +53,9 @@ public:
   /// generator, or interface) with teh specified input parameter values.
   /// `insertionPoint` is always a point in the primary module where a new
   /// kernel should be placed if necessary.
-  const SmallVector<KernelOp> &
-  getAllInstantiations(Operation *decl, ArrayRef<Attribute> inputParamValues,
-                       Operation *insertionPoint);
+  ArrayRef<KernelOp> getAllInstantiations(Operation *decl,
+                                          ArrayRef<Attribute> inputParamValues,
+                                          Operation *insertionPoint);
 
   /// Insert a variant of an existing kernel into the primary file.
   void insertKernelVariant(KernelOp existing, KernelOp newKernel);
@@ -176,7 +176,8 @@ public:
 
   /// Process all the `opsToRewrite`, simplifying this kernel.  If new variants
   /// of this kernel are necessary, they are added to rewriterWorklist.
-  LogicalResult rewriteOps(SmallVector<ParameterRewriter, 2> &rewriterWorklist);
+  LogicalResult
+  rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
 
   /// Return the kernel we're generating into.
   KernelOp getKernel() const { return kernel; }
@@ -199,10 +200,11 @@ private:
   void processParamBindOp(ParamBindOp op);
   void processParamValueOp(ParamValueOp op);
   void processCallOp(CallOp call,
-                     SmallVector<ParameterRewriter, 2> &rewriterWorklist);
+                     SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
   void completeCallOpProcessing(CallOp call, KernelOp newCallee);
-  void spawnNewKernelClone(CallOp call, KernelOp callee,
-                           SmallVector<ParameterRewriter, 2> &rewriterWorklist);
+  void
+  spawnNewKernelClone(CallOp call, KernelOp callee,
+                      SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
   void processGenericOp(Operation *op);
 
   /// Get the specified attribute with any nested parameter expressions
@@ -254,7 +256,7 @@ ParameterRewriter::ParameterRewriter(
 
 /// Work the `opsToRewrite` worklist.
 LogicalResult ParameterRewriter::rewriteOps(
-    SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
+    SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
   /// We use a worklist for this so cloned versions of ParameterRewriter can
   /// be created and known where to pick up from.
   while (!opsToRewrite.empty()) {
@@ -352,7 +354,7 @@ void ParameterRewriter::processParamValueOp(ParamValueOp op) {
 }
 
 void ParameterRewriter::processCallOp(
-    CallOp call, SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
+    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
   // Evaluating any input parameters.
   SmallVector<Attribute> boundInputParams;
   for (auto param : call.getParamValues()) {
@@ -367,8 +369,12 @@ void ParameterRewriter::processCallOp(
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
   auto callee = Elaborator.lookupCallee(call.getCalleeAttr().getAttr());
-  SmallVector<KernelOp> newCallees =
+  auto newCalleesRef =
       Elaborator.getAllInstantiations(callee, boundInputParams, kernel);
+
+  // Copy the list of kernels instead of referring to the cache entry to avoid
+  // iterator invalidation problems.
+  SmallVector<KernelOp> newCallees(newCalleesRef.begin(), newCalleesRef.end());
 
   // If kernel instantiation failed for some reason, bail out.  The error will
   // already be reported.
@@ -413,7 +419,7 @@ void ParameterRewriter::completeCallOpProcessing(CallOp call,
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewKernelClone(
     CallOp call, KernelOp callee,
-    SmallVector<ParameterRewriter, 2> &rewriterWorklist) {
+    SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
 
   // Start by cloning the current WIP kernel to a new copy of it.
   BlockAndValueMapping blocksAndValues;
@@ -706,7 +712,8 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
   SmallVector<KernelOp> result;
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached.
-    result.append(getAllInstantiations(gen, inputParamValues, insertionPoint));
+    auto kernels = getAllInstantiations(gen, inputParamValues, insertionPoint);
+    result.append(kernels.begin(), kernels.end());
   }
   return result;
 }
@@ -715,7 +722,7 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
 /// generator, or interface) with teh specified input parameter values.
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
-const SmallVector<KernelOp> &
+ArrayRef<KernelOp>
 Elaborator::getAllInstantiations(Operation *decl,
                                  ArrayRef<Attribute> inputParamValues,
                                  Operation *insertionPoint) {
@@ -799,7 +806,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
 
   // Process each kernel.
   for (auto kernel : kernelsToGenerate) {
-    SmallVector<KernelOp> results =
+    ArrayRef<KernelOp> results =
         generator.getAllInstantiations(kernel, {}, kernel);
     didFail |= results.empty();
   }
