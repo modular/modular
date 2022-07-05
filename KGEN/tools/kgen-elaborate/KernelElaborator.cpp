@@ -164,9 +164,9 @@ namespace {
 /// and simplify operations based on those values.
 class ParameterRewriter {
 public:
-  ParameterRewriter(Elaborator &Elaborator, KernelOp kernel,
+  ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
                     SmallVector<Operation *> opsToRewrite)
-      : Elaborator(Elaborator), kernel(kernel),
+      : elaborator(elaborator), kernel(kernel),
         opsToRewrite(std::move(opsToRewrite)) {}
 
   /// Create a clone of this rewriter, but refer with a clone of the kernel.
@@ -215,7 +215,7 @@ private:
   Type getReboundType(Type type, Location loc);
 
   // This is maintains global information about the file we're generating into.
-  Elaborator &Elaborator;
+  Elaborator &elaborator;
 
   /// This is the kernel we're working on.
   KernelOp kernel;
@@ -239,7 +239,7 @@ private:
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : Elaborator(existing.Elaborator), paramValues(existing.paramValues),
+    : elaborator(existing.elaborator), paramValues(existing.paramValues),
       rewrittenAttrs(existing.rewrittenAttrs),
       rewrittenTypes(existing.rewrittenTypes) {
   // Remap the kernel itself.
@@ -368,9 +368,9 @@ void ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
-  auto callee = Elaborator.lookupCallee(call.getCalleeAttr().getAttr());
+  auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
   auto newCalleesRef =
-      Elaborator.getAllInstantiations(callee, boundInputParams, kernel);
+      elaborator.getAllInstantiations(callee, boundInputParams, kernel);
 
   // Copy the list of kernels instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -428,7 +428,7 @@ void ParameterRewriter::spawnNewKernelClone(
       cast<KernelOp>(cloneOperation(kernel, blocksAndValues, operationMap));
 
   // Insert the kernel into the output file and auto-unique the symbol.
-  Elaborator.insertKernelVariant(kernel, newKernel);
+  elaborator.insertKernelVariant(kernel, newKernel);
 
   // Generate the new rewriter which will process this.
   auto &newRewriter = rewriterWorklist.emplace_back(*this, operationMap);
