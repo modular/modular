@@ -111,6 +111,8 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
   kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
 }
 
+//===----------------------------------------------------------------------===//
+
 // CHECK-NOT: kgen.generator.interface @genItf
 kgen.generator.interface @genItf<x -> y>(si32) -> si32
 
@@ -145,4 +147,16 @@ kgen.kernel @use_interface(%arg0: si32) -> index {
   %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
   %1 = kgen.param.value = <out>
   kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.kernel @use_kernel_using_interface(%arg0: si32) -> index {
+// CHECK-NEXT:   %0 = kgen.call @use_interface(%arg0) : (si32) -> index
+// CHECK-NEXT:   kgen.return  %0 : index
+
+// CHECK-LABEL: kgen.kernel @use_kernel_using_interface_1(%arg0: si32) -> index {
+// CHECK-NEXT:   %0 = kgen.call @use_interface_0(%arg0) : (si32) -> index
+// CHECK-NEXT:   kgen.return  %0 : index
+kgen.kernel @use_kernel_using_interface(%arg0: si32) -> index {
+  %0 = kgen.call @use_interface(%arg0) : (si32) -> index
+  kgen.return %0 : index
 }
