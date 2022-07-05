@@ -16,7 +16,7 @@ add_modular_tool(kgen-elaborate
   LINK_LIBS PRIVATE
   KGENDialect
   MetaDialect
-  MLIRArithmetic
+  MLIRArithmeticDialect
   MLIRIR
   MLIROptLib
   MLIRParser
