@@ -15,15 +15,26 @@
 #include "llvm/Support/SourceMgr.h"
 namespace M {
 
-/// Contains command-line options that are shared among most of our binaries.
-class CommonCLOptions {
+/// Contains functionality that's common to all tools.
+class CLOptionsBase {
 public:
-  CommonCLOptions(StringRef programName) : programName(programName) {}
+  CLOptionsBase(StringRef programName) : programName(programName) {}
 
   int reportError(Twine errorMessage) const {
     llvm::errs() << programName << ": " << errorMessage << "\n";
     return EXIT_FAILURE;
   }
+
+private:
+  /// This is the value of argv[0] when the program launches, used for reporting
+  /// error messages.
+  StringRef programName;
+};
+
+/// Contains command-line options that are shared among most of our binaries.
+class CommonCLOptions : public CLOptionsBase {
+public:
+  CommonCLOptions(StringRef programName) : CLOptionsBase(programName) {}
 
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,
@@ -104,11 +115,6 @@ public:
     mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
     return bodyFn(&context);
   }
-
-private:
-  /// This is the value of argv[0] when the program launches, used for reporting
-  /// error messages.
-  StringRef programName;
 };
 
 } // namespace M
