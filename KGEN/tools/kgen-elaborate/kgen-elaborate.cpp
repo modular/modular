@@ -61,9 +61,9 @@ public:
 
 /// Generate all the kernels specified with a single input file.  This requires
 /// parsing the file and its library.
-static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
-                        llvm::raw_ostream &outputStream,
-                        const CLOptions &options) {
+static LogicalResult processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
+                                 llvm::raw_ostream &outputStream,
+                                 const CLOptions &clOptions) {
   ctx->appendDialectRegistry(getDialects());
   ctx->loadAllAvailableDialects();
   ctx->allowUnregisteredDialects(true);
@@ -73,12 +73,14 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   OwningOpRef<ModuleOp> primaryModule(
       mlir::parseSourceFile<ModuleOp>(sourceMgr, ctx));
   if (!primaryModule)
-    exit(1);
+    return failure(clOptions.reportError("could not parse input file"));
 
   OwningOpRef<ModuleOp> libraryModule(
-      mlir::parseSourceFile<ModuleOp>(options.libraryFilename, ctx));
-  if (!libraryModule)
-    exit(1);
+      mlir::parseSourceFile<ModuleOp>(clOptions.libraryFilename, ctx));
+  if (!libraryModule) {
+    return failure(clOptions.reportError(
+        Twine("could not parse library file: ") + clOptions.libraryFilename));
+  }
 
   // Elaborate kernels for the primary module.  If any errors are emitted, we
   // let the current diagnostic handler decide what to do with them.
@@ -90,6 +92,7 @@ static void processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   }
 
   primaryModule->print(outputStream);
+  return success();
 }
 
 int main(int argc, char **argv) {
@@ -98,31 +101,30 @@ int main(int argc, char **argv) {
   // Enable command line options for various MLIR internals.
   mlir::registerAsmPrinterCLOptions();
   mlir::registerMLIRContextCLOptions();
-  CLOptions options(argv[0]);
+  CLOptions clOptions(argv[0]);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file.
-  std::unique_ptr<llvm::MemoryBuffer> inputFile = options.openInputFileOrExit();
+  std::unique_ptr<llvm::MemoryBuffer> inputFile =
+      clOptions.openInputFileOrExit();
 
   // Get the output file now so that we can use it in the lambdas below.
-  std::unique_ptr<llvm::ToolOutputFile> outputFile = options.getOutputFile();
+  std::unique_ptr<llvm::ToolOutputFile> outputFile = clOptions.getOutputFile();
 
   // Provide a tool function that runs the requested ops, again, so we can
   // re-use it.
   auto toolFn = [&](std::unique_ptr<llvm::MemoryBuffer> chunkBuffer,
                     raw_ostream &os) {
-    return options.configureMLIRContextAndSourceMgrAndExecute(
+    return clOptions.configureMLIRContextAndSourceMgrAndExecute(
         std::move(chunkBuffer),
         [&](MLIRContext *ctx, llvm::SourceMgr &sourceMgr) {
-          processFile(ctx, sourceMgr, os, options);
+          return processFile(ctx, sourceMgr, os, clOptions);
         });
   };
 
   // Either split the input file (or don't) and process.
-  auto result = options.splitInputFile
-                    ? mlir::splitAndProcessBuffer(std::move(inputFile), toolFn,
-                                                  outputFile->os())
-                    : toolFn(std::move(inputFile), outputFile->os());
+  auto result = mlir::splitAndProcessBuffer(
+      std::move(inputFile), toolFn, outputFile->os(), clOptions.splitInputFile);
   // Only keep the output file if we succeeded.
   if (succeeded(result))
     outputFile->keep();

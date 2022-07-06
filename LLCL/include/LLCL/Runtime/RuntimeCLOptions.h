@@ -19,6 +19,15 @@
 
 namespace LLCL {
 
+namespace {
+enum class OnFailure {
+  /// Allocator that just calls malloc/free.
+  kContinue,
+  /// Allocator that does leak checking.
+  kExit,
+};
+}
+
 /// Contains a number of command-line options that are shared among most of our
 /// binaries
 class RuntimeCLOptions {
@@ -33,6 +42,17 @@ public:
           "Specify the number of threads to run the work queue items."),
       llvm::cl::init(0)};
 
+  /// Set the behavior of executors if one of the functions they should run
+  /// returns with an error. E.g. Set to `continue` for diagnostic verification.
+  llvm::cl::opt<OnFailure> onFailure{
+      "on-failure",
+      llvm::cl::desc("Behavior in case an executed function returns with an "
+                     "error. Ignored if there is only one function executed."),
+      llvm::cl::values(
+          clEnumValN(OnFailure::kContinue, "continue", "System malloc/free"),
+          clEnumValN(OnFailure::kExit, "exit", "Allocator with leak checking")),
+      llvm::cl::init(OnFailure::kExit)};
+
   // Enable HostAllocator types to be specified on the command line.
   llvm::cl::opt<AllocatorType> allocatorType{
       "allocator", llvm::cl::desc("Specify allocator type:"),
@@ -44,6 +64,10 @@ public:
                      "Allocator with profiling and leak checking")),
       llvm::cl::init(AllocatorType::kLeakChecker)};
 
+  /// Returns whether an executor should stop when a model returns an error.
+  bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
+
+  /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
     return Runtime(getAllocator(allocatorType), getWorkQueue(numThreads));
   }
