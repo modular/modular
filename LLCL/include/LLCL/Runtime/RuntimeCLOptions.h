@@ -21,8 +21,8 @@ namespace LLCL {
 
 /// Contains a number of command-line options that are shared among most of our
 /// binaries
-struct RuntimeCLOptions {
-
+class RuntimeCLOptions {
+public:
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
   // work queue is using a thread pool. The default number of threads is the

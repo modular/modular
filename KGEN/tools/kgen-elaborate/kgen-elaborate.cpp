@@ -23,17 +23,9 @@ static DialectRegistry getDialects() {
   return registry;
 }
 
-struct CLOptions : public CommonCLOptions {
-  CLOptions(const char *toolName) : toolName(toolName) {}
-
-  // This is argv[0] of the invoking command.
-  const char *const toolName;
-
-  // Emit an error prefixed with the argv[0] tool name.
-  int reportError(Twine message) const {
-    llvm::errs() << toolName << ": " << message << '\n';
-    return 1;
-  }
+class CLOptions : public CommonCLOptions {
+public:
+  CLOptions(StringRef programName) : CommonCLOptions(programName) {}
 
   //===--------------------------------------------------------------------===//
   // Input specification
@@ -110,8 +102,7 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file.
-  std::unique_ptr<llvm::MemoryBuffer> inputFile =
-      options.openInputFileOrExit(argv[0]);
+  std::unique_ptr<llvm::MemoryBuffer> inputFile = options.openInputFileOrExit();
 
   // Get the output file now so that we can use it in the lambdas below.
   std::unique_ptr<llvm::ToolOutputFile> outputFile = options.getOutputFile();
