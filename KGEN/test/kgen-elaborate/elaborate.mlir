@@ -160,3 +160,53 @@ kgen.kernel @use_kernel_using_interface(%arg0: si32) -> index {
   %0 = kgen.call @use_interface(%arg0) : (si32) -> index
   kgen.return %0 : index
 }
+
+//===----------------------------------------------------------------------===//
+
+// CHECK-NOT: @genItf2<x>()
+kgen.generator.interface @genItf2<x>()
+
+// CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
+// CHECK-LABEL: kgen.kernel @"genItf2_impl0,x=0"() {
+// CHECK-NEXT:   "impl0"() : () -> ()
+// CHECK-NEXT:   kgen.return 
+// CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
+kgen.generator @genItf2_impl0<x>()
+  constraints <eq(x, 0)> implements @genItf2 {
+  "impl0"() : () -> ()
+  kgen.return
+}
+
+// CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
+// CHECK-LABEL: kgen.kernel @"genItf2_impl1,x=1"() {
+// CHECK-NEXT:   "impl1"() : () -> ()
+// CHECK-NEXT:   kgen.return
+// CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
+kgen.generator @genItf2_impl1<x>() 
+  constraints <eq(x, 1)> implements @genItf2 {
+  "impl1"() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.kernel @use_Itf2zero() {
+// CHECK-NEXT:   kgen.call @"genItf2_impl0,x=0"() : () -> ()
+// CHECK-NEXT:   kgen.return 
+kgen.kernel @use_Itf2zero() {
+  kgen.call @genItf2<x = 0>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.kernel @use_Itf2one() {
+// CHECK-NEXT:   kgen.call @"genItf2_impl1,x=1"() : () -> ()
+// CHECK-NEXT:   kgen.return 
+// CHECK-NEXT: }
+kgen.kernel @use_Itf2one() {
+  kgen.call @genItf2<x = 1>() : () -> ()
+  kgen.return
+}
+
+// TODO: This doesn't work yet, it generate any expansions.
+//kgen.kernel @use_Itf2two() {
+//  kgen.call @genItf2<x = 2>() : () -> ()
+//  kgen.return
+//}
