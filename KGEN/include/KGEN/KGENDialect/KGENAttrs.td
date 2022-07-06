@@ -175,13 +175,15 @@ def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 // by -1?  We don't need both EQ and NE for example, we should be able to just
 // have EQ and LT and be good.
 def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
+def POC_EQ_DTYPE : I32EnumAttrCase<"EQ_DTYPE", 10, "eq_dtype">;
 
 // TODO: Can add compares, string concat, etc as needed.
 
 /// This defines the Parameter Operator Code enum attribute.
 def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                            [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
-                            POC_Shl, POC_Shr, POC_Div, POC_Mod, POC_EQ]>;
+                            POC_Shl, POC_Shr, POC_Div, POC_Mod,
+                            POC_EQ, POC_EQ_DTYPE]>;
 }
 
 def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",

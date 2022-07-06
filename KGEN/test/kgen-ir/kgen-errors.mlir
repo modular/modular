@@ -64,7 +64,7 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 // -----
 
 "someop" () {
-  // expected-error @+1 {{binary operators must have two operands}}
+  // expected-error @+1 {{shl must have two operands}}
   use1 = #kgen.param.expr<shl, 1 : si32, 2 : si32, 3 : si32>
 } : () -> ()
 
@@ -77,7 +77,7 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 // -----
 
-// expected-error @+1 {{'kgen.param.value' binary operators must have two operands}}
+// expected-error @+1 {{'kgen.param.value' shl must have two operands}}
 %0 = kgen.param.value = <shl(p1, p2, p3)>
 
 // -----

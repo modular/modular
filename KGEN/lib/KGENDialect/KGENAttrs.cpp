@@ -140,6 +140,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
     Type operandType = type;
     if (opcode == POC::EQ)
       operandType = p.getBuilder().getIndexType();
+    else if (opcode == POC::EQ_DTYPE)
+      operandType = p.getBuilder().getType<DTypeType>();
 
     if (failed(p.parseOptionalRParen())) {
       if (p.parseCommaSeparatedList([&]() -> ParseResult {
@@ -398,7 +400,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Div:
   case POC::Mod:
     if (operands.size() != 2)
-      return emitError() << "binary operators must have two operands";
+      return emitError() << stringifyEnum(opcode) << " must have two operands";
     if (type != operands[0].getType())
       return emitError() << "result type should match operand types";
     if (!operands[0].getType().isIndex())
@@ -408,6 +410,14 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
     if (!operands[0].getType().isIndex())
+      return emitError() << "comparison requires an index type operand";
+    if (!type.isInteger(1))
+      return emitError() << "comparisons return i1";
+    break;
+  case POC::EQ_DTYPE:
+    if (operands.size() != 2)
+      return emitError() << "comparison operators must have two operands";
+    if (!operands[0].getType().isa<DTypeType>())
       return emitError() << "comparison requires an index type operand";
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
@@ -438,12 +448,14 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
     return false;
 
   // All expressions are "less than" a constant, since they appear on the right.
-  if (rhs.isa<IntegerAttr>()) {
+  // We handle integers and dtypes consistently here, they can never occur in
+  // the same expression, since they have different types.
+  if (rhs.isa<IntegerAttr, DTypeConstantAttr>()) {
     // We don't bother to order constants w.r.t. each other since they will be
     // folded - they can all compare equal.
-    return !lhs.isa<IntegerAttr>();
+    return !lhs.isa<IntegerAttr, DTypeConstantAttr>();
   }
-  if (lhs.isa<IntegerAttr>())
+  if (lhs.isa<IntegerAttr, DTypeConstantAttr>())
     return false;
 
   // Next up are named parameters.
@@ -740,6 +752,17 @@ static Attribute simplifyEQ(SmallVector<Attribute, 4> &operands) {
   return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
 }
 
+static Attribute simplifyEQ_DTYPE(SmallVector<Attribute, 4> &operands) {
+  // Make sure parameters are ordered correctly.
+  llvm::stable_sort(operands, paramExprOperandSortPredicate);
+
+  if (auto lhs = operands[0].dyn_cast<DTypeConstantAttr>())
+    if (auto rhs = operands[1].dyn_cast<DTypeConstantAttr>())
+      return IntegerAttr::get(IntegerType::get(lhs.getContext(), 1),
+                              lhs == rhs);
+  return {};
+}
+
 /// Build a parameter expression.  This automatically canonicalizes and
 /// folds, so it may not necessarily return a ParamOperatorAttr.
 Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
@@ -786,6 +809,10 @@ Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
     break;
   case POC::EQ:
     result = simplifyEQ(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
+  case POC::EQ_DTYPE:
+    result = simplifyEQ_DTYPE(operands);
     resultType = IntegerType::get(context, 1);
     break;
   }
