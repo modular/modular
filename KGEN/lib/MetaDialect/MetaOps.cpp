@@ -113,7 +113,7 @@ static bool typesAreCompatible(Type builtinTy, DType eltTy) {
     return builtinTy.isa<IntegerType>() && (builtinWidth == eltWidth);
 
   if (eltTy.isFloat()) {
-    // bf16 and fp16 are not convertible, but are both floats and have  the same
+    // bf16 and fp16 are not convertible, but are both floats and have the same
     // bit width, so we have to make sure we're not converting fp16 to bf16 and
     // vice versa.
     if (eltTy == DType::bf16) {
