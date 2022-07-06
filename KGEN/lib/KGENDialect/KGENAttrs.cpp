@@ -674,6 +674,20 @@ foldBinaryOp(ArrayRef<Attribute> operands,
   return {};
 }
 
+/// Folds constants given a comparison function that returns bool.  The client
+/// must handle signedness etc.
+static Attribute foldCompareOp(
+    ArrayRef<Attribute> operands,
+    llvm::function_ref<bool(const APInt &, const APInt &)> compareFn) {
+  assert(operands.size() == 2 && "compare operator always has two operands");
+  if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
+    if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+      bool result = compareFn(lhs.getValue(), rhs.getValue());
+      return IntegerAttr::get(IntegerType::get(lhs.getContext(), 1), result);
+    }
+  return {};
+}
+
 static Attribute simplifyShl(SmallVector<Attribute, 4> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
@@ -723,9 +737,7 @@ static Attribute simplifyEQ(SmallVector<Attribute, 4> &operands) {
   // Make sure parameters are ordered correctly.
   llvm::stable_sort(operands, paramExprOperandSortPredicate);
 
-  return foldBinaryOp(
-      operands, [](auto a, auto b) { return APInt(1, a == b); },
-      [](auto a, auto b) { return APInt(1, a == b); });
+  return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
 }
 
 /// Build a parameter expression.  This automatically canonicalizes and
