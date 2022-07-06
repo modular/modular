@@ -893,3 +893,12 @@ KGEN::getDeclParameterInfo(Operation *decl) {
   return std::make_pair(declParams.take_front(numInputParams),
                         declParams.drop_front(numInputParams));
 }
+
+ArrayRef<Attribute> KGEN::getDeclConstraints(Operation *decl) {
+  // Kernels never have constraints.
+  if (isa<KernelOp>(decl))
+    return {};
+  assert((isa<GeneratorOp, GeneratorInterfaceOp>(decl)) &&
+         "unknown declaration");
+  return decl->getAttrOfType<ArrayAttr>("constraints").getValue();
+}

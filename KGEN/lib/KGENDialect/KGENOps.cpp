@@ -283,6 +283,33 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
   return parser.parseGreater();
 }
 
+/// Parse a constraint specification if present.
+/// constraints-spec ::=
+///    `constraints` `<` attribute-value (`,` attribute-value)? `>`
+static ParseResult parseOptionalConstraints(OpAsmParser &parser,
+                                            OperationState &result,
+                                            GeneratorOrKernelKind opKind) {
+  // Kernels cannot have constraint specifications.
+  if (opKind == GeneratorOrKernelKind::kernel)
+    return success();
+
+  SmallVector<Attribute> constraints;
+
+  if (succeeded(parser.parseOptionalKeyword("constraints"))) {
+    // Constraints are always i1.
+    Type int1Ty = parser.getBuilder().getI1Type();
+    if (parser.parseCommaSeparatedList(
+            OpAsmParser::Delimiter::LessGreater, [&]() -> ParseResult {
+              return parseParamValue(parser, constraints.emplace_back(),
+                                     int1Ty);
+            }))
+      return failure();
+  }
+  result.addAttribute("constraints",
+                      parser.getBuilder().getArrayAttr(constraints));
+  return success();
+}
+
 /// Parse either a kgen.generator or kgen.kernel declaration, depending on what
 /// `isGenerator` is set to.
 static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
@@ -308,7 +335,8 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
   bool isVariadic = false;
   if (parseOptionalParameterSpec(parser, result, opKind) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
-                             isVariadic, resultTypes, resultAttrs))
+                             isVariadic, resultTypes, resultAttrs) ||
+      parseOptionalConstraints(parser, result, opKind))
     return failure();
 
   SmallVector<Type> argTypes;
@@ -395,6 +423,19 @@ static void printParameterList(Operation *decl, OpAsmPrinter &p) {
   p << '>';
 }
 
+/// Print a constraint list for a generator or interface.
+static void printConstraints(Operation *decl, OpAsmPrinter &p) {
+  auto constraints = getDeclConstraints(decl);
+  if (constraints.empty())
+    return;
+
+  p << "\n  constraints <";
+  llvm::interleaveComma(constraints, p, [&](Attribute constraint) {
+    printParamValue(p, constraint);
+  });
+  p << '>';
+}
+
 static void printGeneratorOrKernel(OpAsmPrinter &p,
                                    mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
@@ -416,6 +457,7 @@ static void printGeneratorOrKernel(OpAsmPrinter &p,
   printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           GeneratorOp::getAttributeNames());
+  printConstraints(op, p);
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
@@ -657,6 +699,13 @@ ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
 // Print the GeneratorInterfaceOp using the shared printing logic.
 void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
   printGeneratorOrKernel(p, *this);
+}
+
+LogicalResult GeneratorInterfaceOp::verify() {
+  // See if the parameter definitions and uses within the generator are
+  // structured correctly.  These are only defined in the interface and used
+  // in the argument list or constraints list.
+  return ParameterDeclsAndUses::calculate(*this);
 }
 
 //===----------------------------------------------------------------------===//
