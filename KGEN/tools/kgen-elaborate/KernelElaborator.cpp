@@ -161,8 +161,125 @@ ParseResult Elaborator::collectInterfaces() {
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
-/// and simplify operations based on those values.
-class ParameterRewriter {
+/// and simplify parameter expressions based on those values.
+class ParameterEvaluator {
+public:
+  ParameterEvaluator() = default;
+  ParameterEvaluator(const ParameterEvaluator &) = default;
+
+  /// Given a generator or interface declaration operation, evaluate any
+  /// constraints against inputParamValues.  If the constraints are met, return
+  /// success, otherwise return why they aren't.
+  static ErrorOrSuccess
+  evaluateConstraints(Operation *decl, ArrayRef<Attribute> inputParamValues);
+
+  /// Set a value for the specified parameter declaration to the specified
+  /// simplified value.
+  void setParameterValue(ParamDeclAttr decl, Attribute value) {
+    assert(!paramValues.count(decl.getName()) && "parameter already declared!");
+    assert(isSimpleConstant(value) && "expression isn't simplified");
+    paramValues[decl.getName()] = value;
+  }
+
+  /// Given a generic parameter expression, simplify it by folding the
+  /// expression according to known parameter values.  This returns an error if
+  /// the expression cannot be folded for one reason or another.
+  ErrorOr<Attribute> simplifyParameterExpr(Attribute expr);
+
+private:
+  /// These are the bound parameter values, captured in simplified form.
+  DenseMap<StringAttr, Attribute> paramValues;
+};
+} // end anonymous namespace
+
+static std::string getString(Attribute attr) {
+  std::string str;
+  llvm::raw_string_ostream(str) << attr;
+  return str;
+}
+
+/// Given a generic parameter expression, simplify it by folding the
+/// expression according to known parameter values.  This returns an error if
+/// the expression cannot be folded for one reason or another.
+ErrorOr<Attribute> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
+  // Simple constants don't need simplification.
+  if (isSimpleConstant(expr))
+    return expr;
+
+  // We can directly substitute declaration references given our known table of
+  // bindings.
+  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
+    auto value = paramValues[declRef.getName()];
+    assert(value && "Verifier should check that all parameters are defined");
+    return value;
+  }
+
+  // Simplify operators by recursively simplifying their operands, then
+  // refolding the expression.
+  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
+    SmallVector<Attribute> simplifiedOperands;
+    for (auto value : oper.getOperands()) {
+      auto simplified = simplifyParameterExpr(value);
+      if (simplified.isError())
+        return simplified;
+      simplifiedOperands.push_back(simplified.takeValue());
+    }
+
+    // FIXME: 'index' folding should require target information to simplify
+    // things like div.
+    auto result = ParamOperatorAttr::get(oper.getOpcode(), simplifiedOperands);
+    if (!isSimpleConstant(result))
+      return Error("could not simplify operator " + getString(expr));
+    return result;
+  }
+
+  // Otherwise, we don't know how to simplify this attribute, it's an error.
+  return Error("unknown expression to fold: " + getString(expr));
+}
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+ErrorOrSuccess
+ParameterEvaluator::evaluateConstraints(Operation *decl,
+                                        ArrayRef<Attribute> inputParamValues) {
+  // If there are no constraints, we are trivially done.
+  auto constraints = getDeclConstraints(decl);
+  if (constraints.empty())
+    return success();
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ParameterEvaluator evaluator;
+  auto inputParamDecls = getDeclParameterInfo(decl).first;
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [decl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(decl.cast<ParamDeclAttr>(), value);
+
+  // Each constraint must be foldable, and must fold to true.
+  for (auto constraint : constraints) {
+    ErrorOr<Attribute> result = evaluator.simplifyParameterExpr(constraint);
+    if (failed(result))
+      return Error("constraint evaluation failure: " +
+                   Twine(result.getError()));
+    auto resultInt = (*result).dyn_cast<IntegerAttr>();
+    if (!resultInt || resultInt.getValue().getBitWidth() != 1)
+      return Error("constraint evaluation didn't return true or false");
+
+    // TODO: This isn't a very pretty printing of why the constraint failed.
+    if (resultInt.getValue().isZero())
+      return Error("constraint failed: " + getString(constraint));
+  }
+
+  // If we made it this far, then everything folded to true.
+  return success();
+}
+
+namespace {
+/// This class keeps a set of defined parameter values and is used to evaluate
+/// and simplify operations in a kernel based on those values.
+class ParameterRewriter : public ParameterEvaluator {
 public:
   ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
                     SmallVector<Operation *> opsToRewrite)
@@ -181,20 +298,6 @@ public:
 
   /// Return the kernel we're generating into.
   KernelOp getKernel() const { return kernel; }
-
-private:
-  /// Set a value for the specified parameter declaration to the specified
-  /// simplified value.
-  void setParameterValue(ParamDeclAttr decl, Attribute value) {
-    assert(!paramValues.count(decl.getName()) && "parameter already declared!");
-    assert(isSimpleConstant(value) && "expression isn't simplified");
-    paramValues[decl.getName()] = value;
-  }
-
-  /// Given a generic parameter expression, simplify it by folding the
-  /// expression according to known parameter values.  This returns an error if
-  /// the expression cannot be folded for one reason or another.
-  ErrorOr<Attribute> simplifyParameterExpr(Attribute expr);
 
 private:
   void processParamBindOp(ParamBindOp op);
@@ -223,9 +326,6 @@ private:
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
 
-  /// These are the bound parameter values, captured in simplified form.
-  DenseMap<StringAttr, Attribute> paramValues;
-
   /// This caches attributes and Types with parameter references rebound, and
   /// remembers complex attributes that don't have parameter subexprs (noted as
   /// being rebound to themselves).
@@ -239,7 +339,7 @@ private:
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : elaborator(existing.elaborator), paramValues(existing.paramValues),
+    : ParameterEvaluator(existing), elaborator(existing.elaborator),
       rewrittenAttrs(existing.rewrittenAttrs),
       rewrittenTypes(existing.rewrittenTypes) {
   // Remap the kernel itself.
@@ -278,51 +378,6 @@ LogicalResult ParameterRewriter::rewriteOps(
 
   // Check that the thing we just built is correct!
   return verify(kernel);
-}
-
-static std::string getString(Attribute attr) {
-  std::string str;
-  llvm::raw_string_ostream(str) << attr;
-  return str;
-}
-
-/// Given a generic parameter expression, simplify it by folding the
-/// expression according to known parameter values.  This returns an error if
-/// the expression cannot be folded for one reason or another.
-ErrorOr<Attribute> ParameterRewriter::simplifyParameterExpr(Attribute expr) {
-  // Simple constants don't need simplification.
-  if (isSimpleConstant(expr))
-    return expr;
-
-  // We can directly substitute declaration references given our known table of
-  // bindings.
-  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
-    auto value = paramValues[declRef.getName()];
-    assert(value && "Verifier should check that all parameters are defined");
-    return value;
-  }
-
-  // Simplify operators by recursively simplifying their operands, then
-  // refolding the expression.
-  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
-    SmallVector<Attribute> simplifiedOperands;
-    for (auto value : oper.getOperands()) {
-      auto simplified = simplifyParameterExpr(value);
-      if (simplified.isError())
-        return simplified;
-      simplifiedOperands.push_back(simplified.takeValue());
-    }
-
-    // FIXME: 'index' folding should require target information to simplify
-    // things like div.
-    auto result = ParamOperatorAttr::get(oper.getOpcode(), simplifiedOperands);
-    if (!isSimpleConstant(result))
-      return Error("could not simplify operator " + getString(expr));
-    return result;
-  }
-
-  // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return Error("unknown expression to fold: " + getString(expr));
 }
 
 void ParameterRewriter::processParamBindOp(ParamBindOp op) {
@@ -711,7 +766,8 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
 
   SmallVector<KernelOp> result;
   for (GeneratorOp gen : interfaceImpls) {
-    // Make sure to go through getAllInstantiations so generators are cached.
+    // Make sure to go through getAllInstantiations so generators are cached
+    // and any constraints on the generator itself are validated.
     auto kernels = getAllInstantiations(gen, inputParamValues, insertionPoint);
     result.append(kernels.begin(), kernels.end());
   }
@@ -734,6 +790,12 @@ Elaborator::getAllInstantiations(Operation *decl,
   auto cacheIt = generatedKernels.find(cacheKey);
   if (cacheIt != generatedKernels.end())
     return cacheIt->second;
+
+  // Evaluate any constraints for this declaration to see if this is a viable
+  // expansion.  If not, the expansion fails.
+  if (failed(ParameterEvaluator::evaluateConstraints(decl, inputParamValues)))
+    // TODO: We need to report up information about why this expansion failed.
+    return {};
 
   SmallVector<KernelOp> newCallees;
   if (auto kernel = dyn_cast<KernelOp>(decl))
