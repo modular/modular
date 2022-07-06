@@ -32,8 +32,7 @@ inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
 
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always never have input
-/// parameters.
+/// result parameters.  A kernel will always never have input parameters.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
 getDeclParameterInfo(Operation *decl);
 
@@ -45,6 +44,10 @@ ArrayRef<Attribute> getParamDecls(Operation *op);
 /// operation has it, or an empty array otherwise.  This handles casting each
 /// element of the attribute list, which requires building a new SmallVector.
 SmallVector<ParamDeclAttr, 4> getParamDeclsCasted(Operation *op);
+
+/// Given a kernel, generator or interface operation, return the constraints
+/// imposed on it.  For a kernel this is always empty.
+ArrayRef<Attribute> getDeclConstraints(Operation *decl);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing

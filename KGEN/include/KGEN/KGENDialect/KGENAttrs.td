@@ -18,6 +18,12 @@ def ParameterExprAttr
       CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
     >]>;
 
+def I1ParameterExprAttr
+  : Confined<ParameterExprAttr, [AttrConstraint<
+      CPred<"$_self.getType().isInteger(1)">, "i1 parameter expression"
+    >]>;
+      
+
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
@@ -236,3 +242,11 @@ def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
     DType getDType();
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// ConstraintArrayAttr
+//===----------------------------------------------------------------------===//
+
+/// An array of attributes with bool type.
+def ConstraintArrayAttr
+  : TypedArrayAttrBase<I1ParameterExprAttr, "array of parameter constraints">;

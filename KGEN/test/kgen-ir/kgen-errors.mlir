@@ -382,3 +382,22 @@ kgen.kernel @cast_from_meta_type(%arg0: f64) {
   %0 = meta.cast_from_builtin %arg0: f64 to !meta.scalar<f32>
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
+kgen.generator @constrained<width, height>()
+  constraints <eq(width, 42), eq(he1ght, 42)> {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
+kgen.generator.interface @constrained<width, height>()
+  constraints <eq(width, 42), eq(he1ght, 42)>
+
+// -----
+
+// expected-error @+1 {{invalid use of parameter with no declaration "ty2"}}
+kgen.generator.interface @badTypes<ty1 : dtype>(%a : !meta.scalar<ty2>)
