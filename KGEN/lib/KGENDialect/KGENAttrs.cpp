@@ -195,6 +195,15 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value) {
     return;
   }
 
+  // If this is an i1 integer attr, print it as zero or one; not true/false
+  // keywords.  This simplifies the keyword processing logic.
+  if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
+    if (intAttr.getValue().getBitWidth() == 1) {
+      p << (int)intAttr.getValue().getZExtValue();
+      return;
+    }
+  }
+
   p.printAttributeWithoutType(value);
 }
 
