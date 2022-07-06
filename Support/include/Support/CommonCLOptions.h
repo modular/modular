@@ -22,7 +22,7 @@ public:
 
   int reportError(Twine errorMessage) const {
     llvm::errs() << programName << ": " << errorMessage << "\n";
-    return 1;
+    return EXIT_FAILURE;
   }
 
   // Specify the input file for a given binary
@@ -79,8 +79,11 @@ public:
     llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
     return configureMLIRContextAndExecute(
-        sourceMgr, [&sourceMgr, bodyFn = std::forward<BodyFn>(bodyFn)](
-                       mlir::MLIRContext *ctx) { bodyFn(ctx, sourceMgr); });
+        sourceMgr,
+        [&sourceMgr, bodyFn = std::forward<BodyFn>(bodyFn)](
+            mlir::MLIRContext *ctx) -> LogicalResult {
+          return bodyFn(ctx, sourceMgr);
+        });
   }
 
   /// This method creates an MLIR context and configures it for diagnostic
@@ -93,13 +96,13 @@ public:
     if (verifyDiagnostics) {
       mlir::SourceMgrDiagnosticVerifierHandler sourceMgrHandler(sourceMgr,
                                                                 &context);
-      bodyFn(&context);
+      // If diagnostic verification is enabled, we don't propagate the result.
+      (void)bodyFn(&context);
       return sourceMgrHandler.verify();
     }
 
     mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
-    bodyFn(&context);
-    return success();
+    return bodyFn(&context);
   }
 
 private:
