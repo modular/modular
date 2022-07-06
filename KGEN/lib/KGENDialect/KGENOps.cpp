@@ -34,7 +34,7 @@ static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
                                    Attribute value, Type type) {
   printColonTypeOrIndex(p, type);
   p << " = <";
-  printParamValue(p, value, type);
+  printParamValue(p, value);
   p << ">";
 }
 
@@ -95,7 +95,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
     printParamName(p, bind.getName());
     printColonTypeOrIndex(p, bind.getType());
     p << " = ";
-    printParamValue(p, bind.getValue(), bind.getType());
+    printParamValue(p, bind.getValue());
   });
   p << '>';
 }
@@ -211,7 +211,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
     printParamName(p, bind.getName().getValue());
     printColonTypeOrIndex(p, bind.getType());
     p << " = ";
-    printParamValue(p, bind.getValue(), bind.getType());
+    printParamValue(p, bind.getValue());
   });
   if (paramValues.empty())
     p << "()";

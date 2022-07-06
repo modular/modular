@@ -135,9 +135,12 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
     // If it is a known opcode, parse the operand list.
     SmallVector<Attribute> operands;
 
-    // The element type of a function is currently always the same type
-    // as the expression itself.
+    // The element type of a function is the same type as the expression itself
+    // except for comparisons.
     Type operandType = type;
+    if (opcode == POC::EQ)
+      operandType = p.getBuilder().getIndexType();
+
     if (failed(p.parseOptionalRParen())) {
       if (p.parseCommaSeparatedList([&]() -> ParseResult {
             return parseParamValue(p, operands.emplace_back(Attribute()),
@@ -164,10 +167,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
-  assert(type && "parameter's should always have a contextual type!");
+void KGEN::printParamValue(AsmPrinter &p, Attribute value) {
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
-    assert(type == declRef.getType() && "type mismatch in emission?");
     printParamName(p, declRef.getName());
     return;
   }
@@ -188,7 +189,7 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value, Type type) {
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
     p << stringifyEnum(expr.getOpcode()) << '(';
     llvm::interleaveComma(expr.getOperands(), p, [&](Attribute operand) {
-      printParamValue(p, operand, type);
+      printParamValue(p, operand);
     });
     p << ')';
     return;
@@ -232,7 +233,7 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
 
 /// Print an attribute value that is known to have index type.
 void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value, IndexType::get(value.getContext()));
+  printParamValue(p, value);
 }
 
 /// Parse a parameter value that is known to be an index type.
@@ -360,9 +361,9 @@ mlir::SubElementAttrInterface ParamBindAttr::replaceImmediateSubAttribute(
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<Attribute> operands, Type type) {
-  // All the operand types and result type must match.
-  if (!llvm::all_of(operands, [&](auto op) {
-        return op.getType() == operands.front().getType();
+  // All the operand types must match.
+  if (!llvm::all_of(operands, [&](auto operand) {
+        return operand.getType() == operands.front().getType();
       }))
     return emitError() << "operand type mismatch";
 
@@ -374,9 +375,10 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Or:
   case POC::Xor:
     if (operands.empty())
-      return emitError()
-             << "associative operator must have at least one operand";
-    type = operands[0].getType();
+      return emitError() << stringifyEnum(opcode)
+                         << " operator must have at least one operand";
+    if (type != operands[0].getType())
+      return emitError() << "result type should match operand types";
     if (!type.isIndex())
       return emitError() << "operator requires an index type";
     break;
@@ -388,9 +390,18 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Mod:
     if (operands.size() != 2)
       return emitError() << "binary operators must have two operands";
-    type = operands[0].getType();
-    if (!type.isIndex())
+    if (type != operands[0].getType())
+      return emitError() << "result type should match operand types";
+    if (!operands[0].getType().isIndex())
       return emitError() << "operator requires an index type";
+    break;
+  case POC::EQ:
+    if (operands.size() != 2)
+      return emitError() << "comparison operators must have two operands";
+    if (!operands[0].getType().isIndex())
+      return emitError() << "comparison requires an index type operand";
+    if (!type.isInteger(1))
+      return emitError() << "comparisons return i1";
     break;
   }
   return success();
@@ -699,16 +710,28 @@ static Attribute simplifyMod(SmallVector<Attribute, 4> &operands) {
       [](auto a, auto b) { return a.srem(b); });
 }
 
+static Attribute simplifyEQ(SmallVector<Attribute, 4> &operands) {
+  // Make sure parameters are ordered correctly.
+  llvm::stable_sort(operands, paramExprOperandSortPredicate);
+
+  return foldBinaryOp(
+      operands, [](auto a, auto b) { return APInt(1, a == b); },
+      [](auto a, auto b) { return APInt(1, a == b); });
+}
+
 /// Build a parameter expression.  This automatically canonicalizes and
 /// folds, so it may not necessarily return a ParamOperatorAttr.
 Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
-  // All operands must have the same type, which is the type of the result.
-  auto type = operandsIn.front().getType();
+  // All operands must have the same type.  The result type is usually the same
+  // as the operands, but is i1 for comparisons (overridden below).
+  auto resultType = operandsIn.front().getType();
   assert(llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == type; }));
+                      [&](auto op) { return op.getType() == resultType; }));
 
   SmallVector<Attribute, 4> operands(operandsIn.begin(), operandsIn.end());
+
+  auto *context = operandsIn[0].getContext();
 
   // Verify and canonicalize parameter expressions.
   Attribute result;
@@ -740,13 +763,17 @@ Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   case POC::Mod:
     result = simplifyMod(operands);
     break;
+  case POC::EQ:
+    result = simplifyEQ(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
   }
 
   // If we folded to an operand, return it.
   if (result)
     return result;
 
-  return Base::get(operandsIn[0].getContext(), opcode, operands, type);
+  return Base::get(context, opcode, operands, resultType);
 }
 
 void ParamOperatorAttr::walkImmediateSubElements(

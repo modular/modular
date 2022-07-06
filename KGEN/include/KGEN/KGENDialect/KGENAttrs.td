@@ -164,12 +164,18 @@ def POC_Shr : I32EnumAttrCase<"Shr", 6, "shr">;
 def POC_Div : I32EnumAttrCase<"Div", 7, "div">;
 def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 
+// Compares.
+// TODO: Need to determine canonical format for inverting a bool, e.g. multiply
+// by -1?  We don't need both EQ and NE for example, we should be able to just
+// have EQ and LT and be good.
+def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
+
 // TODO: Can add compares, string concat, etc as needed.
 
 /// This defines the Parameter Operator Code enum attribute.
 def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                            [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
-                            POC_Shl, POC_Shr, POC_Div, POC_Mod]>;
+                            POC_Shl, POC_Shr, POC_Div, POC_Mod, POC_EQ]>;
 }
 
 def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
