@@ -16,7 +16,15 @@
 namespace M {
 
 /// Contains command-line options that are shared among most of our binaries.
-struct CommonCLOptions {
+class CommonCLOptions {
+public:
+  CommonCLOptions(StringRef programName) : programName(programName) {}
+
+  int reportError(Twine errorMessage) const {
+    llvm::errs() << programName << ": " << errorMessage << "\n";
+    return 1;
+  }
+
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,
                                      cl::desc("<input file>"), cl::init("-")};
@@ -39,13 +47,10 @@ struct CommonCLOptions {
 
   /// The common case for all our driver-like tools is to fail early with an
   /// exit error status.  This takes care of that bit of boilerplate.
-  std::unique_ptr<llvm::MemoryBuffer>
-  openInputFileOrExit(const char *toolName) {
+  std::unique_ptr<llvm::MemoryBuffer> openInputFileOrExit() {
     auto errorOrInputFile = openInputFile();
-    if (failed(errorOrInputFile)) {
-      llvm::errs() << toolName << ": " << errorOrInputFile.takeError() << '\n';
-      exit(1);
-    }
+    if (failed(errorOrInputFile))
+      exit(reportError(Twine(errorOrInputFile.getError())));
     return errorOrInputFile.takeValue();
   }
 
@@ -96,6 +101,11 @@ struct CommonCLOptions {
     bodyFn(&context);
     return success();
   }
+
+private:
+  /// This is the value of argv[0] when the program launches, used for reporting
+  /// error messages.
+  StringRef programName;
 };
 
 } // namespace M
