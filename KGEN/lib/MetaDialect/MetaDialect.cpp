@@ -37,7 +37,7 @@ static ParseResult parseParamDTypeValue(AsmParser &p,
 }
 
 static void printParamDTypeValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value, value.getType());
+  printParamValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//

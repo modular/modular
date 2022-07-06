@@ -63,7 +63,7 @@ void printParamName(AsmPrinter &p, StringRef name);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParamValue(AsmPrinter &p, Attribute value, Type type);
+void printParamValue(AsmPrinter &p, Attribute value);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
