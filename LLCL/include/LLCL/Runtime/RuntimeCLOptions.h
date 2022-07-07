@@ -19,18 +19,17 @@
 
 namespace LLCL {
 
-namespace {
-enum class OnFailure {
-  /// Allocator that just calls malloc/free.
-  kContinue,
-  /// Allocator that does leak checking.
-  kExit,
-};
-}
-
 /// Contains a number of command-line options that are shared among most of our
 /// binaries
 class RuntimeCLOptions {
+private:
+  enum class OnFailure {
+    /// Allocator that just calls malloc/free.
+    kContinue,
+    /// Allocator that does leak checking.
+    kExit,
+  };
+
 public:
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
