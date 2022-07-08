@@ -1026,19 +1026,6 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   if (generator.collectInterfaces())
     return failure();
 
-  // Concretize all the kernels at the top-level.  We use a temporary operation
-  // as a cursor to keep track of where we are in the module.  This is because
-  // kernels can cause kernels, and we don't want our iterator to get
-  // invalidated.
-  bool didFail = false;
-  SmallVector<KernelOp, 16> kernelsToGenerate;
-
-  // Collect all the kernels to generate in a prepass, because we will be
-  // creating new kernels in the primary file that are already concretized and
-  // we don't want to reprocess them.
-  // FIXME: This isn't correct at all: kernels can call kernels which can lead
-  // to them getting deleted.
-
   // TODO: When expanding a kernel we need to pass in history of prior expansion
   // bindings, which constrains/defines future expansions of the same thing, and
   // we need to return up novel bindings that are done.  For each multi-version
@@ -1060,11 +1047,25 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   // generate 5 copies of @bar, each of which resolves the call to
   // foo->someInterface in the same direction.  We should not generate 5*5*5
   // copies of @bar that has all pairs of foo/someInterface resolutions.
-  for (auto kernel : primary.getOps<KernelOp>())
-    kernelsToGenerate.push_back(kernel);
+
+  // Elaborate all the kernels at the top-level.  We use a temporary operation
+  // as a cursor to keep track of where we are in the module.  This is because
+  // kernels can cause kernels, and we don't want our iterator to get
+  // invalidated.
+  auto b = OpBuilder::atBlockBegin(primary.getBody());
+  Operation *cursor =
+      b.create(OperationState(primary->getLoc(), "kgen-elaborate-cursor"));
 
   // Process each kernel.
-  for (auto kernel : kernelsToGenerate) {
+  bool didFail = false;
+  while (std::next(Block::iterator(cursor)) != primary.end()) {
+    // Look at the next operation and move the cursor past it.
+    Operation *nextOp = &*std::next(Block::iterator(cursor));
+    cursor->moveAfter(nextOp);
+    auto kernel = dyn_cast<KernelOp>(nextOp);
+    if (!kernel)
+      continue;
+
     // Elaborate the kernel into concrete versions.
     ArrayRef<KernelOrCalleeError> results =
         generator.getAllInstantiations(kernel, {}, kernel);
@@ -1082,6 +1083,9 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
       didFail = true;
     }
   }
+
+  // When we're done with the iteration, we can get rid of the cursor.
+  cursor->erase();
 
   // If we failed to expand any kernel, propagate that failure.
   if (didFail)
