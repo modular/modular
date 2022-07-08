@@ -361,11 +361,16 @@ public:
     return kernel;
   }
 
-  CalleeExpansionError takeDiagnostic() {
+  /// If elaboration of this kernel fails, then the client can get the error
+  /// out.  This also deletes the dead husk of the kernel which may not even
+  /// verify correctly.
+  CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.hasValue() &&
            "cannot get diagnostic when none was generated");
-    return CalleeExpansionError(kernel->getLoc(),
-                                std::move(diagnostic.getValue()));
+    auto kernelLoc = kernel->getLoc();
+    kernel->erase();
+    kernel = KernelOp();
+    return CalleeExpansionError(kernelLoc, std::move(diagnostic.getValue()));
   }
 
   /// Generate a error expanding this kernel.  The location specified is the
@@ -815,10 +820,16 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
   SmallVector<KernelOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
     auto rewriter = rewriterWorklist.pop_back_val();
-    if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
+
+    // If elaborating the kernel succeeded, then we have a viable candidate.
+    if (succeeded(rewriter.rewriteOps(rewriterWorklist))) {
       results.push_back(rewriter.getKernel());
-    else
-      results.push_back(rewriter.takeDiagnostic());
+    } else {
+      // If elaborating the kernel fails, then remember the diagnostic (in case
+      // we need to explain why elaboration fails) and remove the broken husk of
+      // a kernel that didn't make it.
+      results.push_back(rewriter.takeDiagnosticAndEraseKernel());
+    }
   }
   return results;
 }
