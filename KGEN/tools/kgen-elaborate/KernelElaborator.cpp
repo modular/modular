@@ -31,6 +31,43 @@ static bool isSimpleConstant(Attribute attr) {
 }
 
 //===----------------------------------------------------------------------===//
+// ElaborationDiagnostic class definition
+//===----------------------------------------------------------------------===//
+
+class ElaborationDiagnostic;
+
+/// This class models the location of a declaration that failed to expand along
+/// with the reason why it failed.
+using CalleeExpansionError = std::pair<Location, ElaborationDiagnostic>;
+
+/// This class represents the reason that a kernel or generator could not be
+/// elaborated.  It is either a local problem in the kernel (e.g. an operator
+/// defining a parameter that is unknown) or it is a call to another set of
+/// kernel/generators that had problems expanding.
+class ElaborationDiagnostic {
+public:
+  ElaborationDiagnostic(Location loc, Error error)
+      : loc(loc), payload(std::string(error.get())) {}
+  ElaborationDiagnostic(Location loc,
+                        ArrayRef<CalleeExpansionError> calleeErrors)
+      : loc(loc), payload(calleeErrors.vec()) {}
+
+private:
+  /// This is the location within the declaration of the failure, e.g. of the
+  /// call or other operator with a problem.
+  Location loc;
+
+  /// The problem is either:
+  ///   1) a local issue represented as an error on an operation.
+  ///   2) a transitive issue where expansion of a call failed (the main
+  ///      location) due to callees where something inside the callee failed to
+  ///      expand.  Each callee has a location of the decl itself + the problem.
+  std::variant<std::string, std::vector<CalleeExpansionError>> payload;
+};
+
+using KernelOrCalleeError = std::variant<KernelOp, CalleeExpansionError>;
+
+//===----------------------------------------------------------------------===//
 // Elaborator class definition
 //===----------------------------------------------------------------------===//
 
@@ -53,9 +90,9 @@ public:
   /// generator, or interface) with teh specified input parameter values.
   /// `insertionPoint` is always a point in the primary module where a new
   /// kernel should be placed if necessary.
-  ArrayRef<KernelOp> getAllInstantiations(Operation *decl,
-                                          ArrayRef<Attribute> inputParamValues,
-                                          Operation *insertionPoint);
+  ArrayRef<KernelOrCalleeError>
+  getAllInstantiations(Operation *decl, ArrayRef<Attribute> inputParamValues,
+                       Operation *insertionPoint);
 
   /// Insert a variant of an existing kernel into the primary file.
   void insertKernelVariant(KernelOp existing, KernelOp newKernel);
@@ -64,12 +101,12 @@ private:
   /// Specialize a kernel body, generating one variant or each viable
   /// instantiation of that body.  Kernels do not have parameters, but they can
   /// invoke interfaces etc which can cause them to produce multiple variants.
-  SmallVector<KernelOp> specializeKernel(KernelOp kernel);
+  SmallVector<KernelOrCalleeError> specializeKernel(KernelOp kernel);
 
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  SmallVector<KernelOp>
+  SmallVector<KernelOrCalleeError>
   specializeGenerator(GeneratorOp generator,
                       ArrayRef<Attribute> inputParamValues,
                       Operation *insertionPoint);
@@ -77,7 +114,7 @@ private:
   /// Specialize a kernel interface with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  SmallVector<KernelOp>
+  SmallVector<KernelOrCalleeError>
   specializeInterface(GeneratorInterfaceOp itf,
                       ArrayRef<Attribute> inputParamValues,
                       Operation *insertionPoint);
@@ -102,7 +139,7 @@ private:
   /// This is a cache of already-instantiated declarations.  The key is the
   /// kernel/generator/interface and input parameters, the result are
   /// all-possible kernels that could be generated from this.
-  DenseMap<std::pair<Operation *, ArrayAttr>, SmallVector<KernelOp>>
+  DenseMap<std::pair<Operation *, ArrayAttr>, SmallVector<KernelOrCalleeError>>
       generatedKernels;
 };
 } // end anonymous namespace
@@ -278,7 +315,9 @@ ParameterEvaluator::evaluateConstraints(Operation *decl,
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
-/// and simplify operations in a kernel based on those values.
+/// and simplify operations in a kernel based on those values.  If an error
+/// happens during rewriting, the diagnostic is filled in and failure() is
+/// returned.
 class ParameterRewriter : public ParameterEvaluator {
 public:
   ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
@@ -297,18 +336,47 @@ public:
   rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
 
   /// Return the kernel we're generating into.
-  KernelOp getKernel() const { return kernel; }
+  KernelOp getKernel() const {
+    assert(!diagnostic.hasValue() &&
+           "can't get the result kernel when a diagnostic was generated");
+    return kernel;
+  }
+
+  CalleeExpansionError takeDiagnostic() {
+    assert(diagnostic.hasValue() &&
+           "cannot get diagnostic when none was generated");
+    return CalleeExpansionError(kernel->getLoc(),
+                                std::move(diagnostic.getValue()));
+  }
+
+  /// Generate a error expanding this kernel.  The location specified is the
+  /// operation with the problem, and the message is the problem with it.
+  LogicalResult error(Location loc, Error message) {
+    assert(!diagnostic.hasValue() && "Already emitted an error");
+    diagnostic = ElaborationDiagnostic(loc, std::move(message));
+    return failure();
+  }
+
+  /// Generate an error expanding this kernel for a call expansion problem.  The
+  /// location specified is for the call.  Each entry in calleeErrors includes
+  /// the location of the declaration that failed to expand along with why it
+  /// failed.
+  LogicalResult errorCalling(Location callLoc,
+                             ArrayRef<CalleeExpansionError> calleeErrors) {
+    assert(!diagnostic.hasValue() && "Already emitted an error");
+    diagnostic = ElaborationDiagnostic(callLoc, calleeErrors);
+    return failure();
+  }
 
 private:
-  void processParamBindOp(ParamBindOp op);
-  void processParamValueOp(ParamValueOp op);
-  void processCallOp(CallOp call,
-                     SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
+  LogicalResult processParamBindOp(ParamBindOp op);
+  LogicalResult processParamValueOp(ParamValueOp op);
+  LogicalResult processCallOp(CallOp call,
+                              SmallVectorImpl<ParameterRewriter> &rewriters);
   void completeCallOpProcessing(CallOp call, KernelOp newCallee);
-  void
-  spawnNewKernelClone(CallOp call, KernelOp callee,
-                      SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
-  void processGenericOp(Operation *op);
+  void spawnNewKernelClone(CallOp call, KernelOp callee,
+                           SmallVectorImpl<ParameterRewriter> &rewriters);
+  LogicalResult processGenericOp(Operation *op);
 
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.
@@ -322,6 +390,10 @@ private:
 
   /// This is the kernel we're working on.
   KernelOp kernel;
+
+  /// This is a diagnostic explaining the expansion failure if something goes
+  /// wrong.
+  Optional<ElaborationDiagnostic> diagnostic;
 
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
@@ -362,88 +434,119 @@ LogicalResult ParameterRewriter::rewriteOps(
   while (!opsToRewrite.empty()) {
     Operation *op = opsToRewrite.pop_back_val();
 
+    LogicalResult result = success();
     /// Process an operation that needs to be rewritten/lowered based on the
     /// context of the parameter values we know are defined.
     if (auto bind = dyn_cast<ParamBindOp>(op))
-      processParamBindOp(bind);
+      result = processParamBindOp(bind);
     else if (auto value = dyn_cast<ParamValueOp>(op))
-      processParamValueOp(value);
+      result = processParamValueOp(value);
     else if (auto call = dyn_cast<CallOp>(op))
-      processCallOp(call, rewriterWorklist);
+      result = processCallOp(call, rewriterWorklist);
     else if (isa<KernelOp>(op))
       /*kernels can define parameters, nothing need be done with them*/;
     else
-      processGenericOp(op);
+      result = processGenericOp(op);
+
+    // If processing any operation failed, then this entire kernel elaboration
+    // failed.
+    if (failed(result))
+      return failure();
   }
 
-  // Check that the thing we just built is correct!
-  return verify(kernel);
+  // Check that the thing we just built is correct IR!  We want to catch any
+  // errors produced by the verify pass, we don't want them to actually get
+  // emitted.
+  bool hadError = false;
+  mlir::ScopedDiagnosticHandler diagHandler(
+      kernel.getContext(), [&](Diagnostic &diag) -> LogicalResult {
+        (void)error(diag.getLocation(),
+                    Twine("verification error: ") + diag.str());
+        hadError = true;
+        return success();
+      });
+
+  LogicalResult verifyResult = verify(kernel);
+  assert(hadError == failed(verifyResult) && "Result of verify is unexpected");
+  return verifyResult;
 }
 
-void ParameterRewriter::processParamBindOp(ParamBindOp op) {
+LogicalResult ParameterRewriter::processParamBindOp(ParamBindOp op) {
   // Simplify the input expression.
   auto errorOrValue = simplifyParameterExpr(op.getValue());
-  if (errorOrValue.isError()) {
-    op->emitError(errorOrValue.getError());
-    return;
-  }
+  if (errorOrValue.isError())
+    return error(op->getLoc(), errorOrValue.takeError());
 
   // Bind it to the parameter declaration it is setting.
   setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
 
   // The param.bind operation serves no other purpose, so we can remove it.
   op->erase();
+  return success();
 }
 
-void ParameterRewriter::processParamValueOp(ParamValueOp op) {
+LogicalResult ParameterRewriter::processParamValueOp(ParamValueOp op) {
   // ParamValueOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
   auto errorOrValue = simplifyParameterExpr(op.getValue());
-  if (errorOrValue.isError()) {
-    op->emitError(errorOrValue.getError());
-    return;
-  }
+  if (errorOrValue.isError())
+    return error(op->getLoc(), errorOrValue.takeError());
 
   op.setValueAttr(errorOrValue.takeValue());
+  return success();
 }
 
-void ParameterRewriter::processCallOp(
-    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
+LogicalResult ParameterRewriter::processCallOp(
+    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
   // Evaluating any input parameters.
   SmallVector<Attribute> boundInputParams;
   for (auto param : call.getParamValues()) {
     auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
-    if (value.isError()) {
-      call->emitError(value.getError());
-      return;
-    }
+    if (value.isError())
+      return error(call->getLoc(), value.takeError());
+
     boundInputParams.push_back(value.takeValue());
   }
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
   auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
-  auto newCalleesRef =
+  ArrayRef<KernelOrCalleeError> newCalleesRef =
       elaborator.getAllInstantiations(callee, boundInputParams, kernel);
 
   // Copy the list of kernels instead of referring to the cache entry to avoid
   // iterator invalidation problems.
-  SmallVector<KernelOp> newCallees(newCalleesRef.begin(), newCalleesRef.end());
+  SmallVector<KernelOrCalleeError> newCallees(newCalleesRef.begin(),
+                                              newCalleesRef.end());
 
-  // If kernel instantiation failed for some reason, bail out.  The error will
-  // already be reported.
-  if (newCallees.empty())
-    return;
+  // If we found more than one callee to produce then we need to spawn
+  // multiple versions of the kernel we are currently constructing, each
+  // which get a different callee.
+  KernelOp thisCallee;
+  for (const KernelOrCalleeError &callee : newCallees) {
+    // Ignore erroneous callees.
+    if (std::holds_alternative<CalleeExpansionError>(callee))
+      continue;
+    // We will pursue the first viable callee locally.
+    if (!thisCallee)
+      thisCallee = std::get<KernelOp>(callee);
+    else
+      /// All other callees gets spawned as sub-evaluators.
+      spawnNewKernelClone(call, std::get<KernelOp>(callee), rewriters);
+  }
 
-  // If we found more than one callee to produce then we need to spawn multiple
-  // versions of the kernel we are currently constructing, each which get a
-  // different callee.
-  for (KernelOp callee : llvm::drop_begin(newCallees))
-    spawnNewKernelClone(call, callee, rewriterWorklist);
+  // If all the expansions failed, then this call fails overall.
+  if (!thisCallee) {
+    SmallVector<CalleeExpansionError> errors;
+    for (const auto &value : newCalleesRef)
+      errors.push_back(std::get<CalleeExpansionError>(value));
+    return errorCalling(call->getLoc(), errors);
+  }
 
-  // Finally, we can handle the first one as our continued progress here.
-  completeCallOpProcessing(call, newCallees[0]);
+  // Finally, we can handle the first viable one as our continued progress here.
+  completeCallOpProcessing(call, thisCallee);
+  return success();
 }
 
 void ParameterRewriter::completeCallOpProcessing(CallOp call,
@@ -474,7 +577,7 @@ void ParameterRewriter::completeCallOpProcessing(CallOp call,
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewKernelClone(
     CallOp call, KernelOp callee,
-    SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
+    SmallVectorImpl<ParameterRewriter> &rewriters) {
 
   // Start by cloning the current WIP kernel to a new copy of it.
   BlockAndValueMapping blocksAndValues;
@@ -486,7 +589,7 @@ void ParameterRewriter::spawnNewKernelClone(
   elaborator.insertKernelVariant(kernel, newKernel);
 
   // Generate the new rewriter which will process this.
-  auto &newRewriter = rewriterWorklist.emplace_back(*this, operationMap);
+  auto &newRewriter = rewriters.emplace_back(*this, operationMap);
 
   // Change the future of this kernel by resolving the call in the new kernel to
   // the specifed callee.
@@ -589,15 +692,14 @@ Type ParameterRewriter::getReboundType(Type type, Location loc) {
 
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
-void ParameterRewriter::processGenericOp(Operation *op) {
+LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // We can rewrite generic references and /uses/ of parameters, but we don't
   // don't know how to calculate the new value for a defined parameter.  If
   // there is a reason to allow open extension of operations that define
   // parameters, we could genericize this into a op interface.
-  if (!getParamDecls(op).empty()) {
-    op->emitError("unknown parameter-defining operator in GenerateKernels");
-    return;
-  }
+  if (!getParamDecls(op).empty())
+    return error(op->getLoc(),
+                 "unknown parameter-defining operator in GenerateKernels");
 
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
@@ -626,6 +728,7 @@ void ParameterRewriter::processGenericOp(Operation *op) {
         for (Value arg : block.getArguments())
           arg.setType(getReboundType(arg.getType(), op->getLoc()));
   }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -667,7 +770,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// Specialize a kernel body, generating one variant or each viable
 /// instantiation of that body.  Kernels do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
-SmallVector<KernelOp> Elaborator::specializeKernel(KernelOp kernel) {
+SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
   SmallVector<Operation *> opsToRewrite;
@@ -690,11 +793,13 @@ SmallVector<KernelOp> Elaborator::specializeKernel(KernelOp kernel) {
 
   // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
   // until we converge.
-  SmallVector<KernelOp> results;
+  SmallVector<KernelOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
     auto rewriter = rewriterWorklist.pop_back_val();
     if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
       results.push_back(rewriter.getKernel());
+    else
+      results.push_back(rewriter.takeDiagnostic());
   }
   return results;
 }
@@ -704,7 +809,7 @@ SmallVector<KernelOp> Elaborator::specializeKernel(KernelOp kernel) {
 /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
-SmallVector<KernelOp>
+SmallVector<KernelOrCalleeError>
 Elaborator::specializeGenerator(GeneratorOp generator,
                                 ArrayRef<Attribute> inputParamValues,
                                 Operation *insertionPoint) {
@@ -754,17 +859,26 @@ Elaborator::specializeGenerator(GeneratorOp generator,
 /// Specialize a kernel interface with the specified input parameters and
 /// return the generated kernel.  `insertionPoint` is always a point in the
 /// primary module where a new kernel should be placed if necessary.
-SmallVector<KernelOp>
+SmallVector<KernelOrCalleeError>
 Elaborator::specializeInterface(GeneratorInterfaceOp itf,
                                 ArrayRef<Attribute> inputParamValues,
                                 Operation *insertionPoint) {
+  SmallVector<KernelOrCalleeError> result;
+
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
   ArrayRef<GeneratorOp> interfaceImpls = getGeneratorsImplementing(itf);
-  if (interfaceImpls.empty())
-    return {};
+  if (interfaceImpls.empty()) {
+    // If we found no implementations, report that problem at the call site as
+    // a single diagnostic.
+    result.push_back(CalleeExpansionError(
+        itf->getLoc(),
+        ElaborationDiagnostic(itf->getLoc(),
+                              Error(Twine("no implementations of interface '") +
+                                    itf.getName() + "' found"))));
+    return result;
+  }
 
-  SmallVector<KernelOp> result;
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
@@ -778,7 +892,7 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
 /// generator, or interface) with teh specified input parameter values.
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
-ArrayRef<KernelOp>
+ArrayRef<KernelOrCalleeError>
 Elaborator::getAllInstantiations(Operation *decl,
                                  ArrayRef<Attribute> inputParamValues,
                                  Operation *insertionPoint) {
@@ -791,21 +905,28 @@ Elaborator::getAllInstantiations(Operation *decl,
   if (cacheIt != generatedKernels.end())
     return cacheIt->second;
 
+  SmallVector<KernelOrCalleeError> newCallees;
+
+  auto localError = [&](Error err) {
+    newCallees.push_back(CalleeExpansionError(
+        decl->getLoc(), ElaborationDiagnostic(decl->getLoc(), std::move(err))));
+  };
+
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
-  if (failed(ParameterEvaluator::evaluateConstraints(decl, inputParamValues)))
-    // TODO: We need to report up information about why this expansion failed.
-    return {};
-
-  SmallVector<KernelOp> newCallees;
-  if (auto kernel = dyn_cast<KernelOp>(decl))
+  auto constraintResult =
+      ParameterEvaluator::evaluateConstraints(decl, inputParamValues);
+  if (failed(constraintResult)) {
+    localError(constraintResult.takeError());
+  } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
     newCallees = specializeKernel(kernel);
-  else if (auto generator = dyn_cast<GeneratorOp>(decl))
+  } else if (auto generator = dyn_cast<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(generator, inputParamValues, kernel);
-  else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl))
+  } else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl)) {
     newCallees = specializeInterface(interface, inputParamValues, kernel);
-  else
-    decl->emitError("cannot handle this yet");
+  } else {
+    localError("call to an unknown kind of declaration");
+  }
 
   auto &result = generatedKernels[cacheKey];
   result = std::move(newCallees);
@@ -868,9 +989,19 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
 
   // Process each kernel.
   for (auto kernel : kernelsToGenerate) {
-    ArrayRef<KernelOp> results =
+    // Elaborate the kernel into concrete versions.
+    ArrayRef<KernelOrCalleeError> results =
         generator.getAllInstantiations(kernel, {}, kernel);
-    didFail |= results.empty();
+
+    /// If the kernel failed to expand into /anything/ then emit an error.
+    if (llvm::all_of(results, [](const KernelOrCalleeError &result) -> bool {
+          return std::holds_alternative<CalleeExpansionError>(result);
+        })) {
+      // TODO: We have a TON of information about /why/ it failed, format the
+      // result info.
+      kernel->emitError("failed to generate any kernels");
+      didFail = true;
+    }
   }
 
   // If we failed to expand any kernel, propagate that failure.
