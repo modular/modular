@@ -204,33 +204,3 @@ kgen.kernel @use_Itf2one() {
   kgen.call @genItf2<x = 1>() : () -> ()
   kgen.return
 }
-
-
-// -----
-
-kgen.generator.interface @genItf3<ty: dtype>()
-
-// This implementation is fine.
-// CHECK-LABEL: kgen.kernel @"genItf3_impl0,ty=f32"() {
-kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
-  "impl0"() : () -> ()
-  kgen.return
-}
-
-// This generates a kernel that fails to verify, so it isn't used and must be
-// deleted.
-// CHECK-NOT: genItf3_impl1
-kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %c1 = arith.constant 1.0 : f32
-  %0 = meta.cast_from_builtin %c1: f32 to !meta.scalar<ty>
-  %1 = meta.cast_to_builtin %0: !meta.scalar<ty> to i8
-  kgen.return
-}
-
-// This has a single viable implementation.
-// CHECK-LABEL: kgen.kernel @use_Itf3() {
-// CHECK-NEXT:    kgen.call @"genItf3_impl0,ty=f32"()
-kgen.kernel @use_Itf3() {
-  kgen.call @genItf3<ty: dtype = f32>() : () -> ()
-  kgen.return
-}
