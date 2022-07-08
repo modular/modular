@@ -204,9 +204,3 @@ kgen.kernel @use_Itf2one() {
   kgen.call @genItf2<x = 1>() : () -> ()
   kgen.return
 }
-
-// TODO: This doesn't work yet, it generate any expansions.
-//kgen.kernel @use_Itf2two() {
-//  kgen.call @genItf2<x = 2>() : () -> ()
-//  kgen.return
-//}
