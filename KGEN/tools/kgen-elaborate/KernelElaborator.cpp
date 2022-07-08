@@ -20,6 +20,7 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
+#include <variant>
 
 using namespace M;
 using namespace KGEN;
