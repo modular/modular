@@ -47,16 +47,34 @@ using CalleeExpansionError = std::pair<Location, ElaborationDiagnostic>;
 /// kernel/generators that had problems expanding.
 class ElaborationDiagnostic {
 public:
-  ElaborationDiagnostic(Location loc, Error error)
-      : loc(loc), payload(std::string(error.get())) {}
-  ElaborationDiagnostic(Location loc,
+  ElaborationDiagnostic(Location failureLoc, Error error)
+      : failureLoc(failureLoc), payload(std::string(error.get())) {}
+  ElaborationDiagnostic(Location failureLoc,
                         ArrayRef<CalleeExpansionError> calleeErrors)
-      : loc(loc), payload(calleeErrors.vec()) {}
+      : failureLoc(failureLoc), payload(calleeErrors.vec()) {}
+
+  bool operator==(const ElaborationDiagnostic &diag) const {
+    return failureLoc == diag.failureLoc && payload == diag.payload;
+  }
+
+  /// This is the location within the declaration of the failure, e.g. of the
+  /// call or other operator with a problem.
+  Location getFailureLoc() const { return failureLoc; }
+
+  bool isLocalError() const {
+    return std::holds_alternative<std::string>(payload);
+  }
+  bool isCalleeError() const { return !isLocalError(); }
+
+  StringRef getLocalMessage() const { return std::get<std::string>(payload); }
+  MutableArrayRef<CalleeExpansionError> getCalleeErrors() {
+    return std::get<std::vector<CalleeExpansionError>>(payload);
+  }
 
 private:
   /// This is the location within the declaration of the failure, e.g. of the
   /// call or other operator with a problem.
-  Location loc;
+  Location failureLoc;
 
   /// The problem is either:
   ///   1) a local issue represented as an error on an operation.
@@ -938,6 +956,60 @@ Elaborator::getAllInstantiations(Operation *decl,
 // generateKernels Driver
 //===----------------------------------------------------------------------===//
 
+static void emitElaborationError(InFlightDiagnostic &diag,
+                                 MutableArrayRef<CalleeExpansionError> errors,
+                                 unsigned indentDepth) {
+  assert(!errors.empty());
+
+  // This is true when we have multiple decls that a call resolved to, e.g. due
+  // to an interface.
+  bool haveMultipleDecls = false;
+  std::string spaces(indentDepth, ' ');
+
+  // Start by grouping the errors by declaration, emitting each one in turn.
+  // Iteratively partition out things by declaration.
+  while (!errors.empty()) {
+    auto declLoc = errors[0].first;
+    auto split =
+        std::partition(errors.begin(), errors.end(),
+                       [&](auto &elt) -> bool { return elt.first == declLoc; });
+    haveMultipleDecls |= split != errors.end();
+
+    // Process the batch.
+    MutableArrayRef<CalleeExpansionError> batch =
+        errors.take_front(split - errors.begin());
+
+    // If there is one error in this batch, or if they are all at the same point
+    // and are the same problem, collapse them together.  These forks must have
+    // been different earlier in their elaboration but fail for the same reason.
+    if (batch.size() > 1 && llvm::all_of(batch, [&](const auto &err) -> bool {
+          return err == batch[0];
+        }))
+      batch = batch.take_front();
+
+    // If there are multiple alternative declarations in batches, emit a header
+    // that groups each batch.
+    if (haveMultipleDecls)
+      diag.attachNote(declLoc) << spaces << "failed to expand this declaration";
+
+    for (auto &error : batch) {
+      ElaborationDiagnostic &elabError = error.second;
+      if (elabError.isLocalError()) {
+        diag.attachNote(elabError.getFailureLoc())
+            << spaces << "  " << elabError.getLocalMessage();
+      } else {
+        diag.attachNote(elabError.getFailureLoc())
+            << spaces << "  call expansion failed";
+        emitElaborationError(diag, elabError.getCalleeErrors(),
+                             indentDepth + 4);
+      }
+    }
+
+    // Drop all the processed elements.
+    errors = errors.drop_front(split - errors.begin());
+  }
+}
+
 /// Elaborate kernels in the specified module, incorporating implementation
 /// logic from the specified library.
 LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
@@ -954,7 +1026,10 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   if (generator.collectInterfaces())
     return failure();
 
-  // Concretize all the kernels at the top-level.
+  // Concretize all the kernels at the top-level.  We use a temporary operation
+  // as a cursor to keep track of where we are in the module.  This is because
+  // kernels can cause kernels, and we don't want our iterator to get
+  // invalidated.
   bool didFail = false;
   SmallVector<KernelOp, 16> kernelsToGenerate;
 
@@ -998,9 +1073,12 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
     if (llvm::all_of(results, [](const KernelOrCalleeError &result) -> bool {
           return std::holds_alternative<CalleeExpansionError>(result);
         })) {
-      // TODO: We have a TON of information about /why/ it failed, format the
-      // result info.
-      kernel->emitError("failed to generate any kernels");
+      // Collect the errors together.
+      SmallVector<CalleeExpansionError> errors;
+      for (const auto &value : results)
+        errors.push_back(std::get<CalleeExpansionError>(value));
+      auto diag = emitError(kernel->getLoc(), "failed to generate any kernels");
+      emitElaborationError(diag, errors, /*depth=*/2);
       didFail = true;
     }
   }
