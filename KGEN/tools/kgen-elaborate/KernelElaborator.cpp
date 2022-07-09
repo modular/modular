@@ -325,11 +325,16 @@ public:
     return kernel;
   }
 
-  CalleeExpansionError takeDiagnostic() {
+  /// If elaboration of this kernel fails, then the client can get the error
+  /// out.  This also deletes the dead husk of the kernel which may not even
+  /// verify correctly.
+  CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.hasValue() &&
            "cannot get diagnostic when none was generated");
-    return CalleeExpansionError(kernel->getLoc(),
-                                std::move(diagnostic.getValue()));
+    auto kernelLoc = kernel->getLoc();
+    kernel->erase();
+    kernel = KernelOp();
+    return CalleeExpansionError(kernelLoc, std::move(diagnostic.getValue()));
   }
 
   /// Generate a error expanding this kernel.  The location specified is the
@@ -781,10 +786,14 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
     auto rewriter = rewriterWorklist.pop_back_val();
 
     // If elaborating the kernel succeeded, then we have a viable candidate.
-    if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
+    if (succeeded(rewriter.rewriteOps(rewriterWorklist))) {
       results.push_back(rewriter.getKernel());
-    else
-      results.push_back(rewriter.takeDiagnostic());
+    } else {
+      // If elaborating the kernel fails, then remember the diagnostic (in case
+      // we need to explain why elaboration fails) and remove the broken husk of
+      // a kernel that didn't make it.
+      results.push_back(rewriter.takeDiagnosticAndEraseKernel());
+    }
   }
   return results;
 }
@@ -1172,7 +1181,8 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
     ArrayRef<KernelOrCalleeError> results =
         elaborator.getAllInstantiations(kernel, {}, kernel);
 
-    /// If the kernel failed to expand into /anything/ then emit an error.
+    // If the kernel failed to expand into /anything/ then emit an error.  Note
+    // that the kernel will have been deleted.
     if (llvm::all_of(results, [](const KernelOrCalleeError &result) -> bool {
           return std::holds_alternative<CalleeExpansionError>(result);
         })) {
@@ -1180,7 +1190,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
       SmallVector<CalleeExpansionError> errors;
       for (const auto &value : results)
         errors.push_back(std::get<CalleeExpansionError>(value));
-      auto diag = emitError(kernel->getLoc(), "failed to generate any kernels");
+      auto diag = emitError(errors[0].first, "failed to generate any kernels");
       emitElaborationError(diag, errors, /*depth=*/2);
       didFail = true;
     }
