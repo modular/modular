@@ -20,8 +20,8 @@ namespace {
 /// donated.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue() {}
-  ~SingleThreadWorkQueue() {
+  SingleThreadWorkQueue() = default;
+  ~SingleThreadWorkQueue() override {
     // Complete any work that's still in-flight.
     doWork([]() -> bool { return false; });
   }
