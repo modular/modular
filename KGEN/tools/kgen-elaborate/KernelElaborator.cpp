@@ -20,6 +20,7 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include <variant>
 
 using namespace M;
@@ -96,9 +97,14 @@ public:
   Elaborator(ModuleOp primary, ModuleOp library)
       : primaryModule(primary), libraryModule(library), symbolTable(primary) {}
 
+  ModuleOp getPrimaryModule() const { return primaryModule; }
+
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
+
+  // Check the kernel/generator call graph to reject any recursion.
+  ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(StringAttr symbolName) const {
@@ -115,6 +121,11 @@ public:
 
   /// Insert a variant of an existing kernel into the primary file.
   void insertKernelVariant(KernelOp existing, KernelOp newKernel);
+
+  ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
+    auto it = interfaceImpls.find(itf.getNameAttr());
+    return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  }
 
 private:
   /// Specialize a kernel body, generating one variant or each viable
@@ -137,11 +148,6 @@ private:
   specializeInterface(GeneratorInterfaceOp itf,
                       ArrayRef<Attribute> inputParamValues,
                       Operation *insertionPoint);
-
-  ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
-    auto it = interfaceImpls.find(itf.getNameAttr());
-    return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
-  }
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
@@ -167,48 +173,6 @@ private:
 void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
   auto insertPt = Block::iterator(existing.getOperation());
   symbolTable.insert(newKernel, /*insertionPoint*/ ++insertPt);
-}
-
-//===----------------------------------------------------------------------===//
-// collectInterfaces and cleanup helpers
-//===----------------------------------------------------------------------===//
-
-/// Scan the primary and library module to collect all the interfaces,
-/// verifying that any common interfaces are the same.
-ParseResult Elaborator::collectInterfaces() {
-  // Collect all the generator interfaces in the library module, which will
-  // allow cross checking them below.
-  DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
-  for (auto itf : libraryModule.getOps<GeneratorInterfaceOp>())
-    libraryInterfaces[itf.getNameAttr()] = itf;
-
-  // Collect all the kernel generators that implement a given interface,
-  // starting with the library.  These will already have been type checked
-  // within the library.
-  for (auto generator : libraryModule.getOps<GeneratorOp>()) {
-    if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getAttr()].push_back(generator);
-  }
-
-  // Collect the kernel generators from the primary module.  Start by checking
-  // that any generator implementations that exist in both modules match in
-  // signature exactly.
-  for (auto itf : primaryModule.getOps<GeneratorInterfaceOp>()) {
-    auto it = libraryInterfaces.find(itf.getNameAttr());
-    if (it == libraryInterfaces.end())
-      continue;
-    if (failed(verifyDeclMatchesInterface("interface", itf, "library interface",
-                                          it->second)))
-      return failure();
-  }
-
-  // If they all match up, collect the generator implementations from the
-  // primary module.
-  for (auto generator : primaryModule.getOps<GeneratorOp>())
-    if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getAttr()].push_back(generator);
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -815,6 +779,8 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
   SmallVector<KernelOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
     auto rewriter = rewriterWorklist.pop_back_val();
+
+    // If elaborating the kernel succeeded, then we have a viable candidate.
     if (succeeded(rewriter.rewriteOps(rewriterWorklist)))
       results.push_back(rewriter.getKernel());
     else
@@ -956,6 +922,138 @@ Elaborator::getAllInstantiations(Operation *decl,
 // generateKernels Driver
 //===----------------------------------------------------------------------===//
 
+/// Scan the primary and library module to collect all the interfaces,
+/// verifying that any common interfaces are the same.
+ParseResult Elaborator::collectInterfaces() {
+  // Collect all the generator interfaces in the library module, which will
+  // allow cross checking them below.
+  DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
+  for (auto itf : libraryModule.getOps<GeneratorInterfaceOp>())
+    libraryInterfaces[itf.getNameAttr()] = itf;
+
+  // Collect all the kernel generators that implement a given interface,
+  // starting with the library.  These will already have been type checked
+  // within the library.
+  for (auto generator : libraryModule.getOps<GeneratorOp>()) {
+    if (auto interface = generator.getImplementsAttr())
+      interfaceImpls[interface.getAttr()].push_back(generator);
+  }
+
+  // Collect the kernel generators from the primary module.  Start by checking
+  // that any generator implementations that exist in both modules match in
+  // signature exactly.
+  for (auto itf : primaryModule.getOps<GeneratorInterfaceOp>()) {
+    auto it = libraryInterfaces.find(itf.getNameAttr());
+    if (it == libraryInterfaces.end())
+      continue;
+    if (failed(verifyDeclMatchesInterface("interface", itf, "library interface",
+                                          it->second)))
+      return failure();
+  }
+
+  // If they all match up, collect the generator implementations from the
+  // primary module.
+  for (auto generator : primaryModule.getOps<GeneratorOp>())
+    if (auto interface = generator.getImplementsAttr())
+      interfaceImpls[interface.getAttr()].push_back(generator);
+
+  return success();
+}
+
+namespace {
+class RecursionChecker {
+public:
+  RecursionChecker(Elaborator &elaborator) : elaborator(elaborator) {}
+  ParseResult run();
+
+private:
+  ParseResult checkRecursively(Operation *op);
+
+  Elaborator &elaborator;
+  llvm::SetVector<Operation *> callStack;
+  std::vector<Operation *> callStackCalls;
+  SmallPtrSet<Operation *, 8> alreadyCheckedOps;
+};
+} // namespace
+
+/// Check the specified operation and its call-tree by visiting callees in
+/// depth-first order.  If we report errors the call-graph, and keep track of
+/// known-ok operators to avoid redundant work.
+ParseResult RecursionChecker::checkRecursively(Operation *op) {
+  // If we've already verified that this operator and all its callees are ok,
+  // then we're already done.
+  if (alreadyCheckedOps.count(op))
+    return success();
+
+  // If this op is in the call stack for our depth first traversal, then we've
+  // found a cycle, reject it.  Otherwise add it to our call stack
+  if (!callStack.insert(op)) {
+    assert(callStack.size() == callStackCalls.size());
+    size_t i = 0, e = callStack.size();
+    // Skip over any leading stack that isn't part of the cycle.
+    while (callStack[i] != op)
+      ++i;
+    // Report
+    auto diag =
+        op->emitError("declaration involved in recursive elaboration cycle");
+    diag.attachNote(callStackCalls[i]->getLoc()) << "through this call";
+    for (++i; i != e; ++i) {
+      diag.attachNote(callStack[i]->getLoc()) << "to this declaration";
+      diag.attachNote(callStackCalls[i]->getLoc()) << "through this call";
+    }
+    diag.attachNote(op->getLoc()) << "back to this declaration";
+    return failure();
+  }
+
+  // Okay, we haven't seen this before, check all the calls in the body of the
+  // declaration to see what they call.
+  bool failed = false;
+  op->walk([&](CallOp call) {
+    auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
+    assert(callee && "couldn't resolve callee?");
+    callStackCalls.push_back(call);
+    if (isa<KernelOp, GeneratorOp>(callee)) {
+      // For direct calls, we immediately check the callee.
+      if (checkRecursively(callee))
+        failed = true;
+    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(callee)) {
+      // For generator interfaces, we resolve to all the implementations.
+      for (auto gen : elaborator.getGeneratorsImplementing(itf)) {
+        if (checkRecursively(gen))
+          failed = true;
+      }
+    } else {
+      call->emitError("unknown callee in elaboration");
+      failed = true;
+    }
+    callStackCalls.pop_back();
+  });
+
+  if (failed)
+    return failure();
+
+  callStack.pop_back();
+
+  // Okay, we're successful!  Remember that we don't need to process this again.
+  alreadyCheckedOps.insert(op);
+  return success();
+}
+
+ParseResult RecursionChecker::run() {
+  // Check all the operations at the top level of the primary module.
+  for (Operation &op : elaborator.getPrimaryModule().getOps())
+    if (checkRecursively(&op))
+      return failure();
+  return success();
+}
+
+/// Check the kernel/generator call graph to reject any recursion.
+ParseResult Elaborator::checkRecursion() {
+  return RecursionChecker(*this).run();
+}
+
+/// When a top-level kernel failed to elaborate, this is used to recursively
+/// emit a tree of notes indicating why the elaboration tree failed.
 static void emitElaborationError(InFlightDiagnostic &diag,
                                  MutableArrayRef<CalleeExpansionError> errors,
                                  unsigned indentDepth) {
@@ -1019,11 +1117,15 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   if (primary.getContext() != library.getContext())
     return primary.emitError() << "Cannot generate kernels when primary and "
                                   "library are in different MLIR contexts";
-  Elaborator generator(primary, library);
+  Elaborator elaborator(primary, library);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
-  if (generator.collectInterfaces())
+  if (elaborator.collectInterfaces())
+    return failure();
+
+  // Check the kernel/generator call graph to reject any recursion.
+  if (elaborator.checkRecursion())
     return failure();
 
   // TODO: When expanding a kernel we need to pass in history of prior expansion
@@ -1068,7 +1170,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
 
     // Elaborate the kernel into concrete versions.
     ArrayRef<KernelOrCalleeError> results =
-        generator.getAllInstantiations(kernel, {}, kernel);
+        elaborator.getAllInstantiations(kernel, {}, kernel);
 
     /// If the kernel failed to expand into /anything/ then emit an error.
     if (llvm::all_of(results, [](const KernelOrCalleeError &result) -> bool {

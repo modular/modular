@@ -11,14 +11,12 @@ kgen.kernel @local_verif_error() {
 
   kgen.param.bind ty : dtype = <f32>
   %c1 = arith.constant 1.0 : f32
-
   %0 = meta.cast_from_builtin %c1: f32 to !meta.scalar<ty>
 
   // expected-note @+1 {{verification error: 'meta.cast_to_builtin' op does not support casting %1 = "meta.cast_from_builtin"(%0) : (f32) -> !meta.scalar<f32> to 'i8'}}
   %1 = meta.cast_to_builtin %0: !meta.scalar<ty> to i8
   kgen.return
 }
-
 
 // -----
 
@@ -43,5 +41,24 @@ kgen.generator @genItf2_impl1<x>() implements @genItf2 {
 kgen.kernel @use_Itf2two() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf2<x = 2>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// Recursive expansions.
+
+kgen.generator.interface @genItf3<x>()
+
+// expected-note @+2 {{back to this declaration}}
+// expected-error @+1 {{declaration involved in recursive elaboration cycle}}
+kgen.generator @genItf3_impl<x>() implements @genItf3 {
+  // expected-note @+1 {{through this call}}
+  kgen.call @genItf3<x = 7>() : () -> ()
+  kgen.return
+}
+
+kgen.kernel @use_Itf3two() {
+  kgen.call @genItf3<x = 2>() : () -> ()
   kgen.return
 }
