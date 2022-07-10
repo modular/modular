@@ -117,22 +117,22 @@ kgen.kernel @call_generator_test(%arg0: si32, %arg1: si32)
 kgen.generator.interface @genItf<x -> y>(si32) -> si32
 
 // CHECK-LABEL: kgen.kernel @"genItf_impl1,x=42"<() -> y>(
-// CHECK-NEXT:   "unary_add_impl1"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return <y = 43> %arg0 : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
   implements @genItf {
-  "unary_add_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
 // CHECK-LABEL: kgen.kernel @"genItf_impl2,x=42"<() -> y>(
-// CHECK-NEXT:   "unary_add_impl2"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return <y = 84> %arg0 : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
   implements @genItf {
-  "unary_add_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<y = mul(x, 2)> %arg0 : si32
 }
 
@@ -205,7 +205,6 @@ kgen.kernel @use_Itf2one() {
   kgen.return
 }
 
-
 // -----
 
 kgen.generator.interface @genItf3<ty: dtype>()
@@ -234,3 +233,55 @@ kgen.kernel @use_Itf3() {
   kgen.call @genItf3<ty: dtype = f32>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// Test that expansions are tracked and each ultimate kernel version only allows
+// any particular generator/parameter set pair to expand one direction, reducing
+// exponential explosion.
+// TODO: Implement this.
+
+// CHECK-LABEL: kgen.kernel @track_expansions(%arg0: si32)
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0) : (si32) -> si32
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out1>(%arg0) : (si32) -> si32
+// CHECK: kgen.call @use_interface(%arg0)
+kgen.kernel @track_expansions(%arg0: si32) {
+  // Within any generated kernel genItf should expand the same way.
+  %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
+  %1 = kgen.call @genItf<x = 42 -> out1>(%arg0) : (si32) -> si32
+
+  // Even if deeply nested within other generator/kernel invocations
+  %2 = kgen.call @use_interface(%arg0) : (si32) -> index
+  kgen.return
+}
+
+// TODO: Should only have the track_expansions_2_6_8 variant!
+
+// CHECK-LABEL: kgen.kernel @track_expansions_4(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface_0(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_3(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_3_5(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface_0(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_2(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_2_7(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl1,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface_0(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_2_6(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface(%arg0)
+// CHECK-LABEL: kgen.kernel @track_expansions_2_6_8(%arg0: si32) {
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0)
+// CHECK: kgen.call @"genItf_impl2,x=42"<() -> out1>(%arg0)
+// CHECK: kgen.call @use_interface_0(%arg0)
