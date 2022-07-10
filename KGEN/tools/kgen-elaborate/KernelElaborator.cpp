@@ -85,7 +85,104 @@ private:
   std::variant<std::string, std::vector<CalleeExpansionError>> payload;
 };
 
-using KernelOrCalleeError = std::variant<KernelOp, CalleeExpansionError>;
+//===----------------------------------------------------------------------===//
+// ElaboratedKernel class definition
+//===----------------------------------------------------------------------===//
+
+/// This typedef represents a kernel/generator declaration + a set of input
+/// parameters that provide a complete binding for something that can be
+/// resolved.
+using GeneratorAndInputParamsPair = std::pair<Operation *, ArrayAttr>;
+
+namespace {
+/// This class keeps track of one result from binding a generator to a set of
+/// input parameters.  It holds both the kernel that gets produced as well as
+/// the (transitive) set of generator bindings used to create it.  This is used
+/// to ensure that further derived kernels are only done with consistent
+/// bindings.
+class ElaboratedKernel {
+public:
+  /// This is the kernel that is produced.
+  KernelOp kernel;
+
+  /// These are the bindings used to produce the kernel.  The results are
+  /// transitively flattened, so we don't need to maintain a tree of bindings.
+  SmallDenseMap<GeneratorAndInputParamsPair, KernelOp> bindings;
+
+  /// If we have a binding for the specified generator+InputParamSet, return it,
+  /// otherwise return null.
+  KernelOp getBinding(GeneratorAndInputParamsPair key) const {
+    auto it = bindings.find(key);
+    return it != bindings.end() ? it->second : KernelOp();
+  }
+
+  /// Return true if the set of bindings in this elaborated kernel are
+  /// consistent with the specified set of bindings.
+  bool isConsistentWith(const ElaboratedKernel &other) const;
+
+  /// Declare that we're resolving the specified `declAndInputParams` to a
+  /// specified callee.  The callee is known to have bindings that are
+  /// consistent with ours, but may have additional entries to merge in.
+  void addBinding(GeneratorAndInputParamsPair declAndInputParams,
+                  const ElaboratedKernel &newCallee);
+
+  LLVM_DUMP_METHOD void dump() const;
+
+private:
+  void addOneBinding(GeneratorAndInputParamsPair declAndInputParams,
+                     KernelOp result) {
+    auto &entry = bindings[declAndInputParams];
+    assert((entry == KernelOp() || entry == result) &&
+           "merged bindings must be consistent with each other");
+    entry = result;
+  }
+};
+} // end anonymous namespace
+
+void ElaboratedKernel::dump() const {
+  if (!kernel) {
+    llvm::errs() << "NULL ElaboratedKernel\n";
+    return;
+  }
+
+  llvm::errs() << "ElaboratedKernel @" << KernelOp(kernel).getName() << "\n";
+  unsigned entryNo = 0;
+  for (auto entry : bindings) {
+    StringAttr name = SymbolTable::getSymbolName(entry.first.first);
+    llvm::errs() << "  #" << (entryNo++) << " @" << name << entry.first.second
+                 << " = @" << entry.second.getNameAttr() << "\n";
+  }
+}
+
+/// Return true if the set of bindings in this elaborated kernel are
+/// consistent with the specified set of bindings.
+bool ElaboratedKernel::isConsistentWith(const ElaboratedKernel &other) const {
+  for (auto &binding : bindings) {
+    if (KernelOp result = other.getBinding(binding.first))
+      if (result != binding.second)
+        return false;
+  }
+  return true;
+}
+
+/// Declare that we're resolving the specified `declAndInputParams` to a
+/// specified callee.  The callee is known to have bindings that are
+/// consistent with ours, but may have additional entries to merge in.
+void ElaboratedKernel::addBinding(
+    GeneratorAndInputParamsPair declAndInputParams,
+    const ElaboratedKernel &newCallee) {
+
+  // Remember the generator+inputParams to resolved callee binding.
+  addOneBinding(declAndInputParams, newCallee.kernel);
+
+  // We know the callee is consistent with our current binding set, but it may
+  // also have bound generators that we haven't seen yet.  Remember them.
+  for (auto &binding : newCallee.bindings)
+    addOneBinding(binding.first, binding.second);
+}
+
+using ElaboratedKernelOrCalleeError =
+    std::variant<ElaboratedKernel, CalleeExpansionError>;
 
 /// This typedef represents a kernel/generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
@@ -120,8 +217,8 @@ public:
   /// generator, or interface) with the specified input parameter values.
   /// `insertionPoint` is always a point in the primary module where a new
   /// kernel should be placed if necessary.
-  ArrayRef<KernelOrCalleeError>
-  getAllInstantiations(GeneratorAndInputParamsPair generatorKey,
+  ArrayRef<ElaboratedKernelOrCalleeError>
+  getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
                        Operation *insertionPoint);
 
   /// Insert a variant of an existing kernel into the primary file.
@@ -136,20 +233,20 @@ private:
   /// Specialize a kernel body, generating one variant or each viable
   /// instantiation of that body.  Kernels do not have parameters, but they can
   /// invoke interfaces etc which can cause them to produce multiple variants.
-  SmallVector<KernelOrCalleeError> specializeKernel(KernelOp kernel);
+  SmallVector<ElaboratedKernelOrCalleeError> specializeKernel(KernelOp kernel);
 
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  SmallVector<KernelOrCalleeError>
-  specializeGenerator(GeneratorAndInputParamsPair generatorKey,
+  SmallVector<ElaboratedKernelOrCalleeError>
+  specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
   /// Specialize a kernel interface with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
-  SmallVector<KernelOrCalleeError>
-  specializeInterface(GeneratorAndInputParamsPair generatorKey,
+  SmallVector<ElaboratedKernelOrCalleeError>
+  specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
 private:
@@ -167,7 +264,8 @@ private:
   /// This is a cache of already-instantiated declarations.  The key is the
   /// kernel/generator/interface and input parameters, the result are
   /// all-possible kernels that could be generated from this.
-  DenseMap<std::pair<Operation *, ArrayAttr>, SmallVector<KernelOrCalleeError>>
+  DenseMap<GeneratorAndInputParamsPair,
+           SmallVector<ElaboratedKernelOrCalleeError>>
       generatedKernels;
 };
 } // end anonymous namespace
@@ -194,7 +292,7 @@ public:
   /// constraints against inputParamValues.  If the constraints are met, return
   /// success, otherwise return why they aren't.
   static ErrorOrSuccess
-  evaluateConstraints(GeneratorAndInputParamsPair generatorKey);
+  evaluateConstraints(GeneratorAndInputParamsPair declAndInputParams);
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -264,8 +362,8 @@ ErrorOr<Attribute> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
 ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
-    GeneratorAndInputParamsPair generatorKey) {
-  Operation *decl = generatorKey.first;
+    GeneratorAndInputParamsPair declAndInputParams) {
+  Operation *decl = declAndInputParams.first;
 
   // If there are no constraints, we are trivially done.
   auto constraints = getDeclConstraints(decl);
@@ -276,7 +374,7 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
   // parameter names.
   ParameterEvaluator evaluator;
   auto inputParamDecls = getDeclParameterInfo(decl).first;
-  ArrayRef<Attribute> inputParamValues = generatorKey.second.getValue();
+  ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
   for (auto [decl, value] : llvm::zip(inputParamDecls, inputParamValues))
@@ -310,8 +408,9 @@ class ParameterRewriter : public ParameterEvaluator {
 public:
   ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
                     SmallVector<Operation *> opsToRewrite)
-      : elaborator(elaborator), kernel(kernel),
-        opsToRewrite(std::move(opsToRewrite)) {}
+      : elaborator(elaborator), opsToRewrite(std::move(opsToRewrite)) {
+    elaboratedKernel.kernel = kernel;
+  }
 
   /// Create a clone of this rewriter, but refer with a clone of the kernel.
   /// This uses operationMap to remap our state onto the newly created kernel.
@@ -323,11 +422,11 @@ public:
   LogicalResult
   rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
 
-  /// Return the kernel we're generating into.
-  KernelOp getKernel() const {
+  /// Return the kernel we're generating into, along with its bindings.
+  ElaboratedKernel takeElaboratedKernel() {
     assert(!diagnostic.hasValue() &&
            "can't get the result kernel when a diagnostic was generated");
-    return kernel;
+    return std::move(elaboratedKernel);
   }
 
   /// If elaboration of this kernel fails, then the client can get the error
@@ -336,9 +435,9 @@ public:
   CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.hasValue() &&
            "cannot get diagnostic when none was generated");
-    auto kernelLoc = kernel->getLoc();
-    kernel->erase();
-    kernel = KernelOp();
+    auto kernelLoc = elaboratedKernel.kernel->getLoc();
+    elaboratedKernel.kernel->erase();
+    elaboratedKernel.kernel = KernelOp();
     return CalleeExpansionError(kernelLoc, std::move(diagnostic.getValue()));
   }
 
@@ -366,8 +465,13 @@ private:
   LogicalResult processParamValueOp(ParamValueOp op);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
-  void completeCallOpProcessing(CallOp call, KernelOp newCallee);
-  void spawnNewKernelClone(CallOp call, KernelOp callee,
+  void
+  completeCallOpProcessing(CallOp call,
+                           GeneratorAndInputParamsPair calleeAndInputParams,
+                           const ElaboratedKernel &newCallee);
+  void spawnNewKernelClone(CallOp call,
+                           GeneratorAndInputParamsPair calleeAndInputParams,
+                           const ElaboratedKernel &callee,
                            SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
 
@@ -382,7 +486,7 @@ private:
   Elaborator &elaborator;
 
   /// This is the kernel we're working on.
-  KernelOp kernel;
+  ElaboratedKernel elaboratedKernel;
 
   /// This is a diagnostic explaining the expansion failure if something goes
   /// wrong.
@@ -405,11 +509,13 @@ ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
     : ParameterEvaluator(existing), elaborator(existing.elaborator),
+      elaboratedKernel(existing.elaboratedKernel),
       rewrittenAttrs(existing.rewrittenAttrs),
       rewrittenTypes(existing.rewrittenTypes) {
-  // Remap the kernel itself.
-  kernel = cast<KernelOp>(operationMap[existing.kernel]);
-  assert(kernel && "didn't remap kernel correctly");
+  // Remap the kernel operation.
+  elaboratedKernel.kernel =
+      cast<KernelOp>(operationMap[existing.elaboratedKernel.kernel]);
+  assert(elaboratedKernel.kernel && "didn't remap kernel correctly");
 
   // Remap the operation worklist.
   opsToRewrite.reserve(existing.opsToRewrite.size());
@@ -452,14 +558,15 @@ LogicalResult ParameterRewriter::rewriteOps(
   // emitted.
   bool hadError = false;
   mlir::ScopedDiagnosticHandler diagHandler(
-      kernel.getContext(), [&](Diagnostic &diag) -> LogicalResult {
+      elaboratedKernel.kernel.getContext(),
+      [&](Diagnostic &diag) -> LogicalResult {
         (void)error(diag.getLocation(),
                     Twine("verification error: ") + diag.str());
         hadError = true;
         return success();
       });
 
-  LogicalResult verifyResult = verify(kernel);
+  LogicalResult verifyResult = verify(elaboratedKernel.kernel);
   assert(hadError == failed(verifyResult) && "Result of verify is unexpected");
   return verifyResult;
 }
@@ -518,32 +625,54 @@ LogicalResult ParameterRewriter::processCallOp(
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
   auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
-  ArrayRef<KernelOrCalleeError> newCalleesRef =
-      elaborator.getAllInstantiations({callee, inputParamKey}, kernel);
+  GeneratorAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
+
+  // If we already have a binding for this decl/inputParam set, then reuse the
+  // consistent callee.
+  if (KernelOp callee = elaboratedKernel.getBinding(calleeDeclAndInputParams)) {
+    ElaboratedKernel elaboratedCallee;
+    elaboratedCallee.kernel = callee;
+    completeCallOpProcessing(call, calleeDeclAndInputParams, elaboratedCallee);
+    return success();
+  }
+
+  // Otherwise, this is our first use of this.  Ask the global elaborator for
+  // the full set of candidates.
+  ArrayRef<ElaboratedKernelOrCalleeError> newCalleesRef =
+      elaborator.getAllInstantiations(calleeDeclAndInputParams,
+                                      elaboratedKernel.kernel);
 
   // Copy the list of kernels instead of referring to the cache entry to avoid
   // iterator invalidation problems.
-  SmallVector<KernelOrCalleeError> newCallees(newCalleesRef.begin(),
-                                              newCalleesRef.end());
+  SmallVector<ElaboratedKernelOrCalleeError> newCallees(newCalleesRef.begin(),
+                                                        newCalleesRef.end());
 
   // If we found more than one callee to produce then we need to spawn
   // multiple versions of the kernel we are currently constructing, each
   // which get a different callee.
-  KernelOp thisCallee;
-  for (const KernelOrCalleeError &callee : newCallees) {
+  ElaboratedKernel thisCallee;
+  for (const ElaboratedKernelOrCalleeError &candidate : newCallees) {
     // Ignore erroneous callees.
-    if (std::holds_alternative<CalleeExpansionError>(callee))
+    if (std::holds_alternative<CalleeExpansionError>(candidate))
       continue;
-    // We will pursue the first viable callee locally.
-    if (!thisCallee)
-      thisCallee = std::get<KernelOp>(callee);
+    // Ignore the candidate if the elaborated kernel is inconsistent with our
+    // current bindings.
+    const ElaboratedKernel &calleeCandidate =
+        std::get<ElaboratedKernel>(candidate);
+    if (!calleeCandidate.isConsistentWith(elaboratedKernel))
+      continue;
+
+    // If this is the first viable candidates, then we will pursue it locally.
+    if (!thisCallee.kernel)
+      thisCallee = calleeCandidate;
     else
       /// All other callees gets spawned as sub-evaluators.
-      spawnNewKernelClone(call, std::get<KernelOp>(callee), rewriters);
+      spawnNewKernelClone(call, calleeDeclAndInputParams, calleeCandidate,
+                          rewriters);
   }
 
   // If all the expansions failed, then this call fails overall.
-  if (!thisCallee) {
+  if (!thisCallee.kernel) {
     SmallVector<CalleeExpansionError> errors;
     for (const auto &value : newCalleesRef)
       errors.push_back(std::get<CalleeExpansionError>(value));
@@ -551,17 +680,24 @@ LogicalResult ParameterRewriter::processCallOp(
   }
 
   // Finally, we can handle the first viable one as our continued progress here.
-  completeCallOpProcessing(call, thisCallee);
+  completeCallOpProcessing(call, calleeDeclAndInputParams, thisCallee);
   return success();
 }
 
-void ParameterRewriter::completeCallOpProcessing(CallOp call,
-                                                 KernelOp newCallee) {
-  // If we resolved the call to a new thing, build a new call to replace the old
-  // one.
+void ParameterRewriter::completeCallOpProcessing(
+    CallOp call, GeneratorAndInputParamsPair calleeAndInputParams,
+    const ElaboratedKernel &newCallee) {
+  // Add a binding to remember that we resolved this call to this candidate,
+  // and merge any bindings from it into our set.
+  elaboratedKernel.addBinding(calleeAndInputParams, newCallee);
+
+  KernelOp newCalleeKernel = newCallee.kernel;
+
+  // Now that we resolved the call to a new thing, build a new call to replace
+  // the old one.
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
-      call.getLoc(), call.getResultTypes(), newCallee.getNameAttr(),
+      call.getLoc(), call.getResultTypes(), newCalleeKernel.getNameAttr(),
       /*input params*/ ArrayRef<Attribute>(),
       /*output params*/ call.getParamDecls().getValue(), call.getOperands());
 
@@ -570,8 +706,9 @@ void ParameterRewriter::completeCallOpProcessing(CallOp call,
   call->erase();
 
   // Bind the result parameters to the output parameter decls.
-  for (auto [decl, bindValue] : llvm::zip(
-           newCall.getParamDecls(), newCallee.getReturnOp().getParameters()))
+  for (auto [decl, bindValue] :
+       llvm::zip(newCall.getParamDecls(),
+                 newCalleeKernel.getReturnOp().getParameters()))
     setParameterValue(decl.cast<ParamDeclAttr>(),
                       bindValue.cast<ParamBindAttr>().getValue());
 }
@@ -582,17 +719,18 @@ void ParameterRewriter::completeCallOpProcessing(CallOp call,
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewKernelClone(
-    CallOp call, KernelOp callee,
+    CallOp call, GeneratorAndInputParamsPair calleeAndInputParams,
+    const ElaboratedKernel &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
 
   // Start by cloning the current WIP kernel to a new copy of it.
   BlockAndValueMapping blocksAndValues;
   DenseMap<Operation *, Operation *> operationMap;
-  auto newKernel =
-      cast<KernelOp>(cloneOperation(kernel, blocksAndValues, operationMap));
+  auto newKernel = cast<KernelOp>(
+      cloneOperation(elaboratedKernel.kernel, blocksAndValues, operationMap));
 
   // Insert the kernel into the output file and auto-unique the symbol.
-  elaborator.insertKernelVariant(kernel, newKernel);
+  elaborator.insertKernelVariant(elaboratedKernel.kernel, newKernel);
 
   // Generate the new rewriter which will process this.
   auto &newRewriter = rewriters.emplace_back(*this, operationMap);
@@ -600,7 +738,7 @@ void ParameterRewriter::spawnNewKernelClone(
   // Change the future of this kernel by resolving the call in the new kernel to
   // the specifed callee.
   auto newCall = cast<CallOp>(operationMap[call]);
-  newRewriter.completeCallOpProcessing(newCall, callee);
+  newRewriter.completeCallOpProcessing(newCall, calleeAndInputParams, callee);
 }
 
 /// Get the specified attribute with any nested parameter expressions
@@ -776,7 +914,8 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// Specialize a kernel body, generating one variant or each viable
 /// instantiation of that body.  Kernels do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
-SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
+SmallVector<ElaboratedKernelOrCalleeError>
+Elaborator::specializeKernel(KernelOp kernel) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
   SmallVector<Operation *> opsToRewrite;
@@ -799,13 +938,13 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
 
   // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
   // until we converge.
-  SmallVector<KernelOrCalleeError> results;
+  SmallVector<ElaboratedKernelOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
     auto rewriter = rewriterWorklist.pop_back_val();
 
     // If elaborating the kernel succeeded, then we have a viable candidate.
     if (succeeded(rewriter.rewriteOps(rewriterWorklist))) {
-      results.push_back(rewriter.getKernel());
+      results.push_back(rewriter.takeElaboratedKernel());
     } else {
       // If elaborating the kernel fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
@@ -821,10 +960,10 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
 /// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
-SmallVector<KernelOrCalleeError>
-Elaborator::specializeGenerator(GeneratorAndInputParamsPair generatorKey,
+SmallVector<ElaboratedKernelOrCalleeError>
+Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
-  auto generator = cast<GeneratorOp>(generatorKey.first);
+  auto generator = cast<GeneratorOp>(declAndInputParams.first);
 
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
@@ -836,7 +975,7 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair generatorKey,
     assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
   }
 
-  ArrayRef<Attribute> inputParamValues = generatorKey.second.getValue();
+  ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
   auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
@@ -873,11 +1012,11 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair generatorKey,
 /// Specialize a kernel interface with the specified input parameters and
 /// return the generated kernel.  `insertionPoint` is always a point in the
 /// primary module where a new kernel should be placed if necessary.
-SmallVector<KernelOrCalleeError>
-Elaborator::specializeInterface(GeneratorAndInputParamsPair generatorKey,
+SmallVector<ElaboratedKernelOrCalleeError>
+Elaborator::specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
-  auto itf = cast<GeneratorInterfaceOp>(generatorKey.first);
-  SmallVector<KernelOrCalleeError> result;
+  auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
+  SmallVector<ElaboratedKernelOrCalleeError> result;
 
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
@@ -897,7 +1036,7 @@ Elaborator::specializeInterface(GeneratorAndInputParamsPair generatorKey,
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
     auto kernels =
-        getAllInstantiations({gen, generatorKey.second}, insertionPoint);
+        getAllInstantiations({gen, declAndInputParams.second}, insertionPoint);
     result.append(kernels.begin(), kernels.end());
   }
   return result;
@@ -907,19 +1046,17 @@ Elaborator::specializeInterface(GeneratorAndInputParamsPair generatorKey,
 /// generator, or interface) with teh specified input parameter values.
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
-ArrayRef<KernelOrCalleeError>
-Elaborator::getAllInstantiations(GeneratorAndInputParamsPair generatorKey,
+ArrayRef<ElaboratedKernelOrCalleeError>
+Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
                                  Operation *insertionPoint) {
-
-  // Check the cache these so multiple uses of the same kernel don't get
-  // separate instantiations.
-  auto cacheIt = generatedKernels.find(generatorKey);
+  // Check the global cache of instantiations so we only ever instantiate a
+  // generator once.
+  auto cacheIt = generatedKernels.find(declAndInputParams);
   if (cacheIt != generatedKernels.end())
     return cacheIt->second;
 
-  Operation *decl = generatorKey.first;
-
-  SmallVector<KernelOrCalleeError> newCallees;
+  Operation *decl = declAndInputParams.first;
+  SmallVector<ElaboratedKernelOrCalleeError> newCallees;
   auto localError = [&](Error err) {
     auto loc = decl->getLoc();
     newCallees.push_back(
@@ -928,20 +1065,21 @@ Elaborator::getAllInstantiations(GeneratorAndInputParamsPair generatorKey,
 
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
-  auto constraintResult = ParameterEvaluator::evaluateConstraints(generatorKey);
+  auto constraintResult =
+      ParameterEvaluator::evaluateConstraints(declAndInputParams);
   if (failed(constraintResult)) {
     localError(constraintResult.takeError());
   } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
     newCallees = specializeKernel(kernel);
   } else if (isa<GeneratorOp>(decl)) {
-    newCallees = specializeGenerator(generatorKey, kernel);
+    newCallees = specializeGenerator(declAndInputParams, kernel);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
-    newCallees = specializeInterface(generatorKey, kernel);
+    newCallees = specializeInterface(declAndInputParams, kernel);
   } else {
     localError("call to an unknown kind of declaration");
   }
 
-  auto &result = generatedKernels[generatorKey];
+  auto &result = generatedKernels[declAndInputParams];
   result = std::move(newCallees);
   return result;
 }
@@ -1156,28 +1294,6 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   if (elaborator.checkRecursion())
     return failure();
 
-  // TODO: When expanding a kernel we need to pass in history of prior expansion
-  // bindings, which constrains/defines future expansions of the same thing, and
-  // we need to return up novel bindings that are done.  For each multi-version
-  // we need to track /which way/ we're resolving an ambiguity.  For something
-  // like this:
-  //    kernel @foo() {
-  //      call @someInterface()        // has 5 implementations
-  //    }
-  //
-  //    kernel @bar() { call @foo() }  // has 5 implementations
-  //
-  //    kernel @baz() {
-  //      call @foo()
-  //      call @foo()
-  //      call @bar()
-  //    }
-  //
-  // We should process @bar before recursing down to @foo.  We should only
-  // generate 5 copies of @bar, each of which resolves the call to
-  // foo->someInterface in the same direction.  We should not generate 5*5*5
-  // copies of @bar that has all pairs of foo/someInterface resolutions.
-
   // Elaborate all the kernels at the top-level.  We use a temporary operation
   // as a cursor to keep track of where we are in the module.  This is because
   // kernels can cause kernels, and we don't want our iterator to get
@@ -1198,14 +1314,15 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
       continue;
 
     // Elaborate the kernel into concrete versions.
-    ArrayRef<KernelOrCalleeError> results =
+    ArrayRef<ElaboratedKernelOrCalleeError> results =
         elaborator.getAllInstantiations({kernel, emptyInputParamKey}, kernel);
 
     // If the kernel failed to expand into /anything/ then emit an error.  Note
     // that the kernel will have been deleted.
-    if (llvm::all_of(results, [](const KernelOrCalleeError &result) -> bool {
-          return std::holds_alternative<CalleeExpansionError>(result);
-        })) {
+    if (llvm::all_of(
+            results, [](const ElaboratedKernelOrCalleeError &result) -> bool {
+              return std::holds_alternative<CalleeExpansionError>(result);
+            })) {
       // Collect the errors together.
       SmallVector<CalleeExpansionError> errors;
       for (const auto &value : results)
