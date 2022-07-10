@@ -112,11 +112,11 @@ public:
   }
 
   /// Return all instantiations of the specified declaration (a kernel,
-  /// generator, or interface) with teh specified input parameter values.
+  /// generator, or interface) with the specified input parameter values.
   /// `insertionPoint` is always a point in the primary module where a new
   /// kernel should be placed if necessary.
   ArrayRef<KernelOrCalleeError>
-  getAllInstantiations(Operation *decl, ArrayRef<Attribute> inputParamValues,
+  getAllInstantiations(Operation *decl, ArrayAttr inputParamValueKey,
                        Operation *insertionPoint);
 
   /// Insert a variant of an existing kernel into the primary file.
@@ -137,16 +137,14 @@ private:
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
   SmallVector<KernelOrCalleeError>
-  specializeGenerator(GeneratorOp generator,
-                      ArrayRef<Attribute> inputParamValues,
+  specializeGenerator(GeneratorOp generator, ArrayAttr inputParamValueKey,
                       Operation *insertionPoint);
 
   /// Specialize a kernel interface with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
   SmallVector<KernelOrCalleeError>
-  specializeInterface(GeneratorInterfaceOp itf,
-                      ArrayRef<Attribute> inputParamValues,
+  specializeInterface(GeneratorInterfaceOp itf, ArrayAttr inputParamValueKey,
                       Operation *insertionPoint);
 
 private:
@@ -190,8 +188,8 @@ public:
   /// Given a generator or interface declaration operation, evaluate any
   /// constraints against inputParamValues.  If the constraints are met, return
   /// success, otherwise return why they aren't.
-  static ErrorOrSuccess
-  evaluateConstraints(Operation *decl, ArrayRef<Attribute> inputParamValues);
+  static ErrorOrSuccess evaluateConstraints(Operation *decl,
+                                            ArrayAttr inputParamValueKey);
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -262,7 +260,7 @@ ErrorOr<Attribute> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
 /// success, otherwise return why they aren't.
 ErrorOrSuccess
 ParameterEvaluator::evaluateConstraints(Operation *decl,
-                                        ArrayRef<Attribute> inputParamValues) {
+                                        ArrayAttr inputParamValueKey) {
   // If there are no constraints, we are trivially done.
   auto constraints = getDeclConstraints(decl);
   if (constraints.empty())
@@ -272,6 +270,7 @@ ParameterEvaluator::evaluateConstraints(Operation *decl,
   // parameter names.
   ParameterEvaluator evaluator;
   auto inputParamDecls = getDeclParameterInfo(decl).first;
+  ArrayRef<Attribute> inputParamValues = inputParamValueKey.getValue();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
   for (auto [decl, value] : llvm::zip(inputParamDecls, inputParamValues))
@@ -485,23 +484,36 @@ LogicalResult ParameterRewriter::processParamValueOp(ParamValueOp op) {
   return success();
 }
 
-LogicalResult ParameterRewriter::processCallOp(
-    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
-  // Evaluating any input parameters.
+/// Resolve all of input parameters present at the specified call site to
+/// concrete constants.  This reports the error and returns null on failure,
+/// and returns an array of bound input parameters on success.
+static ArrayAttr resolveCallInputParams(CallOp call,
+                                        ParameterRewriter &rewriter) {
   SmallVector<Attribute> boundInputParams;
   for (auto param : call.getParamValues()) {
-    auto value = simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
+    auto value =
+        rewriter.simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
     if (value.isError())
-      return error(call->getLoc(), value.takeError());
+      return (void)rewriter.error(call->getLoc(), value.takeError()),
+             ArrayAttr();
 
     boundInputParams.push_back(value.takeValue());
   }
+  return ArrayAttr::get(call->getContext(), boundInputParams);
+}
+
+LogicalResult ParameterRewriter::processCallOp(
+    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
+  // Evaluate any input parameters.
+  auto inputParamKey = resolveCallInputParams(call, *this);
+  if (!inputParamKey)
+    return failure();
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
   auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
   ArrayRef<KernelOrCalleeError> newCalleesRef =
-      elaborator.getAllInstantiations(callee, boundInputParams, kernel);
+      elaborator.getAllInstantiations(callee, inputParamKey, kernel);
 
   // Copy the list of kernels instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -805,7 +817,7 @@ SmallVector<KernelOrCalleeError> Elaborator::specializeKernel(KernelOp kernel) {
 /// necessary.
 SmallVector<KernelOrCalleeError>
 Elaborator::specializeGenerator(GeneratorOp generator,
-                                ArrayRef<Attribute> inputParamValues,
+                                ArrayAttr inputParamValueKey,
                                 Operation *insertionPoint) {
   // We insert specializations of the generator immediately before the generator
   // if it is defined in the primary module.  Otherwise if it is from the
@@ -817,6 +829,7 @@ Elaborator::specializeGenerator(GeneratorOp generator,
     assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
   }
 
+  ArrayRef<Attribute> inputParamValues = inputParamValueKey.getValue();
   auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
@@ -855,7 +868,7 @@ Elaborator::specializeGenerator(GeneratorOp generator,
 /// primary module where a new kernel should be placed if necessary.
 SmallVector<KernelOrCalleeError>
 Elaborator::specializeInterface(GeneratorInterfaceOp itf,
-                                ArrayRef<Attribute> inputParamValues,
+                                ArrayAttr inputParamValueKey,
                                 Operation *insertionPoint) {
   SmallVector<KernelOrCalleeError> result;
 
@@ -876,7 +889,8 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
-    auto kernels = getAllInstantiations(gen, inputParamValues, insertionPoint);
+    auto kernels =
+        getAllInstantiations(gen, inputParamValueKey, insertionPoint);
     result.append(kernels.begin(), kernels.end());
   }
   return result;
@@ -887,14 +901,12 @@ Elaborator::specializeInterface(GeneratorInterfaceOp itf,
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
 ArrayRef<KernelOrCalleeError>
-Elaborator::getAllInstantiations(Operation *decl,
-                                 ArrayRef<Attribute> inputParamValues,
+Elaborator::getAllInstantiations(Operation *decl, ArrayAttr inputParamValueKey,
                                  Operation *insertionPoint) {
 
   // Check the cache these so multiple uses of the same kernel don't get
   // separate instantiations.
-  auto inputParamKey = ArrayAttr::get(decl->getContext(), inputParamValues);
-  auto cacheKey = std::make_pair(decl, inputParamKey);
+  auto cacheKey = std::make_pair(decl, inputParamValueKey);
   auto cacheIt = generatedKernels.find(cacheKey);
   if (cacheIt != generatedKernels.end())
     return cacheIt->second;
@@ -909,15 +921,15 @@ Elaborator::getAllInstantiations(Operation *decl,
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
   auto constraintResult =
-      ParameterEvaluator::evaluateConstraints(decl, inputParamValues);
+      ParameterEvaluator::evaluateConstraints(decl, inputParamValueKey);
   if (failed(constraintResult)) {
     localError(constraintResult.takeError());
   } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
     newCallees = specializeKernel(kernel);
   } else if (auto generator = dyn_cast<GeneratorOp>(decl)) {
-    newCallees = specializeGenerator(generator, inputParamValues, kernel);
+    newCallees = specializeGenerator(generator, inputParamValueKey, kernel);
   } else if (auto interface = dyn_cast<GeneratorInterfaceOp>(decl)) {
-    newCallees = specializeInterface(interface, inputParamValues, kernel);
+    newCallees = specializeInterface(interface, inputParamValueKey, kernel);
   } else {
     localError("call to an unknown kind of declaration");
   }
@@ -1166,6 +1178,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   auto b = OpBuilder::atBlockBegin(primary.getBody());
   Operation *cursor =
       b.create(OperationState(primary->getLoc(), "kgen-elaborate-cursor"));
+  auto emptyInputParamKey = b.getArrayAttr({});
 
   // Process each kernel.
   bool didFail = false;
@@ -1179,7 +1192,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
 
     // Elaborate the kernel into concrete versions.
     ArrayRef<KernelOrCalleeError> results =
-        elaborator.getAllInstantiations(kernel, {}, kernel);
+        elaborator.getAllInstantiations(kernel, emptyInputParamKey, kernel);
 
     // If the kernel failed to expand into /anything/ then emit an error.  Note
     // that the kernel will have been deleted.
