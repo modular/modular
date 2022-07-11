@@ -1338,8 +1338,10 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   // On success, we remove generators and generator interfaces from the file to
   // clean it up.
   for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
-    if (isa<GeneratorOp, GeneratorInterfaceOp>(op))
+    if (isa<GeneratorOp, GeneratorInterfaceOp>(op)) {
       op.erase();
+      continue;
+    }
 
     /// Unviable kernels will be left with an empty/invalid body.  Remove them
     /// at the end of elaboration.
