@@ -77,21 +77,18 @@ void AsyncValue::destroyWithRefCountZero() {
 //===----------------------------------------------------------------------===//
 
 /// Invoke all of the waiters specified by the list of waiter nodes, and
-/// deallocate the waiter nodes.
-
-void AsyncValue::runWaitersAndDeallocate(AsyncValue *value,
-                                         WaiterListNodeBase *list) {
-  // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
-  // ownership very clear (they can use the value but have to copy it if
-  // persisting it).  We do this delicately to avoid additional refcount
-  // bumps.
-  auto rcThisRef = AnyAsyncValueRef::take(value);
-
+/// deallocate the waiter nodes.  We know we have ownership of `list` here and
+/// that it is done being mutated.  We also know that the caller has an RCRef
+/// that keeps 'this' alive.
+void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list) {
+  // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to the 'call'
+  // method make the ownership very clear (they can use the value but have to
+  // copy it if persisting it).  We do this delicately to avoid additional
+  // refcount bumps.
+  auto rcThisRef = AnyAsyncValueRef::take(this);
   while (list) {
     auto *node = list;
-
-    node->call(rcThisRef);
-
+    node->waiter(rcThisRef);
     list = node->next;
     delete node;
   }
@@ -104,11 +101,10 @@ void AsyncValue::runWaitersAndDeallocate(AsyncValue *value,
 /// invoked when the value appears to be non-ready.
 ///
 /// If the value is available or becomes available, this calls the closure
-/// immediately. Otherwise, the add closure to the waiter list where it will be
-/// called when the value becomes available.
-void AsyncValue::andThenOutOfLine(WaiterListNodeBase *node,
-                                  WaitersAndState oldValue) {
-  node->setNext(oldValue.getPointer());
+/// immediately. Otherwise, the add the waiter closure to the waiter list where
+/// it will be called when the value becomes available.
+void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
+  auto node = new WaiterListNode(std::move(waiter), oldValue.getPointer());
 
   auto oldState = oldValue.getInt();
 
@@ -125,13 +121,16 @@ void AsyncValue::andThenOutOfLine(WaiterListNodeBase *node,
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      node->setNext(nullptr);
-      runWaitersAndDeallocate(this, node);
+      // Change the tail of the list to null.  Whatever moved this to a ready
+      // state will already have executed and deallocated that.  We just need
+      // to run the one waiter.
+      node->next = nullptr;
+      runWaitersAndDeallocate(node);
       return;
     }
     // Otherwise, it is possible we just got extra waiter nodes.  Update the
     // waiter list in newValue.
-    node->setNext(oldValue.getPointer());
+    node->next = oldValue.getPointer();
   }
 
   // compare_exchange_weak succeeds. The oldValue must be in some non-ready
@@ -148,7 +147,7 @@ AsyncValue::State AsyncValue::notifyReady(State newState) {
   // the value that got filled in.
   auto oldValue = waitersAndState.exchange(WaitersAndState(nullptr, newState),
                                            std::memory_order_acq_rel);
-  runWaitersAndDeallocate(this, oldValue.getPointer());
+  runWaitersAndDeallocate(oldValue.getPointer());
   return oldValue.getInt();
 }
 

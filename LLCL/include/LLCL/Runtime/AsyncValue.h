@@ -352,54 +352,43 @@ private:
 
   /// This is a singly linked list of nodes waiting for notification, hanging
   /// off of AsyncValue.  When the AsyncValue becomes ready, the callbacks are
-  /// invoked. The callback type is hidden through the pure virtual base class
-  /// and stored in a templated subclass.
-  class WaiterListNodeBase {
+  /// invoked.
+  using Waiter = llvm::unique_function<void(const AnyAsyncValueRef &arg)>;
+
+  class WaiterListNode {
   public:
-    explicit WaiterListNodeBase() = default;
-    virtual ~WaiterListNodeBase() = default;
-    virtual void call(const AnyAsyncValueRef &arg) = 0;
+    explicit WaiterListNode(Waiter &&newWaiter, WaiterListNode *next)
+        : waiter(std::move(newWaiter)), next(next) {}
 
-    void setNext(WaiterListNodeBase *newNext) { next = newNext; }
-
-    WaiterListNodeBase *next{nullptr};
+    friend class AsyncValue;
 
   private:
-    WaiterListNodeBase(const WaiterListNodeBase &) = delete;
-    void operator=(const WaiterListNodeBase &) = delete;
-  };
+    Waiter waiter;
+    WaiterListNode *next = nullptr;
 
-  template <typename WaiterT>
-  class WaiterListNode : public WaiterListNodeBase {
-  public:
-    explicit WaiterListNode(WaiterT &&newWaiter)
-        : WaiterListNodeBase(), waiter(std::move(newWaiter)) {}
-    void call(const AnyAsyncValueRef &arg) override { waiter(arg); }
-    WaiterT waiter;
+    WaiterListNode(const WaiterListNode &) = delete;
+    void operator=(const WaiterListNode &) = delete;
   };
 
   struct WaiterListNodePointerTraits {
-    static inline void *getAsVoidPointer(WaiterListNodeBase *ptr) {
-      return ptr;
+    static inline void *getAsVoidPointer(WaiterListNode *ptr) { return ptr; }
+    static inline WaiterListNode *getFromVoidPointer(void *ptr) {
+      return static_cast<WaiterListNode *>(ptr);
     }
-    static inline WaiterListNodeBase *getFromVoidPointer(void *ptr) {
-      return static_cast<WaiterListNodeBase *>(ptr);
-    }
-    enum { NumLowBitsAvailable = 2 };
+    enum { NumLowBitsAvailable = 3 };
   };
 
   /// The waiter list and the state are compacted into a single atomic word,
   /// since the fields need to be accessed at the same time for state changes.
   ///
   /// Invariant: If the state is ready, then the waiter list must be nullptr.
-  using WaitersAndState = llvm::PointerIntPair<WaiterListNodeBase *, 2, State,
+  using WaitersAndState = llvm::PointerIntPair<WaiterListNode *, 3, State,
                                                WaiterListNodePointerTraits>;
   std::atomic<WaitersAndState> waitersAndState;
 
 protected:
-  static void runWaitersAndDeallocate(AsyncValue *value,
-                                      WaiterListNodeBase *list);
-  void andThenOutOfLine(WaiterListNodeBase *waiter, WaitersAndState oldValue);
+  void runWaitersAndDeallocate(WaiterListNode *list);
+  void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
 
   /// Transition to a ready state and notify all waiters about this.  This
@@ -724,9 +713,7 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
     return;
   }
 
-  andThenOutOfLine(
-      new AsyncValue::WaiterListNode(std::forward<WaiterT>(waiter)),
-      waitersAndStateValue);
+  andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
 }
 
 /// Construct the payload of a ConcreteAsyncValue and change its state to
