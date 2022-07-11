@@ -267,6 +267,12 @@ private:
   DenseMap<GeneratorAndInputParamsPair,
            SmallVector<ElaboratedKernelOrCalleeError>>
       generatedKernels;
+
+  /// This keeps track of kernels that were found to be unviable and need to be
+  /// removed.  Their body block is empty (no terminator) so they are known to
+  /// be invalid.  We keep them around to the end of elaboration to avoid
+  /// invalidating iterators.
+  std::vector<KernelOp> kernelsToRemove;
 };
 } // end anonymous namespace
 
@@ -435,10 +441,12 @@ public:
   CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.hasValue() &&
            "cannot get diagnostic when none was generated");
-    auto kernelLoc = elaboratedKernel.kernel->getLoc();
-    elaboratedKernel.kernel->erase();
-    elaboratedKernel.kernel = KernelOp();
-    return CalleeExpansionError(kernelLoc, std::move(diagnostic.getValue()));
+    // The kernel is unviable so we need to delete it.  This op can appear in
+    // various maps though, so instead of actually deleting it, we just delete
+    // its body.  The cleanup pass at the end of elaboration will remove it.
+    elaboratedKernel.kernel.getBodyBlock()->clear();
+    return CalleeExpansionError(elaboratedKernel.kernel->getLoc(),
+                                std::move(diagnostic.getValue()));
   }
 
   /// Generate a error expanding this kernel.  The location specified is the
@@ -1294,23 +1302,13 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   if (elaborator.checkRecursion())
     return failure();
 
-  // Elaborate all the kernels at the top-level.  We use a temporary operation
-  // as a cursor to keep track of where we are in the module.  This is because
-  // kernels can cause kernels, and we don't want our iterator to get
-  // invalidated.
-  auto b = OpBuilder::atBlockBegin(primary.getBody());
-  Operation *cursor =
-      b.create(OperationState(primary->getLoc(), "kgen-elaborate-cursor"));
-  auto emptyInputParamKey = b.getArrayAttr({});
+  auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
 
-  // Process each kernel.
+  // Elaborate all the kernels at the top-level.
   bool didFail = false;
-  while (std::next(Block::iterator(cursor)) != primary.end()) {
-    // Look at the next operation and move the cursor past it.
-    Operation *nextOp = &*std::next(Block::iterator(cursor));
-    cursor->moveAfter(nextOp);
-    auto kernel = dyn_cast<KernelOp>(nextOp);
-    if (!kernel)
+  for (auto kernel : primary.getOps<KernelOp>()) {
+    // Ignore kernels with an empty body, they are things found to be unviable.
+    if (kernel.getBodyBlock()->empty())
       continue;
 
     // Elaborate the kernel into concrete versions.
@@ -1333,9 +1331,6 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
     }
   }
 
-  // When we're done with the iteration, we can get rid of the cursor.
-  cursor->erase();
-
   // If we failed to expand any kernel, propagate that failure.
   if (didFail)
     return failure();
@@ -1345,6 +1340,12 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
     if (isa<GeneratorOp, GeneratorInterfaceOp>(op))
       op.erase();
+
+    /// Unviable kernels will be left with an empty/invalid body.  Remove them
+    /// at the end of elaboration.
+    if (auto kernel = dyn_cast<KernelOp>(op))
+      if (kernel.getBodyBlock()->empty())
+        kernel->erase();
   }
 
   return success();
