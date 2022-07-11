@@ -382,6 +382,28 @@ parallelForEachNMarkReady(Runtime &runtime, size_t totalCount,
 /// from [0 ..< N).  This function returns immediately after kicking off the
 /// work: all of the elements are processed on the Runtime's WorkQueue.
 ///
+/// When all of the elements have finished, the `readyChain` is completed,
+/// unblocking any computation `andThen`d on it.
+///
+template <typename... CaptureTys, typename ElementFn>
+static inline void
+parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
+                              AsyncValueRef<Chain> &&readyChain,
+                              ElementFn &&elementFn, CaptureTys &&...captures) {
+  parallelForEachNCustomCompletion(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      [readyChain = std::move(readyChain)](auto &&...args) {
+        // When all the elements are ready, complete the `readyChain`,
+        // unblocking other work.
+        readyChain.emplace();
+      },
+      std::forward<CaptureTys...>(captures)...);
+}
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
 /// When all of the elements have finished, the chain result is marked as ready.
 /// provides a convenient way to chain together work with `.andThen` on the
 /// chain.
@@ -390,10 +412,10 @@ template <typename... CaptureTys, typename ElementFn>
 static inline AsyncValueRef<Chain>
 parallelForEachNChain(Runtime &runtime, size_t totalCount,
                       ElementFn &&elementFn, CaptureTys &&...captures) {
-  auto result = AsyncValueRef<Chain>::createConstructed(runtime);
-  parallelForEachNMarkReady(runtime, totalCount, result.copy(),
-                            std::forward<ElementFn>(elementFn),
-                            std::forward<CaptureTys...>(captures)...);
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  parallelForEachNCompleteChain(runtime, totalCount, result.copy(),
+                                std::forward<ElementFn>(elementFn),
+                                std::forward<CaptureTys...>(captures)...);
   return result;
 }
 
