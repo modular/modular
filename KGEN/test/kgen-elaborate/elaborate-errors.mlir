@@ -62,3 +62,24 @@ kgen.kernel @use_Itf3two() {
   kgen.call @genItf3<x = 2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// Expansions of kernels with zero expansions.
+
+// expected-note @+1 {{no implementations of interface 'itf' found}}
+kgen.generator.interface @itf<x>()
+
+// expected-error @+1 {{failed to generate any kernels}}
+kgen.kernel @k1() {
+  // expected-note @+1 {{call expansion failed}}
+  kgen.call @itf<x = 2>() : () -> ()
+  kgen.return
+}
+
+// expected-error @+1 {{failed to generate any kernels}}
+kgen.kernel @k2() {
+  // expected-note @+1 {{call expansion failed}}
+  kgen.call @k1() : () -> ()
+  kgen.return
+}
