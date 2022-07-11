@@ -22,7 +22,7 @@ kgen.kernel @local_verif_error() {
 
 kgen.generator.interface @genItf2<x>()
 
-// expected-note @+2 {{failed to expand this declaration}}
+// expected-note @below {{failed to expand this declaration}}
 // expected-note @+1 {{constraint failed}}
 kgen.generator @genItf2_impl0<x>()
   constraints <eq(x, 0)> implements @genItf2 {
