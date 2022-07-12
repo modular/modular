@@ -25,6 +25,17 @@ public:
     return EXIT_FAILURE;
   }
 
+  /// Open the filename specified as the argument and return a memory buffer, or
+  /// an error message on failure.
+  static ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  openInputFile(StringRef inputFilename) {
+    std::string errorMsg;
+    auto result = mlir::openInputFile(inputFilename, &errorMsg);
+    if (result)
+      return result;
+    return Error(errorMsg);
+  }
+
 private:
   /// This is the value of argv[0] when the program launches, used for reporting
   /// error messages.
@@ -49,11 +60,7 @@ public:
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openInputFile() {
-    std::string errorMsg;
-    auto result = mlir::openInputFile(inputFilename, &errorMsg);
-    if (result)
-      return result;
-    return Error(errorMsg);
+    return CLOptionsBase::openInputFile(inputFilename);
   }
 
   /// The common case for all our driver-like tools is to fail early with an
