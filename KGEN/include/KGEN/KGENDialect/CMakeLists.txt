@@ -6,7 +6,7 @@
 
 # Generating KGEN filename prefix into the "kgen" C++ namespace.
 add_mlir_dialect(KGEN kgen)
-add_modular_doc(KGEN -gen-dialect-doc KGENDialect KGEN/docs/)
+add_modular_doc(KGEN -gen-dialect-doc KGENDialect KGEN/docs/ -dialect=kgen)
 
 set(LLVM_TARGET_DEFINITIONS KGEN.td)
 mlir_tablegen(KGENAttrs.h.inc -gen-attrdef-decls -dialect=kgen)
