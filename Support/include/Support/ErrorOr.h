@@ -241,7 +241,7 @@ public:
   auto VARIABLE##OrError = (EXPRESSION);                                       \
   if (VARIABLE##OrError.isError())                                             \
     return VARIABLE##OrError.takeError();                                      \
-  auto (VARIABLE) = VARIABLE##OrError.takeValue();
+  auto(VARIABLE) = VARIABLE##OrError.takeValue();
 
 } // namespace M
 
