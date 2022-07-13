@@ -114,7 +114,7 @@ public:
   /// Transition a "constructed" AsyncValue to "available" and notify any
   /// waiters.
   void markReady() {
-    auto oldState = notifyReady(State::kAvailable);
+    auto oldState = notifyReady(State::kAvailable, nullptr);
     assert(oldState == State::kConstructed &&
            "can only mark 'constructed' values ready");
     (void)oldState;
@@ -259,24 +259,35 @@ public:
 
   // The state of AsyncValue.  This is mutable as the value evolves.
   enum class State : uint8_t {
-    /// The underlying value's constructor has not been invoked and the value is
-    /// not ready for consumption. This state can transition to `kConstructed`,
-    /// `kAvailable` and `kError`.
+    /// The payload's constructor has not been invoked so the value is not
+    /// ready for consumption. This state can transition to `kConstructed`,
+    /// `kUnconstructedInlineWaiterConstructing`, `kAvailable` and `kError`.
     kUnconstructed = 0,
 
-    /// The underlying value's constructor is called but the value is not
-    /// ready for consumption (triggering waiters). This state can
-    /// transition to `kAvailable` and `kError`.
-    kConstructed = 1,
+    /// These two states are the same as kUnconstructed in terms of state (the
+    /// payload is not initialized), but demarcate that payload field is being
+    /// used to hold the first waiter in the waiter list.  The first enum value
+    /// is used when initialization of the waiter starting (the payload field is
+    /// claimed by "andThen") the second value is used when the waiter is fully
+    /// initialized.
+    ///
+    /// This state can transition to `kConstructed`, `kAvailable` and `kError`.
+    kUnconstructedInlineWaiterConstructing = 1,
+    kUnconstructedInlineWaiterPresent = 2,
+
+    /// The payload's constructor is called but the value is not ready for
+    /// consumption (triggering waiters). This state can transition to
+    /// `kAvailable` and `kError`.
+    kConstructed = 3,
 
     /// The underlying value is constructed and ready for consumption by
     /// waiters and contains an initialized value. This state can not transition
     /// to any other state.
-    kAvailable = 2,
+    kAvailable = 4,
 
     /// This AsyncValue is ready and contains an error, along with an
     /// uninitialized value. This state can not transition to any other state.
-    kError = 3,
+    kError = 5,
   };
 
   /// Return the current state of this AsyncValue.
@@ -315,6 +326,10 @@ public:
     return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
+  /// AsyncValue maintains a list of waiters that are waiting for notification
+  /// that this value transitioned to Available or Error.
+  using Waiter = llvm::unique_function<void(const AnyAsyncValueRef &arg)>;
+
 private:
   // Reference counting, only accessible to RCRef<>.
   template <typename T>
@@ -350,26 +365,7 @@ private:
   /// for IndirectAsyncValue's when they get resolved.
   uint16_t typeID;
 
-  /// This is a singly linked list of nodes waiting for notification, hanging
-  /// off of AsyncValue.  When the AsyncValue becomes ready, the callbacks are
-  /// invoked.
-  using Waiter = llvm::unique_function<void(const AnyAsyncValueRef &arg)>;
-
-  class WaiterListNode {
-  public:
-    explicit WaiterListNode(Waiter &&newWaiter, WaiterListNode *next)
-        : waiter(std::move(newWaiter)), next(next) {}
-
-    friend class AsyncValue;
-
-  private:
-    Waiter waiter;
-    WaiterListNode *next = nullptr;
-
-    WaiterListNode(const WaiterListNode &) = delete;
-    void operator=(const WaiterListNode &) = delete;
-  };
-
+protected:
   struct WaiterListNodePointerTraits {
     static inline void *getAsVoidPointer(WaiterListNode *ptr) { return ptr; }
     static inline WaiterListNode *getFromVoidPointer(void *ptr) {
@@ -384,23 +380,34 @@ private:
   /// Invariant: If the state is ready, then the waiter list must be nullptr.
   using WaitersAndState = llvm::PointerIntPair<WaiterListNode *, 3, State,
                                                WaiterListNodePointerTraits>;
+
   std::atomic<WaitersAndState> waitersAndState;
 
 protected:
+  M::LogicalResult moveState(WaitersAndState &oldValue, State newState);
   void runWaitersAndDeallocate(WaiterListNode *list);
-  void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
+  WaitersAndState andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
+  State notifyReady(State newState, llvm::Optional<Waiter> *extraWaiter);
 
-  /// Transition to a ready state and notify all waiters about this.  This
-  /// returns the old state.
-  State notifyReady(State newState);
+  /// Invoke a single waiter immediately.
+  template <typename WaiterCallable>
+  void runOneWaiter(WaiterCallable &waiter) {
+    // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
+    // ownership very clear (they can use the value but have to copy it if
+    // persisting it).  We do this delicately to avoid additional refcount
+    // bumps.
+    auto rcThisRef = AnyAsyncValueRef::take(this);
+    waiter(const_cast<const AnyAsyncValueRef &>(rcThisRef));
+    (void)rcThisRef.release();
+  }
 
 protected:
   /// This layout of this class is designed very carefully to ensure alignment
-  /// of the payload to 16 bytes.  That said, we do include a significant amount
-  /// of metadata (including information about the concrete type, whether
-  /// vtables exist or not, etc) in order to detect common programmer mistakes
-  /// quickly.
+  /// of the payload to 16 bytes and we don't want to change this.  That said,
+  /// we do put the 16 bytes to work (including metadata about the concrete
+  /// type of the value, whether vtables exist or not, etc) in order to detect
+  /// common programmer mistakes quickly.
   static constexpr int kAsyncValueSize = 16;
 
   AsyncValue(SubclassKind subclassKind, State state, bool hasVTable,
@@ -485,11 +492,13 @@ private:
   /// Return the stored destructor function for this ConcreteValue.
   ValueDestructorFn getValueDestructor();
 
-  /// The error field and the payload field are always first thing in our
-  /// derived class.
+  /// The error value is always first thing in our derived class.
   EncodedDiagnostic *getDiagnosticPointer() {
     return reinterpret_cast<EncodedDiagnostic *>(this + 1);
   }
+
+  /// The waiter value is always the firstthing in our derived class.
+  Waiter *getWaiterPointer() { return reinterpret_cast<Waiter *>(this + 1); }
 
   /// Return the address of the (potentially uninitialized) payload.
   void *getPayloadPointer() {
@@ -502,6 +511,9 @@ private:
   /// This is the out-of-line slow patch for type registration.
   static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
                                  ValueDestructorFn destructor);
+
+  WaitersAndState removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter,
+                                        State newState);
 };
 
 /// Subclass for storing the payload of the AsyncValue inline.  This should
@@ -549,16 +561,19 @@ private:
 #endif
   }
 
-  // NOTE: destruction of the payload and error (if constructed) is handled by
-  // SomeConcreteAsyncValue destructor.
-
-  /// This value in a 'constructed' AsyncValue is always "payload".  This value
-  /// in a 'ready' AsyncValue may either be "payload" or "diagnostic".  Note
-  /// that EncodedDiagnostic is 3 words.  We could store this out of line when
-  /// sizeof(T) is smaller than sizeof(EncodedDiagnostic) at the cost of
-  /// complexity and expense in the error case for those types.
+  // NOTE: destruction of this state is handled by ~SomeConcreteAsyncValue.
   union {
+    /// When in a `kError` state, this includes location and diagnostic
+    /// information.  Both this field and Waiter are 3 words.
     EncodedDiagnostic diagnostic;
+    /// When unconstructed, this can hold an inline copy of the first waiter,
+    /// avoiding having to heap allocate a waiter node for it.  The state will
+    /// be either `kUnconstructedInlineWaiterConstructing` (while initializing
+    /// this field for a brief few cycles) or
+    /// `kUnconstructedInlineWaiterPresent` after initialization.
+    Waiter waiter;
+    /// When in `kConstructed` or `kAvailable` state, this is the payload of
+    /// the AsyncValue.
     T payload;
   };
 
@@ -703,17 +718,11 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
   auto waitersAndStateValue = waitersAndState.load(std::memory_order_acquire);
   if (isReady(waitersAndStateValue.getInt())) {
     assert(waitersAndStateValue.getPointer() == nullptr);
-    // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
-    // ownership very clear (they can use the value but have to copy it if
-    // persisting it).  We do this delicately to avoid additional refcount
-    // bumps.
-    auto rcThisRef = AnyAsyncValueRef::take(this);
-    waiter(const_cast<const AnyAsyncValueRef &>(rcThisRef));
-    (void)rcThisRef.release();
+    runOneWaiter(waiter);
     return;
   }
 
-  andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+  (void)andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
 }
 
 /// Construct the payload of a ConcreteAsyncValue and change its state to
@@ -721,25 +730,29 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
 /// and is moved to a ready state with `markReady()`.
 template <typename T, typename... Args>
 inline void AsyncValue::construct(Args &&...args) {
-  auto oldValue = waitersAndState.load(std::memory_order_acquire);
-  assert(getSubclassKind() == SubclassKind::kConcrete &&
-         oldValue.getInt() == State::kUnconstructed &&
-         "cannot construct an indirect or already set up AsyncValue");
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
-
+  assert(getSubclassKind() == SubclassKind::kConcrete &&
+         "cannot construct an IndirectAsyncvalue");
   auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
+
+  // Take any inline waiters out of the payload so we can construct T into it.
+  llvm::Optional<Waiter> inlineWaiter;
+  auto oldValue =
+      concrete->removeAnyInlineWaiter(inlineWaiter, State::kConstructed);
+
+  // If we had an inline waiter, re-add it onto the traditional waiter list.
+  if (inlineWaiter.hasValue())
+    oldValue = andThenOutOfLine(std::move(*inlineWaiter), oldValue);
+
+  // We now have unfettered access to the payload section.
   new (&concrete->payload) T(std::forward<Args>(args)...);
 
-  // Change the state to 'constructed' while making sure any waiters that get
-  // concurrently added don't get lost.
-  auto newValue = WaitersAndState(oldValue.getPointer(), State::kConstructed);
-  while (!waitersAndState.compare_exchange_strong(oldValue, newValue,
-                                                  std::memory_order_acq_rel,
-                                                  std::memory_order_acquire)) {
-    assert(oldValue.getInt() == State::kUnconstructed &&
-           "state changed while constructing?");
-    newValue.setPointer(oldValue.getPointer());
-  }
+  // Change the state to 'constructed' while making sure any waiters that
+  // get concurrently added don't get lost.  We know that no other state
+  // transition can happen concurrently.
+  auto result = moveState(oldValue, State::kConstructed);
+  assert(succeeded(result));
+  (void)result;
 }
 
 /// Construct the payload of the AsyncValue in place and change its state to
@@ -749,15 +762,21 @@ template <typename T, typename... Args>
 inline void AsyncValue::emplace(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
          "Cannot 'emplace' an IndirectValue, use 'emplaceIndirect' instead");
-  assert(getState() == State::kUnconstructed &&
-         "cannot emplace an indirect or already set up AsyncValue");
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
-
   auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
+
+  // Take any inline waiters out of the payload area so we can construct it.
+  llvm::Optional<Waiter> inlineWaiter;
+  (void)concrete->removeAnyInlineWaiter(inlineWaiter, State::kAvailable);
+
+  // Initialize the payload.
   new (&concrete->payload) T(std::forward<Args>(args)...);
-  auto oldState = notifyReady(State::kAvailable);
-  assert(oldState == State::kUnconstructed &&
-         "fulfilling a concrete value that was already set up?");
+
+  // Change state and notify the waiters.
+  auto oldState = notifyReady(State::kAvailable, &inlineWaiter);
+  assert((oldState == State::kUnconstructedInlineWaiterPresent ||
+          oldState == State::kConstructed) &&
+         "AsyncValue transitioned to ready while we're emplacing?");
   (void)oldState;
 }
 

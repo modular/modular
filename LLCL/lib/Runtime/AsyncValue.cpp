@@ -59,6 +59,12 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
     getDiagnosticPointer()->~EncodedDiagnostic();
   else if (isConstructedOrAvailable(s))
     getValueDestructor()(getPayloadPointer());
+  else {
+    // TODO: If unconstructed this will leak the waiters list.  We should signal
+    // this as an error (checking for ressurection) etc.
+    llvm::report_fatal_error(
+        "destroying a non-available AsyncValue isn't implemented");
+  }
 }
 
 void AsyncValue::destroyWithRefCountZero() {
@@ -76,25 +82,131 @@ void AsyncValue::destroyWithRefCountZero() {
 // Waiter list management.
 //===----------------------------------------------------------------------===//
 
+/// Prepare to transition a ConcreteAsyncValue to a state specified by
+/// `newState`, which must be either `kConstructed`, `kAvailable`, or `kError`.
+/// The origin state may be `kUnconstructed`,
+/// `kUnconstructedInlineWaiterConstructing` or
+/// `kUnconstructedInlineWaiterPresent` state.  It can also be `kError` if
+/// coming from one of those or also coming from a `kConstructed` state.
+///
+/// The postcondition of this method is that the waiter state of the async value
+/// is guaranteed to be in a state that doesn't allow adding inline waiters, but
+/// any inline waiters will be moved out to the `inlineWaiter` argument, and
+/// the payload/error area is uninitialized.
+///
+/// This returns the last seen version of waitersAndState.
+auto Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
+    llvm::Optional<Waiter> &inlineWaiter, State newState) -> WaitersAndState {
+  assert(newState == State::kConstructed || newState == State::kAvailable ||
+         newState == State::kError);
+
+  WaitersAndState oldValue = waitersAndState.load(std::memory_order_acquire);
+  while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
+    switch (oldValue.getInt()) {
+    default:
+      assert(0 && "cannot construct a ready AsyncValue");
+    case State::kUnconstructed: {
+      assert(oldValue.getPointer() == nullptr &&
+             "how'd we get out of line waiters without an inline waiter?");
+      // We need to avoid races with other threads "andThen'ing" the async value
+      // which would try to set up an inline waiter.  We do this by moving our
+      // state to kUnconstructedInlineWaiterPresent because any andThen would
+      // put the waiter on the waiter list if we get to that state.  We have to
+      // be careful though because we might not successfully get to that state!
+      auto newValue =
+          WaitersAndState(nullptr, State::kUnconstructedInlineWaiterPresent);
+      if (!waitersAndState.compare_exchange_weak(oldValue, newValue,
+                                                 std::memory_order_acq_rel,
+                                                 std::memory_order_acquire)) {
+        // If we failed the compare/xchg, retry.  The only state transition is
+        // to having an inline waiter and potentially indirect waiters.
+        continue;
+      }
+      // If we succeeded, then we're in a 'inline waiter present' state, but
+      // the inline waiter isn't actually constructed.
+      return newValue;
+    }
+    case State::kUnconstructedInlineWaiterConstructing:
+      // If someone is actively constructing a waiter, spin for a few cycles
+      // until it resolves.
+      oldValue = waitersAndState.load(std::memory_order_acquire);
+      // TODO: We should sleep 10 cycles and potentially even give up the thread
+      // or something, how do we do this?  ThreadPoolWorkQueue uses
+      // std::chrono::steady_clock::now().
+      // We should potentially do exponential backoff in all these compare/xchg
+      // loops.
+      continue;
+
+    case State::kUnconstructedInlineWaiterPresent:
+      // If we have an inline waiter, move it aside.
+      inlineWaiter = std::move(*getWaiterPointer());
+      getWaiterPointer()->~Waiter();
+      return oldValue;
+
+    case State::kConstructed:
+      assert(newState != State::kAvailable &&
+             "Use markReady to mark a constructed value as available");
+      assert(newState == State::kError &&
+             "Can only move from kConstructed to kError with this method");
+      // If the value was already constructed, destroy it before setting the
+      // error.
+      getValueDestructor()(getPayloadPointer());
+      return oldValue;
+    }
+  }
+}
+
+namespace LLCL {
+class WaiterListNode {
+public:
+  explicit WaiterListNode(AsyncValue::Waiter &&newWaiter, WaiterListNode *next)
+      : waiter(std::move(newWaiter)), next(next) {}
+  friend class AsyncValue;
+
+private:
+  AsyncValue::Waiter waiter;
+  WaiterListNode *next = nullptr;
+
+  WaiterListNode(const WaiterListNode &) = delete;
+  void operator=(const WaiterListNode &) = delete;
+};
+} // namespace LLCL
+
 /// Invoke all of the waiters specified by the list of waiter nodes, and
 /// deallocate the waiter nodes.  We know we have ownership of `list` here and
 /// that it is done being mutated.  We also know that the caller has an RCRef
 /// that keeps 'this' alive.
 void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list) {
-  // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to the 'call'
-  // method make the ownership very clear (they can use the value but have to
-  // copy it if persisting it).  We do this delicately to avoid additional
-  // refcount bumps.
-  auto rcThisRef = AnyAsyncValueRef::take(this);
   while (list) {
     auto *node = list;
-    node->waiter(rcThisRef);
+    runOneWaiter(node->waiter);
     list = node->next;
     delete node;
   }
+}
 
-  // We're done with the RCRef.
-  (void)rcThisRef.release();
+/// Atomically move from the current state specified by `oldValue` to the
+/// state specified by `newState`, ignoring any waiter changes.  This returns
+/// success() when successful, or failure() if the AsyncValue moved to another
+/// state in the meantime.
+M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
+                                       State newState) {
+  auto origState = oldValue.getInt();
+  assert(origState != newState && "cannot transition to same state");
+  auto newValue = WaitersAndState(oldValue.getPointer(), newState);
+  while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
+                                                std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+    // If the thing changed to a different state underneath us, return
+    // failure.
+    if (oldValue.getInt() != origState)
+      return M::failure();
+
+    // If the waiter list changed out from under us, try again.
+    newValue = WaitersAndState(oldValue.getPointer(), newState);
+  }
+  oldValue = newValue;
+  return M::success();
 }
 
 /// This is the out-of-line portion of the `AsyncValue::andThen` method which is
@@ -103,17 +215,52 @@ void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list) {
 /// If the value is available or becomes available, this calls the closure
 /// immediately. Otherwise, the add the waiter closure to the waiter list where
 /// it will be called when the value becomes available.
-void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
+auto AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue)
+    -> WaitersAndState {
+  // If the oldValue appears to be kUnconstructed then we will try to add this
+  // as an inline waiter node, otherwise we add another node to the waiter list.
+  if (oldValue.getInt() == State::kUnconstructed &&
+      getSubclassKind() == SubclassKind::kConcrete) {
+    auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
+    assert(oldValue.getPointer() == nullptr &&
+           "how'd we get out of line waiters without an inline waiter?");
+    // Allocate the payload aread by moving to the ...Constructing state.  If
+    // the AsyncValue moved to another state in the meantime then it either
+    // got constructed or became available.  In any case, we can't do inline
+    // waiter initialization so we have to fall back.
+    if (succeeded(moveState(oldValue,
+                            State::kUnconstructedInlineWaiterConstructing))) {
+      // In the vastly most common case we get into the 'WaiterConstructing'
+      // state. Inline initialize the waiter.
+      new (concrete->getWaiterPointer()) Waiter(std::move(waiter));
+      // Then transition immediately to the 'WaiterPresent' state.  We want this
+      // critical section to be extremely short, only a few cycles.
+      auto result =
+          moveState(oldValue, State::kUnconstructedInlineWaiterPresent);
+      assert(succeeded(result) &&
+             "no state transitions can happen in this window");
+      (void)result;
+      return oldValue;
+    }
+  }
+
+  // If we raced with a transition into a ready state then we can just execute
+  // the waiter and be done.
+  if (isReady(oldValue.getInt())) {
+    runOneWaiter(waiter);
+    return oldValue;
+  }
+
+  // Otherwise, the value is inline waiter is occupied and the state is
+  // unavailable, go ahead and do some head allocations.
   auto node = new WaiterListNode(std::move(waiter), oldValue.getPointer());
 
-  auto oldState = oldValue.getInt();
-
   // Swap the next link in. oldValue.getInt() must be non-ready when
-  // evaluating the loop condition. The acquire barrier on the compare_exchange
-  // ensures that prior changes to waiter list are visible here as we may call
-  // RunWaiter() on it. The release barrier ensures that prior changes to *node
-  // appear to happen before it's added to the list.
-  auto newValue = WaitersAndState(node, oldState);
+  // evaluating the loop condition. The acquire barrier on the
+  // compare_exchange ensures that prior changes to waiter list are visible
+  // here as we may call RunWaiter() on it. The release barrier ensures that
+  // prior changes to *node appear to happen before it's added to the list.
+  auto newValue = WaitersAndState(node, oldValue.getInt());
   while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
                                                 std::memory_order_acq_rel,
                                                 std::memory_order_acquire)) {
@@ -121,12 +268,12 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
+      runOneWaiter(node->waiter);
       // Change the tail of the list to null.  Whatever moved this to a ready
-      // state will already have executed and deallocated that.  We just need
-      // to run the one waiter.
+      // state will already have executed and deallocated that.
       node->next = nullptr;
-      runWaitersAndDeallocate(node);
-      return;
+      delete node;
+      return oldValue;
     }
     // Otherwise, it is possible we just got extra waiter nodes.  Update the
     // waiter list in newValue.
@@ -136,17 +283,26 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   // compare_exchange_weak succeeds. The oldValue must be in some non-ready
   // state.
   assert(!isReady(oldValue.getInt()));
+  return oldValue;
 }
 
 /// Transition to a ready state and notify all waiters about this.  This
 /// returns the old state.
-AsyncValue::State AsyncValue::notifyReady(State newState) {
-  assert(newState == State::kAvailable || newState == State::kError);
+AsyncValue::State AsyncValue::notifyReady(State newState,
+                                          llvm::Optional<Waiter> *extraWaiter) {
+  assert((newState == State::kAvailable || newState == State::kError) &&
+         "new state isn't a ready state!");
 
   // Mark the value as available, ensuring that new queries for the state see
   // the value that got filled in.
   auto oldValue = waitersAndState.exchange(WaitersAndState(nullptr, newState),
                                            std::memory_order_acq_rel);
+
+  // If there was an inline waiter, run it first.
+  if (extraWaiter && extraWaiter->hasValue())
+    runOneWaiter(**extraWaiter);
+
+  //  Then run the rest of the waiter list.
   runWaitersAndDeallocate(oldValue.getPointer());
   return oldValue.getInt();
 }
@@ -187,28 +343,25 @@ AnyAsyncValueRef AsyncValue::createError(CompactRuntimePtr runtime,
 
 /// Mark an "unconstructed" AsyncValue as an error.
 void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
-  if (getSubclassKind() == SubclassKind::kConcrete) {
-    auto *concretePtr = static_cast<Detail::SomeConcreteAsyncValue *>(this);
-    State oldState = getState();
-    // If the value was already constructed, destroy it before setting the
-    // error.
-    if (oldState == State::kConstructed)
-      concretePtr->getValueDestructor()(concretePtr->getPayloadPointer());
-    else
-      assert(oldState == State::kUnconstructed &&
-             "cannot set an error to an indirect or already set up AsyncValue");
-
-    // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
-    // do the pointer arithmetic manually.
-    auto *diagPtr = concretePtr->getDiagnosticPointer();
-    new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
-    oldState = notifyReady(State::kError);
-    assert(!isReady(oldState) &&
-           "AsyncValue transitioned to ready while we're changing to error?");
-    (void)oldState;
-  } else {
+  if (getSubclassKind() != SubclassKind::kConcrete) {
     resolveIndirect(createError(getRuntime(), std::move(diagnostic)));
+    return;
   }
+
+  auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
+
+  llvm::Optional<Waiter> inlineWaiter;
+  (void)concrete->removeAnyInlineWaiter(inlineWaiter, State::kError);
+
+  // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
+  // do the pointer arithmetic manually.
+  auto *diagPtr = concrete->getDiagnosticPointer();
+  new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
+  auto oldState = notifyReady(State::kError, &inlineWaiter);
+  assert((oldState == State::kUnconstructedInlineWaiterPresent ||
+          oldState == State::kConstructed) &&
+         "AsyncValue transitioned to ready while we're changing to error?");
+  (void)oldState;
 }
 
 //===----------------------------------------------------------------------===//
@@ -225,14 +378,14 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
 
   assert(!thisIndirect->value && "IndirectAsyncValue is already resolved");
 
-  // If the newValue is already itself ready, we can resolve this indirect value
-  // and make it ready.
+  // If the newValue is already itself ready, we can resolve this indirect
+  // value and make it ready.
   auto newValueState = newValue->getState();
   if (isReady(newValueState)) {
     // Collapse through an intermediate IndirectAsyncValue so they can be
-    // deallocated and to reduce pointer hops.  We know there can be at most one
-    // IndirectAsyncValue here because each locally resolves when they become
-    // ready.
+    // deallocated and to reduce pointer hops.  We know there can be at most
+    // one IndirectAsyncValue here because each locally resolves when they
+    // become ready.
     if (newValue->getSubclassKind() == SubclassKind::kIndirect) {
       auto *concreteValue = newValue.getPointer();
       concreteValue = static_cast<Detail::IndirectAsyncValue *>(concreteValue)
@@ -246,9 +399,9 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
     thisIndirect->value = std::move(newValue);
 
     // Finally, notify our waiters and switch to kAvailable or kError state.
-    auto oldState = notifyReady(newValueState);
+    auto oldState = notifyReady(newValueState, /*no extra waiter*/ nullptr);
     assert(oldState == State::kUnconstructed &&
-           "setting an erro to an AsyncValue that was already set up?");
+           "resolving an IndirectAsyncValue that was already set up?");
     (void)oldState;
     return;
   }
