@@ -365,7 +365,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 template <typename... CaptureTys, typename ElementFn>
 static inline void
 parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
-                              AsyncValueRef<Chain> &&readyChain,
+                              AsyncValueRef<Chain> readyChain,
                               ElementFn &&elementFn, CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
       runtime, totalCount, std::forward<ElementFn>(elementFn),
@@ -375,6 +375,29 @@ parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
         readyChain.emplace();
       },
       std::forward<CaptureTys...>(captures)...);
+}
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
+/// This helper takes an initialized `EltTy` value, and when complete it
+/// emplaces it into the resultAV value.
+///
+template <typename EltTy, typename... CaptureTys, typename ElementFn>
+static inline void
+parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
+                          EltTy &&initialResultValue,
+                          AsyncValueRef<EltTy> resultAV, ElementFn &&elementFn,
+                          CaptureTys &&...captures) {
+  parallelForEachNCustomCompletion(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      [resultAV = std::move(resultAV)](EltTy &result, auto &&...args) {
+        // When all the elements are ready, emplace the result value into the
+        // result AV.
+        resultAV.emplace(std::move(result));
+      },
+      std::move(initialResultValue), std::forward<CaptureTys...>(captures)...);
 }
 
 /// This method invokes the specified element function "N" times with indexes
