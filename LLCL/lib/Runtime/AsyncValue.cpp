@@ -91,10 +91,7 @@ void AsyncValue::destroyWithRefCountZero() {
 /// any inline waiters will be moved out to the `inlineWaiter` argument, and
 /// the payload/error area is uninitialized.
 ///
-void Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
-    llvm::Optional<Waiter> &inlineWaiter, State newState) {
-  assert(newState == State::kAvailable || newState == State::kError);
-
+void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
   WaitersAndState oldValue = waitersAndState.load(std::memory_order_acquire);
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
     switch (oldValue.getInt()) {
@@ -132,11 +129,15 @@ void Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
       // loops.
       continue;
 
-    case State::kUnconstructedInlineWaiterPresent:
+    case State::kUnconstructedInlineWaiterPresent: {
+      assert(getSubclassKind() == SubclassKind::kConcrete);
+      Waiter *waiterPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this)
+                              ->getWaiterPointer();
       // If we have an inline waiter, move it aside.
-      inlineWaiter = std::move(*getWaiterPointer());
-      getWaiterPointer()->~Waiter();
+      inlineWaiter = std::move(*waiterPtr);
+      waiterPtr->~Waiter();
       return;
+    }
     }
   }
 }
@@ -329,13 +330,10 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
     return;
   }
 
-  auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
-
   llvm::Optional<Waiter> inlineWaiter;
-  (void)concrete->removeAnyInlineWaiter(inlineWaiter, State::kError);
+  removeAnyInlineWaiter(inlineWaiter);
 
-  // We don't have the <T> type required to cast to ConcreteAsyncValue<T> so
-  // do the pointer arithmetic manually.
+  auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
   auto oldState = notifyReady(State::kError, &inlineWaiter);

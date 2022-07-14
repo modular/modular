@@ -360,6 +360,7 @@ protected:
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
   State notifyReady(State newState, llvm::Optional<Waiter> *extraWaiter);
+  void removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter);
 
   /// Invoke a single waiter immediately.
   template <typename WaiterCallable>
@@ -482,9 +483,6 @@ private:
   /// This is the out-of-line slow patch for type registration.
   static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
                                  ValueDestructorFn destructor);
-
-  void removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter,
-                             State newState);
 };
 
 /// Subclass for storing the payload of the AsyncValue inline.  This should
@@ -690,13 +688,13 @@ inline void AsyncValue::emplace(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
          "Cannot 'emplace' an IndirectValue, use 'emplaceIndirect' instead");
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
-  auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
 
   // Take any inline waiters out of the payload area so we can construct it.
   llvm::Optional<Waiter> inlineWaiter;
-  concrete->removeAnyInlineWaiter(inlineWaiter, State::kAvailable);
+  removeAnyInlineWaiter(inlineWaiter);
 
   // Initialize the payload.
+  auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
   new (&concrete->payload) T(std::forward<Args>(args)...);
 
   // Change state and notify the waiters.
