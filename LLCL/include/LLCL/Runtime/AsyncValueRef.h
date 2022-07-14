@@ -62,15 +62,6 @@ public:
     return AsyncValue::allocate<T>(runtime);
   }
 
-  /// Create an AsyncValue for the specified type in "constructed" but non-ready
-  /// state.  This should be `markReady()`, or finalized with an error.
-  template <typename... Args>
-  static AsyncValueRef<T> createConstructed(CompactRuntimePtr runtime,
-                                            Args &&...args) {
-    return AsyncValue::createConstructed<T>(runtime,
-                                            std::forward<Args>(args)...);
-  }
-
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
@@ -129,14 +120,6 @@ public:
 
   /// Return the stored value in an `available` AsyncValue.
   T &get() const { return value->get<T>(); }
-
-  /// Construct the payload of a ConcreteAsyncValue and change its state to
-  /// `constructed`.  Requires that the AsyncValue's state is `unconstructed`,
-  /// and is moved to a ready state with `markReady()`.
-  template <typename... Args>
-  void construct(Args &&...args) const {
-    value->construct<T>(std::forward<Args>(args)...);
-  }
 
   /// Construct the payload of a ConcreteAsyncValue and change its state to
   /// `available`.  Requires that the AsyncValue's state is `unconstructed`.
