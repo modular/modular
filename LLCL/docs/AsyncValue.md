@@ -140,7 +140,8 @@ to extend the lifetime of the reference.
 
 ## The states of `AsyncValue`
 
-`AsyncValue` may be in four possible states: "unconstructed", "constructed",
+`AsyncValue` may be in four possible states: "unconstructed", "unconstructed
+(with inline waiter)",
 "value available" and "error".  The final two states are considered to be
 "ready" states - they happen when the future is resolved (either to a value or
 an error) - all waiters are notified transitioning to a ready state, and you
@@ -151,29 +152,22 @@ cannot transition an `AsyncValue` back out of a ready state.
 this state, any `andThen` requests are queued up until the value transitions
 into a ready state.
 
-**"Constructed":** An `AsyncValue` in constructed state is obtained from
-`AsyncValue::createConstructed<T>` or `AsyncValueRef<T>::createConstructed`
-static method, which take the arguments to the constructor.  This state is used
-by code that finds it convenient to construct a C++ type directly into an
-AsyncValue, manipulate it in place for a while, and eventually complete it by
-transitioning to a ready state.  This can be useful for types that are
-non-movable.  If transitioning to "value available", the waiter list is
-notified.  When transitioning to "error", the value is destructed, the error is
-installed and then the waiter list is notified.
+**"Unconstructed (with inline waiter)":** An `AsyncValue` in unconstructed state
+works exactly like an `kUnconstructed` one, but has its first waiter held in the
+payload field.  Clients of `AsyncValue` will never have to worry about this.
 
 **"Value Available":** This is the state that most `AsyncValue`s achieve where
 they hold a completed C++ value and where all `andThen` waiters are notified.
 You can directly create an `AsyncValue` in this state with
 `AsyncValue::createReady<T>` or `AsyncValueRef<T>::createReady`,
 but most cases will create one in unconstructed and transition to this state
-with the `emplace(...)` method, or start in constructed state and transition
- with the `markReady()` method.
+with the `emplace(...)` method.
 
 **"Error":** This state indicates that the computation creating the value had
 an error.  You may create an `AsyncValue` directly in this state with the
 `createError` method, but a more typical usage is to determine that an 
-unconstructed or constructed `AsyncValue` had a problem, and transition it to
-this state with the `setToError` method.
+unconstructed `AsyncValue` had a problem, and transition it to this state with
+the `setToError` method.
 
 ## Indirect Async Values
 

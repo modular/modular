@@ -57,7 +57,7 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
   // Destroy the error or value if constructed.
   if (s == State::kError)
     getDiagnosticPointer()->~EncodedDiagnostic();
-  else if (isConstructedOrAvailable(s))
+  else if (s == State::kAvailable)
     getValueDestructor()(getPayloadPointer());
   else {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
@@ -83,22 +83,17 @@ void AsyncValue::destroyWithRefCountZero() {
 //===----------------------------------------------------------------------===//
 
 /// Prepare to transition a ConcreteAsyncValue to a state specified by
-/// `newState`, which must be either `kConstructed`, `kAvailable`, or `kError`.
-/// The origin state may be `kUnconstructed`,
-/// `kUnconstructedInlineWaiterConstructing` or
-/// `kUnconstructedInlineWaiterPresent` state.  It can also be `kError` if
-/// coming from one of those or also coming from a `kConstructed` state.
+/// `newState`, which must be either `kAvailable` or `kError`.
+/// The origin state may be `kUnconstructed` or `kUnconstructedInlineWaiter*`.
 ///
 /// The postcondition of this method is that the waiter state of the async value
 /// is guaranteed to be in a state that doesn't allow adding inline waiters, but
 /// any inline waiters will be moved out to the `inlineWaiter` argument, and
 /// the payload/error area is uninitialized.
 ///
-/// This returns the last seen version of waitersAndState.
-auto Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
-    llvm::Optional<Waiter> &inlineWaiter, State newState) -> WaitersAndState {
-  assert(newState == State::kConstructed || newState == State::kAvailable ||
-         newState == State::kError);
+void Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
+    llvm::Optional<Waiter> &inlineWaiter, State newState) {
+  assert(newState == State::kAvailable || newState == State::kError);
 
   WaitersAndState oldValue = waitersAndState.load(std::memory_order_acquire);
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
@@ -122,9 +117,9 @@ auto Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
         // to having an inline waiter and potentially indirect waiters.
         continue;
       }
-      // If we succeeded, then we're in a 'inline waiter present' state, but
+      // When we succeed, we're in a 'inline waiter present' state, but
       // the inline waiter isn't actually constructed.
-      return newValue;
+      return;
     }
     case State::kUnconstructedInlineWaiterConstructing:
       // If someone is actively constructing a waiter, spin for a few cycles
@@ -141,17 +136,7 @@ auto Detail::SomeConcreteAsyncValue::removeAnyInlineWaiter(
       // If we have an inline waiter, move it aside.
       inlineWaiter = std::move(*getWaiterPointer());
       getWaiterPointer()->~Waiter();
-      return oldValue;
-
-    case State::kConstructed:
-      assert(newState != State::kAvailable &&
-             "Use markReady to mark a constructed value as available");
-      assert(newState == State::kError &&
-             "Can only move from kConstructed to kError with this method");
-      // If the value was already constructed, destroy it before setting the
-      // error.
-      getValueDestructor()(getPayloadPointer());
-      return oldValue;
+      return;
     }
   }
 }
@@ -215,8 +200,7 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
 /// If the value is available or becomes available, this calls the closure
 /// immediately. Otherwise, the add the waiter closure to the waiter list where
 /// it will be called when the value becomes available.
-auto AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue)
-    -> WaitersAndState {
+void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   // If the oldValue appears to be kUnconstructed then we will try to add this
   // as an inline waiter node, otherwise we add another node to the waiter list.
   if (oldValue.getInt() == State::kUnconstructed &&
@@ -240,16 +224,14 @@ auto AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue)
       assert(succeeded(result) &&
              "no state transitions can happen in this window");
       (void)result;
-      return oldValue;
+      return;
     }
   }
 
   // If we raced with a transition into a ready state then we can just execute
   // the waiter and be done.
-  if (isReady(oldValue.getInt())) {
-    runOneWaiter(waiter);
-    return oldValue;
-  }
+  if (isReady(oldValue.getInt()))
+    return runOneWaiter(waiter);
 
   // Otherwise, the value is inline waiter is occupied and the state is
   // unavailable, go ahead and do some head allocations.
@@ -273,7 +255,7 @@ auto AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue)
       // state will already have executed and deallocated that.
       node->next = nullptr;
       delete node;
-      return oldValue;
+      return;
     }
     // Otherwise, it is possible we just got extra waiter nodes.  Update the
     // waiter list in newValue.
@@ -283,7 +265,6 @@ auto AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue)
   // compare_exchange_weak succeeds. The oldValue must be in some non-ready
   // state.
   assert(!isReady(oldValue.getInt()));
-  return oldValue;
 }
 
 /// Transition to a ready state and notify all waiters about this.  This
@@ -358,8 +339,7 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
   auto oldState = notifyReady(State::kError, &inlineWaiter);
-  assert((oldState == State::kUnconstructedInlineWaiterPresent ||
-          oldState == State::kConstructed) &&
+  assert(oldState == State::kUnconstructedInlineWaiterPresent &&
          "AsyncValue transitioned to ready while we're changing to error?");
   (void)oldState;
 }
