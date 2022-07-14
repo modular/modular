@@ -359,29 +359,6 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 /// from [0 ..< N).  This function returns immediately after kicking off the
 /// work: all of the elements are processed on the Runtime's WorkQueue.
 ///
-/// When all of the elements have finished, the `readyMarker` is marked as
-/// ready, unblocking any computation `andThen`d on it.  Its `AsyncValue` may
-/// contain any type.
-///
-template <typename... CaptureTys, typename ElementFn>
-static inline void
-parallelForEachNMarkReady(Runtime &runtime, size_t totalCount,
-                          AnyAsyncValueRef readyMarker, ElementFn &&elementFn,
-                          CaptureTys &&...captures) {
-  parallelForEachNCustomCompletion(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
-      [readyMarker = std::move(readyMarker)](auto &&...args) {
-        // When all the elements are ready, mark the `readyMarker` as complete,
-        // unblocking other work.
-        readyMarker->markReady();
-      },
-      std::forward<CaptureTys...>(captures)...);
-}
-
-/// This method invokes the specified element function "N" times with indexes
-/// from [0 ..< N).  This function returns immediately after kicking off the
-/// work: all of the elements are processed on the Runtime's WorkQueue.
-///
 /// When all of the elements have finished, the `readyChain` is completed,
 /// unblocking any computation `andThen`d on it.
 ///
