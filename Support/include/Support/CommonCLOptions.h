@@ -36,6 +36,12 @@ public:
     return Error(errorMsg);
   }
 
+  cl::opt<bool> verifyDiagnostics{
+      "verify-diagnostics",
+      cl::desc("Check that emitted diagnostics match "
+               "expected-* lines on the corresponding line"),
+      cl::init(false)};
+
 private:
   /// This is the value of argv[0] when the program launches, used for reporting
   /// error messages.
@@ -50,12 +56,6 @@ public:
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,
                                      cl::desc("<input file>"), cl::init("-")};
-
-  cl::opt<bool> verifyDiagnostics{
-      "verify-diagnostics",
-      cl::desc("Check that emitted diagnostics match "
-               "expected-* lines on the corresponding line"),
-      cl::init(false)};
 
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
