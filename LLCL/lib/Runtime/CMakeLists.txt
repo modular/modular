@@ -23,6 +23,7 @@ add_modular_library(LLCLRuntime
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
+  LLCLSupport
   LLVMSupport
   MSupport
   Threads::Threads
