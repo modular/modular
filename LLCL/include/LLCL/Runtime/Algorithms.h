@@ -139,7 +139,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
     return;
   if (values.size() == 1) {
     values[0]->andThen([completionFn = std::move(completionFn)](
-                           const AnyAsyncValueRef &value) {
+                           const AnyAsyncValueRef &value) mutable {
       AnyAsyncValueRef mutableValue = value.copy();
       completionFn(mutableValue);
     });

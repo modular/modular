@@ -699,9 +699,8 @@ inline void AsyncValue::dropRef(uint16_t count) {
 template <typename WaiterT>
 inline auto AsyncValue::andThen(WaiterT &&waiter)
     -> decltype(waiter(), void()) {
-  andThen([waiter = std::forward<WaiterT>(waiter)](const AnyAsyncValueRef &) {
-    return waiter();
-  });
+  andThen([waiter = std::forward<WaiterT>(waiter)](
+              const AnyAsyncValueRef &) mutable { return waiter(); });
 }
 
 /// Call the specified closure if the value is ready.  Otherwise, add it
