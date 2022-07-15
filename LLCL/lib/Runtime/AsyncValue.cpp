@@ -130,9 +130,7 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
       continue;
 
     case State::kUnconstructedInlineWaiterPresent: {
-      assert(getSubclassKind() == SubclassKind::kConcrete);
-      Waiter *waiterPtr = static_cast<Detail::SomeConcreteAsyncValue *>(this)
-                              ->getWaiterPointer();
+      Waiter *waiterPtr = getWaiterPointer();
       // If we have an inline waiter, move it aside.
       inlineWaiter = std::move(*waiterPtr);
       waiterPtr->~Waiter();
@@ -204,9 +202,7 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
 void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   // If the oldValue appears to be kUnconstructed then we will try to add this
   // as an inline waiter node, otherwise we add another node to the waiter list.
-  if (oldValue.getInt() == State::kUnconstructed &&
-      getSubclassKind() == SubclassKind::kConcrete) {
-    auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
+  if (oldValue.getInt() == State::kUnconstructed) {
     assert(oldValue.getPointer() == nullptr &&
            "how'd we get out of line waiters without an inline waiter?");
     // Allocate the payload aread by moving to the ...Constructing state.  If
@@ -217,7 +213,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
                             State::kUnconstructedInlineWaiterConstructing))) {
       // In the vastly most common case we get into the 'WaiterConstructing'
       // state. Inline initialize the waiter.
-      new (concrete->getWaiterPointer()) Waiter(std::move(waiter));
+      new (getWaiterPointer()) Waiter(std::move(waiter));
       // Then transition immediately to the 'WaiterPresent' state.  We want this
       // critical section to be extremely short, only a few cycles.
       auto result =
@@ -271,7 +267,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
 /// Transition to a ready state and notify all waiters about this.  This
 /// returns the old state.
 AsyncValue::State AsyncValue::notifyReady(State newState,
-                                          llvm::Optional<Waiter> *extraWaiter) {
+                                          llvm::Optional<Waiter> &extraWaiter) {
   assert((newState == State::kAvailable || newState == State::kError) &&
          "new state isn't a ready state!");
 
@@ -281,8 +277,8 @@ AsyncValue::State AsyncValue::notifyReady(State newState,
                                            std::memory_order_acq_rel);
 
   // If there was an inline waiter, run it first.
-  if (extraWaiter && extraWaiter->hasValue())
-    runOneWaiter(**extraWaiter);
+  if (extraWaiter.hasValue())
+    runOneWaiter(*extraWaiter);
 
   //  Then run the rest of the waiter list.
   runWaitersAndDeallocate(oldValue.getPointer());
@@ -296,20 +292,15 @@ AsyncValue::State AsyncValue::notifyReady(State newState,
 /// If this AsyncValue holds an error, return its diagnostic.  If not, return
 /// nullptr.
 EncodedDiagnostic *AsyncValue::getDiagnosticIfPresent() {
-  if (getSubclassKind() == SubclassKind::kConcrete) {
-    // If this isn't an error, we're done.
-    if (getState() != State::kError)
-      return nullptr;
+  // If this isn't an error, we're done.
+  if (getState() != State::kError)
+    return nullptr;
 
-    // We don't know the concrete <T> type, so get to the error with pointer
-    // arithmetic.
+  if (getSubclassKind() == SubclassKind::kConcrete)
     return static_cast<Detail::SomeConcreteAsyncValue *>(this)
         ->getDiagnosticPointer();
-  }
 
   auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
-  if (!thisIndirect->value)
-    return nullptr;
   return thisIndirect->value->getDiagnosticIfPresent();
 }
 
@@ -336,7 +327,7 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
-  auto oldState = notifyReady(State::kError, &inlineWaiter);
+  auto oldState = notifyReady(State::kError, inlineWaiter);
   assert(oldState == State::kUnconstructedInlineWaiterPresent &&
          "AsyncValue transitioned to ready while we're changing to error?");
   (void)oldState;
@@ -349,12 +340,9 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
 /// Resolve an IndirectAsyncValue to point to the specified new value,
 /// resolving any waiters whenever newValue becomes ready.
 void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
-  assert(getSubclassKind() == SubclassKind::kIndirect &&
-         getState() == State::kUnconstructed &&
+  assert(getSubclassKind() == SubclassKind::kIndirect && !isReady(getState()) &&
          "Can only resolve indirect async values");
   auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
-
-  assert(!thisIndirect->value && "IndirectAsyncValue is already resolved");
 
   // If the newValue is already itself ready, we can resolve this indirect
   // value and make it ready.
@@ -374,11 +362,15 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
 
     // Resolve the type of the contained value.
     typeID = newValue->typeID;
-    thisIndirect->value = std::move(newValue);
+
+    llvm::Optional<Waiter> inlineWaiter;
+    removeAnyInlineWaiter(inlineWaiter);
+
+    new (&thisIndirect->value) AnyAsyncValueRef(std::move(newValue));
 
     // Finally, notify our waiters and switch to kAvailable or kError state.
-    auto oldState = notifyReady(newValueState, /*no extra waiter*/ nullptr);
-    assert(oldState == State::kUnconstructed &&
+    auto oldState = notifyReady(newValueState, inlineWaiter);
+    assert(!isReady(oldState) &&
            "resolving an IndirectAsyncValue that was already set up?");
     (void)oldState;
     return;

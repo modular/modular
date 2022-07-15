@@ -359,8 +359,9 @@ protected:
   void runWaitersAndDeallocate(WaiterListNode *list);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
-  State notifyReady(State newState, llvm::Optional<Waiter> *extraWaiter);
+  State notifyReady(State newState, llvm::Optional<Waiter> &extraWaiter);
   void removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter);
+  Waiter *getWaiterPointer();
 
   /// Invoke a single waiter immediately.
   template <typename WaiterCallable>
@@ -568,9 +569,18 @@ class IndirectAsyncValue : public AsyncValue {
       : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
                    /*hasVTable=*/false,
                    /*typeID=*/uint16_t(~0U), runtime) {}
-  ~IndirectAsyncValue() = default;
+  ~IndirectAsyncValue() {
+    assert(isReady(getState()) &&
+           "destroying an IndirectAsyncValue that never got resolved?");
+    value.~AnyAsyncValueRef();
+  }
 
-  AnyAsyncValueRef value;
+  union {
+    // This field is present when in kUnconstructedInlineWaiter* state.
+    Waiter waiter;
+    // This field is present when resolved to another AsyncValue.
+    AnyAsyncValueRef value;
+  };
 };
 } // end namespace Detail
 
@@ -698,7 +708,7 @@ inline void AsyncValue::emplace(Args &&...args) {
   new (&concrete->payload) T(std::forward<Args>(args)...);
 
   // Change state and notify the waiters.
-  auto oldState = notifyReady(State::kAvailable, &inlineWaiter);
+  auto oldState = notifyReady(State::kAvailable, inlineWaiter);
   assert(oldState == State::kUnconstructedInlineWaiterPresent &&
          "AsyncValue transitioned to ready while we're emplacing?");
   (void)oldState;
@@ -732,6 +742,13 @@ const T &AsyncValue::get() const {
   assert(thisIndirect->value &&
          "indirect can't be constructed without being resolved");
   return thisIndirect->value->get<T>();
+}
+
+inline AsyncValue::Waiter *AsyncValue::getWaiterPointer() {
+  if (getSubclassKind() == SubclassKind::kConcrete)
+    return static_cast<Detail::SomeConcreteAsyncValue *>(this)
+        ->getWaiterPointer();
+  return &static_cast<Detail::IndirectAsyncValue *>(this)->waiter;
 }
 
 } // namespace LLCL
