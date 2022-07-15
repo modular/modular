@@ -397,7 +397,8 @@ parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
         // result AV.
         resultAV.emplace(std::move(result));
       },
-      std::move(initialResultValue), std::forward<CaptureTys...>(captures)...);
+      std::forward<EltTy>(initialResultValue),
+      std::forward<CaptureTys...>(captures)...);
 }
 
 /// This method invokes the specified element function "N" times with indexes
