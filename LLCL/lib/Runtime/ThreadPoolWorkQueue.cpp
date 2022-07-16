@@ -9,14 +9,14 @@
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
+#include "LLCL/Support/Signposts.h"
 #include "llvm/ADT/ArrayRef.h"
-
 #include <thread>
+
 using namespace LLCL;
+using namespace mlir;
 
 namespace {
-
-using namespace mlir;
 
 /// This class provides a thread-pool that implements the WorkQueue interface.
 /// It starts a dynamic number of threads and distributes work to it by means of
@@ -36,12 +36,15 @@ public:
     syncState.sema.post();
   }
 
-  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
-  /// `poolSize` is set to the number of worker threads that are created by the
-  /// work queue. However, we expect to have an external "main" thread that
-  /// has an access to the work queue by calling "await". Therefore, we return
-  /// `poolSize + 1` here.
-  int getParallelismLevel() const final { return poolSize + 1; }
+  void await(ArrayRef<AnyAsyncValueRef> values) override;
+
+  int getParallelismLevel() const final {
+    // `poolSize` is set to the number of worker threads that are created by the
+    // work queue. However, we expect to have an external "main" thread that
+    // has an access to the work queue by calling "await". Therefore, we return
+    // `poolSize + 1` here.
+    return poolSize + 1;
+  }
 
 private:
   /// Pop a single item off the queue and do the task.
@@ -49,7 +52,6 @@ private:
     auto callable = q.dequeue();
     if (!callable)
       return failure();
-
     callable();
     return success();
   }
@@ -98,14 +100,17 @@ private:
   struct Thread {
     ThreadSyncState &sync;
     LockFreeRingBuffer<TaskFunction> &taskList;
-
+    size_t threadPoolNumber;
     std::thread thread;
 
     /// Create a `Thread` from a sync state reference and a reference to a
     /// task list. This also starts the std::thread, so the sync state and
     /// task list must be initialized by the time this is called.
-    Thread(ThreadSyncState &sync, LockFreeRingBuffer<TaskFunction> &taskList)
-        : sync(sync), taskList(taskList), thread(&Thread::run, this) {}
+    Thread(ThreadSyncState &sync, LockFreeRingBuffer<TaskFunction> &taskList,
+           size_t threadPoolNumber)
+        : sync(sync), taskList(taskList), threadPoolNumber(threadPoolNumber),
+          thread(&Thread::run, this) {}
+
     /// Joins the thread. Asserts that `sync.done` is true because otherwise
     /// the thread will never join.
     ~Thread() {
@@ -143,7 +148,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads)
   taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
-    new (&pool[i]) Thread(syncState, *taskList);
+    new (&pool[i]) Thread(syncState, *taskList, i);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -165,7 +170,9 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   free(pool);
 }
 
-void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
+  LLCL_EmitSignpost("TPWQ await");
+
   using namespace std::chrono_literals;
   // We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
@@ -209,6 +216,17 @@ void ThreadPoolWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
 void ThreadPoolWorkQueue::Thread::run() {
   using namespace std::chrono_literals;
+
+  // On systems that support it, give the thread a symbolic name that will show
+  // up in profilers and debuggers.
+  // TODO: I think this is widely supported on linux and windows apparently has
+  // SetThreadName.
+#ifdef __APPLE__
+  char threadName[30];
+  sprintf(threadName, "LLCL TPWQ Thread %d", (int)threadPoolNumber);
+  pthread_setname_np(threadName);
+#endif
+
   // While we haven't been told to finish up, attempt to dequeue and execute
   // work.
   while (true) {
