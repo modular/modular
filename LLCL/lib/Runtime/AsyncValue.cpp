@@ -92,7 +92,7 @@ void AsyncValue::destroyWithRefCountZero() {
 /// the payload/error area is uninitialized.
 ///
 void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
-  WaitersAndState oldValue = waitersAndState.load(std::memory_order_acquire);
+  WaitersAndState oldValue = loadWaitersAndState();
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
     switch (oldValue.getInt()) {
     default:
@@ -107,9 +107,7 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
       // be careful though because we might not successfully get to that state!
       auto newValue =
           WaitersAndState(nullptr, State::kUnconstructedInlineWaiterPresent);
-      if (!waitersAndState.compare_exchange_weak(oldValue, newValue,
-                                                 std::memory_order_acq_rel,
-                                                 std::memory_order_acquire)) {
+      if (!compareExchangeWaiterAndState(oldValue, newValue)) {
         // If we failed the compare/xchg, retry.  The only state transition is
         // to having an inline waiter and potentially indirect waiters.
         continue;
@@ -121,7 +119,7 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
     case State::kUnconstructedInlineWaiterConstructing:
       // If someone is actively constructing a waiter, spin for a few cycles
       // until it resolves.
-      oldValue = waitersAndState.load(std::memory_order_acquire);
+      oldValue = loadWaitersAndState();
       // TODO: We should sleep 10 cycles and potentially even give up the thread
       // or something, how do we do this?  ThreadPoolWorkQueue uses
       // std::chrono::steady_clock::now().
@@ -178,9 +176,7 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
   auto origState = oldValue.getInt();
   assert(origState != newState && "cannot transition to same state");
   auto newValue = WaitersAndState(oldValue.getPointer(), newState);
-  while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
-                                                std::memory_order_acq_rel,
-                                                std::memory_order_acquire)) {
+  while (!compareExchangeWaiterAndState(oldValue, newValue)) {
     // If the thing changed to a different state underneath us, return
     // failure.
     if (oldValue.getInt() != origState)
@@ -215,12 +211,27 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
       // state. Inline initialize the waiter.
       new (getWaiterPointer()) Waiter(std::move(waiter));
       // Then transition immediately to the 'WaiterPresent' state.  We want this
-      // critical section to be extremely short, only a few cycles.
-      auto result =
-          moveState(oldValue, State::kUnconstructedInlineWaiterPresent);
-      assert(succeeded(result) &&
-             "no state transitions can happen in this window");
-      (void)result;
+      // critical section to be extremely short, only a few cycles.  We use an
+      // atomic increment here because we know the old value cannot change while
+      // in kUnconstructedConstructingInlineWaiter state.  We could use
+      // `moveState`, but we have no need for the compare/xchg and loop
+      // overhead.
+      static_assert(int(State::kUnconstructedInlineWaiterConstructing) + 1 ==
+                    int(State::kUnconstructedInlineWaiterPresent));
+      // FIXME: This probably doesn't have to be std::memory_order_seq_cst.
+      auto prevValue = waitersAndState.fetch_add(1, std::memory_order_seq_cst);
+
+      // Verify that no one moved the state or waiter list behind our back.
+      assert(prevValue == (intptr_t)oldValue.getOpaqueValue() &&
+             "nothing can move the value in the WaiterConstructing state");
+      // Verify that adding one does actually move to the right state without
+      // changing the waiter list.
+      assert(prevValue + 1 == (intptr_t)WaitersAndState(
+                                  oldValue.getPointer(),
+                                  State::kUnconstructedInlineWaiterPresent)
+                                  .getOpaqueValue() &&
+             "adding one should get us to the next state");
+      (void)prevValue;
       return;
     }
   }
@@ -240,9 +251,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   // here as we may call RunWaiter() on it. The release barrier ensures that
   // prior changes to *node appear to happen before it's added to the list.
   auto newValue = WaitersAndState(node, oldValue.getInt());
-  while (!waitersAndState.compare_exchange_weak(oldValue, newValue,
-                                                std::memory_order_acq_rel,
-                                                std::memory_order_acquire)) {
+  while (!compareExchangeWaiterAndState(oldValue, newValue)) {
     // While swapping in our waiter, the value could have become ready.  If
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
@@ -273,8 +282,7 @@ AsyncValue::State AsyncValue::notifyReady(State newState,
 
   // Mark the value as available, ensuring that new queries for the state see
   // the value that got filled in.
-  auto oldValue = waitersAndState.exchange(WaitersAndState(nullptr, newState),
-                                           std::memory_order_acq_rel);
+  auto oldValue = exchangeWaiterAndState(WaitersAndState(nullptr, newState));
 
   // If there was an inline waiter, run it first.
   if (extraWaiter.hasValue())
