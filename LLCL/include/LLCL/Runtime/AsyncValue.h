@@ -265,9 +265,7 @@ public:
   };
 
   /// Return the current state of this AsyncValue.
-  State getState() const {
-    return waitersAndState.load(std::memory_order_acquire).getInt();
-  }
+  State getState() const { return loadWaitersAndState().getInt(); }
 
   /// Return true if the specified AsyncValue state is ready, which means the
   /// waiters have all been notiveid.
@@ -352,7 +350,35 @@ protected:
   using WaitersAndState = llvm::PointerIntPair<WaiterListNode *, 3, State,
                                                WaiterListNodePointerTraits>;
 
-  std::atomic<WaitersAndState> waitersAndState;
+  WaitersAndState loadWaitersAndState() const {
+    return WaitersAndState::getFromOpaqueValue(
+        (void *)waitersAndState.load(std::memory_order_acquire));
+  }
+
+  /// Compare the current value of waiterAndState with the specified `oldValue`.
+  /// If equal, replace it with `newValue` and return true (`oldValue` will also
+  /// be updated to match).  If the value changed underneath us, return false
+  /// and update `oldValue` to what is currently in memory.
+  bool compareExchangeWaiterAndState(WaitersAndState &oldValue,
+                                     WaitersAndState newValue) {
+    intptr_t oldValueInt = (intptr_t)oldValue.getOpaqueValue();
+    intptr_t newValueInt = (intptr_t)newValue.getOpaqueValue();
+    bool result = waitersAndState.compare_exchange_weak(
+        oldValueInt, newValueInt, std::memory_order_acq_rel,
+        std::memory_order_acquire);
+    oldValue = WaitersAndState::getFromOpaqueValue((void *)oldValueInt);
+    return result;
+  }
+
+  /// Replace the current waiterAndState value with the new value and return the
+  /// old one.
+  WaitersAndState exchangeWaiterAndState(WaitersAndState newValue) {
+    auto result = waitersAndState.exchange((intptr_t)newValue.getOpaqueValue());
+    return WaitersAndState::getFromOpaqueValue((void *)result);
+  }
+
+private:
+  std::atomic<intptr_t> waitersAndState;
 
 protected:
   M::LogicalResult moveState(WaitersAndState &oldValue, State newState);
@@ -386,7 +412,9 @@ protected:
   AsyncValue(SubclassKind subclassKind, State state, bool hasVTable,
              uint16_t typeID, CompactRuntimePtr runtime)
       : runtime(runtime), subclassKind(subclassKind), hasVTable(hasVTable),
-        typeID(typeID), waitersAndState(WaitersAndState(nullptr, state)) {
+        typeID(typeID),
+        waitersAndState(
+            (intptr_t)WaitersAndState(nullptr, state).getOpaqueValue()) {
     if (isAllocationTrackingEnabled())
       ++totalAllocatedAsyncValues;
   }
@@ -680,9 +708,10 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
   // Clients generally want to use andThen without them each having to check
   // to see if the value is present. Check for them, and immediately run the
   // lambda if it is already here.
-  auto waitersAndStateValue = waitersAndState.load(std::memory_order_acquire);
+  auto waitersAndStateValue = loadWaitersAndState();
   if (isReady(waitersAndStateValue.getInt())) {
-    assert(waitersAndStateValue.getPointer() == nullptr);
+    assert(waitersAndStateValue.getPointer() == nullptr &&
+           "cannot have waiter nodes when ready");
     runOneWaiter(waiter);
     return;
   }
