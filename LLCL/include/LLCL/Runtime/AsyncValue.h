@@ -387,7 +387,7 @@ protected:
   void destroyWithRefCountZero();
   State notifyReady(State newState, llvm::Optional<Waiter> &extraWaiter);
   void removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter);
-  Waiter *getWaiterPointer();
+  Waiter *getInlineWaiterPointer();
 
   /// Invoke a single waiter immediately.
   template <typename WaiterCallable>
@@ -499,7 +499,9 @@ private:
   }
 
   /// The waiter value is always the firstthing in our derived class.
-  Waiter *getWaiterPointer() { return reinterpret_cast<Waiter *>(this + 1); }
+  Waiter *getInlineWaiterPointer() {
+    return reinterpret_cast<Waiter *>(this + 1);
+  }
 
   /// Return the address of the (potentially uninitialized) payload.
   void *getPayloadPointer() {
@@ -773,10 +775,10 @@ const T &AsyncValue::get() const {
   return thisIndirect->value->get<T>();
 }
 
-inline AsyncValue::Waiter *AsyncValue::getWaiterPointer() {
+inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
   if (getSubclassKind() == SubclassKind::kConcrete)
     return static_cast<Detail::SomeConcreteAsyncValue *>(this)
-        ->getWaiterPointer();
+        ->getInlineWaiterPointer();
   return &static_cast<Detail::IndirectAsyncValue *>(this)->waiter;
 }
 
