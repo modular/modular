@@ -128,7 +128,7 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
       continue;
 
     case State::kUnconstructedInlineWaiterPresent: {
-      Waiter *waiterPtr = getWaiterPointer();
+      Waiter *waiterPtr = getInlineWaiterPointer();
       // If we have an inline waiter, move it aside.
       inlineWaiter = std::move(*waiterPtr);
       waiterPtr->~Waiter();
@@ -209,7 +209,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
                             State::kUnconstructedInlineWaiterConstructing))) {
       // In the vastly most common case we get into the 'WaiterConstructing'
       // state. Inline initialize the waiter.
-      new (getWaiterPointer()) Waiter(std::move(waiter));
+      new (getInlineWaiterPointer()) Waiter(std::move(waiter));
       // Then transition immediately to the 'WaiterPresent' state.  We want this
       // critical section to be extremely short, only a few cycles.  We use an
       // atomic increment here because we know the old value cannot change while
