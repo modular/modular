@@ -16,6 +16,15 @@
 
 namespace M {
 
+// GCC's dataflow diagnostics get very confused and generate false
+// positive warnings about freeing string literals, because it doesn't
+// track the correlation with storageMode.  This is a dataflow diagnostic that
+// gets triggered in the caller of ErrorOr code, not in the ErrorOr code, so
+// there is nothing we can do locally to turn it off.  Turn it off globally.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
+
 /// ErrorOr<T> is a lightweight class that represents the result of an operation
 /// or a string error.  This is designed to emulate the usage of returning a
 /// pointer where nullptr indicates failure.  However instead of just knowing
@@ -63,12 +72,6 @@ public:
     case StorageMode::kStaticError:
       return;
     case StorageMode::kMallocError:
-      // GCC's dataflow diagnostics get very confused and generate false
-      // positive warnings about freeing string literals, because it doesn't
-      // track the correlation with storageMode.  Just turn it off.
-#if __GNUC__ && !__clang__
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
-#endif
       std::free(const_cast<char *>(errorStorage));
       return;
     }
