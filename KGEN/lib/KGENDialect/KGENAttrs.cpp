@@ -763,8 +763,22 @@ static Attribute simplifyEQ_DTYPE(SmallVector<Attribute, 4> &operands) {
   return {};
 }
 
-/// Build a parameter expression.  This automatically canonicalizes and
-/// folds, so it may not necessarily return a ParamOperatorAttr.
+Attribute ParamOperatorAttr::get(MLIRContext *context, POC opcode,
+                                 ArrayRef<Attribute> operandsIn, Type type) {
+  auto result = get(opcode, operandsIn);
+  assert((!type || type == result.getType()) && "unexpected type");
+  return result;
+}
+
+Attribute
+ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *context, POC opcode,
+                              ArrayRef<Attribute> operandsIn, Type type) {
+  if (failed(verify(emitError, opcode, operandsIn, type)))
+    return {};
+  return get(context, opcode, operandsIn, type);
+}
+
 Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type.  The result type is usually the same
