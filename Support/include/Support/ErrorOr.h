@@ -63,6 +63,12 @@ public:
     case StorageMode::kStaticError:
       return;
     case StorageMode::kMallocError:
+      // GCC's dataflow diagnostics get very confused and generate false
+      // positive warnings about freeing string literals, because it doesn't
+      // track the correlation with storageMode.  Just turn it off.
+#if __GNUC__ && !__clang__
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
       std::free(const_cast<char *>(errorStorage));
       return;
     }
@@ -241,7 +247,7 @@ public:
   auto VARIABLE##OrError = (EXPRESSION);                                       \
   if (VARIABLE##OrError.isError())                                             \
     return VARIABLE##OrError.takeError();                                      \
-  auto(VARIABLE) = VARIABLE##OrError.takeValue();
+  auto VARIABLE = VARIABLE##OrError.takeValue();
 
 } // namespace M
 
