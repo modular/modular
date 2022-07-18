@@ -243,25 +243,33 @@ public:
     /// `kUnconstructedInlineWaiterConstructing`, `kAvailable` and `kError`.
     kUnconstructed = 0,
 
-    /// These two states are the same as kUnconstructed in terms of state (the
-    /// payload is not initialized), but demarcate that payload field is being
-    /// used to hold the first waiter in the waiter list.  The first enum value
-    /// is used when initialization of the waiter starting (the payload field is
-    /// claimed by "andThen") the second value is used when the waiter is fully
-    /// initialized.
-    ///
-    /// This state can transition to `kAvailable` and `kError`.
-    kUnconstructedInlineWaiterConstructing = 1,
-    kUnconstructedInlineWaiterPresent = 2,
+    /// This is a transient state when the first waiter is added to an
+    /// kUnconstructed AsyncValue.  It is used for a few cycles when the inline
+    /// waiter is being initialized.  Any state-aware internal implementation
+    /// details of AsyncValue that encounters this should just spin until the
+    /// state changes to kUnconstructed0AvailableOOLWaiters.
+    kUnconstructedInitializingInlineWaiter = 1,
+
+    /// These states are used to keep track of how many entries are used in the
+    /// first out-of-line WaiterListNode, which is pointed to by
+    /// `waitersAndState`.  Encoding this information in the state integer in
+    /// `waitersAndState` allows us to use compare/xchg to atomically allocate
+    /// entries in the out of line waiter.  The enum values here are encoded
+    /// this was to make certain operations against the state enum value more
+    /// efficient.
+    kUnconstructed1ValidOOLWaiterSlots = 2, //< 1 valid, 3 free slots.
+    kUnconstructed2ValidOOLWaiterSlots = 3, //< 2 valid, 2 free slots.
+    kUnconstructed3ValidOOLWaiterSlots = 4, //< 3 valid, 1 free slots.
+    kUnconstructed4ValidOOLWaiterSlots = 5, //< 4 valid, 0 free slots.
 
     /// The underlying value is constructed and ready for consumption by
     /// waiters and contains an initialized value. This state can not transition
     /// to any other state.
-    kAvailable = 3,
+    kAvailable = 6,
 
     /// This AsyncValue is ready and contains an error, along with an
     /// uninitialized value. This state can not transition to any other state.
-    kError = 4,
+    kError = 7,
   };
 
   /// Return the current state of this AsyncValue.
@@ -271,6 +279,12 @@ public:
   /// waiters have all been notiveid.
   static bool isReady(State state) {
     return state == State::kAvailable || state == State::kError;
+  }
+
+  /// Return true if this is a state with a finalized inline waiter.
+  static bool hasInlineWaiter(State state) {
+    return state >= State::kUnconstructed1ValidOOLWaiterSlots &&
+           state <= State::kUnconstructed4ValidOOLWaiterSlots;
   }
 
   /// Return true if reference count is 1.
@@ -382,7 +396,7 @@ private:
 
 protected:
   M::LogicalResult moveState(WaitersAndState &oldValue, State newState);
-  void runWaitersAndDeallocate(WaiterListNode *list);
+  void runWaitersAndDeallocate(WaiterListNode *list, size_t numEntriesValid);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
   State notifyReady(State newState, llvm::Optional<Waiter> &extraWaiter);
@@ -391,7 +405,7 @@ protected:
 
   /// Invoke a single waiter immediately.
   template <typename WaiterCallable>
-  void runOneWaiter(WaiterCallable &waiter) {
+  void runOneWaiter(WaiterCallable &&waiter) {
     // We pass the AsyncValue in as a `const AnyAsyncValueRef&` to make the
     // ownership very clear (they can use the value but have to copy it if
     // persisting it).  We do this delicately to avoid additional refcount
@@ -568,9 +582,7 @@ private:
     EncodedDiagnostic diagnostic;
     /// When unconstructed, this can hold an inline copy of the first waiter,
     /// avoiding having to heap allocate a waiter node for it.  The state will
-    /// be either `kUnconstructedInlineWaiterConstructing` (while initializing
-    /// this field for a brief few cycles) or
-    /// `kUnconstructedInlineWaiterPresent` after initialization.
+    /// be considered "unconstructed" but not `kUnconstructed`.
     Waiter waiter;
     /// When in the `kAvailable` state, this is the payload of the AsyncValue.
     T payload;
@@ -714,7 +726,7 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
   if (isReady(waitersAndStateValue.getInt())) {
     assert(waitersAndStateValue.getPointer() == nullptr &&
            "cannot have waiter nodes when ready");
-    runOneWaiter(waiter);
+    runOneWaiter(std::move(waiter));
     return;
   }
 
@@ -740,8 +752,11 @@ inline void AsyncValue::emplace(Args &&...args) {
 
   // Change state and notify the waiters.
   auto oldState = notifyReady(State::kAvailable, inlineWaiter);
-  assert(oldState == State::kUnconstructedInlineWaiterPresent &&
-         "AsyncValue transitioned to ready while we're emplacing?");
+  // This must have been in one of the unconstructed states, but couldn't have
+  // been in kUnconstructed because that would allow a race for another inline
+  // waiter to be added. `removeAnyInlineWaiter` ensures this isn't possible.
+  assert(hasInlineWaiter(oldState) &&
+         "AsyncValue transitioned to while we're emplacing?");
   (void)oldState;
 }
 

@@ -95,28 +95,31 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
   WaitersAndState oldValue = loadWaitersAndState();
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
     switch (oldValue.getInt()) {
-    default:
+    case State::kAvailable:
+    case State::kError:
       assert(0 && "cannot construct a ready AsyncValue");
     case State::kUnconstructed: {
       assert(oldValue.getPointer() == nullptr &&
              "how'd we get out of line waiters without an inline waiter?");
       // We need to avoid races with other threads "andThen'ing" the async value
       // which would try to set up an inline waiter.  We do this by moving our
-      // state to kUnconstructedInlineWaiterPresent because any andThen would
-      // put the waiter on the waiter list if we get to that state.  We have to
-      // be careful though because we might not successfully get to that state!
+      // state to kUnconstructed4ValidOOLWaiterSlots because any andThen
+      // would put the waiter on the waiter list if we get to that state.  We
+      // have to be careful though because we might not successfully get to that
+      // state!
       auto newValue =
-          WaitersAndState(nullptr, State::kUnconstructedInlineWaiterPresent);
+          WaitersAndState(nullptr, State::kUnconstructed4ValidOOLWaiterSlots);
       if (!compareExchangeWaiterAndState(oldValue, newValue)) {
         // If we failed the compare/xchg, retry.  The only state transition is
         // to having an inline waiter and potentially indirect waiters.
         continue;
       }
-      // When we succeed, we're in a 'inline waiter present' state, but
-      // the inline waiter isn't actually constructed.
+      // When we succeed, we're in an 'inline waiter present' state, but
+      // the inline waiter isn't actually constructed, so we don't put anything
+      // into `inlineWaiter`.
       return;
     }
-    case State::kUnconstructedInlineWaiterConstructing:
+    case State::kUnconstructedInitializingInlineWaiter:
       // If someone is actively constructing a waiter, spin for a few cycles
       // until it resolves.
       oldValue = loadWaitersAndState();
@@ -127,7 +130,10 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
       // loops.
       continue;
 
-    case State::kUnconstructedInlineWaiterPresent: {
+    case State::kUnconstructed1ValidOOLWaiterSlots:
+    case State::kUnconstructed2ValidOOLWaiterSlots:
+    case State::kUnconstructed3ValidOOLWaiterSlots:
+    case State::kUnconstructed4ValidOOLWaiterSlots: {
       Waiter *waiterPtr = getInlineWaiterPointer();
       // If we have an inline waiter, move it aside.
       inlineWaiter = std::move(*waiterPtr);
@@ -139,15 +145,80 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
 }
 
 namespace LLCL {
+/// This class provides a singly linked list of nodes that each contain four
+/// waiters.  The AsyncValue itself stores the first waiter added to an
+/// AsyncValue inline in the same space as its payload field, then stores
+/// additional waiters in this list.
+///
+/// Each node of this list holds four waiters - this reduces malloc overhead and
+/// improves locality.  The thing that points to this node (the AV or another
+/// list node) knows how many of the waiters are valid in this node.  We track
+/// an atomic bitset in this node that keeps track of whether each entry in the
+/// waiter array is fully initialized or not.
 class WaiterListNode {
 public:
-  explicit WaiterListNode(AsyncValue::Waiter &&newWaiter, WaiterListNode *next)
-      : waiter(std::move(newWaiter)), next(next) {}
   friend class AsyncValue;
+  using Waiter = AsyncValue::Waiter;
+
+  // Create a node with the first element initialized.
+  explicit WaiterListNode(Waiter &&newWaiter, WaiterListNode *next)
+      : firstWaiter(std::move(newWaiter)), next(next),
+        waitersCompletelyInitialized(0) {}
+  ~WaiterListNode() {
+    // We know all the waiters will be destroyed at this point.
+  }
+
+  void setWaiter(size_t i, Waiter &&waiter) {
+    // This slot shouldn't be initialized yet.
+    --i;
+    assert(i < 3 && (waitersCompletelyInitialized.load() & (1 << i)) == 0 &&
+           "Invalid slot #");
+    new (waiters + i) Waiter(std::move(waiter));
+
+    // FIXME: This likely doesn't need to be sequentially consistent.
+    waitersCompletelyInitialized.fetch_or(1 << i, std::memory_order_seq_cst);
+  }
+
+  Waiter takeFirstWaiter() { return std::move(firstWaiter); }
+
+  Waiter takeAndDestroyWaiterN(size_t i) {
+    assert(i != 0 && i < 4);
+    --i;
+    Waiter result = std::move(waiters[i]);
+    waiters[i].~Waiter();
+    return result;
+  }
+
+  void spinUntilWaitersAreInitialized(size_t numWaiters) {
+    // Entry 0 is special, it is always valid.  Check the rest of the three
+    // using the bitmask in `waitersCompletelyInitialized`.
+    if (numWaiters == 1)
+      return;
+    --numWaiters;
+    uint8_t allReadyMask = (1 << numWaiters) - 1;
+    // Make sure the waiter in question finished construction.
+    while (waitersCompletelyInitialized.load() != allReadyMask)
+      /*FIXME: Need better spinning ala atomic::wait, exponential backoff etc*/
+      ;
+  }
 
 private:
-  AsyncValue::Waiter waiter;
+  // This waiter is initialized on construction and not tracked in
+  // `waitersCompletelyInitialized`.
+  Waiter firstWaiter;
+  union {
+    // These are not implicitly constructed.
+    AsyncValue::Waiter waiters[3];
+  };
+
   WaiterListNode *next = nullptr;
+
+  /// This contains a bitset that indicates which elements of 'waiters' have
+  /// finished initializing.  This is used when tearing down the list to avoid
+  /// races between adding waiters and a value becoming ready.
+  /// NOTE: We only use 3 bits in this, we could mash it into the 'next' field
+  /// with PointerIntPair if there is a reason to.
+  std::atomic<uint8_t> waitersCompletelyInitialized;
 
   WaiterListNode(const WaiterListNode &) = delete;
   void operator=(const WaiterListNode &) = delete;
@@ -155,15 +226,32 @@ private:
 } // namespace LLCL
 
 /// Invoke all of the waiters specified by the list of waiter nodes, and
-/// deallocate the waiter nodes.  We know we have ownership of `list` here and
-/// that it is done being mutated.  We also know that the caller has an RCRef
-/// that keeps 'this' alive.
-void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list) {
+/// deallocate the nodes.  We know we have ownership of `list` here, but there
+/// may be concurrent mutations.  We cannot know the waiters are settled unless
+/// their corresponding `waitersCompletelyInitialized` bit is set.
+///
+/// We also know that the caller has an RCRef that keeps 'this' alive.
+///
+void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list,
+                                         size_t numEntriesValid) {
   while (list) {
     auto *node = list;
-    runOneWaiter(node->waiter);
+    // The first waiter in a node is always valid.
+    assert(numEntriesValid != 0);
+    runOneWaiter(node->takeFirstWaiter());
+
+    // If the waiters in the specified node haven't finished initializing, wait
+    // for them.
+    node->spinUntilWaitersAreInitialized(numEntriesValid);
+
+    // Run waiters 1-3 if they are valid.
+    for (size_t i = 1; i != numEntriesValid; ++i)
+      runOneWaiter(node->takeAndDestroyWaiterN(i));
     list = node->next;
     delete node;
+
+    // Beyond the first node, we know that all entries are valid.
+    numEntriesValid = 4;
   }
 }
 
@@ -189,6 +277,15 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
   return M::success();
 }
 
+/// Given an AsyncValue::State in one of the
+/// `kUnconstructed*AvailableOOLWaiterSlots` states, return the number of
+/// waiters that are initialized.
+static unsigned getNumWaitersValid(AsyncValue::State state) {
+  assert(AsyncValue::hasInlineWaiter(state));
+  return (int)state -
+         int(AsyncValue::State::kUnconstructed1ValidOOLWaiterSlots) + 1;
+}
+
 /// This is the out-of-line portion of the `AsyncValue::andThen` method which is
 /// invoked when the value appears to be non-ready.
 ///
@@ -206,7 +303,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // got constructed or became available.  In any case, we can't do inline
     // waiter initialization so we have to fall back.
     if (succeeded(moveState(oldValue,
-                            State::kUnconstructedInlineWaiterConstructing))) {
+                            State::kUnconstructedInitializingInlineWaiter))) {
       // In the vastly most common case we get into the 'WaiterConstructing'
       // state. Inline initialize the waiter.
       new (getInlineWaiterPointer()) Waiter(std::move(waiter));
@@ -216,19 +313,19 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
       // in kUnconstructedConstructingInlineWaiter state.  We could use
       // `moveState`, but we have no need for the compare/xchg and loop
       // overhead.
-      static_assert(int(State::kUnconstructedInlineWaiterConstructing) + 1 ==
-                    int(State::kUnconstructedInlineWaiterPresent));
+      static_assert(int(State::kUnconstructedInitializingInlineWaiter) + 4 ==
+                    int(State::kUnconstructed4ValidOOLWaiterSlots));
       // FIXME: This probably doesn't have to be std::memory_order_seq_cst.
-      auto prevValue = waitersAndState.fetch_add(1, std::memory_order_seq_cst);
+      auto prevValue = waitersAndState.fetch_add(4, std::memory_order_seq_cst);
 
       // Verify that no one moved the state or waiter list behind our back.
       assert(prevValue == (intptr_t)oldValue.getOpaqueValue() &&
              "nothing can move the value in the WaiterConstructing state");
-      // Verify that adding one does actually move to the right state without
+      // Verify that adding four does actually move to the right state without
       // changing the waiter list.
-      assert(prevValue + 1 == (intptr_t)WaitersAndState(
+      assert(prevValue + 4 == (intptr_t)WaitersAndState(
                                   oldValue.getPointer(),
-                                  State::kUnconstructedInlineWaiterPresent)
+                                  State::kUnconstructed4ValidOOLWaiterSlots)
                                   .getOpaqueValue() &&
              "adding one should get us to the next state");
       (void)prevValue;
@@ -236,41 +333,63 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     }
   }
 
-  // If we raced with a transition into a ready state then we can just execute
-  // the waiter and be done.
-  if (isReady(oldValue.getInt()))
-    return runOneWaiter(waiter);
+  while (1) {
+    // If we raced with a transition into a ready state then we can just execute
+    // the waiter and be done.
+    if (isReady(oldValue.getInt()))
+      return runOneWaiter(std::move(waiter));
 
-  // Otherwise, the value is inline waiter is occupied and the state is
-  // unavailable, go ahead and do some head allocations.
-  auto node = new WaiterListNode(std::move(waiter), oldValue.getPointer());
+    // If there are slots available in the existing waiter node, take one.
+    unsigned numValid = getNumWaitersValid(oldValue.getInt());
+    if (numValid < 4) {
+      // Try to move the state to say that we're claiming this waiter slot.
+      if (failed(moveState(oldValue, (State)(int(oldValue.getInt()) + 1))))
+        continue; // retry on failure.
 
-  // Swap the next link in. oldValue.getInt() must be non-ready when
-  // evaluating the loop condition. The acquire barrier on the
-  // compare_exchange ensures that prior changes to waiter list are visible
-  // here as we may call RunWaiter() on it. The release barrier ensures that
-  // prior changes to *node appear to happen before it's added to the list.
-  auto newValue = WaitersAndState(node, oldValue.getInt());
-  while (!compareExchangeWaiterAndState(oldValue, newValue)) {
+      // If we succeeded, set the waiter and we're done.
+      oldValue.getPointer()->setWaiter(numValid, std::move(waiter));
+      return;
+    }
+
+    // Otherwise, put the waiter into a new waiter node which will point to the
+    // full list as its tail.
+    auto node = new WaiterListNode(std::move(waiter), oldValue.getPointer());
+
+    // Swap the next link in. oldValue.getInt() must be non-ready when
+    // evaluating the loop condition. The acquire barrier on the
+    // compare_exchange ensures that prior changes to waiter list are visible
+    // here as we may call RunWaiter() on it. The release barrier ensures that
+    // prior changes to *node appear to happen before it's added to the list.
+    auto newValue =
+        WaitersAndState(node, State::kUnconstructed1ValidOOLWaiterSlots);
+
+    if (compareExchangeWaiterAndState(oldValue, newValue)) {
+      // We successfully installed the new node. The oldValue must be in some
+      // non-ready state.
+      assert(!isReady(oldValue.getInt()));
+      return;
+    }
+
     // While swapping in our waiter, the value could have become ready.  If
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      runOneWaiter(node->waiter);
+      runOneWaiter(std::move(node->takeFirstWaiter()));
       // Change the tail of the list to null.  Whatever moved this to a ready
-      // state will already have executed and deallocated that.
+      // state will already have executed and deallocated the list tail.
       node->next = nullptr;
       delete node;
       return;
     }
-    // Otherwise, it is possible we just got extra waiter nodes.  Update the
-    // waiter list in newValue.
-    node->next = oldValue.getPointer();
-  }
 
-  // compare_exchange_weak succeeds. The oldValue must be in some non-ready
-  // state.
-  assert(!isReady(oldValue.getInt()));
+    // Otherwise, someone beat us to it and added a new node.  Deallocate our
+    // node and try adding the waiter to their node.
+    waiter = node->takeFirstWaiter();
+    // Change the tail of the list to null.  Whatever moved this to a ready
+    // state will already have executed and deallocated the list tail.
+    node->next = nullptr;
+    delete node;
+  }
 }
 
 /// Transition to a ready state and notify all waiters about this.  This
@@ -286,10 +405,13 @@ AsyncValue::State AsyncValue::notifyReady(State newState,
 
   // If there was an inline waiter, run it first.
   if (extraWaiter.hasValue())
-    runOneWaiter(*extraWaiter);
+    runOneWaiter(std::move(*extraWaiter));
+
+  // Figure out how many waiters are valid in the first node of the list.
+  size_t numEntriesValid = getNumWaitersValid(oldValue.getInt());
 
   //  Then run the rest of the waiter list.
-  runWaitersAndDeallocate(oldValue.getPointer());
+  runWaitersAndDeallocate(oldValue.getPointer(), numEntriesValid);
   return oldValue.getInt();
 }
 
@@ -336,8 +458,12 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
   auto oldState = notifyReady(State::kError, inlineWaiter);
-  assert(oldState == State::kUnconstructedInlineWaiterPresent &&
-         "AsyncValue transitioned to ready while we're changing to error?");
+
+  // This must have been in one of the unconstructed states, but couldn't have
+  // been in kUnconstructed because that would allow a race for another inline
+  // waiter to be added. `removeAnyInlineWaiter` ensures this isn't possible.
+  assert(hasInlineWaiter(oldState) &&
+         "AsyncValue transitioned to while we're changing to error?");
   (void)oldState;
 }
 
