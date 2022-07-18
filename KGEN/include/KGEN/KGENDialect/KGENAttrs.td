@@ -22,7 +22,6 @@ def I1ParameterExprAttr
   : Confined<ParameterExprAttr, [AttrConstraint<
       CPred<"$_self.getType().isInteger(1)">, "i1 parameter expression"
     >]>;
-      
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
@@ -195,24 +194,27 @@ def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
                         AttributeSelfTypeParameter<"">:$type);
   let mnemonic = "param.expr";
 
-  // Force all clients to go through our building logic so we can canonicalize
-  // during building.
-  // FIXME: https://reviews.llvm.org/D128555 enforced default builders with
-  // assembly format, We should re-skip when that check is reverted (we don't 
-  // want default builders here).
-  // let skipDefaultBuilders = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins
+      "POC":$opcode, "llvm::ArrayRef<mlir::Attribute>":$operands,
+      "mlir::Type":$type
+    ), [{}], "mlir::Attribute">,
 
-  let extraClassDeclaration = [{
-    /// Build a parameter expression.  This automatically canonicalizes and
-    /// folds, so it may not necessarily return a ParamOperatorAttr.
-    static Attribute get(POC opcode, mlir::ArrayRef<mlir::Attribute> operands);
+    // Build a parameter expression.  This automatically canonicalizes and
+    // folds, so it may not necessarily return a ParamOperatorAttr.
+    AttrBuilderWithInferredContext<(ins
+      "POC":$opcode, "llvm::ArrayRef<mlir::Attribute>":$operands
+    ), [{}], "mlir::Attribute">,
 
-    /// Build a binary parameter expression for convenience.
-    static Attribute get(POC opcode, mlir::Attribute lhs, mlir::Attribute rhs) {
+    // Build a binary parameter expression for convenience.
+    AttrBuilderWithInferredContext<(ins "POC":$opcode, "mlir::Attribute":$lhs,
+                                        "mlir::Attribute":$rhs), [{
       Attribute operands[] = { lhs, rhs };
       return get(opcode, operands);
-    }
-  }];
+    }], "mlir::Attribute">
+  ];
 
   let assemblyFormat = "`<` $opcode `,` $operands `>`";
   let genVerifyDecl = 1;  // Generate getChecked/verify.
