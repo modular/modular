@@ -374,7 +374,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      runOneWaiter(std::move(node->takeFirstWaiter()));
+      runOneWaiter(node->takeFirstWaiter());
       // Change the tail of the list to null.  Whatever moved this to a ready
       // state will already have executed and deallocated the list tail.
       node->next = nullptr;
