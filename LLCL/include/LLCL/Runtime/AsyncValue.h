@@ -614,8 +614,10 @@ class IndirectAsyncValue : public AsyncValue {
                    /*hasVTable=*/false,
                    /*typeID=*/uint16_t(~0U), runtime) {}
   ~IndirectAsyncValue() {
-    assert(isReady(getState()) &&
-           "destroying an IndirectAsyncValue that never got resolved?");
+    // FIXME: Explore what is going on here.
+    assert((isReady(getState()) || getState() == State::kUnconstructed) &&
+           "destroying an IndirectAsyncValue with waiters that never got "
+           "resolved?");
     value.~AnyAsyncValueRef();
   }
 
