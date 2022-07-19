@@ -614,11 +614,21 @@ class IndirectAsyncValue : public AsyncValue {
                    /*hasVTable=*/false,
                    /*typeID=*/uint16_t(~0U), runtime) {}
   ~IndirectAsyncValue() {
-    // FIXME: Explore what is going on here.
-    assert((isReady(getState()) || getState() == State::kUnconstructed) &&
-           "destroying an IndirectAsyncValue with waiters that never got "
-           "resolved?");
-    value.~AnyAsyncValueRef();
+    // If the IndirectAsyncValue is ready, then the RCRef to the resolved
+    // pointer has been constructed, destroy it.
+    if (isReady(getState())) {
+      value.~AnyAsyncValueRef();
+    } else {
+      // Otherwise, we must be in a plain unconstructed case with no waiters.
+      // This can happen when an IndirectAsyncValue is created and immediately
+      // destroyed.
+      // NOTE: It isn't currently valid to destroy an IndirectAsyncValue with
+      // waiters - we'd have to propagate error into them, and would have to
+      // check for ressurection.  Don't do this until we have a known use-case.
+      assert(getState() == State::kUnconstructed &&
+             "destroying an IndirectAsyncValue with waiters that never got "
+             "resolved?");
+    }
   }
 
   union {
