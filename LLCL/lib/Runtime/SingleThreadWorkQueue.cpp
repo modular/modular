@@ -62,9 +62,9 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 template <typename T>
 void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
   while (auto callable = workItems.dequeue()) {
-    if (!stopPredicate()) {
-      callable();
-    }
+    callable();
+    if (stopPredicate())
+      break;
   }
 }
 
