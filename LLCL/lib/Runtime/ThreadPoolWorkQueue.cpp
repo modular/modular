@@ -14,7 +14,10 @@
 #include <thread>
 
 using namespace LLCL;
-using namespace mlir;
+using llvm::ArrayRef;
+using mlir::failure;
+using mlir::LogicalResult;
+using mlir::success;
 
 namespace {
 
