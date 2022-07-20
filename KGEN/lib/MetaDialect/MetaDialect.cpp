@@ -155,6 +155,33 @@ mlir::SubElementTypeInterface BufferType::replaceImmediateSubAttribute(
 }
 
 //===----------------------------------------------------------------------===//
+// PointerType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                    Attribute dtype) {
+  if (dtype && !dtype.getType().isa<DTypeType>())
+    return emitError() << "type parameter for pointer must be a !kgen.dtype";
+  return success();
+}
+
+void PointerType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getDtype());
+}
+
+mlir::SubElementTypeInterface PointerType::replaceImmediateSubAttribute(
+    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
+  if (replacements.empty())
+    return *this;
+  assert(replacements.size() == 1 && replacements[0].first == 0 &&
+         "only have one sub-attribute");
+  return PointerType::get(replacements[0].second);
+}
+
+//===----------------------------------------------------------------------===//
 // Dialect Type Parsing and Printing
 //===----------------------------------------------------------------------===//
 

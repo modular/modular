@@ -108,3 +108,43 @@ def BufferType : MetaType<"Buffer",
     };
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// PointerType
+//===----------------------------------------------------------------------===//
+def PointerType : MetaType<"Pointer",
+      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
+                                   ["replaceImmediateSubAttribute"]>]> {
+  let summary = "parameterized pointer type";
+  let description = [{
+    This type is parameterized with a !kgen.dtype type. The dtype type is also
+    optional, in which case this is a pointer to a buffer with unknown element
+    type.
+  }];
+
+  let mnemonic = "pointer";
+  let parameters = (ins "::mlir::Attribute":$dtype);
+  let assemblyFormat = [{
+    `<` custom<OptionalParamDTypeValue>($dtype) `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Attribute":$ty), [{
+      return $_get(ty.getContext(), ty);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the DType of the dtype.
+    /// Returns DType::invalid if dtype is null
+    /// (indicating dtype is unknown)
+    DType getDType() {
+      auto ptr_dtype = getDtype().dyn_cast_or_null<DTypeConstantAttr>();
+      if (!ptr_dtype)
+        return DType::invalid;
+
+      return ptr_dtype.getDType();
+    };
+  }];
+}
