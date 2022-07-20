@@ -58,10 +58,12 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
 /// Create a thread pool. Setting 0 as the number of threads makes this default
 /// to std::thread::hardware_concurrency().
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0);
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
+                                                     unsigned busyWaitNs = 0);
 
 /// Configure the appropriate work queue based on the number of threads.
-std::unique_ptr<WorkQueue> getWorkQueue(size_t numThreads = 0);
+std::unique_ptr<WorkQueue> getWorkQueue(size_t numThreads = 0,
+                                        unsigned busyWaitNs = 0);
 
 } // namespace LLCL
 

@@ -10,6 +10,7 @@
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/Signposts.h"
+#include "Support/CommandLine.h"
 #include "llvm/ADT/ArrayRef.h"
 #include <thread>
 
@@ -29,7 +30,7 @@ public:
   /// Initialize the thread pool and start up the worker threads. By the time
   /// the constructor finishes, all the worker threads have started and shall
   /// only be cancelled by the destructor.
-  explicit ThreadPoolWorkQueue(size_t numWorkerThreads);
+  explicit ThreadPoolWorkQueue(size_t numWorkerThreads, unsigned busyWaitNs);
   /// Cleans up all threads in the thread pool cleanly.
   ~ThreadPoolWorkQueue() override;
 
@@ -104,15 +105,16 @@ private:
     ThreadSyncState &sync;
     LockFreeRingBuffer<TaskFunction> &taskList;
     size_t threadPoolNumber;
+    std::chrono::nanoseconds busyWaitNs;
     std::thread thread;
 
     /// Create a `Thread` from a sync state reference and a reference to a
     /// task list. This also starts the std::thread, so the sync state and
     /// task list must be initialized by the time this is called.
     Thread(ThreadSyncState &sync, LockFreeRingBuffer<TaskFunction> &taskList,
-           size_t threadPoolNumber)
+           size_t threadPoolNumber, unsigned busyWaitNs)
         : sync(sync), taskList(taskList), threadPoolNumber(threadPoolNumber),
-          thread(&Thread::run, this) {}
+          busyWaitNs(busyWaitNs), thread(&Thread::run, this) {}
 
     /// Joins the thread. Asserts that `sync.done` is true because otherwise
     /// the thread will never join.
@@ -138,6 +140,9 @@ private:
   // reference to this structure.
   ThreadSyncState syncState;
   std::unique_ptr<LockFreeRingBuffer<TaskFunction>> taskList;
+
+  // busy wait duration in nanoseconds.
+  std::chrono::nanoseconds busyWaitNs;
 };
 } // end anonymous namespace
 
@@ -145,13 +150,15 @@ private:
 // ThreadPoolWorkQueue function implementations
 //===----------------------------------------------------------------------===//
 
-ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads)
+ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
+                                         unsigned busyWaitNs)
     : poolSize(numWorkerThreads),
-      pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}} {
+      pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}},
+      busyWaitNs(busyWaitNs) {
   taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
-    new (&pool[i]) Thread(syncState, *taskList, i);
+    new (&pool[i]) Thread(syncState, *taskList, i, busyWaitNs);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -200,7 +207,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   //   client thread is now sleeping on its semaphore. If someone else adds more
   //   work, this thread currently has no way of waking up to check again if
   //   there's more work to be done.
-  auto busyWaitFor = 0ms;
   auto busyWaitCond = [this, &numRemaining]() {
     if (numRemaining.load() == 0 || succeeded(popAndDoWork(*taskList)))
       return success();
@@ -210,7 +216,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     if (failed(popAndDoWork(*taskList)))
       for (auto &value : values)
         if (!value->isReady())
-          busyWaitThenBlock(allValuesDone, busyWaitFor, busyWaitCond);
+          busyWaitThenBlock(allValuesDone, busyWaitNs, busyWaitCond);
 }
 
 //===----------------------------------------------------------------------===//
@@ -235,8 +241,7 @@ void ThreadPoolWorkQueue::Thread::run() {
   while (true) {
     // Wait for any work that might be on its way in. If there's no work, then
     // this thread will be slept by the kernel.
-    auto busyWaitFor = 0ms;
-    busyWaitThenBlock(sync.sema, busyWaitFor,
+    busyWaitThenBlock(sync.sema, busyWaitNs,
                       [this]() { return popAndDoWork(taskList); });
 
     if (succeeded(popAndDoWork(taskList)))
@@ -251,12 +256,13 @@ void ThreadPoolWorkQueue::Thread::run() {
 // LLCL top level implementations
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<WorkQueue> LLCL::createThreadPoolWorkQueue(size_t numThreads) {
+std::unique_ptr<WorkQueue>
+LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
   if (numThreads == 0)
     numThreads = std::thread::hardware_concurrency();
   // We expect `numThreads` to be the total numbers of threads that are
   // accessing the work queue. As there will be an external thread that will
   // access the work queue and take items from it by calling `await`, we create
   // `numThreads - 1` worker threads from the thread pool work queue.
-  return std::make_unique<ThreadPoolWorkQueue>(numThreads - 1);
+  return std::make_unique<ThreadPoolWorkQueue>(numThreads - 1, busyWaitNs);
 }
