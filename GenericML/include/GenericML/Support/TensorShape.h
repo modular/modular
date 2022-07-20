@@ -277,6 +277,11 @@ public:
     return result;
   }
 
+  /// Return true if the shape is dynamic, i.e. at least one of the dims is -1.
+  bool isDynamic() const {
+    return llvm::any_of(*this, [](auto dim) { return dim == -1; });
+  }
+
   // Support the typical iteration and subscripting operations.
   using iterator = typename Detail::TensorShapeStorage::iterator;
   iterator begin() { return storage.begin(); }
