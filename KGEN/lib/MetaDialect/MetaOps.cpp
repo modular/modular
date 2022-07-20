@@ -33,7 +33,7 @@ OpFoldResult BufferSizeOp::fold(ArrayRef<Attribute> constants) {
   return getValue().getType().cast<BufferType>().getSize();
 }
 
-//===----------------------------------------------------------------------===//\
+//===----------------------------------------------------------------------===//
 // BufferDTypeOp
 //===----------------------------------------------------------------------===//
 
@@ -43,6 +43,22 @@ OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
   // indicates that we don't fold anything, we don't need to check if dtype is
   // null.
   return getValue().getType().cast<BufferType>().getDtype();
+}
+
+//===----------------------------------------------------------------------===//
+// BufferAddressOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult BufferAddressOp::inferReturnTypes(
+    MLIRContext *context, Optional<Location> location, ValueRange operands,
+    DictionaryAttr attributes, mlir::RegionRange regions,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  BufferAddressOpAdaptor adaptor(operands, attributes);
+  Type inferredPointerType = PointerType::get(
+      context, adaptor.getValue().getType().cast<BufferType>().getDtype());
+  inferredReturnTypes.push_back(inferredPointerType);
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
