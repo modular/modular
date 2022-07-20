@@ -63,12 +63,20 @@ public:
                      "Allocator with profiling and leak checking")),
       llvm::cl::init(AllocatorType::kLeakChecker)};
 
+  // Specify the busy-wait duration of thread-pool work queue.
+  llvm::cl::opt<unsigned> busyWaitNs{
+      "busy-wait-ns",
+      llvm::cl::desc(
+          "Specify thread-pool work queue busy-wait duration in nanoseconds"),
+      llvm::cl::Hidden, llvm::cl::init(0)};
+
   /// Returns whether an executor should stop when a model returns an error.
   bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
 
   /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
-    return Runtime(getAllocator(allocatorType), getWorkQueue(numThreads));
+    return Runtime(getAllocator(allocatorType),
+                   getWorkQueue(numThreads, busyWaitNs));
   }
 
   /// Run a lambda or other callable with a new Runtime instance configured
