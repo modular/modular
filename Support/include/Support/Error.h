@@ -26,7 +26,7 @@ class ErrorOr;
 /// but do include a trailing period or other terminator.
 ///
 class LLVM_NODISCARD Error final {
-  enum StorageMode {
+  enum StorageMode : uint8_t {
     kStaticError, // This contains a pointer to static data.  No allocation.
     kMallocError, // This contains a malloc'd string.
     kValue,       // This is a normal a value (used by ErrorOr).
