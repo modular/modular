@@ -10,6 +10,7 @@
 
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENTypes.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -54,6 +55,29 @@ def BufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
   let results = (outs DTypeType:$dtype);
   let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
   let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// BufferAddressOp
+//===----------------------------------------------------------------------===//
+
+def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
+                      DeclareOpInterfaceMethods<InferTypeOpInterface,
+                                                ["inferReturnTypes"]>]> {
+  let summary = [{
+    Return the address of a meta.buffer as an SSA value (of type !meta.pointer)
+    that may be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = meta.buffer.address %arg0 : meta.buffer<3xf32>
+    ```
+  }];
+
+  let arguments = (ins BufferType:$value);
+  let results = (outs PointerType:$pointer);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
 }
 
 //===----------------------------------------------------------------------===//

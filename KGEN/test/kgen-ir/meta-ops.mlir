@@ -20,6 +20,25 @@ kgen.kernel @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer
   kgen.return %1 : !kgen.dtype
 }
 
+// CHECK-LABEL: kgen.generator @pointer_types<dt: dtype>(
+kgen.generator @pointer_types<dt: dtype>(
+  // CHECK: %arg0: !meta.pointer<dt>, %arg1: !meta.pointer<f32>, %arg2: !meta.pointer<?>) {
+  %arg0: !meta.pointer<dt>, %arg1: !meta.pointer<f32>, %arg2: !meta.pointer<?>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @meta_buffer_address<dt: dtype, size>(
+kgen.generator @meta_buffer_address<dt: dtype, size>(
+   %arg0: !meta.buffer<size, dt>, %arg1: !meta.buffer<?, ?>, %arg2: !meta.buffer<3, f32>) -> (!meta.pointer<dt>, !meta.pointer<?>, !meta.pointer<f32>) {
+  // CHECK: %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
+  %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
+  // CHECK: %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
+  %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
+  // CHECK: %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
+  %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
+  kgen.return %0, %1, %2 : !meta.pointer<dt>, !meta.pointer<?>, !meta.pointer<f32>
+}
+
 // CHECK-LABEL: kgen.kernel @meta_buffer_cast(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
 kgen.kernel @meta_buffer_cast(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
   // CHECK: %0 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
