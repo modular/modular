@@ -8,6 +8,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
@@ -20,6 +21,7 @@ static DialectRegistry getDialects() {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   registry.insert<mlir::arith::ArithmeticDialect>();
+  registry.insert<mlir::LLVM::LLVMDialect>();
   return registry;
 }
 
