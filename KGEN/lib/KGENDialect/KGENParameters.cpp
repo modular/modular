@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
@@ -108,6 +109,12 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+    // Ops that are not from the KEN or Meta dialects don't need their params
+    // checked.
+    auto dialect = bodyOp->getDialect();
+    if (dialect && !isa<MetaDialect>(dialect) && !isa<KGENDialect>(dialect))
+      return;
+
     ArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
