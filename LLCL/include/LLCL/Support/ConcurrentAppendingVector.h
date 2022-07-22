@@ -12,6 +12,7 @@
 #ifndef LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 #define LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 
+#include <atomic>
 #include <cstdlib>
 #include <mutex>
 #include <utility>
@@ -55,7 +56,7 @@ public:
   ~ConcurrentAppendingVector() {
     auto curState = getState(std::memory_order_relaxed);
     for (size_t i = 0; i <= curState.lastAllocated; ++i)
-      free(allocatedVectors[i]);
+      free(allocatedVectors[i].first);
   }
 
   const T &operator[](size_t index) const {
@@ -99,7 +100,7 @@ public:
     size_t newCapacity = last.second * 2;
     T *newStorage = (T *)malloc(newCapacity * sizeof(T));
     // Copy over the previous vector to the new vector.
-    std::uninitialized_copy(newStorage, last.first, last.first + last.second);
+    std::uninitialized_copy(last.first, last.first + last.second, newStorage);
     std::pair<T *, size_t> newLast =
         std::pair<T *, size_t>{newStorage, newCapacity};
     new (newStorage + curState.size) T(std::forward<Args>(args)...);
