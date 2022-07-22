@@ -12,12 +12,11 @@ kgen.generator @unary_add_library_impl1<size>(%arg0: si32) -> si32
   implements @unary_add {
 
   // Silly op so we know when something used this.
-  "unary_add_library_impl1"() : () -> ()
+  //"unary_add_library_impl1"() : () -> ()
 
   // TODO: Do something with <size>
   kgen.return %arg0 : si32
 }
-
 
 kgen.generator.interface @scalar_add<dt: dtype>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>
 
@@ -115,4 +114,19 @@ kgen.generator @scalar_erf<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<
   %prod1   = kgen.call @mul<type : dtype = f32>(%fact1, %x) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
   %prod2   = kgen.call @mul<type : dtype = f32>(%prod1, %fact3) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
   kgen.return %prod2 : !meta.scalar<type>
+}
+
+kgen.generator.interface @buffer_store<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
+
+// TODO: Currently, the signature of @buffer_store_f32 must exactly match the signature of @buffer_store, so we can't
+// have the signature use f32. When we allow this, we shoudl change the signature to be specialized to f32
+kgen.generator @buffer_store_f32<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
+  implements @buffer_store {
+  %ptr = meta.buffer.address %buffer: !meta.buffer<size, dt>
+  %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<dt> to !llvm.ptr<f32>
+  %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
+  %scalar_val = meta.cast_to_builtin %value: !meta.scalar<dt> to f32
+  %element_ptr = llvm.getelementptr %llvm_ptr[%i64_idx]: (!llvm.ptr<f32>, i64) -> !llvm.ptr<f32>
+  llvm.store %scalar_val, %element_ptr : !llvm.ptr<f32>
+  kgen.return
 }
