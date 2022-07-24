@@ -76,9 +76,6 @@ private:
   template <typename CondFn, typename DurationT>
   static void busyWaitThenBlock(Semaphore &sema, DurationT busyWait,
                                 CondFn cond) {
-    if (succeeded(cond()))
-      return;
-
     // Busy-wait for a given duration.
     // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
     // from the loop, which may perform expensive operations in its
@@ -202,22 +199,30 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     });
 
   // Donate the client thread to doing useful work until there's no more useful
-  // work to do. The thread should wake up and this function should return as
-  // soon as the work that it's waiting on has finished.
-  // TODO: This code has a problem - once the taskList has been drained the
-  //   client thread is now sleeping on its semaphore. If someone else adds more
-  //   work, this thread currently has no way of waking up to check again if
-  //   there's more work to be done.
-  auto busyWaitCond = [this, &numRemaining]() {
-    if (numRemaining.load() == 0 || succeeded(popAndDoWork(*taskList)))
-      return success();
-    return failure();
-  };
-  while (numRemaining.load() > 0)
-    if (failed(popAndDoWork(*taskList)))
-      for (auto &value : values)
-        if (!value->isReady())
-          busyWaitThenBlock(allValuesDone, busyWaitNs, busyWaitCond);
+  // work to do.
+  while (numRemaining.load() > 0) {
+    // While we are waiting, we might as well do work for other tasks that need
+    // to be done.  Take a work item and do it.
+    if (succeeded(popAndDoWork(*taskList)))
+      continue;
+
+    // Otherwise if we ran out of work to do, and we are still waiting on
+    // things, then other threads must be doing the work we are waiting on.
+    // Do a busy wait for awhile, and eventually block this thread on the
+    // 'allValuesDone' semaphore as needed.
+    //
+    // TODO: This code has a problem - once the taskList has been drained the
+    //   client thread is now sleeping on its semaphore. If someone else adds
+    //   more work, this thread currently has no way of waking up to check again
+    //   if there's more work to be done.
+    busyWaitThenBlock(allValuesDone, busyWaitNs, [this, &numRemaining]() {
+      // The wait is done when either the AV's become available or when we find
+      // another work item to keep us busy.
+      if (numRemaining.load() == 0 || succeeded(popAndDoWork(*taskList)))
+        return success();
+      return failure();
+    });
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -238,13 +243,13 @@ void ThreadPoolWorkQueue::Thread::run() {
   // While we haven't been told to finish up, attempt to dequeue and execute
   // work.
   while (true) {
+    if (succeeded(popAndDoWork(taskList)))
+      continue;
+
     // Wait for any work that might be on its way in. If there's no work, then
     // this thread will be slept by the kernel.
     busyWaitThenBlock(sync.sema, busyWaitNs,
                       [this]() { return popAndDoWork(taskList); });
-
-    if (succeeded(popAndDoWork(taskList)))
-      continue;
 
     if (sync.done.load(std::memory_order_acquire))
       return;
