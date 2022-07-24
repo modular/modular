@@ -16,11 +16,14 @@ namespace LLCL {
 /// semaphore, or in the worst case a counter protected by a mutex.
 class Semaphore {
 public:
-  /// Create and destroy a semaphore.
-  Semaphore();
+  /// Initialize a semaphore, the initial value is the starting count for the
+  /// value, it may not be negative because that would indicate that there are
+  /// blocked threads already.
+  Semaphore(ssize_t initialValue = 0);
   ~Semaphore();
 
-  /// Increments the semaphore.
+  /// Increments the semaphore.  If it was previously negative, then this will
+  /// wake up one of the waiters.
   void post();
 
   /// Attempts to decrement the semaphore, but waits for `ns` nanoseconds.

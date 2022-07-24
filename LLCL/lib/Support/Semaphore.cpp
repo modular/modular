@@ -27,14 +27,14 @@ class Semaphore::Impl {
 public:
   /// Manage semaphore lifetime. In cases where this wraps other APIs, this
   /// should be used to (for example) call sem_destroy.
-  Impl();
+  Impl(ssize_t initialValue);
   ~Impl();
 
   /// Increment the semaphore.
   void post();
   /// Decrement the semaphore. Passing -1 as the parameter means no timeout for
   /// waiting.
-  bool wait(int64_t ns);
+  bool wait(int64_t timeoutNS);
 
 private:
 #if defined(__APPLE__)
@@ -57,15 +57,18 @@ private:
 // Semaphore::Impl for Apple platforms
 //===----------------------------------------------------------------------===//
 
-Semaphore::Impl::Impl() : sema(dispatch_semaphore_create(0)) {}
+Semaphore::Impl::Impl(ssize_t initialValue)
+    : sema(dispatch_semaphore_create(initialValue)) {
+  assert(initialValue >= 0 && "semaphore initial value cannot be negative");
+}
 Semaphore::Impl::~Impl() { dispatch_release(sema); }
 void Semaphore::Impl::post() { dispatch_semaphore_signal(sema); }
-bool Semaphore::Impl::wait(int64_t ns) {
+bool Semaphore::Impl::wait(int64_t timeoutNS) {
   dispatch_time_t timeout;
-  if (ns == -1)
+  if (timeoutNS == -1)
     timeout = DISPATCH_TIME_FOREVER;
   else
-    timeout = dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ ns);
+    timeout = dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ timeoutNS);
 
   return 0 != dispatch_semaphore_wait(sema, timeout);
 }
@@ -75,8 +78,9 @@ bool Semaphore::Impl::wait(int64_t ns) {
 // Semaphore::Impl for POSIX platforms with sem_timedwait
 //===----------------------------------------------------------------------===//
 
-Semaphore::Impl::Impl() {
-  if (-1 == sem_init(&sema, 0, 0))
+Semaphore::Impl::Impl(ssize_t initialValue) {
+  assert(initialValue >= 0 && "semaphore initial value cannot be negative");
+  if (-1 == sem_init(&sema, 0, initialValue))
     llvm::report_fatal_error("Unable to initialize an unnamed semaphore.");
 }
 
@@ -87,11 +91,11 @@ Semaphore::Impl::~Impl() {
 
 void Semaphore::Impl::post() { sem_post(&sema); }
 
-bool Semaphore::Impl::wait(int64_t ns) {
+bool Semaphore::Impl::wait(int64_t timeoutNS) {
   int rc;
   // If we have no timeout, then we just have check for having been interrupted
   // by a signal handler.
-  if (ns == -1) {
+  if (timeoutNS == -1) {
     while ((rc = sem_wait(&sema)) == -1 && errno == EINTR)
       continue;
 
@@ -106,7 +110,7 @@ bool Semaphore::Impl::wait(int64_t ns) {
   if (-1 == clock_gettime(CLOCK_REALTIME, &ts))
     llvm::report_fatal_error("Unable to call clock_gettime");
 
-  ts.tv_nsec += ns;
+  ts.tv_nsec += timeoutNS;
   // The semaphore may be interrupted by a signal handler, so check for this
   // case and continue if that is what happens.
   while ((rc = sem_timedwait(&sema, &ts)) == -1 && errno == EINTR)
@@ -129,7 +133,9 @@ bool Semaphore::Impl::wait(int64_t ns) {
 // Backup Semaphore::Impl using std::mutex and std::condition_variable.
 //===----------------------------------------------------------------------===//
 
-Semaphore::Impl::Impl() : counter(0) {}
+Semaphore::Impl::Impl(ssize_t initialValue) : counter(initialValue) {
+  assert(initialValue >= 0 && "semaphore initial value cannot be negative");
+}
 
 Semaphore::Impl::~Impl() {}
 
@@ -143,19 +149,20 @@ void Semaphore::Impl::post() {
   cv.notify_one();
 }
 
-bool Semaphore::Impl::wait(int64_t ns) {
+bool Semaphore::Impl::wait(int64_t timeoutNS) {
   // Use the condition variable to wait for counter to be greater than 0.
   std::unique_lock lock(mut);
 
   // If there is no timeout specified, use cv.wait to wait forever. cv.wait's
   // return type is `void` so the actual return value here is `false`.
-  if (ns == -1)
+  if (timeoutNS == -1)
     return cv.wait(lock, [&] { return counter > 0; }), false;
 
   // Otherwise, there's a timeout specified so wait for that number of
   // nanoseconds.
   using namespace std::chrono_literals;
-  bool condition = cv.wait_for(lock, ns * 1ns, [&] { return counter > 0; });
+  bool condition =
+      cv.wait_for(lock, timeoutNS * 1ns, [&] { return counter > 0; });
   if (!condition)
     return true;
 
@@ -170,7 +177,8 @@ bool Semaphore::Impl::wait(int64_t ns) {
 // Semaphore function implementations (just forward to Semaphore::Impl)
 //===----------------------------------------------------------------------===//
 
-Semaphore::Semaphore() : impl(std::make_unique<Semaphore::Impl>()) {}
+Semaphore::Semaphore(ssize_t initialValue)
+    : impl(std::make_unique<Semaphore::Impl>(initialValue)) {}
 
 // Empty destructor needed here so we can forward declare Semaphore::Impl into
 // the header.
@@ -178,4 +186,4 @@ Semaphore::~Semaphore() = default;
 
 void Semaphore::post() { impl->post(); }
 
-bool Semaphore::wait(int64_t ns) { return impl->wait(ns); }
+bool Semaphore::wait(int64_t timeoutNS) { return impl->wait(timeoutNS); }
