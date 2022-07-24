@@ -32,8 +32,8 @@ public:
 
   /// Increment the semaphore.
   void post();
-  /// Decrement the semaphore. Passing -1 as the parameter means no timeout for
-  /// waiting.
+
+  bool wait();
   bool wait(int64_t timeoutNS);
 
 private:
@@ -63,13 +63,14 @@ Semaphore::Impl::Impl(ssize_t initialValue)
 }
 Semaphore::Impl::~Impl() { dispatch_release(sema); }
 void Semaphore::Impl::post() { dispatch_semaphore_signal(sema); }
-bool Semaphore::Impl::wait(int64_t timeoutNS) {
-  dispatch_time_t timeout;
-  if (timeoutNS == -1)
-    timeout = DISPATCH_TIME_FOREVER;
-  else
-    timeout = dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ timeoutNS);
 
+bool Semaphore::Impl::wait() {
+  return 0 != dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+}
+
+bool Semaphore::Impl::wait(int64_t timeoutNS) {
+  dispatch_time_t timeout =
+      dispatch_time(DISPATCH_TIME_NOW, /*nsecToAdd*/ timeoutNS);
   return 0 != dispatch_semaphore_wait(sema, timeout);
 }
 
@@ -95,15 +96,15 @@ bool Semaphore::Impl::wait(int64_t timeoutNS) {
   int rc;
   // If we have no timeout, then we just have check for having been interrupted
   // by a signal handler.
-  if (timeoutNS == -1) {
-    while ((rc = sem_wait(&sema)) == -1 && errno == EINTR)
-      continue;
+  while ((rc = sem_wait(&sema)) == -1 && errno == EINTR)
+    continue;
 
-    // If sem_wait returned 0 then we're good, we acquired the semaphore.
-    // Otherwise, we hit an error and were unable to acquire the semaphore.
-    return rc != 0;
-  }
+  // If sem_wait returned 0 then we're good, we acquired the semaphore.
+  // Otherwise, we hit an error and were unable to acquire the semaphore.
+  return rc != 0;
+}
 
+bool Semaphore::Impl::wait(int64_t timeoutNS) {
   // Get the current time - the timeout on sem_timedwait is an absolute timeout
   // since the epoch.
   struct timespec ts;
@@ -113,6 +114,7 @@ bool Semaphore::Impl::wait(int64_t timeoutNS) {
   ts.tv_nsec += timeoutNS;
   // The semaphore may be interrupted by a signal handler, so check for this
   // case and continue if that is what happens.
+  int rc;
   while ((rc = sem_timedwait(&sema, &ts)) == -1 && errno == EINTR)
     continue;
 
@@ -149,17 +151,20 @@ void Semaphore::Impl::post() {
   cv.notify_one();
 }
 
+bool Semaphore::Impl::wait() {
+  // Use the condition variable to wait for counter to be greater than 0.
+  std::unique_lock lock(mut);
+
+  // If there is no timeout specified, use cv.wait to wait forever.
+  cv.wait(lock, [&] { return counter > 0; });
+  return false;
+}
+
 bool Semaphore::Impl::wait(int64_t timeoutNS) {
   // Use the condition variable to wait for counter to be greater than 0.
   std::unique_lock lock(mut);
 
-  // If there is no timeout specified, use cv.wait to wait forever. cv.wait's
-  // return type is `void` so the actual return value here is `false`.
-  if (timeoutNS == -1)
-    return cv.wait(lock, [&] { return counter > 0; }), false;
-
-  // Otherwise, there's a timeout specified so wait for that number of
-  // nanoseconds.
+  // There's a timeout specified so wait for that number of nanoseconds.
   using namespace std::chrono_literals;
   bool condition =
       cv.wait_for(lock, timeoutNS * 1ns, [&] { return counter > 0; });
@@ -185,5 +190,7 @@ Semaphore::Semaphore(ssize_t initialValue)
 Semaphore::~Semaphore() = default;
 
 void Semaphore::post() { impl->post(); }
+
+bool Semaphore::wait() { return impl->wait(); }
 
 bool Semaphore::wait(int64_t timeoutNS) { return impl->wait(timeoutNS); }

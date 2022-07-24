@@ -26,13 +26,19 @@ public:
   /// wake up one of the waiters.
   void post();
 
-  /// Attempts to decrement the semaphore, but waits for `ns` nanoseconds.
-  /// Returns true if the decrement timed out. Conceptually similar to
-  /// POSIX sem_timedwait. You can also pass in a special value: -1 means wait
-  /// forever.
+  /// Decrement the semaphore: if the resulting value is less than zero, wait
+  /// for someone to signal the semaphore.
+  bool wait();
+
+  /// Decrement the semaphore: if the resulting value is less than zero, wait
+  /// for someone to signal the semaphore.  This wait will eventually time out
+  /// in approximately `timeoutNS` nanoseconds.
   ///
-  /// Generally, you should pass -1 here; timeouts usually aren't the answer!
-  bool wait(int64_t ns = -1);
+  /// Using this is extremely unwise because you've built a polling algorithm
+  /// that will burn power when something is supposed to be quiesced.
+  ///
+  /// Timeouts are generally not the answer!
+  bool wait(int64_t timeoutNS);
 
 private:
   class Impl;
