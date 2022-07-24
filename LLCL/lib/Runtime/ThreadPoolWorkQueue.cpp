@@ -35,8 +35,12 @@ public:
   ~ThreadPoolWorkQueue() override;
 
   void addTask(TaskFunction work) override {
-    while (!taskList->enqueue(std::move(work)))
+    // Try to add this work to the RingBuffer.  If that fails, then the ring
+    // buffer is full: we take an item out of queue and do it to try to make
+    // more space then try again.
+    while (!taskList->enqueue(work)) {
       [[maybe_unused]] auto r = popAndDoWork(*taskList);
+    }
     syncState.sema.post();
   }
 

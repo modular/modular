@@ -35,10 +35,11 @@ public:
            "Cannot destroy a non-empty ring buffer!");
   }
 
-  /// Enqueue adds the object to the circular buffer and takes ownership of the
-  /// object. Returns false if the object couldn't added because the buffer is
-  /// full, returns true otherwise.
-  bool enqueue(ItemType &&item) {
+  /// Enqueue adds the object to the circular buffer and returns true, or
+  /// returns false if the buffer is full.
+  ///
+  /// On success, it takes ownership of the object, std::move'ing from it.
+  bool enqueue(ItemType &item) {
     // Make sure that the buffer is not full.
     uint64_t curConsumed = consumed.load(std::memory_order_acquire);
     uint64_t curWriteIndex = writeIndex.load(std::memory_order_acquire);
@@ -89,7 +90,7 @@ public:
       return nullptr;
 
     // Claim the ownership of `consumed`. If `compare_exchange_weak` succeedes,
-    // we can make suere that 1) `buffer[curConsumed % size]` contains a valid
+    // we can make sure that 1) `buffer[curConsumed % size]` contains a valid
     // item, and 2) no other threads is taking the item from `buffer[curConsumed
     // % size]`.
     while (!readIndex.compare_exchange_weak(curReadIndex, curReadIndex + 1,
