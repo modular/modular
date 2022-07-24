@@ -260,7 +260,6 @@ KeepRunning:
     // client thread is now sleeping on its semaphore.  If someone else adds
     // more work for the system to do, this thread currently has no way of
     // waking up to help out with that.
-    printf("suspending await\n");
     break;
   }
 
