@@ -87,7 +87,7 @@ public:
 
   /// Return true if this waiter is going to do heavy weight OS operations to
   /// slow the current thread's progress.
-  bool isDoneWithYieldSpins() const { return iterations >= yieldSpins; }
+  bool isDoneWithNopSpins() const { return iterations >= nopSpins; }
 
 private:
   size_t iterations = 0;

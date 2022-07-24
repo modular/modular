@@ -10,15 +10,83 @@
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/Signposts.h"
+#include "LLCL/Support/SpinWaiter.h"
 #include "Support/CommandLine.h"
 #include "llvm/ADT/ArrayRef.h"
 #include <thread>
 
 using namespace LLCL;
 using llvm::ArrayRef;
+using llvm::Optional;
 using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
+
+namespace {
+/// This is like SpinWaiter but uses explensive syscalls to optionally hard-wait
+/// for long periods of time.
+class SemaphoreSpinWaiter {
+public:
+  SemaphoreSpinWaiter(Semaphore &semaphore, std::atomic<bool> &doneFlag,
+                      std::chrono::nanoseconds busyWaitTime)
+      : busyWaitTime(busyWaitTime), semaphore(semaphore), doneFlag(doneFlag) {}
+
+  /// Wait for another step using progressively more heavy-weight mechanisms.
+  /// This returns true if we need to shut down the specified thread.
+  bool wait() {
+    // If we are cheap-waiting, just return quickly.
+    if (!waiter.isDoneWithNopSpins()) {
+      waiter.wait();
+      return false;
+    }
+
+    // Otherwise we're going to intentionally burn time.  If this is the first
+    // iteration of this, figure out what wall time we are.
+    //
+    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
+    // from the loop, which may perform expensive operations in its
+    // implementation that make busy-waiting not working as expected.
+    // https://github.com/modularml/modular/issues/1092 for monitoring this.
+    if (busyWaitTime != std::chrono::nanoseconds::zero()) {
+      if (!busyWaitEndTime.hasValue())
+        busyWaitEndTime = std::chrono::steady_clock::now() + busyWaitTime;
+
+      // If we haven't reached out busy wait end time, then continue spinning.
+      if (std::chrono::steady_clock::now() < *busyWaitEndTime)
+        return false;
+    }
+
+    if (doneFlag.load(std::memory_order_acquire))
+      return true;
+
+    // Otherwise, we we've waited long enough, yield the thread to the OS so we
+    // don't burn power and starve other tasks on the system.
+    semaphore.wait();
+
+    // When we wake up, check the doneFlag to see if we need to shut down the
+    // thread.
+    return doneFlag.load(std::memory_order_acquire);
+  }
+
+private:
+  /// This is a spin waiter that never yields to the OS with sched_yield etc.
+  /// We would rather block on the semaphore.
+  SpinWaiter<false> waiter;
+
+  /// This is how long to spin on the waiter.
+  /// TODO: This should eventually go away or turn into a constant.
+  std::chrono::nanoseconds busyWaitTime;
+
+  /// This is the time we should stop busy waiting.
+  Optional<std::chrono::steady_clock::time_point> busyWaitEndTime;
+
+  /// This is the semaphore to block on when all hope is lost.
+  Semaphore &semaphore;
+
+  /// This  tells us if we should shut down the thread.
+  std::atomic<bool> &doneFlag;
+};
+} // namespace
 
 namespace {
 
@@ -64,39 +132,10 @@ private:
     return success();
   }
 
-  /// Loop around `popAndDoWork`, just do work until the queue is empty.
-  static void doWork(LockFreeRingBuffer<TaskFunction> &q) {
-    while (succeeded(popAndDoWork(q)))
-      ;
-  }
-
-  /// Performs busy-waiting until `cond()` returns mlir::success(). If that
-  /// doesn't happen for `busyWait` duration, start passive-waiting with
-  /// the semaphore `sema`.
-  template <typename CondFn, typename DurationT>
-  static void busyWaitThenBlock(Semaphore &sema, DurationT busyWait,
-                                CondFn cond) {
-    // Busy-wait for a given duration.
-    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
-    // from the loop, which may perform expensive operations in its
-    // implementation that make busy-waiting not working as expected.
-    // https://github.com/modularml/modular/issues/1092 for monitoring this.
-    if (busyWait != DurationT::zero()) {
-      auto busyWaitUntil =
-          std::chrono::steady_clock::now() + DurationT(busyWait);
-      while (busyWaitUntil > std::chrono::steady_clock::now())
-        if (succeeded(cond()))
-          return;
-    }
-
-    // Start passive waiting.
-    sema.wait();
-  }
-
   /// Provides the state needed to synchronize the threads in the thread pool
   /// for the required exit functionality.
   struct ThreadSyncState {
-    std::atomic<bool> done;
+    std::atomic<bool> doneFlag;
     Semaphore sema;
   };
 
@@ -121,7 +160,7 @@ private:
     /// the thread will never join.
     ~Thread() {
       assert(
-          sync.done.load() &&
+          sync.doneFlag.load() &&
           "Must not destroy a Thread object that is not pending completion.");
       thread.join();
     }
@@ -164,16 +203,17 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // Donate the client thread to help empty the queue if there's anything left.
-  doWork(*taskList);
+  while (succeeded(popAndDoWork(*taskList)))
+    ;
 
   // Now we can tell all the threads to exit.
-  syncState.done.store(true, std::memory_order_release);
+  syncState.doneFlag.store(true, std::memory_order_release);
 
   // Post on the semaphore for every thread to wake it if it's waiting.
   for (size_t i = 0; i < poolSize; ++i)
     syncState.sema.post();
 
-  // Call the destructor.
+  // Call the destructors to join the threads.
   for (size_t i = 0; i < poolSize; ++i)
     pool[i].~Thread();
 
@@ -197,6 +237,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       allValuesDone.post();
       --numRemaining;
     });
+  std::atomic<bool> doneFlag{false};
 
   // Donate the client thread to doing useful work until there's no more useful
   // work to do.
@@ -232,13 +273,29 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     //   client thread is now sleeping on its semaphore. If someone else adds
     //   more work, this thread currently has no way of waking up to check
     //   again if there's more work to be done.
-    busyWaitThenBlock(allValuesDone, busyWaitNs, [this, &numRemaining]() {
-      // The wait is done when either the AV's become available or when we
-      // find another work item to keep us busy.
-      if (numRemaining.load() == 0 || succeeded(popAndDoWork(*taskList)))
-        return success();
-      return failure();
-    });
+
+    SemaphoreSpinWaiter spinWaiter(allValuesDone, doneFlag, busyWaitNs);
+
+    // Spin until we find some work to do.
+    do {
+      // Wait for another step.  We ignore any requests to shut down the current
+      // thread, because we need the AVs to get resolved.
+      (void)spinWaiter.wait();
+
+      // FIXME: This should not be needed, but is.
+      allReady = true;
+      for (auto &value : values)
+        if (!value->isReady()) {
+          allReady = false;
+          break;
+        }
+      if (allReady)
+        break;
+
+      if (numRemaining.load() == 0)
+        return;
+
+    } while (failed(popAndDoWork(*taskList)));
   }
 }
 
@@ -257,22 +314,28 @@ void ThreadPoolWorkQueue::Thread::run() {
   pthread_setname_np(threadName);
 #endif
 
-  // While we haven't been told to finish up, attempt to dequeue and execute
-  // work.
+  // Continuously execute work units.
   while (true) {
+    // In the normal case we happily pick up and do work.
     if (succeeded(popAndDoWork(taskList)))
       continue;
 
-    if (sync.done.load(std::memory_order_acquire))
-      return;
+    // If we've run out of work to do, we need to quiesce and ultimately block
+    // in the kernel on the semaphore.  However, we don't want to immediately
+    // give up hope, because we may be "right about to" get new work incoming.
+    // We also want to make sure to use exponential backoff to avoid pummeling
+    // the memory hierarchy of the threads that are doing useful work.  As such,
+    // we use a SemaphoreSpinWaiter.
+    SemaphoreSpinWaiter spinWaiter(sync.sema, sync.doneFlag, busyWaitNs);
 
-    // Wait for any work that might be on its way in. If there's no work, then
-    // this thread will be slept by the kernel.
-    busyWaitThenBlock(sync.sema, busyWaitNs,
-                      [this]() { return popAndDoWork(taskList); });
+    // Spin until we find some work to do.
+    do {
+      // Wait for another step.  If commanded to exit, we return from our
+      // thread's work.
+      if (spinWaiter.wait())
+        return;
 
-    if (sync.done.load(std::memory_order_acquire))
-      return;
+    } while (failed(popAndDoWork(taskList)));
   }
 }
 
