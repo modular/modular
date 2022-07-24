@@ -8,6 +8,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
+#include "LLCL/Support/SpinWaiter.h"
 using namespace LLCL;
 
 std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
@@ -93,6 +94,7 @@ void AsyncValue::destroyWithRefCountZero() {
 ///
 void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
   WaitersAndState oldValue = loadWaitersAndState();
+  SpinWaiter spinWaiter;
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
     switch (oldValue.getInt()) {
     case State::kAvailable:
@@ -112,6 +114,8 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
       if (!compareExchangeWaiterAndState(oldValue, newValue)) {
         // If we failed the compare/xchg, retry.  The only state transition is
         // to having an inline waiter and potentially indirect waiters.
+        if (spinWaiter.wait())
+          oldValue = loadWaitersAndState();
         continue;
       }
       // When we succeed, we're in an 'inline waiter present' state, but
@@ -122,12 +126,8 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
     case State::kUnconstructedInitializingInlineWaiter:
       // If someone is actively constructing a waiter, spin for a few cycles
       // until it resolves.
+      spinWaiter.wait();
       oldValue = loadWaitersAndState();
-      // TODO: We should sleep 10 cycles and potentially even give up the thread
-      // or something, how do we do this?  ThreadPoolWorkQueue uses
-      // std::chrono::steady_clock::now().
-      // We should potentially do exponential backoff in all these compare/xchg
-      // loops.
       continue;
 
     case State::kUnconstructed1ValidOOLWaiterSlots:
@@ -197,9 +197,11 @@ public:
     --numWaiters;
     uint8_t allReadyMask = (1 << numWaiters) - 1;
     // Make sure the waiter in question finished construction.
-    while (waitersCompletelyInitialized.load() != allReadyMask)
-      /*FIXME: Need better spinning ala atomic::wait, exponential backoff etc*/
-      ;
+    SpinWaiter spinWaiter;
+    while (waitersCompletelyInitialized.load() != allReadyMask) {
+      // If not, wait a bit and retry.
+      spinWaiter.wait();
+    }
   }
 
 private:
@@ -264,6 +266,7 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
   auto origState = oldValue.getInt();
   assert(origState != newState && "cannot transition to same state");
   auto newValue = WaitersAndState(oldValue.getPointer(), newState);
+  SpinWaiter spinWaiter;
   while (!compareExchangeWaiterAndState(oldValue, newValue)) {
     // If the thing changed to a different state underneath us, return
     // failure.
@@ -271,6 +274,11 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
       return M::failure();
 
     // If the waiter list changed out from under us, try again.
+    if (spinWaiter.wait()) {
+      oldValue = loadWaitersAndState();
+      if (oldValue.getInt() != origState)
+        return M::failure();
+    }
     newValue = WaitersAndState(oldValue.getPointer(), newState);
   }
   oldValue = newValue;
@@ -308,11 +316,11 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
       // state. Inline initialize the waiter.
       new (getInlineWaiterPointer()) Waiter(std::move(waiter));
       // Then transition immediately to the 'WaiterPresent' state.  We want this
-      // critical section to be extremely short, only a few cycles.  We use an
-      // atomic increment here because we know the old value cannot change while
-      // in kUnconstructedConstructingInlineWaiter state.  We could use
-      // `moveState`, but we have no need for the compare/xchg and loop
-      // overhead.
+      // critical section to be extremely short, only a few cycles.  We could
+      // use `moveState` here, but we know the old value cannot change while
+      // in kUnconstructedConstructingInlineWaiter state, and thus this can
+      // never fail.  An atomic add is faster and simpler than compare/xchg and
+      // loop overhead.
       static_assert(int(State::kUnconstructedInitializingInlineWaiter) + 4 ==
                     int(State::kUnconstructed4ValidOOLWaiterSlots));
       // FIXME: This probably doesn't have to be std::memory_order_seq_cst.
@@ -333,6 +341,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     }
   }
 
+  SpinWaiter spinWaiter;
   while (1) {
     // If we raced with a transition into a ready state then we can just execute
     // the waiter and be done.
@@ -343,8 +352,10 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     unsigned numValid = getNumWaitersValid(oldValue.getInt());
     if (numValid < 4) {
       // Try to move the state to say that we're claiming this waiter slot.
-      if (failed(moveState(oldValue, (State)(int(oldValue.getInt()) + 1))))
+      if (failed(moveState(oldValue, (State)(int(oldValue.getInt()) + 1)))) {
+        spinWaiter.wait();
         continue; // retry on failure.
+      }
 
       // If we succeeded, set the waiter and we're done.
       oldValue.getPointer()->setWaiter(numValid, std::move(waiter));
