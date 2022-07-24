@@ -27,12 +27,11 @@ namespace {
 /// for long periods of time.
 class SemaphoreSpinWaiter {
 public:
-  SemaphoreSpinWaiter(Semaphore &semaphore, std::atomic<bool> &doneFlag,
-                      std::chrono::nanoseconds busyWaitTime)
-      : busyWaitTime(busyWaitTime), semaphore(semaphore), doneFlag(doneFlag) {}
+  SemaphoreSpinWaiter(std::chrono::nanoseconds busyWaitTime)
+      : busyWaitTime(busyWaitTime) {}
 
   /// Wait for another step using progressively more heavy-weight mechanisms.
-  /// This returns true if we need to shut down the specified thread.
+  /// This returns true if we should block on a semaphore.
   bool wait() {
     // If we are cheap-waiting, just return quickly.
     if (!waiter.isDoneWithNopSpins()) {
@@ -56,16 +55,7 @@ public:
         return false;
     }
 
-    if (doneFlag.load(std::memory_order_acquire))
-      return true;
-
-    // Otherwise, we we've waited long enough, yield the thread to the OS so we
-    // don't burn power and starve other tasks on the system.
-    semaphore.wait();
-
-    // When we wake up, check the doneFlag to see if we need to shut down the
-    // thread.
-    return doneFlag.load(std::memory_order_acquire);
+    return true;
   }
 
 private:
@@ -79,14 +69,8 @@ private:
 
   /// This is the time we should stop busy waiting.
   Optional<std::chrono::steady_clock::time_point> busyWaitEndTime;
-
-  /// This is the semaphore to block on when all hope is lost.
-  Semaphore &semaphore;
-
-  /// This  tells us if we should shut down the thread.
-  std::atomic<bool> &doneFlag;
 };
-} // namespace
+} // end anonymous namespace
 
 namespace {
 
@@ -234,69 +218,58 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
     value->andThen([&numRemaining, &allValuesDone]() {
-      allValuesDone.post();
-      --numRemaining;
+      // TODO: This can probably use more relaxed memory consistency!
+      if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) == 1)
+        allValuesDone.post();
     });
-  std::atomic<bool> doneFlag{false};
 
   // Donate the client thread to doing useful work until there's no more useful
   // work to do.
-  while (numRemaining.load() != 0) {
+KeepRunning:
+  // TODO: This can probably use more relaxed memory consistency!
+  while (numRemaining.load(std::memory_order_seq_cst) != 0) {
     // While we are waiting, we might as well do work for other tasks that need
     // to be done.  Take a work item and do it.
     if (succeeded(popAndDoWork(*taskList)))
-      continue;
-
-    // If we successfully resolved all the AV's then we're done.
-    if (numRemaining.load() == 0)
-      break;
-
-    // FIXME: This should not be needed, but is.  There is a fundamental problem
-    // with how we're using the 'allValuesDone' semaphore: it isn't initialized
-    // to the number of values, so the wakeup logic isn't correct.  As far as I
-    // can tell, it is pure luck that things seem to work below.
-    bool allReady = true;
-    for (auto &value : values)
-      if (!value->isReady()) {
-        allReady = false;
-        break;
-      }
-    if (allReady)
       continue;
 
     // Otherwise if we ran out of work to do, and we are still waiting on
     // things, then other threads must be doing the work we are waiting on.
     // Do a busy wait for awhile, and eventually block this thread on the
     // 'allValuesDone' semaphore as needed.
-    //
-    // TODO: This code has a problem - once the taskList has been drained the
-    //   client thread is now sleeping on its semaphore. If someone else adds
-    //   more work, this thread currently has no way of waking up to check
-    //   again if there's more work to be done.
-
-    SemaphoreSpinWaiter spinWaiter(allValuesDone, doneFlag, busyWaitNs);
+    SemaphoreSpinWaiter spinWaiter(busyWaitNs);
 
     // Spin until we find some work to do.
-    do {
-      // Wait for another step.  We ignore any requests to shut down the current
-      // thread, because we need the AVs to get resolved.
-      (void)spinWaiter.wait();
+    while (!spinWaiter.wait()) {
+      // If we ever succeed in finding work to do, go back to running like
+      // normal.
+      if (succeeded(popAndDoWork(*taskList)))
+        goto KeepRunning;
 
-      // FIXME: This should not be needed, but is.
-      allReady = true;
-      for (auto &value : values)
-        if (!value->isReady()) {
-          allReady = false;
-          break;
-        }
-      if (allReady)
+      // If we successfully resolved all the AV's then we're done.
+      // TODO: This can probably use more relaxed memory consistency!
+      if (numRemaining.load(std::memory_order_seq_cst) == 0)
         break;
+    }
 
-      if (numRemaining.load() == 0)
-        return;
-
-    } while (failed(popAndDoWork(*taskList)));
+    // If we've waited long enough, block on the `allValuesDone` semaphore to
+    // yield the thread to the OS so we don't burn power and starve other tasks
+    // on the system.
+    //
+    // TODO: This code has a problem - once the taskList has been drained the
+    // client thread is now sleeping on its semaphore.  If someone else adds
+    // more work for the system to do, this thread currently has no way of
+    // waking up to help out with that.
+    printf("suspending await\n");
+    break;
   }
+
+  // Ok, we successfully saw that all values are done.  Do a final wait on the
+  // semaphore to make sure the last 'andThen' block has executed the post.  We
+  // don't want them to fire after this function has been returned, because that
+  // will destory 'allValuesDone' itself.
+  allValuesDone.wait();
+  assert(numRemaining.load() == 0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -315,6 +288,7 @@ void ThreadPoolWorkQueue::Thread::run() {
 #endif
 
   // Continuously execute work units.
+KeepRunning:
   while (true) {
     // In the normal case we happily pick up and do work.
     if (succeeded(popAndDoWork(taskList)))
@@ -326,16 +300,24 @@ void ThreadPoolWorkQueue::Thread::run() {
     // We also want to make sure to use exponential backoff to avoid pummeling
     // the memory hierarchy of the threads that are doing useful work.  As such,
     // we use a SemaphoreSpinWaiter.
-    SemaphoreSpinWaiter spinWaiter(sync.sema, sync.doneFlag, busyWaitNs);
+    SemaphoreSpinWaiter spinWaiter(busyWaitNs);
 
     // Spin until we find some work to do.
-    do {
-      // Wait for another step.  If commanded to exit, we return from our
-      // thread's work.
-      if (spinWaiter.wait())
-        return;
+    while (!spinWaiter.wait()) {
+      // If we ever succeed in finding work to do, go back to running like
+      // normal.
+      if (succeeded(popAndDoWork(taskList)))
+        goto KeepRunning;
+    }
 
-    } while (failed(popAndDoWork(taskList)));
+    // Otherwise, we we've waited long enough, yield the thread to the OS so we
+    // don't burn power and starve other tasks on the system.
+    sync.sema.wait();
+
+    // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
+    // the thread.
+    if (sync.doneFlag.load(std::memory_order_acquire))
+      return;
   }
 }
 

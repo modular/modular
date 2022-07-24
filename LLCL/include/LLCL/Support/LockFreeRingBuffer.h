@@ -87,7 +87,7 @@ public:
     uint64_t curPublished = published.load(std::memory_order_acquire);
     uint64_t curReadIndex = readIndex.load(std::memory_order_acquire);
     if (curPublished <= curReadIndex)
-      return nullptr;
+      return ItemType();
 
     // Claim the ownership of `consumed`. If `compare_exchange_weak` succeedes,
     // we can make sure that 1) `buffer[curConsumed % size]` contains a valid
@@ -97,7 +97,7 @@ public:
                                             std::memory_order_acq_rel)) {
       // Check again if we have enough values published.
       if (published.load(std::memory_order_acquire) <= curReadIndex)
-        return nullptr;
+        return ItemType();
     }
 
     // Now we can safely read from `buffer[curReadIndex & (size - 1)]`, which
