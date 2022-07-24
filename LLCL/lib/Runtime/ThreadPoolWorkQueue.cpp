@@ -181,10 +181,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
-  LLCL_EmitSignpost("TPWQ await");
-
-  using namespace std::chrono_literals;
-  // We are done when values_remaining drops to zero.
+  //  We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
   // Set up a private semaphore so we can just wait on the values that we care
@@ -224,8 +221,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 void ThreadPoolWorkQueue::Thread::run() {
-  using namespace std::chrono_literals;
-
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
   // TODO: I think this is widely supported on linux and windows apparently has
