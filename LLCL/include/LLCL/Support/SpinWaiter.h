@@ -55,12 +55,10 @@ public:
         // The client can disable the more expensive yielding mechanisms below
         // by setting "shouldYieldToOS" to true.
         !shouldYieldToOS) {
-#if defined __i386__ || defined __x86_64__
 #ifdef _MSC_VER
       _mm_pause();
-#else
+#elif defined __i386__ || defined __x86_64__
       __builtin_ia32_pause();
-#endif
 #elif __ARM_ARCH_7A__ || __aarch64__
       __asm__ __volatile__("yield" ::: "memory");
 #else
