@@ -8,6 +8,7 @@
 #define LLCL_SUPPORT_SEMAPHORE_H
 
 #include <memory>
+#include <sys/types.h>
 
 namespace LLCL {
 /// This is an interface to a basic semaphore with post and timed wait
