@@ -109,12 +109,6 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    // Ops that are not from the KEN or Meta dialects don't need their params
-    // checked.
-    auto dialect = bodyOp->getDialect();
-    if (dialect && !isa<MetaDialect>(dialect) && !isa<KGENDialect>(dialect))
-      return;
-
     ArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
@@ -203,7 +197,8 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 
   // If this attribute has no sub-attributes or we have already scanned it an
   // know that it has no parameters in it, return early.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr>() ||
+  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
+               DenseElementsAttr>() ||
       parameterLessAttrs.contains(attr))
     return;
 
