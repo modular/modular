@@ -6,6 +6,7 @@
 
 #include "LLCL/Support/Semaphore.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <cassert>
 
 #if defined(__APPLE__)
 #include <dispatch/dispatch.h>
