@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
@@ -732,17 +733,6 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitError() << "'" << calleeAttr.getValue()
                        << "' does not reference a valid callee";
 
-  // Verify that the operand and result types match the callee.
-  auto fnType = callee->getAttrOfType<TypeAttr>("function_type")
-                    .getValue()
-                    .cast<FunctionType>();
-
-  if (verifyMatchingCallLists(getOperandTypes(), fnType.getInputs(), *this,
-                              callee, "input", "type") ||
-      verifyMatchingCallLists(getResultTypes(), fnType.getResults(), *this,
-                              callee, "result", "type"))
-    return failure();
-
   // Verify that the callee/caller parameters match.  The parameter names on the
   // results don't need to match, but the parameter names on the argument
   // bindings do.  The types always need to match.
@@ -783,7 +773,44 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       /// Check result parameter types.
       verifyMatchingCallLists(getParamDeclType(callerOutputParamDecls),
                               getParamDeclType(calleeOutputParamDecls), *this,
-                              callee, "output parameter", "type"))
+                              callee, "output parameter", "type")) {
+    return failure();
+  }
+
+  // Ok, now that we know the parameters match up, verify that the operand
+  // and result types match the callee.
+  auto fnType = callee->getAttrOfType<TypeAttr>("function_type")
+                    .getValue()
+                    .cast<FunctionType>();
+
+  // We need to substitute and simplify expressions that occur in the argument
+  // list, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
+  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
+  // ... call @callee1<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
+  //
+  // We do this with with ParameterEvaluator which can do the remapping for us.
+  ParameterEvaluator evaluator;
+  for (auto [value, decl] :
+       llvm::zip(callerInputParams, calleeInputParamDecls)) {
+    evaluator.setParameterValue(decl.cast<ParamDeclAttr>(),
+                                value.cast<ParamBindAttr>().getValue());
+  }
+
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type, callee->getLoc());
+  };
+
+  auto calleeInputTypes = llvm::map_range(fnType.getInputs(), remapType);
+  auto calleeResultTypes = llvm::map_range(fnType.getResults(), remapType);
+
+  // Check that the passed in operands, and returned types match our
+  // expectations.
+  if (verifyMatchingCallLists(getOperandTypes(), calleeInputTypes, *this,
+                              callee, "input", "type") ||
+      verifyMatchingCallLists(getResultTypes(), calleeResultTypes, *this,
+                              callee, "result", "type"))
     return failure();
 
   return success();
