@@ -11,9 +11,7 @@ using namespace M;
 // ConcatTreeBaseNode
 //===----------------------------------------------------------------------===//
 
-/// This data structure provides the ability to concatenate (potentially large)
-/// strings together without copying the data around too much.  This is the
-/// abstract base class.
+/// This is an abstract base class for all concatenation tree nodes.
 namespace M {
 class ConcatTreeBaseNode {
 public:
@@ -22,20 +20,19 @@ public:
     kBranch, // a node with two or more subnodes.
   } nodeKind;
 
-  virtual ~ConcatTreeBaseNode();
+  void destroy();
 
 protected:
   ConcatTreeBaseNode(NodeKind kind) : nodeKind(kind) {}
 };
 } // namespace M
 
-ConcatTreeBaseNode::~ConcatTreeBaseNode() {}
-
 //===----------------------------------------------------------------------===//
 // ConcatTreeVectorNode
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// This is a leaf node that holds an std::vector of data.
 class ConcatTreeVectorNode : public ConcatTreeBaseNode {
 public:
   static bool classof(const ConcatTreeBaseNode *base) {
@@ -54,6 +51,9 @@ public:
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// This class is an interior node in the tree, which has pointers to other
+/// nodes.  This can store multiple children to reduce allocations of the branch
+/// nodes themselves.
 class ConcatTreeBranchNode : public ConcatTreeBaseNode {
 public:
   ConcatTreeBranchNode(ConcatenationTree lhs, ConcatenationTree rhs)
@@ -78,14 +78,30 @@ public:
 // ConcatenationTree implementation logic
 //===----------------------------------------------------------------------===//
 
-ConcatenationTree::ConcatenationTree() {}
-ConcatenationTree::ConcatenationTree(ConcatTreeBaseNode *nodePtr)
-    : node(nodePtr) {}
-ConcatenationTree::ConcatenationTree(ConcatenationTree &&rhs) = default;
-ConcatenationTree &
-ConcatenationTree::operator=(ConcatenationTree &&rhs) = default;
+ConcatenationTree::ConcatenationTree(ConcatTreeBaseNode *node) : node(node) {}
+ConcatenationTree::ConcatenationTree(ConcatenationTree &&rhs) : node(rhs.node) {
+  rhs.node = nullptr;
+}
 
-ConcatenationTree::~ConcatenationTree() {}
+ConcatenationTree &ConcatenationTree::operator=(ConcatenationTree &&rhs) {
+  if (node)
+    node->destroy();
+  node = rhs.node;
+  rhs.node = nullptr;
+  return *this;
+}
+
+ConcatenationTree::~ConcatenationTree() {
+  if (node)
+    node->destroy();
+}
+
+void ConcatTreeBaseNode::destroy() {
+  if (auto *vec = dyn_cast<ConcatTreeVectorNode>(this))
+    delete vec;
+  else
+    delete cast<ConcatTreeBranchNode>(this);
+}
 
 /// Get a ContatenationTree with the specified vector data.
 ConcatenationTree ConcatenationTree::takeVector(std::vector<uint8_t> data) {
@@ -109,7 +125,7 @@ ConcatenationTree ConcatenationTree::concat(ConcatenationTree lhs,
 
   // If the left side is a branch node with space, we can add nodes to it
   // instead of allocating another branch.
-  if (auto *lhsConcat = dyn_cast<ConcatTreeBranchNode>(lhs.node.get())) {
+  if (auto *lhsConcat = dyn_cast<ConcatTreeBranchNode>(lhs.node)) {
     if (!lhsConcat->child[2].node) {
       lhsConcat->totalSize += rhs.getSize();
       lhsConcat->child[2] = std::move(rhs);
@@ -123,7 +139,7 @@ ConcatenationTree ConcatenationTree::concat(ConcatenationTree lhs,
   }
 
   // If the right side is a concat node with space, we can push into it.
-  if (auto *rhsConcat = dyn_cast<ConcatTreeBranchNode>(rhs.node.get())) {
+  if (auto *rhsConcat = dyn_cast<ConcatTreeBranchNode>(rhs.node)) {
     if (!rhsConcat->child[2].node) {
       rhsConcat->totalSize += lhs.getSize();
       // Move everything down so we can insert to the left of them.
@@ -149,25 +165,27 @@ ConcatenationTree ConcatenationTree::concat(ConcatenationTree lhs,
 /// This returns the size in bytes of the collection of data that this
 /// represents.  This is O(1).
 size_t ConcatenationTree::getSize() const {
-  ConcatTreeBaseNode *nodePtr = node.get();
-  if (nodePtr == nullptr)
+  if (node == nullptr)
     return 0;
 
-  if (auto *vec = dyn_cast<ConcatTreeVectorNode>(nodePtr))
+  if (auto *vec = dyn_cast<ConcatTreeVectorNode>(node))
     return vec->data.size();
 
-  return cast<ConcatTreeBranchNode>(nodePtr)->totalSize;
+  return cast<ConcatTreeBranchNode>(node)->totalSize;
 }
 
+/// Iterate through this structure walking over the leaf node data in-order.
 void ConcatenationTree::traverse(std::function<void(ArrayRef<uint8_t>)> fn) {
-  ConcatTreeBaseNode *nodePtr = node.get();
-  if (nodePtr == nullptr)
+  // Null is an empty tree.
+  if (node == nullptr)
     return;
 
-  if (auto *vec = dyn_cast<ConcatTreeVectorNode>(nodePtr))
+  // Vector nodes are leaves.
+  if (auto *vec = dyn_cast<ConcatTreeVectorNode>(node))
     return fn(vec->data);
 
-  auto *branch = cast<ConcatTreeBranchNode>(nodePtr);
+  // Otherwise walk through a branch.
+  auto *branch = cast<ConcatTreeBranchNode>(node);
   branch->child[0].traverse(fn);
   branch->child[1].traverse(fn);
 
