@@ -63,6 +63,15 @@ kgen.generator @sub_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   kgen.return %3 : !meta.scalar<type>
 }
 
+kgen.generator @sub_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @sub  {
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
+  %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
+  %2 = llvm.fsub %0, %1 : f64
+  %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<type>
+  kgen.return %3 : !meta.scalar<type>
+}
+
 //===----------------------------------------------------------------------===//
 // mul
 //===----------------------------------------------------------------------===//
@@ -78,6 +87,15 @@ kgen.generator @mul_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   kgen.return %3 : !meta.scalar<type>
 }
 
+kgen.generator @mul_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @mul {
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
+  %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
+  %2 = llvm.fmul %0, %1 : f64
+  %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<type>
+  kgen.return %3 : !meta.scalar<type>
+}
+
 //===----------------------------------------------------------------------===//
 // div
 //===----------------------------------------------------------------------===//
@@ -90,6 +108,15 @@ kgen.generator @div_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f32
   %2 = llvm.fdiv %0, %1 : f32
   %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<type>
+  kgen.return %3 : !meta.scalar<type>
+}
+
+kgen.generator @div_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @div {
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
+  %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
+  %2 = llvm.fdiv %0, %1 : f64
+  %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<type>
   kgen.return %3 : !meta.scalar<type>
 }
 

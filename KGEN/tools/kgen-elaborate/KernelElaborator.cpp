@@ -550,8 +550,6 @@ LogicalResult ParameterRewriter::rewriteOps(
       result = processParamValueOp(value);
     else if (auto call = dyn_cast<CallOp>(op))
       result = processCallOp(call, rewriterWorklist);
-    else if (isa<KernelOp>(op))
-      /*kernels can define parameters, nothing need be done with them*/;
     else
       result = processGenericOp(op);
 
@@ -701,11 +699,16 @@ void ParameterRewriter::completeCallOpProcessing(
 
   KernelOp newCalleeKernel = newCallee.kernel;
 
+  // Resolve any bound result types.
+  SmallVector<Type> resultTypes;
+  for (auto result : call.getResultTypes())
+    resultTypes.push_back(getReboundType(result, call.getLoc()));
+
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
-      call.getLoc(), call.getResultTypes(), newCalleeKernel.getNameAttr(),
+      call.getLoc(), resultTypes, newCalleeKernel.getNameAttr(),
       /*input params*/ ArrayRef<Attribute>(),
       /*output params*/ call.getParamDecls().getValue(), call.getOperands());
 
@@ -775,6 +778,11 @@ Attribute ParameterRewriter::getReboundAttribute(Attribute attr, Location loc) {
     if (!newVal.isError())
       result = newVal.takeValue();
 
+  } else if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
+    // TODO: Improve SubElementTypeInterface
+    Type newType = getReboundType(typeAttr.getValue(), loc);
+    if (newType != typeAttr.getValue())
+      result = TypeAttr::get(newType);
   } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
     SmallVector<std::pair<size_t, Attribute>> newAttrs;
     bool changedType = false;
@@ -815,7 +823,26 @@ Type ParameterRewriter::getReboundType(Type type, Location loc) {
     return iter->second;
 
   Type result = type;
-  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+
+  // Rebind types in aggregates that we know, but otherwise just scan the types
+  // that we don't.
+  if (auto fnType = type.dyn_cast<FunctionType>()) {
+    // Function types show up in kernel signatures.
+    SmallVector<Type> inputs, results;
+    bool changed = false;
+    for (Type input : fnType.getInputs()) {
+      inputs.push_back(getReboundType(input, loc));
+      changed |= inputs.back() != input;
+    }
+    for (Type result : fnType.getResults()) {
+      results.push_back(getReboundType(result, loc));
+      changed |= results.back() != result;
+    }
+
+    if (changed)
+      result = FunctionType::get(type.getContext(), inputs, results);
+
+  } else if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
     SmallVector<std::pair<size_t, Attribute>> newAttrs;
     bool changedType = false;
     size_t attrNo = 0;
@@ -849,7 +876,9 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // don't know how to calculate the new value for a defined parameter.  If
   // there is a reason to allow open extension of operations that define
   // parameters, we could genericize this into a op interface.
-  if (!getParamDecls(op).empty())
+  if (!getParamDecls(op).empty() &&
+      // Kernels are allowed to declare parameters, they don't need rewriting.
+      !isa<KernelOp>(op))
     return error(op->getLoc(),
                  "unknown parameter-defining operator in GenerateKernels");
 
@@ -858,6 +887,12 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    // Preserve but ignore the 'paramDecls' attribute on KernelOp.
+    if (namedAttr.getName() == "paramDecls") {
+      newAttrs.push_back(namedAttr);
+      continue;
+    }
+
     newAttrs.push_back(NamedAttribute(
         namedAttr.getName(),
         getReboundAttribute(namedAttr.getValue(), op->getLoc())));
@@ -1012,8 +1047,8 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
                           inputValue);
   }
 
-  // Now that we have a new synthesized generic kernel, run the rewriter over it
-  // to specialize its body.
+  // Now that we have a new synthesized generic kernel, run the rewriter
+  // over it to specialize its body.
   return specializeKernel(newKernel);
 }
 
@@ -1080,9 +1115,9 @@ Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
   } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
     newCallees = specializeKernel(kernel);
   } else if (isa<GeneratorOp>(decl)) {
-    newCallees = specializeGenerator(declAndInputParams, kernel);
+    newCallees = specializeGenerator(declAndInputParams, insertionPoint);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
-    newCallees = specializeInterface(declAndInputParams, kernel);
+    newCallees = specializeInterface(declAndInputParams, insertionPoint);
   } else {
     localError("call to an unknown kind of declaration");
   }
