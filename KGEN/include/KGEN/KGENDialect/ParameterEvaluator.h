@@ -8,13 +8,7 @@
 #define KGEN_KGENDIALECT_PARAMETEREVALUATOR_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-
-namespace M {
-// TODO: Need a Support/ForwardDecls.h
-class ErrorOrSuccess;
-template <typename T>
-class ErrorOr;
-} // namespace M
+#include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
 
@@ -47,7 +41,6 @@ public:
   /// simplified value.
   void setParameterValue(ParamDeclAttr decl, Attribute value) {
     assert(!paramValues.count(decl.getName()) && "parameter already declared!");
-    assert(isSimpleConstant(value) && "expression isn't simplified");
     paramValues[decl.getName()] = value;
   }
 

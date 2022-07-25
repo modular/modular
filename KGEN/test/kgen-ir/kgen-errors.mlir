@@ -401,3 +401,16 @@ kgen.generator.interface @constrained<width, height>()
 
 // expected-error @+1 {{invalid use of parameter with no declaration "ty2"}}
 kgen.generator.interface @badTypes<ty1 : dtype>(%a : !meta.scalar<ty2>)
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @callee<type: dtype>(%x: !meta.scalar<type>) {
+  kgen.return
+}
+
+kgen.generator @caller<type : dtype>(%arg0: !meta.scalar<type>) {
+  // expected-error @+1 {{caller input #0 has type '!meta.scalar<type>' but callee expected type '!meta.scalar<f64>'}}
+  kgen.call @callee<type: dtype = f64>(%arg0) : (!meta.scalar<type>) -> ()
+  kgen.return
+}

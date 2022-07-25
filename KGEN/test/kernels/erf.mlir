@@ -28,19 +28,17 @@ kgen.generator @scalar_erf<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<
 // CHECK-LABEL: kgen.kernel @erf_f32(%arg0: f32) -> f32
 // CHECK: kgen.call @"scalar_erf,type=f32"(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
 kgen.kernel @erf_f32(%arg0: f32) -> f32 {
-  kgen.param.bind type : dtype = <f32>
-  %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<type>
-  %1 = kgen.call @scalar_erf<type: dtype = type>(%0) : (!meta.scalar<type>) -> !meta.scalar<type>
-  %2 = meta.cast_to_builtin %1 : !meta.scalar<type> to f32
+  %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
+  %1 = kgen.call @scalar_erf<type: dtype = f32>(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
+  %2 = meta.cast_to_builtin %1 : !meta.scalar<f32> to f32
   kgen.return %2 : f32
 }
 
 // CHECK-LABEL: kgen.kernel @erf_f64(%arg0: f64) -> f64
 // CHECK: kgen.call @"scalar_erf,type=f64"(%0) : (!meta.scalar<f64>) -> !meta.scalar<f64>
 kgen.kernel @erf_f64(%arg0: f64) -> f64 {
-  kgen.param.bind type : dtype = <f64>
-  %0 = meta.cast_from_builtin %arg0 : f64 to !meta.scalar<type>
-  %1 = kgen.call @scalar_erf<type: dtype = type>(%0) : (!meta.scalar<type>) -> !meta.scalar<type>
-  %2 = meta.cast_to_builtin %1 : !meta.scalar<type> to f64
+  %0 = meta.cast_from_builtin %arg0 : f64 to !meta.scalar<f64>
+  %1 = kgen.call @scalar_erf<type: dtype = f64>(%0) : (!meta.scalar<f64>) -> !meta.scalar<f64>
+  %2 = meta.cast_to_builtin %1 : !meta.scalar<f64> to f64
   kgen.return %2 : f64
 }
