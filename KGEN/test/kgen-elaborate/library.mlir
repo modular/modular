@@ -3,68 +3,54 @@
 
 // RUN: kgen-opt %s | kgen-opt -o /dev/null
 
-// CHECK-LABEL: kgen.generator.interface @unary_add<size>(si32) -> si32
+//===----------------------------------------------------------------------===//
+// add
+//===----------------------------------------------------------------------===//
 
-// expected-note @+1 {{library interface}}
-kgen.generator.interface @unary_add<size>(si32) -> si32
+kgen.generator.interface @add<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
 
-// Trivial kernel so we can call something
-kgen.kernel @unary_add_library_impl() {
-  kgen.return
-}
-
-kgen.generator @unary_add_library_impl1<size>(%arg0: si32) -> si32
-  implements @unary_add {
-
-  // Silly kernel so we know when something used this.
-  kgen.call @unary_add_library_impl() : () -> ()
-
-  // TODO: Do something with <size>
-  kgen.return %arg0 : si32
-}
-
-kgen.generator.interface @scalar_add<dt: dtype>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>
-
-kgen.generator @scalar_add_i32<dt: dtype>(%arg0: !meta.scalar<dt>, %arg1: !meta.scalar<dt>) -> !meta.scalar<dt>
-  implements @scalar_add {
-    %0 = meta.cast_to_builtin %arg0: !meta.scalar<dt> to i32
-    %1 = meta.cast_to_builtin %arg1: !meta.scalar<dt> to i32
+kgen.generator @add_i32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  // TODO: This also works for ui32
+  constraints <eq_dtype(type, si32)> implements @add {
+    %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to i32
+    %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to i32
     %2 = arith.addi %0, %1 : i32
-    %3 = meta.cast_from_builtin %2 : i32 to !meta.scalar<dt>
-    kgen.return %3 : !meta.scalar<dt>
+    %3 = meta.cast_from_builtin %2 : i32 to !meta.scalar<type>
+    kgen.return %3 : !meta.scalar<type>
   }
 
-
-kgen.generator @scalar_add_i64<dt: dtype>(%arg0: !meta.scalar<dt>, %arg1: !meta.scalar<dt>) -> !meta.scalar<dt>
-  implements @scalar_add {
-    %0 = meta.cast_to_builtin %arg0: !meta.scalar<dt> to i64
-    %1 = meta.cast_to_builtin %arg1: !meta.scalar<dt> to i64
+kgen.generator @add_i64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  // TODO: This also works for ui64
+  constraints <eq_dtype(type, si64)> implements @add {
+    %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to i64
+    %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to i64
     %2 = arith.addi %0, %1 : i64
-    %3 = meta.cast_from_builtin %2 : i64 to !meta.scalar<dt>
-    kgen.return %3 : !meta.scalar<dt>
+    %3 = meta.cast_from_builtin %2 : i64 to !meta.scalar<type>
+    kgen.return %3 : !meta.scalar<type>
   }
 
-
-kgen.generator @scalar_add_f32<dt: dtype>(%arg0: !meta.scalar<dt>, %arg1: !meta.scalar<dt>) -> !meta.scalar<dt>
-  implements @scalar_add {
-    %0 = meta.cast_to_builtin %arg0: !meta.scalar<dt> to f32
-    %1 = meta.cast_to_builtin %arg1: !meta.scalar<dt> to f32
+kgen.generator @add_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f32)> implements @add {
+    %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f32
+    %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f32
     %2 = arith.addf %0, %1 : f32
-    %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<dt>
-    kgen.return %3 : !meta.scalar<dt>
+    %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<type>
+    kgen.return %3 : !meta.scalar<type>
   }
 
-
-kgen.generator @scalar_add_f64<dt: dtype>(%arg0: !meta.scalar<dt>, %arg1: !meta.scalar<dt>) -> !meta.scalar<dt>
-  implements @scalar_add {
-    %0 = meta.cast_to_builtin %arg0: !meta.scalar<dt> to f64
-    %1 = meta.cast_to_builtin %arg1: !meta.scalar<dt> to f64
+kgen.generator @add_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @add {
+    %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
+    %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
     %2 = arith.addf %0, %1 : f64
-    %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<dt>
-    kgen.return %3 : !meta.scalar<dt>
+    %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<type>
+    kgen.return %3 : !meta.scalar<type>
   }
 
-// Arithmetics operations.
+//===----------------------------------------------------------------------===//
+// sub
+//===----------------------------------------------------------------------===//
+
 // TODO: Add support for types other than f32.
 kgen.generator.interface @sub<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
 
@@ -77,6 +63,10 @@ kgen.generator @sub_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   kgen.return %3 : !meta.scalar<type>
 }
 
+//===----------------------------------------------------------------------===//
+// mul
+//===----------------------------------------------------------------------===//
+
 kgen.generator.interface @mul<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
 
 kgen.generator @mul_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
@@ -87,6 +77,10 @@ kgen.generator @mul_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<type>
   kgen.return %3 : !meta.scalar<type>
 }
+
+//===----------------------------------------------------------------------===//
+// div
+//===----------------------------------------------------------------------===//
 
 kgen.generator.interface @div<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
 
@@ -99,21 +93,40 @@ kgen.generator @div_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
   kgen.return %3 : !meta.scalar<type>
 }
 
-kgen.generator @constant_float<value: f64, type: dtype>() -> !meta.scalar<type> {
+//===----------------------------------------------------------------------===//
+// float_constant
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @float_constant<value: f64, type: dtype>() -> !meta.scalar<type>
+
+kgen.generator @float_constant_f64<value: f64, type: dtype>() -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @float_constant  {
   %0 = kgen.param.value : f64 = <value>
   %1 = meta.cast_from_builtin %0: f64 to !meta.scalar<type>
   kgen.return %1 : !meta.scalar<type>
 }
+
+kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
+  constraints <eq_dtype(type, f32)> implements @float_constant  {
+  %0 = kgen.param.value : f64 = <value>
+  %1 = llvm.fptrunc %0 : f64 to f32
+  %2 = meta.cast_from_builtin %1: f32 to !meta.scalar<type>
+  kgen.return %2 : !meta.scalar<type>
+}
+
+//===----------------------------------------------------------------------===//
+// scalar_erf
+//===----------------------------------------------------------------------===//
 
 // Compute erf as Taylor series expansion: erf(x) = 2/sqrt(pi) * (x - x^3/3)
 
 kgen.generator @scalar_erf<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
   constraints <eq_dtype(type, f32)> {
   // Compute 2/sqrt(pi) * (x - x^3 / 3) as 2/sqrt(pi) * x * (1 - x^2 / 3)
-  %sqrt_of_pi = kgen.call @constant_float<value : f64 = 1.77245384, type : dtype = type>() : () -> !meta.scalar<type>
-  %one     = kgen.call @constant_float<value : f64 = 1.0, type : dtype = type>() : () -> !meta.scalar<type>
-  %two     = kgen.call @constant_float<value : f64 = 2.0, type : dtype = type>() : () -> !meta.scalar<type>
-  %three   = kgen.call @constant_float<value : f64 = 3.0, type : dtype = type>() : () -> !meta.scalar<type>
+  %sqrt_of_pi = kgen.call @float_constant<value : f64 = 1.77245384, type : dtype = type>() : () -> !meta.scalar<type>
+  %one     = kgen.call @float_constant<value : f64 = 1.0, type : dtype = type>() : () -> !meta.scalar<type>
+  %two     = kgen.call @float_constant<value : f64 = 2.0, type : dtype = type>() : () -> !meta.scalar<type>
+  %three   = kgen.call @float_constant<value : f64 = 3.0, type : dtype = type>() : () -> !meta.scalar<type>
   %fact1   = kgen.call @div<type : dtype = type>(%two, %sqrt_of_pi) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
   %x_sqr   = kgen.call @mul<type : dtype = type>(%x, %x) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
   %x_sqr_3 = kgen.call @div<type : dtype = type>(%x_sqr, %three) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
@@ -122,6 +135,10 @@ kgen.generator @scalar_erf<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<
   %prod2   = kgen.call @mul<type : dtype = type>(%prod1, %fact3) : (!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
   kgen.return %prod2 : !meta.scalar<type>
 }
+
+//===----------------------------------------------------------------------===//
+// buffer_store
+//===----------------------------------------------------------------------===//
 
 kgen.generator.interface @buffer_store<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
 
