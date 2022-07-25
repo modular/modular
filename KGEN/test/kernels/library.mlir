@@ -159,3 +159,30 @@ kgen.generator @buffer_store_f32<size, dt: dtype>(%value: !meta.scalar<dt>, %buf
   llvm.store %scalar_val, %element_ptr : !llvm.ptr<f32>
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// fma
+//===----------------------------------------------------------------------===//
+
+// Perform an FMA operation. The fma operation performs an `a*b + c` operation.
+kgen.generator.interface @fma<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
+
+kgen.generator @fma_f32<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f32)> implements @fma {
+  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f32
+  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f32
+  %2 = meta.cast_to_builtin %c: !meta.scalar<type> to f32
+  %3 = "llvm.intr.fma"(%0, %1, %2) : (f32, f32, f32) -> f32
+  %4 = meta.cast_from_builtin %3 : f32 to !meta.scalar<type>
+  kgen.return %4 : !meta.scalar<type>
+}
+
+kgen.generator @fma_f64<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @fma {
+  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f64
+  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f64
+  %2 = meta.cast_to_builtin %c: !meta.scalar<type> to f64
+  %3 = "llvm.intr.fma"(%0, %1, %2) : (f64, f64, f64) -> f64
+  %4 = meta.cast_from_builtin %3 : f64 to !meta.scalar<type>
+  kgen.return %4 : !meta.scalar<type>
+}
