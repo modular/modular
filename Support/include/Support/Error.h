@@ -11,11 +11,10 @@
 #ifndef SUPPORT_ERROR_H
 #define SUPPORT_ERROR_H
 
+#include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 
 namespace M {
-template <typename T>
-class ErrorOr;
 
 /// This is a lightweight error class that holds a nul-terminated string, with a
 /// static string optimization that does not allocate.  This is not implicitly
