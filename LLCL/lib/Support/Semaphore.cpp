@@ -92,7 +92,7 @@ Semaphore::Impl::~Impl() {
 
 void Semaphore::Impl::post() { sem_post(&sema); }
 
-bool Semaphore::Impl::wait(int64_t timeoutNS) {
+bool Semaphore::Impl::wait() {
   int rc;
   // If we have no timeout, then we just have check for having been interrupted
   // by a signal handler.
