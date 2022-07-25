@@ -263,3 +263,31 @@ kgen.kernel @track_expansions(%arg0: si32) {
   %2 = kgen.call @use_interface(%arg0) : (si32) -> index
   kgen.return
 }
+
+
+// -----
+
+// Test that parameter and result argument types get rewritten and specialized.
+
+// CHECK-LABEL: kgen.kernel @"float_constant_f32,value=1.5,type=f32"() -> !meta.scalar<f32> {
+// ...
+// CHECK:    %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<f32>
+// CHECK:    kgen.return  %2 : !meta.scalar<f32>
+
+kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
+  constraints <eq_dtype(type, f32)>  {
+  %0 = kgen.param.value : f64 = <value>
+  %1 = llvm.fptrunc %0 : f64 to f32
+  %2 = meta.cast_from_builtin %1: f32 to !meta.scalar<type>
+  kgen.return %2 : !meta.scalar<type>
+}
+
+// CHECK-LABEL: kgen.kernel @test_f32() -> f32 {
+// CHECK:    %0 = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !meta.scalar<f32>
+// CHECK:    %1 = meta.cast_to_builtin %0 : !meta.scalar<f32> to f32
+kgen.kernel @test_f32() -> f32 {
+  kgen.param.bind type : dtype = <f32>
+  %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !meta.scalar<type>
+  %2 = meta.cast_to_builtin %1 : !meta.scalar<type> to f32
+  kgen.return %2 : f32
+}
