@@ -13,16 +13,13 @@
 #ifndef KGEN_KGENATTRIBUTES_H
 #define KGEN_KGENATTRIBUTES_H
 
+#include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 // Pull in all enum type definitions and utility function declarations.
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
-
-namespace M {
-class DType;
-}
 
 namespace M::KGEN {
 class ParamDeclAttr;
