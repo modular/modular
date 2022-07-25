@@ -3,15 +3,6 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-//
-// This data structure is used by clients that want to build (potentially large)
-// structures by concatenating and rearranging blobs of data.  This is
-// implemented by building a tree of nodes that can be concatenated together
-// multiple times without copying the data around.
-//
-// When the final structure is finished, you can emit it to a flat form once.
-//
-//===----------------------------------------------------------------------===//
 
 #ifndef CONCATENATIONTREE_H
 #define CONCATENATIONTREE_H
@@ -22,11 +13,17 @@
 
 namespace M {
 class ConcatTreeBaseNode;
-/// This is the main typedef used in the codebase when referring to a tree of
-/// data.
+
+/// This data structure provides the ability to concatenate (potentially large)
+/// strings/arrays together without ever copying the underlying data around.
+/// This is implemented by building a tree of nodes representing the underlying
+/// concatenated result.
+///
+/// When the final structure is finished, you can use the `traverse` method to
+/// emit the data to a file or flatten it into a buffer of your choice once.
 class ConcatenationTree {
 public:
-  ConcatenationTree();
+  ConcatenationTree() : node(nullptr) {}
   ConcatenationTree(ConcatenationTree &&rhs);
   ~ConcatenationTree();
 
@@ -45,14 +42,12 @@ public:
   /// represents.  This is O(1).
   size_t getSize() const;
 
-  /// Iterate through the ConcatenationTree walking over the leaf nodes with
-  /// data in-order.  The specified TraversalFn is expected to be a callable
-  /// that takes `ArrayRef<uint8_t>` and returns void.
-  void traverse(std::function<void(ArrayRef<uint8_t>)> fn);
+  /// Iterate through this structure walking over the leaf node data in-order.
+  void traverse(std::function<void(ArrayRef<uint8_t>)> traversalFn);
 
 private:
   ConcatenationTree(ConcatTreeBaseNode *nodePtr);
-  std::unique_ptr<ConcatTreeBaseNode> node;
+  ConcatTreeBaseNode *node;
 };
 
 } // namespace M
