@@ -8,6 +8,7 @@ add_subdirectory(Benchmark)
 
 add_modular_library(MSupport
   AlignedAlloc.cpp
+  ConcatenationTree.cpp
   DType.cpp
   Error.cpp
 
