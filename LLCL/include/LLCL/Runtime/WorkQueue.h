@@ -61,10 +61,6 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
                                                      unsigned busyWaitNs = 0);
 
-/// Configure the appropriate work queue based on the number of threads.
-std::unique_ptr<WorkQueue> getWorkQueue(size_t numThreads = 0,
-                                        unsigned busyWaitNs = 0);
-
 } // namespace LLCL
 
 #endif // LLCL_RUNTIME_WORKQUEUE_H
