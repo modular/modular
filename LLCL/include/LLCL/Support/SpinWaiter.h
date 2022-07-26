@@ -90,6 +90,55 @@ public:
 private:
   size_t iterations = 0;
 };
+
+/// This is like SpinWaiter but allows configurable busy waiting based on wall
+/// time.
+class BusyWaitSpinWaiter {
+public:
+  BusyWaitSpinWaiter(std::chrono::nanoseconds busyWaitTime)
+      : busyWaitTime(busyWaitTime) {}
+
+  /// Wait for another step using progressively more heavy-weight mechanisms.
+  /// This returns true if we should block on a semaphore.
+  bool wait() {
+    // If we are cheap-waiting, just return quickly.
+    if (!waiter.isDoneWithNopSpins()) {
+      waiter.wait();
+      return false;
+    }
+
+    // Otherwise we're going to intentionally burn time.  If this is the first
+    // iteration of this, figure out what wall time we are.
+    //
+    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
+    // from the loop, which may perform expensive operations in its
+    // implementation that make busy-waiting not working as expected.
+    // https://github.com/modularml/modular/issues/1092 for monitoring this.
+    if (busyWaitTime != std::chrono::nanoseconds::zero()) {
+      if (!busyWaitEndTime.hasValue())
+        busyWaitEndTime = std::chrono::steady_clock::now() + busyWaitTime;
+
+      // If we haven't reached out busy wait end time, then continue spinning.
+      if (std::chrono::steady_clock::now() < *busyWaitEndTime)
+        return false;
+    }
+
+    return true;
+  }
+
+private:
+  /// This is a spin waiter that never yields to the OS with sched_yield etc.
+  /// We would rather block on the semaphore.
+  SpinWaiter<false> waiter;
+
+  /// This is how long to spin on the waiter.
+  /// TODO: This should eventually go away or turn into a constant.
+  std::chrono::nanoseconds busyWaitTime;
+
+  /// This is the time we should stop busy waiting.
+  llvm::Optional<std::chrono::steady_clock::time_point> busyWaitEndTime;
+};
+
 } // namespace LLCL
 
 #endif // LLCL_SUPPORT_SPINWAITER_H

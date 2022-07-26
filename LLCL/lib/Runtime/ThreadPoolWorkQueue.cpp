@@ -23,56 +23,6 @@ using mlir::LogicalResult;
 using mlir::success;
 
 namespace {
-/// This is like SpinWaiter but uses explensive syscalls to optionally hard-wait
-/// for long periods of time.
-class SemaphoreSpinWaiter {
-public:
-  SemaphoreSpinWaiter(std::chrono::nanoseconds busyWaitTime)
-      : busyWaitTime(busyWaitTime) {}
-
-  /// Wait for another step using progressively more heavy-weight mechanisms.
-  /// This returns true if we should block on a semaphore.
-  bool wait() {
-    // If we are cheap-waiting, just return quickly.
-    if (!waiter.isDoneWithNopSpins()) {
-      waiter.wait();
-      return false;
-    }
-
-    // Otherwise we're going to intentionally burn time.  If this is the first
-    // iteration of this, figure out what wall time we are.
-    //
-    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
-    // from the loop, which may perform expensive operations in its
-    // implementation that make busy-waiting not working as expected.
-    // https://github.com/modularml/modular/issues/1092 for monitoring this.
-    if (busyWaitTime != std::chrono::nanoseconds::zero()) {
-      if (!busyWaitEndTime.hasValue())
-        busyWaitEndTime = std::chrono::steady_clock::now() + busyWaitTime;
-
-      // If we haven't reached out busy wait end time, then continue spinning.
-      if (std::chrono::steady_clock::now() < *busyWaitEndTime)
-        return false;
-    }
-
-    return true;
-  }
-
-private:
-  /// This is a spin waiter that never yields to the OS with sched_yield etc.
-  /// We would rather block on the semaphore.
-  SpinWaiter<false> waiter;
-
-  /// This is how long to spin on the waiter.
-  /// TODO: This should eventually go away or turn into a constant.
-  std::chrono::nanoseconds busyWaitTime;
-
-  /// This is the time we should stop busy waiting.
-  Optional<std::chrono::steady_clock::time_point> busyWaitEndTime;
-};
-} // end anonymous namespace
-
-namespace {
 
 /// This class provides a thread-pool that implements the WorkQueue interface.
 /// It starts a dynamic number of threads and distributes work to it by means of
@@ -237,7 +187,7 @@ KeepRunning:
     // things, then other threads must be doing the work we are waiting on.
     // Do a busy wait for awhile, and eventually block this thread on the
     // 'allValuesDone' semaphore as needed.
-    SemaphoreSpinWaiter spinWaiter(busyWaitNs);
+    BusyWaitSpinWaiter spinWaiter(busyWaitNs);
 
     // Spin until we find some work to do.
     while (!spinWaiter.wait()) {
@@ -298,8 +248,8 @@ KeepRunning:
     // give up hope, because we may be "right about to" get new work incoming.
     // We also want to make sure to use exponential backoff to avoid pummeling
     // the memory hierarchy of the threads that are doing useful work.  As such,
-    // we use a SemaphoreSpinWaiter.
-    SemaphoreSpinWaiter spinWaiter(busyWaitNs);
+    // we use a BusyWaitSpinWaiter.
+    BusyWaitSpinWaiter spinWaiter(busyWaitNs);
 
     // Spin until we find some work to do.
     while (!spinWaiter.wait()) {
