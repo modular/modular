@@ -61,6 +61,10 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
                                                      unsigned busyWaitNs = 0);
 
+/// Create the "No Interesting Name" Experimental Work Queue.
+std::unique_ptr<WorkQueue> createNINEWorkQueue(size_t numThreads,
+                                               unsigned busyWaitNs);
+
 } // namespace LLCL
 
 #endif // LLCL_RUNTIME_WORKQUEUE_H

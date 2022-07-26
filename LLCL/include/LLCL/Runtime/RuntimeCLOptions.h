@@ -43,6 +43,8 @@ private:
     kSingleThread,
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
+    /// "No Interesting Name" Experimental Work Queue
+    kNINE,
   };
 
   // Specify the number of threads. If `thread==1`, then we automatically set
@@ -64,7 +66,9 @@ private:
           clEnumValN(WorkQueueType::kSingleThread, "single-thread",
                      "Work queue that only ever uses one thread"),
           clEnumValN(WorkQueueType::kThreadPool, "thread-pool",
-                     "Default threaded work queue based on std::thread")),
+                     "Default threaded work queue based on std::thread"),
+          clEnumValN(WorkQueueType::kNINE, "nine",
+                     "'No Interesting Name' Experimental Work Queue")),
       llvm::cl::init(WorkQueueType::kDefault)};
 
   // Enable HostAllocator types to be specified on the command line.
@@ -120,6 +124,9 @@ public:
     case WorkQueueType::kThreadPool:
       printf("thread pool work queue");
       break;
+    case WorkQueueType::kNINE:
+      printf("'no interesting name' experimental work queue");
+      break;
     }
 
     switch (numThreads) {
@@ -156,6 +163,9 @@ public:
       workQueue = createSingleThreadWorkQueue();
       break;
     case WorkQueueType::kThreadPool:
+      workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
+      break;
+    case WorkQueueType::kNINE:
       workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
       break;
     }
