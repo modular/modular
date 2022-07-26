@@ -11,8 +11,14 @@
 #include "Support/ErrorOr.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
+
+namespace llvm {
+class ToolOutputFile;
+}
+
 namespace M {
 
 /// Contains functionality that's common to all tools.
@@ -71,6 +77,18 @@ public:
       exit(reportError(Twine(errorOrInputFile.getError())));
     return errorOrInputFile.takeValue();
   }
+
+  //===--------------------------------------------------------------------===//
+  // Emission Options
+  //===--------------------------------------------------------------------===//
+
+  cl::opt<std::string> outputFilename{"o", cl::desc("Output filename"),
+                                      cl::value_desc("filename"),
+                                      cl::init("-")};
+
+  /// Determine an output file name and open it.
+  std::unique_ptr<llvm::ToolOutputFile>
+  getOutputFile(bool hasBinaryOutput) const;
 
   /// This method creates an MLIR context with the specified memory buffer as
   /// the primary file configured in the source mgr.  It configures it for
