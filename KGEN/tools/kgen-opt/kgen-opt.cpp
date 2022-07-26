@@ -7,6 +7,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
@@ -18,8 +19,8 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<mlir::arith::ArithmeticDialect>();
-  registry.insert<mlir::LLVM::LLVMDialect>();
+  registry.insert<mlir::arith::ArithmeticDialect, mlir::LLVM::LLVMDialect,
+                  mlir::scf::SCFDialect>();
 
   // Register the standard passes we want.
   mlir::registerCSEPass();

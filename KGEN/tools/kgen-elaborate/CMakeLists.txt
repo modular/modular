@@ -21,6 +21,7 @@ add_modular_tool(kgen-elaborate
   MLIRLLVMDialect
   MLIROptLib
   MLIRParser
+  MLIRSCFDialect
   MLIRSupport
   MLIRTransforms
   MSupport

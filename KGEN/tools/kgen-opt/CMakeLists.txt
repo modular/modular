@@ -20,6 +20,7 @@ add_modular_tool(kgen-opt
   MLIRLLVMDialect
   MLIROptLib
   MLIRParser
+  MLIRSCFDialect
   MLIRSupport
   MLIRTransforms
   )
