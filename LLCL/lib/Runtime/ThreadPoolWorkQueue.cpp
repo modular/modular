@@ -360,7 +360,7 @@ KeepRunning:
 }
 
 //===----------------------------------------------------------------------===//
-// LLCL top level implementations
+// createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
