@@ -17,8 +17,8 @@ add_modular_tool(kgen-elaborate
   KGENDialect
   MetaDialect
   MLIRArithmeticDialect
-  MLIRLLVMDialect
   MLIRIR
+  MLIRLLVMDialect
   MLIROptLib
   MLIRParser
   MLIRSupport
