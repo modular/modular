@@ -7,14 +7,12 @@
 find_package(Threads)
 
 add_modular_library(LLCLRuntime
-  AllocatorType.cpp
   AsyncValue.cpp
   DebuggingAllocators.cpp
   MallocAllocator.cpp
   Runtime.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
-  WorkQueue.cpp
 
   ADDITIONAL_HEADER_DIRS
 

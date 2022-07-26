@@ -12,7 +12,6 @@
 #ifndef LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 #define LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 
-#include "LLCL/Runtime/AllocatorType.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommandLine.h"
 #include <type_traits>
@@ -28,6 +27,15 @@ private:
     kContinue,
     /// Allocator that does leak checking.
     kExit,
+  };
+
+  enum class AllocatorType {
+    /// Allocator that just calls malloc/free.
+    kMalloc,
+    /// Allocator that does leak checking.
+    kLeakChecker,
+    /// Allocator that does profiling (and leak checking).
+    kProfiler,
   };
 
 public:
@@ -73,10 +81,64 @@ public:
   /// Returns whether an executor should stop when a model returns an error.
   bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
 
+  /// Print information about the runtime configuration to standard out.
+  void printRuntimeConfig() const {
+    printf("runtime using ");
+    switch (allocatorType) {
+    case AllocatorType::kMalloc:
+      printf("malloc");
+      break;
+    case AllocatorType::kLeakChecker:
+      printf("leak check");
+      break;
+    case AllocatorType::kProfiler:
+      printf("profiling");
+      break;
+    }
+    printf(" allocator, and ");
+    switch (numThreads) {
+    case 1:
+      printf("single thread work queue");
+      break;
+    default:
+      printf("thread pool work queue");
+      break;
+    }
+    switch (numThreads) {
+    case 0:
+      printf(" with autosensed threads.\n");
+      break;
+    default:
+      printf(" with %d thread%s.\n", (int)numThreads, &"s"[numThreads == 1]);
+      break;
+    }
+  }
+
   /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
-    return Runtime(getAllocator(allocatorType),
-                   getWorkQueue(numThreads, busyWaitNs));
+    std::unique_ptr<Allocator> allocator;
+    switch (allocatorType) {
+    case AllocatorType::kMalloc:
+      allocator = createMallocAllocator();
+      break;
+    case AllocatorType::kLeakChecker:
+      allocator = createLeakCheckAllocator(createMallocAllocator());
+      break;
+    case AllocatorType::kProfiler:
+      allocator = createProfilingAllocator(createMallocAllocator());
+      break;
+    }
+
+    std::unique_ptr<WorkQueue> workQueue;
+    switch (numThreads) {
+    case 1:
+      workQueue = createSingleThreadWorkQueue();
+      break;
+    default:
+      workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
+      break;
+    }
+    return Runtime(std::move(allocator), std::move(workQueue));
   }
 
   /// Run a lambda or other callable with a new Runtime instance configured
