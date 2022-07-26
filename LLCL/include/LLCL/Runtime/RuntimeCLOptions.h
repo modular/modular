@@ -14,6 +14,7 @@
 
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommandLine.h"
+#include <thread>
 #include <type_traits>
 
 namespace LLCL {
@@ -23,17 +24,6 @@ namespace LLCL {
 /// stopping behavior, etc.
 ///
 class RuntimeCLOptions {
-public:
-  // Specify the number of threads. If `thread==1`, then we automatically set
-  // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
-  // work queue is using a thread pool. The default number of threads is the
-  // result of std::thread::hardware_concurrency().
-  llvm::cl::opt<size_t> numThreads{
-      "num-threads",
-      llvm::cl::desc(
-          "Specify the number of threads to run the work queue items."),
-      llvm::cl::init(0)};
-
   //===--------------------------------------------------------------------===//
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
@@ -82,6 +72,16 @@ private:
           clEnumValN(AllocatorType::kProfiler, "profiler",
                      "Allocator with profiling and leak checking")),
       llvm::cl::init(AllocatorType::kLeakChecker)};
+
+  // Specify the number of threads. If `thread==1`, then we automatically set
+  // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
+  // work queue is using a thread pool. The default number of threads is the
+  // result of std::thread::hardware_concurrency().
+  llvm::cl::opt<size_t> numThreads{
+      "num-threads",
+      llvm::cl::desc(
+          "Specify the number of threads to run the work queue items."),
+      llvm::cl::init(0)};
 
   // Specify the busy-wait duration of thread-pool work queue.
   llvm::cl::opt<unsigned> busyWaitNs{
@@ -140,6 +140,13 @@ public:
     }
   }
 
+  /// Return the number of threads to use. This is always canonicalized to be
+  /// non-zero.
+  size_t getNumThreads() const {
+    // If numThreads is 0 then return number of threads on the system.
+    return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
+  }
+
   /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
     // Create the allocator based on command line settings.
@@ -164,10 +171,10 @@ public:
       workQueue = createSingleThreadWorkQueue();
       break;
     case WorkQueueType::kThreadPool:
-      workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
+      workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
       break;
     case WorkQueueType::kNINE:
-      workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
+      workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
       break;
     }
     return Runtime(std::move(allocator), std::move(workQueue));

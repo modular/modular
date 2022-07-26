@@ -9,11 +9,9 @@
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
-#include "LLCL/Support/Signposts.h"
 #include "LLCL/Support/SpinWaiter.h"
 #include "Support/CommandLine.h"
 #include "llvm/ADT/ArrayRef.h"
-#include <thread>
 
 using namespace LLCL;
 using llvm::ArrayRef;
@@ -369,8 +367,7 @@ LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
   startTime = std::chrono::high_resolution_clock::now();
 #endif
 
-  if (numThreads == 0)
-    numThreads = std::thread::hardware_concurrency();
+  assert(numThreads > 0);
   // We expect `numThreads` to be the total numbers of threads that are
   // accessing the work queue. As there will be an external thread that will
   // access the work queue and take items from it by calling `await`, we create
