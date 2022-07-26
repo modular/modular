@@ -22,6 +22,9 @@ using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
 
+/// This value is set to a number for workqueue threads.
+static thread_local ssize_t threadIDInTLS = -1;
+
 //===----------------------------------------------------------------------===//
 // Tracing facilities.
 //===----------------------------------------------------------------------===//
@@ -31,7 +34,8 @@ using mlir::success;
 // visualize what is happening in a fine grained way.  The code inside here is
 // not necessarily portable to all compilers etc.
 
-// This is the density of logging.  0 = Off, 1 = Events, 2 = All work items.
+// This is the density of logging.  0 = Off, 1 = Events, 2 = All work items,
+// 3 includes shutdown activity.
 #define TRACE_LEVEL 0
 
 #if TRACE_LEVEL > 0
@@ -45,15 +49,14 @@ static size_t getMicrosecondsSinceStart() {
 #define TRACE(LEVEL, FORMAT, ...)                                              \
   if ((LEVEL) <= TRACE_LEVEL)                                                  \
   fprintf(stderr, "[%lldµs]T%d\t" FORMAT "\n",                                 \
-          (long long)getMicrosecondsSinceStart(), (int)threadPoolNumber,       \
+          (long long)getMicrosecondsSinceStart(), (int)threadPoolNumber + 1,   \
           ##__VA_ARGS__)
 
 /// CTX_TRACE - This is used in contexts that don't have a threadPoolNumber
-/// available.
-/// TODO: Use a better system than hard coding -1.
+/// available.  This pulls the thread pool # out of TLS.
 #define CTX_TRACE(LEVEL, FORMAT, ...)                                          \
   do {                                                                         \
-    ssize_t threadPoolNumber = -1;                                             \
+    ssize_t threadPoolNumber = threadIDInTLS;                                  \
     TRACE(LEVEL, FORMAT, ##__VA_ARGS__);                                       \
   } while (0)
 
@@ -192,8 +195,8 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
-  int threadPoolNumber = -1; // TODO: Better system.
-  TRACE(2, "~ThreadPoolWorkQueue().");
+  int threadPoolNumber = threadIDInTLS;
+  TRACE(3, "~ThreadPoolWorkQueue() start.");
 
   // Donate the client thread to help empty the queue if there's anything left.
   while (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
@@ -212,11 +215,13 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 
   // Free the memory we allocated with malloc.
   free(pool);
+
+  TRACE(3, "~ThreadPoolWorkQueue() done.");
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
-  // TODO: Have a better way to get current thread ID.
-  ssize_t threadPoolNumber = -1;
+  // Get the current thread ID from TLS.
+  ssize_t threadPoolNumber = threadIDInTLS;
 
   TRACE(1, "await() start.\t\t[%p %p]", __builtin_return_address(0),
         __builtin_return_address(1));
@@ -236,7 +241,10 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) == 1) {
         allValuesDone.post();
-        CTX_TRACE(1, "await() work completed.");
+        // This trace is useful when looking at latency between work completing
+        // and await returning in the blocked thread, but right now that isn't
+        // the problem we're working on solving.
+        // CTX_TRACE(1, "await() work completed.");
       }
     });
 
@@ -277,7 +285,7 @@ KeepRunning:
     // client thread is now sleeping on its semaphore.  If someone else adds
     // more work for the system to do, this thread currently has no way of
     // waking up to help out with that.
-    TRACE(1, "await() suspend.");
+    TRACE(1, "await() SUSPEND.");
     break;
   }
 
@@ -295,6 +303,10 @@ KeepRunning:
 //===----------------------------------------------------------------------===//
 
 void ThreadPoolWorkQueue::Thread::run() {
+  // Set the current thread ID # in thread local storage so we can find it later
+  // when re-entering.
+  threadIDInTLS = threadPoolNumber;
+
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
   // TODO: I think this is widely supported on linux and windows apparently has
@@ -340,11 +352,11 @@ KeepRunning:
 
     // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
     // the thread.
-    if (sync.doneFlag.load(std::memory_order_acquire))
+    if (sync.doneFlag.load(std::memory_order_acquire)) {
+      TRACE(3, "worker destroying.");
       return;
+    }
   }
-
-  TRACE(1, "worker destroying.");
 }
 
 //===----------------------------------------------------------------------===//
