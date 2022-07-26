@@ -15,8 +15,8 @@ add_modular_tool(kgen-opt
   MetaDialect
   GRTDialect
 
-  MLIRIR
   MLIRArithmeticDialect
+  MLIRIR
   MLIRLLVMDialect
   MLIROptLib
   MLIRParser

@@ -142,15 +142,32 @@ kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<ty
 }
 
 //===----------------------------------------------------------------------===//
-// buffer_store
+// buffer.load
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @buffer_store<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
+kgen.generator.interface @buffer.load<size, type: dtype>(%buffer: !meta.buffer<size, type>, %idx: index) -> !meta.scalar<type>
+
+kgen.generator @buffer_load_f32<size, type: dtype>(%buffer: !meta.buffer<size, type>, %idx: index) -> !meta.scalar<type>
+  implements @buffer.load {
+  %ptr = meta.buffer.address %buffer: !meta.buffer<size, type>
+  %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<type> to !llvm.ptr<f32>
+  %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
+  %element_ptr = llvm.getelementptr %llvm_ptr[%i64_idx]: (!llvm.ptr<f32>, i64) -> !llvm.ptr<f32>
+  %scalar_value = llvm.load %element_ptr : !llvm.ptr<f32>
+  %value = meta.cast_from_builtin %scalar_value: f32 to !meta.scalar<type>
+  kgen.return %value : !meta.scalar<type>
+}
+
+//===----------------------------------------------------------------------===//
+// buffer.store
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @buffer.store<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
 
 // TODO: Currently, the signature of @buffer_store_f32 must exactly match the signature of @buffer_store, so we can't
 // have the signature use f32. When we allow this, we shoudl change the signature to be specialized to f32
 kgen.generator @buffer_store_f32<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
-  implements @buffer_store {
+  implements @buffer.store {
   %ptr = meta.buffer.address %buffer: !meta.buffer<size, dt>
   %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<dt> to !llvm.ptr<f32>
   %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
