@@ -162,16 +162,16 @@ kgen.generator @buffer_load_f32<size, type: dtype>(%buffer: !meta.buffer<size, t
 // buffer.store
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @buffer.store<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
+kgen.generator.interface @buffer.store<size, type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<size, type>, %idx: index) -> ()
 
 // TODO: Currently, the signature of @buffer_store_f32 must exactly match the signature of @buffer_store, so we can't
 // have the signature use f32. When we allow this, we shoudl change the signature to be specialized to f32
-kgen.generator @buffer_store_f32<size, dt: dtype>(%value: !meta.scalar<dt>, %buffer: !meta.buffer<size, dt>, %idx: index) -> ()
+kgen.generator @buffer_store_f32<size, type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<size, type>, %idx: index) -> ()
   implements @buffer.store {
-  %ptr = meta.buffer.address %buffer: !meta.buffer<size, dt>
-  %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<dt> to !llvm.ptr<f32>
+  %ptr = meta.buffer.address %buffer: !meta.buffer<size, type>
+  %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<type> to !llvm.ptr<f32>
   %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
-  %scalar_val = meta.cast_to_builtin %value: !meta.scalar<dt> to f32
+  %scalar_val = meta.cast_to_builtin %value: !meta.scalar<type> to f32
   %element_ptr = llvm.getelementptr %llvm_ptr[%i64_idx]: (!llvm.ptr<f32>, i64) -> !llvm.ptr<f32>
   llvm.store %scalar_val, %element_ptr : !llvm.ptr<f32>
   kgen.return
