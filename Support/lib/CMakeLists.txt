@@ -19,6 +19,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/VCSRevision.h.in
 add_modular_library(MSupport
   AlignedAlloc.cpp
   ConcatenationTree.cpp
+  CommonCLOptions.cpp
   DType.cpp
   Error.cpp
 
@@ -29,4 +30,5 @@ add_modular_library(MSupport
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
+  LLVMSupport
   )

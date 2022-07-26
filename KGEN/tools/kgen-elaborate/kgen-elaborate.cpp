@@ -43,23 +43,6 @@ public:
   // Library specification.
 
   cl::opt<std::string> libraryFilename{"library", cl::desc("<input file>")};
-
-  //===--------------------------------------------------------------------===//
-  // Emission Options
-
-  cl::opt<std::string> outputFilename{"o", cl::desc("Output filename"),
-                                      cl::value_desc("filename"),
-                                      cl::init("-")};
-
-  // Determine an output file name and open it.
-  std::unique_ptr<llvm::ToolOutputFile> getOutputFile() const {
-    std::string errorMessage;
-    auto result =
-        mlir::openOutputFile(outputFilename.getValue(), &errorMessage);
-    if (!result)
-      exit(reportError(errorMessage));
-    return result;
-  }
 };
 
 /// Generate all the kernels specified with a single input file.  This requires
@@ -112,7 +95,8 @@ int main(int argc, char **argv) {
       clOptions.openInputFileOrExit();
 
   // Get the output file now so that we can use it in the lambdas below.
-  std::unique_ptr<llvm::ToolOutputFile> outputFile = clOptions.getOutputFile();
+  std::unique_ptr<llvm::ToolOutputFile> outputFile =
+      clOptions.getOutputFile(/*hasBinaryOutput=*/false);
 
   // Provide a tool function that runs the requested ops, again, so we can
   // re-use it.
