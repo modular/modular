@@ -18,17 +18,15 @@
 
 namespace LLCL {
 
-/// Contains a number of command-line options that are shared among most of our
-/// binaries
+/// Contains a number of command-line options that are shared among binaries
+/// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
+/// stopping behavior, etc.
+///
 class RuntimeCLOptions {
+  //===--------------------------------------------------------------------===//
+  // Core Runtime configuration.
+  //===--------------------------------------------------------------------===//
 private:
-  enum class OnFailure {
-    /// Allocator that just calls malloc/free.
-    kContinue,
-    /// Allocator that does leak checking.
-    kExit,
-  };
-
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
@@ -38,7 +36,15 @@ private:
     kProfiler,
   };
 
-public:
+  enum class WorkQueueType {
+    /// Autosense work queue type based on # threads.
+    kDefault,
+    /// Workqueue that only ever uses one thread.
+    kSingleThread,
+    /// Default thread pool that uses std::thread and semaphores.
+    kThreadPool,
+  };
+
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
   // work queue is using a thread pool. The default number of threads is the
@@ -49,16 +55,17 @@ public:
           "Specify the number of threads to run the work queue items."),
       llvm::cl::init(0)};
 
-  /// Set the behavior of executors if one of the functions they should run
-  /// returns with an error. E.g. Set to `continue` for diagnostic verification.
-  llvm::cl::opt<OnFailure> onFailure{
-      "on-failure",
-      llvm::cl::desc("Behavior in case an executed function returns with an "
-                     "error. Ignored if there is only one function executed."),
+  // Enable HostAllocator types to be specified on the command line.
+  llvm::cl::opt<WorkQueueType> workQueueType{
+      "workqueue", llvm::cl::desc("Specify workqueue type:"),
       llvm::cl::values(
-          clEnumValN(OnFailure::kContinue, "continue", "System malloc/free"),
-          clEnumValN(OnFailure::kExit, "exit", "Allocator with leak checking")),
-      llvm::cl::init(OnFailure::kExit)};
+          clEnumValN(WorkQueueType::kDefault, "default",
+                     "Auto-select based on # threads"),
+          clEnumValN(WorkQueueType::kSingleThread, "single-thread",
+                     "Work queue that only ever uses one thread"),
+          clEnumValN(WorkQueueType::kThreadPool, "thread-pool",
+                     "Default threaded work queue based on std::thread")),
+      llvm::cl::init(WorkQueueType::kDefault)};
 
   // Enable HostAllocator types to be specified on the command line.
   llvm::cl::opt<AllocatorType> allocatorType{
@@ -78,9 +85,17 @@ public:
           "Specify thread-pool work queue busy-wait duration in nanoseconds"),
       llvm::cl::Hidden, llvm::cl::init(0)};
 
-  /// Returns whether an executor should stop when a model returns an error.
-  bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
+  // Return the workqueue type to use, resolving kDefault into a concrete kind.
+  WorkQueueType getWorkQueueType() const {
+    // The default behavior picks a thread count based on the -num-threads
+    // command line setting, but can be overridden.
+    if (workQueueType == WorkQueueType::kDefault)
+      return numThreads == 1 ? WorkQueueType::kSingleThread
+                             : WorkQueueType::kThreadPool;
+    return workQueueType;
+  }
 
+public:
   /// Print information about the runtime configuration to standard out.
   void printRuntimeConfig() const {
     printf("runtime using ");
@@ -96,14 +111,17 @@ public:
       break;
     }
     printf(" allocator, and ");
-    switch (numThreads) {
-    case 1:
+    switch (getWorkQueueType()) {
+    case WorkQueueType::kDefault:
+      assert(0 && "should be resolved");
+    case WorkQueueType::kSingleThread:
       printf("single thread work queue");
       break;
-    default:
+    case WorkQueueType::kThreadPool:
       printf("thread pool work queue");
       break;
     }
+
     switch (numThreads) {
     case 0:
       printf(" with autosensed threads.\n");
@@ -116,6 +134,7 @@ public:
 
   /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
+    // Create the allocator based on command line settings.
     std::unique_ptr<Allocator> allocator;
     switch (allocatorType) {
     case AllocatorType::kMalloc:
@@ -128,18 +147,49 @@ public:
       allocator = createProfilingAllocator(createMallocAllocator());
       break;
     }
-
+    // Create the WorkQueue based on command line settings.
     std::unique_ptr<WorkQueue> workQueue;
-    switch (numThreads) {
-    case 1:
+    switch (getWorkQueueType()) {
+    case WorkQueueType::kDefault:
+      assert(0 && "should be resolved");
+    case WorkQueueType::kSingleThread:
       workQueue = createSingleThreadWorkQueue();
       break;
-    default:
+    case WorkQueueType::kThreadPool:
       workQueue = createThreadPoolWorkQueue(numThreads, busyWaitNs);
       break;
     }
     return Runtime(std::move(allocator), std::move(workQueue));
   }
+
+  //===--------------------------------------------------------------------===//
+  // Behavior indicating what to do when a test fails.
+  //===--------------------------------------------------------------------===//
+
+private:
+  enum class OnFailure {
+    kContinue,
+    kExit,
+  };
+
+public:
+  /// Set the behavior of executors if one of the functions they should run
+  /// returns with an error. E.g. Set to `continue` for diagnostic verification.
+  llvm::cl::opt<OnFailure> onFailure{
+      "on-failure",
+      llvm::cl::desc("Behavior in case an executed function returns with an "
+                     "error. Ignored if there is only one function executed."),
+      llvm::cl::values(
+          clEnumValN(OnFailure::kContinue, "continue", "System malloc/free"),
+          clEnumValN(OnFailure::kExit, "exit", "Allocator with leak checking")),
+      llvm::cl::init(OnFailure::kExit)};
+
+  /// Returns whether an executor should stop when a model returns an error.
+  bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
+
+  //===--------------------------------------------------------------------===//
+  // Helper methods.
+  //===--------------------------------------------------------------------===//
 
   /// Run a lambda or other callable with a new Runtime instance configured
   /// according to the command line argument specification.  Encircle this with
