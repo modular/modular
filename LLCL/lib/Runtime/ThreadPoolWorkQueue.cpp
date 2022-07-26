@@ -22,11 +22,59 @@ using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
 
+//===----------------------------------------------------------------------===//
+// Tracing facilities.
+//===----------------------------------------------------------------------===//
+
+// This is a bespoke tracing facility for low level tracing of the thread pool.
+// This shouldn't ever be checked into the code base while on, but can help
+// visualize what is happening in a fine grained way.  The code inside here is
+// not necessarily portable to all compilers etc.
+
+// This is the density of logging.  0 = Off, 1 = Events, 2 = All work items.
+#define TRACE_LEVEL 0
+
+#if TRACE_LEVEL > 0
+static std::chrono::high_resolution_clock::time_point startTime;
+static size_t getMicrosecondsSinceStart() {
+  auto diff = std::chrono::high_resolution_clock::now() - startTime;
+  return std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
+}
+
+/// TRACE - When trace level is >= the specified level, we print the log.
+#define TRACE(LEVEL, FORMAT, ...)                                              \
+  if ((LEVEL) <= TRACE_LEVEL)                                                  \
+  fprintf(stderr, "[%lldµs]T%d\t" FORMAT "\n",                                 \
+          (long long)getMicrosecondsSinceStart(), (int)threadPoolNumber,       \
+          ##__VA_ARGS__)
+
+/// CTX_TRACE - This is used in contexts that don't have a threadPoolNumber
+/// available.
+/// TODO: Use a better system than hard coding -1.
+#define CTX_TRACE(LEVEL, FORMAT, ...)                                          \
+  do {                                                                         \
+    ssize_t threadPoolNumber = -1;                                             \
+    TRACE(LEVEL, FORMAT, ##__VA_ARGS__);                                       \
+  } while (0)
+
+// Silences warnings about __builtin_return_address > 0.  This is a debugging
+// aid, we can take the risk.
+#pragma GCC diagnostic ignored "-Wframe-address"
+
+#else
+#define TRACE(LEVEL, FORMAT, ...)
+#define CTX_TRACE(LEVEL, FORMAT, ...)
+#endif
+
+//===----------------------------------------------------------------------===//
+// ThreadPoolWorkQueue
+//===----------------------------------------------------------------------===//
+
 namespace {
 
 /// This class provides a thread-pool that implements the WorkQueue interface.
-/// It starts a dynamic number of threads and distributes work to it by means of
-/// a concurrent-safe queue.
+/// It starts a dynamic number of threads and distributes work to it by means
+/// of a concurrent-safe queue.
 class ThreadPoolWorkQueue : public WorkQueue {
 public:
   /// Initialize the thread pool and start up the worker threads. By the time
@@ -40,8 +88,12 @@ public:
     // Try to add this work to the RingBuffer.  If that fails, then the ring
     // buffer is full: we take an item out of queue and do it to try to make
     // more space then try again.
+    CTX_TRACE(1, "addTask\t\t\t[%p %p]", __builtin_return_address(0),
+              __builtin_return_address(1));
     while (!taskList->enqueue(work)) {
-      [[maybe_unused]] auto r = popAndDoWork(*taskList);
+      ssize_t threadPoolNumber = -2; // TODO.
+      TRACE(1, "WORK QUEUE FULL.");
+      [[maybe_unused]] auto r = popAndDoWork(*taskList, threadPoolNumber);
     }
     syncState.sema.post();
   }
@@ -49,20 +101,24 @@ public:
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
   int getParallelismLevel() const final {
-    // `poolSize` is set to the number of worker threads that are created by the
-    // work queue. However, we expect to have an external "main" thread that
-    // has an access to the work queue by calling "await". Therefore, we return
-    // `poolSize + 1` here.
+    // `poolSize` is set to the number of worker threads that are created by
+    // the work queue. However, we expect to have an external "main" thread
+    // that has an access to the work queue by calling "await". Therefore, we
+    // return `poolSize + 1` here.
     return poolSize + 1;
   }
 
 private:
   /// Pop a single item off the queue and do the task.
-  static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q) {
+  static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
+                                    size_t threadPoolNumber) {
     auto callable = q.dequeue();
     if (!callable)
       return failure();
+
+    TRACE(2, "work start.");
     callable();
+    TRACE(2, "work end.");
     return success();
   }
 
@@ -136,8 +192,11 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
+  int threadPoolNumber = -1; // TODO: Better system.
+  TRACE(2, "~ThreadPoolWorkQueue().");
+
   // Donate the client thread to help empty the queue if there's anything left.
-  while (succeeded(popAndDoWork(*taskList)))
+  while (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
     ;
 
   // Now we can tell all the threads to exit.
@@ -156,6 +215,12 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
+  // TODO: Have a better way to get current thread ID.
+  ssize_t threadPoolNumber = -1;
+
+  TRACE(1, "await() start.\t\t[%p %p]", __builtin_return_address(0),
+        __builtin_return_address(1));
+
   //  We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
@@ -169,8 +234,10 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   for (auto &value : values)
     value->andThen([&numRemaining, &allValuesDone]() {
       // TODO: This can probably use more relaxed memory consistency!
-      if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) == 1)
+      if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) == 1) {
         allValuesDone.post();
+        CTX_TRACE(1, "await() work completed.");
+      }
     });
 
   // Donate the client thread to doing useful work until there's no more useful
@@ -180,7 +247,7 @@ KeepRunning:
   while (numRemaining.load(std::memory_order_seq_cst) != 0) {
     // While we are waiting, we might as well do work for other tasks that need
     // to be done.  Take a work item and do it.
-    if (succeeded(popAndDoWork(*taskList)))
+    if (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
       continue;
 
     // Otherwise if we ran out of work to do, and we are still waiting on
@@ -193,7 +260,7 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(*taskList)))
+      if (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
         goto KeepRunning;
 
       // If we successfully resolved all the AV's then we're done.
@@ -210,6 +277,7 @@ KeepRunning:
     // client thread is now sleeping on its semaphore.  If someone else adds
     // more work for the system to do, this thread currently has no way of
     // waking up to help out with that.
+    TRACE(1, "await() suspend.");
     break;
   }
 
@@ -219,6 +287,7 @@ KeepRunning:
   // will destory 'allValuesDone' itself.
   allValuesDone.wait();
   assert(numRemaining.load() == 0);
+  TRACE(1, "await() returning.");
 }
 
 //===----------------------------------------------------------------------===//
@@ -236,11 +305,13 @@ void ThreadPoolWorkQueue::Thread::run() {
   pthread_setname_np(threadName);
 #endif
 
+  TRACE(1, "worker starting.");
+
   // Continuously execute work units.
 KeepRunning:
   while (true) {
     // In the normal case we happily pick up and do work.
-    if (succeeded(popAndDoWork(taskList)))
+    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
       continue;
 
     // If we've run out of work to do, we need to quiesce and ultimately block
@@ -255,19 +326,25 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(taskList)))
+      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
         goto KeepRunning;
     }
+
+    TRACE(1, "worker sleeping.");
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
     // don't burn power and starve other tasks on the system.
     sync.sema.wait();
+
+    TRACE(1, "worker woke.");
 
     // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
     // the thread.
     if (sync.doneFlag.load(std::memory_order_acquire))
       return;
   }
+
+  TRACE(1, "worker destroying.");
 }
 
 //===----------------------------------------------------------------------===//
@@ -276,6 +353,10 @@ KeepRunning:
 
 std::unique_ptr<WorkQueue>
 LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
+#if TRACE_LEVEL > 0
+  startTime = std::chrono::high_resolution_clock::now();
+#endif
+
   if (numThreads == 0)
     numThreads = std::thread::hardware_concurrency();
   // We expect `numThreads` to be the total numbers of threads that are
