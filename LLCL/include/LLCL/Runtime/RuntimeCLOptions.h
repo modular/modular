@@ -23,6 +23,17 @@ namespace LLCL {
 /// stopping behavior, etc.
 ///
 class RuntimeCLOptions {
+public:
+  // Specify the number of threads. If `thread==1`, then we automatically set
+  // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
+  // work queue is using a thread pool. The default number of threads is the
+  // result of std::thread::hardware_concurrency().
+  llvm::cl::opt<size_t> numThreads{
+      "num-threads",
+      llvm::cl::desc(
+          "Specify the number of threads to run the work queue items."),
+      llvm::cl::init(0)};
+
   //===--------------------------------------------------------------------===//
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
@@ -46,16 +57,6 @@ private:
     /// "No Interesting Name" Experimental Work Queue
     kNINE,
   };
-
-  // Specify the number of threads. If `thread==1`, then we automatically set
-  // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
-  // work queue is using a thread pool. The default number of threads is the
-  // result of std::thread::hardware_concurrency().
-  llvm::cl::opt<size_t> numThreads{
-      "num-threads",
-      llvm::cl::desc(
-          "Specify the number of threads to run the work queue items."),
-      llvm::cl::init(0)};
 
   // Enable HostAllocator types to be specified on the command line.
   llvm::cl::opt<WorkQueueType> workQueueType{
