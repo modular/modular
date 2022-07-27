@@ -40,7 +40,7 @@ static thread_local ssize_t threadIDInTLS = -1;
   TRACE_IMPL(threadIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
 //===----------------------------------------------------------------------===//
-// WorkQueueThread
+// WorkThread
 //===----------------------------------------------------------------------===//
 
 /// Pop a single item off the queue and do the task.  This returns failure if
@@ -68,12 +68,124 @@ struct SharedThreadState {
 } // end anonymous namespace
 
 namespace {
-/// RAII wrapper around a thread to simplify handling of each thread in the
-/// thread pool.
-struct WorkQueueThread {
+/// This is a light weight class that is subclassed by WorkQueueThread for the
+/// dedicated worker threads, and is used in await() when an unknown thread is
+/// donated to get work done.
+struct WorkThread {
   SharedThreadState &sharedState;
   LockFreeRingBuffer<TaskFunction> &taskList;
   size_t threadPoolNumber;
+
+  WorkThread(SharedThreadState &sharedState,
+             LockFreeRingBuffer<TaskFunction> &taskList,
+             size_t threadPoolNumber)
+      : sharedState(sharedState), taskList(taskList),
+        threadPoolNumber(threadPoolNumber) {}
+  WorkThread(WorkThread &&) = default;
+
+  void runItemsForWorker();
+  void runItemsForAwait(std::atomic<size_t> &numRemaining,
+                        Semaphore &allValuesDone);
+};
+} // end anonymous namespace
+
+void WorkThread::runItemsForWorker() {
+  // Continuously execute work units.
+KeepRunning:
+  while (true) {
+    // In the normal case we happily pick up and do work.
+    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+      continue;
+
+    // If we've run out of work to do, we need to quiesce and ultimately block
+    // in the kernel on the semaphore.  However, we don't want to immediately
+    // give up hope, because we may be "right about to" get new work incoming.
+    // We also want to make sure to use exponential backoff to avoid pummeling
+    // the memory hierarchy of the threads that are doing useful work.  As such,
+    // we use a BusyWaitSpinWaiter.
+    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+
+    // Spin until we find some work to do.
+    while (!spinWaiter.wait()) {
+      // If we ever succeed in finding work to do, go back to running like
+      // normal.
+      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+        goto KeepRunning;
+    }
+
+    TRACE(1, "worker sleeping.");
+
+    // Otherwise, we we've waited long enough, yield the thread to the OS so we
+    // don't burn power and starve other tasks on the system.
+    sharedState.sema.wait();
+
+    TRACE(1, "worker woke.");
+
+    // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
+    // the thread.
+    if (sharedState.doneFlag.load(std::memory_order_acquire))
+      return;
+  }
+}
+
+void WorkThread::runItemsForAwait(std::atomic<size_t> &numRemaining,
+                                  Semaphore &allValuesDone) {
+  // Donate the client thread to doing useful work until there's no more
+  // useful work to do.
+KeepRunning:
+  // TODO: This can probably use more relaxed memory consistency!
+  while (numRemaining.load(std::memory_order_seq_cst) != 0) {
+    // While we are waiting, we might as well do work for other tasks that need
+    // to be done.  Take a work item and do it.
+    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+      continue;
+
+    // Otherwise if we ran out of work to do, and we are still waiting on
+    // things, then other threads must be doing the work we are waiting on.
+    // Do a busy wait for awhile, and eventually block this thread on the
+    // 'allValuesDone' semaphore as needed.
+    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+
+    // Spin until we find some work to do.
+    while (!spinWaiter.wait()) {
+      // If we ever succeed in finding work to do, go back to running like
+      // normal.
+      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+        goto KeepRunning;
+
+      // If we successfully resolved all the AV's then we're done.
+      // TODO: This can probably use more relaxed memory consistency!
+      if (numRemaining.load(std::memory_order_seq_cst) == 0)
+        break;
+    }
+
+    // If we've waited long enough, block on the `allValuesDone` semaphore to
+    // yield the thread to the OS so we don't burn power and starve other tasks
+    // on the system.
+    //
+    // TODO: This code has a problem - once the taskList has been drained the
+    // client thread is now sleeping on its semaphore.  If someone else adds
+    // more work for the system to do, this thread currently has no way of
+    // waking up to help out with that.
+    TRACE(1, "await() SUSPEND.");
+    break;
+  }
+
+  // Ok, we successfully saw that all values are done.  Do a final wait on the
+  // semaphore to make sure the last 'andThen' block has executed the post.  We
+  // don't want them to fire after this function has been returned, because that
+  // will destory 'allValuesDone' itself.
+  allValuesDone.wait();
+}
+
+//===----------------------------------------------------------------------===//
+// WorkQueueThread
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Wrapper around an std::thread which is created for one instance of each
+/// worker thread.
+struct WorkQueueThread : public WorkThread {
   std::thread thread;
 
   /// Create a `WorkQueueThread` from a sync state reference and a reference to
@@ -82,8 +194,7 @@ struct WorkQueueThread {
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<TaskFunction> &taskList,
                   size_t threadPoolNumber)
-      : sharedState(sharedState), taskList(taskList),
-        threadPoolNumber(threadPoolNumber),
+      : WorkThread(sharedState, taskList, threadPoolNumber),
         thread(&WorkQueueThread::run, this) {}
 
   WorkQueueThread(WorkQueueThread &&) = default;
@@ -118,45 +229,8 @@ void WorkQueueThread::run() {
 #endif
 
   TRACE(1, "worker starting.");
-
-  // Continuously execute work units.
-KeepRunning:
-  while (true) {
-    // In the normal case we happily pick up and do work.
-    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
-      continue;
-
-    // If we've run out of work to do, we need to quiesce and ultimately block
-    // in the kernel on the semaphore.  However, we don't want to immediately
-    // give up hope, because we may be "right about to" get new work incoming.
-    // We also want to make sure to use exponential backoff to avoid pummeling
-    // the memory hierarchy of the threads that are doing useful work.  As such,
-    // we use a BusyWaitSpinWaiter.
-    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
-
-    // Spin until we find some work to do.
-    while (!spinWaiter.wait()) {
-      // If we ever succeed in finding work to do, go back to running like
-      // normal.
-      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
-        goto KeepRunning;
-    }
-
-    TRACE(1, "worker sleeping.");
-
-    // Otherwise, we we've waited long enough, yield the thread to the OS so we
-    // don't burn power and starve other tasks on the system.
-    sharedState.sema.wait();
-
-    TRACE(1, "worker woke.");
-
-    // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
-    // the thread.
-    if (sharedState.doneFlag.load(std::memory_order_acquire)) {
-      TRACE(3, "worker destroying.");
-      return;
-    }
-  }
+  runItemsForWorker();
+  TRACE(3, "worker destroying.");
 }
 
 //===----------------------------------------------------------------------===//
@@ -250,6 +324,10 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
+  // If all the values are ready, then we don't have to do anything.
+  if (llvm::all_of(values, [](auto &av) { return av->isReady(); }))
+    return;
+
   // Get the current thread ID from TLS.
   ssize_t threadPoolNumber = threadIDInTLS;
 
@@ -278,52 +356,12 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       }
     });
 
-  // Donate the client thread to doing useful work until there's no more useful
-  // work to do.
-KeepRunning:
-  // TODO: This can probably use more relaxed memory consistency!
-  while (numRemaining.load(std::memory_order_seq_cst) != 0) {
-    // While we are waiting, we might as well do work for other tasks that need
-    // to be done.  Take a work item and do it.
-    if (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
-      continue;
+  // Create a WorkThread (not a WorkQueueThread) for our donated host thread.
+  // This will allow us to donate the current thread to running work items.
+  WorkThread thread(sharedState, *taskList, threadPoolNumber);
 
-    // Otherwise if we ran out of work to do, and we are still waiting on
-    // things, then other threads must be doing the work we are waiting on.
-    // Do a busy wait for awhile, and eventually block this thread on the
-    // 'allValuesDone' semaphore as needed.
-    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+  thread.runItemsForAwait(numRemaining, allValuesDone);
 
-    // Spin until we find some work to do.
-    while (!spinWaiter.wait()) {
-      // If we ever succeed in finding work to do, go back to running like
-      // normal.
-      if (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
-        goto KeepRunning;
-
-      // If we successfully resolved all the AV's then we're done.
-      // TODO: This can probably use more relaxed memory consistency!
-      if (numRemaining.load(std::memory_order_seq_cst) == 0)
-        break;
-    }
-
-    // If we've waited long enough, block on the `allValuesDone` semaphore to
-    // yield the thread to the OS so we don't burn power and starve other tasks
-    // on the system.
-    //
-    // TODO: This code has a problem - once the taskList has been drained the
-    // client thread is now sleeping on its semaphore.  If someone else adds
-    // more work for the system to do, this thread currently has no way of
-    // waking up to help out with that.
-    TRACE(1, "await() SUSPEND.");
-    break;
-  }
-
-  // Ok, we successfully saw that all values are done.  Do a final wait on the
-  // semaphore to make sure the last 'andThen' block has executed the post.  We
-  // don't want them to fire after this function has been returned, because that
-  // will destory 'allValuesDone' itself.
-  allValuesDone.wait();
   assert(numRemaining.load() == 0);
   TRACE(1, "await() returning.");
 }
