@@ -45,6 +45,17 @@ static thread_local ssize_t threadIDInTLS = -1;
 
 namespace {
 
+/// Provides the state needed to synchronize the threads in the thread pool
+/// for the required exit functionality.
+struct SharedThreadState {
+  std::atomic<bool> doneFlag;
+  Semaphore sema;
+  std::chrono::nanoseconds busyWaitNs;
+};
+} // end anonymous namespace
+
+namespace {
+
 /// This class provides a thread-pool that implements the WorkQueue interface.
 /// It starts a dynamic number of threads and distributes work to it by means
 /// of a concurrent-safe queue.
@@ -53,7 +64,8 @@ public:
   /// Initialize the thread pool and start up the worker threads. By the time
   /// the constructor finishes, all the worker threads have started and shall
   /// only be cancelled by the destructor.
-  explicit ThreadPoolWorkQueue(size_t numWorkerThreads, unsigned busyWaitNs);
+  explicit ThreadPoolWorkQueue(size_t numWorkerThreads,
+                               std::chrono::nanoseconds busyWaitNs);
   /// Cleans up all threads in the thread pool cleanly.
   ~ThreadPoolWorkQueue() override;
 
@@ -68,7 +80,7 @@ public:
       TRACE(1, "WORK QUEUE FULL.");
       [[maybe_unused]] auto r = popAndDoWork(*taskList, threadPoolNumber);
     }
-    syncState.sema.post();
+    sharedState.sema.post();
   }
 
   void await(ArrayRef<AnyAsyncValueRef> values) override;
@@ -95,57 +107,46 @@ private:
     return success();
   }
 
-  /// Provides the state needed to synchronize the threads in the thread pool
-  /// for the required exit functionality.
-  struct ThreadSyncState {
-    std::atomic<bool> doneFlag;
-    Semaphore sema;
-  };
-
   /// RAII wrapper around a thread to simplify handling of each thread in the
   /// thread pool.
   struct Thread {
-    ThreadSyncState &sync;
+    SharedThreadState &sharedState;
     LockFreeRingBuffer<TaskFunction> &taskList;
     size_t threadPoolNumber;
-    std::chrono::nanoseconds busyWaitNs;
     std::thread thread;
 
     /// Create a `Thread` from a sync state reference and a reference to a
     /// task list. This also starts the std::thread, so the sync state and
     /// task list must be initialized by the time this is called.
-    Thread(ThreadSyncState &sync, LockFreeRingBuffer<TaskFunction> &taskList,
-           size_t threadPoolNumber, unsigned busyWaitNs)
-        : sync(sync), taskList(taskList), threadPoolNumber(threadPoolNumber),
-          busyWaitNs(busyWaitNs), thread(&Thread::run, this) {}
+    Thread(SharedThreadState &sharedState,
+           LockFreeRingBuffer<TaskFunction> &taskList, size_t threadPoolNumber)
+        : sharedState(sharedState), taskList(taskList),
+          threadPoolNumber(threadPoolNumber), thread(&Thread::run, this) {}
 
-    /// Joins the thread. Asserts that `sync.done` is true because otherwise
-    /// the thread will never join.
+    Thread(Thread &&) = default;
+
+    /// Joins the thread. Asserts that `sharedState.done` is true because
+    /// otherwise the thread will never join.
     ~Thread() {
       assert(
-          sync.doneFlag.load() &&
+          sharedState.doneFlag.load() &&
           "Must not destroy a Thread object that is not pending completion.");
       thread.join();
     }
 
     /// Thread's main run function. Loops until (1) the work queue is empty,
-    /// and (2) `sync.done` is set to true, at which point it exits
+    /// and (2) `sharedState.done` is set to true, at which point it exits
     /// gracefully.
     void run();
   };
 
   const size_t poolSize;
-  // Uses a raw pointer here because operator new[] doesn't allow constructor
-  // arguments.
-  Thread *pool;
+  std::vector<Thread> pool;
 
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
-  ThreadSyncState syncState;
+  SharedThreadState sharedState;
   std::unique_ptr<LockFreeRingBuffer<TaskFunction>> taskList;
-
-  // busy wait duration in nanoseconds.
-  std::chrono::nanoseconds busyWaitNs;
 };
 } // end anonymous namespace
 
@@ -154,14 +155,14 @@ private:
 //===----------------------------------------------------------------------===//
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
-                                         unsigned busyWaitNs)
-    : poolSize(numWorkerThreads),
-      pool((Thread *)malloc(poolSize * sizeof(Thread))), syncState{false, {}},
-      busyWaitNs(busyWaitNs) {
+                                         std::chrono::nanoseconds busyWaitNs)
+    : poolSize(numWorkerThreads), sharedState{false, {}, busyWaitNs} {
   taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
+
+  pool.reserve(poolSize);
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
-    new (&pool[i]) Thread(syncState, *taskList, i, busyWaitNs);
+    pool.emplace_back(sharedState, *taskList, i);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -173,18 +174,14 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
     ;
 
   // Now we can tell all the threads to exit.
-  syncState.doneFlag.store(true, std::memory_order_release);
+  sharedState.doneFlag.store(true, std::memory_order_release);
 
   // Post on the semaphore for every thread to wake it if it's waiting.
   for (size_t i = 0; i < poolSize; ++i)
-    syncState.sema.post();
+    sharedState.sema.post();
 
   // Call the destructors to join the threads.
-  for (size_t i = 0; i < poolSize; ++i)
-    pool[i].~Thread();
-
-  // Free the memory we allocated with malloc.
-  free(pool);
+  pool.clear();
 
   TRACE(3, "~ThreadPoolWorkQueue() done.");
 }
@@ -232,7 +229,7 @@ KeepRunning:
     // things, then other threads must be doing the work we are waiting on.
     // Do a busy wait for awhile, and eventually block this thread on the
     // 'allValuesDone' semaphore as needed.
-    BusyWaitSpinWaiter spinWaiter(busyWaitNs);
+    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
 
     // Spin until we find some work to do.
     while (!spinWaiter.wait()) {
@@ -302,7 +299,7 @@ KeepRunning:
     // We also want to make sure to use exponential backoff to avoid pummeling
     // the memory hierarchy of the threads that are doing useful work.  As such,
     // we use a BusyWaitSpinWaiter.
-    BusyWaitSpinWaiter spinWaiter(busyWaitNs);
+    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
 
     // Spin until we find some work to do.
     while (!spinWaiter.wait()) {
@@ -316,13 +313,13 @@ KeepRunning:
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
     // don't burn power and starve other tasks on the system.
-    sync.sema.wait();
+    sharedState.sema.wait();
 
     TRACE(1, "worker woke.");
 
     // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
     // the thread.
-    if (sync.doneFlag.load(std::memory_order_acquire)) {
+    if (sharedState.doneFlag.load(std::memory_order_acquire)) {
       TRACE(3, "worker destroying.");
       return;
     }
@@ -342,5 +339,6 @@ LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
   // access the work queue and take items from it by calling `await`, we create
   // `numThreads - 1` worker threads from the thread pool work queue.
   assert(numThreads > 0);
-  return std::make_unique<ThreadPoolWorkQueue>(numThreads - 1, busyWaitNs);
+  return std::make_unique<ThreadPoolWorkQueue>(
+      numThreads - 1, std::chrono::nanoseconds(busyWaitNs));
 }
