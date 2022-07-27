@@ -231,3 +231,27 @@ kgen.generator @horner_f32<size, type: dtype>(%val: !meta.scalar<type>, %coeffic
   %result = meta.cast_from_builtin %res : f32 to !meta.scalar<type>
   kgen.return %result : !meta.scalar<type>
 }
+
+//===----------------------------------------------------------------------===//
+// exp
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @exp<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+
+
+// Compute exp using the llvm intrinsics.
+kgen.generator @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f32)> implements @exp {
+  %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f32
+  %1 = "llvm.intr.exp"(%0) : (f32) -> f32
+  %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<type>
+  kgen.return %2 : !meta.scalar<type>
+}
+
+kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+  constraints <eq_dtype(type, f64)> implements @exp {
+  %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f64
+  %1 = "llvm.intr.exp"(%0) : (f64) -> f64
+  %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
+  kgen.return %2 : !meta.scalar<type>
+}
