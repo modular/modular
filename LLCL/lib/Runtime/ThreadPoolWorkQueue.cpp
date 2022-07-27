@@ -40,11 +40,24 @@ static thread_local ssize_t threadIDInTLS = -1;
   TRACE_IMPL(threadIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
 //===----------------------------------------------------------------------===//
-// ThreadPoolWorkQueue
+// WorkQueueThread
 //===----------------------------------------------------------------------===//
 
-namespace {
+/// Pop a single item off the queue and do the task.  This returns failure if
+/// the queue is empty.
+static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
+                                  size_t threadPoolNumber) {
+  auto callable = q.dequeue();
+  if (!callable) // If the queue is empty, return failure.
+    return failure();
 
+  TRACE(2, "work start.");
+  callable();
+  TRACE(2, "work end.");
+  return success();
+}
+
+namespace {
 /// Provides the state needed to synchronize the threads in the thread pool
 /// for the required exit functionality.
 struct SharedThreadState {
@@ -53,6 +66,102 @@ struct SharedThreadState {
   std::chrono::nanoseconds busyWaitNs;
 };
 } // end anonymous namespace
+
+namespace {
+/// RAII wrapper around a thread to simplify handling of each thread in the
+/// thread pool.
+struct WorkQueueThread {
+  SharedThreadState &sharedState;
+  LockFreeRingBuffer<TaskFunction> &taskList;
+  size_t threadPoolNumber;
+  std::thread thread;
+
+  /// Create a `WorkQueueThread` from a sync state reference and a reference to
+  /// a task list. This also starts the std::thread, so the sync state and task
+  /// list must be initialized by the time this is called.
+  WorkQueueThread(SharedThreadState &sharedState,
+                  LockFreeRingBuffer<TaskFunction> &taskList,
+                  size_t threadPoolNumber)
+      : sharedState(sharedState), taskList(taskList),
+        threadPoolNumber(threadPoolNumber),
+        thread(&WorkQueueThread::run, this) {}
+
+  WorkQueueThread(WorkQueueThread &&) = default;
+
+  /// Joins the thread. Asserts that `sharedState.done` is true because
+  /// otherwise the thread will never join.
+  ~WorkQueueThread() {
+    assert(sharedState.doneFlag.load() &&
+           "Must not destroy a WorkQueueThread object that is not pending "
+           "completion.");
+    thread.join();
+  }
+
+  /// The main run function run by std::thread.
+  void run();
+};
+} // end anonymous namespace
+
+void WorkQueueThread::run() {
+  // Set the current thread ID # in thread local storage so we can find it later
+  // when re-entering.
+  threadIDInTLS = threadPoolNumber;
+
+  // On systems that support it, give the thread a symbolic name that will show
+  // up in profilers and debuggers.
+  // TODO: I think this is widely supported on linux and windows apparently has
+  // SetThreadName.
+#ifdef __APPLE__
+  char threadName[30];
+  sprintf(threadName, "LLCL TPWQ Thread %d", (int)threadPoolNumber);
+  pthread_setname_np(threadName);
+#endif
+
+  TRACE(1, "worker starting.");
+
+  // Continuously execute work units.
+KeepRunning:
+  while (true) {
+    // In the normal case we happily pick up and do work.
+    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+      continue;
+
+    // If we've run out of work to do, we need to quiesce and ultimately block
+    // in the kernel on the semaphore.  However, we don't want to immediately
+    // give up hope, because we may be "right about to" get new work incoming.
+    // We also want to make sure to use exponential backoff to avoid pummeling
+    // the memory hierarchy of the threads that are doing useful work.  As such,
+    // we use a BusyWaitSpinWaiter.
+    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+
+    // Spin until we find some work to do.
+    while (!spinWaiter.wait()) {
+      // If we ever succeed in finding work to do, go back to running like
+      // normal.
+      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+        goto KeepRunning;
+    }
+
+    TRACE(1, "worker sleeping.");
+
+    // Otherwise, we we've waited long enough, yield the thread to the OS so we
+    // don't burn power and starve other tasks on the system.
+    sharedState.sema.wait();
+
+    TRACE(1, "worker woke.");
+
+    // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
+    // the thread.
+    if (sharedState.doneFlag.load(std::memory_order_acquire)) {
+      TRACE(3, "worker destroying.");
+      return;
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// ThreadPoolWorkQueue
+//===----------------------------------------------------------------------===//
 
 namespace {
 
@@ -94,54 +203,8 @@ public:
   }
 
 private:
-  /// Pop a single item off the queue and do the task.
-  static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
-                                    size_t threadPoolNumber) {
-    auto callable = q.dequeue();
-    if (!callable)
-      return failure();
-
-    TRACE(2, "work start.");
-    callable();
-    TRACE(2, "work end.");
-    return success();
-  }
-
-  /// RAII wrapper around a thread to simplify handling of each thread in the
-  /// thread pool.
-  struct Thread {
-    SharedThreadState &sharedState;
-    LockFreeRingBuffer<TaskFunction> &taskList;
-    size_t threadPoolNumber;
-    std::thread thread;
-
-    /// Create a `Thread` from a sync state reference and a reference to a
-    /// task list. This also starts the std::thread, so the sync state and
-    /// task list must be initialized by the time this is called.
-    Thread(SharedThreadState &sharedState,
-           LockFreeRingBuffer<TaskFunction> &taskList, size_t threadPoolNumber)
-        : sharedState(sharedState), taskList(taskList),
-          threadPoolNumber(threadPoolNumber), thread(&Thread::run, this) {}
-
-    Thread(Thread &&) = default;
-
-    /// Joins the thread. Asserts that `sharedState.done` is true because
-    /// otherwise the thread will never join.
-    ~Thread() {
-      assert(
-          sharedState.doneFlag.load() &&
-          "Must not destroy a Thread object that is not pending completion.");
-      thread.join();
-    }
-
-    /// Thread's main run function. Loops until (1) the work queue is empty,
-    /// and (2) `sharedState.done` is set to true, at which point it exits
-    /// gracefully.
-    void run();
-  };
-
   const size_t poolSize;
-  std::vector<Thread> pool;
+  std::vector<WorkQueueThread> pool;
 
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
@@ -263,67 +326,6 @@ KeepRunning:
   allValuesDone.wait();
   assert(numRemaining.load() == 0);
   TRACE(1, "await() returning.");
-}
-
-//===----------------------------------------------------------------------===//
-// ThreadPoolWorkQueue::ThreadContext implementation
-//===----------------------------------------------------------------------===//
-
-void ThreadPoolWorkQueue::Thread::run() {
-  // Set the current thread ID # in thread local storage so we can find it later
-  // when re-entering.
-  threadIDInTLS = threadPoolNumber;
-
-  // On systems that support it, give the thread a symbolic name that will show
-  // up in profilers and debuggers.
-  // TODO: I think this is widely supported on linux and windows apparently has
-  // SetThreadName.
-#ifdef __APPLE__
-  char threadName[30];
-  sprintf(threadName, "LLCL TPWQ Thread %d", (int)threadPoolNumber);
-  pthread_setname_np(threadName);
-#endif
-
-  TRACE(1, "worker starting.");
-
-  // Continuously execute work units.
-KeepRunning:
-  while (true) {
-    // In the normal case we happily pick up and do work.
-    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
-      continue;
-
-    // If we've run out of work to do, we need to quiesce and ultimately block
-    // in the kernel on the semaphore.  However, we don't want to immediately
-    // give up hope, because we may be "right about to" get new work incoming.
-    // We also want to make sure to use exponential backoff to avoid pummeling
-    // the memory hierarchy of the threads that are doing useful work.  As such,
-    // we use a BusyWaitSpinWaiter.
-    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
-
-    // Spin until we find some work to do.
-    while (!spinWaiter.wait()) {
-      // If we ever succeed in finding work to do, go back to running like
-      // normal.
-      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
-        goto KeepRunning;
-    }
-
-    TRACE(1, "worker sleeping.");
-
-    // Otherwise, we we've waited long enough, yield the thread to the OS so we
-    // don't burn power and starve other tasks on the system.
-    sharedState.sema.wait();
-
-    TRACE(1, "worker woke.");
-
-    // On wakeup, check to see if we're supposed to shutdown.  If so, wind down
-    // the thread.
-    if (sharedState.doneFlag.load(std::memory_order_acquire)) {
-      TRACE(3, "worker destroying.");
-      return;
-    }
-  }
 }
 
 //===----------------------------------------------------------------------===//
