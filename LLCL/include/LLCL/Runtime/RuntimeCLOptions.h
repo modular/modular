@@ -174,7 +174,7 @@ public:
       workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
       break;
     case WorkQueueType::kNINE:
-      workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
+      workQueue = createNINEWorkQueue(getNumThreads(), busyWaitNs);
       break;
     }
     return Runtime(std::move(allocator), std::move(workQueue));

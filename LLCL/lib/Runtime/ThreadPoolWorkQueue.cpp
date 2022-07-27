@@ -20,52 +20,24 @@ using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
 
+// Optionally enable tracing.
+//
+// TRACE_LEVEL is the density of logging.  0 = Off, 1 = Events, 2 = All work
+// items, 3 includes shutdown activity.
+#define TRACE_LEVEL 0
+#include "PrintfTracing.h"
+
 /// This value is set to a number for workqueue threads.
 static thread_local ssize_t threadIDInTLS = -1;
 
-//===----------------------------------------------------------------------===//
-// Tracing facilities.
-//===----------------------------------------------------------------------===//
-
-// This is a bespoke tracing facility for low level tracing of the thread pool.
-// This shouldn't ever be checked into the code base while on, but can help
-// visualize what is happening in a fine grained way.  The code inside here is
-// not necessarily portable to all compilers etc.
-
-// This is the density of logging.  0 = Off, 1 = Events, 2 = All work items,
-// 3 includes shutdown activity.
-#define TRACE_LEVEL 0
-
-#if TRACE_LEVEL > 0
-static std::chrono::high_resolution_clock::time_point startTime;
-static size_t getMicrosecondsSinceStart() {
-  auto diff = std::chrono::high_resolution_clock::now() - startTime;
-  return std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
-}
-
 /// TRACE - When trace level is >= the specified level, we print the log.
 #define TRACE(LEVEL, FORMAT, ...)                                              \
-  if ((LEVEL) <= TRACE_LEVEL)                                                  \
-  fprintf(stderr, "[%lldµs]T%d\t" FORMAT "\n",                                 \
-          (long long)getMicrosecondsSinceStart(), (int)threadPoolNumber + 1,   \
-          ##__VA_ARGS__)
+  TRACE_IMPL(threadPoolNumber + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
 /// CTX_TRACE - This is used in contexts that don't have a threadPoolNumber
 /// available.  This pulls the thread pool # out of TLS.
 #define CTX_TRACE(LEVEL, FORMAT, ...)                                          \
-  do {                                                                         \
-    ssize_t threadPoolNumber = threadIDInTLS;                                  \
-    TRACE(LEVEL, FORMAT, ##__VA_ARGS__);                                       \
-  } while (0)
-
-// Silences warnings about __builtin_return_address > 0.  This is a debugging
-// aid, we can take the risk.
-#pragma GCC diagnostic ignored "-Wframe-address"
-
-#else
-#define TRACE(LEVEL, FORMAT, ...)
-#define CTX_TRACE(LEVEL, FORMAT, ...)
-#endif
+  TRACE_IMPL(threadIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
 //===----------------------------------------------------------------------===//
 // ThreadPoolWorkQueue
@@ -363,14 +335,12 @@ KeepRunning:
 
 std::unique_ptr<WorkQueue>
 LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
-#if TRACE_LEVEL > 0
-  startTime = std::chrono::high_resolution_clock::now();
-#endif
+  TRACE_INIT_START_TIME();
 
-  assert(numThreads > 0);
   // We expect `numThreads` to be the total numbers of threads that are
   // accessing the work queue. As there will be an external thread that will
   // access the work queue and take items from it by calling `await`, we create
   // `numThreads - 1` worker threads from the thread pool work queue.
+  assert(numThreads > 0);
   return std::make_unique<ThreadPoolWorkQueue>(numThreads - 1, busyWaitNs);
 }
