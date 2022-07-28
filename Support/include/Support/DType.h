@@ -406,12 +406,26 @@ public:
   /// generic lambda:
   ///
   ///  eltType.dispatch<ResultType>(ptr...)
-  ///     .whenCXXInt([&](auto *... ptr) { use ptr generically })
+  ///     .whenCXXFP([&](auto *... ptr) { use ptr generically })
   ///
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
   DTypeSwitch &whenCXXFP(CallableT &&elementFn) {
     return when<DType::f32, DType::f64>(std::forward<CallableT>(elementFn));
+  }
+
+  /// Invoke the specified lambda with integer and float element types.
+  /// This passes the pointer in with the correct C++ type, so it is usually
+  /// best to use a generic lambda:
+  ///
+  ///  eltType.dispatch<ResultType>(ptr...)
+  ///     .whenCXXArithmeticType([&](auto *... ptr) { use ptr generically })
+  ///
+  /// TODO: Add long double when sizeof(long double) != sizeof(double).
+  template <typename CallableT>
+  DTypeSwitch &whenCXXArithmeticType(CallableT &&elementFn) {
+    return this->whenCXXInt(std::forward<CallableT>(elementFn))
+        .whenCXXFP(std::forward<CallableT>(elementFn));
   }
 
   /// Invoke the specified lambda with integer, float and bool element types.
@@ -424,8 +438,7 @@ public:
   /// TODO: Add long double when sizeof(long double) != sizeof(double).
   template <typename CallableT>
   DTypeSwitch &whenCXXType(CallableT &&elementFn) {
-    return this->whenCXXInt(std::forward<CallableT>(elementFn))
-        .whenCXXFP(std::forward<CallableT>(elementFn))
+    return this->whenCXXArithmeticType(std::forward<CallableT>(elementFn))
         .template when<DType::kBool>(std::forward<CallableT>(elementFn));
   }
 
