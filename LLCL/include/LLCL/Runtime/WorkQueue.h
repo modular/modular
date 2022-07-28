@@ -45,6 +45,9 @@ public:
   /// they should break themselves into.
   virtual int getParallelismLevel() const = 0;
 
+  /// Shutdown the thread pool and quiesce in preparation for destruction.
+  virtual void shutdown() = 0;
+
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();

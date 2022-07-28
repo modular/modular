@@ -70,15 +70,11 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
 }
 
 Runtime::~Runtime() {
-  // Explicitly call the destructor here while the workQueue is still alive.
-  // This is because the work queue's destructor will clear out its internal
-  // task list by doing all the work required. This will result in segfaults if
-  // the work queue itself has been freed already because inflight tasks that
-  // run during the destructor try to add work to the Runtime object whose
-  // pointer is now gone.
-  workQueue->~WorkQueue();
-  WorkQueue *wq = workQueue.release();
-  operator delete(wq);
+  // Explicitly shutdown the workQueue while the Runtime is still alive.
+  // Shutting down the workqueue will execute unfinished tasks, and those tasks
+  // can add new tasks to the runtime, so we need to make sure to tie all this
+  // off before invalidating the workQueue pointer.
+  workQueue->shutdown();
 
   // Clear cancellation value if present.
   restartFromCancellation();
