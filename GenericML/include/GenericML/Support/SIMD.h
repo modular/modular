@@ -46,7 +46,7 @@ public:
       aligned(1)));
 #else  // __GNUC__
   // We are just going to emulate the SIMD type using an array.
-  using vector_type = element_type[width];
+  using vector_type = std::array<element_type, SIMDBitWidth>;
 #endif // __GNUC__
 
   SIMDVector() = default;
@@ -169,7 +169,7 @@ private:
 
   element_type *data() {
     if constexpr (std::is_array_v<vector_type>)
-      return vectorData;
+      return vectorData.data();
     else
       return (element_type *)&vectorData;
   }
