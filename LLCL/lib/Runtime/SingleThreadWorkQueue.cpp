@@ -21,10 +21,13 @@ namespace {
 class SingleThreadWorkQueue : public WorkQueue {
 public:
   SingleThreadWorkQueue() = default;
-  ~SingleThreadWorkQueue() override {
+
+  void shutdown() override {
     // Complete any work that's still in-flight.
     doWork([]() -> bool { return false; });
   }
+
+  ~SingleThreadWorkQueue() override {}
 
   /// Enqueue a block of work. This does not use synchronization since this
   void addTask(TaskFunction work) override {

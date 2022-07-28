@@ -252,8 +252,10 @@ public:
   /// only be cancelled by the destructor.
   explicit ThreadPoolWorkQueue(size_t numWorkerThreads,
                                std::chrono::nanoseconds busyWaitNs);
+  ~ThreadPoolWorkQueue() override {}
+
   /// Cleans up all threads in the thread pool cleanly.
-  ~ThreadPoolWorkQueue() override;
+  virtual void shutdown() override;
 
   void addTask(TaskFunction work) override {
     // Try to add this work to the RingBuffer.  If that fails, then the ring
@@ -305,9 +307,9 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
     pool.emplace_back(sharedState, *taskList, i);
 }
 
-ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
+void ThreadPoolWorkQueue::shutdown() {
   int workerID = workerIDInTLS;
-  TRACE(3, "~ThreadPoolWorkQueue() start.");
+  TRACE(3, "ThreadPoolWorkQueue::shutdown() start.");
 
   // Donate the client thread to help empty the queue if there's anything left.
   while (succeeded(popAndDoWork(*taskList, workerID)))
@@ -323,7 +325,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // Call the destructors to join the threads.
   pool.clear();
 
-  TRACE(3, "~ThreadPoolWorkQueue() done.");
+  TRACE(3, "ThreadPoolWorkQueue::shutdown() done.");
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
