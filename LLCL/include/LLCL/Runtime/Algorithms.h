@@ -432,13 +432,29 @@ template <typename... CaptureTys, typename ElementFn>
 static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
                                     ElementFn &&elementFn,
                                     CaptureTys &&...captures) {
-  auto chainResult = parallelForEachNChain(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
-      std::forward<CaptureTys...>(captures)...);
+
+  if (totalCount == 0)
+    return;
+
+  // Execute N-1 elements for elements on background threads.
+  AsyncValueRef<Chain> chainResult;
+  if (totalCount > 1) {
+    chainResult = parallelForEachNChain(
+        runtime, totalCount - 1, std::forward<ElementFn>(elementFn),
+        std::forward<CaptureTys...>(captures)...);
+  }
+
+  // Execute the last element on this thread since we'll be blocking otherwise.
+  // This thread just spent a bunch of time kicking off work for other threads,
+  // so it may be the straggler and a bit behind the rest of the pack. That
+  // said, there is a reasonable likelihood that the last element will be
+  // smaller than the rest, so this thread can catch up with the others.
+  elementFn(totalCount - 1, captures...);
 
   // Donate the client thread to executing work until all the elements have
   // completed.
-  await(chainResult);
+  if (chainResult)
+    await(chainResult);
 }
 
 } // namespace LLCL
