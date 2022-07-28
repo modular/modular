@@ -31,6 +31,11 @@ public:
   AsyncValueRef(AnyAsyncValueRef &&value) : value(std::move(value)) {}
   AsyncValueRef(AsyncValueRef &&rhs) : value(std::move(rhs.value)) {}
 
+  AsyncValueRef &operator=(AsyncValueRef &&rhs) {
+    value = std::move(rhs.value);
+    return *this;
+  }
+
   // Support implicit conversion from AsyncValueRef<Derived> to
   // AsyncValueRef<Base>.
   template <typename DerivedT,
