@@ -28,25 +28,25 @@ using mlir::success;
 #include "PrintfTracing.h"
 
 /// This value is set to a number for workqueue threads.
-static thread_local ssize_t threadIDInTLS = -1;
+static thread_local ssize_t workerIDInTLS = -1;
 
 /// TRACE - When trace level is >= the specified level, we print the log.
 #define TRACE(LEVEL, FORMAT, ...)                                              \
-  TRACE_IMPL(threadPoolNumber + 1, LEVEL, FORMAT, ##__VA_ARGS__)
+  TRACE_IMPL(workerID + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
-/// CTX_TRACE - This is used in contexts that don't have a threadPoolNumber
+/// CTX_TRACE - This is used in contexts that don't have a workerID
 /// available.  This pulls the thread pool # out of TLS.
 #define CTX_TRACE(LEVEL, FORMAT, ...)                                          \
-  TRACE_IMPL(threadIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
+  TRACE_IMPL(workerIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
 //===----------------------------------------------------------------------===//
-// WorkThread
+// WorkerThread
 //===----------------------------------------------------------------------===//
 
 /// Pop a single item off the queue and do the task.  This returns failure if
 /// the queue is empty.
 static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
-                                  size_t threadPoolNumber) {
+                                  size_t workerID) {
   auto callable = q.dequeue();
   if (!callable) // If the queue is empty, return failure.
     return failure();
@@ -58,12 +58,18 @@ static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
 }
 
 namespace {
-/// Provides the state needed to synchronize the threads in the thread pool
-/// for the required exit functionality.
+/// Provides the state needed to synchronize the workers in the thread pool.
 struct SharedThreadState {
-  std::atomic<bool> doneFlag;
-  Semaphore sema;
+  /// This is the time to spin wait before falling asleep.
   std::chrono::nanoseconds busyWaitNs;
+
+  /// This flag indicates when a thread should quit working and get ready to be
+  /// joined.
+  std::atomic<bool> doneFlag;
+
+  /// This is a work-queue global semaphore that workers block on when they run
+  /// out of things to do.
+  Semaphore sema;
 };
 } // end anonymous namespace
 
@@ -71,17 +77,15 @@ namespace {
 /// This is a light weight class that is subclassed by WorkQueueThread for the
 /// dedicated worker threads, and is used in await() when an unknown thread is
 /// donated to get work done.
-struct WorkThread {
+struct WorkerThread {
   SharedThreadState &sharedState;
   LockFreeRingBuffer<TaskFunction> &taskList;
-  size_t threadPoolNumber;
+  size_t workerID;
 
-  WorkThread(SharedThreadState &sharedState,
-             LockFreeRingBuffer<TaskFunction> &taskList,
-             size_t threadPoolNumber)
-      : sharedState(sharedState), taskList(taskList),
-        threadPoolNumber(threadPoolNumber) {}
-  WorkThread(WorkThread &&) = default;
+  WorkerThread(SharedThreadState &sharedState,
+               LockFreeRingBuffer<TaskFunction> &taskList, size_t workerID)
+      : sharedState(sharedState), taskList(taskList), workerID(workerID) {}
+  WorkerThread(WorkerThread &&) = default;
 
   void runItemsForWorker();
   void runItemsForAwait(std::atomic<size_t> &numRemaining,
@@ -89,12 +93,12 @@ struct WorkThread {
 };
 } // end anonymous namespace
 
-void WorkThread::runItemsForWorker() {
+void WorkerThread::runItemsForWorker() {
   // Continuously execute work units.
 KeepRunning:
   while (true) {
     // In the normal case we happily pick up and do work.
-    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+    if (succeeded(popAndDoWork(taskList, workerID)))
       continue;
 
     // If we've run out of work to do, we need to quiesce and ultimately block
@@ -109,7 +113,7 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+      if (succeeded(popAndDoWork(taskList, workerID)))
         goto KeepRunning;
     }
 
@@ -128,8 +132,8 @@ KeepRunning:
   }
 }
 
-void WorkThread::runItemsForAwait(std::atomic<size_t> &numRemaining,
-                                  Semaphore &allValuesDone) {
+void WorkerThread::runItemsForAwait(std::atomic<size_t> &numRemaining,
+                                    Semaphore &allValuesDone) {
   // Donate the client thread to doing useful work until there's no more
   // useful work to do.
 KeepRunning:
@@ -137,7 +141,7 @@ KeepRunning:
   while (numRemaining.load(std::memory_order_seq_cst) != 0) {
     // While we are waiting, we might as well do work for other tasks that need
     // to be done.  Take a work item and do it.
-    if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+    if (succeeded(popAndDoWork(taskList, workerID)))
       continue;
 
     // Otherwise if we ran out of work to do, and we are still waiting on
@@ -150,7 +154,7 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(taskList, threadPoolNumber)))
+      if (succeeded(popAndDoWork(taskList, workerID)))
         goto KeepRunning;
 
       // If we successfully resolved all the AV's then we're done.
@@ -185,16 +189,15 @@ KeepRunning:
 namespace {
 /// Wrapper around an std::thread which is created for one instance of each
 /// worker thread.
-struct WorkQueueThread : public WorkThread {
+struct WorkQueueThread : public WorkerThread {
   std::thread thread;
 
   /// Create a `WorkQueueThread` from a sync state reference and a reference to
   /// a task list. This also starts the std::thread, so the sync state and task
   /// list must be initialized by the time this is called.
   WorkQueueThread(SharedThreadState &sharedState,
-                  LockFreeRingBuffer<TaskFunction> &taskList,
-                  size_t threadPoolNumber)
-      : WorkThread(sharedState, taskList, threadPoolNumber),
+                  LockFreeRingBuffer<TaskFunction> &taskList, size_t workerID)
+      : WorkerThread(sharedState, taskList, workerID),
         thread(&WorkQueueThread::run, this) {}
 
   WorkQueueThread(WorkQueueThread &&) = default;
@@ -214,9 +217,9 @@ struct WorkQueueThread : public WorkThread {
 } // end anonymous namespace
 
 void WorkQueueThread::run() {
-  // Set the current thread ID # in thread local storage so we can find it later
+  // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
-  threadIDInTLS = threadPoolNumber;
+  workerIDInTLS = workerID;
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
@@ -224,7 +227,7 @@ void WorkQueueThread::run() {
   // SetThreadName.
 #ifdef __APPLE__
   char threadName[30];
-  sprintf(threadName, "LLCL TPWQ Thread %d", (int)threadPoolNumber);
+  sprintf(threadName, "LLCL TPWQ Thread %d", (int)workerID);
   pthread_setname_np(threadName);
 #endif
 
@@ -259,9 +262,9 @@ public:
     CTX_TRACE(1, "addTask\t\t\t[%p %p]", __builtin_return_address(0),
               __builtin_return_address(1));
     while (!taskList->enqueue(work)) {
-      ssize_t threadPoolNumber = -2; // TODO.
+      auto workerID = workerIDInTLS;
       TRACE(1, "WORK QUEUE FULL.");
-      [[maybe_unused]] auto r = popAndDoWork(*taskList, threadPoolNumber);
+      [[maybe_unused]] auto r = popAndDoWork(*taskList, workerID);
     }
     sharedState.sema.post();
   }
@@ -293,7 +296,7 @@ private:
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
                                          std::chrono::nanoseconds busyWaitNs)
-    : poolSize(numWorkerThreads), sharedState{false, {}, busyWaitNs} {
+    : poolSize(numWorkerThreads), sharedState{busyWaitNs, false, {}} {
   taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
 
   pool.reserve(poolSize);
@@ -303,11 +306,11 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
-  int threadPoolNumber = threadIDInTLS;
+  int workerID = workerIDInTLS;
   TRACE(3, "~ThreadPoolWorkQueue() start.");
 
   // Donate the client thread to help empty the queue if there's anything left.
-  while (succeeded(popAndDoWork(*taskList, threadPoolNumber)))
+  while (succeeded(popAndDoWork(*taskList, workerID)))
     ;
 
   // Now we can tell all the threads to exit.
@@ -328,8 +331,8 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   if (llvm::all_of(values, [](auto &av) { return av->isReady(); }))
     return;
 
-  // Get the current thread ID from TLS.
-  ssize_t threadPoolNumber = threadIDInTLS;
+  // Get the current worker ID from TLS.
+  ssize_t workerID = workerIDInTLS;
 
   TRACE(1, "await() start.\t\t[%p %p]", __builtin_return_address(0),
         __builtin_return_address(1));
@@ -356,9 +359,9 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       }
     });
 
-  // Create a WorkThread (not a WorkQueueThread) for our donated host thread.
+  // Create a WorkerThread (not a WorkQueueThread) for our donated host thread.
   // This will allow us to donate the current thread to running work items.
-  WorkThread thread(sharedState, *taskList, threadPoolNumber);
+  WorkerThread thread(sharedState, *taskList, workerID);
 
   thread.runItemsForAwait(numRemaining, allValuesDone);
 
