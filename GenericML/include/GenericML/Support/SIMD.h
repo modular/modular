@@ -115,7 +115,7 @@ public:
   /// Inplace adds the given vector to this vector.
   SIMDVector &operator+=(SIMDVector other) {
     if constexpr (isEmulated)
-      std::transform(data(), data() + size(), other.data(),
+      std::transform(data(), data() + size(), other.data(), data(),
                      [](auto a, auto b) { return a + b; });
     else
       vectorData += other.value();
@@ -132,7 +132,7 @@ public:
   /// Inplace subtracts the given vector to this vector.
   SIMDVector &operator-=(SIMDVector other) {
     if constexpr (isEmulated)
-      std::transform(data(), data() + size(), other.data(),
+      std::transform(data(), data() + size(), other.data(), data(),
                      [](auto a, auto b) { return a - b; });
     else
       vectorData -= other.value();
@@ -149,7 +149,7 @@ public:
   /// Inplace multiplies the given vector to this vector.
   SIMDVector &operator*=(SIMDVector other) {
     if constexpr (isEmulated)
-      std::transform(data(), data() + size(), other.data(),
+      std::transform(data(), data() + size(), other.data(), data(),
                      [](auto a, auto b) { return a * b; });
     else
       vectorData *= other.value();
