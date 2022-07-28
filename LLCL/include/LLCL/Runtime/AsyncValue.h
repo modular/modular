@@ -291,13 +291,13 @@ public:
   bool isUnique() const { return refcount.load() == 1; }
 
   /// Return true if we tracking of live AsyncValue instances is enabled.
-  static bool isAllocationTrackingEnabled() {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+  static constexpr bool isAllocationTrackingEnabled() {
+#ifdef MODULAR_DEBUG
     return true;
-#else
+#else  // MODULAR_DEBUG
     // Only track the number of alive AsyncValue instances in debug builds.
     return false;
-#endif
+#endif // MODULAR_DEBU
   }
 
   /// Return the total number of async values that are currently live in the
@@ -429,12 +429,12 @@ protected:
         typeID(typeID),
         waitersAndState(
             (intptr_t)WaitersAndState(nullptr, state).getOpaqueValue()) {
-    if (isAllocationTrackingEnabled())
+    if constexpr (isAllocationTrackingEnabled())
       ++totalAllocatedAsyncValues;
   }
 
   ~AsyncValue() {
-    if (isAllocationTrackingEnabled())
+    if constexpr (isAllocationTrackingEnabled())
       --totalAllocatedAsyncValues;
   }
 

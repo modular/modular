@@ -216,7 +216,7 @@ public:
   auto runWithLeakCheckedRuntime(const char *testName, BodyFn bodyFn) const {
     // If we are leak checking, remember how many AsyncValue's we started with.
     ssize_t numStartingLiveAsyncValues = 0;
-    if (AsyncValue::isAllocationTrackingEnabled())
+    if constexpr (AsyncValue::isAllocationTrackingEnabled())
       numStartingLiveAsyncValues = AsyncValue::getNumAllocatedInstances();
 
     // Check leak status on exit from scope.
@@ -225,7 +225,7 @@ public:
       ssize_t numStartingLiveAsyncValues;
 
       ~LeakChecker() { // Make sure we're not leaking AsyncValues.
-        if (AsyncValue::isAllocationTrackingEnabled()) {
+        if constexpr (AsyncValue::isAllocationTrackingEnabled()) {
           ssize_t numLiveAsyncValues = AsyncValue::getNumAllocatedInstances();
           if (numLiveAsyncValues != numStartingLiveAsyncValues) {
             fprintf(
