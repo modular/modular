@@ -7,13 +7,11 @@
 #ifndef LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 #define LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 
+#include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/SpinWaiter.h"
 #include "llvm/Support/MathExtras.h"
-
-#include <atomic>
 #include <cassert>
 #include <memory>
-#include <new>
 
 namespace LLCL {
 
@@ -127,11 +125,6 @@ public:
 
 private:
   static constexpr size_t DEFAULT_SIZE = 128;
-#if defined(__cpp_lib_hardware_interference_size) && !defined(_MSC_VER)
-  using std::hardware_destructive_interference_size;
-#else
-  static constexpr std::size_t hardware_destructive_interference_size = 64;
-#endif
 
   LockFreeRingBuffer(const LockFreeRingBuffer &other) = delete;
   LockFreeRingBuffer &operator=(const LockFreeRingBuffer &other) = delete;
@@ -161,15 +154,12 @@ private:
   /// elements per second, it takes ~557844 years for the overflow to happen.
   /// They are aligned with cache line size to avoid false sharing.
   /// TODO: Make the implementation handle the overflow.
-  alignas(hardware_destructive_interference_size)
-      std::atomic<uint64_t> readIndex = 0;
-  alignas(hardware_destructive_interference_size)
-      std::atomic<uint64_t> writeIndex = 0;
-  alignas(hardware_destructive_interference_size)
-      std::atomic<uint64_t> consumed = 0;
-  alignas(hardware_destructive_interference_size)
-      std::atomic<uint64_t> published = 0;
+  AlignedAtomic<uint64_t> readIndex = 0;
+  AlignedAtomic<uint64_t> writeIndex = 0;
+  AlignedAtomic<uint64_t> consumed = 0;
+  AlignedAtomic<uint64_t> published = 0;
 };
+
 } // namespace LLCL
 
 #endif // LLCL_SUPPORT_LOCKFREERINGBUFFER_H
