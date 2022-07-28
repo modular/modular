@@ -11,6 +11,8 @@
 #ifndef LLCL_SUPPORT_ATOMICS_H
 #define LLCL_SUPPORT_ATOMICS_H
 
+#include "LLCL/Support/SpinWaiter.h"
+
 #include <atomic>
 #include <type_traits>
 
@@ -30,8 +32,12 @@ static void atomicAdd(std::atomic<T> &accumValue, const T &value) {
     // No add operation exists in the C++17 standard so we perform the addition
     // via a compare_exchange_weak loop.
     T prevAccumValue = accumValue;
+
+    LLCL::SpinWaiter waiter;
     while (!accumValue.compare_exchange_weak(prevAccumValue,
                                              prevAccumValue + value)) {
+      // Wait a bit and retry.
+      waiter.wait();
     }
   }
 }
@@ -44,8 +50,11 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   T previousMax = maxValue;
 
   // Note that compare_exchange_weak updates `previousMax` on failure.
+  LLCL::SpinWaiter waiter;
   while (previousMax < value &&
          !maxValue.compare_exchange_weak(previousMax, value)) {
+    // Wait a bit and retry.
+    waiter.wait();
   }
 }
 
