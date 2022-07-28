@@ -49,6 +49,8 @@ private:
 #endif
 };
 
+Semaphore::Semaphore(Semaphore &&other) = default;
+
 //===----------------------------------------------------------------------===//
 // Semaphore::Impl function implementations
 //===----------------------------------------------------------------------===//

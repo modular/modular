@@ -21,6 +21,7 @@ public:
   /// value, it may not be negative because that would indicate that there are
   /// blocked threads already.
   Semaphore(ssize_t initialValue = 0);
+  Semaphore(Semaphore &&);
   ~Semaphore();
 
   /// Increments the semaphore.  If it was previously negative, then this will
