@@ -7,7 +7,6 @@
 #ifndef LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 #define LLCL_SUPPORT_LOCKFREERINGBUFFER_H
 
-#include "LLCL/Support/SpinWaiter.h"
 #include "llvm/Support/MathExtras.h"
 
 #include <atomic>
@@ -61,15 +60,11 @@ public:
     // succeeds, we can make sure that 1) writing to `buffer[curWriteIndex %
     // size] does not overwrite any unconsumed item, and 2) no other threads
     // will write to `buffer[curWriteIndex % size]` simultaneously.
-    LLCL::SpinWaiter indexWaiter;
     while (!writeIndex.compare_exchange_weak(curWriteIndex, curWriteIndex + 1,
                                              std::memory_order_acq_rel)) {
       // New `curWriteIndex` needs to be compared against `consumed` again.
       if (curWriteIndex - consumed.load(std::memory_order_acquire) >= size)
         return false;
-
-      // Wait a bit and retry.
-      indexWaiter.wait();
     }
 
     // Now we can safely write to `buffer[curWriteIndex & (size - 1)]`, which is
@@ -79,9 +74,8 @@ public:
     // Update `published` to indicate that the value is actually written and
     // ready to consume. Check that the value of `published` is same as
     // `curWriteIndex`, to make sure that the values are published in order.
-    LLCL::SpinWaiter publishWaiter;
     while (published.load(std::memory_order_acquire) != curWriteIndex)
-      publishWaiter.wait();
+      ;
     published.store(curWriteIndex + 1, std::memory_order_release);
     return true;
   }
@@ -99,15 +93,11 @@ public:
     // we can make sure that 1) `buffer[curConsumed % size]` contains a valid
     // item, and 2) no other threads is taking the item from `buffer[curConsumed
     // % size]`.
-    LLCL::SpinWaiter indexWaiter;
     while (!readIndex.compare_exchange_weak(curReadIndex, curReadIndex + 1,
                                             std::memory_order_acq_rel)) {
       // Check again if we have enough values published.
       if (published.load(std::memory_order_acquire) <= curReadIndex)
         return ItemType();
-
-      // Wait a bit and retry.
-      indexWaiter.wait();
     }
 
     // Now we can safely read from `buffer[curReadIndex & (size - 1)]`, which
@@ -118,9 +108,8 @@ public:
     // `buffer[consumed % size]` can be overwritten. Check the value of
     // `consumed` is same as `curReadIndex`, to make sure that the slots became
     // available in order.
-    LLCL::SpinWaiter consumeWaiter;
     while (consumed.load(std::memory_order_acquire) != curReadIndex)
-      consumeWaiter.wait();
+      ;
     consumed.store(curReadIndex + 1, std::memory_order_release);
     return ret;
   }
