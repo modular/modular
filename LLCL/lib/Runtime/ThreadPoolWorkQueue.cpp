@@ -263,10 +263,10 @@ public:
     // more space then try again.
     CTX_TRACE(1, "addTask\t\t\t[%p %p]", __builtin_return_address(0),
               __builtin_return_address(1));
-    while (!taskList->enqueue(work)) {
+    while (!taskList.enqueue(work)) {
       auto workerID = workerIDInTLS;
       TRACE(1, "WORK QUEUE FULL.");
-      [[maybe_unused]] auto r = popAndDoWork(*taskList, workerID);
+      [[maybe_unused]] auto r = popAndDoWork(taskList, workerID);
     }
     sharedState.sema.post();
   }
@@ -288,7 +288,7 @@ private:
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
   SharedThreadState sharedState;
-  std::unique_ptr<LockFreeRingBuffer<TaskFunction>> taskList;
+  LockFreeRingBuffer<TaskFunction> taskList;
 };
 } // end anonymous namespace
 
@@ -299,12 +299,11 @@ private:
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
                                          std::chrono::nanoseconds busyWaitNs)
     : poolSize(numWorkerThreads), sharedState{busyWaitNs, false, {}} {
-  taskList = std::make_unique<LockFreeRingBuffer<TaskFunction>>();
 
   pool.reserve(poolSize);
   // Initialize each thread with its required state.
   for (size_t i = 0; i < poolSize; ++i)
-    pool.emplace_back(sharedState, *taskList, i);
+    pool.emplace_back(sharedState, taskList, i);
 }
 
 void ThreadPoolWorkQueue::shutdown() {
@@ -312,7 +311,7 @@ void ThreadPoolWorkQueue::shutdown() {
   TRACE(3, "ThreadPoolWorkQueue::shutdown() start.");
 
   // Donate the client thread to help empty the queue if there's anything left.
-  while (succeeded(popAndDoWork(*taskList, workerID)))
+  while (succeeded(popAndDoWork(taskList, workerID)))
     ;
 
   // Now we can tell all the threads to exit.
@@ -363,7 +362,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 
   // Create a WorkerThread (not a WorkQueueThread) for our donated host thread.
   // This will allow us to donate the current thread to running work items.
-  WorkerThread thread(sharedState, *taskList, workerID);
+  WorkerThread thread(sharedState, taskList, workerID);
 
   thread.runItemsForAwait(numRemaining, allValuesDone);
 

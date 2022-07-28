@@ -13,6 +13,7 @@
 #define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "LLCL/ForwardDecls.h"
+#include "LLCL/Support/Atomics.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
 
@@ -29,7 +30,11 @@ using TaskFunction = llvm::unique_function<void()>;
 /// intentionally simple to just `addTask` (which adds a block of work to be
 /// done as a C++ lambda), and `await` which runs work items until some specific
 /// values are ready to go.
-class WorkQueue {
+///
+/// This is aligned to hardware_destructive_interference_size because
+/// implementations of this often need that alignment, and without this the
+/// destructor unique_ptr destructor is invoked incorrectly.
+class alignas(hardware_destructive_interference_size) WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
