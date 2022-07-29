@@ -27,23 +27,24 @@ static constexpr size_t kPreferredSIMDBitWidth = 128;
 #endif // __AVX2__
 
 /// The SIMDVector class is an architecture independent wrapper for operating on
-/// SIMD types. It is designed to emulate the SIMD operations if the do not
-/// exist on the target architecture.
-template <typename ElemTy, size_t SIMDBitWidth = kPreferredSIMDBitWidth>
+/// SIMD types. Width is the number of elements in the SIMDVector (and not the
+/// bytecount nor the bitcount). The SIMDVector is designed to emulate the SIMD
+/// operations if the do not exist on the target architecture.
+template <typename ElemTy,
+          size_t Width = kPreferredSIMDBitWidth / sizeof(ElemTy)>
 class SIMDVector {
 
-  static_assert(SIMDBitWidth > 0, "SIMDBitWidth must be positive");
-  static_assert(SIMDBitWidth % 2 == 0, "SIMDBitWidth must be even");
-  static_assert(SIMDBitWidth % sizeof(ElemTy) == 0,
-                "SIMDBitWidth must be a multiple of the size of the ElemTy");
+  static_assert(Width != 0, "Width must be positive");
   static_assert(std::is_arithmetic_v<ElemTy>, "ElemTy must be arithmetic");
 
 public:
   using element_type = ElemTy;
-  static constexpr size_t width = SIMDBitWidth / (8 * sizeof(ElemTy));
+  static constexpr size_t byte_count = Width * sizeof(ElemTy);
+  static constexpr size_t bit_count = 8 * byte_count;
+  static constexpr size_t width = Width;
 #ifdef __clang__
-  using vector_type = element_type
-      __attribute__((vector_size(sizeof(element_type) * width), aligned(1)));
+  using vector_type =
+      element_type __attribute__((vector_size(bit_count), aligned(1)));
 #else  // __clang__
   // We are just going to emulate the SIMD type using an array.
   using vector_type = std::array<element_type, width>;
@@ -78,13 +79,11 @@ public:
   static constexpr size_t size() { return width; }
 
   /// Gets the size of the vector in bytes.
-  static constexpr size_t getSizeInBytes() {
-    return size() * sizeof(element_type);
-  }
+  static constexpr size_t getSizeInBytes() { return byte_count; }
 
   /// Loads the vector from the given memory location.
   static SIMDVector loadFrom(const element_type *mem) {
-    SIMDVector<ElemTy, SIMDBitWidth> result;
+    SIMDVector result;
     result.assign(mem, mem + size());
     return result;
   }
