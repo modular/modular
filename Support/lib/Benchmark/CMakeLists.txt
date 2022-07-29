@@ -4,7 +4,6 @@
 #
 #===-----------------------------------------------------------------------===##
 
-
 add_modular_library(MSupportBenchmark
   QuerySampleLibrary.cpp
   SystemUnderTest.cpp
