@@ -40,13 +40,13 @@ class SIMDVector {
 
 public:
   using element_type = ElemTy;
+  static constexpr size_t width = SIMDBitWidth / (8 * sizeof(ElemTy));
 #ifdef __clang__
-  using vector_type = element_type __attribute__((
-      vector_size(sizeof(element_type) * (SIMDBitWidth / (8 * sizeof(ElemTy)))),
-      aligned(1)));
+  using vector_type = element_type
+      __attribute__((vector_size(sizeof(element_type) * width), aligned(1)));
 #else  // __clang__
   // We are just going to emulate the SIMD type using an array.
-  using vector_type = std::array<element_type, SIMDBitWidth>;
+  using vector_type = std::array<element_type, width>;
 #endif // __clang__
 
   SIMDVector() = default;
@@ -163,7 +163,6 @@ private:
   static constexpr bool isEmulated = true;
 #endif // __clang__
   vector_type vectorData;
-  static constexpr size_t width = SIMDBitWidth / (8 * sizeof(ElemTy));
 
   const vector_type &value() { return vectorData; }
 
