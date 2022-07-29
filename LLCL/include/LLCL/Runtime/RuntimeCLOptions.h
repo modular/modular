@@ -93,7 +93,8 @@ private:
       "busy-wait-ns",
       llvm::cl::desc(
           "Specify thread-pool work queue busy-wait duration in nanoseconds"),
-      llvm::cl::Hidden, llvm::cl::init(0)};
+      // For now we default to 1ms = 1000000ns.
+      llvm::cl::Hidden, llvm::cl::init(1000000)};
 
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
   WorkQueueType getWorkQueueType() const {
