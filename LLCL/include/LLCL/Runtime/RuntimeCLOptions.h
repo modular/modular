@@ -44,6 +44,8 @@ private:
     kSingleThread,
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
+    /// Thread pool work queue with sharded semaphores.
+    kShardedSemaphore,
     /// "No Interesting Name" Experimental Work Queue
     kNINE,
   };
@@ -58,6 +60,9 @@ private:
                      "Work queue that only ever uses one thread"),
           clEnumValN(WorkQueueType::kThreadPool, "thread-pool",
                      "Default threaded work queue based on std::thread"),
+          clEnumValN(
+              WorkQueueType::kShardedSemaphore, "sharded-semaphore",
+              "Thread pool work queue with sharded semaphore (experimental)"),
           clEnumValN(WorkQueueType::kNINE, "nine",
                      "'No Interesting Name' Experimental Work Queue")),
       llvm::cl::init(WorkQueueType::kDefault)};
@@ -125,6 +130,9 @@ public:
     case WorkQueueType::kThreadPool:
       printf("thread pool work queue");
       break;
+    case WorkQueueType::kShardedSemaphore:
+      printf("thread pool work queue with sharded semaphore (experimental).");
+      break;
     case WorkQueueType::kNINE:
       printf("'no interesting name' experimental work queue");
       break;
@@ -172,6 +180,9 @@ public:
       break;
     case WorkQueueType::kThreadPool:
       workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
+      break;
+    case WorkQueueType::kShardedSemaphore:
+      workQueue = createShardedSemaphoreWorkQueue(getNumThreads(), busyWaitNs);
       break;
     case WorkQueueType::kNINE:
       workQueue = createNINEWorkQueue(getNumThreads(), busyWaitNs);

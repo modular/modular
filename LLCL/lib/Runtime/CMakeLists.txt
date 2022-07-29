@@ -13,6 +13,7 @@ add_modular_library(LLCLRuntime
   NINEWorkQueue.cpp
   Runtime.cpp
   SingleThreadWorkQueue.cpp
+  ShardedSemaphoreWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
 
   ADDITIONAL_HEADER_DIRS
