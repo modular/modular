@@ -120,7 +120,7 @@ public:
     result.storageMode = storageMode;
     switch (storageMode) {
     case StorageMode::kValue:
-      new (&result.valueStorage) T(std::move(valueStorage));
+      new (&result.valueStorage) T(valueStorage);
       break;
     case StorageMode::kStaticError:
       result.errorStorage = errorStorage;
