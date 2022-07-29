@@ -10,8 +10,8 @@
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/SpinWaiter.h"
-#include "Support/CommandLine.h"
-#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/Threading.h"
 
 using namespace LLCL;
 using llvm::ArrayRef;
@@ -223,13 +223,7 @@ void WorkQueueThread::run() {
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
-  // TODO: I think this is widely supported on linux and windows apparently has
-  // SetThreadName.
-#ifdef __APPLE__
-  char threadName[30];
-  sprintf(threadName, "LLCL TPWQ Thread %d", (int)workerID);
-  pthread_setname_np(threadName);
-#endif
+  llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
   TRACE(1, "worker starting.");
   runItemsForWorker();
