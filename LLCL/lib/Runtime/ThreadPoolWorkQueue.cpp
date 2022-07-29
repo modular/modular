@@ -15,7 +15,6 @@
 
 using namespace LLCL;
 using llvm::ArrayRef;
-using llvm::Optional;
 using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
