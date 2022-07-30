@@ -33,27 +33,23 @@ static thread_local ssize_t workerIDInTLS = -1;
 #define TRACE(LEVEL, FORMAT, ...)                                              \
   TRACE_IMPL(workerID + 1, LEVEL, FORMAT, ##__VA_ARGS__)
 
-/// CTX_TRACE - This is used in contexts that don't have a workerID
-/// available.  This pulls the thread pool # out of TLS.
-#define CTX_TRACE(LEVEL, FORMAT, ...)                                          \
-  TRACE_IMPL(workerIDInTLS + 1, LEVEL, FORMAT, ##__VA_ARGS__)
-
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
-/// Pop a single item off the queue and do the task.  This returns failure if
-/// the queue is empty.
-static LogicalResult popAndDoWork(LockFreeRingBuffer<TaskFunction> &q,
-                                  size_t workerID) {
-  auto callable = q.dequeue();
-  if (!callable) // If the queue is empty, return failure.
-    return failure();
-
+// Execute a single work item with tracing support.
+static void doWork(TaskFunction &workFn, size_t workerID) {
   TRACE(2, "work start.");
-  callable();
-  TRACE(2, "work end.");
-  return success();
+#if TRACE_LEVEL > 1
+  auto workStartTime = std::chrono::high_resolution_clock::now();
+#endif
+  workFn();
+
+#if TRACE_LEVEL > 1
+  auto diff = std::chrono::high_resolution_clock::now() - workStartTime;
+  auto ms = std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
+  TRACE(2, "work end, %lldµs.", (long long)ms);
+#endif
 }
 
 namespace {
@@ -97,8 +93,8 @@ void WorkerThread::runItemsForWorker() {
 KeepRunning:
   while (true) {
     // In the normal case we happily pick up and do work.
-    if (succeeded(popAndDoWork(taskList, workerID)))
-      continue;
+    while (auto work = taskList.dequeue())
+      doWork(work, workerID);
 
     // If we've run out of work to do, we need to quiesce and ultimately block
     // in the kernel on the semaphore.  However, we don't want to immediately
@@ -112,8 +108,10 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(taskList, workerID)))
+      if (auto work = taskList.dequeue()) {
+        doWork(work, workerID);
         goto KeepRunning;
+      }
     }
 
     TRACE(1, "worker sleeping.");
@@ -140,8 +138,10 @@ KeepRunning:
   while (numRemaining.load(std::memory_order_seq_cst) != 0) {
     // While we are waiting, we might as well do work for other tasks that need
     // to be done.  Take a work item and do it.
-    if (succeeded(popAndDoWork(taskList, workerID)))
+    if (auto work = taskList.dequeue()) {
+      doWork(work, workerID);
       continue;
+    }
 
     // Otherwise if we ran out of work to do, and we are still waiting on
     // things, then other threads must be doing the work we are waiting on.
@@ -153,8 +153,10 @@ KeepRunning:
     while (!spinWaiter.wait()) {
       // If we ever succeed in finding work to do, go back to running like
       // normal.
-      if (succeeded(popAndDoWork(taskList, workerID)))
+      if (auto work = taskList.dequeue()) {
+        doWork(work, workerID);
         goto KeepRunning;
+      }
 
       // If we successfully resolved all the AV's then we're done.
       // TODO: This can probably use more relaxed memory consistency!
@@ -250,33 +252,20 @@ public:
   /// Cleans up all threads in the thread pool cleanly.
   virtual void shutdown() override;
 
-  void addTask(TaskFunction work) override {
-    // Try to add this work to the RingBuffer.  If that fails, then the ring
-    // buffer is full: we take an item out of queue and do it to try to make
-    // more space then try again.
-    CTX_TRACE(1, "addTask\t\t\t[%p %p]", __builtin_return_address(0),
-              __builtin_return_address(1));
-    while (!taskList.enqueue(work)) {
-      auto workerID = workerIDInTLS;
-      TRACE(1, "WORK QUEUE FULL.");
-      [[maybe_unused]] auto r = popAndDoWork(taskList, workerID);
-    }
-    sharedState.sema.post();
-  }
-
+  void addTask(TaskFunction work) override;
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
   int getParallelismLevel() const final {
-    // `poolSize` is set to the number of worker threads that are created by
+    // `numWorkers` is set to the number of worker threads that are created by
     // the work queue. However, we expect to have an external "main" thread
     // that has an access to the work queue by calling "await". Therefore, we
-    // return `poolSize + 1` here.
-    return poolSize + 1;
+    // return `numWorkers + 1` here.
+    return numWorkers + 1;
   }
 
 private:
-  const size_t poolSize;
-  std::vector<WorkQueueThread> pool;
+  const size_t numWorkers;
+  std::vector<WorkQueueThread> workers;
 
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
@@ -289,14 +278,14 @@ private:
 // ThreadPoolWorkQueue function implementations
 //===----------------------------------------------------------------------===//
 
-ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkerThreads,
+ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
                                          std::chrono::nanoseconds busyWaitNs)
-    : poolSize(numWorkerThreads), sharedState{busyWaitNs, false, {}} {
+    : numWorkers(numWorkers), sharedState{busyWaitNs, false, {}} {
 
-  pool.reserve(poolSize);
+  workers.reserve(numWorkers);
   // Initialize each thread with its required state.
-  for (size_t i = 0; i < poolSize; ++i)
-    pool.emplace_back(sharedState, taskList, i);
+  for (size_t i = 0; i < numWorkers; ++i)
+    workers.emplace_back(sharedState, taskList, i);
 }
 
 void ThreadPoolWorkQueue::shutdown() {
@@ -304,20 +293,39 @@ void ThreadPoolWorkQueue::shutdown() {
   TRACE(3, "ThreadPoolWorkQueue::shutdown() start.");
 
   // Donate the client thread to help empty the queue if there's anything left.
-  while (succeeded(popAndDoWork(taskList, workerID)))
-    ;
+  while (auto work = taskList.dequeue())
+    doWork(work, workerID);
 
   // Now we can tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
 
   // Post on the semaphore for every thread to wake it if it's waiting.
-  for (size_t i = 0; i < poolSize; ++i)
+  for (size_t i = 0; i < numWorkers; ++i)
     sharedState.sema.post();
 
   // Call the destructors to join the threads.
-  pool.clear();
+  workers.clear();
 
   TRACE(3, "ThreadPoolWorkQueue::shutdown() done.");
+}
+
+void ThreadPoolWorkQueue::addTask(TaskFunction work) {
+  // Try to add this work to the RingBuffer.  If that fails, then the ring
+  // buffer is full: we take an item out of queue and do it to try to make
+  // more space then try again.
+  auto workerID = workerIDInTLS;
+  TRACE(1, "addTask\t\t\t[%p %p]", __builtin_return_address(0),
+        __builtin_return_address(1));
+  if (taskList.enqueue(work)) {
+    sharedState.sema.post();
+    return;
+  }
+
+  // If we failed to add it, then the ring buffer is full: just run the work
+  // item locally on the current stack.
+  // NOTE: This runs the risk of stack overflow, but we don't have a choice.
+  TRACE(1, "WORK QUEUE FULL: running locally");
+  doWork(work, workerID);
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
@@ -349,7 +357,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
         // This trace is useful when looking at latency between work completing
         // and await returning in the blocked thread, but right now that isn't
         // the problem we're working on solving.
-        // CTX_TRACE(1, "await() work completed.");
+        // TRACE(1, "await() work completed.");
       }
     });
 
