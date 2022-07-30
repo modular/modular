@@ -205,7 +205,7 @@ struct WorkQueueThread : public WorkerThread {
 
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
-  ~WorkQueueThread() {
+  void join() {
     assert(sharedState.doneFlag.load() &&
            "Must not destroy a WorkQueueThread object that is not pending "
            "completion.");
@@ -303,8 +303,9 @@ void ThreadPoolWorkQueue::shutdown() {
   for (size_t i = 0; i < numWorkers; ++i)
     sharedState.sema.post();
 
-  // Call the destructors to join the threads.
-  workers.clear();
+  // Join all the threads.
+  for (auto &worker : workers)
+    worker.join();
 
   TRACE(3, "ThreadPoolWorkQueue::shutdown() done.");
 }
