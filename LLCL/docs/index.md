@@ -8,7 +8,7 @@ This library contains low level support for domain independent parallel CPU
 computation.  It is intended to support building high performance runtimes, as
 well as hosting parallel compiler infrastructure like MLIR and LLD.  LLCL
 currently contains two major pieces of functionality:
-LLCL/Support and [LLCL/Runtime](LLCLRuntime.md).  
+LLCL/Support and [LLCL/Runtime](LLCLRuntime.md).
 
 LLCL/Support provides low-level  concurrent containers, reference counting
 support, atomics support algorithm helpers etc - which are all dependency free
@@ -43,7 +43,7 @@ TO WRITE:
 ## Introduction to LLCL/Runtime/Algorithms.h
 
 TO WRITE:
- 
+
  - Generally use this instead of poking at WorkQueue directly.
 
  - addTask, await.  Parallel for loop, map reduce ...

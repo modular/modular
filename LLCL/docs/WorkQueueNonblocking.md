@@ -42,7 +42,7 @@ Unfortunately, there are many problems with adaptive thread pools:
 3) The complexity of these systems escalate quickly because there is no
    structure to the problem.  Tasks get markable with Quality of Service markers
    to help the scheduler, new kinds of queues get introduced for special cases,
-   etc.  The [source code for 
+   etc.  The [source code for
    GCD](https://github.com/apple/swift-corelibs-libdispatch) is open source and
    relatively portable for anyone to inspect.
 4) Uncooperative legacy code often talks to other concurrency approaches and has
@@ -89,7 +89,7 @@ grain.  This involves a few things:
    (e.g. when the output is redirected to a file) but we don't want to make
    `printf` debugging painful.  Similarly, a `std::mutex` can block, but if you
    have a mutex that is protecting a tiny critical region, then it is safe
-   enough to 
+   enough to
 
 This is a different approach than is used in many systems, but it strikes a
 mix between being very useful for "completely pure" systems which scales down to
@@ -112,11 +112,11 @@ One challenge of building high-performance infrastructure that needs I/O is that
 there is no consistent and portable way to use [asynchronous
 I/O](https://en.wikipedia.org/wiki/Asynchronous_I/O).  You've got things like
 AIO on Linux (which is [surprisingly bad](http://davmac.org/davpage/linux/async-io.html)),
-Windows has [reasonable async 
+Windows has [reasonable async
 I/O](https://docs.microsoft.com/en-us/windows/win32/fileio/synchronous-and-asynchronous-i-o) that just has [a few edge
 cases](https://docs.microsoft.com/en-us/troubleshoot/windows/win32/asynchronous-disk-io-synchronous).  New Linux kernels have a new fancy new
 [io_uring API](https://blogs.oracle.com/linux/post/an-introduction-to-the-io-uring-asynchronous-io-framework) that is perfect for
-what we need. 
+what we need.
 On the other hand, asynchronous I/O may not even make sense for embedded
 systems.
 
@@ -126,5 +126,3 @@ specific implementations, and allows clients of LLCL to access it
 asynchronously.  This will allow those algorithms to be written in a host OS
 independent way, and allows us to centralize the complexity of this world into
 one place.
-
-
