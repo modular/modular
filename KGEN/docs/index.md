@@ -33,7 +33,7 @@ Individual parameters:
    type of `b` is `!kgen.dtype`, as such, we don't require their type specifiers
    at all.
 
-3) In cases with take arbitrary types (e.g. the input list to `kgen.call`, the
+3) In cases with take arbitrary types (for example the input list to `kgen.call`, the
    parameter expression in `kgen.param.value` etc) we allow specifying a type
    with `: type = value` syntax which provides full generality for dtypes,
    strings etc.  However, because almost all parameters are of type 'index',
@@ -93,7 +93,7 @@ kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
 
 Note that we do *not* support dynamic shapes or dtypes for the `!meta.scalar` or
 `!meta.simd` types.  These may be *parameterized* with arithmetic that
-determines the vector length or element, but it may not be dynamic (i.e., there
+determines the vector length or element, but it may not be dynamic (that is, there
 is no `?` allowed) - parameters are always resolved to static values as part of
 the code generation process.
 This is because these are register-equivalent types, not memory-equivalent
@@ -135,7 +135,7 @@ dialects.
 Parameter uses, on the other hand, are far more flexible.  Parameters
 expressions may occur anywhere in an operation -- including in types of values
 referred to or returned by an operation.  This allows parameterized types,
-allows an open and expressive set of operators that use parameters (e.g. to
+allows an open and expressive set of operators that use parameters (for example to
 pass to invoked generators, to materialize as SSA values, to return from the
 function) etc.  There are no limitations on where they occur.
 
