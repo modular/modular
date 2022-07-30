@@ -5,7 +5,7 @@
 ## Introduction
 
 One of the key problems that a thread pool must solve is how they behave when an
-item of work they execute blocks its thread (e.g. on I/O).  When this happens,
+item of work they execute blocks its thread (for example on I/O).  When this happens,
 the thread is implicitly taken out of the thread pool, and therefore the machine
 ends up being over- or under-utilized.
 
@@ -16,8 +16,8 @@ execute other work in the work queue.
 
 This is a challenging problem to deal with, particularly with large scale
 software systems - most existing code in the world was built on top of
-existing blocking APIs (e.g. even simple things like `printf` can block!). We
-also face the unfortunate situation where some important OS's (e.g. like older
+existing blocking APIs (for example even simple things like `printf` can block!). We
+also face the unfortunate situation where some important OS's (for example like older
 Linux kernels) [don't even support non-blocking async
 I/O](http://davmac.org/davpage/linux/async-io.html).
 
@@ -27,7 +27,7 @@ pools... and what LLCL does. :)
 ## Adaptive thread pools
 
 One classical way to try to solve for this is with adaptive thread pools, this
-is how (e.g.) Apple's Grand Central Dispatch (GCD) API works.
+is how (for example) Apple's Grand Central Dispatch (GCD) API works.
 
 Unfortunately, there are many problems with adaptive thread pools:
 
@@ -36,7 +36,7 @@ Unfortunately, there are many problems with adaptive thread pools:
    functionality, or hybrids (M:N, fibers, etc).  Regardless of the
    implementation approach, it is inefficient to lose processor caches and other
    state on each switch, and leads to poor latency stability.
-2) You end up with weird edge cases where they run out of resources, e.g.
+2) You end up with weird edge cases where they run out of resources, for example
    crashing the system because you can't allocate enough thread stacks, or
    deadlock your app due to [other limitations](https://stackoverflow.com/questions/15150308/workaround-on-the-threads-limit-in-grand-central-dispatch).
 3) The complexity of these systems escalate quickly because there is no
@@ -86,7 +86,7 @@ grain.  This involves a few things:
    around with no incentive to invest in it.
 5) Finally, there is no checking that workitems don't block, so an empirical
    approach to this is fine.  For example, `printf` can theoretically block
-   (e.g. when the output is redirected to a file) but we don't want to make
+   (for example when the output is redirected to a file) but we don't want to make
    `printf` debugging painful.  Similarly, a `std::mutex` can block, but if you
    have a mutex that is protecting a tiny critical region, then it is safe
    enough to

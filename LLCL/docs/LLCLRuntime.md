@@ -18,11 +18,11 @@ and many others.
 
 It has three major differentiating factors:
 
- 1) It follows proper library-based design approaches (e.g. there are no global
+ 1) It follows proper library-based design approaches (for example there are no global
     parallel-for-each operations that act against an implicit thread pool).
  2) It is designed to cooperate with other things within the application that are
     using CPU threads (including multiple instances of itself).
- 3) Its key policies (e.g. how is a thread pool implemented?) are abstracted
+ 3) Its key policies (for example how is a thread pool implemented?) are abstracted
     from the code that is working with it.
 
 This is very important: we want LLCL-based technology to compose into existing
@@ -85,7 +85,7 @@ execute the work.
 ### Minimal interface
 
 Keeping the interface minimal allows flexibility within the implementation, and
-ensures that client algorithms (e.g. a "parallel for loop") are kept
+ensures that client algorithms (for example a "parallel for loop") are kept
 orthogonal from the implementations of the `WorkQueue` implementations.  The
 algorithms that compose onto this interface are implemented separately, in
 [Runtime/Algorithms.h](../include/LLCL/Runtime/Algorithms.h).
@@ -93,7 +93,7 @@ algorithms that compose onto this interface are implemented separately, in
 ### Designed for non-blocking work
 
 Implementations of `WorkQueue` are allowed to assume that no work items submitted
-to the queue may block (e.g. on I/O).  This allows a much simpler implementation
+to the queue may block (for example on I/O).  This allows a much simpler implementation
 approach and allows more efficient use of the machine.  For an exploration of
 the issues involved here, please see [detailed document on non-blocking
 work queues](WorkQueueNonblocking.md).
@@ -131,7 +131,7 @@ the CPUs.  It also allows integration with "huge page" OS features which
 [require fiddly logic to use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
 but can massively affect latency in some cases by reducing TLB misses.
 
-When building data intensive applications (e.g. allocating tensor data in a
+When building data intensive applications (for example allocating tensor data in a
 machine learning application), it is a good idea to allocate that data with the
 `Runtime` you're executing within.
 

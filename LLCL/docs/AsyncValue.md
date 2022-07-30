@@ -51,7 +51,7 @@ storage of the payloads and data, and allows limited type reflection with the
 ## Access to the `LLCL::Runtime` for an `AsyncValue`
 
 The LLCL runtime is designed to support multiple instances of a runtime in a
-process at the same time, so some things (e.g. allocating a new `AsyncValue`)
+process at the same time, so some things (for example allocating a new `AsyncValue`)
 require an `LLCL::Runtime&` to be handy and around.  This can be awkward,
 because (like an `MLIRContext`) it is almost global state, and it is a pain to
 pass it around everywhere.
