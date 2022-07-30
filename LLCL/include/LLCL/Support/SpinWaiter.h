@@ -108,12 +108,6 @@ public:
 
     // Otherwise we're going to intentionally burn time.  If this is the first
     // iteration of this, figure out what wall time we are.
-    //
-    // NOTE: Busy-waiting logic below calls
-    // `std::chrono::high_resolution_clock::now()` from the loop, which may
-    // perform expensive operations in its implementation that make busy-waiting
-    // not working as expected. https://github.com/modularml/modular/issues/1092
-    // for monitoring this.
     if (busyWaitTime == std::chrono::nanoseconds::zero())
       return false;
 
