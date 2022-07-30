@@ -25,7 +25,7 @@ Individual parameters:
    simple integer values (secondarily dtypes will occur, then there will be a
    longer tail).  We use the builtin MLIR `index` type as a convenient
    `ssize_t` type for math.
-   
+
 2) We want to reduce syntactic verbosity where reasonably possible, because
    syntactic noise makes it more difficult to write and read IR dumps.  In some
    cases, we "know" the type of a parameter expression, for example, in a buffer
@@ -36,7 +36,7 @@ Individual parameters:
 3) In cases with take arbitrary types (e.g. the input list to `kgen.call`, the
    parameter expression in `kgen.param.value` etc) we allow specifying a type
    with `: type = value` syntax which provides full generality for dtypes,
-   strings etc.  However, because almost all parameters are of type 'index', 
+   strings etc.  However, because almost all parameters are of type 'index',
    we allow omitting a type with `= value` syntax.  Note that an omitted type
    defaults to type `index` - it is not inferred from the initializer value
    (we can't do this for parameter references because of the forward reference

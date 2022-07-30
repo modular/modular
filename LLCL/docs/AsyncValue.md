@@ -39,7 +39,7 @@ when *accessing* the contained data, for example with `AsyncValue::get<T>()` or
 `AnyAsyncValueRef` is used when working with a type-erased
 `AsyncValue` and `AsyncValueRef<T>` is used when you know the element type `T`
 that is stored in the `AsyncValue`.  It is preferable to use strong types if
-you know them, but dynamic type-generic code sometimes doesn't.  
+you know them, but dynamic type-generic code sometimes doesn't.
 `AsyncValueRef<T>` implicitly converts to `AnyAsyncValueRef`.
 
 `AsyncValue` can hold any C++ type, including move-only and even non-movable
@@ -92,7 +92,7 @@ other `RCRef` you capture will be alive for the duration as well:
 ```c++
 /// When the specified int32_t becomes available, add it to the refcounted
 /// table.
-void addToTableWhenReady(AsyncValueRef<int32_t> input, 
+void addToTableWhenReady(AsyncValueRef<int32_t> input,
                          RCRef<TableOfValues> tablePtr) {
   // Watch out for order of evaluation, std::move will corrupt our `input`
   // argument.
@@ -120,7 +120,7 @@ be expressed as:
 ```c++
 /// When the specified int32_t becomes available, add it to the refcounted
 /// table.
-void addToTableWhenReady(AsyncValueRef<int32_t> input, 
+void addToTableWhenReady(AsyncValueRef<int32_t> input,
                          RCRef<TableOfValues> tablePtr) {
   // Note that use of `input.` vs `input->`:
   input.andThen([tablePtr = std::move(tablePtr)]
@@ -165,7 +165,7 @@ with the `emplace(...)` method.
 
 **"Error":** This state indicates that the computation creating the value had
 an error.  You may create an `AsyncValue` directly in this state with the
-`createError` method, but a more typical usage is to determine that an 
+`createError` method, but a more typical usage is to determine that an
 unconstructed `AsyncValue` had a problem, and transition it to this state with
 the `setToError` method.
 
@@ -176,7 +176,7 @@ create an `AsyncValue` before knowing what C++ type it will contain.  In this
 case, you can create a special "indirect AsyncValue" with the
 `AsyncValue::createIndirect`, and resolve it with `resolveIndirect` method.  As
 the name implies, this adds a level of indirection that allows you to create an
-AsyncValue, and then fulfill it with another AsyncValue of concrete type later.  
+AsyncValue, and then fulfill it with another AsyncValue of concrete type later.
 
 For example, you might have some type generic code that resolves the type
 depending on the input types:

@@ -118,7 +118,7 @@ def GeneratorOp
 //===----------------------------------------------------------------------===//
 
 def GeneratorInterfaceOp
-  : KGENOp<"generator.interface", 
+  : KGENOp<"generator.interface",
            [HasParent<"ModuleOp">, FunctionOpInterface, Symbol,
             IsolatedFromAbove]> {
   let summary = "Generator interface definition";
@@ -182,7 +182,7 @@ def CallOp
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
   }];
-  
+
   let assemblyFormat = [{
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
     attr-dict `:` functional-type($operands, results)

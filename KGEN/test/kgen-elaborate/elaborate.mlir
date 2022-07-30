@@ -19,14 +19,14 @@ kgen.kernel @parameter_use_chain() {
 
   // Uses 42 and defines r2
   kgen.param.bind r2 = <2>
-  // CHECK-NEXT: %1 = kgen.param.value = <2> 
+  // CHECK-NEXT: %1 = kgen.param.value = <2>
   %1 = kgen.param.value = <r2>
 
   // Uses r1/r2 and defines r3
   kgen.param.bind r3 = <mul(shl(r1, r2), 3)>
-  // CHECK-NEXT: %2 = kgen.param.value = <36> 
+  // CHECK-NEXT: %2 = kgen.param.value = <36>
   %2 = kgen.param.value = <r3>
-  
+
   // Defines a dtype value and uses it.
   kgen.param.bind type1 : !kgen.dtype = <f32>
   // CHECK-NEXT: %3 = kgen.param.value : dtype = <f32>
@@ -169,7 +169,7 @@ kgen.generator.interface @genItf2<x>()
 // CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
 // CHECK-LABEL: kgen.kernel @"genItf2_impl0,x=0"() {
 // CHECK-NEXT:   "impl0"() : () -> ()
-// CHECK-NEXT:   kgen.return 
+// CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
 kgen.generator @genItf2_impl0<x>()
   constraints <eq(x, 0)> implements @genItf2 {
@@ -182,7 +182,7 @@ kgen.generator @genItf2_impl0<x>()
 // CHECK-NEXT:   "impl1"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
-kgen.generator @genItf2_impl1<x>() 
+kgen.generator @genItf2_impl1<x>()
   constraints <eq(x, 1)> implements @genItf2 {
   "impl1"() : () -> ()
   kgen.return
@@ -190,7 +190,7 @@ kgen.generator @genItf2_impl1<x>()
 
 // CHECK-LABEL: kgen.kernel @use_Itf2zero() {
 // CHECK-NEXT:   kgen.call @"genItf2_impl0,x=0"() : () -> ()
-// CHECK-NEXT:   kgen.return 
+// CHECK-NEXT:   kgen.return
 kgen.kernel @use_Itf2zero() {
   kgen.call @genItf2<x = 0>() : () -> ()
   kgen.return
@@ -198,7 +198,7 @@ kgen.kernel @use_Itf2zero() {
 
 // CHECK-LABEL: kgen.kernel @use_Itf2one() {
 // CHECK-NEXT:   kgen.call @"genItf2_impl1,x=1"() : () -> ()
-// CHECK-NEXT:   kgen.return 
+// CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
 kgen.kernel @use_Itf2one() {
   kgen.call @genItf2<x = 1>() : () -> ()
