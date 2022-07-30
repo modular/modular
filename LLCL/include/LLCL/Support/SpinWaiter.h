@@ -17,19 +17,10 @@
 
 namespace LLCL {
 
-/// This class is used in busy-wait loops to provide exponential backoff and
-/// to defer to the OS under long waits.  This helps improve situations with
-/// high contention, by allowing the thread we're waiting for to have proper
-/// access to the memory hierarchy and CPU cores needed to make forward
-/// progress.
-///
-/// This is "free" to initialize in cases where it isn't used, just setting a
-/// non-atomic integer to zero.
-template <bool shouldYieldToOS = true>
-class SpinWaiter {
-public:
-  SpinWaiter() = default;
-
+namespace Detail {
+// This is the non-templated base class of SpinWaiter.
+class SpinWaiterBase {
+protected:
   enum {
     // This is the number of times we will spin without doing any system
     // operations.
@@ -41,6 +32,24 @@ public:
     yieldSpins = 128,
     // If that doesn't work we sleep the thread.
   };
+
+  bool yieldToOS();
+  size_t iterations = 0;
+};
+} // namespace Detail
+
+/// This class is used in busy-wait loops to provide exponential backoff and
+/// to defer to the OS under long waits.  This helps improve situations with
+/// high contention, by allowing the thread we're waiting for to have proper
+/// access to the memory hierarchy and CPU cores needed to make forward
+/// progress.
+///
+/// This is "free" to initialize in cases where it isn't used, just setting a
+/// non-atomic integer to zero.
+template <bool shouldYieldToOS = true>
+class SpinWaiter : public Detail::SpinWaiterBase {
+public:
+  SpinWaiter() = default;
 
   /// This method is called by spinning algorithms that realize they need to try
   /// again.  This returns false when a non-appreciable amount of time has
@@ -71,26 +80,14 @@ public:
       return true;
     }
 
-    // If that didn't work, we yield the thread back to the OS.  This is much
-    // heavier weight but can cause the OS to reschedule the problematic thread.
-    if (iterations < yieldSpins) {
-      std::this_thread::yield();
-      return true;
-    }
-
-    // Otherwise, we're in pretty serious trouble, actually go to sleep for
-    // longer times.
-    std::this_thread::sleep_for(std::chrono::microseconds(iterations / 128));
-    iterations += 128;
-    return true;
+    // Ok, we're going to yield to the OS, call our out-of-line implementation
+    // of this.
+    return yieldToOS();
   }
 
   /// Return true if this waiter is going to do heavy weight OS operations to
   /// slow the current thread's progress.
   bool isDoneWithNopSpins() const { return iterations >= nopSpins; }
-
-private:
-  size_t iterations = 0;
 };
 
 /// This is like SpinWaiter but allows configurable busy waiting based on wall
@@ -112,20 +109,21 @@ public:
     // Otherwise we're going to intentionally burn time.  If this is the first
     // iteration of this, figure out what wall time we are.
     //
-    // NOTE: Busy-waiting logic below calls `std::chrono::steady_clock::now()`
-    // from the loop, which may perform expensive operations in its
-    // implementation that make busy-waiting not working as expected.
-    // https://github.com/modularml/modular/issues/1092 for monitoring this.
-    if (busyWaitTime != std::chrono::nanoseconds::zero()) {
-      if (!busyWaitEndTime.hasValue())
-        busyWaitEndTime = std::chrono::steady_clock::now() + busyWaitTime;
+    // NOTE: Busy-waiting logic below calls
+    // `std::chrono::high_resolution_clock::now()` from the loop, which may
+    // perform expensive operations in its implementation that make busy-waiting
+    // not working as expected. https://github.com/modularml/modular/issues/1092
+    // for monitoring this.
+    if (busyWaitTime == std::chrono::nanoseconds::zero())
+      return false;
 
-      // If we haven't reached out busy wait end time, then continue spinning.
-      if (std::chrono::steady_clock::now() < *busyWaitEndTime)
-        return false;
-    }
+    if (!busyWaitEndTime.hasValue())
+      busyWaitEndTime =
+          std::chrono::high_resolution_clock::now() + busyWaitTime;
 
-    return true;
+    // When we reach the busy wait end time, return true so the caller can block
+    // on a semaphore.
+    return std::chrono::high_resolution_clock::now() >= *busyWaitEndTime;
   }
 
 private:
@@ -138,7 +136,8 @@ private:
   std::chrono::nanoseconds busyWaitTime;
 
   /// This is the time we should stop busy waiting.
-  llvm::Optional<std::chrono::steady_clock::time_point> busyWaitEndTime;
+  llvm::Optional<std::chrono::high_resolution_clock::time_point>
+      busyWaitEndTime;
 };
 
 } // namespace LLCL
