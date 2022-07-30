@@ -23,6 +23,7 @@ add_modular_library(LLCLSupport
   Location.cpp
   ReferenceCounted.cpp
   Semaphore.cpp
+  SpinWaiter.cpp
 
   ADDITIONAL_HEADER_DIRS
 
