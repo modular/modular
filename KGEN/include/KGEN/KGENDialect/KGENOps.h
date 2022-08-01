@@ -20,16 +20,34 @@
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-namespace M {
-namespace KGEN {
+namespace M::KGEN {
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 
 LogicalResult verifyDeclMatchesInterface(
     const char *originatorName, mlir::FunctionOpInterface originatorDecl,
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl);
-}
-} // namespace M
+
+enum class GeneratorOrKernelKind {
+  kernel,
+  generator,
+  interface,
+
+  // HLKGEN dialect
+  hlgenerator,
+};
+
+/// Given an arbitrary MLIR operation, classify it into a declaration kind or
+/// return None if unknown.
+Optional<GeneratorOrKernelKind> classifyDecl(Operation *op);
+
+/// Parse the MLIR syntax for a kgen.generator, kgen.kernel and related
+/// operators.
+ParseResult parseGeneratorOrKernel(OpAsmParser &parser, OperationState &result,
+                                   GeneratorOrKernelKind opKind);
+void printGeneratorOrKernel(OpAsmPrinter &p, mlir::FunctionOpInterface op);
+
+} // namespace M::KGEN
 
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.h.inc"

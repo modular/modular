@@ -22,6 +22,22 @@ using namespace M::KGEN;
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
 
+/// Given an arbitrary MLIR operation, classify it into a declaration kind or
+/// return None if unknown.
+Optional<GeneratorOrKernelKind> KGEN::classifyDecl(Operation *op) {
+  if (isa<KernelOp>(op))
+    return GeneratorOrKernelKind::kernel;
+  if (isa<GeneratorOp>(op))
+    return GeneratorOrKernelKind::generator;
+
+  if (isa<GeneratorInterfaceOp>(op))
+    return GeneratorOrKernelKind::interface;
+  // Classify hlkgen.generator even though kgen cannot depend on hlkgen libs.
+  if (op->getName().getStringRef() == "hlkgen.generator")
+    return GeneratorOrKernelKind::hlgenerator;
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
 //===----------------------------------------------------------------------===//
@@ -921,12 +937,11 @@ SmallVector<ParamDeclAttr, 4> KGEN::getParamDeclsCasted(Operation *op) {
 /// result parameters.  A concrete kernel will always never have input params.
 std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
 KGEN::getDeclParameterInfo(Operation *decl) {
-  assert((isa<KernelOp, GeneratorOp, GeneratorInterfaceOp>(decl)) &&
-         "unknown declaration");
+  assert(classifyDecl(decl).hasValue() && "unknown declaration");
   ArrayRef<Attribute> declParams = getParamDecls(decl);
   size_t numInputParams = 0;
   // Kernels never have input parameters, but they can have output parameters.
-  if (isa<GeneratorOp, GeneratorInterfaceOp>(decl))
+  if (!isa<KernelOp>(decl))
     numInputParams = decl->getAttrOfType<IntegerAttr>("numInputParameters")
                          .getValue()
                          .getZExtValue();
@@ -939,7 +954,7 @@ ArrayRef<Attribute> KGEN::getDeclConstraints(Operation *decl) {
   // Kernels never have constraints.
   if (isa<KernelOp>(decl))
     return {};
-  assert((isa<GeneratorOp, GeneratorInterfaceOp>(decl)) &&
-         "unknown declaration");
+  // Must be a generator or interface.
+  assert(classifyDecl(decl).hasValue() && "unknown declaration");
   return decl->getAttrOfType<ArrayAttr>("constraints").getValue();
 }

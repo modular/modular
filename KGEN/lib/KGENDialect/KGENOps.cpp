@@ -232,12 +232,6 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 // Logic shared between kernels, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-enum class GeneratorOrKernelKind {
-  kernel,
-  generator,
-  interface,
-};
-
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
@@ -313,9 +307,9 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
 
 /// Parse either a kgen.generator or kgen.kernel declaration, depending on what
 /// `isGenerator` is set to.
-static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
-                                          OperationState &result,
-                                          GeneratorOrKernelKind opKind) {
+ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
+                                         OperationState &result,
+                                         GeneratorOrKernelKind opKind) {
   using namespace mlir::function_interface_impl;
 
   SmallVector<OpAsmParser::Argument> entryArgs;
@@ -355,7 +349,8 @@ static ParseResult parseGeneratorOrKernel(OpAsmParser &parser,
 
   // If this is a generator, see if it is an implementation of a generator
   // interface.
-  if (opKind == GeneratorOrKernelKind::generator &&
+  if ((opKind == GeneratorOrKernelKind::generator ||
+       opKind == GeneratorOrKernelKind::hlgenerator) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
     ::mlir::FlatSymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
@@ -437,8 +432,8 @@ static void printConstraints(Operation *decl, OpAsmPrinter &p) {
   p << '>';
 }
 
-static void printGeneratorOrKernel(OpAsmPrinter &p,
-                                   mlir::FunctionOpInterface op) {
+void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
+                                  mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
 
   // Print the operation and the function name.

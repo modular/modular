@@ -11,6 +11,7 @@
 #ifndef KGEN_INITALLDIALECTS_H
 #define KGEN_INITALLDIALECTS_H
 
+#include "KGEN/HLKGENDialect/HLKGENDialect.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -19,6 +20,7 @@ namespace M {
 // Add all the MLIR dialects to the provided registry.
 inline void registerAllKGENDialects(DialectRegistry &registry) {
   registry.insert<KGEN::KGENDialect>();
+  registry.insert<KGEN::HLKGENDialect>();
   registry.insert<KGEN::MetaDialect>();
 }
 

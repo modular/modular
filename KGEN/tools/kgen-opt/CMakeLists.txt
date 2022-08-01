@@ -11,6 +11,7 @@ set(LLVM_LINK_COMPONENTS
 add_modular_tool(kgen-opt
   kgen-opt.cpp
   LINK_LIBS PRIVATE
+  HLKGENDialect
   KGENDialect
   MetaDialect
   GRTDialect

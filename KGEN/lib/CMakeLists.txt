@@ -5,4 +5,5 @@
 #===-----------------------------------------------------------------------===##
 
 add_subdirectory(KGENDialect)
+add_subdirectory(HLKGENDialect)
 add_subdirectory(MetaDialect)
