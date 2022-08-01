@@ -19,7 +19,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 //===----------------------------------------------------------------------===//
 
 def KernelOp
-  : KGENOp<"kernel", [HasParent<"ModuleOp">, FunctionOpInterface,
+  : KGENOp<"kernel", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                       Symbol, IsolatedFromAbove,
                       SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Concrete kernel definition";
@@ -71,7 +71,7 @@ def KernelOp
 //===----------------------------------------------------------------------===//
 
 def GeneratorOp
-  : KGENOp<"generator", [HasParent<"ModuleOp">, FunctionOpInterface,
+  : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
                          SingleBlockImplicitTerminator<"ReturnOp">,
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
@@ -119,7 +119,7 @@ def GeneratorOp
 
 def GeneratorInterfaceOp
   : KGENOp<"generator.interface",
-           [HasParent<"ModuleOp">, FunctionOpInterface, Symbol,
+           [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
             IsolatedFromAbove]> {
   let summary = "Generator interface definition";
 
