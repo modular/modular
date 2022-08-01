@@ -8,27 +8,34 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/SubElementInterfaces.td"
 
 /// This is an attribute that is formed of valid nodes in a parameter
 /// expression.
 def ParameterExprAttr
-  : Confined<AnyAttr, [AttrConstraint<
+  : Confined<TypedAttrInterface, [AttrConstraint<
       CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
     >]>;
 
 def I1ParameterExprAttr
   : Confined<ParameterExprAttr, [AttrConstraint<
-      CPred<"$_self.getType().isInteger(1)">, "i1 parameter expression"
+      CPred<"$_self.cast<TypedAttr>().getType().isInteger(1)">,
+            "i1 parameter expression"
     >]>;
+
+class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
+  : AttrDef<KGENDialect, attrName, [TypedAttrInterface] # traits> {
+  let mnemonic = attrMnemonic;
+}
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
 
 /// Declaration of a named parameter.
-def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
+def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   let summary = "Parameter declaration";
   let description = [{
     This is a declaration of a parameter in the meta-programming domain for
@@ -40,7 +47,6 @@ def ParamDeclAttr : AttrDef<KGENDialect, "ParamDecl"> {
   /// asmsyntax defaults to si64.
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
-  let mnemonic = "param.decl";
 
   let hasCustomAssemblyFormat = 1;
 
@@ -82,14 +88,13 @@ def ParamDeclSize1ArrayAttr
 /// This attribute binds a concrete value to a named parameter, for example a
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
-def ParamBindAttr : AttrDef<KGENDialect, "ParamBind",
+def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type,
                         "::mlir::Attribute":$value);
-  let mnemonic = "param.bind";
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
@@ -117,11 +122,10 @@ def ParamBindArrayAttr
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def ParamDeclRefAttr : AttrDef<KGENDialect, "ParamDeclRef"> {
+def ParamDeclRefAttr : KGENAttr<"ParamDeclRef", "param.decl.ref"> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
-  let mnemonic = "param.decl.ref";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
@@ -185,35 +189,34 @@ def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                             POC_EQ, POC_EQ_DTYPE]>;
 }
 
-def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
+def ParamOperatorAttr : KGENAttr<"ParamOperator", "param.expr",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
-                        ArrayRefParameter<"::mlir::Attribute">:$operands,
+                        ArrayRefParameter<"TypedAttr">:$operands,
                         AttributeSelfTypeParameter<"">:$type);
-  let mnemonic = "param.expr";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins
-      "POC":$opcode, "llvm::ArrayRef<mlir::Attribute>":$operands,
+      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands,
       "mlir::Type":$type
-    ), [{}], "mlir::Attribute">,
+    ), [{}], "TypedAttr">,
 
     // Build a parameter expression.  This automatically canonicalizes and
     // folds, so it may not necessarily return a ParamOperatorAttr.
     AttrBuilderWithInferredContext<(ins
-      "POC":$opcode, "llvm::ArrayRef<mlir::Attribute>":$operands
-    ), [{}], "mlir::Attribute">,
+      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands
+    ), [{}], "TypedAttr">,
 
     // Build a binary parameter expression for convenience.
-    AttrBuilderWithInferredContext<(ins "POC":$opcode, "mlir::Attribute":$lhs,
-                                        "mlir::Attribute":$rhs), [{
-      Attribute operands[] = { lhs, rhs };
+    AttrBuilderWithInferredContext<(ins "POC":$opcode, "TypedAttr":$lhs,
+                                        "TypedAttr":$rhs), [{
+      TypedAttr operands[] = { lhs, rhs };
       return get(opcode, operands);
-    }], "mlir::Attribute">
+    }], "TypedAttr">
   ];
 
   let assemblyFormat = "`<` $opcode `,` $operands `>`";
@@ -225,7 +228,7 @@ def ParamOperatorAttr : AttrDef<KGENDialect, "ParamOperator",
 //===----------------------------------------------------------------------===//
 
 /// This is a value of !kgen.dtype with a constant value from 0...255.
-def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
+def DTypeConstantAttr : KGENAttr<"DTypeConstant", "dtype.constant"> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
     This is constant value for a dtype, whose elements correspond to
@@ -236,7 +239,6 @@ def DTypeConstantAttr : AttrDef<KGENDialect, "DTypeConstant"> {
   /// and the type is always !kgen.dtype.
   let parameters = (ins "::mlir::IntegerAttr":$value,
                         AttributeSelfTypeParameter<"">:$type);
-  let mnemonic = "dtype.constant";
 
   let assemblyFormat = "`<` $value `>`";
   let genVerifyDecl = 1;

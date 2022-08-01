@@ -28,12 +28,12 @@ def ScalarType : MetaType<"Scalar",
   }];
 
   let mnemonic = "scalar";
-  let parameters = (ins "::mlir::Attribute":$dtype);
+  let parameters = (ins "TypedAttr":$dtype);
   let assemblyFormat = "`<` custom<ParamDTypeValue>($dtype) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Attribute":$parameter), [{
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$parameter), [{
       return $_get(parameter.getContext(), parameter);
     }]>,
   ];
@@ -52,14 +52,14 @@ def SIMDType : MetaType<"SIMD",
   }];
 
   let mnemonic = "simd";
-  let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dtype);
   let assemblyFormat = [{
     `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dtype) `>`
   }];
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
       return $_get(size.getContext(), size, ty);
     }]>,
   ];
@@ -81,7 +81,7 @@ def BufferType : MetaType<"Buffer",
   }];
 
   let mnemonic = "buffer";
-  let parameters = (ins "::mlir::Attribute":$size, "::mlir::Attribute":$dtype);
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dtype);
   let assemblyFormat = [{
     `<` custom<OptionalIndexParamValue>($size) `,` ` `
         custom<OptionalParamDTypeValue>($dtype) `>`
@@ -89,7 +89,7 @@ def BufferType : MetaType<"Buffer",
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Attribute":$size, "Attribute":$ty), [{
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
       return $_get(size.getContext(), size, ty);
     }]>,
   ];
@@ -112,6 +112,7 @@ def BufferType : MetaType<"Buffer",
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
+
 def PointerType : MetaType<"Pointer",
       [DeclareTypeInterfaceMethods<SubElementTypeInterface,
                                    ["replaceImmediateSubAttribute"]>]> {
@@ -123,7 +124,7 @@ def PointerType : MetaType<"Pointer",
   }];
 
   let mnemonic = "pointer";
-  let parameters = (ins "::mlir::Attribute":$dtype);
+  let parameters = (ins "TypedAttr":$dtype);
   let assemblyFormat = [{
     `<` custom<OptionalParamDTypeValue>($dtype) `>`
   }];

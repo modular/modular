@@ -311,8 +311,8 @@ kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
 
 // -----
 
-// expected-error @+1 {{failed to satisfy constraint: any attribute valid parameter expression}}
-%0 = kgen.param.value : i32 = <[]>
+// expected-error @+1 {{failed to satisfy constraint: TypedAttr instance valid parameter expression}}
+%0 = kgen.param.value : i32 = <[:i32]>
 
 // -----
 

@@ -211,9 +211,11 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 
   size_t oldSize = uses.size();
 
-  // Otherwise we haven't processed this, check the attribute's type.
-  // TODO(jeff): MLIR attribute should not carry types!
-  collectParameterUsesFromType(attr.getType(), uses, loc);
+  // Otherwise we haven't processed this, check the attribute's type if it has
+  // one.
+  // TODO: Capture types using SubElementAttrInterface.
+  if (auto typedAttr = attr.dyn_cast<TypedAttr>())
+    collectParameterUsesFromType(typedAttr.getType(), uses, loc);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.

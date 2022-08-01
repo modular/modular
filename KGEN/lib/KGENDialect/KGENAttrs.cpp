@@ -115,7 +115,7 @@ static ParseResult parseOptionalParamKeywordOrString(AsmParser &p,
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
+ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   assert(type && "always have a contextual type");
   llvm::SMLoc loc = p.getCurrentLocation();
 
@@ -149,7 +149,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, Attribute &value, Type type) {
     if (!opcode.hasValue())
       return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
-    SmallVector<Attribute> operands;
+    SmallVector<TypedAttr> operands;
 
     // The element type of a function is the same type as the expression itself
     // except for comparisons.
@@ -265,8 +265,8 @@ void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
 
 /// Parse a parameter value that is known to be an index type.
 ParseResult KGEN::parseIndexParamValue(AsmParser &p,
-                                       FailureOr<Attribute> &result) {
-  Attribute value;
+                                       FailureOr<TypedAttr> &result) {
+  TypedAttr value;
   if (parseParamValue(p, value, p.getBuilder().getIndexType()))
     return failure();
   result = value;
@@ -286,9 +286,9 @@ void KGEN::printOptionalIndexParamValue(AsmPrinter &p, Attribute value) {
 /// Parse a parameter value that is known to be an index type or a `?` which
 /// results in a null attribute.
 ParseResult KGEN::parseOptionalIndexParamValue(AsmParser &p,
-                                               FailureOr<Attribute> &result) {
+                                               FailureOr<TypedAttr> &result) {
   if (succeeded(p.parseOptionalQuestion())) {
-    result = Attribute();
+    result = TypedAttr();
     return success();
   }
   return parseIndexParamValue(p, result);
@@ -370,15 +370,12 @@ void ParamBindAttr::walkImmediateSubElements(
   walkAttrsFn(getValue());
 }
 
-mlir::SubElementAttrInterface ParamBindAttr::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  Attribute attrs[2] = {getName(), getValue()};
-
-  for (auto entry : replacements) {
-    assert(entry.first < 2);
-    attrs[entry.first] = entry.second;
-  }
-  return ParamBindAttr::get(attrs[0].cast<StringAttr>(), getType(), attrs[1]);
+Attribute
+ParamBindAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                           ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.empty());
+  return ParamBindAttr::get(replAttrs[0].cast<StringAttr>(), getType(),
+                            replAttrs[1]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -387,7 +384,7 @@ mlir::SubElementAttrInterface ParamBindAttr::replaceImmediateSubAttribute(
 
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
-    ArrayRef<Attribute> operands, Type type) {
+    ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match.
   if (!llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -494,7 +491,7 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
            stringifyPOC(rhsExpr.getOpcode());
 
   // If they are the same opcode, then sort by arity: more complex to the left.
-  ArrayRef<Attribute> lhsOperands = lhsExpr.getOperands(),
+  ArrayRef<TypedAttr> lhsOperands = lhsExpr.getOperands(),
                       rhsOperands = rhsExpr.getOperands();
   if (lhsOperands.size() != rhsOperands.size())
     return lhsOperands.size() > rhsOperands.size();
@@ -516,7 +513,7 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
 /// constant operands and move them to the right.  If the whole expression is
 /// constant, then return that, otherwise update the operands list.
 static Attribute simplifyAssocOp(
-    POC opcode, SmallVector<Attribute, 4> &operands,
+    POC opcode, SmallVectorImpl<TypedAttr> &operands,
     llvm::function_ref<APInt(const APInt &, const APInt &)> calculateFn,
     llvm::function_ref<bool(const APInt &)> identityConstantFn,
     llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {}) {
@@ -572,14 +569,14 @@ static Attribute simplifyAssocOp(
 /// `(a*b*42)` then split it into the non-constant and the constant portions
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
 /// null as the second (standin for "multiplication by 1").
-static std::pair<Attribute, Attribute> decomposeAddend(Attribute operand) {
+static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
   if (auto mul = dyn_castPE(POC::Mul, operand))
     if (auto cst = mul.getOperands().back().dyn_cast<IntegerAttr>()) {
       auto nonCst =
           ParamOperatorAttr::get(POC::Mul, mul.getOperands().drop_back());
       return {nonCst, cst};
     }
-  return {operand, Attribute()};
+  return {operand, TypedAttr()};
 }
 
 static Attribute getOneOfType(Type type) {
@@ -587,7 +584,7 @@ static Attribute getOneOfType(Type type) {
   return IntegerAttr::get(type, APInt(width, 1));
 }
 
-static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
           POC::Add, operands, [](auto a, auto b) { return a + b; },
           /*identityCst*/ [](auto cst) { return cst.isZero(); }))
@@ -595,8 +592,8 @@ static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
 
   // Canonicalize the add by splitting all addends into their variable and
   // constant factors.
-  SmallVector<std::pair<Attribute, Attribute>> decomposedOperands;
-  llvm::SmallDenseSet<Attribute> nonConstantParts;
+  SmallVector<std::pair<TypedAttr, TypedAttr>> decomposedOperands;
+  llvm::SmallDenseSet<TypedAttr> nonConstantParts;
   for (auto &op : operands) {
     decomposedOperands.push_back(decomposeAddend(op));
 
@@ -606,7 +603,7 @@ static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
     // `(a*3 + b)`.
     if (!nonConstantParts.insert(decomposedOperands.back().first).second) {
       // The thing we multiply will be the common expression.
-      Attribute mulOperand = decomposedOperands.back().first;
+      TypedAttr mulOperand = decomposedOperands.back().first;
 
       // Find the index of the first occurrence.
       size_t i = 0;
@@ -636,7 +633,7 @@ static Attribute simplifyAdd(SmallVector<Attribute, 4> &operands) {
   return {};
 }
 
-static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyMul(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
           POC::Mul, operands, [](auto a, auto b) { return a * b; },
           /*identityCst*/ [](auto cst) { return cst.isOne(); },
@@ -652,7 +649,7 @@ static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
       operands.erase(operands.begin() + i);
 
       // Build each add operand.
-      SmallVector<Attribute> addOperands;
+      SmallVector<TypedAttr> addOperands;
       for (auto addOperand : addSubExpr.getOperands()) {
         operands.push_back(addOperand);
         addOperands.push_back(ParamOperatorAttr::get(POC::Mul, operands));
@@ -666,21 +663,21 @@ static Attribute simplifyMul(SmallVector<Attribute, 4> &operands) {
   return {};
 }
 
-static Attribute simplifyAnd(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::And, operands, [](auto a, auto b) { return a & b; },
       /*identityCst*/ [](auto cst) { return cst.isAllOnes(); },
       /*destructiveCst*/ [](auto cst) { return cst.isZero(); });
 }
 
-static Attribute simplifyOr(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyOr(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::Or, operands, [](auto a, auto b) { return a | b; },
       /*identityCst*/ [](auto cst) { return cst.isZero(); },
       /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); });
 }
 
-static Attribute simplifyXor(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::Xor, operands, [](auto a, auto b) { return a ^ b; },
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
@@ -689,7 +686,7 @@ static Attribute simplifyXor(SmallVector<Attribute, 4> &operands) {
 /// Given a binary function, if the two operands are known constant integers,
 /// use the specified fold functions to compute the result.
 static Attribute
-foldBinaryOp(ArrayRef<Attribute> operands,
+foldBinaryOp(ArrayRef<TypedAttr> operands,
              llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedfn,
              llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn) {
   assert(operands.size() == 2 && "binary operator always has two operands");
@@ -705,7 +702,7 @@ foldBinaryOp(ArrayRef<Attribute> operands,
 /// Folds constants given a comparison function that returns bool.  The client
 /// must handle signedness etc.
 static Attribute foldCompareOp(
-    ArrayRef<Attribute> operands,
+    ArrayRef<TypedAttr> operands,
     llvm::function_ref<bool(const APInt &, const APInt &)> compareFn) {
   assert(operands.size() == 2 && "compare operator always has two operands");
   if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
@@ -716,7 +713,7 @@ static Attribute foldCompareOp(
   return {};
 }
 
-static Attribute simplifyShl(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
@@ -728,7 +725,7 @@ static Attribute simplifyShl(SmallVector<Attribute, 4> &operands) {
   return {};
 }
 
-static Attribute simplifyShr(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
     if (rhs.getValue().isZero())
       return operands[0]; // `x >> 0 = x`.
@@ -739,7 +736,7 @@ static Attribute simplifyShr(SmallVector<Attribute, 4> &operands) {
       [](auto a, auto b) { return a.ashr(b); });
 }
 
-static Attribute simplifyDiv(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
   // Implement support for identities like `x/1 = x`.
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
     if (rhs.getValue().isOne())
@@ -750,7 +747,7 @@ static Attribute simplifyDiv(SmallVector<Attribute, 4> &operands) {
       [](auto a, auto b) { return a.sdiv(b); });
 }
 
-static Attribute simplifyMod(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
   // Implement support for identities like `x%1 = 0`.
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
     if (rhs.getValue().isOne())
@@ -761,14 +758,14 @@ static Attribute simplifyMod(SmallVector<Attribute, 4> &operands) {
       [](auto a, auto b) { return a.srem(b); });
 }
 
-static Attribute simplifyEQ(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
   // Make sure parameters are ordered correctly.
   llvm::stable_sort(operands, paramExprOperandSortPredicate);
 
   return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
 }
 
-static Attribute simplifyEQ_DTYPE(SmallVector<Attribute, 4> &operands) {
+static Attribute simplifyEQ_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
   // Make sure parameters are ordered correctly.
   llvm::stable_sort(operands, paramExprOperandSortPredicate);
 
@@ -779,23 +776,23 @@ static Attribute simplifyEQ_DTYPE(SmallVector<Attribute, 4> &operands) {
   return {};
 }
 
-Attribute ParamOperatorAttr::get(MLIRContext *context, POC opcode,
-                                 ArrayRef<Attribute> operandsIn, Type type) {
+TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
+                                 ArrayRef<TypedAttr> operandsIn, Type type) {
   auto result = get(opcode, operandsIn);
   assert((!type || type == result.getType()) && "unexpected type");
   return result;
 }
 
-Attribute
+TypedAttr
 ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               MLIRContext *context, POC opcode,
-                              ArrayRef<Attribute> operandsIn, Type type) {
+                              ArrayRef<TypedAttr> operandsIn, Type type) {
   if (failed(verify(emitError, opcode, operandsIn, type)))
     return {};
   return get(context, opcode, operandsIn, type);
 }
 
-Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
+TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type.  The result type is usually the same
   // as the operands, but is i1 for comparisons (overridden below).
@@ -803,7 +800,7 @@ Attribute ParamOperatorAttr::get(POC opcode, ArrayRef<Attribute> operandsIn) {
   assert(llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
-  SmallVector<Attribute, 4> operands(operandsIn.begin(), operandsIn.end());
+  SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
 
   auto *context = operandsIn[0].getContext();
 
@@ -861,14 +858,16 @@ void ParamOperatorAttr::walkImmediateSubElements(
     walkAttrsFn(operand);
 }
 
-mlir::SubElementAttrInterface ParamOperatorAttr::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  SmallVector<Attribute> attrs(getOperands().begin(), getOperands().end());
-
-  for (auto entry : replacements)
-    attrs[entry.first] = entry.second;
-
-  return ParamOperatorAttr::get(getOpcode(), attrs);
+Attribute
+ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                               ArrayRef<Type> replTypes) const {
+  assert(!replAttrs.empty() && replTypes.empty());
+  if (!llvm::all_of(replAttrs,
+                    [](Attribute attr) { return attr.isa<TypedAttr>(); }))
+    return nullptr;
+  return ParamOperatorAttr::get(
+      getOpcode(), {reinterpret_cast<const TypedAttr *>(replAttrs.data()),
+                    replAttrs.size()});
 }
 
 //===----------------------------------------------------------------------===//

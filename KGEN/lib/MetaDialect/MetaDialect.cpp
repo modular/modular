@@ -28,8 +28,8 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseParamDTypeValue(AsmParser &p,
-                                        FailureOr<Attribute> &result) {
-  Attribute retValue;
+                                        FailureOr<TypedAttr> &result) {
+  TypedAttr retValue;
   if (failed(parseParamValue(p, retValue, p.getBuilder().getType<DTypeType>())))
     return failure();
   result = retValue;
@@ -45,9 +45,9 @@ static void printParamDTypeValue(AsmPrinter &p, Attribute value) {
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseOptionalParamDTypeValue(AsmParser &p,
-                                                FailureOr<Attribute> &result) {
+                                                FailureOr<TypedAttr> &result) {
   if (succeeded(p.parseOptionalQuestion())) {
-    result = Attribute();
+    result = TypedAttr();
     return success();
   }
   return parseParamDTypeValue(p, result);
@@ -67,7 +67,7 @@ static void printOptionalParamDTypeValue(AsmPrinter &p, Attribute value) {
 
 LogicalResult
 ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                   Attribute dtype) {
+                   TypedAttr dtype) {
   if (!dtype.getType().isa<DTypeType>())
     return emitError() << "parameter for scalar type must be a !kgen.dtype";
   return success();
@@ -79,13 +79,10 @@ void ScalarType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
-mlir::SubElementTypeInterface ScalarType::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  if (replacements.empty())
-    return *this;
-  assert(replacements.size() == 1 && replacements[0].first == 0 &&
-         "only have one sub-attribute");
-  return ScalarType::get(replacements[0].second);
+Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                             ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.empty());
+  return ScalarType::get(replAttrs[0]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -94,7 +91,7 @@ mlir::SubElementTypeInterface ScalarType::replaceImmediateSubAttribute(
 
 LogicalResult
 SIMDType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                 Attribute size, Attribute dtype) {
+                 TypedAttr size, TypedAttr dtype) {
   if (!size || !dtype)
     return emitError() << "simd type requires size and dtype";
   if (!size.getType().isIndex())
@@ -111,15 +108,10 @@ void SIMDType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
-mlir::SubElementTypeInterface SIMDType::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  Attribute attrs[2] = {getSize(), getDtype()};
-
-  for (auto entry : replacements) {
-    assert(entry.first < 2);
-    attrs[entry.first] = entry.second;
-  }
-  return SIMDType::get(attrs[0], attrs[1]);
+Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                           ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.empty());
+  return SIMDType::get(replAttrs[0], replAttrs[1]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -128,7 +120,7 @@ mlir::SubElementTypeInterface SIMDType::replaceImmediateSubAttribute(
 
 LogicalResult
 BufferType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                   Attribute size, Attribute dtype) {
+                   TypedAttr size, TypedAttr dtype) {
   if (size && !size.getType().isIndex())
     return emitError() << "size parameter for buffer must have type `index`";
   if (dtype && !dtype.getType().isa<DTypeType>())
@@ -143,15 +135,10 @@ void BufferType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
-mlir::SubElementTypeInterface BufferType::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  Attribute attrs[2] = {getSize(), getDtype()};
-
-  for (auto entry : replacements) {
-    assert(entry.first < 2);
-    attrs[entry.first] = entry.second;
-  }
-  return BufferType::get(attrs[0], attrs[1]);
+Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                             ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.empty());
+  return BufferType::get(replAttrs[0], replAttrs[1]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,7 +147,7 @@ mlir::SubElementTypeInterface BufferType::replaceImmediateSubAttribute(
 
 LogicalResult
 PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                    Attribute dtype) {
+                    TypedAttr dtype) {
   if (dtype && !dtype.getType().isa<DTypeType>())
     return emitError() << "type parameter for pointer must be a !kgen.dtype";
   return success();
@@ -172,13 +159,10 @@ void PointerType::walkImmediateSubElements(
   walkAttrsFn(getDtype());
 }
 
-mlir::SubElementTypeInterface PointerType::replaceImmediateSubAttribute(
-    ArrayRef<std::pair<size_t, Attribute>> replacements) const {
-  if (replacements.empty())
-    return *this;
-  assert(replacements.size() == 1 && replacements[0].first == 0 &&
-         "only have one sub-attribute");
-  return PointerType::get(replacements[0].second);
+Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                              ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.empty());
+  return PointerType::get(replAttrs[0]);
 }
 
 //===----------------------------------------------------------------------===//
