@@ -9,6 +9,7 @@
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+
 using namespace M;
 using namespace M::KGEN;
 
@@ -21,7 +22,7 @@ static std::string getString(Attribute attr) {
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
-ErrorOr<Attribute> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
+ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
   // Simple constants don't need simplification.
   if (isSimpleConstant(expr))
     return expr;
@@ -37,7 +38,7 @@ ErrorOr<Attribute> ParameterEvaluator::simplifyParameterExpr(Attribute expr) {
   // Simplify operators by recursively simplifying their operands, then
   // refolding the expression.
   if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
-    SmallVector<Attribute> simplifiedOperands;
+    SmallVector<TypedAttr> simplifiedOperands;
     for (auto value : oper.getOperands()) {
       auto simplified = simplifyParameterExpr(value);
       if (simplified.isError())
@@ -114,10 +115,12 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
   if (iter != rewrittenAttrs.end())
     return iter->second;
 
-  // TODO(jeff): MLIR attribute should not carry types!
-  if (getReboundType(attr.getType(), loc) != attr.getType()) {
-    emitError(loc, "unsupported parameterized type in attribute ") << attr;
-    return rewrittenAttrs[attr] = attr;
+  // Otherwise, check the type of typed attributes.
+  if (auto typedAttr = attr.dyn_cast<TypedAttr>()) {
+    if (getReboundType(typedAttr.getType(), loc) != typedAttr.getType()) {
+      emitError(loc, "unsupported parameterized type in attribute ") << attr;
+      return rewrittenAttrs[attr] = attr;
+    }
   }
 
   // If this is a foldable parameter expression, do it.
@@ -128,30 +131,19 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
       result = newVal.takeValue();
 
   } else if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
-    // TODO: Improve SubElementTypeInterface
+    // TODO: Capture types using SubElementAttrInterface.
     Type newType = getReboundType(typeAttr.getValue(), loc);
     if (newType != typeAttr.getValue())
       result = TypeAttr::get(newType);
   } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
-    SmallVector<std::pair<size_t, Attribute>> newAttrs;
-    bool changedType = false;
-    size_t attrNo = 0;
+    SmallVector<Attribute> newAttrs;
+    SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
         [&](Attribute attr) {
-          auto newAttr = getReboundAttribute(attr, loc);
-          if (newAttr != attr)
-            newAttrs.push_back(std::make_pair(attrNo, newAttr));
-          ++attrNo;
+          newAttrs.push_back(getReboundAttribute(attr, loc));
         },
-        [&](Type type) { changedType = type != getReboundType(type, loc); });
-    if (changedType) {
-      // TODO: Improve SubElementTypeInterface:
-      // https://github.com/llvm/llvm-project/issues/56355
-      emitError(loc, "don't know how to rebind parameterized subtypes in ")
-          << attr;
-    } else if (!newAttrs.empty()) {
-      result = itf.replaceImmediateSubAttribute(newAttrs);
-    }
+        [&](Type type) { newTypes.push_back(getReboundType(type, loc)); });
+    result = itf.replaceImmediateSubElements(newAttrs, newTypes);
   } else {
     emitError(loc, "unknown attribute in parameterized operation ") << attr;
   }
@@ -180,6 +172,7 @@ Type ParameterEvaluator::getReboundType(Type type, Location loc) {
   // that we don't.
   if (auto fnType = type.dyn_cast<FunctionType>()) {
     // Function types show up in kernel signatures.
+    // TODO: Capture function subtypes using SubElementAttrInterface.
     SmallVector<Type> inputs, results;
     bool changed = false;
     for (Type input : fnType.getInputs()) {
@@ -195,25 +188,14 @@ Type ParameterEvaluator::getReboundType(Type type, Location loc) {
       result = FunctionType::get(type.getContext(), inputs, results);
 
   } else if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
-    SmallVector<std::pair<size_t, Attribute>> newAttrs;
-    bool changedType = false;
-    size_t attrNo = 0;
+    SmallVector<Attribute> newAttrs;
+    SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
         [&](Attribute attr) {
-          auto newAttr = getReboundAttribute(attr, loc);
-          if (newAttr != attr)
-            newAttrs.push_back(std::make_pair(attrNo, newAttr));
-          ++attrNo;
+          newAttrs.push_back(getReboundAttribute(attr, loc));
         },
-        [&](Type type) { changedType = type != getReboundType(type, loc); });
-    if (changedType) {
-      // TODO: Improve SubElementTypeInterface:
-      // https://github.com/llvm/llvm-project/issues/56355
-      emitError(loc, "don't know how to rebind parameterized subtypes in ")
-          << type;
-    } else if (!newAttrs.empty()) {
-      result = itf.replaceImmediateSubAttribute(newAttrs);
-    }
+        [&](Type type) { newTypes.push_back(getReboundType(type, loc)); });
+    result = itf.replaceImmediateSubElements(newAttrs, newTypes);
   } else {
     emitError(loc, "unknown type in parameterized operation ") << type;
   }

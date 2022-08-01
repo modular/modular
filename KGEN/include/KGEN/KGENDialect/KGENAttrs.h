@@ -67,13 +67,13 @@ void printParamValue(AsmPrinter &p, Attribute value);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParamValue(AsmParser &p, Attribute &value, Type type);
+ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
 
 /// Print a parameter value that is known to be an index type.
 void printIndexParamValue(AsmPrinter &p, Attribute value);
 
 /// Parse a parameter value that is known to be an index type.
-ParseResult parseIndexParamValue(AsmParser &p, FailureOr<Attribute> &value);
+ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 
 /// Print a parameter value that either has an index type or is null (which
 /// prints as a `?`).
@@ -82,7 +82,7 @@ void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to be an index type or a `?` which
 /// results in a null attribute.
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
-                                         FailureOr<Attribute> &result);
+                                         FailureOr<TypedAttr> &result);
 
 } // namespace M::KGEN
 

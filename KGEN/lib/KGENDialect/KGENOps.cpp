@@ -23,7 +23,7 @@ using namespace KGEN;
 // custom<ParamValueOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamValueOpValue(OpAsmParser &p, Attribute &value,
+static ParseResult parseParamValueOpValue(OpAsmParser &p, TypedAttr &value,
                                           Type &resultType) {
   if (parseColonTypeOrIndex(p, resultType) || p.parseEqual() || p.parseLess() ||
       parseParamValue(p, value, resultType) || p.parseGreater())
@@ -43,8 +43,8 @@ static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
 // custom<ParamBindOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamBindOpValue(OpAsmParser &p, Attribute &paramDecls,
-                                         Attribute &value) {
+static ParseResult parseParamBindOpValue(OpAsmParser &p, ArrayAttr &paramDecls,
+                                         TypedAttr &value) {
   std::string varname;
   Type valTy;
   if (p.parseKeywordOrString(&varname) ||
@@ -56,7 +56,7 @@ static ParseResult parseParamBindOpValue(OpAsmParser &p, Attribute &paramDecls,
 }
 
 static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
-                                  ArrayAttr paramDecls, Attribute value) {
+                                  ArrayAttr paramDecls, TypedAttr value) {
   ParamDeclAttr variable = paramDecls.begin()->cast<ParamDeclAttr>();
   printParamName(p, variable.getName().getValue());
   printParamValueOpValue(p, nullptr, value, value.getType());
@@ -72,7 +72,7 @@ static ParseResult parseParameterBindings(OpAsmParser &p, ArrayAttr &value) {
           OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
             std::string name;
             Type type;
-            Attribute value;
+            TypedAttr value;
             if (p.parseKeywordOrString(&name) ||
                 parseColonTypeOrIndex(p, type) || p.parseEqual() ||
                 parseParamValue(p, value, type))
@@ -141,7 +141,7 @@ static ParseResult parseParamList(OpAsmParser &p,
     if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type))
       return failure();
     if (isBinding) {
-      Attribute value;
+      TypedAttr value;
       if (p.parseEqual() || parseParamValue(p, value, type))
         return failure();
       paramDecls.emplace_back(ParamBindAttr::get(name, type, value));
@@ -295,8 +295,11 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
     Type int1Ty = parser.getBuilder().getI1Type();
     if (parser.parseCommaSeparatedList(
             OpAsmParser::Delimiter::LessGreater, [&]() -> ParseResult {
-              return parseParamValue(parser, constraints.emplace_back(),
-                                     int1Ty);
+              TypedAttr constraint;
+              if (failed(parseParamValue(parser, constraint, int1Ty)))
+                return failure();
+              constraints.push_back(constraint);
+              return success();
             }))
       return failure();
   }
