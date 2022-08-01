@@ -109,7 +109,7 @@ public:
     // Otherwise we're going to intentionally burn time.  If this is the first
     // iteration of this, figure out what wall time we are.
     if (busyWaitTime == std::chrono::nanoseconds::zero())
-      return false;
+      return true;
 
     if (!busyWaitEndTime.hasValue())
       busyWaitEndTime =
