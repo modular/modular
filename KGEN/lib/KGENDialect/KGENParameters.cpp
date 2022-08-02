@@ -198,7 +198,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
   // If this attribute has no sub-attributes or we have already scanned it an
   // know that it has no parameters in it, return early.
   if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DenseElementsAttr>() ||
+               DenseElementsAttr, mlir::DenseArrayBaseAttr>() ||
       parameterLessAttrs.contains(attr))
     return;
 
