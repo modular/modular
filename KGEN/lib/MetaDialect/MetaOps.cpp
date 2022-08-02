@@ -136,7 +136,7 @@ static bool typesAreCompatible(Type builtinTy, DType eltTy) {
       return builtinTy.isa<BFloat16Type>();
     }
     if (eltTy == DType::f16) {
-      return builtinTy.isa<Float16Type>() && (builtinWidth == eltWidth);
+      return builtinTy.isa<Float16Type>();
     }
     if (eltTy == DType::tf32) {
       // There is no builtin tf32 type, so we can't do the conversion.
