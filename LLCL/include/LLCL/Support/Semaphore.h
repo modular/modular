@@ -8,7 +8,12 @@
 #define LLCL_SUPPORT_SEMAPHORE_H
 
 #include <memory>
+#if defined(_WIN64) || defined(_WIN32)
+#include <BaseTsd.h>
+using ssize_t = SSIZE_T;
+#else // defined(_WIN64) || defined(_WIN32)
 #include <sys/types.h>
+#endif // defined(_WIN64) || defined(_WIN32)
 
 namespace LLCL {
 /// This is an interface to a basic semaphore with post and timed wait
