@@ -4,21 +4,14 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_modular_tool(kgen-opt
-  kgen-opt.cpp
-  LINK_LIBS PRIVATE
-  HLKGENDialect
+add_modular_conversion_library(KGENToLLVM
+  ConvertKGENToLLVM.cpp
+
+  DEPENDS
+  MLIRConvertKGENToLLVM
+
+  LINK_LIBS PUBLIC
   KGENDialect
   MetaDialect
-  GRTDialect
-  KGENToLLVM
-
-  MLIRArithmeticDialect
   MLIRIR
-  MLIRLLVMDialect
-  MLIROptLib
-  MLIRParser
-  MLIRSCFDialect
-  MLIRSupport
-  MLIRTransforms
   )
