@@ -62,3 +62,12 @@ kgen.generator @erf_impl1<N, type: dtype>(%in: !meta.buffer<N, type>, %out : !me
     }
     kgen.return
   }
+
+// Instantiate @erf for concrete buffer size and element type
+
+// CHECK-LABEL: kgen.kernel @erf_10_f32(%arg0: !meta.buffer<10, f32>, %arg1: !meta.buffer<10, f32>)
+// CHECK: kgen.call @"erf_impl1,N=10,type=f32"(%arg0, %arg1) : (!meta.buffer<10, f32>, !meta.buffer<10, f32>) -> ()
+kgen.kernel @erf_10_f32(%in: !meta.buffer<10, f32>, %out: !meta.buffer<10, f32>) {
+  kgen.call @erf<N=10, type:dtype=f32>(%in, %out) : (!meta.buffer<10, f32>, !meta.buffer<10, f32>) -> ()
+  kgen.return
+}
