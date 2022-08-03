@@ -13,7 +13,7 @@ kgen.generator @test() {
 kgen.generator @test<p1>() {
   // expected-note @-1 {{previous declaration here}}
   "someop" () { // expected-error {{redeclaration of parameter "p1"}}
-    paramDecls = [#kgen.param.decl<p1> : i4]
+    paramDecls = [#kgen.param.decl<p1: i4>]
   } : () -> ()
   kgen.return
 }
@@ -33,7 +33,7 @@ kgen.generator @test<p1>() {
 kgen.generator @test<p1>() {
   // expected-error @+1 {{invalid ParamDeclAttr outside of paramDecls attribute}}
   "someop" () {
-    notParamDecls = #kgen.param.decl<p1> : i4
+    notParamDecls = #kgen.param.decl<p1: i4>
   } : () -> ()
   kgen.return
 }
@@ -52,13 +52,6 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
   // expected-error @+2 {{failed to parse ParamOperatorAttr parameter}}
   // expected-error @+1 {{parameter reference requires a type}}
                           #kgen.param.decl.ref<"p1">, 42 : si64>
-} : () -> ()
-
-// -----
-
-"someop" () {
-  // expected-error @+1 {{parameter declaration requires a type}}
-  paramDecls = [#kgen.param.decl<"p3">]
 } : () -> ()
 
 // -----

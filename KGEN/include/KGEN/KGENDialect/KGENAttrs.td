@@ -25,10 +25,16 @@ def I1ParameterExprAttr
             "i1 parameter expression"
     >]>;
 
+/// An attribute in the KGEN dialect.
 class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
-  : AttrDef<KGENDialect, attrName, [TypedAttrInterface] # traits> {
+    : AttrDef<KGENDialect, attrName, traits> {
   let mnemonic = attrMnemonic;
 }
+
+/// The base class of all parameter expression attributes. Expression attributes
+/// are all typed attributes.
+class ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
+    : KGENAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
@@ -44,22 +50,18 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   }];
 
   /// ParamDeclAttr's always have a `name` and `type`: an omitted type in the
-  /// asmsyntax defaults to si64.
-  let parameters = (ins "::mlir::StringAttr":$name,
-                        AttributeSelfTypeParameter<"">:$type);
+  /// asmsyntax defaults to `index`.
+  let parameters = (ins "StringAttr":$name, "Type":$type);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = "`<` custom<ParamName>($name) `:` $type `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
-                                         "::mlir::Type":$type),
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),
       "return $_get(type.getContext(), name, type);">,
-    AttrBuilderWithInferredContext<(ins "::mlir::StringRef":$name,
-                                         "::mlir::Type":$type),
+    AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type),
       "return get(StringAttr::get(type.getContext(), name), type);">,
-    AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name), [{
-      return get(name, IntegerType::get(name.getContext(), 64,
-                                        IntegerType::Signed));
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name), [{
+      return get(name, IndexType::get(name.getContext()));
     }]>
   ];
 }
@@ -92,20 +94,22 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Bind a value to a parameter declaration.";
-  let parameters = (ins "::mlir::StringAttr":$name,
-                        AttributeSelfTypeParameter<"">:$type,
-                        "::mlir::Attribute":$value);
-  let hasCustomAssemblyFormat = 1;
+  let parameters = (ins
+    "StringAttr":$name,
+    DefaultValuedParameter<"Type", "IndexType::get($_ctxt)">:$type,
+    "TypedAttr":$value
+  );
+
+  let assemblyFormat =
+    "`<` custom<ParamName>($name) (`:` $type^)? `=` $value `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
-                                        "::mlir::Type":$type,
-                                        "::mlir::Attribute":$value), [{
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type,
+                                        "TypedAttr":$value), [{
       return get(name.getContext(), name, type, value);
     }]>,
-    AttrBuilderWithInferredContext<(ins "::llvm::StringRef":$name,
-                                        "::mlir::Type":$type,
-                                        "::mlir::Attribute":$value), [{
+    AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type,
+                                        "TypedAttr":$value), [{
       return get(StringAttr::get(type.getContext(), name), type, value);
     }]>,
   ];
@@ -122,7 +126,7 @@ def ParamBindArrayAttr
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def ParamDeclRefAttr : KGENAttr<"ParamDeclRef", "param.decl.ref"> {
+def ParamDeclRefAttr : ExprAttr<"ParamDeclRef", "param.decl.ref"> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -189,7 +193,7 @@ def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                             POC_EQ, POC_EQ_DTYPE]>;
 }
 
-def ParamOperatorAttr : KGENAttr<"ParamOperator", "param.expr",
+def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Parameter expression";
@@ -228,7 +232,7 @@ def ParamOperatorAttr : KGENAttr<"ParamOperator", "param.expr",
 //===----------------------------------------------------------------------===//
 
 /// This is a value of !kgen.dtype with a constant value from 0...255.
-def DTypeConstantAttr : KGENAttr<"DTypeConstant", "dtype.constant"> {
+def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
     This is constant value for a dtype, whose elements correspond to

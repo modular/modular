@@ -58,6 +58,16 @@ struct FieldParser<POC> {
 };
 } // namespace mlir
 
+/// Parse a parameter name. This is the corresponding parser to
+/// `printParamName`.
+static ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &result) {
+  std::string name;
+  if (p.parseKeywordOrString(&name))
+    return failure();
+  result = StringAttr::get(p.getContext(), name);
+  return success();
+}
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
 
@@ -295,29 +305,6 @@ ParseResult KGEN::parseOptionalIndexParamValue(AsmParser &p,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamDeclAttr
-//===----------------------------------------------------------------------===//
-
-Attribute ParamDeclAttr::parse(AsmParser &p, Type type) {
-  if (!type) {
-    p.emitError(p.getNameLoc(), "parameter declaration requires a type");
-    return {};
-  }
-
-  std::string name;
-  if (p.parseLess() || p.parseKeywordOrString(&name) || p.parseGreater())
-    return {};
-
-  return ParamDeclAttr::get(name, type);
-}
-
-void ParamDeclAttr::print(AsmPrinter &p) const {
-  p << "<";
-  printParamName(p, getName());
-  p << ">";
-}
-
-//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 
@@ -343,25 +330,6 @@ void ParamDeclRefAttr::print(AsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
-
-Attribute ParamBindAttr::parse(AsmParser &p, Type type) {
-  std::string name;
-  Attribute value;
-  if (p.parseLess() || p.parseKeywordOrString(&name) ||
-      parseColonTypeOrIndex(p, type) || p.parseEqual() ||
-      p.parseAttribute(value, type) || p.parseGreater())
-    return {};
-
-  return ParamBindAttr::get(name, type, value);
-}
-
-void ParamBindAttr::print(AsmPrinter &p) const {
-  p << "<" << getName();
-  printColonTypeOrIndex(p, getType());
-  p << " = ";
-  p.printAttributeWithoutType(getValue());
-  p << ">";
-}
 
 void ParamBindAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
