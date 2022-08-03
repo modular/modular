@@ -4,7 +4,6 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_subdirectory(KGENDialect)
-add_subdirectory(HLKGENDialect)
-add_subdirectory(MetaDialect)
-add_subdirectory(KGENToLLVM)
+set(LLVM_TARGET_DEFINITIONS ConvertKGENToLLVM.td)
+mlir_tablegen(ConvertKGENToLLVM.h.inc -gen-pass-decls -name ConvertKGENToLLVM)
+add_public_tablegen_target(MLIRConvertKGENToLLVM)
