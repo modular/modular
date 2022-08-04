@@ -6,4 +6,3 @@
 
 add_subdirectory(kgen-elaborate)
 add_subdirectory(kgen-opt)
-add_subdirectory(kgen-execute)
