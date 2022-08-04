@@ -42,8 +42,8 @@ kgen.kernel @"void,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>)
 // CHECK-LABEL: llvm.func @"struct,type=f32"(%arg0: f32, %arg1: f32) -> !llvm.struct<(f32, f32)>
 // CHECK: [[OUT:%[0-9]+]] = llvm.fmul %arg0, %arg1
 // CHECK: [[UNDEF:%[0-9]+]] = llvm.mlir.undef : !llvm.struct<(f32, f32)>
-// CHECK: [[ONE:%[0-9]+]] = llvm.insertvalue [[OUT]], [[UNDEF]][0 : index] : !llvm.struct<(f32, f32)>
-// CHECK: [[TWO:%[0-9]+]] = llvm.insertvalue [[OUT]], [[ONE]][1 : index] : !llvm.struct<(f32, f32)>
+// CHECK: [[ONE:%[0-9]+]] = llvm.insertvalue [[OUT]], [[UNDEF]][0] : !llvm.struct<(f32, f32)>
+// CHECK: [[TWO:%[0-9]+]] = llvm.insertvalue [[OUT]], [[ONE]][1] : !llvm.struct<(f32, f32)>
 // CHECK: llvm.return [[TWO]]
 kgen.kernel @"struct,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> (!meta.scalar<f32>, !meta.scalar<f32>) {
   %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
