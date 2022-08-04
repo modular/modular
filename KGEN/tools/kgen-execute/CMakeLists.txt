@@ -4,6 +4,10 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_subdirectory(kgen-elaborate)
-add_subdirectory(kgen-opt)
-add_subdirectory(kgen-execute)
+add_modular_tool(kgen-execute
+  kgen-execute.cpp
+
+  LINK_LIBS PRIVATE
+  KGENExecutionEngine
+  MLIRParser
+  )
