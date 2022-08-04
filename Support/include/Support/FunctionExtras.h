@@ -7,6 +7,7 @@
 #ifndef SUPPORT_FUNCTION_EXTRAS_H
 #define SUPPORT_FUNCTION_EXTRAS_H
 
+#include "ErrorOr.h"
 #include <functional>
 #include <type_traits>
 
@@ -30,6 +31,21 @@ invokeWithDefaultResultType(F &&f, Args &&...args) {
     return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
   }
 }
+
+/// Provides a default type that can be used with `invokeWithDefaultResultType`.
+/// This struct is fairly common, and so provided here. Its usage would be:
+///
+///  template<typename T>
+///  ErrorOr<T> someFunc() {
+///    ...
+///    return invokeWithDefaultResultType<DefaultSuccess>(func, args...);
+///  }
+///
+/// Where `someFunc` could be called with `T = void`.
+struct DefaultSuccess {
+  operator ErrorOrSuccess() { return success(); }
+  static DefaultSuccess get() { return DefaultSuccess{}; }
+};
 } // namespace M
 
 #endif // SUPPORT_FUNCTION_EXTRAS_H
