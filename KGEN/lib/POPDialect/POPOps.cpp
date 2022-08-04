@@ -31,17 +31,24 @@ LogicalResult ConstantOp::verify() {
   if (!isBuildableWith(getValue(), valueType))
     return emitError(
         "constant has to be either an integer, float or index type");
+
   // The return type should be a meta scalar which is the same as the value
-  // type.
-  auto resultType = getType();
-  if (auto resultDType =
-          resultType.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>();
-      !resultDType.isCompatibleWith(valueType))
-    return emitOpError()
-           << "expected the type of the constant input value (" << valueType
-           << ") to be compatible with the dtype of the return value ('"
-           << resultDType.getDType().getAsString() << "').";
-  return success();
+  // type or can be parameterized.
+  auto resultDType = getType().cast<ScalarType>().getDtype();
+
+  if (auto resultConstantDType = resultDType.dyn_cast<DTypeConstantAttr>()) {
+    if (!resultConstantDType.isCompatibleWith(valueType))
+      return emitOpError()
+             << "expected the type of the constant input value (" << valueType
+             << ") to be compatible with the dtype of the return value ('"
+             << resultConstantDType.getDType().getAsString() << "').";
+    else
+      return success();
+  } else if (resultDType.isa<ParamDeclRefAttr>()) {
+    return success();
+  }
+
+  llvm::report_fatal_error("unhandled output type");
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
