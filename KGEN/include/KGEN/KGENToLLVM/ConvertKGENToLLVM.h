@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENTOLLVM_CONVERTKGENTOLLVM_H
 #define KGEN_KGENTOLLVM_CONVERTKGENTOLLVM_H
 
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/DialectConversion.h"
 
@@ -16,9 +17,19 @@ class Pass;
 } // namespace mlir
 
 namespace M::KGEN {
-class KGENToLLVMTypeConverter : public mlir::TypeConverter {
+class KGENToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
-  KGENToLLVMTypeConverter();
+  KGENToLLVMTypeConverter(mlir::Location loc);
+
+  /// Report an error or conversion failure.
+  /// TODO: TypeConverter needs an error reporting mechanism.
+  mlir::InFlightDiagnostic emitError(llvm::StringRef msg) {
+    return mlir::emitError(loc) << msg;
+  }
+
+private:
+  /// A location used to report conversion failures.
+  mlir::Location loc;
 };
 
 //===----------------------------------------------------------------------===//

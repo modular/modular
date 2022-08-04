@@ -13,5 +13,8 @@ add_modular_conversion_library(KGENToLLVM
   LINK_LIBS PUBLIC
   KGENDialect
   MetaDialect
+  MLIRFuncDialect
+  MLIRFuncToLLVM
   MLIRIR
+  MLIRLLVMCommonConversion
   )

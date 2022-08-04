@@ -7,8 +7,8 @@ kgen.kernel @trivial_kernel<() -> a>(%arg0: si32) -> si32 {
 }
 
 // -----
-
-// expected-error@+2 {{could not convert this type: '!meta.simd<4, f32>' to be llvm-compatible}}
+// expected-error@-2 {{could not convert '!meta.simd<4, f32>' to be an llvm-compatible type}}
+// expected-error@+2 {{could not convert region types to be LLVM-compatible}}
 // expected-error@+1 {{failed to legalize operation 'kgen.kernel'}}
 kgen.kernel @simd_unsupported(%arg0: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
   kgen.return %arg0 : !meta.simd<4, f32>
