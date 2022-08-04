@@ -858,9 +858,6 @@ DType DTypeConstantAttr::getDType() {
 }
 
 /// Checks if the DType constant is compatible with the MLIR type.
-/// Types are compatible if the types are the same, and the bit widths are the
-/// same. Allows conversions from signed to unsigned, but does not allow
-/// conversion from bf to fp.
 bool DTypeConstantAttr::isCompatibleWith(Type builtinTy) {
   if (!builtinTy.isa<IntegerType, FloatType>())
     return false;

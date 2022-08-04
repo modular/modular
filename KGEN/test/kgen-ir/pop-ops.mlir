@@ -1,4 +1,4 @@
-// RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: kgen.kernel @pop_constant() -> !meta.scalar<f32> {
 kgen.kernel @pop_constant() -> !meta.scalar<f32> {
@@ -38,26 +38,18 @@ kgen.generator @pop_add2<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<t
   kgen.return %c : !meta.scalar<type>
 }
 
-// CHECK-LABEL: kgen.kernel @pop_sub() -> !meta.scalar<f32> {
-kgen.kernel @pop_sub() -> !meta.scalar<f32> {
-  // CHECK-NEXT: %cst = pop.constant(4.000000e+00 : f32) : <f32>
-  %a = pop.constant(4.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: %cst_0 = pop.constant(6.000000e+00 : f32) : <f32>
-  %b = pop.constant(6.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: %0 = pop.add %cst, %cst_0 : <f32>
-  %c = pop.add %a, %b : !meta.scalar<f32>
+// CHECK-LABEL: kgen.kernel @pop_sub(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_sub(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK-NEXT: %0 = pop.sub %arg0, %arg1 : <f32>
+  %0 = pop.sub %arg0, %arg1 : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %0 : !meta.scalar<f32>
-  kgen.return %c : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.kernel @pop_mul() -> !meta.scalar<f32> {
-kgen.kernel @pop_mul() -> !meta.scalar<f32> {
-  // CHECK-NEXT: %cst = pop.constant(4.000000e+00 : f32) : <f32>
-  %a = pop.constant(4.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: %cst_0 = pop.constant(6.000000e+00 : f32) : <f32>
-  %b = pop.constant(6.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: %0 = pop.add %cst, %cst_0 : <f32>
-  %c = pop.add %a, %b : !meta.scalar<f32>
+// CHECK-LABEL: kgen.kernel @pop_mul(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_mul(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK-NEXT: %0 = pop.mul %arg0, %arg1 : <f32>
+  %0 = pop.mul %arg0, %arg1 : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %0 : !meta.scalar<f32>
-  kgen.return %c : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
 }
