@@ -10,6 +10,14 @@ kgen.kernel @pop_constant() -> !meta.scalar<f32> {
   kgen.return %1 : !meta.scalar<f32>
 }
 
+// CHECK-LABEL: kgen.generator @pop_constant2<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @pop_constant2<type: dtype>() -> !meta.scalar<type> {
+  // CHECK-NEXT: %cst = pop.constant(32 : i64) : <type>
+  %0 = pop.constant(32) : !meta.scalar<type>
+  // CHECK-NEXT: kgen.return %cst : !meta.scalar<type>
+  kgen.return %0 : !meta.scalar<type>
+}
+
 // CHECK-LABEL: kgen.kernel @pop_add() -> !meta.scalar<f32> {
 kgen.kernel @pop_add() -> !meta.scalar<f32> {
   // CHECK-NEXT: %cst = pop.constant(4.000000e+00 : f32) : <f32>
@@ -20,6 +28,14 @@ kgen.kernel @pop_add() -> !meta.scalar<f32> {
   %c = pop.add %a, %b : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %0 : !meta.scalar<f32>
   kgen.return %c : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: kgen.generator @pop_add2<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type> {
+kgen.generator @pop_add2<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> !meta.scalar<type> {
+  // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : <type>
+  %c = pop.add %a, %b : !meta.scalar<type>
+  // CHECK-NEXT: kgen.return %0 : !meta.scalar<type>
+  kgen.return %c : !meta.scalar<type>
 }
 
 // CHECK-LABEL: kgen.kernel @pop_sub() -> !meta.scalar<f32> {

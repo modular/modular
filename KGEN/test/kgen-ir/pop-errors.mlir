@@ -8,6 +8,14 @@ kgen.kernel @pop_constant() -> !meta.scalar<si64> {
 
 // -----
 
+kgen.kernel @pop_constant() -> !meta.scalar<f32> {
+  // expected-error @below {{expected '<'}}
+  %0 = pop.constant(32 : si32) : f32
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
+
 kgen.kernel @pop_constant() -> !meta.scalar<si64> {
   // expected-error @below {{expected '<'}}
   %0 = pop.constant(32.0 : f32) : f32
