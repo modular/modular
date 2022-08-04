@@ -857,6 +857,34 @@ DType DTypeConstantAttr::getDType() {
   return DType(getValue().getValue().getZExtValue());
 }
 
+/// Checks if the DType constant is compatible with the MLIR type.
+/// Types are compatible if the types are the same, and the bit widths are the
+/// same. Allows conversions from signed to unsigned, but does not allow
+/// conversion from bf to fp.
+bool DTypeConstantAttr::isCompatibleWith(Type builtinTy) {
+  if (!builtinTy.isa<IntegerType, FloatType>())
+    return false;
+
+  auto eltTy = getDType();
+  auto builtinWidth = builtinTy.getIntOrFloatBitWidth();
+  auto eltWidth = eltTy.getWidthInBits();
+  if (eltTy.isInt())
+    return builtinTy.isa<IntegerType>() && (builtinWidth == eltWidth);
+
+  switch (eltTy.getValue()) {
+  default:
+    return builtinWidth == eltWidth;
+  // Special cases for bf16, fp16, and tf32.
+  case DType::bf16:
+    return builtinTy.isa<BFloat16Type>();
+  case DType::f16:
+    return builtinTy.isa<Float16Type>();
+  case DType::tf32:
+    return false;
+  }
+  llvm::report_fatal_error("unhandled DType");
+}
+
 //===----------------------------------------------------------------------===//
 // Parameter Helper Functions
 //===----------------------------------------------------------------------===//

@@ -17,6 +17,7 @@ add_modular_tool(kgen-elaborate
   KGENDialect
   HLKGENDialect
   MetaDialect
+  POPDialect
   MLIRArithmeticDialect
   MLIRIR
   MLIRLLVMDialect

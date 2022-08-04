@@ -116,38 +116,6 @@ OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
 }
 
 //===----------------------------------------------------------------------===//
-// Shared logic for MetaCastToBuiltinOp and MetaCastFromBuiltinOp
-//===----------------------------------------------------------------------===//
-
-/// Types are compatible if the types are the same, and the bit widths are the
-/// same. Allows conversions from signed to unsigned, but does not allow
-/// conversion from bf to fp.
-static bool typesAreCompatible(Type builtinTy, DType eltTy) {
-  auto builtinWidth = builtinTy.getIntOrFloatBitWidth();
-  auto eltWidth = eltTy.getWidthInBits();
-  if (eltTy.isInt())
-    return builtinTy.isa<IntegerType>() && (builtinWidth == eltWidth);
-
-  if (eltTy.isFloat()) {
-    // bf16 and fp16 are not convertible, but are both floats and have the same
-    // bit width, so we have to make sure we're not converting fp16 to bf16 and
-    // vice versa.
-    if (eltTy == DType::bf16) {
-      return builtinTy.isa<BFloat16Type>();
-    }
-    if (eltTy == DType::f16) {
-      return builtinTy.isa<Float16Type>();
-    }
-    if (eltTy == DType::tf32) {
-      // There is no builtin tf32 type, so we can't do the conversion.
-      return false;
-    }
-    return builtinTy.isa<FloatType>() && (builtinWidth == eltWidth);
-  }
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
 // MetaCastToBuiltinOp
 //===----------------------------------------------------------------------===//
 
@@ -166,8 +134,7 @@ LogicalResult MetaCastToBuiltinOp::verify() {
 
   if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
     if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      DType eltTy = dtype.getDType();
-      if (!typesAreCompatible(standardTy, eltTy))
+      if (!dtype.isCompatibleWith(standardTy))
         return emitOpError() << "does not support casting " << getOperand()
                              << " to " << standardTy << ".";
     }
@@ -207,8 +174,7 @@ LogicalResult MetaCastFromBuiltinOp::verify() {
 
   if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
     if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      DType eltTy = dtype.getDType();
-      if (!typesAreCompatible(standardTy, eltTy))
+      if (!dtype.isCompatibleWith(standardTy))
         return emitOpError() << "does not support casting " << getOperand()
                              << " to " << scalarOrSIMDTy << ".";
     }

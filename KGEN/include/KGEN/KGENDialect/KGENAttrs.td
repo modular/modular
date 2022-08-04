@@ -250,6 +250,12 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   let extraClassDeclaration = [{
     /// Return the DType for the value we contain.
     DType getDType();
+
+    /// Checks if the DType is compatible with the MLIR type.
+    /// Types are compatible if the types are the same, and the bit widths are
+    /// the same. Allows conversions from signed to unsigned, but does not allow
+    /// conversion from bf to fp.
+    bool isCompatibleWith(Type type);
   }];
 }
 
