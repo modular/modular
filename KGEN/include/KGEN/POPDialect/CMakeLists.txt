@@ -4,8 +4,6 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_subdirectory(KGENDialect)
-add_subdirectory(HLKGENDialect)
-add_subdirectory(MetaDialect)
-add_subdirectory(POPDialect)
-add_subdirectory(KGENToLLVM)
+# Generating POP filename prefix into the "kgen" C++ namespace.
+add_mlir_dialect(POP pop -dialect=pop)
+add_modular_doc(POP -gen-dialect-doc POPDialect KGEN/docs/ -dialect=pop)
