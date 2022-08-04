@@ -32,8 +32,8 @@ LogicalResult ConstantOp::verify() {
     return emitError(
         "constant has to be either an integer, float or index type");
 
-  // The return type should be a meta scalar which is the same as the value
-  // type or can be parameterized.
+  // The return type should be a meta scalar which is compatible with the input
+  // value type or can be parameterized.
   auto resultDType = getType().cast<ScalarType>().getDtype();
 
   if (auto resultConstantDType = resultDType.dyn_cast<DTypeConstantAttr>()) {

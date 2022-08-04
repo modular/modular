@@ -252,9 +252,8 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
     DType getDType();
 
     /// Checks if the DType is compatible with the MLIR type.
-    /// Types are compatible if the types are the same, and the bit widths are
-    /// the same. Allows conversions from signed to unsigned, but does not allow
-    /// conversion from bf to fp.
+    /// Types are compatible if the DType and the MLIR types are the same. I.e.
+    /// The kind (integral or floating) is the same as well as the bitwidth.
     bool isCompatibleWith(Type type);
   }];
 }
