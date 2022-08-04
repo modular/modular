@@ -15,7 +15,7 @@ class RewritePatternSet;
 class Pass;
 } // namespace mlir
 
-namespace M {
+namespace M::KGEN {
 class KGENToLLVMTypeConverter : public mlir::TypeConverter {
 public:
   KGENToLLVMTypeConverter();
@@ -41,6 +41,6 @@ std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass();
 /// Generate the code for registering the pass.
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENToLLVM/ConvertKGENToLLVM.h.inc"
-} // namespace M
+} // namespace M::KGEN
 
 #endif // KGEN_KGENTOLLVM_CONVERTKGENTOLLVM_H

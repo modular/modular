@@ -230,8 +230,8 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter() {
   addConversion([](mlir::FloatType fty) { return fty; });
 }
 
-void M::populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
-                                   mlir::RewritePatternSet &patterns) {
+void M::KGEN::populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
+                                         mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertKGENKernel, ConvertKGENReturn, ConvertKGENParamValue,
                   ConvertMetaCastToBuiltin, ConvertMetaCastFromBuiltin>(
       typeConverter, patterns.getContext());
@@ -263,6 +263,6 @@ void ConvertKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 }
 
-std::unique_ptr<mlir::Pass> M::createConvertKGENToLLVMPass() {
+std::unique_ptr<mlir::Pass> M::KGEN::createConvertKGENToLLVMPass() {
   return std::make_unique<ConvertKGENToLLVMPass>();
 }

@@ -17,5 +17,5 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "ModuleOp"> {
   // We generate the LLVM dialect.
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
 
-  let constructor = "::M::createConvertKGENToLLVMPass()";
+  let constructor = "::M::KGEN::createConvertKGENToLLVMPass()";
 }
