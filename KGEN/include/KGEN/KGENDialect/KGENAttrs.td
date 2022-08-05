@@ -184,13 +184,17 @@ def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
 def POC_EQ_DTYPE : I32EnumAttrCase<"EQ_DTYPE", 10, "eq_dtype">;
 
+// Complex variadic operations.
+def POC_IN : I32EnumAttrCase<"IN", 11, "in">;
+def POC_IN_DTYPE : I32EnumAttrCase<"IN_DTYPE", 12, "in_dtype">;
+
 // TODO: Can add compares, string concat, etc as needed.
 
 /// This defines the Parameter Operator Code enum attribute.
 def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                            [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
                             POC_Shl, POC_Shr, POC_Div, POC_Mod,
-                            POC_EQ, POC_EQ_DTYPE]>;
+                            POC_EQ, POC_EQ_DTYPE, POC_IN, POC_IN_DTYPE]>;
 }
 
 def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
@@ -235,8 +239,7 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
-    This is constant value for a dtype, whose elements correspond to
-    DType.
+    This is constant value for a dtype, whose elements correspond to DType.
   }];
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value

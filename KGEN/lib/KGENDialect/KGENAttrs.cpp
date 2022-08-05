@@ -14,6 +14,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/SubElementInterfaces.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -123,6 +124,54 @@ static ParseResult parseOptionalParamKeywordOrString(AsmParser &p,
   return p.parseOptionalString(result);
 }
 
+/// Parse operator expression operands with operator-specific syntax.
+static ParseResult parseOperatorOperands(AsmParser &p, POC opcode,
+                                         SmallVectorImpl<TypedAttr> &operands,
+                                         Type type) {
+  switch (opcode) {
+  default:
+    // operand-list ::= expr (`,` expr)*
+    return p.parseCommaSeparatedList(
+        [&] { return parseParamValue(p, operands.emplace_back(), type); });
+  case POC::IN:
+  case POC::IN_DTYPE:
+    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
+    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
+        p.parseLSquare())
+      break;
+    if (failed(p.parseOptionalRSquare())) {
+      if (p.parseCommaSeparatedList([&] {
+            return parseParamValue(p, operands.emplace_back(), type);
+          }) ||
+          p.parseRSquare())
+        return failure();
+    }
+    return success();
+  }
+  llvm_unreachable("unknown operator");
+}
+
+static void printOperatorOperands(AsmPrinter &p, POC opcode,
+                                  ArrayRef<TypedAttr> operands) {
+  switch (opcode) {
+  default:
+    // operand-list ::= expr (`,` expr)*
+    llvm::interleaveComma(
+        operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
+    break;
+  case POC::IN:
+  case POC::IN_DTYPE:
+    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
+    printParamValue(p, operands[0]);
+    p << ", [";
+    llvm::interleaveComma(operands.drop_front(), p, [&](TypedAttr operand) {
+      printParamValue(p, operand);
+    });
+    p << "]";
+    break;
+  }
+}
+
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
@@ -164,16 +213,21 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // The element type of a function is the same type as the expression itself
     // except for comparisons.
     Type operandType = type;
-    if (opcode == POC::EQ)
+    switch (*opcode) {
+    case POC::EQ:
+    case POC::IN:
       operandType = p.getBuilder().getIndexType();
-    else if (opcode == POC::EQ_DTYPE)
+      break;
+    case POC::EQ_DTYPE:
+    case POC::IN_DTYPE:
       operandType = p.getBuilder().getType<DTypeType>();
+      break;
+    default:
+      break;
+    }
 
     if (failed(p.parseOptionalRParen())) {
-      if (p.parseCommaSeparatedList([&]() -> ParseResult {
-            return parseParamValue(p, operands.emplace_back(Attribute()),
-                                   operandType);
-          }) ||
+      if (parseOperatorOperands(p, *opcode, operands, operandType) ||
           p.parseRParen())
         return failure();
     }
@@ -216,9 +270,7 @@ void KGEN::printParamValue(AsmPrinter &p, Attribute value) {
 
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
     p << stringifyEnum(expr.getOpcode()) << '(';
-    llvm::interleaveComma(expr.getOperands(), p, [&](Attribute operand) {
-      printParamValue(p, operand);
-    });
+    printOperatorOperands(p, expr.getOpcode(), expr.getOperands());
     p << ')';
     return;
   }
@@ -399,7 +451,27 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
     if (!operands[0].getType().isa<DTypeType>())
-      return emitError() << "comparison requires an index type operand";
+      return emitError() << "comparison requires dtype type operand";
+    if (!type.isInteger(1))
+      return emitError() << "comparisons return i1";
+    break;
+  case POC::IN:
+    if (operands.empty())
+      return emitError() << "operator requires at least one operand";
+    if (!llvm::all_of(operands, [](TypedAttr operand) {
+          return operand.getType().isIndex();
+        }))
+      return emitError() << "operator requires all index type operands";
+    if (!type.isInteger(1))
+      return emitError() << "comparisons return i1";
+    break;
+  case POC::IN_DTYPE:
+    if (operands.empty())
+      return emitError() << "operator requires at least one operand";
+    if (!llvm::all_of(operands, [](TypedAttr operand) {
+          return operand.getType().isa<DTypeType>();
+        }))
+      return emitError() << "operator requires all dtype type operands";
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
@@ -431,10 +503,13 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   // All expressions are "less than" a constant, since they appear on the right.
   // We handle integers and dtypes consistently here, they can never occur in
   // the same expression, since they have different types.
-  if (rhs.isa<IntegerAttr, DTypeConstantAttr>()) {
-    // We don't bother to order constants w.r.t. each other since they will be
-    // folded - they can all compare equal.
-    return !lhs.isa<IntegerAttr, DTypeConstantAttr>();
+  if (auto intRhs = rhs.dyn_cast<IntegerAttr>()) {
+    auto intLhs = lhs.dyn_cast<IntegerAttr>();
+    return !intLhs || intLhs.getValue().slt(intRhs.getValue());
+  } else if (auto dtypeRhs = rhs.dyn_cast<DTypeConstantAttr>()) {
+    auto dtypeLhs = lhs.dyn_cast<DTypeConstantAttr>();
+    return !dtypeLhs ||
+           dtypeLhs.getDType().getValue() < dtypeRhs.getDType().getValue();
   }
   if (lhs.isa<IntegerAttr, DTypeConstantAttr>())
     return false;
@@ -744,6 +819,49 @@ static Attribute simplifyEQ_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
   return {};
 }
 
+/// Simplifies an `in` or `in_dtype` operator.
+template <typename ConstOperandT, POC OpCode, POC EQOpCode>
+static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
+  TypedAttr lhs = operands[0];
+  MutableArrayRef<TypedAttr> trailing =
+      llvm::makeMutableArrayRef(operands).drop_front();
+
+  Builder b(lhs.getContext());
+
+  // If there are no trailing operands, fold to false.
+  if (trailing.empty())
+    return b.getBoolAttr(false);
+
+  // If there is only one trailing operand, canonicalize to an `eq` operator.
+  if (trailing.size() == 1)
+    return ParamOperatorAttr::get(EQOpCode, operands);
+
+  bool allConst = true;
+  for (TypedAttr operand : trailing) {
+    // Fold to true if a match was found.
+    if (lhs == operand)
+      return b.getBoolAttr(true);
+    allConst &= operand.isa<ConstOperandT>();
+  }
+  // If all operands are constants and a match was not found, then definitively
+  // fold to false.
+  if (allConst && lhs.isa<ConstOperandT>())
+    return b.getBoolAttr(false);
+
+  // Sort and unique the trailing operands.
+  llvm::stable_sort(trailing, paramExprOperandSortPredicate);
+  SmallVector<TypedAttr> newOperands;
+  newOperands.reserve(operands.size());
+  newOperands.push_back(lhs);
+  SmallPtrSet<Attribute, 4> seenTrailing;
+  for (TypedAttr operand : trailing)
+    if (seenTrailing.insert(operand).second)
+      newOperands.push_back(operand);
+  if (newOperands == operands)
+    return {};
+  return ParamOperatorAttr::get(OpCode, newOperands);
+}
+
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
                                  ArrayRef<TypedAttr> operandsIn, Type type) {
   auto result = get(opcode, operandsIn);
@@ -810,6 +928,15 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyEQ_DTYPE(operands);
     resultType = IntegerType::get(context, 1);
     break;
+  case POC::IN:
+    result = simplifyIN<IntegerAttr, POC::IN, POC::EQ>(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
+  case POC::IN_DTYPE:
+    result =
+        simplifyIN<DTypeConstantAttr, POC::IN_DTYPE, POC::EQ_DTYPE>(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -842,9 +969,9 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-LogicalResult DTypeConstantAttr::verify(
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, IntegerAttr value,
-    Type type) {
+LogicalResult
+DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          IntegerAttr value, Type type) {
   if (!value.getType().isSignlessInteger(8))
     return emitError() << "kgen.dtype.constant requires i8 value";
   if (!type || !type.isa<DTypeType>())
