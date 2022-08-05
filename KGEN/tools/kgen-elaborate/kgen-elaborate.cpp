@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Internals.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KernelElaborator.h"
 #include "Support/CommonCLOptions.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
