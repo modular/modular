@@ -6,6 +6,10 @@ kgen.kernel @pop_constant() -> !meta.scalar<f32> {
   %0 = pop.constant(32 : si64) : !meta.scalar<si64>
   // CHECK-NEXT: %cst_0 = pop.constant(3.200000e+01 : f32) : <f32>
   %1 = pop.constant(32.0 : f32) : !meta.scalar<f32>
+  // CHECK-NEXT: %cst_1 = pop.constant(3.200000e+01 : f64) : <f32>
+  %2 = pop.constant(32.0 : f64) : !meta.scalar<f32>
+  // CHECK-NEXT: %cst_2 = pop.constant(32 : i64) : <f32>
+  %3 = pop.constant(32) : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %cst_0 : !meta.scalar<f32>
   kgen.return %1 : !meta.scalar<f32>
 }
@@ -52,4 +56,25 @@ kgen.kernel @pop_mul(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !m
   %0 = pop.mul %arg0, %arg1 : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %0 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
+}
+
+// COM: Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
+// COM: = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
+
+// CHECK-LABEL: kgen.kernel @erf(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @erf(%x: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: cst = pop.constant(1.1283791670955099 : f64) : <f32>
+  %c0 = pop.constant(1.12837916709551) : !meta.scalar<f32>
+  // CHECK: %cst_0 = pop.constant(-0.37612638903180001 : f64) : <f32>
+  %c1 = pop.constant(-0.3761263890318) : !meta.scalar<f32>
+  // CHECK: %0 = pop.mul %arg0, %arg0 : <f32>
+  %x2 = pop.mul %x, %x : !meta.scalar<f32>
+  // CHECK: %1 = pop.mul %0, %cst_0 : <f32>
+  %x3 = pop.mul %x2, %c1 : !meta.scalar<f32>
+  // CHECK: %2 = pop.add %1, %cst : <f32>
+  %x4 = pop.add %x3, %c0 : !meta.scalar<f32>
+  // CHECK: %3 = pop.mul %2, %arg0 : <f32>
+  %x5 = pop.mul %x4, %x : !meta.scalar<f32>
+  // CHECK: kgen.return  %3 : !meta.scalar<f32>
+  kgen.return %x5 : !meta.scalar<f32>
 }
