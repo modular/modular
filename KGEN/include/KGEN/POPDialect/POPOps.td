@@ -62,6 +62,61 @@ def ConstantOp : POPOp<"constant", [
 
 
 //===----------------------------------------------------------------------===//
+// UnaryOp
+//===----------------------------------------------------------------------===//
+
+// Base class for unary arithmetic pop operations.
+class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
+       POPOp<mnemonic, traits # [NoSideEffect, SameOperandsAndResultType]> {
+  let assemblyFormat = "$operand attr-dict `:` type($result)";
+}
+
+// Base class for unary operations.
+class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
+    POP_ArithmeticUnaryOp<mnemonic, traits # [
+                      DeclareOpInterfaceMethods<InferTypeOpInterface,
+                                                ["inferReturnTypes"]>]>,
+    Arguments<(ins ScalarType:$operand)>,
+    Results<(outs ScalarType:$result)>;
+
+
+//===----------------------------------------------------------------------===//
+// AbsOp
+//===----------------------------------------------------------------------===//
+
+def AbsOp : POP_MetaArithmeticUnaryOp<"abs", [Commutative]> {
+  let summary = "absolute value";
+  let description = [{
+    The `abs` operation takes a meta variable and returns its absolute value.
+    The operand and result types must be the same.
+
+    Example:
+
+    ```mlir
+    %b = pop.abs %a : !meta.scalar<type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// NegOp
+//===----------------------------------------------------------------------===//
+
+def NegOp : POP_MetaArithmeticUnaryOp<"neg", [Commutative]> {
+  let summary = "negation";
+  let description = [{
+    The `neg` operation takes a meta variable and returns its negative.
+    The operand and result types must be the same.
+
+    Example:
+
+    ```mlir
+    %b = pop.neg %a : !meta.scalar<type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 
@@ -71,7 +126,7 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
 }
 
-// Base class for integer binary operations.
+// Base class for binary operations.
 class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticBinaryOp<mnemonic, traits # [
                       DeclareOpInterfaceMethods<InferTypeOpInterface,
@@ -87,13 +142,13 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
-    The `add` operation takes two meta variables numbers and returns their sum.
+    The `add` operation takes two meta variables and returns their sum.
     The operand and result types must be the same.
 
     Example:
 
     ```mlir
-    %a = pop.add %b, %c : !meta.scalar<type>
+    %c = pop.add %a, %b : !meta.scalar<type>
     ```
   }];
 }
@@ -105,13 +160,13 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `sub` operation subtracts two meta variables numbers.
-    The operand and result types must be the same.
+    The `sub` operation subtracts two meta variables. The operand and
+    result types must be the same.
 
     Example:
 
     ```mlir
-    %a = pop.sub %b, %c : !meta.scalar<type>
+    %c = pop.sub %a, %b : !meta.scalar<type>
     ```
   }];
 }
@@ -123,13 +178,72 @@ def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
-    The `mul` operation takes two meta variables numbers and returns their product.
+    The `mul` operation takes two meta variables and returns their product.
     The operand and result types must be the same.
 
     Example:
 
     ```mlir
-    %a = pop.mul %b, %c : !meta.scalar<type>
+    %c = pop.mul %a, %b : !meta.scalar<type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// CopySign
+//===----------------------------------------------------------------------===//
+
+def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign", [Commutative]> {
+  let summary = "copy sign";
+  let description = [{
+
+    The `copysign` operation takes two meta variables (a magntitude variable
+    `a` and a sign variable `b`). It then copies the sign from `b` to the `a`.
+    The operand and result types must be the same.
+
+    Maps to `llvm.intr.copysign`
+
+    Example:
+
+    ```mlir
+    %c = pop.copysign %a, %b : !meta.scalar<type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// TernaryOps
+//===----------------------------------------------------------------------===//
+
+// Base class for ternary arithmetic pop operations.
+class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
+       POPOp<mnemonic, traits # [NoSideEffect, SameOperandsAndResultType]> {
+  let assemblyFormat = "$a `,` $b `,` $c attr-dict `:` type($result)";
+}
+
+// Base class for ternary operations.
+class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
+    POP_ArithmeticTernaryOp<mnemonic, traits # [
+                      DeclareOpInterfaceMethods<InferTypeOpInterface,
+                                                ["inferReturnTypes"]>]>,
+    Arguments<(ins ScalarType:$a, ScalarType:$b, ScalarType:$c)>,
+    Results<(outs ScalarType:$result)>;
+
+//===----------------------------------------------------------------------===//
+// FMAOp
+//===----------------------------------------------------------------------===//
+
+def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
+  let summary = "fused-multiply add";
+  let description = [{
+    The `fma` operation takes three meta variables (`a`, `b`, and `c`)
+    and computes the fma operation `a * b + c`. The operand and result
+    types must be the same.
+
+    Example:
+
+    ```mlir
+    %d = pop.fma %a, %b, %c : !meta.scalar<type>
     ```
   }];
 }
