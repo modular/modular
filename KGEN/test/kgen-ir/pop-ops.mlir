@@ -22,6 +22,22 @@ kgen.generator @pop_constant2<type: dtype>() -> !meta.scalar<type> {
   kgen.return %0 : !meta.scalar<type>
 }
 
+// CHECK-LABEL: kgen.kernel @pop_abs(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_abs(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: %0 = pop.abs %arg0 : <f32>
+  %0 = pop.abs %arg0 : !meta.scalar<f32>
+  // CHECK: kgen.return  %0 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: kgen.kernel @pop_neg(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_neg(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: %0 = pop.neg %arg0 : <f32>
+  %0 = pop.neg %arg0 : !meta.scalar<f32>
+  // CHECK: kgen.return  %0 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
 // CHECK-LABEL: kgen.kernel @pop_add() -> !meta.scalar<f32> {
 kgen.kernel @pop_add() -> !meta.scalar<f32> {
   // CHECK-NEXT: %cst = pop.constant(4.000000e+00 : f32) : <f32>
@@ -55,6 +71,22 @@ kgen.kernel @pop_mul(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !m
   // CHECK-NEXT: %0 = pop.mul %arg0, %arg1 : <f32>
   %0 = pop.mul %arg0, %arg1 : !meta.scalar<f32>
   // CHECK-NEXT: kgen.return  %0 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: kgen.kernel @pop_copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: %0 = pop.copysign %arg0, %arg1 : <f32>
+  %0 = pop.copysign %arg0, %arg1 : !meta.scalar<f32>
+  // CHECK: kgen.return  %0 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: kgen.kernel @pop_fma(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_fma(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: %0 = pop.fma %arg0, %arg1, %arg2 : <f32>
+  %0 = pop.fma %arg0, %arg1, %arg2: !meta.scalar<f32>
+  // CHECK: kgen.return  %0 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 

@@ -65,44 +65,17 @@ kgen.generator @buffer_store_f32<size, type: dtype>(%value: !meta.scalar<type>, 
 }
 
 //===----------------------------------------------------------------------===//
-// fma
-//===----------------------------------------------------------------------===//
-
-// Perform an FMA operation. The fma operation performs an `a*b + c` operation.
-kgen.generator.interface @fma<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
-
-kgen.generator @fma_f32<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32)> implements @fma {
-  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f32
-  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f32
-  %2 = meta.cast_to_builtin %c: !meta.scalar<type> to f32
-  %3 = "llvm.intr.fma"(%0, %1, %2) : (f32, f32, f32) -> f32
-  %4 = meta.cast_from_builtin %3 : f32 to !meta.scalar<type>
-  kgen.return %4 : !meta.scalar<type>
-}
-
-kgen.generator @fma_f64<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>, %c: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f64)> implements @fma {
-  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f64
-  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f64
-  %2 = meta.cast_to_builtin %c: !meta.scalar<type> to f64
-  %3 = "llvm.intr.fma"(%0, %1, %2) : (f64, f64, f64) -> f64
-  %4 = meta.cast_from_builtin %3 : f64 to !meta.scalar<type>
-  kgen.return %4 : !meta.scalar<type>
-}
-
-//===----------------------------------------------------------------------===//
 // horner evaluator
 //===----------------------------------------------------------------------===//
+
+kgen.generator.interface @horner<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
 
 // The horner(val, coeffs) where val is a scalar and coeffs is a list of
 // coefficients  [c0, c1, c2, ..., cn] is defined by the following equation:
 // horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
 //                     = fma(val, horner(val, coeffs[1:]), c0)
-kgen.generator.interface @horner<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
-
-kgen.generator @horner_f32<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32)> implements @horner {
+kgen.generator @horner_impl<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+  constraints <in_dtype(type, [f32, f64])> implements @horner {
   %zero = arith.constant 0 : index
   %one = arith.constant 1 : index
   %zerofVal = pop.constant(0.0) : !meta.scalar<type>
@@ -111,7 +84,7 @@ kgen.generator @horner_f32<size, type: dtype>(%val: !meta.scalar<type>, %coeffic
   %res = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> (f32) {
     %sumVal = meta.cast_from_builtin %sum : f32 to !meta.scalar<type>
     %coeff = kgen.call @buffer.load<size = size, type : dtype = type>(%coefficients, %i): (!meta.buffer<size, type>, index) -> !meta.scalar<type>
-    %resVal = kgen.call @fma<type : dtype = type>(%sumVal, %val, %coeff) : (!meta.scalar<type>, !meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
+    %resVal = pop.fma %sumVal, %val, %coeff : !meta.scalar<type>
     %res = meta.cast_to_builtin %resVal: !meta.scalar<type> to f32
     scf.yield %res : f32
   }
@@ -141,4 +114,21 @@ kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64
   %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
   kgen.return %2 : !meta.scalar<type>
+}
+
+//===----------------------------------------------------------------------===//
+// lessThan
+//===----------------------------------------------------------------------===//
+// TODO: This is a temporary placeholder until the pop dialect has support
+// for compare operations.
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @lessThan<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> i1
+
+kgen.generator @lessThan_f32<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> i1
+  constraints <eq_dtype(type, f32)> implements @lessThan {
+  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f32
+  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f32
+  %2 = arith.cmpf olt, %0, %1 : f32
+  kgen.return %2 : i1
 }
