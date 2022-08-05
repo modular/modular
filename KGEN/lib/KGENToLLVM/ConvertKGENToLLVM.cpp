@@ -52,7 +52,13 @@ public:
 };
 } // namespace
 
+//===----------------------------------------------------------------------===//
+// ConvertKGENCall
+//===----------------------------------------------------------------------===//
+
 namespace {
+/// Convert `kgen.call` to `func.call` and re-use the latter's conversion to
+/// LLVM.
 class ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -77,7 +83,7 @@ public:
 namespace {
 class ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
 public:
-  using mlir::ConvertOpToLLVMPattern<ReturnOp>::ConvertOpToLLVMPattern;
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ReturnOp op, ReturnOpAdaptor opAdaptor,
@@ -101,13 +107,15 @@ namespace {
 class ConvertKGENParamValue
     : public mlir::ConvertOpToLLVMPattern<ParamValueOp> {
 public:
-  using mlir::ConvertOpToLLVMPattern<ParamValueOp>::ConvertOpToLLVMPattern;
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor opAdaptor,
+  matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(op, op.getType(),
-                                                        op.getValue());
+    // Ensure that index types are converted.
+    return mlir::LLVM::detail::oneToOneRewrite(
+        op, mlir::LLVM::ConstantOp::getOperationName(), adaptor.getOperands(),
+        *getTypeConverter(), rewriter);
     return success();
   }
 };
@@ -121,8 +129,7 @@ namespace {
 class ConvertMetaCastToBuiltin
     : public mlir::ConvertOpToLLVMPattern<MetaCastToBuiltinOp> {
 public:
-  using mlir::ConvertOpToLLVMPattern<
-      MetaCastToBuiltinOp>::ConvertOpToLLVMPattern;
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(MetaCastToBuiltinOp op, MetaCastToBuiltinOpAdaptor opAdaptor,
@@ -141,8 +148,7 @@ namespace {
 class ConvertMetaCastFromBuiltin
     : public mlir::ConvertOpToLLVMPattern<MetaCastFromBuiltinOp> {
 public:
-  using mlir::ConvertOpToLLVMPattern<
-      MetaCastFromBuiltinOp>::ConvertOpToLLVMPattern;
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(MetaCastFromBuiltinOp op,
@@ -155,26 +161,112 @@ public:
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// ConvertMetaBufferSize
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Convert the size of a buffer to an `llvm.extractvalue`.
+class ConvertMetaBufferSize
+    : public mlir::ConvertOpToLLVMPattern<BufferSizeOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(
+        op, rewriter.getI64Type(), adaptor.getValue(),
+        rewriter.getI64ArrayAttr(0));
+    return success();
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// ConvertMetaBufferAddress
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// The address of a dynamic buffer is the starting pointer. The address of a
+/// fixed-size buffer is the address of the first element.
+class ConvertMetaBufferAddress
+    : public mlir::ConvertOpToLLVMPattern<BufferAddressOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto type = adaptor.getValue().getType().cast<mlir::LLVM::LLVMStructType>();
+    rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(
+        op, type.getBody()[1], adaptor.getValue(), rewriter.getI64ArrayAttr(1));
+    return success();
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// ConvertMetaBufferCast
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ConvertMetaBufferCast
+    : public mlir::ConvertOpToLLVMPattern<BufferCastOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferCastOp op, BufferCastOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getBuffer());
+    return success();
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// ConvertUnrealizedConversionCast
+//===----------------------------------------------------------------------===//
+
+/// TODO: This shouldn't be needed and should be covered by something like
+/// `meta.cast_to/from_builtin`, but "builtin" now includes LLVM.
+namespace {
+class ConvertUnrealizedConversionCast
+    : public mlir::ConvertOpToLLVMPattern<mlir::UnrealizedConversionCastOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(mlir::UnrealizedConversionCastOp op,
+                  mlir::UnrealizedConversionCastOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, op.getInputs());
+    return success();
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // KGENToLLVMTypeConverter Implementation
 //===----------------------------------------------------------------------===//
 
-static mlir::Type getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
+static Optional<Type> getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
   // This intentionally discards signed-ness because LLVM is signless.
   if (dtype.isInt() || dtype.isSInt() || dtype.isUInt())
-    return mlir::IntegerType::get(ctx, dtype.getIntegerWidthInBits());
+    return IntegerType::get(ctx, dtype.getIntegerWidthInBits());
 
   if (dtype.isFloat()) {
     switch (dtype.getValue()) {
     default:
       break;
     case DType::f16:
-      return mlir::FloatType::getF16(ctx);
+      return FloatType::getF16(ctx);
     case DType::bf16:
-      return mlir::FloatType::getBF16(ctx);
+      return FloatType::getBF16(ctx);
     case DType::f32:
-      return mlir::FloatType::getF32(ctx);
+      return FloatType::getF32(ctx);
     case DType::f64:
-      return mlir::FloatType::getF64(ctx);
+      return FloatType::getF64(ctx);
     }
   }
 
@@ -183,17 +275,64 @@ static mlir::Type getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
 
 KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
     : LLVMTypeConverter(loc.getContext()), loc(loc) {
-  addConversion([&](mlir::Type t) -> Optional<mlir::Type> {
+  addConversion([&](Type t) -> Optional<Type> {
     emitError("could not convert ") << t << " to be an llvm-compatible type";
     return llvm::None;
   });
-  addConversion([](ScalarType scalar) -> Optional<Type> {
-    DType dtype = scalar.getDtype().cast<DTypeConstantAttr>().getDType();
-    auto outType = getMLIRTypeForDType(scalar.getContext(), dtype);
-    if (!outType)
-      return llvm::None;
-    return outType;
+
+  // Convert a DType expression to an MLIR type.
+  auto convertDType = [&](auto type) -> Optional<Type> {
+    auto dtypeConst = type.getDtype().template dyn_cast<DTypeConstantAttr>();
+    if (!dtypeConst) {
+      emitError("dtype not fully specified: ") << type;
+      return {};
+    }
+    return getMLIRTypeForDType(type.getContext(), dtypeConst.getDType());
+  };
+
+  // Convert a size expression to a C++ unsigned integer.
+  auto convertSize = [&](auto type) -> Optional<unsigned> {
+    auto size = type.getSize().template dyn_cast<IntegerAttr>();
+    if (!size) {
+      emitError("size not fully specified: ") << type;
+      return {};
+    }
+    const APInt &value = size.getValue();
+    assert(APInt(value.getBitWidth(), value.getLimitedValue()) == value &&
+           "couldn't narrow vector size");
+    return value.getLimitedValue();
+  };
+
+  // Convert scalar types directly to the dtype.
+  addConversion([&](ScalarType scalar) { return convertDType(scalar); });
+
+  // Convert pointer types to bare pointers of the dtype.
+  addConversion([&](PointerType pointer) -> Optional<Type> {
+    if (Optional<Type> dtype = convertDType(pointer))
+      return mlir::LLVM::LLVMPointerType::get(*dtype);
+    return {};
   });
+
+  // Convert SIMD types to vector types.
+  addConversion([&](SIMDType simd) -> Optional<Type> {
+    Optional<Type> dtype = convertDType(simd);
+    auto size = convertSize(simd);
+    if (!dtype || !size)
+      return {};
+    return mlir::VectorType::get(*size, *dtype, /*numScalableDims=*/1);
+  });
+
+  // Convert buffers to struct<(i64, ptr<T>)>.
+  // TODO: Should fixed-size buffers be converted to arrays?
+  addConversion([&](BufferType buffer) -> Optional<Type> {
+    Optional<Type> dtype = convertDType(buffer);
+    if (!dtype)
+      return {};
+    return mlir::LLVM::LLVMStructType::getLiteral(
+        buffer.getContext(), {Builder(buffer.getContext()).getI64Type(),
+                              mlir::LLVM::LLVMPointerType::get(*dtype)});
+  });
+
   // Need basic forwarding conversions too. These are basically copied from
   // mlir/lib/Conversion/LLVMCommon/TypeConverter.cpp
   addConversion([](mlir::IntegerType integer) {
@@ -204,9 +343,11 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
 
 void M::KGEN::populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
                                          mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertKGENKernel, ConvertKGENCall, ConvertKGENReturn,
-                  ConvertKGENParamValue, ConvertMetaCastToBuiltin,
-                  ConvertMetaCastFromBuiltin>(typeConverter);
+  patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamValue,
+                  ConvertKGENReturn, ConvertMetaBufferAddress,
+                  ConvertMetaBufferCast, ConvertMetaBufferSize,
+                  ConvertMetaCastFromBuiltin, ConvertMetaCastToBuiltin,
+                  ConvertUnrealizedConversionCast>(typeConverter);
   mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 }
 
