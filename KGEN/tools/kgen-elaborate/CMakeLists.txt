@@ -4,27 +4,12 @@
 #
 #===-----------------------------------------------------------------------===##
 
-set(LLVM_LINK_COMPONENTS
-  Support
-)
-
 add_modular_tool(kgen-elaborate
-  BetterCloning.cpp
-  KernelElaborator.cpp
   kgen-elaborate.cpp
 
   LINK_LIBS PRIVATE
-  KGENDialect
-  HLKGENDialect
-  MetaDialect
-  POPDialect
-  MLIRArithmeticDialect
-  MLIRIR
-  MLIRLLVMDialect
+  KGENKernelElaborator
   MLIROptLib
   MLIRParser
-  MLIRSCFDialect
-  MLIRSupport
-  MLIRTransforms
   MSupport
 )

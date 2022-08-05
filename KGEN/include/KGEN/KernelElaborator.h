@@ -1,11 +1,11 @@
-//===- Internals.h --------------------------------------------------------===//
+//===- KGEN/KernelElaborator.h --------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef INTERNALS_H
-#define INTERNALS_H
+#ifndef KGEN_KERNEL_ELABORATOR_H
+#define KGEN_KERNEL_ELABORATOR_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -24,4 +24,4 @@ Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
 
 } // namespace M
 
-#endif // INTERNALS_H
+#endif // KGEN_KERNEL_ELABORATOR_H
