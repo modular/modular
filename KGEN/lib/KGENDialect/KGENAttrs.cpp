@@ -12,6 +12,7 @@
 #include "Support/DType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/SubElementInterfaces.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -997,7 +998,7 @@ bool DTypeConstantAttr::isCompatibleWith(Type builtinTy) {
 
   switch (eltTy.getValue()) {
   default:
-    return builtinWidth == eltWidth;
+    return builtinTy.isa<FloatType>() && builtinWidth == eltWidth;
   // Special cases for bf16, fp16, and tf32.
   case DType::bf16:
     return builtinTy.isa<BFloat16Type>();
