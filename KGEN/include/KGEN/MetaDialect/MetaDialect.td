@@ -24,6 +24,7 @@ def MetaDialect : Dialect {
 
   // We don't need an extra C++ namespace, keep this in the KGEN namespace.
   let cppNamespace = "::M::KGEN";
+  let dependentDialects = ["::M::KGEN::KGENDialect"];
 
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
