@@ -32,11 +32,11 @@ kgen.generator @div_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
 // buffer.load
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @buffer.load<size, type: dtype>(%buffer: !meta.buffer<size, type>, %idx: index) -> !meta.scalar<type>
+kgen.generator.interface @buffer.load<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
 
-kgen.generator @buffer_load_f32<size, type: dtype>(%buffer: !meta.buffer<size, type>, %idx: index) -> !meta.scalar<type>
+kgen.generator @buffer_load_f32<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
   implements @buffer.load {
-  %ptr = meta.buffer.address %buffer: !meta.buffer<size, type>
+  %ptr = meta.buffer.address %buffer: !meta.buffer<?, type>
   %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<type> to !llvm.ptr<f32>
   %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
   %element_ptr = llvm.getelementptr %llvm_ptr[%i64_idx]: (!llvm.ptr<f32>, i64) -> !llvm.ptr<f32>
@@ -49,13 +49,13 @@ kgen.generator @buffer_load_f32<size, type: dtype>(%buffer: !meta.buffer<size, t
 // buffer.store
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @buffer.store<size, type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<size, type>, %idx: index) -> ()
+kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()
 
 // TODO: Currently, the signature of @buffer_store_f32 must exactly match the signature of @buffer_store, so we can't
-// have the signature use f32. When we allow this, we shoudl change the signature to be specialized to f32
-kgen.generator @buffer_store_f32<size, type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<size, type>, %idx: index) -> ()
+// have the signature use f32. When we allow this, we should change the signature to be specialized to f32
+kgen.generator @buffer_store_f32<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()
   implements @buffer.store {
-  %ptr = meta.buffer.address %buffer: !meta.buffer<size, type>
+  %ptr = meta.buffer.address %buffer: !meta.buffer<?, type>
   %llvm_ptr = builtin.unrealized_conversion_cast %ptr: !meta.pointer<type> to !llvm.ptr<f32>
   %i64_idx = builtin.unrealized_conversion_cast %idx: index to i64
   %scalar_val = meta.cast_to_builtin %value: !meta.scalar<type> to f32
@@ -68,22 +68,22 @@ kgen.generator @buffer_store_f32<size, type: dtype>(%value: !meta.scalar<type>, 
 // horner evaluator
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @horner<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+kgen.generator.interface @horner<type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<?, type>) -> !meta.scalar<type>
 
 // The horner(val, coeffs) where val is a scalar and coeffs is a list of
 // coefficients  [c0, c1, c2, ..., cn] is defined by the following equation:
 // horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
 //                     = fma(val, horner(val, coeffs[1:]), c0)
-kgen.generator @horner_impl<size, type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+kgen.generator @horner_impl<type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<?, type>) -> !meta.scalar<type>
   constraints <in_dtype(type, [f32, f64])> implements @horner {
   %zero = arith.constant 0 : index
   %one = arith.constant 1 : index
   %zerofVal = pop.constant(0.0) : !meta.scalar<type>
   %zerof = meta.cast_to_builtin %zerofVal: !meta.scalar<type> to f32
-  %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<size, type>
+  %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<?, type>
   %res = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> (f32) {
     %sumVal = meta.cast_from_builtin %sum : f32 to !meta.scalar<type>
-    %coeff = kgen.call @buffer.load<size = size, type : dtype = type>(%coefficients, %i): (!meta.buffer<size, type>, index) -> !meta.scalar<type>
+    %coeff = kgen.call @buffer.load<type : dtype = type>(%coefficients, %i): (!meta.buffer<?, type>, index) -> !meta.scalar<type>
     %resVal = pop.fma %sumVal, %val, %coeff : !meta.scalar<type>
     %res = meta.cast_to_builtin %resVal: !meta.scalar<type> to f32
     scf.yield %res : f32

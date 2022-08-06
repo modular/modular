@@ -90,7 +90,7 @@ def BufferType : MetaType<"Buffer",
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
-      return $_get(size.getContext(), size, ty);
+      return $_get(ty.getContext(), size, ty);
     }]>,
   ];
 

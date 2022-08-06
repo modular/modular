@@ -4,8 +4,8 @@
 
 kgen.generator.interface @lessThan<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> i1
 kgen.generator.interface @exp<type: dtype>(!meta.scalar<type>) -> !meta.scalar<type>
-kgen.generator.interface @buffer.load<size, type: dtype>(%buffer: !meta.buffer<size, type>, %idx: index) -> !meta.scalar<type>
-kgen.generator.interface @buffer.store<size, type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<size, type>, %idx: index) -> ()
+kgen.generator.interface @buffer.load<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
+kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()
 
 kgen.generator.interface @erf_scalar<type: dtype>(%in: !meta.scalar<type>) -> !meta.scalar<type>
 
@@ -95,27 +95,30 @@ kgen.kernel @erf_scalar_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-kgen.generator.interface @erf<N, type: dtype>(%in: !meta.buffer<N, type>, %out : !meta.buffer<N, type>)
+kgen.generator.interface @erf<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
 
-kgen.generator @erf_impl1<N, type: dtype>(%in: !meta.buffer<N, type>, %out : !meta.buffer<N, type>)
+kgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
   implements @erf {
-    %zero = arith.constant 0 : index
-    %one = arith.constant 1 : index
-    %size = kgen.param.value = <N>
+  %zero = arith.constant 0 : index
+  %one = arith.constant 1 : index
 
-    scf.for %i = %zero to %size step %one {
-        %src  = kgen.call @buffer.load<size = N, type:dtype = type>(%in, %i) : (!meta.buffer<N, type>, index) -> !meta.scalar<type>
-        %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!meta.scalar<type>) -> !meta.scalar<type>
-        kgen.call @buffer.store<size = N, type:dtype = type>(%res, %out, %i) : (!meta.scalar<type>, !meta.buffer<N, type>, index) -> ()
-    }
-    kgen.return
+  // TODO: Must assert that size of in and out buffers are the same
+  %size = meta.buffer.size %in: !meta.buffer<?, type>
+
+  scf.for %i = %zero to %size step %one {
+      %src  = kgen.call @buffer.load<type:dtype = type>(%in, %i) : (!meta.buffer<?, type>, index) -> !meta.scalar<type>
+      %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!meta.scalar<type>) -> !meta.scalar<type>
+      kgen.call @buffer.store<type:dtype = type>(%res, %out, %i) : (!meta.scalar<type>, !meta.buffer<?, type>, index) -> ()
   }
+
+  kgen.return
+}
 
 // Instantiate @erf for concrete buffer size and element type
 
-// CHECK-LABEL: kgen.kernel @erf_10_f32(%arg0: !meta.buffer<10, f32>, %arg1: !meta.buffer<10, f32>)
-// CHECK: kgen.call @"erf_impl1,N=10,type=f32"(%arg0, %arg1) : (!meta.buffer<10, f32>, !meta.buffer<10, f32>) -> ()
-kgen.kernel @erf_10_f32(%in: !meta.buffer<10, f32>, %out: !meta.buffer<10, f32>) {
-  kgen.call @erf<N=10, type:dtype=f32>(%in, %out) : (!meta.buffer<10, f32>, !meta.buffer<10, f32>) -> ()
+// CHECK-LABEL: kgen.kernel @erf_f32(%arg0: !meta.buffer<?, f32>, %arg1: !meta.buffer<?, f32>)
+// CHECK: kgen.call @"erf_impl1,type=f32"(%arg0, %arg1) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
+kgen.kernel @erf_f32(%in: !meta.buffer<?, f32>, %out: !meta.buffer<?, f32>) {
+  kgen.call @erf<type: dtype = f32>(%in, %out) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
   kgen.return
 }
