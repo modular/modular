@@ -18,4 +18,5 @@ configure_lit_site_cfg(
 add_modular_testsuite(check-kgen
   TOOLS
   kgen-opt
-  kgen-elaborate)
+  kgen-elaborate
+  kgen-execute)
