@@ -279,3 +279,22 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
                                      TypeRange types);
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// ParamAssertOp
+//===----------------------------------------------------------------------===//
+
+def ParamAssertOp : KGENOp<"param.assert", []> {
+  let summary = "check a parameter expression at elaboration time";
+  let description = [{
+    The `kgen.param.assert` operation ensures that a parameter expression is
+    true at elaboration time.  It is a more flexible form of the constraint list
+    on a generator.
+  }];
+
+  let arguments = (ins I1ParameterExprAttr:$cond, StrAttr:$message);
+  let assemblyFormat = 
+    "` ` `<` custom<ParamAssertOpValue>($cond) `>` `,` $message attr-dict";
+
+  let hasCanonicalizeMethod = 1;
+}

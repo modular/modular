@@ -291,3 +291,38 @@ kgen.kernel @test_f32() -> f32 {
   %2 = meta.cast_to_builtin %1 : !meta.scalar<type> to f32
   kgen.return %2 : f32
 }
+
+// -----
+
+// Test that we can do static assertions on computed parameter expressions (e.g.
+// those that are the result of a sub-generator invocation.
+
+kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
+
+kgen.generator @getSIMDLengthF32<dt: dtype -> length>() 
+     implements @getSIMDLength {
+  // This could be implemented as a constraint.
+  kgen.param.assert <eq_dtype(dt, f32)>, "this only works for f32"
+  // vector length for floats is 4 on our target.
+  kgen.return <length = 4>
+}
+
+kgen.generator @getSIMDLengthF64<dt: dtype -> length>() 
+     implements @getSIMDLength {
+  // This could be implemented as a constraint.
+  kgen.param.assert <eq_dtype(dt, f64)>, "this only works for f32"
+  // vector length for doubles is 2 on our target.
+  kgen.return <length = 2>
+}
+
+// CHECK-LABEL: kgen.kernel @paramAssertExample()
+// CHECK-NEXT:    kgen.call @"getSIMDLengthF32,dt=f32"<() -> flen>() 
+// CHECK-NEXT:    kgen.return
+kgen.kernel @paramAssertExample() {
+  kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
+  
+  // Should succeed.
+  kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
+  kgen.return
+}
+

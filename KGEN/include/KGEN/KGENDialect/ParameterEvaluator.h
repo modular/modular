@@ -37,6 +37,12 @@ public:
   static ErrorOrSuccess
   evaluateConstraints(GeneratorAndInputParamsPair declAndInputParams);
 
+  /// Given a parameter expression, walk it and return any references to named
+  /// parameters.  This fails if an unknown parameter expression exists.
+  static LogicalResult
+  collectParameterReferences(Attribute expr,
+                             SmallVector<ParamDeclRefAttr> &results);
+
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(ParamDeclAttr decl, Attribute value) {

@@ -19,6 +19,31 @@ static std::string getString(Attribute attr) {
   return str;
 }
 
+LogicalResult ParameterEvaluator::collectParameterReferences(
+    Attribute expr, SmallVector<ParamDeclRefAttr> &results) {
+  // Simple constants don't have parameter references.
+  if (isSimpleConstant(expr))
+    return success();
+
+  // We can directly substitute declaration references given our known table of
+  // bindings.
+  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
+    results.push_back(declRef);
+    return success();
+  }
+
+  // Dig references out of expressions.
+  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
+    for (auto value : oper.getOperands()) {
+      if (failed(collectParameterReferences(value, results)))
+        return failure();
+    }
+    return success();
+  }
+  // Otherwise, we don't know how to walk this attribute.
+  return failure();
+}
+
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.

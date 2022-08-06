@@ -50,7 +50,7 @@ kgen.kernel @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32>
   // TODO: Update return check once meta.scalar.cast is implemented.
   // CHECK: kgen.return %arg0
   kgen.return %2 : !meta.scalar<f32>
- }
+}
 
 // CHECK-LABEL: kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
 kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
@@ -61,4 +61,31 @@ kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
 
   // CHECK: kgen.return %arg0
   kgen.return %2 : f32
- }
+}
+
+kgen.kernel @producesResultParam<() -> result>() {
+  kgen.return<result = 42>
+}
+
+
+// CHECK-LABEL: kgen.generator @param_assert_simplify<p1: i1, p2>()
+// CHECK-NEXT: constraints <
+// CHECK-NEXT:   p1, "this is a constraint!",
+// CHECK-NEXT:   eq(add(p2, 4), 17), "also a constraint"> { 
+kgen.generator @param_assert_simplify<p1 : i1, p2>() {
+
+  kgen.param.assert <p1>, "this is a constraint!"
+  kgen.param.assert <eq(add(p2, 4), 17)>, "also a constraint"
+
+  kgen.param.assert <1>, "this is pointless"
+
+  // CHECK-NEXT:   kgen.param.assert <0>, "failing asserts must be kept"
+  kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
+
+  // CHECK-NEXT: kgen.call @producesResultParam
+  kgen.call @producesResultParam<() -> result>() : () -> ()
+
+  // CHECK-NEXT: kgen.param.assert <eq(result, 12)>, "this stays"
+  kgen.param.assert <eq(result, 12)>, "this stays"
+  kgen.return
+}
