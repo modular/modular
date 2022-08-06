@@ -342,6 +342,7 @@ public:
 private:
   LogicalResult processParamBindOp(ParamBindOp op);
   LogicalResult processParamValueOp(ParamValueOp op);
+  LogicalResult processParamAssertOp(ParamAssertOp op);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
   void
@@ -404,6 +405,8 @@ LogicalResult ParameterRewriter::rewriteOps(
       result = processParamBindOp(bind);
     else if (auto value = dyn_cast<ParamValueOp>(op))
       result = processParamValueOp(value);
+    else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
+      result = processParamAssertOp(assertOp);
     else if (auto call = dyn_cast<CallOp>(op))
       result = processCallOp(call, rewriterWorklist);
     else
@@ -456,6 +459,25 @@ LogicalResult ParameterRewriter::processParamValueOp(ParamValueOp op) {
     return error(op->getLoc(), errorOrValue.takeError());
 
   op.setValueAttr(errorOrValue.takeValue());
+  return success();
+}
+
+LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
+  // Check the condition expression.
+  auto errorOrValue = simplifyParameterExpr(op.getCond());
+  if (errorOrValue.isError())
+    return error(op->getLoc(), errorOrValue.takeError());
+
+  auto resultInt = (*errorOrValue).dyn_cast<IntegerAttr>();
+  if (!resultInt || resultInt.getValue().getBitWidth() != 1)
+    return error(op->getLoc(),
+                 "constraint evaluation didn't return true or false");
+  // If the constraint evaluated to zero then the assert fails.
+  if (resultInt.getValue().isZero())
+    return error(op->getLoc(), "constraint failed: " + op.getMessage());
+
+  // The kgen.param.assert op serves no further purpose, so we can remove it.
+  op->erase();
   return success();
 }
 

@@ -15,6 +15,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -102,6 +103,19 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
+// custom<ParamAssertOpValue>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamAssertOpValue(OpAsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value, p.getBuilder().getI1Type());
+}
+
+static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
+                                    Attribute value) {
+  printParamValue(p, value);
+}
+
+//===----------------------------------------------------------------------===//
 // ParamBindOp
 //===----------------------------------------------------------------------===//
 
@@ -115,6 +129,61 @@ ParamDeclAttr ParamBindOp::getParamDecl() {
   assert(getParamDecls().size() == 1 &&
          "ParamBindOp only allows a single parameter decl.");
   return (*getParamDecls().begin()).cast<ParamDeclAttr>();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamAssertOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
+                                          PatternRewriter &rewriter) {
+  // If the condition is statically true then we can just remove this op.
+  auto cond = op.getCond();
+  if (auto intCond = cond.dyn_cast<IntegerAttr>()) {
+    // Leave failing conditions, they must be diagnosed at elaboration time.
+    if (intCond.getValue().isZero())
+      return failure();
+    rewriter.eraseOp(op);
+    return success();
+  }
+
+  // Check to see if this operation only depends on expressions known in the
+  // signature of the generator.  If so, we can fold it into the constraint
+  // list.
+  SmallVector<ParamDeclRefAttr> parameterRefs;
+  if (GeneratorOp parent = op->getParentOfType<GeneratorOp>();
+      succeeded(ParameterEvaluator::collectParameterReferences(
+          cond, parameterRefs))) {
+    ArrayRef<Attribute> generatorInputParams =
+        getDeclParameterInfo(parent).first;
+
+    // Check to see if the parameters referenced by the condition are all
+    // defined by the generator.  If so, we can fold this into the constraint
+    // list.
+    if (llvm::all_of(parameterRefs, [&](ParamDeclRefAttr declRef) -> bool {
+          return llvm::any_of(generatorInputParams, [&](Attribute inputDecl) {
+            return inputDecl.cast<ParamDeclAttr>().getName() ==
+                   declRef.getName();
+          });
+        })) {
+      // Ok, great, add this to the trait list of the enclosing operation.
+      auto oldConstraints = parent.getConstraints().getValue();
+      SmallVector<Attribute> constraints(oldConstraints.begin(),
+                                         oldConstraints.end());
+      auto oldMessages = parent.getConstraintMessages().getValue();
+      SmallVector<Attribute> constraintMessages(oldMessages.begin(),
+                                                oldMessages.end());
+      constraints.push_back(cond);
+      constraintMessages.push_back(op.getMessageAttr());
+      parent.setConstraintsAttr(rewriter.getArrayAttr(constraints));
+      parent.setConstraintMessagesAttr(
+          rewriter.getArrayAttr(constraintMessages));
+      op.erase();
+      return success();
+    }
+  }
+
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
