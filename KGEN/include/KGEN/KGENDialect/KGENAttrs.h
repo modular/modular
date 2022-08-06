@@ -43,8 +43,10 @@ ArrayRef<Attribute> getParamDecls(Operation *op);
 SmallVector<ParamDeclAttr, 4> getParamDeclsCasted(Operation *op);
 
 /// Given a kernel, generator or interface operation, return the constraints
-/// imposed on it.  For a kernel this is always empty.
-ArrayRef<Attribute> getDeclConstraints(Operation *decl);
+/// imposed on it, which is an expression and string describing the problem when
+/// the constraint fails.   For a kernel this is always empty.
+SmallVector<std::pair<Attribute, StringAttr>>
+getDeclConstraints(Operation *decl);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing

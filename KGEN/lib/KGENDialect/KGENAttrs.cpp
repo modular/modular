@@ -1070,11 +1070,19 @@ KGEN::getDeclParameterInfo(Operation *decl) {
                         declParams.drop_front(numInputParams));
 }
 
-ArrayRef<Attribute> KGEN::getDeclConstraints(Operation *decl) {
+SmallVector<std::pair<Attribute, StringAttr>>
+KGEN::getDeclConstraints(Operation *decl) {
+  SmallVector<std::pair<Attribute, StringAttr>> result;
   // Kernels never have constraints.
   if (isa<KernelOp>(decl))
-    return {};
+    return result;
+
   // Must be a generator or interface.
   assert(classifyDecl(decl).hasValue() && "unknown declaration");
-  return decl->getAttrOfType<ArrayAttr>("constraints").getValue();
+  auto exprs = decl->getAttrOfType<ArrayAttr>("constraints").getValue();
+  auto messages =
+      decl->getAttrOfType<ArrayAttr>("constraintMessages").getValue();
+  for (auto [expr, message] : llvm::zip(exprs, messages))
+    result.push_back({expr, message.cast<StringAttr>()});
+  return result;
 }
