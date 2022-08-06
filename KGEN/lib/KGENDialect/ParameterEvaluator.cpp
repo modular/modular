@@ -106,8 +106,8 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
                                                   Location loc) {
   // These are common leaf attributes that we know are never parameterized.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DTypeConstantAttr>())
+  if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
+                        DTypeConstantAttr>())
     return attr;
 
   // If we've already processed this attribute, just reuse the memoized result.
