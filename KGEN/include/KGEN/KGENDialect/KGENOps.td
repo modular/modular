@@ -86,6 +86,7 @@ def GeneratorOp
                        ParamDeclArrayAttr:$paramDecls,
                        I32Attr:$numInputParameters,
                        ConstraintArrayAttr:$constraints,
+                       StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
 
@@ -129,7 +130,8 @@ def GeneratorInterfaceOp
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        I32Attr:$numInputParameters,
-                       ConstraintArrayAttr:$constraints);
+                       ConstraintArrayAttr:$constraints,
+                       StrArrayAttr:$constraintMessages);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.

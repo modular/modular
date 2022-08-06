@@ -23,9 +23,9 @@ kgen.kernel @local_verif_error() {
 kgen.generator.interface @genItf2<x>()
 
 // expected-note @below {{failed to expand this declaration}}
-// expected-note @+1 {{constraint failed}}
+// expected-note @+1 {{constraint failed: x must be zarooo}}
 kgen.generator @genItf2_impl0<x>()
-  constraints <eq(x, 0)> implements @genItf2 {
+  constraints <eq(x, 0), "x must be zarooo"> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return
 }

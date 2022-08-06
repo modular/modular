@@ -380,7 +380,7 @@ kgen.kernel @cast_from_meta_type(%arg0: f64) {
 
 // expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
 kgen.generator @constrained<width, height>()
-  constraints <eq(width, 42), eq(he1ght, 42)> {
+  constraints <eq(width, 42), "thing", eq(he1ght, 42), "other"> {
   kgen.return
 }
 
@@ -388,7 +388,7 @@ kgen.generator @constrained<width, height>()
 
 // expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
 kgen.generator.interface @constrained<width, height>()
-  constraints <eq(width, 42), eq(he1ght, 42)>
+  constraints <eq(width, 42), "width", eq(he1ght, 42), "height">
 
 // -----
 

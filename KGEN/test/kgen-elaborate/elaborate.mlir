@@ -172,7 +172,7 @@ kgen.generator.interface @genItf2<x>()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
 kgen.generator @genItf2_impl0<x>()
-  constraints <eq(x, 0)> implements @genItf2 {
+  constraints <eq(x, 0), "x must be zero"> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return
 }
@@ -183,7 +183,7 @@ kgen.generator @genItf2_impl0<x>()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
 kgen.generator @genItf2_impl1<x>()
-  constraints <eq(x, 1)> implements @genItf2 {
+  constraints <eq(x, 1), "x must be 1"> implements @genItf2 {
   "impl1"() : () -> ()
   kgen.return
 }
@@ -275,7 +275,7 @@ kgen.kernel @track_expansions(%arg0: si32) {
 // CHECK:    kgen.return  %2 : !meta.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32)>  {
+  constraints <eq_dtype(type, f32), "float please">  {
   %0 = kgen.param.value : f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = meta.cast_from_builtin %1: f32 to !meta.scalar<type>

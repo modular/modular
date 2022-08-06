@@ -288,23 +288,31 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
   if (opKind == GeneratorOrKernelKind::kernel)
     return success();
 
-  SmallVector<Attribute> constraints;
+  SmallVector<Attribute> constraints, constraintMessages;
 
   if (succeeded(parser.parseOptionalKeyword("constraints"))) {
     // Constraints are always i1.
     Type int1Ty = parser.getBuilder().getI1Type();
-    if (parser.parseCommaSeparatedList(
-            OpAsmParser::Delimiter::LessGreater, [&]() -> ParseResult {
-              TypedAttr constraint;
-              if (failed(parseParamValue(parser, constraint, int1Ty)))
-                return failure();
-              constraints.push_back(constraint);
-              return success();
-            }))
+    std::string message;
+
+    auto parseConstraint = [&]() -> ParseResult {
+      TypedAttr constraint;
+      if (parseParamValue(parser, constraint, int1Ty) || parser.parseComma() ||
+          parser.parseString(&message))
+        return failure();
+      constraints.push_back(constraint);
+      constraintMessages.push_back(parser.getBuilder().getStringAttr(message));
+      return success();
+    };
+
+    if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::LessGreater,
+                                       parseConstraint))
       return failure();
   }
   result.addAttribute("constraints",
                       parser.getBuilder().getArrayAttr(constraints));
+  result.addAttribute("constraintMessages",
+                      parser.getBuilder().getArrayAttr(constraintMessages));
   return success();
 }
 
@@ -429,9 +437,14 @@ static void printConstraints(Operation *decl, OpAsmPrinter &p) {
     return;
 
   p << "\n  constraints <";
-  llvm::interleaveComma(constraints, p, [&](Attribute constraint) {
-    printParamValue(p, constraint);
-  });
+  llvm::interleaveComma(
+      constraints, p,
+      [&](std::pair<Attribute, StringAttr> constraintAndMessage) {
+        if (constraints.size() > 1)
+          p << "\n    ";
+        printParamValue(p, constraintAndMessage.first);
+        p << ", " << constraintAndMessage.second;
+      });
   p << '>';
 }
 
