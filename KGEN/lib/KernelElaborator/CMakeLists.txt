@@ -9,15 +9,8 @@ add_modular_library(KGENKernelElaborator
   KernelElaborator.cpp
 
   LINK_LIBS PUBLIC
-  HLKGENDialect
   KGENDialect
-  MetaDialect
   MLIRIR
-  MLIRArithmeticDialect
-  MLIRLLVMDialect
-  MLIRSCFDialect
   MLIRSupport
-  MLIRTransforms
   MSupport
-  POPDialect
   )
