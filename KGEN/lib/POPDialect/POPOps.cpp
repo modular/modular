@@ -114,14 +114,12 @@ LogicalResult ConstantOp::verify() {
   auto resultDType = getType().cast<ScalarType>().getDtype();
 
   if (auto resultConstantDType = resultDType.dyn_cast<DTypeConstantAttr>()) {
-    if (!isCastableFrom(getValue(), resultConstantDType)) {
+    if (!isCastableFrom(getValue(), resultConstantDType))
       return emitOpError()
              << "expected the type of the constant input value (" << valueType
              << ") to be compatible with the dtype of the return value ('"
              << resultConstantDType.getDType().getAsString() << "').";
-    } else {
-      return success();
-    }
+    return success();
   } else if (resultDType.isa<ParamDeclRefAttr>()) {
     return success();
   }
