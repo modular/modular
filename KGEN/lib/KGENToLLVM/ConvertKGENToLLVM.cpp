@@ -17,6 +17,7 @@
 
 using namespace M;
 using namespace KGEN;
+namespace LLVM = mlir::LLVM;
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENKernel
@@ -113,8 +114,8 @@ public:
   matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Ensure that index types are converted.
-    return mlir::LLVM::detail::oneToOneRewrite(
-        op, mlir::LLVM::ConstantOp::getOperationName(), adaptor.getOperands(),
+    return LLVM::detail::oneToOneRewrite(
+        op, LLVM::ConstantOp::getOperationName(), adaptor.getOperands(),
         *getTypeConverter(), rewriter);
     return success();
   }
@@ -174,7 +175,7 @@ public:
   LogicalResult
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, rewriter.getI64Type(), adaptor.getValue(),
         rewriter.getI64ArrayAttr(0));
     return success();
@@ -197,8 +198,8 @@ public:
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto type = adaptor.getValue().getType().cast<mlir::LLVM::LLVMStructType>();
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(
+    auto type = adaptor.getValue().getType().cast<LLVM::LLVMStructType>();
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, type.getBody()[1], adaptor.getValue(), rewriter.getI64ArrayAttr(1));
     return success();
   }
@@ -309,7 +310,7 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
   // Convert pointer types to bare pointers of the dtype.
   addConversion([&](PointerType pointer) -> Optional<Type> {
     if (Optional<Type> dtype = convertDType(pointer))
-      return mlir::LLVM::LLVMPointerType::get(*dtype);
+      return LLVM::LLVMPointerType::get(*dtype);
     return {};
   });
 
@@ -328,9 +329,9 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
     Optional<Type> dtype = convertDType(buffer);
     if (!dtype)
       return {};
-    return mlir::LLVM::LLVMStructType::getLiteral(
+    return LLVM::LLVMStructType::getLiteral(
         buffer.getContext(), {Builder(buffer.getContext()).getI64Type(),
-                              mlir::LLVM::LLVMPointerType::get(*dtype)});
+                              LLVM::LLVMPointerType::get(*dtype)});
   });
 
   // Need basic forwarding conversions too. These are basically copied from
@@ -364,7 +365,7 @@ public:
 void ConvertKGENToLLVMPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   mlir::ConversionTarget target(getContext());
-  target.addLegalDialect<mlir::LLVM::LLVMDialect>();
+  target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalOp<ModuleOp>();
   target.addIllegalDialect<KGENDialect, MetaDialect>();
 
