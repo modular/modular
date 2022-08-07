@@ -25,8 +25,8 @@ def ConstantOp : POPOp<"constant", [
       DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "integer or floating point constant";
   let description = [{
-    The `constant` operation produces a meta.scalar value equal to some
-    integer or floating-point constant specified by an attribute. The
+    The `constant` operation produces a meta.scalar type equal to the
+    input integer or floating-point constant specified. The
     input value need not match the dtype of the output meta.scalar but
     must be coerscible to it.
 
@@ -84,10 +84,10 @@ class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 // AbsOp
 //===----------------------------------------------------------------------===//
 
-def AbsOp : POP_MetaArithmeticUnaryOp<"abs", [Commutative]> {
+def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
-    The `abs` operation takes a meta variable and returns its absolute value.
+    The `abs` operation takes a meta.scalar type and returns its absolute value.
     The operand and result types must be the same.
 
     Example:
@@ -102,10 +102,10 @@ def AbsOp : POP_MetaArithmeticUnaryOp<"abs", [Commutative]> {
 // NegOp
 //===----------------------------------------------------------------------===//
 
-def NegOp : POP_MetaArithmeticUnaryOp<"neg", [Commutative]> {
+def NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
-    The `neg` operation takes a meta variable and returns its negative.
+    The `neg` operation takes a meta.scalar type and returns its negative.
     The operand and result types must be the same.
 
     Example:
@@ -142,7 +142,7 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
-    The `add` operation takes two meta variables and returns their sum.
+    The `add` operation takes two meta.scalar types and returns their sum.
     The operand and result types must be the same.
 
     Example:
@@ -160,8 +160,8 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `sub` operation subtracts two meta variables. The operand and
-    result types must be the same.
+    The `sub` operation subtracts two meta.scalar types and subtracts them.
+    The operand and result types must be the same.
 
     Example:
 
@@ -178,7 +178,7 @@ def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
-    The `mul` operation takes two meta variables and returns their product.
+    The `mul` operation takes two meta.scalar types and returns their product.
     The operand and result types must be the same.
 
     Example:
@@ -193,15 +193,13 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 // CopySign
 //===----------------------------------------------------------------------===//
 
-def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign", [Commutative]> {
+def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
 
-    The `copysign` operation takes two meta variables (a magntitude variable
-    `a` and a sign variable `b`). It then copies the sign from `b` to the `a`.
-    The operand and result types must be the same.
-
-    Maps to `llvm.intr.copysign`
+    The `copysign` operation takes two meta.scalar types (a magntitude `a`
+    and a sign `b`). It then copies the sign from `b` to the `a`. The operand
+    and result types must be the same.
 
     Example:
 
@@ -236,7 +234,7 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `fma` operation takes three meta variables (`a`, `b`, and `c`)
+    The `fma` operation takes three meta.scalar types (`a`, `b`, and `c`)
     and computes the fma operation `a * b + c`. The operand and result
     types must be the same.
 
