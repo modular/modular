@@ -26,10 +26,19 @@ static constexpr size_t kPreferredSIMDBitWidth = 256;
 static constexpr size_t kPreferredSIMDBitWidth = 128;
 #endif // __AVX2__
 
+/// For our optimized representation of SIMDVector, we use Clang's extended
+/// vector type.  For compatibility, we use std::array.
+/// TODO: We should be able to use GCC's extended vector syntax as well.
+#ifdef __clang__
+#define LLCL_SIMD_EMULATED 0
+#else
+#define LLCL_SIMD_EMULATED 1
+#endif
+
 /// The SIMDVector class is an architecture independent wrapper for operating on
 /// SIMD types. Width is the number of elements in the SIMDVector (and not the
 /// bytecount nor the bitcount). The SIMDVector is designed to emulate the SIMD
-/// operations if the do not exist on the target architecture.
+/// operations if they do not exist on the target architecture or host compiler.
 template <typename ElemTy,
           size_t Width = kPreferredSIMDBitWidth / sizeof(ElemTy)>
 class SIMDVector {
@@ -42,13 +51,14 @@ public:
   static constexpr size_t byte_count = Width * sizeof(ElemTy);
   static constexpr size_t bit_count = 8 * byte_count;
   static constexpr size_t width = Width;
-#ifdef __clang__
-  using vector_type =
-      element_type __attribute__((vector_size(bit_count), aligned(1)));
-#else  // __clang__
+
+#if LLCL_SIMD_EMULATED
   // We are just going to emulate the SIMD type using an array.
   using vector_type = std::array<element_type, width>;
-#endif // __clang__
+#else
+  using vector_type =
+      element_type __attribute__((vector_size(bit_count), aligned(1)));
+#endif
 
   SIMDVector() = default;
 
@@ -156,11 +166,8 @@ public:
   }
 
 private:
-#ifdef __clang__
-  static constexpr bool isEmulated = false;
-#else  // __clang__
-  static constexpr bool isEmulated = true;
-#endif // __clang__
+  static constexpr bool isEmulated = bool(LLCL_SIMD_EMULATED);
+
   vector_type vectorData;
 
   const vector_type &value() { return vectorData; }
