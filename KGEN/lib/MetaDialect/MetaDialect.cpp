@@ -138,7 +138,7 @@ void BufferType::walkImmediateSubElements(
 Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                              ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.empty());
-  return BufferType::get(replAttrs[0], replAttrs[1]);
+  return BufferType::get(getContext(), replAttrs[0], replAttrs[1]);
 }
 
 //===----------------------------------------------------------------------===//

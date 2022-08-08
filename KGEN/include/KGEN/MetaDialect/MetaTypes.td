@@ -88,12 +88,6 @@ def BufferType : MetaType<"Buffer",
   }];
   let genVerifyDecl = 1;
 
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
-      return $_get(ty.getContext(), size, ty);
-    }]>,
-  ];
-
   let extraClassDeclaration = [{
     /// Return the DType of the dtype.
     /// Returns DType::invalid if dtype is null
