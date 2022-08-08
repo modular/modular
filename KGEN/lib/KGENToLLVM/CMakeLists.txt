@@ -8,7 +8,7 @@ add_modular_conversion_library(KGENToLLVM
   ConvertKGENToLLVM.cpp
 
   DEPENDS
-  MLIRConvertKGENToLLVM
+  MLIRKGENPasses
 
   LINK_LIBS PUBLIC
   KGENDialect
