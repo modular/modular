@@ -53,7 +53,7 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   /// asmsyntax defaults to `index`.
   let parameters = (ins "StringAttr":$name, "Type":$type);
 
-  let assemblyFormat = "`<` custom<ParamName>($name) `:` $type `>`";
+  let assemblyFormat = "custom<ParamName>($name) `:` $type";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),
@@ -67,21 +67,44 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayOfAttrsAttr
+//===----------------------------------------------------------------------===//
+
+/// An array attribute of another attribute.
+class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
+    : KGENAttr<attrName, attrMnemonic,
+              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  let parameters = (ins ArrayRefParameter<eltName>:$value);
+  let assemblyFormat = "`[` $value `]`";
+
+  let returnType = "ArrayRef<" # eltName # ">";
+  let constBuilderCall = "$_builder.getAttr<" # attrName # "Attr>($0)";
+  let convertFromStorage = "$_self.getValue()";
+
+  let extraClassDeclaration = [{
+    auto begin() const { return getValue().begin(); }
+    auto end() const { return getValue().end(); }
+    bool empty() const { return getValue().empty(); }
+    size_t size() const { return getValue().size(); }
+    auto &front() const { return getValue().front(); }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamDeclArrayAttr
 //===----------------------------------------------------------------------===//
 
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
 def ParamDeclArrayAttr
-  : TypedArrayAttrBase<ParamDeclAttr, "parameter array attribute">;
+    : ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr">;
 
 /// An array of ParamDeclAttr of size 1.
 def ParamDeclSize1ArrayAttr
-  : TypedArrayAttrBase<ParamDeclAttr, "single parameter array attribute"> {
-  let predicate = And<[
-    ParamDeclArrayAttr.predicate, CPred<"$_self.cast<ArrayAttr>().size() == 1">
-  ]>;
-}
+  : Confined<ParamDeclArrayAttr, [AttrConstraint<
+      CPred<"$_self.cast<ParamDeclArrayAttr>().getValue().size() == 1">,
+      "single parameter declaration"
+    >]>;
 
 //===----------------------------------------------------------------------===//
 // ParamBindAttr
@@ -101,7 +124,7 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
   );
 
   let assemblyFormat =
-    "`<` custom<ParamName>($name) (`:` $type^)? `=` $value `>`";
+    "custom<ParamName>($name) (`:` $type^)? `=` $value";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type,
@@ -117,7 +140,7 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
 
 /// An array of ParamBindAttr's.
 def ParamBindArrayAttr
-  : TypedArrayAttrBase<ParamBindAttr, "parameter binding array attribute">;
+    : ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclRefAttr

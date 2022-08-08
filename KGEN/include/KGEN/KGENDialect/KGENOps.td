@@ -45,8 +45,8 @@ def KernelOp
 
     /// Return an array of `ParamDeclAttr`s the result parameters.  kgen.kernel
     /// implementations never have input parameters.
-    ArrayRef<Attribute> getOutputParameters() {
-      return getParamDecls().getValue();
+    ArrayRef<ParamDeclAttr> getOutputParameters() {
+      return getParamDecls();
     }
   }];
 
@@ -57,11 +57,11 @@ def KernelOp
     // Create a kernel with a region but no body block.  The caller must create
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
-                   "ArrayRef<Attribute>":$outputParams)>,
+                   "ArrayRef<ParamDeclAttr>":$outputParams)>,
     // Create a kernel with an empty body, `argLocs` specifies the locations for
     // all the block arguments.
     OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
-                   "ArrayRef<Attribute>":$outputParams,
+                   "ArrayRef<ParamDeclAttr>":$outputParams,
                    "ArrayRef<Location>":$argLocs)>,
   ];
 }
@@ -107,7 +107,8 @@ def GeneratorOp
 
     /// Return an array of `ParamDeclAttr`s for the inputs and the array of
     /// `ParamDeclAttr`s for the result parameters.
-    std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
+    std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
+    getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -146,7 +147,8 @@ def GeneratorInterfaceOp
 
     /// Return an array of `ParamDeclAttr`s for the inputs and the array of
     /// `ParamDeclAttr`s for the result parameters.
-    std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
+    std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
+    getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -192,8 +194,8 @@ def CallOp
 
   let builders = [
     OpBuilder<(ins "TypeRange":$resultTypes, "StringAttr":$callee,
-                   "ArrayRef<Attribute>":$inputParams,
-                   "ArrayRef<Attribute>":$resultParams,
+                   "ArrayRef<ParamBindAttr>":$inputParams,
+                   "ArrayRef<ParamDeclAttr>":$resultParams,
                    "OperandRange":$operands)>,
   ];
 }
@@ -275,7 +277,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let extraClassDeclaration = [{
     /// Verify that the operands of this ReturnOp match the specified set of
     /// types.
-    LogicalResult checkArgumentTypes(ArrayRef<Attribute> paramDecls,
+    LogicalResult checkArgumentTypes(ArrayRef<ParamDeclAttr> paramDecls,
                                      TypeRange types);
   }];
 }

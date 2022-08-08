@@ -30,17 +30,12 @@ inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
 /// result parameters.  A kernel will always never have input parameters.
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 getDeclParameterInfo(Operation *decl);
 
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
-ArrayRef<Attribute> getParamDecls(Operation *op);
-
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.  This handles casting each
-/// element of the attribute list, which requires building a new SmallVector.
-SmallVector<ParamDeclAttr, 4> getParamDeclsCasted(Operation *op);
+ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 
 /// Given a kernel, generator or interface operation, return the constraints
 /// imposed on it, which is an expression and string describing the problem when
@@ -65,7 +60,7 @@ void printParamName(AsmPrinter &p, StringRef name);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParamValue(AsmPrinter &p, Attribute value);
+void printParamValue(AsmPrinter &p, TypedAttr value);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.

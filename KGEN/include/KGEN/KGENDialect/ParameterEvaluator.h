@@ -53,7 +53,7 @@ public:
   /// Given a generic parameter expression, simplify it by folding the
   /// expression according to known parameter values.  This returns an error if
   /// the expression cannot be folded for one reason or another.
-  ErrorOr<TypedAttr> simplifyParameterExpr(Attribute expr);
+  ErrorOr<TypedAttr> simplifyParameterExpr(TypedAttr expr);
 
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.  This can fail with incompatible IR (not due to expansion

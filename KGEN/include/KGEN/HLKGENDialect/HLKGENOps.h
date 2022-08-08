@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_HLKGENOPS_H
 
 #include "KGEN/HLKGENDialect/HLKGENDialect.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"

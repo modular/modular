@@ -44,7 +44,8 @@ static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
 // custom<ParamBindOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamBindOpValue(OpAsmParser &p, ArrayAttr &paramDecls,
+static ParseResult parseParamBindOpValue(OpAsmParser &p,
+                                         ParamDeclArrayAttr &paramDecls,
                                          TypedAttr &value) {
   std::string varname;
   Type valTy;
@@ -52,13 +53,15 @@ static ParseResult parseParamBindOpValue(OpAsmParser &p, ArrayAttr &paramDecls,
       parseParamValueOpValue(p, value, valTy))
     return failure();
 
-  paramDecls = p.getBuilder().getArrayAttr(ParamDeclAttr::get(varname, valTy));
+  paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
+      ParamDeclAttr::get(varname, valTy));
   return success();
 }
 
 static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
-                                  ArrayAttr paramDecls, TypedAttr value) {
-  ParamDeclAttr variable = paramDecls.begin()->cast<ParamDeclAttr>();
+                                  ParamDeclArrayAttr paramDecls,
+                                  TypedAttr value) {
+  ParamDeclAttr variable = paramDecls.front();
   printParamName(p, variable.getName().getValue());
   printParamValueOpValue(p, nullptr, value, value.getType());
 }
@@ -67,8 +70,9 @@ static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
 // custom<ParameterBindings>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParameterBindings(OpAsmParser &p, ArrayAttr &value) {
-  SmallVector<Attribute> elts;
+static ParseResult parseParameterBindings(OpAsmParser &p,
+                                          ParamBindArrayAttr &value) {
+  SmallVector<ParamBindAttr> elts;
   if (p.parseCommaSeparatedList(
           OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
             std::string name;
@@ -83,17 +87,16 @@ static ParseResult parseParameterBindings(OpAsmParser &p, ArrayAttr &value) {
           }))
     return failure();
 
-  value = p.getBuilder().getArrayAttr(elts);
+  value = ParamBindArrayAttr::get(p.getContext(), elts);
   return success();
 }
 
 static void printParameterBindings(OpAsmPrinter &p, Operation *op,
-                                   ArrayAttr value) {
+                                   ParamBindArrayAttr value) {
   if (value.empty())
     return;
   p << '<';
-  llvm::interleaveComma(value, p, [&](Attribute attr) {
-    auto bind = attr.cast<ParamBindAttr>();
+  llvm::interleaveComma(value, p, [&](ParamBindAttr bind) {
     printParamName(p, bind.getName());
     printColonTypeOrIndex(p, bind.getType());
     p << " = ";
@@ -122,7 +125,7 @@ static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
 void ParamBindOp::build(OpBuilder &builder, OperationState &result,
                         ParamDeclAttr decl, Attribute value) {
   build(builder, result, /*no result types*/ TypeRange{},
-        builder.getArrayAttr(decl), value);
+        builder.getAttr<ParamDeclArrayAttr>(decl), value);
 }
 
 ParamDeclAttr ParamBindOp::getParamDecl() {
@@ -154,16 +157,15 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   if (GeneratorOp parent = op->getParentOfType<GeneratorOp>();
       succeeded(ParameterEvaluator::collectParameterReferences(
           cond, parameterRefs))) {
-    ArrayRef<Attribute> generatorInputParams =
+    ArrayRef<ParamDeclAttr> generatorInputParams =
         getDeclParameterInfo(parent).first;
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
     // list.
     if (llvm::all_of(parameterRefs, [&](ParamDeclRefAttr declRef) -> bool {
-          return llvm::any_of(generatorInputParams, [&](Attribute inputDecl) {
-            return inputDecl.cast<ParamDeclAttr>().getName() ==
-                   declRef.getName();
+          return llvm::any_of(generatorInputParams, [&](ParamDeclAttr decl) {
+            return decl.getName() == declRef.getName();
           });
         })) {
       // Ok, great, add this to the trait list of the enclosing operation.
@@ -191,32 +193,22 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 //===----------------------------------------------------------------------===//
 
 /// Parse a parameter list if present.
-/// parameter-decl   ::= identifier (`:` type)?
-/// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
-
-/// if isBinding:
-///   parameter-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
-/// else:
-///   parameter-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-static ParseResult parseParamList(OpAsmParser &p,
-                                  SmallVector<Attribute> &paramDecls,
-                                  bool isBinding) {
+template <typename AttrT>
+static ParseResult
+parseParamList(AsmParser &p, SmallVectorImpl<AttrT> &params,
+               function_ref<ParseResult(AsmParser &, AttrT &, StringRef, Type)>
+                   parseElementFn) {
 
   // Handle the parameter-decl/parameter-result productions.
   auto parseParamDecl = [&]() -> ParseResult {
     std::string name;
     Type type;
 
-    if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type))
+    AttrT element;
+    if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type) ||
+        parseElementFn(p, element, name, type))
       return failure();
-    if (isBinding) {
-      TypedAttr value;
-      if (p.parseEqual() || parseParamValue(p, value, type))
-        return failure();
-      paramDecls.emplace_back(ParamBindAttr::get(name, type, value));
-    } else {
-      paramDecls.emplace_back(ParamDeclAttr::get(name, type));
-    }
+    params.push_back(element);
     return success();
   };
 
@@ -227,6 +219,37 @@ static ParseResult parseParamList(OpAsmParser &p,
   // Otherwise, parse the parameters, we know there is at least one.
   return p.parseCommaSeparatedList(OpAsmParser::Delimiter::None,
                                    parseParamDecl);
+}
+
+/// Parse a parameter declaration list if present.
+///
+///   parameter-decl   ::= identifier (`:` type)?
+///   parameter-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
+static ParseResult parseParamDecls(AsmParser &p,
+                                   SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+  auto parseElement = [](AsmParser &p, ParamDeclAttr &attr, StringRef name,
+                         Type type) -> ParseResult {
+    attr = ParamDeclAttr::get(name, type);
+    return success();
+  };
+  return parseParamList<ParamDeclAttr>(p, paramDecls, parseElement);
+}
+
+/// Parse a parameter binding list if present.
+///
+///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
+///   parameter-bind-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
+static ParseResult parseParamBinds(AsmParser &p,
+                                   SmallVectorImpl<ParamBindAttr> &paramBinds) {
+  auto parseElement = [](AsmParser &p, ParamBindAttr &attr, StringRef name,
+                         Type type) -> ParseResult {
+    TypedAttr value;
+    if (p.parseEqual() || parseParamValue(p, value, type))
+      return failure();
+    attr = ParamBindAttr::get(name, type, value);
+    return success();
+  };
+  return parseParamList<ParamBindAttr>(p, paramBinds, parseElement);
 }
 
 //===----------------------------------------------------------------------===//
@@ -241,43 +264,44 @@ static ParseResult parseParamList(OpAsmParser &p,
 /// param-bind-list  ::= parameter-bind (`,` parameter-bind)* | `(` `)`
 
 /// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
-static ParseResult parseCallOpParams(OpAsmParser &p, ArrayAttr &paramValues,
-                                     ArrayAttr &paramDecls) {
+static ParseResult parseCallOpParams(OpAsmParser &p,
+                                     ParamBindArrayAttr &paramValues,
+                                     ParamDeclArrayAttr &paramDecls) {
 
   if (p.parseOptionalLess()) {
     // If there is no <, then the params of the call op are empty, so set
     // paramValues and paramDecls to empty and return.
-    paramValues = p.getBuilder().getArrayAttr({});
-    paramDecls = p.getBuilder().getArrayAttr({});
+    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
+    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
     return success();
   }
 
-  SmallVector<Attribute> vals;
+  SmallVector<ParamBindAttr> vals;
   // Parse the input list
-  if (parseParamList(p, vals, /*isBinding=*/true))
+  if (parseParamBinds(p, vals))
     return failure();
 
   // Check to see if we have results and parse them if so.
   // paramDecls will be empty if there is no arrow.
-  SmallVector<Attribute> decls;
+  SmallVector<ParamDeclAttr> decls;
   if (succeeded(p.parseOptionalArrow())) {
-    if (parseParamList(p, decls, /*isBinding=*/false))
+    if (parseParamDecls(p, decls))
       return failure();
   }
 
-  paramValues = p.getBuilder().getArrayAttr(vals);
-  paramDecls = p.getBuilder().getArrayAttr(decls);
+  paramValues = ParamBindArrayAttr::get(p.getContext(), vals);
+  paramDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
 
   return p.parseGreater();
 }
 
 static void printCallOpParams(OpAsmPrinter &p, Operation *op,
-                              ArrayAttr paramValues, ArrayAttr paramDecls) {
+                              ParamBindArrayAttr paramValues,
+                              ParamDeclArrayAttr paramDecls) {
   if (paramValues.empty() && paramDecls.empty())
     return;
   p << "<";
-  llvm::interleaveComma(paramValues, p, [&](Attribute attr) {
-    auto bind = attr.cast<ParamBindAttr>();
+  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
     printParamName(p, bind.getName().getValue());
     printColonTypeOrIndex(p, bind.getType());
     p << " = ";
@@ -288,8 +312,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 
   if (!paramDecls.empty()) {
     p << " -> ";
-    llvm::interleaveComma(paramDecls, p, [&](Attribute attr) {
-      auto ref = attr.cast<ParamDeclAttr>();
+    llvm::interleaveComma(paramDecls, p, [&](ParamDeclAttr ref) {
       printParamName(p, ref.getName().getValue());
       printColonTypeOrIndex(p, ref.getType());
     });
@@ -311,30 +334,31 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
-    result.addAttribute("paramDecls", parser.getBuilder().getArrayAttr({}));
+    result.addAttribute("paramDecls",
+                        ParamDeclArrayAttr::get(parser.getContext(), {}));
     if (opKind != GeneratorOrKernelKind::kernel)
       result.addAttribute("numInputParameters",
                           parser.getBuilder().getI32IntegerAttr(0));
     return success();
   }
 
-  SmallVector<Attribute> paramDecls;
+  SmallVector<ParamDeclAttr> paramDecls;
 
   // Parse the input list.
   auto loc = parser.getCurrentLocation();
-  if (parseParamList(parser, paramDecls, /*isBinding=*/false))
+  if (parseParamDecls(parser, paramDecls))
     return failure();
 
   unsigned numInputs = paramDecls.size();
 
   // Check to see if we have results and parse them if so.
   if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamList(parser, paramDecls, /*isBinding=*/false))
+    if (parseParamDecls(parser, paramDecls))
       return failure();
   }
 
   result.addAttribute("paramDecls",
-                      parser.getBuilder().getArrayAttr(paramDecls));
+                      ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
 
   // kgen.kernel's are not allowed to have input parameter lists.
   if (opKind == GeneratorOrKernelKind::kernel && numInputs)
@@ -607,12 +631,12 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
   auto [interfaceInputParamDecls, interfaceResultParamDecls] =
       getDeclParameterInfo(interfaceDecl);
 
-  auto getParamDeclName = [](ArrayRef<Attribute> decls) {
+  auto getParamDeclName = [](ArrayRef<ParamDeclAttr> decls) {
     return llvm::map_range(decls, [](Attribute value) -> StringAttr {
       return value.cast<ParamDeclAttr>().getName();
     });
   };
-  auto getParamDeclType = [](ArrayRef<Attribute> decls) {
+  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
     return llvm::map_range(decls, [](Attribute value) -> Type {
       return value.cast<ParamDeclAttr>().getType();
     });
@@ -650,7 +674,7 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 GeneratorOp::getParameterInfo() {
   return getDeclParameterInfo(getOperation());
 }
@@ -670,7 +694,7 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult GeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(
-          getParamDecls().getValue().drop_front(getNumInputParameters()),
+          getParamDecls().drop_front(getNumInputParameters()),
           getResultTypes())))
     return failure();
 
@@ -707,11 +731,12 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 /// it in.
 void KernelOp::build(OpBuilder &builder, OperationState &result,
                      StringAttr name, FunctionType signature,
-                     ArrayRef<Attribute> outputParams) {
+                     ArrayRef<ParamDeclAttr> outputParams) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
-  result.addAttribute("paramDecls", builder.getArrayAttr(outputParams));
+  result.addAttribute("paramDecls",
+                      builder.getAttr<ParamDeclArrayAttr>(outputParams));
   result.addRegion();
 }
 
@@ -719,7 +744,7 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
 /// all the block arguments.
 void KernelOp::build(OpBuilder &builder, OperationState &result,
                      StringAttr name, FunctionType signature,
-                     ArrayRef<Attribute> outputParams,
+                     ArrayRef<ParamDeclAttr> outputParams,
                      ArrayRef<Location> argLocs) {
   build(builder, result, name, signature, outputParams);
 
@@ -765,7 +790,7 @@ LogicalResult KernelOp::verifyRegions() {
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
 
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 GeneratorInterfaceOp::getParameterInfo() {
   return getDeclParameterInfo(getOperation());
 }
@@ -820,13 +845,12 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       getDeclParameterInfo(callee);
 
   // Check the parameter values specified to the input parameters.
-  ArrayRef<Attribute> callerInputParams = getParamValues().getValue();
-  ArrayRef<Attribute> callerOutputParamDecls = getParamDecls().getValue();
+  ArrayRef<ParamBindAttr> callerInputParams = getParamValues();
+  ArrayRef<ParamDeclAttr> callerOutputParamDecls = getParamDecls();
 
-  auto getParamDeclType = [](ArrayRef<Attribute> decls) {
-    return llvm::map_range(decls, [](Attribute value) -> Type {
-      return value.cast<ParamDeclAttr>().getType();
-    });
+  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
+    return llvm::map_range(
+        decls, [](ParamDeclAttr value) -> Type { return value.getType(); });
   };
 
   /// Check the input parameter names.
@@ -898,11 +922,12 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, StringAttr callee,
-                   ArrayRef<Attribute> inputParams,
-                   ArrayRef<Attribute> resultParams, OperandRange operands) {
+                   ArrayRef<ParamBindAttr> inputParams,
+                   ArrayRef<ParamDeclAttr> resultParams,
+                   OperandRange operands) {
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
-        builder.getArrayAttr(inputParams), builder.getArrayAttr(resultParams),
-        operands);
+        builder.getAttr<ParamBindArrayAttr>(inputParams),
+        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands);
 }
 
 //===----------------------------------------------------------------------===//
@@ -920,7 +945,7 @@ OpFoldResult ParamValueOp::fold(ArrayRef<Attribute> constants) {
 
 /// Containers verify that the operands of this ReturnOp match the specified set
 /// of types.
-LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Attribute> paramDecls,
+LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<ParamDeclAttr> paramDecls,
                                            TypeRange types) {
   // Check the parameters match up.
   auto returnedParams = getParameters();
@@ -930,7 +955,7 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Attribute> paramDecls,
 
   for (size_t i = 0, e = returnedParams.size(); i != e; ++i) {
     auto returned = returnedParams[i].cast<ParamBindAttr>();
-    auto decl = paramDecls[i].cast<ParamDeclAttr>();
+    auto decl = paramDecls[i];
     if (returned.getName() != decl.getName())
       return emitOpError("parameter #")
              << i << " is named " << returned.getName() << " but should be "
