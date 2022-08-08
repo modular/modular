@@ -111,7 +111,7 @@ public:
     if (busyWaitTime == std::chrono::nanoseconds::zero())
       return true;
 
-    if (!busyWaitEndTime.hasValue())
+    if (!busyWaitEndTime.has_value())
       busyWaitEndTime =
           std::chrono::high_resolution_clock::now() + busyWaitTime;
 

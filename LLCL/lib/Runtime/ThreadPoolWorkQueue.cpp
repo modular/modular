@@ -171,7 +171,7 @@ struct WorkQueueThread {
     assert(sharedState.doneFlag.load() &&
            "Must not destroy a WorkQueueThread object that is not pending "
            "completion.");
-    if (thread.hasValue())
+    if (thread.has_value())
       thread->join();
   }
 
