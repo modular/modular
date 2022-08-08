@@ -106,6 +106,41 @@ That said, it is better to avoid using this - particularly if you are working
 with accelerators - because you typically want the client thread to go off and
 discover new work, not running existing background tasks.
 
+### Handling `await` without blocking
+
+As mentioned above, LLCL `await` doesn't block because the client thread
+donates itself to run the tasks in the work queue.
+
+Every threads accessing the work queue, including the "foreign" thread that
+calls `await`, owns it's own semaphore. Mostly the semaphores are used to wake
+the threads up when the new task is added to the queue so they can pick up and
+run the task. For `await`ing threads, however, the semaphore is also posted
+when the last value that the `await` is waiting for is fulfilled.
+
+If we had a separate signaling mechanism to indicate the fulfillment of
+awaiting values (e.g. have a separate semaphore for `await`), or had a single
+shared semaphore that is shared across all the threads that are accessing the
+work queue, we wouldn't be able to implement efficient non-blocking execution
+with `await`. If we had a separate semaphore for `await` and let the foreign
+thread wait on it when there's no more tasks in the work queue, the foreign
+thread wouldn't wake up even when there is a new task added to the work queue.
+If a single semaphore is shared across all threads, we wouldn't be able to
+point the `await`ing thread to wake up when all the awaiting values are
+fulfilled.
+
+### Busy waiting with exponential backoff
+
+While it's not ideal for threads to spin the wheel when there are no more tasks
+in the work queue, threads going into sleep too early is also problematic
+because waking them up again would waste time if new tasks are added to the
+queue sooner than later. To get the right trade-off, we adopted busy-waiting
+with exponential backoff. When the work queue is empty, threads are waiting for
+the task without sleeping for the first few iterations of the busy-wait loop.
+If an extra busy-wait time is specified, threads further waits for the given
+amount of time. When the busy-wait time expires, threads go into sleep and wait
+for the corresponding semaphore to be posted. Currently the default busy-wait
+time is set to 1ms.
+
 ### The "Missing" I/O Subsystem in LLCL
 
 One challenge of building high-performance infrastructure that needs I/O is that
