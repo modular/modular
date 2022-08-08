@@ -338,7 +338,7 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
     auto size = convertSize(simd);
     if (!dtype || !size)
       return {};
-    return mlir::VectorType::get(*size, *dtype, /*numScalableDims=*/1);
+    return mlir::VectorType::get(*size, *dtype);
   });
 
   // Convert buffers to struct<(i64, ptr<T>)>.

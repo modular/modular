@@ -116,31 +116,52 @@ OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
 }
 
 //===----------------------------------------------------------------------===//
+// Shared logic for MetaCastToBuiltinOp and MetaCastFromBuiltinOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
+                                      Type standardTy) {
+  auto emitError = [&] {
+    return op->emitOpError()
+           << "does not support casting " << op->getOperand(0).getType()
+           << " to " << op->getResult(0).getType();
+  };
+
+  if (auto scalarTy = metaTy.dyn_cast<ScalarType>()) {
+    // Check that the data types match.
+    if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>();
+        dtype && !dtype.isCompatibleWith(standardTy))
+      return emitError();
+    return success();
+  }
+
+  // Check that the standard type is a rank 1 vector with 1 scalable
+  // dimension, the dimensions match, and the data types match.
+  auto simdTy = metaTy.cast<SIMDType>();
+  auto vectorTy = standardTy.dyn_cast<VectorType>();
+  if (!vectorTy)
+    return emitError();
+  if (vectorTy.getNumScalableDims() != 0)
+    return emitError() << ": vector type should not be scalable";
+  if (vectorTy.getRank() != 1)
+    return emitError() << ": expected a rank 1 vector";
+  if (auto size = simdTy.getSize().dyn_cast<IntegerAttr>();
+      size.getInt() != vectorTy.getShape().front())
+    return emitError() << ": dimensions do not match";
+  if (auto dtype = simdTy.getDtype().dyn_cast<DTypeConstantAttr>();
+      !dtype.isCompatibleWith(vectorTy.getElementType()))
+    return emitError() << ": element types do not match";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // MetaCastToBuiltinOp
 //===----------------------------------------------------------------------===//
 
 /// Verifies that casting the input scalar to the corresponding standard
 /// type is valid.
 LogicalResult MetaCastToBuiltinOp::verify() {
-  auto scalarOrSIMDTy = getOperand().getType();
-  auto standardTy = getType();
-
-  // TODO: Remove when the op supports !meta.simd, and check that !meta.simd is
-  // concrete
-  if (auto simdTy = scalarOrSIMDTy.dyn_cast<SIMDType>())
-    return emitOpError() << "does not support casting !meta.simd types "
-                            "currently. Eventually it "
-                         << "should.";
-
-  if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
-    if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      if (!dtype.isCompatibleWith(standardTy))
-        return emitOpError() << "does not support casting " << getOperand()
-                             << " to " << standardTy << ".";
-    }
-  }
-
-  return success();
+  return checkCastedTypes(*this, getOperand().getType(), getType());
 }
 
 /// Folds fixed_type -> !meta.type -> fixed_type (for A->B->A only)
@@ -162,24 +183,7 @@ OpFoldResult MetaCastToBuiltinOp::fold(ArrayRef<Attribute> constants) {
 
 /// Verifies that casting the standard type to !meta type is valid.
 LogicalResult MetaCastFromBuiltinOp::verify() {
-  auto standardTy = getOperand().getType();
-  auto scalarOrSIMDTy = getType();
-
-  // TODO: Remove when the op supports !meta.simd, and check that !meta.simd
-  // is concrete
-  if (auto simdTy = scalarOrSIMDTy.dyn_cast<SIMDType>())
-    return emitOpError() << "does not support casting to !meta.simd types "
-                            "currently. Eventually it "
-                         << "should.";
-
-  if (auto scalarTy = scalarOrSIMDTy.dyn_cast<ScalarType>()) {
-    if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>()) {
-      if (!dtype.isCompatibleWith(standardTy))
-        return emitOpError() << "does not support casting " << getOperand()
-                             << " to " << scalarOrSIMDTy << ".";
-    }
-  }
-  return success();
+  return checkCastedTypes(*this, getType(), getOperand().getType());
 }
 
 /// Folds !meta.type -> fixed_type -> !meta.type (for A->B->A only)
