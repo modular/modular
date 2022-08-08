@@ -85,6 +85,38 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayOfAttrsAttr
+//===----------------------------------------------------------------------===//
+
+void ParamDeclArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (ParamDeclAttr value : getValue())
+    walkAttrsFn(value);
+}
+
+void ParamBindArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (ParamBindAttr value : getValue())
+    walkAttrsFn(value);
+}
+
+Attribute ParamDeclArrayAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  return get(getContext(),
+             {reinterpret_cast<const ParamDeclAttr *>(replAttrs.begin()),
+              replAttrs.size()});
+}
+
+Attribute ParamBindArrayAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  return get(getContext(),
+             {reinterpret_cast<const ParamBindAttr *>(replAttrs.begin()),
+              replAttrs.size()});
+}
+
+//===----------------------------------------------------------------------===//
 // "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
 
@@ -250,7 +282,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParamValue(AsmPrinter &p, Attribute value) {
+void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
     printParamName(p, declRef.getName());
     return;
@@ -1033,32 +1065,20 @@ bool KGEN::isValidParameterExpr(Attribute value) {
 
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
-ArrayRef<Attribute> KGEN::getParamDecls(Operation *op) {
-  auto paramDeclsArray = op->getAttrOfType<ArrayAttr>("paramDecls");
-  if (!paramDeclsArray)
-    return {};
-  return paramDeclsArray.getValue();
-}
-
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.  This handles casting each
-/// element of the attribute list, which requires building a new SmallVector.
-SmallVector<ParamDeclAttr, 4> KGEN::getParamDeclsCasted(Operation *op) {
-  SmallVector<ParamDeclAttr, 4> result;
-  auto paramDecls = getParamDecls(op);
-  result.reserve(paramDecls.size());
-  for (auto decl : paramDecls)
-    result.push_back(decl.cast<ParamDeclAttr>());
-  return result;
+ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
+  if (auto paramDeclsArray =
+          op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
+    return paramDeclsArray.getValue();
+  return {};
 }
 
 /// Given a kernel, generator, or generator interface operation, return an array
 /// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
 /// result parameters.  A concrete kernel will always never have input params.
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 KGEN::getDeclParameterInfo(Operation *decl) {
   assert(classifyDecl(decl).hasValue() && "unknown declaration");
-  ArrayRef<Attribute> declParams = getParamDecls(decl);
+  ArrayRef<ParamDeclAttr> declParams = getParamDecls(decl);
   size_t numInputParams = 0;
   // Kernels never have input parameters, but they can have output parameters.
   if (!isa<KernelOp>(decl))

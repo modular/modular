@@ -21,7 +21,7 @@ using namespace KGEN;
 // HLGeneratorOp
 //===----------------------------------------------------------------------===//
 
-std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>>
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 HLGeneratorOp::getParameterInfo() {
   return getDeclParameterInfo(getOperation());
 }
@@ -41,7 +41,7 @@ void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult HLGeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(
-          getParamDecls().getValue().drop_front(getNumInputParameters()),
+          getParamDecls().drop_front(getNumInputParameters()),
           getResultTypes())))
     return failure();
 

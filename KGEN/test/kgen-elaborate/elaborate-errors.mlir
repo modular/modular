@@ -32,7 +32,7 @@ kgen.generator @genItf2_impl0<x>()
 // expected-note @+1 {{failed to expand this declaration}}
 kgen.generator @genItf2_impl1<x>() implements @genItf2 {
   // expected-note @+1 {{unknown parameter-defining operator}}
-  "impl1" () { paramDecls = [#kgen.param.decl<"badaram" : index>] } : () -> ()
+  "impl1" () { paramDecls = #kgen<param.decls["badaram" : index]> } : () -> ()
   kgen.return
 }
 

@@ -54,7 +54,8 @@ def HLGeneratorOp
 
     /// Return an array of `ParamDeclAttr`s for the inputs and the array of
     /// `ParamDeclAttr`s for the result parameters.
-    std::pair<ArrayRef<Attribute>, ArrayRef<Attribute>> getParameterInfo();
+    std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
+    getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;

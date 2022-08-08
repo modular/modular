@@ -109,7 +109,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    ArrayAttr paramDeclsAttr;
+    ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
     // Scan all the attributes and types to look for uses of parameters.  We let
@@ -124,7 +124,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       }
 
       // We handle the `paramDecls` attribute specially, remember it for below.
-      paramDeclsAttr = namedAttr.getValue().dyn_cast<ArrayAttr>();
+      paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
       if (!paramDeclsAttr) {
         bodyOp->emitError("paramDecls attribute should be an array ")
             << namedAttr.getValue();

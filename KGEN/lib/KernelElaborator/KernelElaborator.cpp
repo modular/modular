@@ -587,8 +587,8 @@ void ParameterRewriter::completeCallOpProcessing(
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
       call.getLoc(), resultTypes, newCalleeKernel.getNameAttr(),
-      /*input params*/ ArrayRef<Attribute>(),
-      /*output params*/ call.getParamDecls().getValue(), call.getOperands());
+      /*input params*/ ArrayRef<ParamBindAttr>(),
+      /*output params*/ call.getParamDecls(), call.getOperands());
 
   // The SSA results of the old call go directly to the new call and remove it.
   call->getResults().replaceAllUsesWith(newCall);
