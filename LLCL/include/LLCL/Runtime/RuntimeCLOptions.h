@@ -46,8 +46,6 @@ private:
     kThreadPool,
     /// Thread pool work queue with sharded semaphores.
     kShardedSemaphore,
-    /// "No Interesting Name" Experimental Work Queue
-    kNINE,
   };
 
   // Enable HostAllocator types to be specified on the command line.
@@ -62,9 +60,7 @@ private:
                      "Default threaded work queue based on std::thread"),
           clEnumValN(
               WorkQueueType::kShardedSemaphore, "sharded-semaphore",
-              "Thread pool work queue with sharded semaphore (experimental)"),
-          clEnumValN(WorkQueueType::kNINE, "nine",
-                     "'No Interesting Name' Experimental Work Queue")),
+              "Thread pool work queue with sharded semaphore (experimental)")),
       llvm::cl::init(WorkQueueType::kDefault)};
 
   // Enable HostAllocator types to be specified on the command line.
@@ -134,9 +130,6 @@ public:
     case WorkQueueType::kShardedSemaphore:
       printf("thread pool work queue with sharded semaphore (experimental).");
       break;
-    case WorkQueueType::kNINE:
-      printf("'no interesting name' experimental work queue");
-      break;
     }
 
     switch (numThreads) {
@@ -184,9 +177,6 @@ public:
       break;
     case WorkQueueType::kShardedSemaphore:
       workQueue = createShardedSemaphoreWorkQueue(getNumThreads(), busyWaitNs);
-      break;
-    case WorkQueueType::kNINE:
-      workQueue = createNINEWorkQueue(getNumThreads(), busyWaitNs);
       break;
     }
     return Runtime(std::move(allocator), std::move(workQueue));
