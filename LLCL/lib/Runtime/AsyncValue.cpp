@@ -415,7 +415,7 @@ AsyncValue::State AsyncValue::notifyReady(State newState,
   auto oldValue = exchangeWaiterAndState(WaitersAndState(nullptr, newState));
 
   // If there was an inline waiter, run it first.
-  if (extraWaiter.hasValue())
+  if (extraWaiter.has_value())
     runOneWaiter(std::move(*extraWaiter));
 
   // Figure out how many waiters are valid in the first node of the list.
