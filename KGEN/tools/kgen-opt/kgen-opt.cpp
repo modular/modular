@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/InitAllDialects.h"
-#include "KGEN/KGENToLLVM/ConvertKGENToLLVM.h"
+#include "KGEN/KGENPasses.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
   mlir::registerSCCPPass();
   mlir::registerInlinerPass();
   mlir::registerCanonicalizerPass();
-  KGEN::registerConvertKGENToLLVMPass();
+  KGEN::registerKGENPasses();
 
   return failed(mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry,
                                   /*preloadDialectsInContext=*/false));

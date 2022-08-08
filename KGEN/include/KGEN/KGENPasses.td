@@ -1,4 +1,4 @@
-//===- ConvertKGENToLLVM.td --------------------------------*- tablegen -*-===//
+//===- KGENPasses.td ------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

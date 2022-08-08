@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENToLLVM/ConvertKGENToLLVM.h"
+#include "KGEN/KGENPasses.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
@@ -18,6 +19,23 @@
 using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
+
+namespace {
+class KGENToLLVMTypeConverter : public mlir::LLVMTypeConverter {
+public:
+  KGENToLLVMTypeConverter(Location loc);
+
+  /// Report an error or conversion failure.
+  /// TODO: TypeConverter needs an error reporting mechanism.
+  mlir::InFlightDiagnostic emitError(StringRef msg) {
+    return mlir::emitError(loc) << msg;
+  }
+
+private:
+  /// A location used to report conversion failures.
+  mlir::Location loc;
+};
+} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENKernel
@@ -342,8 +360,8 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
   addConversion([](mlir::FloatType fty) { return fty; });
 }
 
-void M::KGEN::populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
-                                         mlir::RewritePatternSet &patterns) {
+static void populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
+                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamValue,
                   ConvertKGENReturn, ConvertMetaBufferAddress,
                   ConvertMetaBufferCast, ConvertMetaBufferSize,
@@ -354,7 +372,7 @@ void M::KGEN::populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
 
 namespace {
 #define GEN_PASS_CLASSES
-#include "KGEN/KGENToLLVM/ConvertKGENToLLVM.h.inc"
+#include "KGEN/KGENPasses.h.inc"
 class ConvertKGENToLLVMPass
     : public ConvertKGENToLLVMBase<ConvertKGENToLLVMPass> {
 public:
