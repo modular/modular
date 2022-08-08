@@ -12,7 +12,7 @@ kgen.kernel @trivial_kernel(%arg0: si32) -> si32 {
 // CHECK-LABEL: llvm.func @convert_meta_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
-// CHECK-SAME: %{{.*}}: vector<[4]xf32>
+// CHECK-SAME: %{{.*}}: vector<4xf32>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<i64>)>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<f32>)>
 kgen.kernel @convert_meta_types(
