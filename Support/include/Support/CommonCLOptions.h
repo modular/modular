@@ -12,6 +12,7 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -24,7 +25,15 @@ namespace M {
 /// Contains functionality that's common to all tools.
 class CLOptionsBase {
 public:
-  CLOptionsBase(StringRef programName) : programName(programName) {}
+  /// When the 'skipInitLLVM' flag is true, this initializer does not call
+  /// InitLLVM.
+  CLOptionsBase(int &argc, char **&argv, bool skipInitLLVM = false) {
+    if (!skipInitLLVM)
+      llvmInitializer.emplace(argc, argv);
+    // On windows, InitLLVM may mutate argv, so make sure to get the fresh
+    // value.
+    programName = argv[0];
+  }
 
   StringRef getProgramName() const { return programName; }
 
@@ -51,6 +60,10 @@ public:
       cl::init(false)};
 
 private:
+  /// This tells LLVM to print stack traces on crashes, and also handles
+  /// multibyte command line options on windows.
+  Optional<llvm::InitLLVM> llvmInitializer;
+
   /// This is the value of argv[0] when the program launches, used for reporting
   /// error messages.
   StringRef programName;
@@ -59,7 +72,7 @@ private:
 /// Contains command-line options that are shared among most of our binaries.
 class CommonCLOptions : public CLOptionsBase {
 public:
-  CommonCLOptions(StringRef programName) : CLOptionsBase(programName) {}
+  using CLOptionsBase::CLOptionsBase;
 
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,

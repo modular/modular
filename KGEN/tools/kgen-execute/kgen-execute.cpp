@@ -10,7 +10,6 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/ToolOutputFile.h"
 using namespace M;
 using namespace mlir;
@@ -64,7 +63,7 @@ public:
 
 class CLOptions : public CommonCLOptions {
 public:
-  CLOptions(StringRef programName) : CommonCLOptions(programName) {}
+  using CommonCLOptions::CommonCLOptions;
 
   cl::list<ExecutableKernel, bool, ExecutableKernelParser> kernelsToExecute{
       "run-kernel",
@@ -223,12 +222,11 @@ struct ProcessBuffer {
 //===--------------------------------------------------------------------===//
 
 int main(int argc, char **argv) {
-  llvm::InitLLVM y(argc, argv);
+  CLOptions clOptions(argc, argv);
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
   registerMLIRContextCLOptions();
-  CLOptions clOptions(argv[0]);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file.
