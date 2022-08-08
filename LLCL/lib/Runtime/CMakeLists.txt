@@ -10,7 +10,6 @@ add_modular_library(LLCLRuntime
   AsyncValue.cpp
   DebuggingAllocators.cpp
   MallocAllocator.cpp
-  NINEWorkQueue.cpp
   Runtime.cpp
   SingleThreadWorkQueue.cpp
   ShardedSemaphoreWorkQueue.cpp
