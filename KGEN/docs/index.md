@@ -4,6 +4,11 @@
 
 TODO: Need to write this.
 
+See these breakout docs:
+
+- [Generative Kernel Compiler Task List](TaskList.md)
+
+
 
 ## Some notes about parameter syntax
 
