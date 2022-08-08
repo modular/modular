@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "modular-pyutils"
+description = "Modular Python utilities"
+readme = "README.md"
+authors = [{ name = "Modular" }]
+requires-python = ">=3.8"
+license = { text = "Modular Proprietary" }
+classifiers = [
+    "License :: Other/Proprietary License",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+]
+dynamic = [
+    "version", # setup.py or plugins can generate this
+]
+dependencies = ["ruamel.yaml>=0.17"]
+
+
+# WARNING: if changing dependencies, need to bump the version as well.
+[project.optional-dependencies]
+tests = ["pytest>=7.1.2", "pytest-cov"]
+dev = ["black>=22.3.0", "isort>=5.10.1", "flake8>=3.9", "pyright>=1.1.255"]
