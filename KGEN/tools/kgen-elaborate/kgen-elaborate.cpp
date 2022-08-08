@@ -14,7 +14,6 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/ToolUtilities.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/ToolOutputFile.h"
 using namespace M;
 
@@ -28,7 +27,7 @@ static DialectRegistry getDialects() {
 
 class CLOptions : public CommonCLOptions {
 public:
-  CLOptions(StringRef programName) : CommonCLOptions(programName) {}
+  CLOptions(int &argc, char **&argv) : CommonCLOptions(argc, argv) {}
 
   //===--------------------------------------------------------------------===//
   // Input specification
@@ -82,12 +81,12 @@ static LogicalResult processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
 }
 
 int main(int argc, char **argv) {
-  llvm::InitLLVM y(argc, argv);
+  CLOptions clOptions(argc, argv);
 
   // Enable command line options for various MLIR internals.
   mlir::registerAsmPrinterCLOptions();
   mlir::registerMLIRContextCLOptions();
-  CLOptions clOptions(argv[0]);
+
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file.
