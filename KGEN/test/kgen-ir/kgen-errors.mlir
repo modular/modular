@@ -126,7 +126,7 @@ kgen.generator @scalar_params_verbose<n : ui32>(%x : !meta.buffer<n, f32>) {
 
 // -----
 
-// expected-error @+1 {{'undefined' does not reference a valid callee}}
+// expected-error @+1 {{'@undefined' does not reference a valid callee}}
 kgen.call @undefined() : () -> ()
 
 // -----
