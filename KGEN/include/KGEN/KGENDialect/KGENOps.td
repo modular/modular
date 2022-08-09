@@ -70,6 +70,10 @@ def KernelOp
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
+def SingleBlockRegionOrExtern : Region<
+    CPred<"::llvm::hasNItemsOrLess($_self, 1)">,
+    "region with either 0 or 1 blocks">;
+
 def GeneratorOp
   : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
@@ -88,7 +92,7 @@ def GeneratorOp
                        ConstraintArrayAttr:$constraints,
                        StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region SingleBlockRegionOrExtern:$body);
 
   let extraClassDeclaration = [{
     using FunctionOpInterfaceTrait::getBody;

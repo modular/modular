@@ -486,8 +486,15 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
     return success();
 
   llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseRegion(*body, entryArgs,
-                         /*enableNameShadowing=*/false))
+  mlir::OptionalParseResult regionParseResult =
+      parser.parseOptionalRegion(*body, entryArgs,
+                                 /*enableNameShadowing=*/false);
+  // If this is an extern declaration, then success.
+  if (!regionParseResult.hasValue())
+    return success();
+
+  // If we have a value, and it's failure, then fail.
+  if (regionParseResult.hasValue() && failed(*regionParseResult))
     return failure();
 
   // Function body was parsed, make sure its not empty.
@@ -693,7 +700,8 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult GeneratorOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(
+  if (!getBody().empty() &&
+      failed(getReturnOp().checkArgumentTypes(
           getParamDecls().drop_front(getNumInputParameters()),
           getResultTypes())))
     return failure();
@@ -830,12 +838,12 @@ static ParseResult verifyMatchingCallLists(const CallerRange &callerRange,
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
-  auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
+  auto calleeAttr = (*this)->getAttrOfType<SymbolRefAttr>("callee");
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
   Operation *callee = symbolTable.lookupNearestSymbolFrom(*this, calleeAttr);
   if (!isa_and_nonnull<GeneratorOp, KernelOp, GeneratorInterfaceOp>(callee))
-    return emitError() << "'" << calleeAttr.getValue()
+    return emitError() << "'" << calleeAttr
                        << "' does not reference a valid callee";
 
   // Verify that the callee/caller parameters match.  The parameter names on the
