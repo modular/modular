@@ -39,6 +39,14 @@ def ScalarType : MetaType<"Scalar",
   ];
 }
 
+/// A scalar type that is constrained to a be either a unbound dtype or a
+/// floating-point dtype.
+def UnboundOrFloatingPointScalarType : Type<
+    CPred<"!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat()">,
+    "whose value is either not unbound or a floating-point dtype">;
+
+
 //===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//

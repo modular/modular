@@ -198,8 +198,9 @@ def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let description = [{
 
     The `copysign` operation takes two meta.scalar types (a magntitude `a`
-    and a sign `b`). It then copies the sign from `b` to the `a`. The operand
-    and result types must be the same.
+    and a sign `b`) of floating-point dtyle. The `copysign` operation
+    copies the sign from `b` to the `a`. The operand and result types must
+    be the same and must have a floating-point dtype.
 
     Example:
 
@@ -207,6 +208,8 @@ def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
     %c = pop.copysign %a, %b : !meta.scalar<type>
     ```
   }];
+  let arguments = (ins UnboundOrFloatingPointScalarType:$lhs,
+                       UnboundOrFloatingPointScalarType:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
