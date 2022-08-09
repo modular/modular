@@ -78,21 +78,13 @@ One nice thing about our approach is that generators are allowed to fail for a v
 
 Actual generators for memset and erf: this means we need to implement math, and the “decision tree found by search” that memset needs, dynamic switches over dtype, things like scf.for, buffer partitioning operations, etc.
 
-
-## ❌ Infra to run a kernel and measure the time
-
-❌[Issue #1610](https://github.com/modularml/modular/issues/1610) (JIT and execute)
-
-❌[Issue #1611](https://github.com/modularml/modular/issues/1611) (compile to obj and execute)
-
-We need to wire up full support for invoking LLVM to generate a .o file or JIT into a buffer, execute the code, and run it.  To run it, we need input generation infrastructure and metadata to know about the expected dtypes.
-
-From there we’ll need the ability to collect realistic data to compare against, e.g. the mmperf [matmul dimension list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt) or the memset/memcpy “histogram of lengths” dataset.
-
-At this point the system will be able to decide which is a GOOD generated kernel.
-
-
 ## ❌ Design/define/implement various UX and tooling things
+
+❌[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor KernelElaborator)
+
+❌[Issue #2126](https://github.com/modularml/modular/issues/2126) (Build über-tool)
+
+❌[Issue #2127](https://github.com/modularml/modular/issues/2127) (Add kernel + test to Faux)
 
 We will want a live and responsive system which is playful, eventually (long term) building up to interactive notebook-like experiences for building and evaluating kernels etc.  In the short term, we need to deal with more pedestrian things like “what happens if there are no expansions for a kernel that work”, “how do I reason about / chart the performance of all the possible expansions” etc.
 
@@ -101,7 +93,7 @@ Similarly, while everything can start out as one massive .mlir file, that will e
 
 ## ❌ Dynamic programming to cache things
 
-As we build things up we will start caring about the execution time of search.  We’ll want to cache kernels and take advantage of hierarchy.   This will drive the need to be able to evaluate microkernels in isolation from the greater kernel.  We may be able to “push down” the input data constraints (e.g. histogram of lengths) to microkernels but will also want to be able to just allow users to define their own metrics (e.g. FLOPS for expected dimensions).
+As we build things up we will start caring about the execution time of search.  We’ll want to cache kernels and take advantage of hierarchy.  This will drive the need to be able to evaluate microkernels in isolation from the greater kernel.  We may be able to “push down” the input data constraints (e.g. histogram of lengths) to microkernels but will also want to be able to just allow users to define their own metrics (e.g. FLOPS for expected dimensions).
 
 
 # To be scoped:
@@ -313,3 +305,15 @@ This will require handling the order of generator logic, diagnosing cyclic param
 4. ✅Walk the call tree of the generators in SCC order (bottom up), diagnosing cycles as errors.  This should consider implementations in the library file as part of the same graph of kernel generators.
 5. ✅Walk the call tree bottom-up generating fully specialized implementations of the kernels, dropping them into the target MLIR file (leaving the library unmodified).  The result of this should be fully specialized and have all parameters eliminated.  This will generate all possible implementations of the kernels.
 6. ✅Track bindings for each kernel to keep track of which direction a multiway expansion goes for an interface site, to make sure it expands consistently within any given kernel.
+
+## ✅ Infra to run a kernel and measure the time
+
+✅[Issue #1610](https://github.com/modularml/modular/issues/1610) (JIT and execute)
+
+✅[Issue #1611](https://github.com/modularml/modular/issues/1611) (compile to obj and execute)
+
+We need to wire up full support for invoking LLVM to generate a .o file or JIT into a buffer, execute the code, and run it.  To run it, we need input generation infrastructure and metadata to know about the expected dtypes.
+
+From there we’ll need the ability to collect realistic data to compare against, e.g. the mmperf [matmul dimension list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt) or the memset/memcpy “histogram of lengths” dataset.
+
+At this point the system will be able to decide which is a GOOD generated kernel.
