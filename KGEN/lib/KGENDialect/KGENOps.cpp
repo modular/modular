@@ -456,7 +456,7 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
   if ((opKind == GeneratorOrKernelKind::generator ||
        opKind == GeneratorOrKernelKind::hlgenerator) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
-    ::mlir::FlatSymbolRefAttr implementsAttr;
+    ::mlir::SymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
                               parser.getBuilder().getType<::mlir::NoneType>(),
                               "implements", result.attributes))
@@ -715,7 +715,7 @@ LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
-  FlatSymbolRefAttr interfaceSym = getImplementsAttr();
+  SymbolRefAttr interfaceSym = getImplementsAttr();
   if (!interfaceSym)
     return success();
 
@@ -723,7 +723,7 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   GeneratorInterfaceOp interface = dyn_cast_or_null<GeneratorInterfaceOp>(
       symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
   if (!interface)
-    return emitError() << "'" << interfaceSym.getValue()
+    return emitError() << "'" << interfaceSym
                        << "' does not reference a generator interface";
 
   // Verify that the signature of this generator matches the signature of the

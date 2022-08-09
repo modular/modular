@@ -199,8 +199,8 @@ public:
   ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(StringAttr symbolName) const {
-    return symbolTable.lookup(symbolName);
+  Operation *lookupCallee(SymbolRefAttr symbolRef) const {
+    return SymbolTable::lookupNearestSymbolFrom(primaryModule, symbolRef);
   }
 
   /// Return all instantiations of the specified declaration (a kernel,
@@ -508,7 +508,7 @@ LogicalResult ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
-  auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
+  Operation *callee = elaborator.lookupCallee(call.getCalleeAttr());
   GeneratorAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
   // If we already have a binding for this decl/inputParam set, then reuse the
@@ -906,7 +906,7 @@ ParseResult Elaborator::collectInterfaces() {
   // within the library.
   for (auto generator : libraryModule.getOps<GeneratorOp>()) {
     if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getAttr()].push_back(generator);
+      interfaceImpls[interface.getLeafReference()].push_back(generator);
   }
 
   // Collect the kernel generators from the primary module.  Start by checking
@@ -925,7 +925,7 @@ ParseResult Elaborator::collectInterfaces() {
   // primary module.
   for (auto generator : primaryModule.getOps<GeneratorOp>())
     if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getAttr()].push_back(generator);
+      interfaceImpls[interface.getLeafReference()].push_back(generator);
 
   return success();
 }
@@ -979,7 +979,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   // declaration to see what they call.
   bool failed = false;
   op->walk([&](CallOp call) {
-    auto callee = elaborator.lookupCallee(call.getCalleeAttr().getAttr());
+    auto callee = elaborator.lookupCallee(call.getCalleeAttr());
     assert(callee && "couldn't resolve callee?");
     callStackCalls.push_back(call);
     if (isa<KernelOp, GeneratorOp>(callee)) {
