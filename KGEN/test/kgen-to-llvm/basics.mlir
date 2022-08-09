@@ -1,5 +1,6 @@
-// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm %s | FileCheck %s
-// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm %s | kgen-opt -canonicalize -split-input-file | FileCheck %s -check-prefixes=CANON
+// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
+// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm -canonicalize %s | FileCheck %s -check-prefixes=CANON
 
 // CHECK-LABEL: llvm.func @trivial_kernel(%arg0: i32)
 // CHECK-NEXT: llvm.return %arg0 : i32
@@ -15,6 +16,11 @@ kgen.kernel @trivial_kernel(%arg0: si32) -> si32 {
 // CHECK-SAME: %{{.*}}: vector<4xf32>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<i64>)>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<f32>)>
+
+// INDEX32-LABEL: llvm.func @convert_meta_types
+// INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<i64>)>
+// INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<f32>)>
+
 kgen.kernel @convert_meta_types(
     %arg0: !meta.scalar<f32>,
     %arg1: !meta.pointer<f32>,
@@ -109,12 +115,22 @@ kgen.kernel @convert_call(%arg0: !meta.scalar<f32>) {
 
 // CHECK-LABEL: llvm.func @buffer_size
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<f32>)>, %[[ARG1:.*]]: !llvm.struct<(i64, ptr<f32>)>
-kgen.kernel @buffer_size(%arg0: !meta.buffer<4, f32>, %arg1: !meta.buffer<?, f32>) {
+// CHECK-SAME: -> i64
+
+// INDEX32-LABEL: llvm.func @buffer_size
+// INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<f32>)>, %[[ARG1:.*]]: !llvm.struct<(i32, ptr<f32>)>
+// INDEX32-SAME: -> i32
+
+kgen.kernel @buffer_size(%arg0: !meta.buffer<4, f32>, %arg1: !meta.buffer<?, f32>) -> index {
   // CHECK: llvm.mlir.constant(4 : index) : i64
+  // INDEX32: llvm.mlir.constant(4 : index) : i32
   %0 = meta.buffer.size %arg0 : !meta.buffer<4, f32>
-  // CHECK: llvm.extractvalue %[[ARG1]][0]
+  // CHECK: %[[SIZE:.*]] = llvm.extractvalue %[[ARG1]][0]
+  // INDEX32: %[[SIZE:.*]] = llvm.extractvalue %[[ARG1]][0]
   %1 = meta.buffer.size %arg1 : !meta.buffer<?, f32>
-  kgen.return
+  // CHECK: llvm.return %[[SIZE]] : i64
+  // INDEX32: llvm.return %[[SIZE]] : i32
+  kgen.return %1 : index
 }
 
 // -----

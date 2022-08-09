@@ -8,7 +8,6 @@ kgen.kernel @trivial_kernel<() -> a>(%arg0: si32) -> si32 {
 
 // -----
 
-// expected-error@-3 {{could not convert 'tensor<4xf32>' to be an llvm-compatible type}}
 // expected-error@+2 {{could not convert region types to be LLVM-compatible}}
 // expected-error@+1 {{failed to legalize operation 'kgen.kernel'}}
 kgen.kernel @simd_unsupported(%arg0: tensor<4xf32>) -> tensor<4xf32> {

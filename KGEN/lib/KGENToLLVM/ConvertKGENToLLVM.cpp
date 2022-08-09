@@ -23,7 +23,8 @@ namespace LLVM = mlir::LLVM;
 namespace {
 class KGENToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
-  KGENToLLVMTypeConverter(Location loc);
+  KGENToLLVMTypeConverter(Location loc,
+                          const mlir::LowerToLLVMOptions &options);
 
   /// Report an error or conversion failure.
   /// TODO: TypeConverter needs an error reporting mechanism.
@@ -194,8 +195,8 @@ public:
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, rewriter.getI64Type(), adaptor.getValue(),
-        rewriter.getI64ArrayAttr(0));
+        op, getTypeConverter()->convertType(rewriter.getIndexType()),
+        adaptor.getValue(), rewriter.getI64ArrayAttr(0));
     return success();
   }
 };
@@ -292,12 +293,9 @@ static Optional<Type> getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
   return {};
 }
 
-KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
-    : LLVMTypeConverter(loc.getContext()), loc(loc) {
-  addConversion([&](Type t) -> Optional<Type> {
-    emitError("could not convert ") << t << " to be an llvm-compatible type";
-    return llvm::None;
-  });
+KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(
+    mlir::Location loc, const mlir::LowerToLLVMOptions &options)
+    : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
 
   // Convert a DType expression to an MLIR type.
   auto convertDType = [&](auto type) -> Optional<Type> {
@@ -348,16 +346,9 @@ KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(mlir::Location loc)
     if (!dtype)
       return {};
     return LLVM::LLVMStructType::getLiteral(
-        buffer.getContext(), {Builder(buffer.getContext()).getI64Type(),
+        buffer.getContext(), {convertType(IndexType::get(&getContext())),
                               LLVM::LLVMPointerType::get(*dtype)});
   });
-
-  // Need basic forwarding conversions too. These are basically copied from
-  // mlir/lib/Conversion/LLVMCommon/TypeConverter.cpp
-  addConversion([](mlir::IntegerType integer) {
-    return IntegerType::get(integer.getContext(), integer.getWidth());
-  });
-  addConversion([](mlir::FloatType fty) { return fty; });
 }
 
 static void populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
@@ -382,16 +373,22 @@ public:
 
 void ConvertKGENToLLVMPass::runOnOperation() {
   ModuleOp theModule = getOperation();
+
+  // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalOp<ModuleOp>();
   target.addIllegalDialect<KGENDialect, MetaDialect>();
 
+  // Set LLVM lowering options.
+  mlir::LowerToLLVMOptions options(&getContext());
+  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
+    options.overrideIndexBitwidth(indexBitwidth);
+  KGENToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+
+  // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  KGENToLLVMTypeConverter typeConverter(theModule->getLoc());
-
   populateKGENToLLVMPatterns(typeConverter, patterns);
-
   if (failed(mlir::applyFullConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 }
