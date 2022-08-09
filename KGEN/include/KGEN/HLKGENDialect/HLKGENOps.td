@@ -10,9 +10,6 @@
 
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
-//include "mlir/Interfaces/CallInterfaces.td"
-//include "mlir/Interfaces/ControlFlowInterfaces.td"
-//include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // HLGeneratorOp
@@ -34,6 +31,7 @@ def HLGeneratorOp
                        ParamDeclArrayAttr:$paramDecls,
                        I32Attr:$numInputParameters,
                        ConstraintArrayAttr:$constraints,
+                       StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
 
