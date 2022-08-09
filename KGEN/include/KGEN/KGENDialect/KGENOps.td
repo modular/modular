@@ -91,7 +91,7 @@ def GeneratorOp
                        I32Attr:$numInputParameters,
                        ConstraintArrayAttr:$constraints,
                        StrArrayAttr:$constraintMessages,
-                       OptionalAttr<FlatSymbolRefAttr>:$implements);
+                       OptionalAttr<SymbolRefAttr>:$implements);
   let regions = (region SingleBlockRegionOrExtern:$body);
 
   let extraClassDeclaration = [{
@@ -170,7 +170,7 @@ def CallOp
   let summary = "Call a kernel or generator";
 
   let arguments =
-   (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
+   (ins SymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
 
