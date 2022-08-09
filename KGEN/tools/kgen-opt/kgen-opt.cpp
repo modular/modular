@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
   mlir::registerSCCPPass();
   mlir::registerInlinerPass();
   mlir::registerCanonicalizerPass();
-  KGEN::registerKGENPasses();
+  KGEN::registerPasses();
 
   return failed(mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry,
                                   /*preloadDialectsInContext=*/false));

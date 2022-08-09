@@ -20,6 +20,7 @@ namespace M::KGEN {
 // Pass creation
 //===----------------------------------------------------------------------===//
 
+std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
 std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass();
 
 //===----------------------------------------------------------------------===//
@@ -29,10 +30,6 @@ std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass();
 /// Generate the code for registering these passes.
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENPasses.h.inc"
-
-// Provide a unified way to register all the KGEN passes for tools like
-// kgen-opt.
-inline void registerKGENPasses() { registerConvertKGENToLLVMPass(); }
 
 } // namespace M::KGEN
 

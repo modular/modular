@@ -6,6 +6,18 @@
 
 include "mlir/Pass/PassBase.td"
 
+def LowerHLKGEN : Pass<"lower-hlkgen", "ModuleOp"> {
+  let summary = "Lower the `hlkgen` dialects to the `kgen` dialect.";
+  let description = [{
+    This pass performs lowers high level abstractions from "hlkgen" to "kgen"
+    and diagnoses any errors that are found along the way.
+  }];
+
+  let dependentDialects = [ "KGEN::KGENDialect" ];
+
+  let constructor = "::M::KGEN::createLowerHLKGENPass()";
+}
+
 def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "ModuleOp"> {
   let summary = "Lower the `kgen` and `meta` dialects to the `llvm` dialect.";
   let description = [{

@@ -20,6 +20,12 @@ using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
+// FIXME: This shouldn't be needed here, this is because
+// KGENPasses.h.inc/GEN_PASS_CLASSES is too monolithic.
+namespace M::KGEN {
+class HLGeneratorOp;
+}
+
 namespace {
 class KGENToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
@@ -364,6 +370,7 @@ static void populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
 namespace {
 #define GEN_PASS_CLASSES
 #include "KGEN/KGENPasses.h.inc"
+
 class ConvertKGENToLLVMPass
     : public ConvertKGENToLLVMBase<ConvertKGENToLLVMPass> {
 public:
