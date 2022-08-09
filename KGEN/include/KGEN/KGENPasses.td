@@ -20,4 +20,10 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "ModuleOp"> {
   ];
 
   let constructor = "::M::KGEN::createConvertKGENToLLVMPass()";
+
+  let options = [
+    Option<"indexBitwidth", "index-bitwidth", "unsigned",
+           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
+           "Bitwidth of the index type, 0 to use size of machine word">,
+  ];
 }
