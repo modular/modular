@@ -5,14 +5,44 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
+#include "Support/ErrorOr.h"
 #include "mlir/IR/Block.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// ObjectCache
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN::detail {
+/// Provides a simple object cache. Users shouldn't be interacting directly with
+/// this cache, they should interact with `ExecutionEngine` below.
+class ObjectCache : public llvm::ObjectCache {
+public:
+  /// notifyObjectCompiled - Provides a pointer to compiled code for Module M.
+  void notifyObjectCompiled(const llvm::Module *M,
+                            llvm::MemoryBufferRef Obj) override;
+
+  /// Returns a pointer to a newly allocated MemoryBuffer that contains the
+  /// object which corresponds with Module M, or 0 if an object is not
+  /// available.
+  std::unique_ptr<llvm::MemoryBuffer> getObject(const llvm::Module *M) override;
+
+  std::unique_ptr<llvm::MemoryBuffer> getObject(llvm::StringRef name);
+
+  /// Check if the cache has the object with the given name.
+  bool hasObject(llvm::StringRef name) { return storage.count(name) != 0; }
+
+private:
+  llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> storage;
+};
+} // namespace M::KGEN::detail
 
 void detail::ObjectCache::notifyObjectCompiled(const llvm::Module *M,
                                                llvm::MemoryBufferRef Obj) {
@@ -64,7 +94,11 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
   return machine;
 }
 
-ErrorOr<ExecutionEngine> ExecutionEngine::create() {
+//===----------------------------------------------------------------------===//
+// ExecutionEngine implementation
+//===----------------------------------------------------------------------===//
+
+M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   ExecutionEngine ee(nullptr);
 
   // Ensure the native target is initialized.
@@ -84,7 +118,7 @@ ErrorOr<ExecutionEngine> ExecutionEngine::create() {
               [&](llvm::orc::JITTargetMachineBuilder jtmb)
                   -> llvm::Expected<
                       std::unique_ptr<llvm::orc::IRCompileLayer::IRCompiler>> {
-                jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::None);
+                jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
                 auto tm = jtmb.createTargetMachine();
                 if (!tm)
                   return tm.takeError();
@@ -109,6 +143,9 @@ ErrorOr<ExecutionEngine> ExecutionEngine::create() {
 ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
     : ctx(std::make_unique<llvm::LLVMContext>()),
       cache(new KGEN::detail::ObjectCache), jit(std::move(jit)) {}
+
+ExecutionEngine::~ExecutionEngine() = default;
+ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
 M::ErrorOrSuccess ExecutionEngine::add(mlir::LLVM::LLVMFuncOp kernel) {
   // Short-circuit early if we already have this kernel.
@@ -170,7 +207,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::LLVM::LLVMFuncOp kernel) {
 }
 
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-ExecutionEngine::getObject(llvm::StringRef kernel) {
+ExecutionEngine::getObject(StringRef kernel) {
   // Do the lookup to ensure it's compiled. We don't actually care about the
   // address of the result.
   auto addr = jit->lookup(kernel);
@@ -182,4 +219,9 @@ ExecutionEngine::getObject(llvm::StringRef kernel) {
 
   return Error("could not find kernel '" + kernel +
                "' in cache, please call Executor::addKernel.");
+}
+
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+ExecutionEngine::getObject(mlir::LLVM::LLVMFuncOp kernel) {
+  return getObject(kernel.getName());
 }

@@ -10,33 +10,12 @@
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include <functional>
 
 namespace M::KGEN {
 namespace detail {
-/// Provides a simple object cache. Users shouldn't be interacting directly with
-/// this cache, they should interact with `ExecutionEngine` below.
-class ObjectCache : public llvm::ObjectCache {
-public:
-  /// notifyObjectCompiled - Provides a pointer to compiled code for Module M.
-  void notifyObjectCompiled(const llvm::Module *M,
-                            llvm::MemoryBufferRef Obj) override;
-
-  /// Returns a pointer to a newly allocated MemoryBuffer that contains the
-  /// object which corresponds with Module M, or 0 if an object is not
-  /// available.
-  std::unique_ptr<llvm::MemoryBuffer> getObject(const llvm::Module *M) override;
-
-  std::unique_ptr<llvm::MemoryBuffer> getObject(llvm::StringRef name);
-
-  /// Check if the cache has the object with the given name.
-  bool hasObject(llvm::StringRef name) { return storage.count(name) != 0; }
-
-private:
-  llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> storage;
-};
+class ObjectCache;
 } // namespace detail
 
 /// This class provides an interface to the LLVM ORCJIT. It can compile
@@ -47,6 +26,10 @@ private:
 /// caching and search.
 class ExecutionEngine {
 public:
+  ~ExecutionEngine();
+  /// This class is move-constructible.
+  ExecutionEngine(ExecutionEngine &&other);
+
   static ErrorOr<ExecutionEngine> create();
 
   /// Add a function to the executor. This will compile the LLVM function
@@ -65,9 +48,13 @@ public:
     if (!fnOr)
       return Error(llvm::toString(fnOr.takeError()));
 
-    return invokeWithDefaultResultType<DefaultSuccess>(
-        reinterpret_cast<ReturnT (*)(Args...)>(fnOr->template toPtr<void *>()),
-        args...);
+    // Get the function pointer out of the ExecutorAddr.
+    auto *fnPtr = fnOr->template toPtr<ReturnT (*)(Args...)>();
+
+    // Invoke the function. If `ReturnT` is `void` then this will default to
+    // returning a value of type `ErrorOrSuccess` set to `success()`. Otherwise,
+    // it will return the result of the function, an object of type `ReturnT`.
+    return invokeWithDefaultResultType<DefaultSuccess>(fnPtr, args...);
   }
 
   template <typename ReturnT, typename... Args>
@@ -81,12 +68,13 @@ public:
   getObject(llvm::StringRef kernel);
 
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getObject(mlir::LLVM::LLVMFuncOp kernel) {
-    return getObject(kernel.getName());
-  }
+  getObject(mlir::LLVM::LLVMFuncOp kernel);
 
 private:
-  ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
+  explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
+
+  /// This class is not copy-constructible.
+  ExecutionEngine(const ExecutionEngine &other) = delete;
 
   llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<detail::ObjectCache> cache;
