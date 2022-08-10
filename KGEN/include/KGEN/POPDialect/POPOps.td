@@ -95,7 +95,7 @@ def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 
     ```mlir
     %b = pop.abs %a : !meta.scalar<type>
-    %b = pop.abs %a : !meta.simd<N, type>
+    %b = pop.abs %a : !meta.simd<size, type>
     ```
   }];
 }
@@ -114,7 +114,7 @@ def NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
 
     ```mlir
     %b = pop.neg %a : !meta.scalar<type>
-    %b = pop.neg %a : !meta.simd<N, type>
+    %b = pop.neg %a : !meta.simd<size, type>
     ```
   }];
 }
@@ -154,7 +154,7 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 
     ```mlir
     %c = pop.add %a, %b : !meta.scalar<type>
-    %c = pop.add %a, %b : !meta.simd<N, type>
+    %c = pop.add %a, %b : !meta.simd<size, type>
     ```
   }];
 }
@@ -166,14 +166,14 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `sub` operation subtracts two meta.scalar or meta.simd types
+    The `sub` operation takes two meta.scalar or meta.simd types
     and subtracts them. The operand and result types must be the same.
 
     Example:
 
     ```mlir
     %c = pop.sub %a, %b : !meta.scalar<type>
-    %c = pop.sub %a, %b : !meta.simd<N, type>
+    %c = pop.sub %a, %b : !meta.simd<size, type>
     ```
   }];
 }
@@ -192,7 +192,7 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 
     ```mlir
     %c = pop.mul %a, %b : !meta.scalar<type>
-    %c = pop.mul %a, %b : !meta.simd<N, type>
+    %c = pop.mul %a, %b : !meta.simd<size, type>
     ```
   }];
 }
@@ -214,7 +214,7 @@ def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
 
     ```mlir
     %c = pop.copysign %a, %b : !meta.scalar<type>
-    %c = pop.copysign %a, %b : !meta.simd<N, type>
+    %c = pop.copysign %a, %b : !meta.simd<size, type>
     ```
   }];
   let arguments = (ins AnyTypeOf<[UnboundOrFloatingPointScalarType, UnboundOrFloatingPointSIMDType]>:$lhs,
@@ -256,7 +256,7 @@ def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
 
     ```mlir
     %d = pop.fma %a, %b, %c : !meta.scalar<type>
-    %d = pop.fma %a, %b, %c : !meta.simd<N, type>
+    %d = pop.fma %a, %b, %c : !meta.simd<size, type>
     ```
   }];
 }
