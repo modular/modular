@@ -312,7 +312,7 @@ public:
   CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.hasValue() &&
            "cannot get diagnostic when none was generated");
-    // The kernel is unviable so we need to delete it.  This op can appear in
+    // The kernel is not viable so we need to delete it.  This op can appear in
     // various maps though, so instead of actually deleting it, we just delete
     // its body.  The cleanup pass at the end of elaboration will remove it.
     elaboratedKernel.kernel.getBodyBlock()->clear();
