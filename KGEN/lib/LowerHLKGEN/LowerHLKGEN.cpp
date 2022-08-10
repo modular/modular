@@ -12,15 +12,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
-// FIXME: This shouldn't be needed here, this is because
-// KGENPasses.h.inc/GEN_PASS_CLASSES is too monolithic.
-namespace mlir::func {
-class FuncDialect;
-} // namespace mlir::func
-namespace mlir::LLVM {
-class LLVMDialect;
-} // namespace mlir::LLVM
-
 using namespace M;
 using namespace KGEN;
 

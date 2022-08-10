@@ -160,7 +160,7 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
-// SubtractOp
+// SubOp
 //===----------------------------------------------------------------------===//
 
 def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {

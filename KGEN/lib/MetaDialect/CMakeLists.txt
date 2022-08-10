@@ -7,6 +7,7 @@
 add_modular_dialect_library(MetaDialect
   MetaDialect.cpp
   MetaOps.cpp
+  MetaTypeConverter.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${MODULAR_MAIN_INCLUDE_DIR}/KGEN/MetaDialect

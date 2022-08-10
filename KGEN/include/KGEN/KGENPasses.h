@@ -7,14 +7,27 @@
 #ifndef KGEN_KGENPASSES_H
 #define KGEN_KGENPASSES_H
 
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+//===----------------------------------------------------------------------===//
+// Forward Declarations
+//===----------------------------------------------------------------------===//
+
 namespace mlir {
-class RewritePatternSet;
-class Pass;
+class ModuleOp;
+namespace func {
+class FuncDialect;
+} // namespace func
+namespace LLVM {
+class LLVMDialect;
+} // namespace LLVM
 } // namespace mlir
 
 namespace M::KGEN {
+class KGENDialect;
+class KernelOp;
 
 //===----------------------------------------------------------------------===//
 // Pass creation
@@ -22,12 +35,13 @@ namespace M::KGEN {
 
 std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
 std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass();
+std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 
 //===----------------------------------------------------------------------===//
-// Pass Registration
+// Generated Pass Classes and Registration
 //===----------------------------------------------------------------------===//
 
-/// Generate the code for registering these passes.
+#define GEN_PASS_CLASSES
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENPasses.h.inc"
 
