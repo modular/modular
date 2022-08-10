@@ -317,7 +317,7 @@ public:
     // its body.  The cleanup pass at the end of elaboration will remove it.
     elaboratedKernel.kernel.getBodyBlock()->clear();
     return CalleeExpansionError(elaboratedKernel.kernel->getLoc(),
-                                std::move(diagnostic.getValue()));
+                                std::move(diagnostic.value()));
   }
 
   /// Generate a error expanding this kernel.  The location specified is the
