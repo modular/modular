@@ -8,41 +8,15 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MetaDialect/MetaOps.h"
-#include "KGEN/MetaDialect/MetaTypes.h"
+#include "KGEN/MetaDialect/MetaTypeConverter.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/Pass/Pass.h"
 
 using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
-
-// FIXME: This shouldn't be needed here, this is because
-// KGENPasses.h.inc/GEN_PASS_CLASSES is too monolithic.
-namespace M::KGEN {
-class HLGeneratorOp;
-}
-
-namespace {
-class KGENToLLVMTypeConverter : public mlir::LLVMTypeConverter {
-public:
-  KGENToLLVMTypeConverter(Location loc,
-                          const mlir::LowerToLLVMOptions &options);
-
-  /// Report an error or conversion failure.
-  /// TODO: TypeConverter needs an error reporting mechanism.
-  mlir::InFlightDiagnostic emitError(StringRef msg) {
-    return mlir::emitError(loc) << msg;
-  }
-
-private:
-  /// A location used to report conversion failures.
-  mlir::Location loc;
-};
-} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENKernel
@@ -271,91 +245,10 @@ public:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// KGENToLLVMTypeConverter Implementation
+// Pattern Population
 //===----------------------------------------------------------------------===//
 
-static Optional<Type> getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
-  // This intentionally discards signed-ness because LLVM is signless.
-  if (dtype.isInt() || dtype.isSInt() || dtype.isUInt())
-    return IntegerType::get(ctx, dtype.getIntegerWidthInBits());
-
-  if (dtype.isFloat()) {
-    switch (dtype.getValue()) {
-    default:
-      break;
-    case DType::f16:
-      return FloatType::getF16(ctx);
-    case DType::bf16:
-      return FloatType::getBF16(ctx);
-    case DType::f32:
-      return FloatType::getF32(ctx);
-    case DType::f64:
-      return FloatType::getF64(ctx);
-    }
-  }
-
-  return {};
-}
-
-KGENToLLVMTypeConverter::KGENToLLVMTypeConverter(
-    mlir::Location loc, const mlir::LowerToLLVMOptions &options)
-    : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
-
-  // Convert a DType expression to an MLIR type.
-  auto convertDType = [&](auto type) -> Optional<Type> {
-    auto dtypeConst = type.getDtype().template dyn_cast<DTypeConstantAttr>();
-    if (!dtypeConst) {
-      emitError("dtype not fully specified: ") << type;
-      return {};
-    }
-    return getMLIRTypeForDType(type.getContext(), dtypeConst.getDType());
-  };
-
-  // Convert a size expression to a C++ unsigned integer.
-  auto convertSize = [&](auto type) -> Optional<unsigned> {
-    auto size = type.getSize().template dyn_cast<IntegerAttr>();
-    if (!size) {
-      emitError("size not fully specified: ") << type;
-      return {};
-    }
-    const APInt &value = size.getValue();
-    assert(APInt(value.getBitWidth(), value.getLimitedValue()) == value &&
-           "couldn't narrow vector size");
-    return value.getLimitedValue();
-  };
-
-  // Convert scalar types directly to the dtype.
-  addConversion([&](ScalarType scalar) { return convertDType(scalar); });
-
-  // Convert pointer types to bare pointers of the dtype.
-  addConversion([&](PointerType pointer) -> Optional<Type> {
-    if (Optional<Type> dtype = convertDType(pointer))
-      return LLVM::LLVMPointerType::get(*dtype);
-    return {};
-  });
-
-  // Convert SIMD types to vector types.
-  addConversion([&](SIMDType simd) -> Optional<Type> {
-    Optional<Type> dtype = convertDType(simd);
-    auto size = convertSize(simd);
-    if (!dtype || !size)
-      return {};
-    return mlir::VectorType::get(*size, *dtype);
-  });
-
-  // Convert buffers to struct<(i64, ptr<T>)>.
-  // TODO: Should fixed-size buffers be converted to arrays?
-  addConversion([&](BufferType buffer) -> Optional<Type> {
-    Optional<Type> dtype = convertDType(buffer);
-    if (!dtype)
-      return {};
-    return LLVM::LLVMStructType::getLiteral(
-        buffer.getContext(), {convertType(IndexType::get(&getContext())),
-                              LLVM::LLVMPointerType::get(*dtype)});
-  });
-}
-
-static void populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
+static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamValue,
                   ConvertKGENReturn, ConvertMetaBufferAddress,
@@ -365,13 +258,13 @@ static void populateKGENToLLVMPatterns(KGENToLLVMTypeConverter &typeConverter,
   mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 }
 
-namespace {
-#define GEN_PASS_CLASSES
-#include "KGEN/KGENPasses.h.inc"
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
 
-class ConvertKGENToLLVMPass
+namespace {
+struct ConvertKGENToLLVMPass
     : public ConvertKGENToLLVMBase<ConvertKGENToLLVMPass> {
-public:
   void runOnOperation() override;
 };
 } // namespace
@@ -381,20 +274,21 @@ void ConvertKGENToLLVMPass::runOnOperation() {
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
-  target.addLegalDialect<LLVM::LLVMDialect>();
-  target.addLegalOp<ModuleOp>();
   target.addIllegalDialect<KGENDialect, MetaDialect>();
+  target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  KGENToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  MetaToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populateKGENToLLVMPatterns(typeConverter, patterns);
-  if (failed(mlir::applyFullConversion(theModule, target, std::move(patterns))))
+
+  if (failed(
+          mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 }
 
