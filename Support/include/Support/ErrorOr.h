@@ -60,7 +60,7 @@ namespace M {
 /// header dependencies because it only holds character strings.
 ///
 template <typename T>
-class LLVM_NODISCARD ErrorOr {
+class [[nodiscard]] ErrorOr {
   using StorageMode = Error::StorageMode;
 
 public:
@@ -219,7 +219,7 @@ class Empty {};
 
 /// This type is used for APIs that either succeed (with no result value) or can
 /// return an Error.
-class LLVM_NODISCARD ErrorOrSuccess : public ErrorOr<Detail::Empty> {
+class [[nodiscard]] ErrorOrSuccess : public ErrorOr<Detail::Empty> {
 public:
   using ErrorOr::ErrorOr;
   // This allows initialization from success().

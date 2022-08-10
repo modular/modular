@@ -53,25 +53,25 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
       representation.rep32.dim3 = dim;
       if (representation.rep32.dim3 != dim)
         break; // Check for dimension too large.
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case 3:
       dim = *--endIt;
       representation.rep32.dims[2] = dim;
       if (representation.rep32.dims[2] != dim)
         break; // Check for dimension too large.
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case 2:
       dim = *--endIt;
       representation.rep32.dims[1] = dim;
       if (representation.rep32.dims[1] != dim)
         break; // Check for dimension too large.
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case 1:
       dim = *--endIt;
       representation.rep32.dims[0] = dim;
       if (representation.rep32.dims[0] != dim)
         break; // Check for dimension too large.
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case 0:
       representation.rep32.kind = RepKind::k32;
       return; // Success

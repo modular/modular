@@ -256,8 +256,8 @@ inline static void addTask(Runtime &runtime, FnTy f) {
 ///
 template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
-LLVM_NODISCARD inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
-                                                             FnTy work) {
+[[nodiscard]] inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
+                                                            FnTy work) {
   auto result = AsyncValueRef<ResultTy>::allocate(runtime);
 
   addTask(runtime,
