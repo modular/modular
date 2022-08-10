@@ -221,7 +221,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (isBareword) {
       auto dtype = DType::getFromString(keyword);
       if (succeeded(dtype)) {
-        auto cst = p.getBuilder().getI8IntegerAttr(dtype.getValue().getValue());
+        auto cst = p.getBuilder().getI8IntegerAttr(dtype.value().getValue());
 
         value = DTypeConstantAttr::getChecked(p.getEncodedSourceLoc(loc),
                                               cst.getContext(), cst, type);

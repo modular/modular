@@ -200,9 +200,8 @@ public:
   LogicalResult
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, getTypeConverter()->convertType(rewriter.getIndexType()),
-        adaptor.getValue(), rewriter.getI64ArrayAttr(0));
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
+                                                      0);
     return success();
   }
 };
@@ -223,9 +222,8 @@ public:
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto type = adaptor.getValue().getType().cast<LLVM::LLVMStructType>();
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, type.getBody()[1], adaptor.getValue(), rewriter.getI64ArrayAttr(1));
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
+                                                      1);
     return success();
   }
 };
