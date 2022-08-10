@@ -301,7 +301,7 @@ public:
 
   /// Return the kernel we're generating into, along with its bindings.
   ElaboratedKernel takeElaboratedKernel() {
-    assert(!diagnostic.hasValue() &&
+    assert(!diagnostic.has_value() &&
            "can't get the result kernel when a diagnostic was generated");
     return std::move(elaboratedKernel);
   }
@@ -310,7 +310,7 @@ public:
   /// out.  This also deletes the dead husk of the kernel which may not even
   /// verify correctly.
   CalleeExpansionError takeDiagnosticAndEraseKernel() {
-    assert(diagnostic.hasValue() &&
+    assert(diagnostic.has_value() &&
            "cannot get diagnostic when none was generated");
     // The kernel is not viable so we need to delete it.  This op can appear in
     // various maps though, so instead of actually deleting it, we just delete
@@ -323,7 +323,7 @@ public:
   /// Generate a error expanding this kernel.  The location specified is the
   /// operation with the problem, and the message is the problem with it.
   LogicalResult error(Location loc, Error message) {
-    assert(!diagnostic.hasValue() && "Already emitted an error");
+    assert(!diagnostic.has_value() && "Already emitted an error");
     diagnostic = ElaborationDiagnostic(loc, std::move(message));
     return failure();
   }
@@ -334,7 +334,7 @@ public:
   /// failed.
   LogicalResult errorCalling(Location callLoc,
                              ArrayRef<CalleeExpansionError> calleeErrors) {
-    assert(!diagnostic.hasValue() && "Already emitted an error");
+    assert(!diagnostic.has_value() && "Already emitted an error");
     diagnostic = ElaborationDiagnostic(callLoc, calleeErrors);
     return failure();
   }

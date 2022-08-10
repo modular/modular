@@ -53,7 +53,7 @@ struct FieldParser<POC> {
     if (parser.parseKeyword(&value))
       return failure();
     auto result = symbolizePOC(value);
-    if (result.hasValue())
+    if (result.has_value())
       return *result;
     return failure();
   }
@@ -238,7 +238,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // Otherwise it's a function expression, decode the name as an operation
     // code.
     auto opcode = symbolizePOC(keyword);
-    if (!opcode.hasValue())
+    if (!opcode.has_value())
       return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
     SmallVector<TypedAttr> operands;
@@ -1077,7 +1077,7 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
 /// result parameters.  A concrete kernel will always never have input params.
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 KGEN::getDeclParameterInfo(Operation *decl) {
-  assert(classifyDecl(decl).hasValue() && "unknown declaration");
+  assert(classifyDecl(decl).has_value() && "unknown declaration");
   ArrayRef<ParamDeclAttr> declParams = getParamDecls(decl);
   size_t numInputParams = 0;
   // Kernels never have input parameters, but they can have output parameters.
@@ -1098,7 +1098,7 @@ KGEN::getDeclConstraints(Operation *decl) {
     return result;
 
   // Must be a generator or interface.
-  assert(classifyDecl(decl).hasValue() && "unknown declaration");
+  assert(classifyDecl(decl).has_value() && "unknown declaration");
   auto exprs = decl->getAttrOfType<ArrayAttr>("constraints").getValue();
   auto messages =
       decl->getAttrOfType<ArrayAttr>("constraintMessages").getValue();
