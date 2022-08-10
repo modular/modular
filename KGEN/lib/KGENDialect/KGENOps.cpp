@@ -490,11 +490,11 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
       parser.parseOptionalRegion(*body, entryArgs,
                                  /*enableNameShadowing=*/false);
   // If this is an extern declaration, then success.
-  if (!regionParseResult.hasValue())
+  if (!regionParseResult.has_value())
     return success();
 
   // If we have a value, and it's failure, then fail.
-  if (regionParseResult.hasValue() && failed(*regionParseResult))
+  if (regionParseResult.has_value() && failed(*regionParseResult))
     return failure();
 
   // Function body was parsed, make sure its not empty.
