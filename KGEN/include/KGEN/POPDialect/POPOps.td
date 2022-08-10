@@ -76,8 +76,8 @@ class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticUnaryOp<mnemonic, traits # [
                       DeclareOpInterfaceMethods<InferTypeOpInterface,
                                                 ["inferReturnTypes"]>]>,
-    Arguments<(ins ScalarType:$operand)>,
-    Results<(outs ScalarType:$result)>;
+    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$operand)>,
+    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
 
 
 //===----------------------------------------------------------------------===//
@@ -87,13 +87,15 @@ class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
-    The `abs` operation takes a meta.scalar type and returns its absolute value.
-    The operand and result types must be the same.
+    The `abs` operation takes a meta.scalar or meta.simd type and
+    returns its absolute value. The operand and result types must
+    be the same.
 
     Example:
 
     ```mlir
     %b = pop.abs %a : !meta.scalar<type>
+    %b = pop.abs %a : !meta.simd<N, type>
     ```
   }];
 }
@@ -105,13 +107,14 @@ def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 def NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
-    The `neg` operation takes a meta.scalar type and returns its negative.
-    The operand and result types must be the same.
+    The `neg` operation takes a meta.scalar or meta.simd type and
+    returns its negative. The operand and result types must be the same.
 
     Example:
 
     ```mlir
     %b = pop.neg %a : !meta.scalar<type>
+    %b = pop.neg %a : !meta.simd<N, type>
     ```
   }];
 }
@@ -131,8 +134,9 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticBinaryOp<mnemonic, traits # [
                       DeclareOpInterfaceMethods<InferTypeOpInterface,
                                                 ["inferReturnTypes"]>]>,
-    Arguments<(ins ScalarType:$lhs, ScalarType:$rhs)>,
-    Results<(outs ScalarType:$result)>;
+    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$lhs,
+                   AnyTypeOf<[ScalarType, SIMDType]>:$rhs)>,
+    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
 
 
 //===----------------------------------------------------------------------===//
@@ -142,13 +146,15 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
-    The `add` operation takes two meta.scalar types and returns their sum.
-    The operand and result types must be the same.
+    The `add` operation takes two meta.scalar or meta.simd types
+    and returns their sum. The operand and result types must be
+    the same.
 
     Example:
 
     ```mlir
     %c = pop.add %a, %b : !meta.scalar<type>
+    %c = pop.add %a, %b : !meta.simd<N, type>
     ```
   }];
 }
@@ -160,13 +166,14 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `sub` operation subtracts two meta.scalar types and subtracts them.
-    The operand and result types must be the same.
+    The `sub` operation subtracts two meta.scalar or meta.simd types
+    and subtracts them. The operand and result types must be the same.
 
     Example:
 
     ```mlir
     %c = pop.sub %a, %b : !meta.scalar<type>
+    %c = pop.sub %a, %b : !meta.simd<N, type>
     ```
   }];
 }
@@ -178,13 +185,14 @@ def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
-    The `mul` operation takes two meta.scalar types and returns their product.
-    The operand and result types must be the same.
+    The `mul` operation takes two meta.scalar or meta.simd types and returns
+    their product. The operand and result types must be the same.
 
     Example:
 
     ```mlir
     %c = pop.mul %a, %b : !meta.scalar<type>
+    %c = pop.mul %a, %b : !meta.simd<N, type>
     ```
   }];
 }
@@ -196,20 +204,21 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
-
-    The `copysign` operation takes two meta.scalar types (a magntitude `a`
-    and a sign `b`) of floating-point dtyle. The `copysign` operation
-    copies the sign from `b` to the `a`. The operand and result types must
-    be the same and must have a floating-point dtype.
+    The `copysign` operation takes two meta.scalar or meta.simd types
+    (a magntitude `a` and a sign `b`) of floating-point dtyle. The
+    `copysign` operation copies the sign from `b` to the `a`. The
+    operand and result types must be the same and must have a
+    floating-point dtype.
 
     Example:
 
     ```mlir
     %c = pop.copysign %a, %b : !meta.scalar<type>
+    %c = pop.copysign %a, %b : !meta.simd<N, type>
     ```
   }];
-  let arguments = (ins UnboundOrFloatingPointScalarType:$lhs,
-                       UnboundOrFloatingPointScalarType:$rhs);
+  let arguments = (ins AnyTypeOf<[UnboundOrFloatingPointScalarType, UnboundOrFloatingPointSIMDType]>:$lhs,
+                       AnyTypeOf<[UnboundOrFloatingPointScalarType, UnboundOrFloatingPointSIMDType]>:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -227,8 +236,10 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticTernaryOp<mnemonic, traits # [
                       DeclareOpInterfaceMethods<InferTypeOpInterface,
                                                 ["inferReturnTypes"]>]>,
-    Arguments<(ins ScalarType:$a, ScalarType:$b, ScalarType:$c)>,
-    Results<(outs ScalarType:$result)>;
+    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$a,
+                   AnyTypeOf<[ScalarType, SIMDType]>:$b,
+                   AnyTypeOf<[ScalarType, SIMDType]>:$c)>,
+    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
 
 //===----------------------------------------------------------------------===//
 // FMAOp
@@ -237,14 +248,15 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `fma` operation takes three meta.scalar types (`a`, `b`, and `c`)
-    and computes the fma operation `a * b + c`. The operand and result
-    types must be the same.
+    The `fma` operation takes three meta.scalar or meta.vector types
+    (`a`, `b`, and `c`) and computes the fma operation `a * b + c`.
+    The operand and result types must be the same.
 
     Example:
 
     ```mlir
     %d = pop.fma %a, %b, %c : !meta.scalar<type>
+    %d = pop.fma %a, %b, %c : !meta.simd<N, type>
     ```
   }];
 }
