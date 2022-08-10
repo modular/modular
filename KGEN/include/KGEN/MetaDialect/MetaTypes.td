@@ -42,8 +42,9 @@ def ScalarType : MetaType<"Scalar",
 /// A scalar type that is constrained to a be either a unbound dtype or a
 /// floating-point dtype.
 def UnboundOrFloatingPointScalarType : Type<
-    CPred<"!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat()">,
+    CPred<"$_self.isa<ScalarType>() &&"
+          "(!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
     "whose value is either not unbound or a floating-point dtype">;
 
 
@@ -72,6 +73,14 @@ def SIMDType : MetaType<"SIMD",
     }]>,
   ];
 }
+
+/// A simd type that is constrained to a be either a unbound dtype or a
+/// floating-point dtype.
+def UnboundOrFloatingPointSIMDType : Type<
+    CPred<"$_self.isa<SIMDType>() &&"
+          "(!$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
+    "whose element type is either not unbound or a floating-point dtype">;
 
 //===----------------------------------------------------------------------===//
 // BufferType
