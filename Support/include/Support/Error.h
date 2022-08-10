@@ -24,7 +24,7 @@ namespace M {
 /// By convention, error strings do not include a trailing \n in the string,
 /// but do include a trailing period or other terminator.
 ///
-class LLVM_NODISCARD Error final {
+class [[nodiscard]] Error final {
   enum StorageMode : uint8_t {
     kStaticError, // This contains a pointer to static data.  No allocation.
     kMallocError, // This contains a malloc'd string.

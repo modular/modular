@@ -442,8 +442,7 @@ public:
         .template when<DType::kBool>(std::forward<CallableT>(elementFn));
   }
 
-  LLVM_NODISCARD
-  operator ResultType() {
+  [[nodiscard]] operator ResultType() {
     assert(result && "Fell off the end of a DTypeSwitch");
     return std::move(*result);
   }
