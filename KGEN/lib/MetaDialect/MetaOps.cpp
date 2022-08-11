@@ -25,8 +25,8 @@ using namespace KGEN;
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult BufferSizeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.size() == 1 && "meta.buffer.size has one operand");
+OpFoldResult BufferSizeOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "meta.buffer.size has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
   // size is null.
@@ -165,7 +165,7 @@ LogicalResult MetaCastToBuiltinOp::verify() {
 }
 
 /// Folds fixed_type -> !meta.type -> fixed_type (for A->B->A only)
-OpFoldResult MetaCastToBuiltinOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult MetaCastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
   if (auto fromFixedType =
           getOperand().getDefiningOp<MetaCastFromBuiltinOp>()) {
     // Note: The defining op will be a MetaCastFromBuiltinOp, since
@@ -187,7 +187,7 @@ LogicalResult MetaCastFromBuiltinOp::verify() {
 }
 
 /// Folds !meta.type -> fixed_type -> !meta.type (for A->B->A only)
-OpFoldResult MetaCastFromBuiltinOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult MetaCastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
   if (auto toFixedType = getOperand().getDefiningOp<MetaCastToBuiltinOp>()) {
     // Note: The defining op will be a MetaCastToBuiltinOp, since
     // we have two asymmetric cast ops.

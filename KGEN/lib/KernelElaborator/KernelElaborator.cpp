@@ -258,9 +258,9 @@ private:
            SmallVector<ElaboratedKernelOrCalleeError>>
       generatedKernels;
 
-  /// This keeps track of kernels that were found to be unviable and need to be
-  /// removed.  Their body block is empty (no terminator) so they are known to
-  /// be invalid.  We keep them around to the end of elaboration to avoid
+  /// This keeps track of kernels that were found to be non viable and need to
+  /// be removed.  Their body block is empty (no terminator) so they are known
+  /// to be invalid.  We keep them around to the end of elaboration to avoid
   /// invalidating iterators.
   std::vector<KernelOp> kernelsToRemove;
 };
@@ -1101,7 +1101,8 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
   // Elaborate all the kernels at the top-level.
   bool didFail = false;
   for (auto kernel : primary.getOps<KernelOp>()) {
-    // Ignore kernels with an empty body, they are things found to be unviable.
+    // Ignore kernels with an empty body, they are things found to be non
+    // viable.
     if (kernel.getBodyBlock()->empty())
       continue;
 
@@ -1120,7 +1121,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
       for (const auto &value : results)
         errors.push_back(std::get<CalleeExpansionError>(value));
       auto diag = emitError(errors[0].first, "failed to generate any kernels");
-      emitElaborationError(diag, errors, /*depth=*/2);
+      emitElaborationError(diag, errors, /*indentDepth=*/2);
       didFail = true;
     }
   }
@@ -1137,7 +1138,7 @@ LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
       continue;
     }
 
-    /// Unviable kernels will be left with an empty/invalid body.  Remove them
+    /// Non viable kernels will be left with an empty/invalid body.  Remove them
     /// at the end of elaboration.
     if (auto kernel = dyn_cast<KernelOp>(op))
       if (kernel.getBodyBlock()->empty())

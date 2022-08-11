@@ -360,11 +360,11 @@ void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
 
 /// Parse a parameter value that is known to be an index type.
 ParseResult KGEN::parseIndexParamValue(AsmParser &p,
-                                       FailureOr<TypedAttr> &result) {
-  TypedAttr value;
-  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
+                                       FailureOr<TypedAttr> &value) {
+  TypedAttr result;
+  if (parseParamValue(p, result, p.getBuilder().getIndexType()))
     return failure();
-  result = value;
+  value = result;
   return success();
 }
 
@@ -1022,24 +1022,24 @@ DType DTypeConstantAttr::getDType() {
 }
 
 /// Checks if the DType constant is compatible with the MLIR type.
-bool DTypeConstantAttr::isCompatibleWith(Type builtinTy) {
-  if (!builtinTy.isa<IntegerType, FloatType>())
+bool DTypeConstantAttr::isCompatibleWith(Type type) {
+  if (!type.isa<IntegerType, FloatType>())
     return false;
 
   auto eltTy = getDType();
-  auto builtinWidth = builtinTy.getIntOrFloatBitWidth();
+  auto builtinWidth = type.getIntOrFloatBitWidth();
   auto eltWidth = eltTy.getWidthInBits();
   if (eltTy.isInt())
-    return builtinTy.isa<IntegerType>() && (builtinWidth == eltWidth);
+    return type.isa<IntegerType>() && (builtinWidth == eltWidth);
 
   switch (eltTy.getValue()) {
   default:
-    return builtinTy.isa<FloatType>() && builtinWidth == eltWidth;
+    return type.isa<FloatType>() && builtinWidth == eltWidth;
   // Special cases for bf16, fp16, and tf32.
   case DType::bf16:
-    return builtinTy.isa<BFloat16Type>();
+    return type.isa<BFloat16Type>();
   case DType::f16:
-    return builtinTy.isa<Float16Type>();
+    return type.isa<Float16Type>();
   case DType::tf32:
     return false;
   }
