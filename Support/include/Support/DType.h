@@ -138,6 +138,7 @@ public:
 
   // Categorization.
   constexpr bool isInvalid() const { return value == invalid; }
+  bool isBool() const { return value == DType::kBool; }
   bool isInt() const { return (value & mIsInteger) != 0; }
   bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
   bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }

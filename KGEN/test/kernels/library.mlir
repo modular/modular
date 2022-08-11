@@ -138,20 +138,3 @@ kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.
   %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
   kgen.return %2 : !meta.scalar<type>
 }
-
-//===----------------------------------------------------------------------===//
-// lessThan
-//===----------------------------------------------------------------------===//
-// TODO: This is a temporary placeholder until the pop dialect has support
-// for compare operations.
-//===----------------------------------------------------------------------===//
-
-kgen.generator.interface @lessThan<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> i1
-
-kgen.generator @lessThan_f32<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> i1
-  constraints <eq_dtype(type, f32), "incorrect element type"> implements @lessThan {
-  %0 = meta.cast_to_builtin %a: !meta.scalar<type> to f32
-  %1 = meta.cast_to_builtin %b: !meta.scalar<type> to f32
-  %2 = arith.cmpf olt, %0, %1 : f32
-  kgen.return %2 : i1
-}

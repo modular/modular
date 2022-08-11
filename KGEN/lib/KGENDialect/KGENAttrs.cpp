@@ -1096,6 +1096,8 @@ bool DTypeConstantAttr::isCompatibleWith(Type type) {
   auto eltTy = getDType();
   auto builtinWidth = type.getIntOrFloatBitWidth();
   auto eltWidth = eltTy.getWidthInBits();
+  if (eltTy.isBool())
+    return type.isa<IntegerType>() && (builtinWidth == 1);
   if (eltTy.isInt())
     return type.isa<IntegerType>() && (builtinWidth == eltWidth);
 
