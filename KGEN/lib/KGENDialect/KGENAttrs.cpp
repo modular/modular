@@ -170,7 +170,7 @@ static ParseResult parseOptionalParamKeywordOrString(AsmParser &p,
 }
 
 /// Parse operator expression operands with operator-specific syntax.
-static ParseResult parseOperatorOperands(AsmParser &p, POC opcode,
+static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                                          SmallVectorImpl<TypedAttr> &operands,
                                          Type type) {
   switch (opcode) {
@@ -178,43 +178,42 @@ static ParseResult parseOperatorOperands(AsmParser &p, POC opcode,
     // operand-list ::= expr (`,` expr)*
     return p.parseCommaSeparatedList(
         [&] { return parseParamValue(p, operands.emplace_back(), type); });
-  case POC::IN:
-  case POC::IN_DTYPE:
+  case (uint32_t)POC::IN:
+  case (uint32_t)POC::IN_DTYPE:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        p.parseLSquare())
-      break;
-    if (failed(p.parseOptionalRSquare())) {
-      if (p.parseCommaSeparatedList([&] {
-            return parseParamValue(p, operands.emplace_back(), type);
-          }) ||
-          p.parseRSquare())
-        return failure();
-    }
+        p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
+          return parseParamValue(p, operands.emplace_back(), type);
+        }))
+      return failure();
+
     return success();
   }
   llvm_unreachable("unknown operator");
 }
 
-static void printOperatorOperands(AsmPrinter &p, POC opcode,
-                                  ArrayRef<TypedAttr> operands) {
-  switch (opcode) {
-  default:
-    // operand-list ::= expr (`,` expr)*
-    llvm::interleaveComma(
-        operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
-    break;
-  case POC::IN:
-  case POC::IN_DTYPE:
-    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
-    printParamValue(p, operands[0]);
-    p << ", [";
-    llvm::interleaveComma(operands.drop_front(), p, [&](TypedAttr operand) {
-      printParamValue(p, operand);
-    });
-    p << "]";
-    break;
-  }
+enum class POCAliases : uint32_t {
+  // The builtin opcodes have 0...127.
+  FIRST_PSEUDO = 128,
+  NE,
+  NE_DTYPE,
+
+  // This is an unknown opcode name.
+  kInvalid,
+};
+
+static uint32_t getOpcodeFromString(StringRef keyword) {
+  // All the valid and builtin opcodes are legal.
+  auto opcode = symbolizePOC(keyword);
+  if (opcode.has_value())
+    return (uint32_t)*opcode;
+
+  if (keyword == "ne")
+    return (uint32_t)POCAliases::NE;
+  if (keyword == "ne_dtype")
+    return (uint32_t)POCAliases::NE_DTYPE;
+
+  return (uint32_t)POCAliases::kInvalid;
 }
 
 /// When in a context that knows it is dealing with a parameter specifically,
@@ -247,8 +246,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
     // Otherwise it's a function expression, decode the name as an operation
     // code.
-    auto opcode = symbolizePOC(keyword);
-    if (!opcode.has_value())
+    auto opcode = getOpcodeFromString(keyword);
+    if (opcode == (uint32_t)POCAliases::kInvalid)
       return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
     SmallVector<TypedAttr> operands;
@@ -256,13 +255,15 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // The element type of a function is the same type as the expression itself
     // except for comparisons.
     Type operandType = type;
-    switch (*opcode) {
-    case POC::EQ:
-    case POC::IN:
+    switch (opcode) {
+    case (uint32_t)POC::EQ:
+    case (uint32_t)POCAliases::NE:
+    case (uint32_t)POC::IN:
       operandType = p.getBuilder().getIndexType();
       break;
-    case POC::EQ_DTYPE:
-    case POC::IN_DTYPE:
+    case (uint32_t)POC::EQ_DTYPE:
+    case (uint32_t)POCAliases::NE_DTYPE:
+    case (uint32_t)POC::IN_DTYPE:
       operandType = p.getBuilder().getType<DTypeType>();
       break;
     default:
@@ -270,24 +271,65 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     }
 
     if (failed(p.parseOptionalRParen())) {
-      if (parseOperatorOperands(p, *opcode, operands, operandType) ||
+      if (parseOperatorOperands(p, opcode, operands, operandType) ||
           p.parseRParen())
         return failure();
+    }
+
+    // If these are actually inverted i1 aliases, build the correct nodes.
+    bool needsInvert = false;
+    switch (opcode) {
+    case (uint32_t)POCAliases::NE:
+      opcode = (uint32_t)POC::EQ;
+      needsInvert = true;
+      break;
+    case (uint32_t)POCAliases::NE_DTYPE:
+      opcode = (uint32_t)POC::EQ_DTYPE;
+      needsInvert = true;
+      break;
     }
 
     // Okay, we parsed the operands, see if this is a valid expression.
     if (failed(ParamOperatorAttr::verify(
             [&]() -> mlir::InFlightDiagnostic { return p.emitError(loc); },
-            *opcode, operands, type)))
+            (POC)opcode, operands, type)))
       return failure();
     // All is good, let's move!
-    value = ParamOperatorAttr::get(*opcode, operands);
+    value = ParamOperatorAttr::get((POC)opcode, operands);
+
+    // If we need to invert this, do so.
+    if (needsInvert) {
+      TypedAttr one = p.getBuilder().getBoolAttr(true);
+      value = ParamOperatorAttr::get(POC::Xor, {value, one});
+    }
+
     return success();
   }
 
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, etc.
   return p.parseAttribute(value, type);
+}
+
+static void printOperatorOperands(AsmPrinter &p, POC opcode,
+                                  ArrayRef<TypedAttr> operands) {
+  switch (opcode) {
+  default:
+    // operand-list ::= expr (`,` expr)*
+    llvm::interleaveComma(
+        operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
+    break;
+  case POC::IN:
+  case POC::IN_DTYPE:
+    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
+    printParamValue(p, operands[0]);
+    p << ", [";
+    llvm::interleaveComma(operands.drop_front(), p, [&](TypedAttr operand) {
+      printParamValue(p, operand);
+    });
+    p << "]";
+    break;
+  }
 }
 
 /// When in a context that knows it is dealing with a parameter specifically,
@@ -311,7 +353,29 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
     }
   }
 
+  // Handle expressions.
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
+    // If this is a inverted boolean sugar, handle it.
+    if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
+            expr.getOperands().size() == 2 &&
+            expr.getOperands()[1].isa<IntegerAttr>();
+        auto invertedExpr =
+            expr.getOperands()[0].dyn_cast<ParamOperatorAttr>()) {
+      auto invertedOpcode = invertedExpr.getOpcode();
+      if (invertedOpcode == POC::EQ) {
+        p << "ne(";
+        printOperatorOperands(p, invertedOpcode, invertedExpr.getOperands());
+        p << ')';
+        return;
+      }
+      if (invertedOpcode == POC::EQ_DTYPE) {
+        p << "ne_dtype(";
+        printOperatorOperands(p, invertedOpcode, invertedExpr.getOperands());
+        p << ')';
+        return;
+      }
+    }
+
     p << stringifyEnum(expr.getOpcode()) << '(';
     printOperatorOperands(p, expr.getOpcode(), expr.getOperands());
     p << ')';
