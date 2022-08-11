@@ -118,7 +118,7 @@ kgen.generator @dtype_params<dt: !kgen.dtype, "f32", "ui32">() {
   kgen.param.value  = <add("f32", "ui32")>
 
   // CHECK: kgen.param.value : dtype = <f32>
-  kgen.param.value : !kgen.dtype = <#kgen.dtype.constant<66 : i8>>
+  kgen.param.value : !kgen.dtype = <#kgen.dtype.constant<f32>>
 
   // CHECK: kgen.param.value : dtype = <f32>
   kgen.param.value : !kgen.dtype = <f32>

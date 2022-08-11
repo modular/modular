@@ -488,6 +488,11 @@ DType::dispatch(ParamPtrTypes... paramPtrs) const {
       *this, std::forward<ParamPtrTypes>(paramPtrs)...);
 }
 
+/// Hash a DType.
+inline llvm::hash_code hash_value(DType dtype) {
+  return llvm::hash_value(dtype.getValue());
+}
+
 } // end namespace M
 
 #endif // SUPPORT_DTYPE_H

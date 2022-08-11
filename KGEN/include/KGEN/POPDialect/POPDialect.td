@@ -21,6 +21,12 @@ def POPDialect : Dialect {
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let hasConstantMaterializer = 1;
+  let useDefaultAttributePrinterParser = 1;
+
+  let extraClassDeclaration = [{
+    /// Register all POP attributes.
+    void registerAttributes();
+  }];
 }
 
 #endif // KGEN_POPDIALECT_POPDIALECT_TD

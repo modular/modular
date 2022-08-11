@@ -8,15 +8,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_POPOPS_H
-#define KGEN_KGENDIALECT_POPOPS_H
+#ifndef KGEN_POPDIALECT_POPOPS_H
+#define KGEN_POPDIALECT_POPOPS_H
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+namespace M::KGEN {
+enum class CmpPredicate : uint32_t;
+class CmpPredicateAttr;
+} // namespace M::KGEN
+
 #define GET_OP_CLASSES
 #include "KGEN/POPDialect/POP.h.inc"
 
-#endif // KGEN_KGENDIALECT_POPOPS_H
+#endif // KGEN_POPDIALECT_POPOPS_H

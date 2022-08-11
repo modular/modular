@@ -45,7 +45,7 @@ Optional<GeneratorOrKernelKind> KGEN::classifyDecl(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-/// Parse an attribute.
+/// Parse an opcode.
 template <>
 struct FieldParser<POC> {
   static FailureOr<POC> parse(AsmParser &parser) {
@@ -58,6 +58,18 @@ struct FieldParser<POC> {
     return failure();
   }
 };
+
+/// Parse a dtype.
+template <>
+struct FieldParser<DType> {
+  static FailureOr<DType> parse(AsmParser &parser) {
+    StringRef value;
+    if (parser.parseKeyword(&value))
+      return failure();
+    return DType::getFromString(value);
+  }
+};
+
 } // namespace mlir
 
 /// Parse a parameter name. This is the corresponding parser to
@@ -221,10 +233,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (isBareword) {
       auto dtype = DType::getFromString(keyword);
       if (succeeded(dtype)) {
-        auto cst = p.getBuilder().getI8IntegerAttr(dtype.value().getValue());
-
-        value = DTypeConstantAttr::getChecked(p.getEncodedSourceLoc(loc),
-                                              cst.getContext(), cst, type);
+        value = DTypeConstantAttr::getChecked(
+            p.getEncodedSourceLoc(loc), p.getContext(), dtype.value(), type);
         return success(value != Attribute());
       }
     }
@@ -1008,17 +1018,10 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 
 LogicalResult
 DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          IntegerAttr value, Type type) {
-  if (!value.getType().isSignlessInteger(8))
-    return emitError() << "kgen.dtype.constant requires i8 value";
+                          DType dtype, Type type) {
   if (!type || !type.isa<DTypeType>())
     return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
   return success();
-}
-
-/// Return the DType for the value we contain.
-DType DTypeConstantAttr::getDType() {
-  return DType(getValue().getValue().getZExtValue());
 }
 
 /// Checks if the DType constant is compatible with the MLIR type.
@@ -1109,4 +1112,12 @@ KGEN::getDeclConstraints(Operation *decl) {
   for (auto [expr, message] : llvm::zip(exprs, messages))
     result.push_back({expr, message.cast<StringAttr>()});
   return result;
+}
+
+//===----------------------------------------------------------------------===//
+// DTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, DType dtype) {
+  return get(ctx, dtype, DTypeType::get(ctx));
 }
