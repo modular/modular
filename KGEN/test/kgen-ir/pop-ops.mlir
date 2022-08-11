@@ -115,6 +115,24 @@ kgen.kernel @pop_fma_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
+// CHECK-LABEL: @pop_cmp
+kgen.kernel @pop_cmp(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<bool> {
+  // CHECK: pop.cmp ge, %{{.*}}, %{{.*}} :
+  %0 = pop.cmp ge, %arg0, %arg1 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<bool>
+}
+
+kgen.kernel @pop_cmp_simd(
+    %arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>,
+    %arg2: !meta.simd<2, f64>, %arg3: !meta.simd<2, f64>
+  ) -> (!meta.simd<4, bool>, !meta.simd<2, bool>) {
+  // CHECK: pop.cmp ne, %{{.*}}, %{{.*}} :
+  %0 = pop.cmp ne, %arg0, %arg1 : !meta.simd<4, si32>
+  // CHECK: pop.cmp lt, %{{.*}}, %{{.*}} :
+  %1 = pop.cmp lt, %arg2, %arg3 : !meta.simd<2, f64>
+  kgen.return %0, %1 : !meta.simd<4, bool>, !meta.simd<2, bool>
+}
+
 // COM: Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
 // COM: = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
 

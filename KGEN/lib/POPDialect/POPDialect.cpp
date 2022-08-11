@@ -39,6 +39,8 @@ struct POPInlinerInterface : public mlir::DialectInlinerInterface {
 
 // Register operations.
 void POPDialect::initialize() {
+  registerAttributes();
+
   addOperations<
 #define GET_OP_LIST
 #include "KGEN/POPDialect/POP.cpp.inc"

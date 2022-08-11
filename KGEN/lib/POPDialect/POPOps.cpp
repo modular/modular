@@ -10,6 +10,7 @@
 
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -134,6 +135,25 @@ bool ConstantOp::isBuildableWith(Attribute value, Type type) {
 OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.empty() && "constant has no operands");
   return getValue();
+}
+
+//===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
+                                      ValueRange operands, DictionaryAttr attrs,
+                                      RegionRange regions,
+                                      SmallVectorImpl<Type> &types) {
+  Type argType = operands[0].getType();
+  auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
+  if (auto scalar = argType.dyn_cast<ScalarType>())
+    types.push_back(ScalarType::get(boolType));
+  else if (auto simd = argType.dyn_cast<SIMDType>())
+    types.push_back(SIMDType::get(simd.getSize(), boolType));
+  else
+    return failure();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

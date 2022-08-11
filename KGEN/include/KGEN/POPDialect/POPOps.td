@@ -12,8 +12,8 @@ include "KGEN/MetaDialect/MetaDialect.td"
 include "KGEN/MetaDialect/MetaTypes.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpAsmInterface.td"
-
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
@@ -60,7 +60,6 @@ def ConstantOp : POPOp<"constant", [
   let hasFolder = 1;
 }
 
-
 //===----------------------------------------------------------------------===//
 // UnaryOp
 //===----------------------------------------------------------------------===//
@@ -74,11 +73,9 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 // Base class for unary operations.
 class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticUnaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface,
-                                                ["inferReturnTypes"]>]>,
-    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$operand)>,
-    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
-
+                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
+    Arguments<(ins ScalarOrSIMD:$operand)>,
+    Results<(outs ScalarOrSIMD:$result)>;
 
 //===----------------------------------------------------------------------===//
 // AbsOp
@@ -132,12 +129,9 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 // Base class for binary operations.
 class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticBinaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface,
-                                                ["inferReturnTypes"]>]>,
-    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$lhs,
-                   AnyTypeOf<[ScalarType, SIMDType]>:$rhs)>,
-    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
-
+                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
+    Arguments<(ins ScalarOrSIMD:$lhs, ScalarOrSIMD:$rhs)>,
+    Results<(outs ScalarOrSIMD:$result)>;
 
 //===----------------------------------------------------------------------===//
 // AddOp
@@ -198,7 +192,7 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
-// CopySign
+// CopySignOp
 //===----------------------------------------------------------------------===//
 
 def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
@@ -217,12 +211,12 @@ def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
     %c = pop.copysign %a, %b : !meta.simd<size, type>
     ```
   }];
-  let arguments = (ins AnyTypeOf<[UnboundOrFloatingPointScalarType, UnboundOrFloatingPointSIMDType]>:$lhs,
-                       AnyTypeOf<[UnboundOrFloatingPointScalarType, UnboundOrFloatingPointSIMDType]>:$rhs);
+  let arguments = (ins UnboundOrFloatScalarOrSIMD:$lhs,
+                       UnboundOrFloatScalarOrSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
-// TernaryOps
+// TernaryOp
 //===----------------------------------------------------------------------===//
 
 // Base class for ternary arithmetic pop operations.
@@ -234,12 +228,9 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 // Base class for ternary operations.
 class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
     POP_ArithmeticTernaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface,
-                                                ["inferReturnTypes"]>]>,
-    Arguments<(ins AnyTypeOf<[ScalarType, SIMDType]>:$a,
-                   AnyTypeOf<[ScalarType, SIMDType]>:$b,
-                   AnyTypeOf<[ScalarType, SIMDType]>:$c)>,
-    Results<(outs AnyTypeOf<[ScalarType, SIMDType]>:$result)>;
+                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
+    Arguments<(ins ScalarOrSIMD:$a, ScalarOrSIMD:$b, ScalarOrSIMD:$c)>,
+    Results<(outs ScalarOrSIMD:$result)>;
 
 //===----------------------------------------------------------------------===//
 // FMAOp
@@ -248,7 +239,7 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `fma` operation takes three meta.scalar or meta.vector types
+    The `fma` operation takes three meta.scalar or meta.simd types
     (`a`, `b`, and `c`) and computes the fma operation `a * b + c`.
     The operand and result types must be the same.
 
@@ -258,5 +249,35 @@ def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
     %d = pop.fma %a, %b, %c : !meta.scalar<type>
     %d = pop.fma %a, %b, %c : !meta.simd<size, type>
     ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
+                          DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "comparison";
+  let description = [{
+    The `cmp` operation takes a comparison predicate and two meta.scalar or
+    meta.simd types (`lhs` and `rhs`) and computes the resulting comparison.
+
+    The comparison semantics between floating point dtypes is the same as in C.
+
+    Example:
+
+    ```mlir
+    %b0 = pop.cmp lt, %a, %b : !meta.scalar<type>
+    %b1 = pop.cmp ge, %c, %d : !meta.simd<?, type>
+    ```
+  }];
+
+  let arguments = (ins CmpPredicateAttr:$pred, ScalarOrSIMD:$lhs,
+                       ScalarOrSIMD:$rhs);
+  let results = (outs BoolScalarOrSIMD:$result);
+
+  let assemblyFormat = [{
+    $pred `,` $lhs `,` $rhs attr-dict `:` type($lhs)
   }];
 }

@@ -80,13 +80,8 @@ kgen.param.value : !kgen.dtype = <mul(1, 4)>
 
 // -----
 
-// expected-error @+1 {{kgen.dtype.constant requires i8 value}}
-kgen.param.value : !kgen.dtype = <#kgen.dtype.constant<66 : i94>>
-
-// -----
-
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
-kgen.param.value : i8 = <#kgen.dtype.constant<66 : i8>>
+kgen.param.value : i8 = <#kgen.dtype.constant<f32>>
 
 // -----
 
@@ -188,7 +183,7 @@ kgen.kernel @bad_cast_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32
 
 // -----
 kgen.kernel @bad_cast_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
-  // expected-error @+1 {{'meta.buffer.cast' op expected the dtype of the input buffer (#kgen.dtype.constant<66 : i8> : !kgen.dtype) to the same as to the dtype you are casting to (#kgen.dtype.constant<67 : i8> : !kgen.dtype), or one of them to be unknown.}}
+  // expected-error @+1 {{'meta.buffer.cast' op expected the dtype of the input buffer (#kgen.dtype.constant<f32> : !kgen.dtype) to the same as to the dtype you are casting to (#kgen.dtype.constant<f64> : !kgen.dtype), or one of them to be unknown.}}
   %0 = meta.buffer.cast %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
   kgen.return %0 : !meta.buffer<42, f64>
 }

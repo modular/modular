@@ -39,15 +39,6 @@ def ScalarType : MetaType<"Scalar",
   ];
 }
 
-/// A scalar type that is constrained to a be either a unbound dtype or a
-/// floating-point dtype.
-def UnboundOrFloatingPointScalarType : Type<
-    CPred<"$_self.isa<ScalarType>() &&"
-          "(!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
-    "whose value is either unbound or a floating-point dtype">;
-
-
 //===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
@@ -73,14 +64,6 @@ def SIMDType : MetaType<"SIMD",
     }]>,
   ];
 }
-
-/// A simd type that is constrained to a be either a unbound dtype or a
-/// floating-point dtype.
-def UnboundOrFloatingPointSIMDType : Type<
-    CPred<"$_self.isa<SIMDType>() &&"
-          "(!$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
-    "whose element type is either unbound or a floating-point dtype">;
 
 //===----------------------------------------------------------------------===//
 // BufferType
@@ -160,3 +143,46 @@ def PointerType : MetaType<"Pointer",
     };
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Type Constraints
+//===----------------------------------------------------------------------===//
+
+/// A scalar type that is constrained to have a bool dtype.
+def BoolScalar : Type<
+    CPred<"$_self.isa<ScalarType>() &&"
+          "$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() &&"
+          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
+    "whose value is either unboard or a bool dtype">;
+
+/// A simd type that is constrained to have a bool dtype.
+def BoolSIMD : Type<
+    CPred<"$_self.isa<SIMDType>() &&"
+          "$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() &&"
+          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
+    "whose value is either unboard or a bool dtype">;
+
+/// A scalar type that is constrained to be either an unbound dtype or a
+/// floating-point dtype.
+def UnboundOrFloatScalar : Type<
+    CPred<"$_self.isa<ScalarType>() &&"
+          "(!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
+    "whose value is either unbound or a floating-point dtype">;
+
+/// A simd type that is constrained to be either an unbound dtype or a
+/// floating-point dtype.
+def UnboundOrFloatSIMD : Type<
+    CPred<"$_self.isa<SIMDType>() &&"
+          "(!$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
+    "whose element type is either unbound or a floating-point dtype">;
+
+def ScalarOrSIMD : AnyTypeOf<
+    [ScalarType, SIMDType]>;
+
+def BoolScalarOrSIMD : AnyTypeOf<
+    [BoolScalar, BoolSIMD]>;
+
+def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
+    [UnboundOrFloatScalar, UnboundOrFloatSIMD]>;

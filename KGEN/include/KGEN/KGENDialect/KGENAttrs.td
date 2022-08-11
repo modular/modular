@@ -267,16 +267,14 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value
   /// and the type is always !kgen.dtype.
-  let parameters = (ins "::mlir::IntegerAttr":$value,
-                        AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "DType":$dType, AttributeSelfTypeParameter<"">:$type);
 
-  let assemblyFormat = "`<` $value `>`";
+  let builders = [AttrBuilder<(ins "DType":$dtype)>];
+
+  let assemblyFormat = "`<` $dType `>`";
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Return the DType for the value we contain.
-    DType getDType();
-
     /// Checks if the DType is compatible with the MLIR type.
     /// Types are compatible if the DType and the MLIR types are the same. I.e.
     /// The kind (integral or floating) is the same as well as the bitwidth.
