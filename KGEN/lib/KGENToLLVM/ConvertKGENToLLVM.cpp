@@ -9,9 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypeConverter.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 using namespace M;
@@ -28,25 +26,24 @@ public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(KernelOp kernel, KernelOpAdaptor opAdaptor,
+  matchAndRewrite(KernelOp kernel, KernelOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // The kernel must be fully specified for this to work, so if the kernel
-    // isn't then this conversion fails.
-    if (!kernel.getParamDecls().empty())
-      return mlir::emitError(kernel->getLoc())
-             << "cannot lower a kernel that is not fully specified.";
+    // Convert the kernel signature.
+    TypeConverter::SignatureConversion result(kernel.getNumArguments());
+    Type funcType = getTypeConverter()->convertFunctionSignature(
+        kernel.getFunctionType(),
+        /*isVariadic=*/false, result);
+    if (!funcType)
+      return emitError(kernel.getLoc(), "failed to convert kernel signature");
 
-    auto funcOp = rewriter.replaceOpWithNewOp<mlir::func::FuncOp>(
-        kernel, kernel.getName(), kernel.getFunctionType());
+    // Create the LLVM function.
+    auto funcOp = rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
+        kernel, kernel.getNameAttr(), funcType);
 
     // And move the kernel's body into the new function.
     rewriter.inlineRegionBefore(kernel.getBodyRegion(0), funcOp.getBody(),
                                 funcOp.end());
-    if (failed(rewriter.convertRegionTypes(&funcOp.getBody(),
-                                           *getTypeConverter())))
-      return emitError(kernel.getLoc(),
-                       "could not convert region types to be LLVM-compatible.");
-
+    (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
     return success();
   }
 };
@@ -66,11 +63,35 @@ public:
   LogicalResult
   matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (!op.getParamDecls().empty() || !op.getParamValues().empty())
-      return mlir::emitError(op->getLoc())
-             << "cannot lower a call op that is not fully specified.";
-    rewriter.replaceOpWithNewOp<mlir::func::CallOp>(
-        op, op.getCallee(), op.getResultTypes(), adaptor.getOperands());
+    // Convert the result types.
+    SmallVector<Type> types = llvm::to_vector(op.getResultTypes());
+    if (!types.empty()) {
+      types.assign({getTypeConverter()->packFunctionResults(types)});
+      if (!types.back())
+        return emitError(op.getLoc(), "failed to convert call result type");
+    }
+
+    // Create the LLVM call operation.
+    auto callee = op.getCallee().dyn_cast<FlatSymbolRefAttr>();
+    if (!callee)
+      return emitError(op.getLoc(), "cannot convert nested symbol reference");
+    auto llvmCall = rewriter.create<LLVM::CallOp>(op.getLoc(), types, callee,
+                                                  adaptor.getOperands());
+
+    // Unpack the struct if necessary.
+    SmallVector<Value> results;
+    if (op.getNumResults() <= 1) {
+      llvm::append_range(results, llvmCall.getResults());
+    } else {
+      results.reserve(op.getNumResults());
+      for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
+        results.push_back(rewriter.create<LLVM::ExtractValueOp>(
+            op.getLoc(), llvmCall.getResult(), i));
+      }
+    }
+
+    // Replace the call operation.
+    rewriter.replaceOp(op, results);
     return success();
   }
 };
@@ -86,14 +107,27 @@ public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(ReturnOp op, ReturnOpAdaptor opAdaptor,
+  matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (!op.getParameters().empty())
-      return mlir::emitError(op->getLoc())
-             << "cannot lower a return op that has parameters.";
+    // If the results don't need to be packed, create the LLVM return.
+    if (op.getNumOperands() <= 1) {
+      rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(),
+                                                  adaptor.getOperands());
+      return success();
+    }
 
-    rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(op,
-                                                      opAdaptor.getOperands());
+    // Pack the function results in a struct.
+    Type type = getTypeConverter()->packFunctionResults(op.getOperandTypes());
+    if (!type)
+      return emitError(op.getLoc(), "failed to convert return types");
+    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    for (auto &it : llvm::enumerate(adaptor.getOperands())) {
+      result = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), result,
+                                                    it.value(), it.index());
+    }
+
+    // Create the LLVM return.
+    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
     return success();
   }
 };
@@ -255,7 +289,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                   ConvertMetaBufferCast, ConvertMetaBufferSize,
                   ConvertMetaCastFromBuiltin, ConvertMetaCastToBuiltin,
                   ConvertUnrealizedConversionCast>(typeConverter);
-  mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 }
 
 //===----------------------------------------------------------------------===//

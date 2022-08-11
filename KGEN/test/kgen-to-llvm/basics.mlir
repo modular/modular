@@ -10,6 +10,14 @@ kgen.kernel @trivial_kernel(%arg0: si32) -> si32 {
 
 // -----
 
+// CHECK-LABEL: llvm.func @produces_result
+kgen.kernel @produces_result<() -> result>() {
+  // CHECK: llvm.return
+  kgen.return<result = 42>
+}
+
+// -----
+
 // CHECK-LABEL: llvm.func @convert_meta_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>

@@ -17,9 +17,6 @@
 
 namespace mlir {
 class ModuleOp;
-namespace func {
-class FuncDialect;
-} // namespace func
 namespace LLVM {
 class LLVMDialect;
 } // namespace LLVM
