@@ -1,8 +1,8 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: kgen.generator @param_expr1
-kgen.generator @param_expr1<p1, p2, type: dtype, type2: dtype>()  {
-  // Generic syntax in generatic ops
+// CHECK-LABEL: kgen.generator @param_expr
+kgen.generator @param_expr<p1, p2, int1 : i1, type: dtype, type2: dtype>()  {
+  // Generic attr syntax in generic ops
   // CHECK: "someop"() {
   "someop" () {
     // CHECK-SAME: use1 = #kgen.param.expr<add, #kgen.param.decl.ref<p1> : index, 42 : index>
@@ -70,6 +70,14 @@ kgen.generator @param_expr1<p1, p2, type: dtype, type2: dtype>()  {
 
   // CHECK: = kgen.param.value : i1 = <eq_dtype(type, f32)>
   %18 = kgen.param.value: i1 = <in_dtype(type, [f32])>
+
+  // The only binary operation that signless i1 supports is xor.
+  // CHECK: = kgen.param.value : i1 = <xor(int1, 1)>
+  %19 = kgen.param.value: i1 = <xor(int1, 1)>
+
+ // CHECK: = kgen.param.value : i1 = <xor(eq_dtype(type, f32), 1)>
+  %20 = kgen.param.value: i1 = <xor(eq_dtype(type, f32), 1)>
+
 
   kgen.return
 }

@@ -456,9 +456,13 @@ LogicalResult ParamOperatorAttr::verify(
                          << " operator must have at least one operand";
     if (type != operands[0].getType())
       return emitError() << "result type should match operand types";
-    if (!type.isIndex())
-      return emitError() << "operator requires an index type";
-    break;
+    // Check the types that are supported.
+    if (type.isIndex())
+      break; // Index type supported for all of these.
+    if (opcode == POC::Xor && type.isSignlessInteger(1))
+      break; // i1 types only support xor.
+    // TODO: Can support signful fixed width types as needed.
+    return emitError() << "operator requires an index type";
 
   // Binary expressions.
   case POC::Shl:
