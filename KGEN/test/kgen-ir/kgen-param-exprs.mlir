@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1 : i1, type: dtype, type2: dtype>()  {
+kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
   // Generic attr syntax in generic ops
   // CHECK: "someop"() {
   "someop" () {
@@ -75,9 +75,20 @@ kgen.generator @param_expr<p1, p2, int1 : i1, type: dtype, type2: dtype>()  {
   // CHECK: = kgen.param.value : i1 = <xor(int1, 1)>
   %19 = kgen.param.value: i1 = <xor(int1, 1)>
 
- // CHECK: = kgen.param.value : i1 = <xor(eq_dtype(type, f32), 1)>
+  // CHECK: = kgen.param.value : i1 = <ne_dtype(type, f32)>
   %20 = kgen.param.value: i1 = <xor(eq_dtype(type, f32), 1)>
 
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @int1_aliases
+kgen.generator @int1_aliases<p1, int1: i1, type: dtype>()  {
+
+  // CHECK: = kgen.param.value : i1 = <ne_dtype(type, f32)>
+  %0 = kgen.param.value: i1 = <ne_dtype(type, f32)>
+
+  // CHECK: = kgen.param.value : i1 = <ne(p1, 42)>
+  %1 = kgen.param.value: i1 = <ne(p1, 42)>
 
   kgen.return
 }
