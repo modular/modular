@@ -17,6 +17,8 @@ namespace LLVM = mlir::LLVM;
 //===----------------------------------------------------------------------===//
 
 static Optional<Type> getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
+  if (dtype.isBool())
+    return IntegerType::get(ctx, 1);
   // This intentionally discards signed-ness because LLVM is signless.
   if (dtype.isInt())
     return IntegerType::get(ctx, dtype.getIntegerWidthInBits());

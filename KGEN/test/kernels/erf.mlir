@@ -2,7 +2,6 @@
 
 // Compute erf as Taylor series expansion: erf(x) = 2/sqrt(pi) * (x - x^3/3)
 
-kgen.generator.interface @lessThan<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> i1
 kgen.generator.interface @exp<type: dtype>(!meta.scalar<type>) -> !meta.scalar<type>
 kgen.generator.interface @buffer.load<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
 kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()
@@ -29,7 +28,8 @@ kgen.generator @erf_scalar_mlas<type: dtype>(%x: !meta.scalar<type>) -> !meta.sc
   %xAbs = pop.abs %x : !meta.scalar<type>
   %branchCut = pop.constant(0.921875) : !meta.scalar<type>
   // computes xAbs < branchCut
-  %branch = kgen.call @lessThan<type : dtype = type>(%xAbs, %branchCut) : (!meta.scalar<type>, !meta.scalar<type>) -> i1
+  %branch0 = pop.cmp lt, %xAbs, %branchCut : !meta.scalar<type>
+  %branch = meta.cast_to_builtin %branch0: !meta.scalar<bool> to i1
   %res = scf.if %branch -> !meta.scalar<type> {
     %c0 = pop.constant(1.72948930e-5 : f32) : !meta.scalar<type>
     %c1 = pop.constant(-3.83208680e-4 : f32) : !meta.scalar<type>
