@@ -205,7 +205,7 @@ def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
     The `copysign` operation takes two meta.scalar or meta.simd types
-    (a magntitude `a` and a sign `b`) of floating-point dtyle. The
+    (a magnitude `a` and a sign `b`) of floating-point dtype. The
     `copysign` operation copies the sign from `b` to the `a`. The
     operand and result types must be the same and must have a
     floating-point dtype.
