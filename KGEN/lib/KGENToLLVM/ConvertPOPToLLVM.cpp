@@ -127,6 +127,7 @@ using ConvertPOPMul =
     OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
 using ConvertPOPAbs =
     OneToOneIntOrFloatConversion<AbsOp, LLVM::AbsOp, LLVM::FAbsOp>;
+using ConvertPOPSelect = OneToOneConversion<SelectOp, LLVM::SelectOp>;
 
 } // namespace
 
@@ -138,8 +139,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertPOPAbs, ConvertPOPAdd, ConvertPOPConstant,
                   ConvertPOPCopySign, ConvertPOPFMA, ConvertPOPMul,
-                  ConvertPOPNeg, ConvertPOPSub>(typeConverter,
-                                                patterns.getContext());
+                  ConvertPOPNeg, ConvertPOPSelect, ConvertPOPSub>(
+      typeConverter, patterns.getContext());
 }
 
 //===----------------------------------------------------------------------===//
