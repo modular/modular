@@ -261,7 +261,8 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
   let summary = "comparison";
   let description = [{
     The `cmp` operation takes a comparison predicate and two meta.scalar or
-    meta.simd types (`lhs` and `rhs`) and computes the resulting comparison.
+    meta.simd types (`lhs` and `rhs`) and computes the resulting comparison
+    elementwise.
 
     The comparison semantics between floating point dtypes is the same as in C.
 
