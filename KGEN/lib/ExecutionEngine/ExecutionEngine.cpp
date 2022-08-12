@@ -130,13 +130,6 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
     return M::Error(llvm::toString(jitOr.takeError()));
 
   ee.jit = std::move(*jitOr);
-
-  // Resolve symbols that are statically linked in the current process.
-  llvm::orc::JITDylib &mainJD = ee.jit->getMainJITDylib();
-  mainJD.addGenerator(
-      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-          ee.targetMachine->createDataLayout().getGlobalPrefix())));
-
   return ee;
 }
 
@@ -200,7 +193,17 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::LLVM::LLVMFuncOp kernel) {
   llvmModule->setDataLayout(targetMachine->createDataLayout());
   llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
 
-  if (auto err = jit->addIRModule({std::move(llvmModule), ctx}))
+  // Create a new dylib so we don't have ODR violations.
+  auto dylibOr = jit->createJITDylib(kernel.getName().str());
+  if (!dylibOr)
+    return M::Error(toString(dylibOr.takeError()));
+
+  // Resolve symbols that are statically linked in the current process.
+  dylibOr->addGenerator(
+      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          jit->getDataLayout().getGlobalPrefix())));
+
+  if (auto err = jit->addIRModule(*dylibOr, {std::move(llvmModule), ctx}))
     return M::Error(toString(std::move(err)));
 
   return success();
@@ -208,9 +211,13 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::LLVM::LLVMFuncOp kernel) {
 
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
 ExecutionEngine::getObject(StringRef kernel) {
+  auto *dylib = jit->getJITDylibByName(kernel);
+  if (!dylib)
+    return Error("could not find JITDylib for " + kernel);
+
   // Do the lookup to ensure it's compiled. We don't actually care about the
   // address of the result.
-  auto addr = jit->lookup(kernel);
+  auto addr = jit->lookup(*dylib, kernel);
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
