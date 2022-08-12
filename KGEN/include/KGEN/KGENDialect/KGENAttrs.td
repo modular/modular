@@ -202,9 +202,11 @@ def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 
 // Compares.
 def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
+def POC_LT : I32EnumAttrCase<"LT", 10, "lt">;
+def POC_LE : I32EnumAttrCase<"LE", 11, "le">;
 
 // Complex variadic operations.
-def POC_IN : I32EnumAttrCase<"IN", 10, "in">;
+def POC_IN : I32EnumAttrCase<"IN", 12, "in">;
 
 // TODO: Can add compares, string concat, etc as needed.
 
@@ -212,7 +214,7 @@ def POC_IN : I32EnumAttrCase<"IN", 10, "in">;
 def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                            [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
                             POC_Shl, POC_Shr, POC_Div, POC_Mod,
-                            POC_EQ, POC_IN]>;
+                            POC_EQ, POC_LT, POC_LE, POC_IN]>;
 }
 
 def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
@@ -247,6 +249,17 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 
   let assemblyFormat = "`<` $opcode `,` $operands `>`";
   let genVerifyDecl = 1;  // Generate getChecked/verify.
+
+  let extraClassDeclaration = [{
+    /// Return (ne x, y) which is the same as (not x, y).
+    static TypedAttr getNE(TypedAttr lhs, TypedAttr rhs) {
+      return getNot(get(POC::EQ, lhs, rhs));
+    }
+
+    /// Return (not x) which is the same as (xor x, true).  The `operand` value
+    /// must have type `i1`.
+    static TypedAttr getNot(TypedAttr operand);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

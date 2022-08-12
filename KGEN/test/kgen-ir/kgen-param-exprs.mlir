@@ -72,8 +72,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
   %18 = kgen.param.value: i1 = <in(:dtype type, [f32])>
 
   // The only binary operation that signless i1 supports is xor.
-  // CHECK: = kgen.param.value : i1 = <xor(int1, 1)>
+  // CHECK: = kgen.param.value : i1 = <not(int1)>
   %19 = kgen.param.value: i1 = <xor(int1, 1)>
+
+  // CHECK: = kgen.param.value : i1 = <not(int1)>
+  %a19 = kgen.param.value: i1 = <not(int1)>
 
   // CHECK: = kgen.param.value : i1 = <ne(:dtype type, f32)>
   %20 = kgen.param.value: i1 = <xor(eq(:dtype type, f32), 1)>
@@ -82,13 +85,31 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
 }
 
 // CHECK-LABEL: kgen.generator @int1_aliases
-kgen.generator @int1_aliases<p1, int1: i1, type: dtype>()  {
+kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 
   // CHECK: = kgen.param.value : i1 = <ne(:dtype type, f32)>
   %0 = kgen.param.value: i1 = <ne(:dtype type, f32)>
 
   // CHECK: = kgen.param.value : i1 = <ne(p1, 42)>
   %1 = kgen.param.value: i1 = <ne(p1, 42)>
+
+  // CHECK: = kgen.param.value : i1 = <not(int1)>
+  %2 = kgen.param.value: i1 = <not(int1)>
+
+  // CHECK: = kgen.param.value : i1 = <ge(p1, p2)>
+  %3 = kgen.param.value: i1 = <ge(p1, p2)>
+
+  // CHECK: = kgen.param.value : i1 = <ge(p1, 43)>
+  %4 = kgen.param.value: i1 = <gt(p1, 42)>
+
+  // CHECK: = kgen.param.value : i1 = <ge(p1, 42)>
+  %5 = kgen.param.value: i1 = <ge(p1, 42)>
+
+  // CHECK: = kgen.param.value : i1 = <ge(p1, 4)>
+  %6 = kgen.param.value: i1 = <le(4, p1)>
+
+  // CHECK: = kgen.param.value : i1 = <ge(p1, 5)>
+  %7 = kgen.param.value: i1 = <lt(4, p1)>
 
   kgen.return
 }

@@ -211,8 +211,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
 enum class POCAliases : uint32_t {
   // The builtin opcodes have 0...127.
   FIRST_PSEUDO = 128,
-  NE,
-  NE_DTYPE,
+  NOT,
+  NE, // !(==)
+  GT, // !(<)
+  GE, // !(<=)
 
   // This is an unknown opcode name.
   kInvalid,
@@ -224,10 +226,14 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
   if (opcode.has_value())
     return (uint32_t)*opcode;
 
+  if (keyword == "not")
+    return (uint32_t)POCAliases::NOT;
   if (keyword == "ne")
     return (uint32_t)POCAliases::NE;
-  if (keyword == "ne_dtype")
-    return (uint32_t)POCAliases::NE_DTYPE;
+  if (keyword == "gt")
+    return (uint32_t)POCAliases::GT;
+  if (keyword == "ge")
+    return (uint32_t)POCAliases::GE;
 
   return (uint32_t)POCAliases::kInvalid;
 }
@@ -279,7 +285,11 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (!operandType) {
       switch (opcode) {
       case (uint32_t)POC::EQ:
+      case (uint32_t)POC::LT:
+      case (uint32_t)POC::LE:
       case (uint32_t)POCAliases::NE:
+      case (uint32_t)POCAliases::GE:
+      case (uint32_t)POCAliases::GT:
       case (uint32_t)POC::IN:
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
@@ -299,13 +309,26 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         return failure();
     }
 
-    // If these are actually inverted i1 aliases, build the correct nodes.
+    // If these are aliases for inverted i1 value, build the correct nodes.
     bool needsInvert = false;
     switch (opcode) {
     case (uint32_t)POCAliases::NE:
       opcode = (uint32_t)POC::EQ;
       needsInvert = true;
       break;
+    case (uint32_t)POCAliases::GE:
+      opcode = (uint32_t)POC::LT;
+      needsInvert = true;
+      break;
+    case (uint32_t)POCAliases::GT:
+      opcode = (uint32_t)POC::LE;
+      needsInvert = true;
+      break;
+    case (uint32_t)POCAliases::NOT:
+      if (operands.size() != 1 || !operands[0].getType().isSignlessInteger(1))
+        return p.emitError(loc, "not operator returns a single i1 operand");
+      value = ParamOperatorAttr::getNot(operands[0]);
+      return success();
     }
 
     // Okay, we parsed the operands, see if this is a valid expression.
@@ -317,10 +340,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     value = ParamOperatorAttr::get((POC)opcode, operands);
 
     // If we need to invert this, do so.
-    if (needsInvert) {
-      TypedAttr one = p.getBuilder().getBoolAttr(true);
-      value = ParamOperatorAttr::get(POC::Xor, {value, one});
-    }
+    if (needsInvert)
+      value = ParamOperatorAttr::getNot(value);
 
     return success();
   }
@@ -334,7 +355,8 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (opcode == POC::IN || opcode == POC::EQ)
+  if (opcode == POC::IN || opcode == POC::EQ || opcode == POC::LT ||
+      opcode == POC::LE)
     printColonTypeOrIndexPrefix(p, operands[0].getType());
 
   switch (opcode) {
@@ -378,25 +400,37 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
 
   // Handle expressions.
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
-    StringRef opcode = stringifyEnum(expr.getOpcode());
+    auto printExpr = [&](StringRef opcode, ArrayRef<TypedAttr> operands) {
+      p << opcode << '(';
+      printOperatorOperands(p, expr.getOpcode(), operands);
+      p << ')';
+    };
 
     // If this is a inverted boolean sugar, handle it.
     if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
-            expr.getOperands().size() == 2 &&
-            expr.getOperands()[1].isa<IntegerAttr>();
-        auto invertedExpr =
-            expr.getOperands()[0].dyn_cast<ParamOperatorAttr>()) {
-      auto invertedOpcode = invertedExpr.getOpcode();
-      if (invertedOpcode == POC::EQ) {
-        opcode = "ne";
-        expr = invertedExpr;
+        expr.getOperands().size() == 2 &&
+        expr.getOperands()[1].isa<IntegerAttr>()) {
+      if (auto invertedExpr =
+              expr.getOperands()[0].dyn_cast<ParamOperatorAttr>()) {
+        if (invertedExpr.getOpcode() == POC::EQ) {
+          expr = invertedExpr;
+          return printExpr("ne", expr.getOperands());
+        }
+        if (invertedExpr.getOpcode() == POC::LT) {
+          expr = invertedExpr;
+          return printExpr("ge", expr.getOperands());
+        }
+        if (invertedExpr.getOpcode() == POC::LE) {
+          expr = invertedExpr;
+          return printExpr("gt", expr.getOperands());
+        }
       }
+
+      // Otherwise, print as a generic "not".
+      return printExpr("not", expr.getOperands()[0]);
     }
 
-    p << opcode << '(';
-    printOperatorOperands(p, expr.getOpcode(), expr.getOperands());
-    p << ')';
-    return;
+    return printExpr(stringifyEnum(expr.getOpcode()), expr.getOperands());
   }
 
   // If this is an i1 integer attr, print it as zero or one; not true/false
@@ -577,6 +611,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "operator requires an index type";
     break;
   case POC::EQ:
+  case POC::LT:
+  case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
     if (!operands[0].getType().isIndex() &&
@@ -586,6 +622,11 @@ LogicalResult ParamOperatorAttr::verify(
     }
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
+
+    // Relational operations don't work for dtypes.
+    if (opcode != POC::EQ && operands[0].getType().isa<DTypeType>())
+      return emitError() << "relational comparisons aren't allowed on dtype's";
+
     break;
   case POC::IN:
     if (operands.empty())
@@ -874,7 +915,7 @@ static Attribute foldCompareOp(
   if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
     if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
       bool result = compareFn(lhs.getValue(), rhs.getValue());
-      return IntegerAttr::get(IntegerType::get(lhs.getContext(), 1), result);
+      return BoolAttr::get(rhs.getContext(), result);
     }
   return {};
 }
@@ -930,10 +971,45 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
 
   if (auto lhs = operands[0].dyn_cast<DTypeConstantAttr>())
     if (auto rhs = operands[1].dyn_cast<DTypeConstantAttr>())
-      return IntegerAttr::get(IntegerType::get(lhs.getContext(), 1),
-                              lhs == rhs);
+      return BoolAttr::get(rhs.getContext(), lhs == rhs);
 
   return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
+}
+
+// Simplify the < and <= operations.
+static Attribute
+simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
+  // We only support signed arithmetic so far.
+  assert(operands[0].getType().isIndex());
+
+  if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+    // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
+    if (opcode == POC::LE) {
+      if (rhs.getValue().isMaxSignedValue()) // x <=s 127 --> TRUE.
+        return BoolAttr::get(rhs.getContext(), true);
+      return ParamOperatorAttr::get(
+          POC::LT, operands[0],
+          IntegerAttr::get(rhs.getType(), rhs.getValue() + 1));
+    }
+    // If this is (x < MAXCST) canonicalize to (x != MAXCST).
+    if (rhs.getValue().isMaxSignedValue())
+      return ParamOperatorAttr::getNE(operands[0], rhs);
+  }
+
+  if (auto lhs = operands[0].dyn_cast<IntegerAttr>()) {
+    // (le cst, x) -> !(lt x, cst)
+    if (opcode == POC::LE)
+      return ParamOperatorAttr::getNot(
+          ParamOperatorAttr::get(POC::LT, operands[1], operands[0]));
+    // (lt cst, x) -> !(le x, cst)
+    return ParamOperatorAttr::getNot(
+        ParamOperatorAttr::get(POC::LE, operands[1], operands[0]));
+  }
+
+  if (opcode == POC::LT)
+    return foldCompareOp(operands, [](auto a, auto b) { return a.slt(b); });
+  assert(opcode == POC::LE);
+  return foldCompareOp(operands, [](auto a, auto b) { return a.sle(b); });
 }
 
 /// Simplifies an `in` (also `in:dtype`) operator.  We know the all the operands
@@ -999,6 +1075,13 @@ ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return get(context, opcode, operandsIn, type);
 }
 
+/// Return (not x) which is the same as (xor x, true).  The `operand` value
+/// must have type `i1`.
+TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
+  TypedAttr one = BoolAttr::get(operand.getContext(), true);
+  return ParamOperatorAttr::get(POC::Xor, {operand, one});
+}
+
 TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type.  The result type is usually the same
@@ -1043,6 +1126,11 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::EQ:
     result = simplifyEQ(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
+  case POC::LT:
+  case POC::LE:
+    result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::IN:
