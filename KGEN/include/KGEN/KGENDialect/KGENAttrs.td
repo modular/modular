@@ -201,15 +201,10 @@ def POC_Div : I32EnumAttrCase<"Div", 7, "div">;
 def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
 
 // Compares.
-// TODO: Need to determine canonical format for inverting a bool, e.g. multiply
-// by -1?  We don't need both EQ and NE for example, we should be able to just
-// have EQ and LT and be good.
 def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
-def POC_EQ_DTYPE : I32EnumAttrCase<"EQ_DTYPE", 10, "eq_dtype">;
 
 // Complex variadic operations.
-def POC_IN : I32EnumAttrCase<"IN", 11, "in">;
-def POC_IN_DTYPE : I32EnumAttrCase<"IN_DTYPE", 12, "in_dtype">;
+def POC_IN : I32EnumAttrCase<"IN", 10, "in">;
 
 // TODO: Can add compares, string concat, etc as needed.
 
@@ -217,7 +212,7 @@ def POC_IN_DTYPE : I32EnumAttrCase<"IN_DTYPE", 12, "in_dtype">;
 def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
                            [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
                             POC_Shl, POC_Shr, POC_Div, POC_Mod,
-                            POC_EQ, POC_EQ_DTYPE, POC_IN, POC_IN_DTYPE]>;
+                            POC_EQ, POC_IN]>;
 }
 
 def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",

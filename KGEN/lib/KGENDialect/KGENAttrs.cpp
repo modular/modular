@@ -20,6 +20,7 @@
 
 using namespace M;
 using namespace M::KGEN;
+using mlir::OptionalParseResult;
 
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
@@ -39,6 +40,22 @@ Optional<GeneratorOrKernelKind> KGEN::classifyDecl(Operation *op) {
     return GeneratorOrKernelKind::hlgenerator;
   return {};
 }
+
+static OptionalParseResult parseOptionalColonType(AsmParser &parser,
+                                                  Type &type) {
+  if (failed(parser.parseOptionalColon()))
+    return None;
+
+  // In addition to standard types, we support 'dtype' as a sugared form of
+  // !kgen.dtype.
+  if (succeeded(parser.parseOptionalKeyword("dtype"))) {
+    type = parser.getBuilder().getType<DTypeType>();
+    return OptionalParseResult(LogicalResult::success());
+  }
+
+  return parser.parseType(type);
+}
+static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type);
 
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
@@ -179,7 +196,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return p.parseCommaSeparatedList(
         [&] { return parseParamValue(p, operands.emplace_back(), type); });
   case (uint32_t)POC::IN:
-  case (uint32_t)POC::IN_DTYPE:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
@@ -244,32 +260,39 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       return success();
     }
 
-    // Otherwise it's a function expression, decode the name as an operation
-    // code.
+    // Otherwise it's a function expression.  If this has an explicit operand
+    // type, parse it.
+    Type operandType;
+    OptionalParseResult typePresent = parseOptionalColonType(p, operandType);
+    if (typePresent.has_value() && failed(typePresent.value()))
+      return failure();
+
+    // Decode the name as an operation code.
     auto opcode = getOpcodeFromString(keyword);
     if (opcode == (uint32_t)POCAliases::kInvalid)
       return p.emitError(loc, "unknown expression ") << keyword;
     // If it is a known opcode, parse the operand list.
     SmallVector<TypedAttr> operands;
 
-    // The element type of a function is the same type as the expression itself
-    // except for comparisons.
-    Type operandType = type;
-    switch (opcode) {
-    case (uint32_t)POC::EQ:
-    case (uint32_t)POCAliases::NE:
-    case (uint32_t)POC::IN:
-      operandType = p.getBuilder().getIndexType();
-      break;
-    case (uint32_t)POC::EQ_DTYPE:
-    case (uint32_t)POCAliases::NE_DTYPE:
-    case (uint32_t)POC::IN_DTYPE:
-      operandType = p.getBuilder().getType<DTypeType>();
-      break;
-    default:
-      break;
+    // If there was no specified element type, then pick a default based on the
+    // opcode in question.
+    if (!operandType) {
+      switch (opcode) {
+      case (uint32_t)POC::EQ:
+      case (uint32_t)POCAliases::NE:
+      case (uint32_t)POC::IN:
+        // Comparisons default to index type for their operand, since their
+        // result is always `i1`.
+        operandType = p.getBuilder().getIndexType();
+        break;
+      default:
+        // Other operators default to the same operand type as the result type.
+        operandType = type;
+        break;
+      }
     }
 
+    // Parse the remaining operands.
     if (failed(p.parseOptionalRParen())) {
       if (parseOperatorOperands(p, opcode, operands, operandType) ||
           p.parseRParen())
@@ -281,10 +304,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     switch (opcode) {
     case (uint32_t)POCAliases::NE:
       opcode = (uint32_t)POC::EQ;
-      needsInvert = true;
-      break;
-    case (uint32_t)POCAliases::NE_DTYPE:
-      opcode = (uint32_t)POC::EQ_DTYPE;
       needsInvert = true;
       break;
     }
@@ -313,6 +332,11 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
 static void printOperatorOperands(AsmPrinter &p, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
+  // If this is a comparison and the elements are not index type, print the
+  // type explicitly.
+  if (opcode == POC::IN || opcode == POC::EQ)
+    printColonTypeOrIndexPrefix(p, operands[0].getType());
+
   switch (opcode) {
   default:
     // operand-list ::= expr (`,` expr)*
@@ -320,7 +344,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
         operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
     break;
   case POC::IN:
-  case POC::IN_DTYPE:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     printParamValue(p, operands[0]);
     p << ", [";
@@ -355,6 +378,8 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
 
   // Handle expressions.
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
+    StringRef opcode = stringifyEnum(expr.getOpcode());
+
     // If this is a inverted boolean sugar, handle it.
     if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
             expr.getOperands().size() == 2 &&
@@ -363,20 +388,12 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
             expr.getOperands()[0].dyn_cast<ParamOperatorAttr>()) {
       auto invertedOpcode = invertedExpr.getOpcode();
       if (invertedOpcode == POC::EQ) {
-        p << "ne(";
-        printOperatorOperands(p, invertedOpcode, invertedExpr.getOperands());
-        p << ')';
-        return;
-      }
-      if (invertedOpcode == POC::EQ_DTYPE) {
-        p << "ne_dtype(";
-        printOperatorOperands(p, invertedOpcode, invertedExpr.getOperands());
-        p << ')';
-        return;
+        opcode = "ne";
+        expr = invertedExpr;
       }
     }
 
-    p << stringifyEnum(expr.getOpcode()) << '(';
+    p << opcode << '(';
     printOperatorOperands(p, expr.getOpcode(), expr.getOperands());
     p << ')';
     return;
@@ -397,19 +414,12 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
 /// Parse a "colon type" production if present or default to index if not.  This
 /// is commonly used in our parameter representation.
 ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
-  if (succeeded(parser.parseOptionalColon())) {
-    // In addition to standard types, we support 'dtype' as a sugared form of
-    // !kgen.dtype.
-    if (succeeded(parser.parseOptionalKeyword("dtype"))) {
-      type = parser.getBuilder().getType<DTypeType>();
-      return success();
-    }
-
-    return parser.parseType(type);
+  auto result = parseOptionalColonType(parser, type);
+  if (!result.has_value()) {
+    type = parser.getBuilder().getIndexType();
+    return success();
   }
-
-  type = parser.getBuilder().getIndexType();
-  return success();
+  return result.value();
 }
 
 /// print `: <type>` or elide it entirely if type is an `index` type.
@@ -425,6 +435,22 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
     p << "dtype";
   else
     p << type;
+}
+
+/// print `:<type> ` or elide it entirely if type is an `index` type.
+static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
+  // Index type is the default so it doesn't print.
+  if (type.isIndex())
+    return;
+  p << ':';
+
+  // Handle other special cases for parameters here: we support `dtype` as a
+  // bareword for `!kgen.dtype`.
+  if (type.isa<DTypeType>())
+    p << "dtype";
+  else
+    p << type;
+  p << ' ';
 }
 
 /// Print an attribute value that is known to have index type.
@@ -553,36 +579,22 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::EQ:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
-    if (!operands[0].getType().isIndex())
-      return emitError() << "comparison requires an index type operand";
-    if (!type.isInteger(1))
-      return emitError() << "comparisons return i1";
-    break;
-  case POC::EQ_DTYPE:
-    if (operands.size() != 2)
-      return emitError() << "comparison operators must have two operands";
-    if (!operands[0].getType().isa<DTypeType>())
-      return emitError() << "comparison requires dtype type operand";
+    if (!operands[0].getType().isIndex() &&
+        !operands[0].getType().isa<DTypeType>()) {
+      return emitError() << "unsupported comparison type "
+                         << operands[0].getType();
+    }
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
   case POC::IN:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
-    if (!llvm::all_of(operands, [](TypedAttr operand) {
-          return operand.getType().isIndex();
-        }))
-      return emitError() << "operator requires all index type operands";
-    if (!type.isInteger(1))
-      return emitError() << "comparisons return i1";
-    break;
-  case POC::IN_DTYPE:
-    if (operands.empty())
-      return emitError() << "operator requires at least one operand";
-    if (!llvm::all_of(operands, [](TypedAttr operand) {
-          return operand.getType().isa<DTypeType>();
-        }))
-      return emitError() << "operator requires all dtype type operands";
+    if (!operands[0].getType().isIndex() &&
+        !operands[0].getType().isa<DTypeType>()) {
+      return emitError() << "unsupported set comparison type "
+                         << operands[0].getType();
+    }
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
@@ -916,22 +928,16 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
   // Make sure parameters are ordered correctly.
   llvm::stable_sort(operands, paramExprOperandSortPredicate);
 
-  return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
-}
-
-static Attribute simplifyEQ_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
-  // Make sure parameters are ordered correctly.
-  llvm::stable_sort(operands, paramExprOperandSortPredicate);
-
   if (auto lhs = operands[0].dyn_cast<DTypeConstantAttr>())
     if (auto rhs = operands[1].dyn_cast<DTypeConstantAttr>())
       return IntegerAttr::get(IntegerType::get(lhs.getContext(), 1),
                               lhs == rhs);
-  return {};
+
+  return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
 }
 
-/// Simplifies an `in` or `in_dtype` operator.
-template <typename ConstOperandT, POC OpCode, POC EQOpCode>
+/// Simplifies an `in` (also `in:dtype`) operator.  We know the all the operands
+/// have the same type.
 static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
   MutableArrayRef<TypedAttr> trailing =
@@ -945,18 +951,22 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
 
   // If there is only one trailing operand, canonicalize to an `eq` operator.
   if (trailing.size() == 1)
-    return ParamOperatorAttr::get(EQOpCode, operands);
+    return ParamOperatorAttr::get(POC::EQ, operands);
+
+  auto isConst = [](Attribute attr) -> bool {
+    return attr.isa<IntegerAttr>() || attr.isa<DTypeConstantAttr>();
+  };
 
   bool allConst = true;
   for (TypedAttr operand : trailing) {
     // Fold to true if a match was found.
     if (lhs == operand)
       return b.getBoolAttr(true);
-    allConst &= operand.isa<ConstOperandT>();
+    allConst &= isConst(operand);
   }
   // If all operands are constants and a match was not found, then definitively
   // fold to false.
-  if (allConst && lhs.isa<ConstOperandT>())
+  if (allConst && isConst(lhs))
     return b.getBoolAttr(false);
 
   // Sort and unique the trailing operands.
@@ -970,7 +980,7 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
       newOperands.push_back(operand);
   if (newOperands == operands)
     return {};
-  return ParamOperatorAttr::get(OpCode, newOperands);
+  return ParamOperatorAttr::get(POC::IN, newOperands);
 }
 
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
@@ -1035,17 +1045,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyEQ(operands);
     resultType = IntegerType::get(context, 1);
     break;
-  case POC::EQ_DTYPE:
-    result = simplifyEQ_DTYPE(operands);
-    resultType = IntegerType::get(context, 1);
-    break;
   case POC::IN:
-    result = simplifyIN<IntegerAttr, POC::IN, POC::EQ>(operands);
-    resultType = IntegerType::get(context, 1);
-    break;
-  case POC::IN_DTYPE:
-    result =
-        simplifyIN<DTypeConstantAttr, POC::IN_DTYPE, POC::EQ_DTYPE>(operands);
+    result = simplifyIN(operands);
     resultType = IntegerType::get(context, 1);
     break;
   }

@@ -13,10 +13,10 @@ kgen.generator.interface @add<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.s
 
 // This implementation is fine.
 // CHECK-LABEL: kgen.generator @add_f32<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.scalar<ty>) -> !meta.scalar<ty> 
-// CHECK-NEXT: constraints <eq_dtype(ty, f32), "f32 feels great"> 
+// CHECK-NEXT: constraints <eq(:dtype ty, f32), "f32 feels great"> 
 // CHECK-NEXT: implements @add { 
 kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scalar<ty>) -> !meta.scalar<ty>
-  constraints <eq_dtype(ty, f32), "f32 feels great"> implements @add {
+  constraints <eq(:dtype ty, f32), "f32 feels great"> implements @add {
   
   // CHECK: %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32 
   %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32

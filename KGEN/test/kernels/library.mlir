@@ -11,7 +11,7 @@
 kgen.generator.interface @div<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
 
 kgen.generator @div_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32), "incorrect element type"> implements @div {
+  constraints <eq(:dtype type, f32), "incorrect element type"> implements @div {
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f32
   %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f32
   %2 = llvm.fdiv %0, %1 : f32
@@ -20,7 +20,7 @@ kgen.generator @div_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.sca
 }
 
 kgen.generator @div_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f64), "incorrect element type"> implements @div {
+  constraints <eq(:dtype type, f64), "incorrect element type"> implements @div {
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
   %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
   %2 = llvm.fdiv %0, %1 : f64
@@ -98,7 +98,7 @@ kgen.generator.interface @horner<type: dtype>(%val: !meta.scalar<type>, %coeffic
 // horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
 //                     = fma(val, horner(val, coeffs[1:]), c0)
 kgen.generator @horner_impl<type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<?, type>) -> !meta.scalar<type>
-  constraints <in_dtype(type, [f32, f64]), "incorrect element type"> implements @horner {
+  constraints <in(:dtype type, [f32, f64]), "incorrect element type"> implements @horner {
   %zero = arith.constant 0 : index
   %one = arith.constant 1 : index
   %zerofVal = pop.constant(0.0) : !meta.scalar<type>
@@ -124,7 +124,7 @@ kgen.generator.interface @exp<type: dtype>(%x: !meta.scalar<type>) -> !meta.scal
 
 // Compute exp using the llvm intrinsics.
 kgen.generator @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32), "incorrect element type"> implements @exp {
+  constraints <eq(:dtype type, f32), "incorrect element type"> implements @exp {
   %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f32
   %1 = "llvm.intr.exp"(%0) : (f32) -> f32
   %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<type>
@@ -132,7 +132,7 @@ kgen.generator @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) -> !meta.
 }
 
 kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <eq_dtype(type, f64), "incorrect element type"> implements @exp {
+  constraints <eq(:dtype type, f64), "incorrect element type"> implements @exp {
   %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f64
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64
   %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
