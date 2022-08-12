@@ -1,4 +1,6 @@
-// RUN: kgen-elaborate %s -library=%S/library.mlir | FileCheck %s
+// RUN: kgen-elaborate %s -I %S | FileCheck %s
+
+kgen.include "library.mlir"
 
 // Compute erf as Taylor series expansion: erf(x) = 2/sqrt(pi) * (x - x^3/3)
 

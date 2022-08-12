@@ -1,4 +1,6 @@
-// RUN: kgen-elaborate %s -library=%S/library-test.mlir -verify-diagnostics -o /dev/null -split-input-file
+// RUN: kgen-elaborate %s -I %S -verify-diagnostics -o /dev/null -split-input-file
+
+kgen.include "library-test.mlir"
 
 // expected-error @+1 {{interface argument #0 has type 'f32' but library interface expected type 'si32'}}
 kgen.generator.interface @unary_add<size>(f32) -> si32
@@ -103,3 +105,8 @@ kgen.kernel @brokenVLenAssert() {
   kgen.param.assert <eq(flen, 3)>, "vector length should be 3"
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{could not find file 'does-not-exist.mlir'}}
+kgen.include "does-not-exist.mlir"

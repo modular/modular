@@ -1,4 +1,6 @@
-// RUN: kgen-elaborate %s -library=%S/library.mlir | FileCheck %s
+// RUN: kgen-elaborate %s -I %S | FileCheck %s
+
+kgen.include "library.mlir"
 
 kgen.generator.interface @buffer.load<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
 kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()

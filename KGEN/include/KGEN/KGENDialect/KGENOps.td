@@ -304,3 +304,22 @@ def ParamAssertOp : KGENOp<"param.assert", []> {
 
   let hasCanonicalizeMethod = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// IncludeOp
+//===----------------------------------------------------------------------===//
+
+def IncludeOp : KGENOp<"include", []> {
+  let summary = "include an external file";
+  let description = [{
+    The `kgen.include` operation includes an external file and makes all the
+    symbols contained within available for use.
+
+    This op only exists in the IR before the include is resolved, once it's
+    resolved the IncludeOp is removed. Includes are resolved by the elaborator
+    by providing a list of search paths.
+  }];
+
+  let arguments = (ins StrAttr:$fileName);
+  let assemblyFormat = "$fileName attr-dict-with-keyword";
+}
