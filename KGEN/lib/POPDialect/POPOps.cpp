@@ -143,9 +143,9 @@ OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
 
 static Type getBoolOfSameParentType(Type type) {
   auto boolType = DTypeConstantAttr::get(type.getContext(), DType::kBool);
-  if (auto scalar = type.dyn_cast<ScalarType>())
+  if (type.isa<ScalarType>())
     return ScalarType::get(boolType);
-  else if (auto simd = type.dyn_cast<SIMDType>())
+  if (auto simd = type.dyn_cast<SIMDType>())
     return SIMDType::get(simd.getSize(), boolType);
   return nullptr;
 }
