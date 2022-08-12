@@ -13,6 +13,7 @@ add_modular_tool(kgen-opt
   POPDialect
   GRTDialect
   KGENToLLVM
+  KGENKernelElaborator
   LowerHLKGEN
 
   MLIRArithmeticDialect

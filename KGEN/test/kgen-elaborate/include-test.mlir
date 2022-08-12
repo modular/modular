@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate %s -I %S | FileCheck %s
+// RUN: kgen-opt %s -elaborate-kernels="search-path=%S" -allow-unregistered-dialect | FileCheck %s
 
 // COM: This is from the generator below - it calls this kernel but we clone it into the top of the module.
 // CHECK-LABEL: kgen.kernel @unary_add_library_impl

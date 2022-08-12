@@ -53,3 +53,20 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "KernelOp"> {
            "Bitwidth of the index type, 0 to use size of machine word">,
   ];
 }
+
+def ElaborateKernels : Pass<"elaborate-kernels", "mlir::ModuleOp"> {
+  let summary = "elaborate generators into fully concrete kernels";
+  let description = [{
+    This pass performs the elaboration step for the kgen pipeline,
+    converting generators and generator interfaces into concrete
+    kernels.
+  }];
+
+  let dependentDialects = ["::M::KGEN::KGENDialect"];
+  let constructor = "::M::KGEN::createElaborateKernelsPass()";
+
+  let options = [
+    ListOption<"searchPaths", "search-path", "std::string",
+               "Search path for imported modules.">,
+  ];
+}

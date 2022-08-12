@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/KGENPasses.h"
 #include "Support/DType.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -1223,4 +1224,32 @@ LogicalResult M::elaborateKernels(ModuleOp primary,
   }
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaborateKernelsPass
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Run the kernel elaborator as a pass. The elaborator requires imports to be
+/// resolved, so first resolve imports and then elaborate.
+class ElaborateKernelsPass : public ElaborateKernelsBase<ElaborateKernelsPass> {
+public:
+  void runOnOperation() override {
+    ModuleOp theModule = getOperation();
+
+    SmallVector<std::filesystem::path> paths;
+    for (const auto &p : searchPaths)
+      paths.push_back(p);
+
+    paths.push_back(std::filesystem::path("."));
+
+    if (failed(elaborateKernels(theModule, paths)))
+      return signalPassFailure();
+  }
+};
+} // namespace
+
+std::unique_ptr<mlir::Pass> M::KGEN::createElaborateKernelsPass() {
+  return std::make_unique<ElaborateKernelsPass>();
 }
