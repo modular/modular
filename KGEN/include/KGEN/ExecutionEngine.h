@@ -44,7 +44,11 @@ public:
   template <typename ReturnT, typename... Args>
   ErrorOr<std::conditional_t<std::is_void_v<ReturnT>, SuccessType, ReturnT>>
   invoke(llvm::StringRef kernel, Args... args) {
-    auto fnOr = jit->lookup(kernel);
+    auto *dylib = jit->getJITDylibByName(kernel);
+    if (!dylib)
+      return Error("could not find JITDylib for " + kernel);
+
+    auto fnOr = jit->lookup(*dylib, kernel);
     if (!fnOr)
       return Error(llvm::toString(fnOr.takeError()));
 
