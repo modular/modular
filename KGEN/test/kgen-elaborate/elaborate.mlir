@@ -1,4 +1,6 @@
-// RUN: kgen-elaborate %s -library=%S/library-test.mlir | FileCheck %s
+// RUN: kgen-elaborate %s -I %S | FileCheck %s
+
+kgen.include "library-test.mlir"
 
 // This is left untouched.
 // CHECK-LABEL: kgen.kernel @test0<() -> outParam>() -> index {

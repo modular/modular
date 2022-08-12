@@ -41,7 +41,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Library specification.
 
-  cl::opt<std::string> libraryFilename{"library", cl::desc("<input file>")};
+  cl::list<std::string> searchPaths{"I", cl::desc("<import search dir>")};
 };
 
 /// Generate all the kernels specified with a single input file.  This requires
@@ -60,18 +60,17 @@ static LogicalResult processFile(MLIRContext *ctx, llvm::SourceMgr &sourceMgr,
   if (!primaryModule)
     return failure(clOptions.reportError("could not parse input file"));
 
-  OwningOpRef<ModuleOp> libraryModule(
-      mlir::parseSourceFile<ModuleOp>(clOptions.libraryFilename, ctx));
-  if (!libraryModule) {
-    return failure(clOptions.reportError(
-        Twine("could not parse library file: ") + clOptions.libraryFilename));
-  }
+  // Get the search paths into std::filesystem, and append the current
+  // directory.
+  SmallVector<std::filesystem::path> searchPaths;
+  for (const auto &p : clOptions.searchPaths)
+    searchPaths.push_back(p);
 
   // Elaborate kernels for the primary module.  If any errors are emitted, we
   // let the current diagnostic handler decide what to do with them.
   // -verify-diagnostics doesn't consider errors to be a tool failure if they
   // are matched correctly.
-  if (succeeded(elaborateKernels(primaryModule.get(), libraryModule.get()))) {
+  if (succeeded(elaborateKernels(primaryModule.get(), searchPaths))) {
     // If the generator thought it succeeded, double check that the IR is valid.
     (void)verify(primaryModule.get());
   }

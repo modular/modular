@@ -21,7 +21,9 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringSet.h"
 #include <variant>
 
 using namespace M;
@@ -186,8 +188,9 @@ using GeneratorAndInputParamsPair = std::pair<Operation *, ArrayAttr>;
 namespace {
 class Elaborator {
 public:
-  Elaborator(ModuleOp primary, ModuleOp library)
-      : primaryModule(primary), libraryModule(library), symbolTable(primary) {}
+  Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
+      : primaryModule(primary), libraryModules(libraryModules),
+        symbolTable(primary) {}
 
   ModuleOp getPrimaryModule() const { return primaryModule; }
 
@@ -200,7 +203,19 @@ public:
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(SymbolRefAttr symbolRef) const {
-    return SymbolTable::lookupNearestSymbolFrom(primaryModule, symbolRef);
+    // First try and resolve in the primary module. This can use the symbol
+    // table we have stored.
+    if (Operation *found = symbolTable.lookup(symbolRef.getLeafReference()))
+      return found;
+
+    // Otherwise, check the included modules.
+    for (auto &libModule : libraryModules) {
+      if (Operation *found =
+              SymbolTable::lookupNearestSymbolFrom(libModule.get(), symbolRef))
+        return found;
+    }
+
+    return nullptr;
   }
 
   /// Return all instantiations of the specified declaration (a kernel,
@@ -217,6 +232,16 @@ public:
   ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
     auto it = interfaceImpls.find(itf.getNameAttr());
     return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  }
+
+  /// Clone the library kernel and insert it at the top of the primary module.
+  /// This makes sure we insert into the symbol table to keep our efficient
+  /// lookups.
+  Operation *copyOpIntoPrimaryModule(Operation *libOp) {
+    Operation *cloned = libOp->clone();
+    symbolTable.insert(cloned, primaryModule.getBody()->begin());
+
+    return cloned;
   }
 
 private:
@@ -241,8 +266,9 @@ private:
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
-  /// our algorithm, the library module is immutable.
-  ModuleOp primaryModule, libraryModule;
+  /// our algorithm, the library modules are immutable.
+  ModuleOp primaryModule;
+  ArrayRef<OwningOpRef<ModuleOp>> libraryModules;
 
   /// This symbol table allows efficient lookups in the primary module.
   SymbolTable symbolTable;
@@ -509,6 +535,16 @@ LogicalResult ParameterRewriter::processCallOp(
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
   Operation *callee = elaborator.lookupCallee(call.getCalleeAttr());
+  if (!callee)
+    return call->emitError("could not find callee '")
+           << call.getCalleeAttr() << "'";
+
+  // If the callee is in one of the loaded library modules, clone it in and use
+  // the cloned one as the callee.
+  auto calleeParentModule = callee->getParentOfType<ModuleOp>();
+  if (calleeParentModule != elaborator.getPrimaryModule())
+    callee = elaborator.copyOpIntoPrimaryModule(callee);
+
   GeneratorAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
   // If we already have a binding for this decl/inputParam set, then reuse the
@@ -892,21 +928,21 @@ Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
 // generateKernels Driver
 //===----------------------------------------------------------------------===//
 
-/// Scan the primary and library module to collect all the interfaces,
+/// Scan the primary and library modules to collect all the interfaces,
 /// verifying that any common interfaces are the same.
 ParseResult Elaborator::collectInterfaces() {
-  // Collect all the generator interfaces in the library module, which will
-  // allow cross checking them below.
+  // Collect all the generator interfaces in the library modules, which will
+  // allow cross-checking them below. Also, collect all the kernel generators
+  // that implement a given interface, starting with the libraries.  These will
+  // already have been type checked within the library.
   DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
-  for (auto itf : libraryModule.getOps<GeneratorInterfaceOp>())
-    libraryInterfaces[itf.getNameAttr()] = itf;
+  for (auto &libraryModule : libraryModules) {
+    for (auto itf : libraryModule.get().getOps<GeneratorInterfaceOp>())
+      libraryInterfaces[itf.getNameAttr()] = itf;
 
-  // Collect all the kernel generators that implement a given interface,
-  // starting with the library.  These will already have been type checked
-  // within the library.
-  for (auto generator : libraryModule.getOps<GeneratorOp>()) {
-    if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getLeafReference()].push_back(generator);
+    for (auto generator : libraryModule.get().getOps<GeneratorOp>())
+      if (auto interface = generator.getImplementsAttr())
+        interfaceImpls[interface.getLeafReference()].push_back(generator);
   }
 
   // Collect the kernel generators from the primary module.  Start by checking
@@ -1076,16 +1112,57 @@ static void emitElaborationError(InFlightDiagnostic &diag,
   }
 }
 
+static LogicalResult
+resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
+               DenseSet<StringAttr> &loadedFiles,
+               SmallVectorImpl<OwningOpRef<ModuleOp>> &includedModules) {
+  if (auto [_, didInsert] = loadedFiles.insert(include.getFileNameAttr());
+      !didInsert)
+    return success();
+
+  std::string modulePath;
+  if (std::filesystem::path(include.getFileName().str()).is_absolute()) {
+    modulePath = include.getFileName().str();
+  } else {
+    for (const auto &p : searchPaths) {
+      auto testPath = p / std::filesystem::path(include.getFileName().str());
+      if (!std::filesystem::exists(testPath))
+        continue;
+
+      modulePath = testPath;
+      break;
+    }
+    if (modulePath.empty())
+      return include->emitError("could not find file '")
+             << include.getFileName() << "'";
+  }
+
+  auto includedModule =
+      mlir::parseSourceFile<ModuleOp>(modulePath, include->getContext());
+
+  // Recursively resolve transitive includes.
+  for (auto inc :
+       llvm::make_early_inc_range(includedModule->getOps<IncludeOp>()))
+    if (failed(resolveInclude(inc, searchPaths, loadedFiles, includedModules)))
+      return failure();
+
+  includedModules.push_back(std::move(includedModule));
+  include->erase();
+  return success();
+}
+
 /// Elaborate kernels in the specified module, incorporating implementation
 /// logic from the specified library.
-LogicalResult M::elaborateKernels(ModuleOp primary, ModuleOp library) {
-  // We currently rely on pointer equivalence between attributes etc when
-  // matching across modules, so the modules must be in the same context.  We
-  // could relax this restriction in the future if there were a reason to.
-  if (primary.getContext() != library.getContext())
-    return primary.emitError() << "Cannot generate kernels when primary and "
-                                  "library are in different MLIR contexts";
-  Elaborator elaborator(primary, library);
+LogicalResult M::elaborateKernels(ModuleOp primary,
+                                  ArrayRef<std::filesystem::path> searchPaths) {
+  SmallVector<OwningOpRef<ModuleOp>> includedModules;
+  DenseSet<StringAttr> loadedFiles;
+  for (auto include : llvm::make_early_inc_range(primary.getOps<IncludeOp>()))
+    if (failed(
+            resolveInclude(include, searchPaths, loadedFiles, includedModules)))
+      return failure();
+
+  Elaborator elaborator(primary, includedModules);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
