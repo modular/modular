@@ -83,7 +83,7 @@ static bool isCastableFrom(Attribute value, DTypeConstantAttr dtypeAttr) {
 
   // First, convert the input to floating point for the given dtype floating
   // point semantics.
-  auto floatVal = llvm::APFloat(getFloatSemantics(dtype));
+  llvm::APFloat floatVal(getFloatSemantics(dtype));
   floatVal.convertFromAPInt(truncVal, false,
                             llvm::APFloat::rmNearestTiesToEven);
 
