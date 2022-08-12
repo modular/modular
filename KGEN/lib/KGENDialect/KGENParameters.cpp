@@ -223,13 +223,6 @@ void ParameterVerifier::collectParameterUsesFromAttr(
     itf.walkSubElements(
         [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
         [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
-  } else if (attr.isa<DTypeConstantAttr>()) {
-    // This attribute doesn't participate with SubElementAttrInterface but we
-    // know it doesn't have any subelements.
-  } else {
-    // Conservatively reject unknown attributes, we don't want someone to forget
-    // to conform to SubElementAttrInterface.
-    emitError(loc, "unknown attribute for parameterization scan: ") << attr;
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -254,14 +247,6 @@ void ParameterVerifier::collectParameterUsesFromType(
     itf.walkSubElements(
         [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
         [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
-  } else {
-    // These are known leaf types that don't participate with
-    // SubElementTypeInterface.
-    if (!type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>()) {
-      // Conservatively reject unknown types, we don't want someone to forget to
-      // conform to SubElementTypeInterface.
-      emitError(loc, "unknown type for parameterization scan: ") << type;
-    }
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
