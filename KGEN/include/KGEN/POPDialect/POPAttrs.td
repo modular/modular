@@ -24,9 +24,6 @@ def CmpPredicate : I32EnumAttr<
   let genSpecializedAttr = 0;
 }
 
-def CmpPredicateAttr : EnumAttr<
-    POPDialect, CmpPredicate, "cmp_pred",
-    // FIXME: This shouldn't be needed to be ignored in parameterization scan.
-    [DeclareAttrInterfaceMethods<SubElementAttrInterface>]>;
+def CmpPredicateAttr : EnumAttr<POPDialect, CmpPredicate, "cmp_pred">;
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD

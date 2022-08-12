@@ -26,17 +26,3 @@ void POPDialect::registerAttributes() {
 #include "KGEN/POPDialect/POPAttrs.cpp.inc"
       >();
 }
-
-//===----------------------------------------------------------------------===//
-// CmpPredicateAttr
-//===----------------------------------------------------------------------===//
-
-void CmpPredicateAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrs,
-    function_ref<void(Type)> walkTypes) const {}
-
-Attribute
-CmpPredicateAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                              ArrayRef<Type> replTypes) const {
-  return *this;
-}

@@ -147,7 +147,7 @@ static Type getBoolOfSameParentType(Type type) {
     return ScalarType::get(boolType);
   else if (auto simd = type.dyn_cast<SIMDType>())
     return SIMDType::get(simd.getSize(), boolType);
-  llvm_unreachable("unhandled type");
+  return nullptr;
 }
 
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
@@ -155,11 +155,11 @@ LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
                                       RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
   Type argType = operands[0].getType();
-  if (argType.isa<ScalarType, SIMDType>())
-    types.push_back(getBoolOfSameParentType(argType));
-  else
-    return failure();
-  return success();
+  types.push_back(getBoolOfSameParentType(argType));
+  if (types.back())
+    return success();
+  return mlir::emitError(loc.value_or(operands[0].getLoc()),
+                         "expected a scalar or simd operand type");
 }
 
 //===----------------------------------------------------------------------===//
