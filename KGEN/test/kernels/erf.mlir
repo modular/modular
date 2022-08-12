@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate %s -I %S | FileCheck %s
+// RUN: kgen-opt %s -elaborate-kernels="search-path=%S" | FileCheck %s
 
 kgen.include "library.mlir"
 

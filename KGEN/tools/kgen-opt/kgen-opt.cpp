@@ -31,5 +31,5 @@ int main(int argc, char **argv) {
   KGEN::registerPasses();
 
   return failed(mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry,
-                                  /*preloadDialectsInContext=*/false));
+                                  /*preloadDialectsInContext=*/true));
 }
