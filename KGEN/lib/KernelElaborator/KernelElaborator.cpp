@@ -203,20 +203,11 @@ public:
   ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(SymbolRefAttr symbolRef) const {
-    // First try and resolve in the primary module. This can use the symbol
-    // table we have stored.
-    if (Operation *found = symbolTable.lookup(symbolRef.getLeafReference()))
-      return found;
-
-    // Otherwise, check the included modules.
-    for (auto &libModule : libraryModules) {
-      if (Operation *found =
-              SymbolTable::lookupNearestSymbolFrom(libModule.get(), symbolRef))
-        return found;
-    }
-
-    return nullptr;
+  Operation *lookupCallee(SymbolRefAttr symbolRef,
+                          ModuleOp sourceModule) const {
+    // TODO: This should be using symbol tables to make this lookup more
+    // efficent.
+    return SymbolTable::lookupNearestSymbolFrom(sourceModule, symbolRef);
   }
 
   /// Return all instantiations of the specified declaration (a kernel,
@@ -235,21 +226,15 @@ public:
     return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
   }
 
-  /// Clone the library kernel and insert it at the top of the primary module.
-  /// This makes sure we insert into the symbol table to keep our efficient
-  /// lookups.
-  Operation *copyOpIntoPrimaryModule(Operation *libOp) {
-    Operation *cloned = libOp->clone();
-    symbolTable.insert(cloned, primaryModule.getBody()->begin());
-
-    return cloned;
-  }
-
 private:
   /// Specialize a kernel body, generating one variant or each viable
   /// instantiation of that body.  Kernels do not have parameters, but they can
   /// invoke interfaces etc which can cause them to produce multiple variants.
-  SmallVector<ElaboratedKernelOrCalleeError> specializeKernel(KernelOp kernel);
+  ///
+  /// SourceModule indicates which module in the included library this
+  /// originally came from (likely not the primary module).
+  SmallVector<ElaboratedKernelOrCalleeError>
+  specializeKernel(KernelOp kernel, ModuleOp sourceModule);
 
   /// Specialize a kernel generator with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
@@ -311,8 +296,10 @@ namespace {
 class ParameterRewriter : public ParameterEvaluator {
 public:
   ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
+                    ModuleOp sourceModule,
                     SmallVector<Operation *> opsToRewrite)
-      : elaborator(elaborator), opsToRewrite(std::move(opsToRewrite)) {
+      : elaborator(elaborator), sourceModule(sourceModule),
+        opsToRewrite(std::move(opsToRewrite)) {
     elaboratedKernel.kernel = kernel;
   }
 
@@ -382,8 +369,13 @@ private:
                            SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
 
-  // This is maintains global information about the file we're generating into.
+  /// This is maintains global information about the file we're generating into.
   Elaborator &elaborator;
+
+  /// This indicates which module this kernel originally came from (e.g. one of
+  /// the imported files).  This is important to know so we can correctly
+  /// resolve callee symbols.
+  ModuleOp sourceModule;
 
   /// This is the kernel we're working on.
   ElaboratedKernel elaboratedKernel;
@@ -403,6 +395,7 @@ ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
     : ParameterEvaluator(existing), elaborator(existing.elaborator),
+      sourceModule(existing.sourceModule),
       elaboratedKernel(existing.elaboratedKernel) {
   // Remap the kernel operation.
   elaboratedKernel.kernel =
@@ -535,16 +528,12 @@ LogicalResult ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
-  Operation *callee = elaborator.lookupCallee(call.getCalleeAttr());
+  Operation *callee =
+      elaborator.lookupCallee(call.getCalleeAttr(), sourceModule);
   if (!callee)
-    return call->emitError("could not find callee '")
-           << call.getCalleeAttr() << "'";
-
-  // If the callee is in one of the loaded library modules, clone it in and use
-  // the cloned one as the callee.
-  auto calleeParentModule = callee->getParentOfType<ModuleOp>();
-  if (calleeParentModule != elaborator.getPrimaryModule())
-    callee = elaborator.copyOpIntoPrimaryModule(callee);
+    return error(call->getLoc(),
+                 Twine("could not find callee '@") +
+                     call.getCalleeAttr().getLeafReference().strref() + "'");
 
   GeneratorAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
@@ -756,7 +745,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// instantiation of that body.  Kernels do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
 SmallVector<ElaboratedKernelOrCalleeError>
-Elaborator::specializeKernel(KernelOp kernel) {
+Elaborator::specializeKernel(KernelOp kernel, ModuleOp sourceModule) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
   SmallVector<Operation *> opsToRewrite;
@@ -775,7 +764,8 @@ Elaborator::specializeKernel(KernelOp kernel) {
 
   // Start by rewriting this kernel.
   SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(*this, kernel, std::move(opsToRewrite));
+  rewriterWorklist.emplace_back(*this, kernel, sourceModule,
+                                std::move(opsToRewrite));
 
   // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
   // until we converge.
@@ -847,7 +837,8 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
 
   // Now that we have a new synthesized generic kernel, run the rewriter
   // over it to specialize its body.
-  return specializeKernel(newKernel);
+  auto sourceModule = generator->getParentOfType<ModuleOp>();
+  return specializeKernel(newKernel, sourceModule);
 }
 
 /// Specialize a kernel interface with the specified input parameters and
@@ -911,7 +902,21 @@ Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
   if (failed(constraintResult)) {
     localError(constraintResult.takeError());
   } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
-    newCallees = specializeKernel(kernel);
+    auto sourceModule = decl->getParentOfType<ModuleOp>();
+
+    // If the kernel being referenced is in an included module, then copy it
+    // into the primary module (the primary module must be self contained by the
+    // time we are done).  We can/should consider more flexible approaches, e.g.
+    // allowing 'extern' references to kernels.
+    if (sourceModule != primaryModule) {
+      /// Clone the library kernel and insert it at the insertion point.
+      Operation *cloned = kernel->clone();
+      assert(insertionPoint && "must be set in non-primary modules");
+      symbolTable.insert(cloned, Block::iterator(insertionPoint));
+      kernel = cast<KernelOp>(cloned);
+    }
+
+    newCallees = specializeKernel(kernel, sourceModule);
   } else if (isa<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(declAndInputParams, insertionPoint);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
@@ -974,7 +979,7 @@ public:
   ParseResult run();
 
 private:
-  ParseResult checkRecursively(Operation *op);
+  ParseResult checkRecursively(Operation *op, ModuleOp module);
 
   Elaborator &elaborator;
   llvm::SetVector<Operation *> callStack;
@@ -986,7 +991,7 @@ private:
 /// Check the specified operation and its call-tree by visiting callees in
 /// depth-first order.  If we report errors the call-graph, and keep track of
 /// known-ok operators to avoid redundant work.
-ParseResult RecursionChecker::checkRecursively(Operation *op) {
+ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
   // If we've already verified that this operator and all its callees are ok,
   // then we're already done.
   if (alreadyCheckedOps.count(op))
@@ -1016,17 +1021,21 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   // declaration to see what they call.
   bool failed = false;
   op->walk([&](CallOp call) {
-    auto callee = elaborator.lookupCallee(call.getCalleeAttr());
+    auto callee = elaborator.lookupCallee(call.getCalleeAttr(), module);
     assert(callee && "couldn't resolve callee?");
     callStackCalls.push_back(call);
     if (isa<KernelOp, GeneratorOp>(callee)) {
       // For direct calls, we immediately check the callee.
-      if (checkRecursively(callee))
+      if (checkRecursively(callee, module))
         failed = true;
     } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(callee)) {
       // For generator interfaces, we resolve to all the implementations.
       for (auto gen : elaborator.getGeneratorsImplementing(itf)) {
-        if (checkRecursively(gen))
+        // Make sure we keep track of the current module we're scanning.
+        // TODO: This recursively checks all code in the imported libraries.
+        // Will this be needed when these are individually checked on their own?
+        ModuleOp genModule = gen->getParentOfType<ModuleOp>();
+        if (checkRecursively(gen, genModule))
           failed = true;
       }
     } else {
@@ -1048,8 +1057,9 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
 
 ParseResult RecursionChecker::run() {
   // Check all the operations at the top level of the primary module.
-  for (Operation &op : elaborator.getPrimaryModule().getOps())
-    if (checkRecursively(&op))
+  auto module = elaborator.getPrimaryModule();
+  for (Operation &op : module.getOps())
+    if (checkRecursively(&op, module))
       return failure();
   return success();
 }
