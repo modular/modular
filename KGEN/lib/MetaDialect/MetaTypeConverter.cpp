@@ -47,7 +47,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
 
   // Convert a DType expression to an MLIR type.
   auto convertDType = [&](auto type) -> Optional<Type> {
-    auto dtypeConst = type.getDtype().template dyn_cast<DTypeConstantAttr>();
+    auto dtypeConst = type.getDType().template dyn_cast<DTypeConstantAttr>();
     if (!dtypeConst) {
       emitError("dtype not fully specified: ") << type;
       return {};

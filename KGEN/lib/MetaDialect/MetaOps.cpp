@@ -42,7 +42,7 @@ OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
   // A null dtype indicates ? dtype (unknown dtype). Since returning null
   // indicates that we don't fold anything, we don't need to check if dtype is
   // null.
-  return getValue().getType().cast<BufferType>().getDtype();
+  return getValue().getType().cast<BufferType>().getDType();
 }
 
 //===----------------------------------------------------------------------===//
@@ -55,7 +55,7 @@ LogicalResult BufferAddressOp::inferReturnTypes(
     SmallVectorImpl<Type> &inferredReturnTypes) {
   BufferAddressOpAdaptor adaptor(operands, attributes);
   Type inferredPointerType = PointerType::get(
-      context, adaptor.getValue().getType().cast<BufferType>().getDtype());
+      context, adaptor.getValue().getType().cast<BufferType>().getDType());
   inferredReturnTypes.push_back(inferredPointerType);
 
   return success();
@@ -74,8 +74,8 @@ LogicalResult BufferCastOp::verify() {
   BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
   BufferType resultBufTy = getResult().getType().cast<BufferType>();
 
-  Attribute inputDtype = inputBufTy.getDtype();
-  Attribute resultDtype = resultBufTy.getDtype();
+  Attribute inputDtype = inputBufTy.getDType();
+  Attribute resultDtype = resultBufTy.getDType();
 
   if (inputDtype != resultDtype)
     if (inputDtype && resultDtype)
@@ -129,7 +129,7 @@ static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
 
   if (auto scalarTy = metaTy.dyn_cast<ScalarType>()) {
     // Check that the data types match.
-    if (auto dtype = scalarTy.getDtype().dyn_cast<DTypeConstantAttr>();
+    if (auto dtype = scalarTy.getDType().dyn_cast<DTypeConstantAttr>();
         dtype && !dtype.isCompatibleWith(standardTy))
       return emitError();
     return success();
@@ -148,7 +148,7 @@ static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
   if (auto size = simdTy.getSize().dyn_cast<IntegerAttr>();
       size.getInt() != vectorTy.getShape().front())
     return emitError() << ": dimensions do not match";
-  if (auto dtype = simdTy.getDtype().dyn_cast<DTypeConstantAttr>();
+  if (auto dtype = simdTy.getDType().dyn_cast<DTypeConstantAttr>();
       !dtype.isCompatibleWith(vectorTy.getElementType()))
     return emitError() << ": element types do not match";
   return success();
