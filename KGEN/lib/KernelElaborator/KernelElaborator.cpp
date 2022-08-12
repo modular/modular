@@ -190,8 +190,7 @@ namespace {
 class Elaborator {
 public:
   Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
-      : primaryModule(primary), libraryModules(libraryModules),
-        symbolTable(primary) {}
+      : primaryModule(primary), libraryModules(libraryModules), symbolTable() {}
 
   ModuleOp getPrimaryModule() const { return primaryModule; }
 
@@ -204,10 +203,8 @@ public:
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(SymbolRefAttr symbolRef,
-                          ModuleOp sourceModule) const {
-    // TODO: This should be using symbol tables to make this lookup more
-    // efficent.
-    return SymbolTable::lookupNearestSymbolFrom(sourceModule, symbolRef);
+                          ModuleOp sourceModule) {
+    return symbolTable.lookupNearestSymbolFrom(sourceModule, symbolRef);
   }
 
   /// Return all instantiations of the specified declaration (a kernel,
@@ -250,6 +247,10 @@ private:
   specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
+  SymbolTable &getPrimaryModuleSymbolTable() {
+    return symbolTable.getSymbolTable(primaryModule);
+  }
+
 private:
   /// These are the two modules we start with.  The primary module is mutated by
   /// our algorithm, the library modules are immutable.
@@ -257,7 +258,7 @@ private:
   ArrayRef<OwningOpRef<ModuleOp>> libraryModules;
 
   /// This symbol table allows efficient lookups in the primary module.
-  SymbolTable symbolTable;
+  SymbolTableCollection symbolTable;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -281,7 +282,8 @@ private:
 /// Insert a variant of an existing kernel into the primary file.
 void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
   auto insertPt = Block::iterator(existing.getOperation());
-  symbolTable.insert(newKernel, /*insertionPoint*/ ++insertPt);
+  getPrimaryModuleSymbolTable().insert(newKernel,
+                                       /*insertionPoint*/ ++insertPt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -820,7 +822,7 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
 
   // Insert the newKernel into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  symbolTable.insert(newKernel);
+  getPrimaryModuleSymbolTable().insert(newKernel);
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
@@ -912,7 +914,8 @@ Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
       /// Clone the library kernel and insert it at the insertion point.
       Operation *cloned = kernel->clone();
       assert(insertionPoint && "must be set in non-primary modules");
-      symbolTable.insert(cloned, Block::iterator(insertionPoint));
+      getPrimaryModuleSymbolTable().insert(cloned,
+                                           Block::iterator(insertionPoint));
       kernel = cast<KernelOp>(cloned);
     }
 
