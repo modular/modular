@@ -12,6 +12,7 @@
 #define KGEN_METADIALECT_METATYPES_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/DType.h"
 

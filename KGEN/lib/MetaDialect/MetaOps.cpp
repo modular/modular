@@ -135,8 +135,7 @@ static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
     return success();
   }
 
-  // Check that the standard type is a rank 1 vector with 1 scalable
-  // dimension, the dimensions match, and the data types match.
+  // Check that the standard type is a rank 1 vector with matching dimensions.
   auto simdTy = metaTy.cast<SIMDType>();
   auto vectorTy = standardTy.dyn_cast<VectorType>();
   if (!vectorTy)
@@ -149,7 +148,7 @@ static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
       size.getInt() != vectorTy.getShape().front())
     return emitError() << ": dimensions do not match";
   if (auto dtype = simdTy.getDType().dyn_cast<DTypeConstantAttr>();
-      !dtype.isCompatibleWith(vectorTy.getElementType()))
+      dtype && !dtype.isCompatibleWith(vectorTy.getElementType()))
     return emitError() << ": element types do not match";
   return success();
 }
