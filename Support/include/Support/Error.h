@@ -58,8 +58,15 @@ public:
   }
 
   ~Error() {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
     if (storageMode == kMallocError)
       free(const_cast<void *>(static_cast<const void *>(value)));
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
   }
 
   /// Return the message this contains as a nul-terminated string.
