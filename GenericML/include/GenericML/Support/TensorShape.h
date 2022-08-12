@@ -108,9 +108,11 @@ public:
   ssize_t operator[](size_t idx) const {
     assert(idx < getRank() && "invalid dimension #");
     auto rep = getRepKind();
-    if (rep == RepKind::k32)
+    if (rep == RepKind::k32) {
+      assert(idx <= 3 && "you can only fit 4 dimensions in k32");
       return idx != 3 ? representation.rep32.dims[idx]
                       : representation.rep32.dim3;
+    }
     if (rep == RepKind::k16)
       return representation.rep16.dims[idx];
     return representation.repOutOfLine.dims[idx];
