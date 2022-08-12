@@ -278,9 +278,7 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
                        ScalarOrSIMD:$rhs);
   let results = (outs BoolScalarOrSIMD:$result);
 
-  let assemblyFormat = [{
-    $pred `,` $lhs `,` $rhs attr-dict `:` type($lhs)
-  }];
+  let assemblyFormat = "$pred `,` $lhs `,` $rhs attr-dict `:` type($lhs)";
 }
 
 
@@ -311,7 +309,5 @@ def SelectOp : POPOp<"select",
                        ScalarOrSIMD:$falseValue);
   let results = (outs ScalarOrSIMD:$result);
 
-  let assemblyFormat = [{
-    operands attr-dict `:` type($result)
-  }];
+  let assemblyFormat = "operands attr-dict `:` type($result)";
 }
