@@ -72,7 +72,14 @@ public:
     case StorageMode::kStaticError:
       return;
     case StorageMode::kMallocError:
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
       std::free(const_cast<char *>(errorStorage));
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
       return;
     }
   }

@@ -107,7 +107,7 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
 
   // Each constraint must be foldable, and must fold to true.
   for (auto [expr, message] : constraints) {
-    ErrorOr<Attribute> result = evaluator.simplifyParameterExpr(expr);
+    auto result = evaluator.simplifyParameterExpr(expr);
     if (failed(result))
       return Error("constraint evaluation failure: " +
                    Twine(result.getError()));
