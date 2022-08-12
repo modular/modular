@@ -281,3 +281,36 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
     $pred `,` $lhs `,` $rhs attr-dict `:` type($lhs)
   }];
 }
+
+
+//===----------------------------------------------------------------------===//
+// SelectOp
+//===----------------------------------------------------------------------===//
+
+def SelectOp : POPOp<"select",
+        [NoSideEffect,
+         AllTypesMatch<["trueValue", "falseValue", "result"]>,
+         TypesMatchWith<"bool of same branch type", "result", "condition", "getBoolOfSameParentType($_self)">
+        ]> {
+  let summary = "select";
+  let description = [{
+    The `select` operation takes a condition predicate and two meta.scalar or
+    meta.simd types (`then` and `else`) and chooses one value based on a
+    condition, without IR-level branching.
+
+    Example:
+
+    ```mlir
+    %a = pop.select %cond, %trueVal, %falseVal : !meta.scalar<type>
+    %b = pop.select %cond, %trueVal, %falseVal : !meta.scalar<size, type>
+    ```
+  }];
+
+  let arguments = (ins BoolScalarOrSIMD:$condition, ScalarOrSIMD:$trueValue,
+                       ScalarOrSIMD:$falseValue);
+  let results = (outs ScalarOrSIMD:$result);
+
+  let assemblyFormat = [{
+    operands attr-dict `:` type($result)
+  }];
+}

@@ -45,3 +45,29 @@ kgen.kernel @pop_constan2t() -> !meta.scalar<f32> {
   %0 = pop.constant(16777217 : i32) : <f32>
   kgen.return %0 : !meta.scalar<f32>
 }
+
+// -----
+
+kgen.kernel @pop_select_simd(
+    // expected-note @below {{prior use here}}
+    %arg0: !meta.scalar<bool>,
+    %arg1: !meta.simd<4, si32>,
+    %arg2: !meta.simd<4, si32>
+  ) -> !meta.simd<4, si32> {
+  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!meta.simd<4, bool>' vs '!meta.scalar<bool>'}}
+  %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
+  kgen.return %0 : !meta.simd<4, si32>
+}
+
+// -----
+
+kgen.kernel @pop_select_simd(
+    // expected-note @below {{prior use here}}
+    %arg0: !meta.simd<8, bool>,
+    %arg1: !meta.simd<4, si32>,
+    %arg2: !meta.simd<4, si32>
+  ) -> !meta.simd<4, si32> {
+  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!meta.simd<4, bool>' vs '!meta.simd<8, bool>'}}
+  %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
+  kgen.return %0 : !meta.simd<4, si32>
+}

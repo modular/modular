@@ -133,6 +133,25 @@ kgen.kernel @pop_cmp_simd(
   kgen.return %0, %1 : !meta.simd<4, bool>, !meta.simd<2, bool>
 }
 
+
+// CHECK-LABEL: @pop_select
+kgen.kernel @pop_select(%arg0 : !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: pop.select %{{.*}}, %{{.*}}, %{{.*}} :
+  %0 = pop.select %arg0, %arg1, %arg2 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: @pop_select_simd
+kgen.kernel @pop_select_simd(
+    %arg0: !meta.simd<4, bool>,
+    %arg1: !meta.simd<4, si32>,
+    %arg2: !meta.simd<4, si32>
+  ) -> !meta.simd<4, si32> {
+  // CHECK: pop.select %{{.*}}, %{{.*}}, %{{.*}} :
+  %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
+  kgen.return %0 : !meta.simd<4, si32>
+}
+
 // COM: Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
 // COM: = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
 

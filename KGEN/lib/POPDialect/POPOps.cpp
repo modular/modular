@@ -141,16 +141,22 @@ OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
 // CmpOp
 //===----------------------------------------------------------------------===//
 
+static Type getBoolOfSameParentType(Type type) {
+  auto boolType = DTypeConstantAttr::get(type.getContext(), DType::kBool);
+  if (auto scalar = type.dyn_cast<ScalarType>())
+    return ScalarType::get(boolType);
+  else if (auto simd = type.dyn_cast<SIMDType>())
+    return SIMDType::get(simd.getSize(), boolType);
+  llvm_unreachable("unhandled type");
+}
+
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
                                       ValueRange operands, DictionaryAttr attrs,
                                       RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
   Type argType = operands[0].getType();
-  auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
-  if (auto scalar = argType.dyn_cast<ScalarType>())
-    types.push_back(ScalarType::get(boolType));
-  else if (auto simd = argType.dyn_cast<SIMDType>())
-    types.push_back(SIMDType::get(simd.getSize(), boolType));
+  if (argType.isa<ScalarType, SIMDType>())
+    types.push_back(getBoolOfSameParentType(argType));
   else
     return failure();
   return success();
