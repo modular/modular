@@ -32,11 +32,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
   // CHECK: = kgen.param.value : i1 = <1>
   %5 = kgen.param.value: i1 = <1>
 
-  // CHECK: = kgen.param.value : i1 = <eq_dtype(type, f32)>
-  %6 = kgen.param.value: i1 = <eq_dtype(type, f32)>
+  // CHECK: = kgen.param.value : i1 = <eq(:dtype type, f32)>
+  %6 = kgen.param.value: i1 = <eq(:dtype type, f32)>
 
   // CHECK: = kgen.param.value : i1 = <0>
-  %7 = kgen.param.value: i1 = <eq_dtype(bf16, f16)>
+  %7 = kgen.param.value: i1 = <eq(:dtype bf16, f16)>
 
   // CHECK: = kgen.param.value : i1 = <in(p1, [add(p2, 1), p2, 1, 3])>
   %8 = kgen.param.value: i1 = <in(p1, [3, 1, p2, add(p2, 1), 1])>
@@ -53,30 +53,30 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
   // CHECK: = kgen.param.value : i1 = <eq(p1, 1)>
   %12 = kgen.param.value: i1 = <in(p1, [1])>
 
-  // CHECK: = kgen.param.value : i1 = <in_dtype(f32, [type, f64])>
-  %13 = kgen.param.value: i1 = <in_dtype(f32, [f64, type, f64, type])>
+  // CHECK: = kgen.param.value : i1 = <in(:dtype f32, [type, f64])>
+  %13 = kgen.param.value: i1 = <in(:dtype f32, [f64, type, f64, type])>
 
   // CHECK: = kgen.param.value : i1 = <0>
-  %14 = kgen.param.value: i1 = <in_dtype(f32, [si64, f64])>
+  %14 = kgen.param.value: i1 = <in(:dtype f32, [si64, f64])>
 
   // CHECK: = kgen.param.value : i1 = <0>
-  %15 = kgen.param.value: i1 = <in_dtype(type, [])>
+  %15 = kgen.param.value: i1 = <in(:dtype type, [])>
 
   // CHECK: = kgen.param.value : i1 = <1>
-  %16 = kgen.param.value: i1 = <in_dtype(type, [type, f32])>
+  %16 = kgen.param.value: i1 = <in(:dtype type, [type, f32])>
 
-  // CHECK: = kgen.param.value : i1 = <in_dtype(type, [type2, f32])>
-  %17 = kgen.param.value: i1 = <in_dtype(type, [type2, f32])>
+  // CHECK: = kgen.param.value : i1 = <in(:dtype type, [type2, f32])>
+  %17 = kgen.param.value: i1 = <in(:dtype type, [type2, f32])>
 
-  // CHECK: = kgen.param.value : i1 = <eq_dtype(type, f32)>
-  %18 = kgen.param.value: i1 = <in_dtype(type, [f32])>
+  // CHECK: = kgen.param.value : i1 = <eq(:dtype type, f32)>
+  %18 = kgen.param.value: i1 = <in(:dtype type, [f32])>
 
   // The only binary operation that signless i1 supports is xor.
   // CHECK: = kgen.param.value : i1 = <xor(int1, 1)>
   %19 = kgen.param.value: i1 = <xor(int1, 1)>
 
-  // CHECK: = kgen.param.value : i1 = <ne_dtype(type, f32)>
-  %20 = kgen.param.value: i1 = <xor(eq_dtype(type, f32), 1)>
+  // CHECK: = kgen.param.value : i1 = <ne(:dtype type, f32)>
+  %20 = kgen.param.value: i1 = <xor(eq(:dtype type, f32), 1)>
 
   kgen.return
 }
@@ -84,8 +84,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
 // CHECK-LABEL: kgen.generator @int1_aliases
 kgen.generator @int1_aliases<p1, int1: i1, type: dtype>()  {
 
-  // CHECK: = kgen.param.value : i1 = <ne_dtype(type, f32)>
-  %0 = kgen.param.value: i1 = <ne_dtype(type, f32)>
+  // CHECK: = kgen.param.value : i1 = <ne(:dtype type, f32)>
+  %0 = kgen.param.value: i1 = <ne(:dtype type, f32)>
 
   // CHECK: = kgen.param.value : i1 = <ne(p1, 42)>
   %1 = kgen.param.value: i1 = <ne(p1, 42)>

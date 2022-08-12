@@ -275,7 +275,7 @@ kgen.kernel @track_expansions(%arg0: si32) {
 // CHECK:    kgen.return  %2 : !meta.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
-  constraints <eq_dtype(type, f32), "float please">  {
+  constraints <eq(:dtype type, f32), "float please">  {
   %0 = kgen.param.value : f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = meta.cast_from_builtin %1: f32 to !meta.scalar<type>
@@ -302,7 +302,7 @@ kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
 kgen.generator @getSIMDLengthF32<dt: dtype -> length>() 
      implements @getSIMDLength {
   // This could be implemented as a constraint.
-  kgen.param.assert <eq_dtype(dt, f32)>, "this only works for f32"
+  kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
   // vector length for floats is 4 on our target.
   kgen.return <length = 4>
 }
@@ -310,7 +310,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
 kgen.generator @getSIMDLengthF64<dt: dtype -> length>() 
      implements @getSIMDLength {
   // This could be implemented as a constraint.
-  kgen.param.assert <eq_dtype(dt, f64)>, "this only works for f32"
+  kgen.param.assert <eq(:dtype dt, f64)>, "this only works for f32"
   // vector length for doubles is 2 on our target.
   kgen.return <length = 2>
 }
