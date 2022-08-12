@@ -76,7 +76,7 @@ ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 void ScalarType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getDtype());
+  walkAttrsFn(getDType());
 }
 
 Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
@@ -105,7 +105,7 @@ void SIMDType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   walkAttrsFn(getSize());
-  walkAttrsFn(getDtype());
+  walkAttrsFn(getDType());
 }
 
 Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
@@ -132,7 +132,7 @@ void BufferType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   walkAttrsFn(getSize());
-  walkAttrsFn(getDtype());
+  walkAttrsFn(getDType());
 }
 
 Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
@@ -156,7 +156,7 @@ PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 void PointerType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getDtype());
+  walkAttrsFn(getDType());
 }
 
 Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,

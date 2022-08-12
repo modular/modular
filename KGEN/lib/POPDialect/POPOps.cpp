@@ -112,7 +112,7 @@ LogicalResult ConstantOp::verify() {
 
   // The return type should castable from the input type or can be
   // parameterized.
-  auto resultDType = getType().cast<ScalarType>().getDtype();
+  auto resultDType = getType().cast<ScalarType>().getDType();
 
   if (auto resultConstantDType = resultDType.dyn_cast<DTypeConstantAttr>()) {
     if (!isCastableFrom(getValue(), resultConstantDType))

@@ -28,8 +28,8 @@ def ScalarType : MetaType<"Scalar",
   }];
 
   let mnemonic = "scalar";
-  let parameters = (ins "TypedAttr":$dtype);
-  let assemblyFormat = "`<` custom<ParamDTypeValue>($dtype) `>`";
+  let parameters = (ins "TypedAttr":$dType);
+  let assemblyFormat = "`<` custom<ParamDTypeValue>($dType) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
@@ -52,9 +52,9 @@ def SIMDType : MetaType<"SIMD",
   }];
 
   let mnemonic = "simd";
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dtype);
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
-    `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dtype) `>`
+    `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -81,26 +81,12 @@ def BufferType : MetaType<"Buffer",
   }];
 
   let mnemonic = "buffer";
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dtype);
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
     `<` custom<OptionalIndexParamValue>($size) `,` ` `
-        custom<OptionalParamDTypeValue>($dtype) `>`
+        custom<OptionalParamDTypeValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
-
-  let extraClassDeclaration = [{
-    /// Return the DType of the dtype.
-    /// Returns DType::invalid if dtype is null
-    /// (indicating dtype is unknown)
-    DType getDType() {
-      DTypeConstantAttr buf_dtype =
-          getDtype().dyn_cast_or_null<DTypeConstantAttr>();
-      if (!buf_dtype)
-        return DType::invalid;
-
-      return buf_dtype.getDType();
-    };
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -118,9 +104,9 @@ def PointerType : MetaType<"Pointer",
   }];
 
   let mnemonic = "pointer";
-  let parameters = (ins "TypedAttr":$dtype);
+  let parameters = (ins "TypedAttr":$dType);
   let assemblyFormat = [{
-    `<` custom<OptionalParamDTypeValue>($dtype) `>`
+    `<` custom<OptionalParamDTypeValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -129,19 +115,6 @@ def PointerType : MetaType<"Pointer",
       return $_get(ty.getContext(), ty);
     }]>,
   ];
-
-  let extraClassDeclaration = [{
-    /// Return the DType of the dtype.
-    /// Returns DType::invalid if dtype is null
-    /// (indicating dtype is unknown)
-    DType getDType() {
-      auto ptr_dtype = getDtype().dyn_cast_or_null<DTypeConstantAttr>();
-      if (!ptr_dtype)
-        return DType::invalid;
-
-      return ptr_dtype.getDType();
-    };
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -151,31 +124,31 @@ def PointerType : MetaType<"Pointer",
 /// A scalar type that is constrained to have a bool dtype.
 def BoolScalar : Type<
     CPred<"$_self.isa<ScalarType>() &&"
-          "$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() &&"
-          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
+          "$_self.cast<ScalarType>().getDType().isa<DTypeConstantAttr>() &&"
+          "$_self.cast<ScalarType>().getDType().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
     "whose value is either unboard or a bool dtype">;
 
 /// A simd type that is constrained to have a bool dtype.
 def BoolSIMD : Type<
     CPred<"$_self.isa<SIMDType>() &&"
-          "$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() &&"
-          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
+          "$_self.cast<SIMDType>().getDType().isa<DTypeConstantAttr>() &&"
+          "$_self.cast<SIMDType>().getDType().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
     "whose value is either unboard or a bool dtype">;
 
 /// A scalar type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
 def UnboundOrFloatScalar : Type<
     CPred<"$_self.isa<ScalarType>() &&"
-          "(!$_self.cast<ScalarType>().getDtype().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<ScalarType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
+          "(!$_self.cast<ScalarType>().getDType().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<ScalarType>().getDType().cast<DTypeConstantAttr>().getDType().isFloat())">,
     "whose value is either unbound or a floating-point dtype">;
 
 /// A simd type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
 def UnboundOrFloatSIMD : Type<
     CPred<"$_self.isa<SIMDType>() &&"
-          "(!$_self.cast<SIMDType>().getDtype().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<SIMDType>().getDtype().cast<DTypeConstantAttr>().getDType().isFloat())">,
+          "(!$_self.cast<SIMDType>().getDType().isa<DTypeConstantAttr>() ||"
+          "$_self.cast<SIMDType>().getDType().cast<DTypeConstantAttr>().getDType().isFloat())">,
     "whose element type is either unbound or a floating-point dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<

@@ -50,7 +50,7 @@ struct OneToOneIntOrFloatConversion : public OpConversionPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    TypedAttr dtypeExpr = op.getType().template cast<ScalarType>().getDtype();
+    TypedAttr dtypeExpr = op.getType().template cast<ScalarType>().getDType();
     DType dtype = dtypeExpr.template cast<DTypeConstantAttr>().getDType();
     Type type = this->getTypeConverter()->convertType(op.getType());
     if (dtype.isInt())
@@ -75,7 +75,7 @@ struct ConvertPOPNeg : public mlir::OpConversionPattern<NegOp> {
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    TypedAttr dtypeExpr = op.getType().cast<ScalarType>().getDtype();
+    TypedAttr dtypeExpr = op.getType().cast<ScalarType>().getDType();
     DType dtype = dtypeExpr.cast<DTypeConstantAttr>().getDType();
     if (dtype.isInt()) {
       Type type = getTypeConverter()->convertType(op.getType());
@@ -100,7 +100,7 @@ struct ConvertPOPFMA : public mlir::OpConversionPattern<FMAOp> {
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    TypedAttr dtypeExpr = op.getType().cast<ScalarType>().getDtype();
+    TypedAttr dtypeExpr = op.getType().cast<ScalarType>().getDType();
     DType dtype = dtypeExpr.cast<DTypeConstantAttr>().getDType();
     if (dtype.isInt()) {
       auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
