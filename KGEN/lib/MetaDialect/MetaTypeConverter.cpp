@@ -69,17 +69,17 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   };
 
   // Convert scalar types directly to the dtype.
-  addConversion([&](ScalarType scalar) { return convertDType(scalar); });
+  addConversion([=](ScalarType scalar) { return convertDType(scalar); });
 
   // Convert pointer types to bare pointers of the dtype.
-  addConversion([&](PointerType pointer) -> Optional<Type> {
+  addConversion([=](PointerType pointer) -> Optional<Type> {
     if (Optional<Type> dtype = convertDType(pointer))
       return LLVM::LLVMPointerType::get(*dtype);
     return {};
   });
 
   // Convert SIMD types to vector types.
-  addConversion([&](SIMDType simd) -> Optional<Type> {
+  addConversion([=](SIMDType simd) -> Optional<Type> {
     Optional<Type> dtype = convertDType(simd);
     auto size = convertSize(simd);
     if (!dtype || !size)
@@ -89,7 +89,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
 
   // Convert buffers to struct<(i64, ptr<T>)>.
   // TODO: Support unknown dtype and convert fixed-size arrays to pointers.
-  addConversion([&](BufferType buffer) -> Optional<Type> {
+  addConversion([=](BufferType buffer) -> Optional<Type> {
     Optional<Type> dtype = convertDType(buffer);
     if (!dtype)
       return {};
