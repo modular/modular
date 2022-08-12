@@ -4,10 +4,12 @@
 #
 #===-----------------------------------------------------------------------===##
 
-add_modular_tool(kgen-execute
-  kgen-execute.cpp
+add_modular_library(KGENCLOptions
+  CLOptions.cpp
 
-  LINK_LIBS PRIVATE
-  KGENCLOptions
-  MLIRParser
+  LINK_LIBS PUBLIC
+  KGENExecutionEngine
+  MLIRLLVMDialect
+
+  DISALLOWED_DEPENDS
   )
