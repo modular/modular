@@ -8,26 +8,35 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/KGENDialect/KGENTypeInterfaces.td"
+include "KGEN/MetaDialect/MetaDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
-class MetaType<string name, list<Trait> traits = []>
-  : TypeDef<MetaDialect, name, traits> { }
+class MetaType<string name, string typeMnemonic, list<Trait> traits = []>
+    : TypeDef<MetaDialect, name, traits> {
+  let mnemonic = typeMnemonic;
+}
+
+// Base class for parameterized types.
+class ParameterizedMetaType<string name, string typeMnemonic,
+                            list<Trait> traits = []>
+    : MetaType<name, typeMnemonic, [
+        DeclareTypeInterfaceMethods<SubElementTypeInterface>,
+        DataTypeInterface
+      ] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ScalarType
 //===----------------------------------------------------------------------===//
 
-def ScalarType : MetaType<"Scalar",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
-                                   ["replaceImmediateSubAttribute"]>]> {
+def ScalarType : ParameterizedMetaType<"Scalar", "scalar"> {
   let summary = "parameterized scalar type";
   let description = [{
     This type is parameterized with a value of !kgen.dtype type.
   }];
 
-  let mnemonic = "scalar";
   let parameters = (ins "TypedAttr":$dType);
   let assemblyFormat = "`<` custom<ParamDTypeValue>($dType) `>`";
   let genVerifyDecl = 1;
@@ -43,15 +52,12 @@ def ScalarType : MetaType<"Scalar",
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def SIMDType : MetaType<"SIMD",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
-                                   ["replaceImmediateSubAttribute"]>]> {
+def SIMDType : ParameterizedMetaType<"SIMD", "simd"> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
   }];
 
-  let mnemonic = "simd";
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
     `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dType) `>`
@@ -69,9 +75,7 @@ def SIMDType : MetaType<"SIMD",
 // BufferType
 //===----------------------------------------------------------------------===//
 
-def BufferType : MetaType<"Buffer",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
-                                   ["replaceImmediateSubAttribute"]>]> {
+def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
   let summary = "parameterized buffer type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.  The size
@@ -80,7 +84,6 @@ def BufferType : MetaType<"Buffer",
     buffer with unknown element type.
   }];
 
-  let mnemonic = "buffer";
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
     `<` custom<OptionalIndexParamValue>($size) `,` ` `
@@ -93,9 +96,7 @@ def BufferType : MetaType<"Buffer",
 // PointerType
 //===----------------------------------------------------------------------===//
 
-def PointerType : MetaType<"Pointer",
-      [DeclareTypeInterfaceMethods<SubElementTypeInterface,
-                                   ["replaceImmediateSubAttribute"]>]> {
+def PointerType : ParameterizedMetaType<"Pointer", "pointer"> {
   let summary = "parameterized pointer type";
   let description = [{
     This type is parameterized with a !kgen.dtype type. The dtype type is also
@@ -103,7 +104,6 @@ def PointerType : MetaType<"Pointer",
     type.
   }];
 
-  let mnemonic = "pointer";
   let parameters = (ins "TypedAttr":$dType);
   let assemblyFormat = [{
     `<` custom<OptionalParamDTypeValue>($dType) `>`
@@ -122,33 +122,17 @@ def PointerType : MetaType<"Pointer",
 //===----------------------------------------------------------------------===//
 
 /// A scalar type that is constrained to have a bool dtype.
-def BoolScalar : Type<
-    CPred<"$_self.isa<ScalarType>() &&"
-          "$_self.cast<ScalarType>().getDType().isa<DTypeConstantAttr>() &&"
-          "$_self.cast<ScalarType>().getDType().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
-    "whose value is either unboard or a bool dtype">;
-
+def BoolScalar : AllOfType<[ScalarType, BoolDType]>;
 /// A simd type that is constrained to have a bool dtype.
-def BoolSIMD : Type<
-    CPred<"$_self.isa<SIMDType>() &&"
-          "$_self.cast<SIMDType>().getDType().isa<DTypeConstantAttr>() &&"
-          "$_self.cast<SIMDType>().getDType().cast<DTypeConstantAttr>().getDType().getValue() == DType::kBool">,
-    "whose value is either unboard or a bool dtype">;
+def BoolSIMD : AllOfType<[SIMDType, BoolDType]>;
 
 /// A scalar type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
-def UnboundOrFloatScalar : Type<
-    CPred<"$_self.isa<ScalarType>() &&"
-          "(!$_self.cast<ScalarType>().getDType().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<ScalarType>().getDType().cast<DTypeConstantAttr>().getDType().isFloat())">,
+def UnboundOrFloatScalar : AllOfType<[ScalarType, FloatOrUnboundDType],
     "whose value is either unbound or a floating-point dtype">;
-
 /// A simd type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
-def UnboundOrFloatSIMD : Type<
-    CPred<"$_self.isa<SIMDType>() &&"
-          "(!$_self.cast<SIMDType>().getDType().isa<DTypeConstantAttr>() ||"
-          "$_self.cast<SIMDType>().getDType().cast<DTypeConstantAttr>().getDType().isFloat())">,
+def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<
