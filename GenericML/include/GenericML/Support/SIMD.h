@@ -335,7 +335,8 @@ public:
       for (int i = 0, e = size(); i < e; ++i)
         result[i] = data()[i] ? lhs[i] : rhs[i];
       return result;
-    } else if constexpr (std::is_same_v<T, float>) {
+    }
+    if constexpr (std::is_same_v<T, float>) {
       // This is a special case for float vectors which produces better assembly
       // with GCC.
       auto lhsInt = *reinterpret_cast<const vector_type *>(&lhs.value());
