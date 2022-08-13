@@ -123,7 +123,7 @@ def MetaCastToBuiltinOp : MetaOp<"cast_to_builtin", [NoSideEffect]> {
   let arguments = (ins AnyTypeOf<[ScalarType, SIMDType]>:$in);
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat, AnyVector]>:$out);
 
-  let assemblyFormat = [{ $in `:` type($in) `to` type($out) attr-dict }];
+  let assemblyFormat = "$in `:` type($in) `to` type($out) attr-dict";
   let hasVerifier = true;
   let hasFolder = true;
 }
@@ -146,7 +146,7 @@ def MetaCastFromBuiltinOp : MetaOp<"cast_from_builtin", [NoSideEffect]> {
   let arguments = (ins AnyTypeOf<[AnyInteger, AnyFloat, AnyVector]>:$in);
   let results = (outs AnyTypeOf<[ScalarType, SIMDType]>:$out);
 
-  let assemblyFormat = [{ $in `:` type($in) `to` type($out) attr-dict }];
+  let assemblyFormat = "$in `:` type($in) `to` type($out) attr-dict";
   let hasVerifier = true;
   let hasFolder = true;
 }

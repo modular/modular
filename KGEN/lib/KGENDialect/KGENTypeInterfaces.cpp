@@ -12,13 +12,9 @@ using namespace M;
 using namespace KGEN;
 
 DType DataTypeInterface::resolveDType() {
-  TypedAttr expr = getDType();
-  if (!expr)
-    return DType::invalid;
-  auto constant = expr.dyn_cast<DTypeConstantAttr>();
-  if (!constant)
-    return DType::invalid;
-  return constant.getDType();
+  if (auto constant = getDType().dyn_cast_or_null<DTypeConstantAttr>())
+    return constant.getDType();
+  return DType::invalid;
 }
 
 #include "KGEN/KGENDialect/KGENTypeInterfaces.cpp.inc"

@@ -23,7 +23,7 @@ def DataTypeInterface : TypeInterface<"DataTypeInterface"> {
 
   let methods = [
     InterfaceMethod<
-      /*desc=*/[{ Get the typed expression representing the data type. }],
+      /*desc=*/"Get the typed expression representing the data type.",
       "TypedAttr", "getDType">
   ];
 
