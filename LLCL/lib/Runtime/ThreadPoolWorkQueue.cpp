@@ -14,6 +14,7 @@
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/SpinWaiter.h"
+#include "LLCL/Support/TimeProfiler.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Threading.h"
 
@@ -185,6 +186,8 @@ struct WorkQueueThread {
 } // end anonymous namespace
 
 void WorkQueueThread::runOnThread() {
+  TIME_PROFILER_WORKER_INIT;
+
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
   workerIDInTLS = workerID;
@@ -207,6 +210,7 @@ void WorkQueueThread::runOnThread() {
            });
 
   TRACE(3, "worker destroying.");
+  TIME_PROFILER_WORKER_WRAPUP;
 }
 
 /// This method iteratively runs work items until either of the specified
