@@ -10,6 +10,7 @@
 #include "KGEN/MetaDialect/MetaTypeConverter.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 using namespace M;
@@ -19,33 +20,14 @@ namespace LLVM = mlir::LLVM;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// OneToOneConversion
-//===----------------------------------------------------------------------===//
-
-/// This pattern does a one-to-one conversion of one operation to another.
-template <typename FromOp, typename ToOp>
-struct OneToOneConversion : public OpConversionPattern<FromOp> {
-  using OpConversionPattern<FromOp>::OpConversionPattern;
-
-  LogicalResult match(FromOp op) const override { return success(); }
-
-  void rewrite(FromOp op, typename FromOp::Adaptor adaptor,
-               ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<ToOp>(
-        op, this->getTypeConverter()->convertType(op.getType()),
-        adaptor.getOperands(), op->getAttrs());
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // OneToOneIntOrFloatConversion
 //===----------------------------------------------------------------------===//
 
 /// This patterns converts a scalar POP dialect operation to either an integer
 /// or floating point LLVM operation one-to-one.
 template <typename Op, typename IntOp, typename FloatOp>
-struct OneToOneIntOrFloatConversion : public OpConversionPattern<Op> {
-  using OpConversionPattern<Op>::OpConversionPattern;
+struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
+  using mlir::ConvertOpToLLVMPattern<Op>::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
@@ -69,8 +51,8 @@ struct OneToOneIntOrFloatConversion : public OpConversionPattern<Op> {
 
 /// Convert an integer pop.neg(x) -> x * -1
 /// and float pop.neg(x) -> llvm.fneg(x)
-struct ConvertPOPNeg : public mlir::OpConversionPattern<NegOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
@@ -92,8 +74,8 @@ struct ConvertPOPNeg : public mlir::OpConversionPattern<NegOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert integer pop.abs x -> llvm.abs
-struct ConvertPOPAbs : public mlir::OpConversionPattern<AbsOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
@@ -118,8 +100,8 @@ struct ConvertPOPAbs : public mlir::OpConversionPattern<AbsOp> {
 
 /// Convert integer pop.fma(x, y, z) -> x * y + z
 /// and float pop.fma(x, y, a) -> llvm.intr.fma(x, y, z)
-struct ConvertPOPFMA : public mlir::OpConversionPattern<FMAOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
@@ -140,15 +122,18 @@ struct ConvertPOPFMA : public mlir::OpConversionPattern<FMAOp> {
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
-using ConvertPOPConstant = OneToOneConversion<ConstantOp, LLVM::ConstantOp>;
-using ConvertPOPCopySign = OneToOneConversion<CopySignOp, LLVM::CopySignOp>;
+using ConvertPOPConstant =
+    mlir::OneToOneConvertToLLVMPattern<ConstantOp, LLVM::ConstantOp>;
+using ConvertPOPCopySign =
+    mlir::OneToOneConvertToLLVMPattern<CopySignOp, LLVM::CopySignOp>;
 using ConvertPOPAdd =
     OneToOneIntOrFloatConversion<AddOp, LLVM::AddOp, LLVM::FAddOp>;
 using ConvertPOPSub =
     OneToOneIntOrFloatConversion<SubOp, LLVM::SubOp, LLVM::FSubOp>;
 using ConvertPOPMul =
     OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
-using ConvertPOPSelect = OneToOneConversion<SelectOp, LLVM::SelectOp>;
+using ConvertPOPSelect =
+    mlir::OneToOneConvertToLLVMPattern<SelectOp, LLVM::SelectOp>;
 
 } // namespace
 
@@ -161,7 +146,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
   patterns.insert<ConvertPOPAbs, ConvertPOPAdd, ConvertPOPConstant,
                   ConvertPOPCopySign, ConvertPOPFMA, ConvertPOPMul,
                   ConvertPOPNeg, ConvertPOPSelect, ConvertPOPSub>(
-      typeConverter, patterns.getContext());
+      typeConverter);
 }
 
 //===----------------------------------------------------------------------===//

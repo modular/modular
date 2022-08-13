@@ -16,11 +16,12 @@ using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
+namespace {
+
 //===----------------------------------------------------------------------===//
 // ConvertKGENKernel
 //===----------------------------------------------------------------------===//
 
-namespace {
 class ConvertKGENKernel : public mlir::ConvertOpToLLVMPattern<KernelOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -47,13 +48,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENCall
 //===----------------------------------------------------------------------===//
 
-namespace {
 /// Convert `kgen.call` to `func.call` and re-use the latter's conversion to
 /// LLVM.
 class ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
@@ -95,13 +94,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENReturn
 //===----------------------------------------------------------------------===//
 
-namespace {
 class ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -131,35 +128,18 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
-namespace {
-class ConvertKGENParamValue
-    : public mlir::ConvertOpToLLVMPattern<ParamValueOp> {
-public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Ensure that index types are converted.
-    return LLVM::detail::oneToOneRewrite(
-        op, LLVM::ConstantOp::getOperationName(), adaptor.getOperands(),
-        *getTypeConverter(), rewriter);
-    return success();
-  }
-};
-} // namespace
+using ConvertKGENParamValue =
+    mlir::OneToOneConvertToLLVMPattern<ParamValueOp, LLVM::ConstantOp>;
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaCastToBuiltin
 //===----------------------------------------------------------------------===//
 
-namespace {
 class ConvertMetaCastToBuiltin
     : public mlir::ConvertOpToLLVMPattern<MetaCastToBuiltinOp> {
 public:
@@ -172,13 +152,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaCastFromBuiltin
 //===----------------------------------------------------------------------===//
 
-namespace {
 class ConvertMetaCastFromBuiltin
     : public mlir::ConvertOpToLLVMPattern<MetaCastFromBuiltinOp> {
 public:
@@ -192,13 +170,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaBufferSize
 //===----------------------------------------------------------------------===//
 
-namespace {
 /// Convert the size of a buffer to an `llvm.extractvalue`.
 class ConvertMetaBufferSize
     : public mlir::ConvertOpToLLVMPattern<BufferSizeOp> {
@@ -213,13 +189,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaBufferAddress
 //===----------------------------------------------------------------------===//
 
-namespace {
 /// The address of a dynamic buffer is the starting pointer. The address of a
 /// fixed-size buffer is the address of the first element.
 class ConvertMetaBufferAddress
@@ -235,13 +209,11 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaBufferCast
 //===----------------------------------------------------------------------===//
 
-namespace {
 class ConvertMetaBufferCast
     : public mlir::ConvertOpToLLVMPattern<BufferCastOp> {
 public:
@@ -254,7 +226,6 @@ public:
     return success();
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // ConvertUnrealizedConversionCast
@@ -262,7 +233,6 @@ public:
 
 /// TODO: This shouldn't be needed and should be covered by something like
 /// `meta.cast_to/from_builtin`, but "builtin" now includes LLVM.
-namespace {
 class ConvertUnrealizedConversionCast
     : public mlir::ConvertOpToLLVMPattern<mlir::UnrealizedConversionCastOp> {
 public:
@@ -276,6 +246,7 @@ public:
     return success();
   }
 };
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
