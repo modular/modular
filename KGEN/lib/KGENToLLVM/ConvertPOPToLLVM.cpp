@@ -88,6 +88,31 @@ struct ConvertPOPNeg : public mlir::OpConversionPattern<NegOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPAbs
+//===----------------------------------------------------------------------===//
+
+/// Convert integer pop.abs x -> llvm.abs
+struct ConvertPOPAbs : public mlir::OpConversionPattern<AbsOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DataTypeInterface>().resolveDType();
+    if (dtype.isInt()) {
+      Type type = adaptor.getOperand().getType();
+      auto zero = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getBoolAttr(false));
+      rewriter.replaceOpWithNewOp<LLVM::AbsOp>(op, type, adaptor.getOperand(),
+                                               zero);
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::FAbsOp>(op, adaptor.getOperand());
+    }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPFMA
 //===----------------------------------------------------------------------===//
 
@@ -123,8 +148,6 @@ using ConvertPOPSub =
     OneToOneIntOrFloatConversion<SubOp, LLVM::SubOp, LLVM::FSubOp>;
 using ConvertPOPMul =
     OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
-using ConvertPOPAbs =
-    OneToOneIntOrFloatConversion<AbsOp, LLVM::AbsOp, LLVM::FAbsOp>;
 using ConvertPOPSelect = OneToOneConversion<SelectOp, LLVM::SelectOp>;
 
 } // namespace

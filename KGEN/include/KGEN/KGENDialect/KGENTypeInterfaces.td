@@ -38,9 +38,6 @@ def DataTypeInterface : TypeInterface<"DataTypeInterface"> {
 // Type Constraints
 //===----------------------------------------------------------------------===//
 
-class AllOfType<list<Type> types, string desc = ""> :
-    Type<And<!listconcat([], !foreach(type, types, type.predicate))>, desc>;
-
 /// A type whose data type conforms to a constraint.
 class ConstrainedDType<string constraint> : Type<
     And<[DataTypeInterface.predicate,
