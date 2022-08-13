@@ -49,17 +49,14 @@ kgen.generator @buffer_load_f32<type: dtype>(%buffer: !meta.buffer<?, type>, %id
 // buffer.loadOrValue
 //===----------------------------------------------------------------------===//
 
-// TODO: isLoad is a predicate, so would be better as i1.
-kgen.generator.interface @buffer.loadOrValue<isLoad, type: dtype>
+kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
   (%buffer: !meta.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
 
-kgen.generator @buffer.loadOrValueImpl<isLoad, type: dtype>
+kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
   (%buffer: !meta.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
   implements @buffer.loadOrValue {
-  %isLoad = kgen.param.value = <isLoad>
-  %zero = arith.constant 0 : index
-  %isLoadBool = arith.cmpi ne, %isLoad, %zero : index
-  %res = scf.if %isLoadBool -> !meta.scalar<type> {
+  %isLoad = kgen.param.value : i1 = <isLoad>
+  %res = scf.if %isLoad -> !meta.scalar<type> {
     %t0 = kgen.call @buffer.load<type : dtype = type>(%buffer, %idx): (!meta.buffer<?, type>, index) -> !meta.scalar<type>
     scf.yield %t0 : !meta.scalar<type>
   } else {
