@@ -29,7 +29,8 @@ kgen.kernel @abs(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 // CHECK-LABEL: @abs
 kgen.kernel @abs(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  // CHECK: llvm.intr.abs
+  // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(false
+  // CHECK: "llvm.intr.abs"(%{{.*}}, %[[ZERO]]
   %0 = pop.abs %arg0 : !meta.scalar<si32>
   kgen.return %0 : !meta.scalar<si32>
 }
