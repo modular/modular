@@ -71,11 +71,8 @@ public:
     }
 
     // Create the LLVM call operation.
-    auto callee = op.getCallee().dyn_cast<FlatSymbolRefAttr>();
-    if (!callee)
-      return emitError(op.getLoc(), "cannot convert nested symbol reference");
-    auto llvmCall = rewriter.create<LLVM::CallOp>(op.getLoc(), types, callee,
-                                                  adaptor.getOperands());
+    auto llvmCall = rewriter.create<LLVM::CallOp>(
+        op.getLoc(), types, op.getCalleeAttr(), adaptor.getOperands());
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;

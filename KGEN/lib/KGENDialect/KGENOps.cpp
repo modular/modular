@@ -456,7 +456,7 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
   if ((opKind == GeneratorOrKernelKind::generator ||
        opKind == GeneratorOrKernelKind::hlgenerator) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
-    ::mlir::SymbolRefAttr implementsAttr;
+    ::mlir::FlatSymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
                               parser.getBuilder().getType<::mlir::NoneType>(),
                               "implements", result.attributes))
@@ -715,7 +715,7 @@ LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
-  SymbolRefAttr interfaceSym = getImplementsAttr();
+  FlatSymbolRefAttr interfaceSym = getImplementsAttr();
   if (!interfaceSym)
     return success();
 
