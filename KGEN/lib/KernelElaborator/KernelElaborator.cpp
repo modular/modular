@@ -202,8 +202,7 @@ public:
   ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(SymbolRefAttr symbolRef,
-                          ModuleOp sourceModule) {
+  Operation *lookupCallee(SymbolRefAttr symbolRef, ModuleOp sourceModule) {
     return symbolTable.lookupNearestSymbolFrom(sourceModule, symbolRef);
   }
 
@@ -949,9 +948,11 @@ ParseResult Elaborator::collectInterfaces() {
     for (auto itf : libraryModule.get().getOps<GeneratorInterfaceOp>())
       libraryInterfaces[itf.getNameAttr()] = itf;
 
+    // Collect all the kernel generators that implement a given interface. These
+    // will already have been type checked within the library.
     for (auto generator : libraryModule.get().getOps<GeneratorOp>())
       if (auto interface = generator.getImplementsAttr())
-        interfaceImpls[interface.getLeafReference()].push_back(generator);
+        interfaceImpls[interface.getAttr()].push_back(generator);
   }
 
   // Collect the kernel generators from the primary module.  Start by checking
@@ -970,7 +971,7 @@ ParseResult Elaborator::collectInterfaces() {
   // primary module.
   for (auto generator : primaryModule.getOps<GeneratorOp>())
     if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getLeafReference()].push_back(generator);
+      interfaceImpls[interface.getAttr()].push_back(generator);
 
   return success();
 }
