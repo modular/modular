@@ -146,35 +146,8 @@ kgen.kernel @fma(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.
 // -----
 
 // CHECK-LABEL: @select
-// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG2:[a-z0-9]*]]:
 kgen.kernel @select(%arg0 : !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %[[COND:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: %[[TRUEVAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: %[[FALSEVAL:.*]] = builtin.unrealized_conversion_cast %[[ARG2]]
-  // CHECK: %[[RES:.*]] = llvm.select %[[COND]], %[[TRUEVAL]], %[[FALSEVAL]]
-  // CHECK: builtin.unrealized_conversion_cast %[[RES]]
+  // CHECK: llvm.select
   %0 = pop.select %arg0, %arg1, %arg2 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
-}
-
-// -----
-
-// CHECK-LABEL: @select_simd
-// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG2:[a-z0-9]*]]:
-kgen.kernel @select_simd(
-    %arg0: !meta.simd<4, bool>,
-    %arg1: !meta.simd<4, si32>,
-    %arg2: !meta.simd<4, si32>
-  ) -> !meta.simd<4, si32> {
-  // CHECK: %[[COND:.*]] = builtin.unrealized_conversion_cast %[[ARG0]] {{.*}} to vector<4xi1>
-  // CHECK: %[[TRUEVAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]] {{.*}} to vector<4xi32>
-  // CHECK: %[[FALSEVAL:.*]] = builtin.unrealized_conversion_cast %[[ARG2]]
-  // CHECK: %[[RES:.*]] = llvm.select %[[COND]], %[[TRUEVAL]], %[[FALSEVAL]]
-  // CHECK: builtin.unrealized_conversion_cast %[[RES]]
-  %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
-  kgen.return %0 : !meta.simd<4, si32>
 }

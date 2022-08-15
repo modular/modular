@@ -49,7 +49,7 @@ struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
 // ConvertPOPNeg
 //===----------------------------------------------------------------------===//
 
-/// Convert an integer pop.neg(x) -> x * -1
+/// Convert an integer pop.neg(x) -> 0 - x
 /// and float pop.neg(x) -> llvm.fneg(x)
 struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -59,8 +59,13 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
                   ConversionPatternRewriter &rewriter) const override {
     DType dtype = op.getType().cast<DataTypeInterface>().resolveDType();
     if (dtype.isInt()) {
-      Type type = getTypeConverter()->convertType(op.getType());
-      auto zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
+      Type type = adaptor.getOperand().getType();
+      Value zero;
+      if (auto vec = type.dyn_cast<VectorType>())
+        zero = rewriter.create<LLVM::ConstantOp>(
+            op.getLoc(), DenseIntElementsAttr::get(vec, 0));
+      else
+        zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
       rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
     } else {
       rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand());
