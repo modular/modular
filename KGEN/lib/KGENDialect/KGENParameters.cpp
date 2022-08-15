@@ -109,8 +109,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    bool hadParamDecls = false;
-    ArrayRef<ParamDeclAttr> paramDecls;
+    ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
     // Scan all the attributes and types to look for uses of parameters.  We let
@@ -130,21 +129,14 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
         continue;
       }
 
-      // Note that we have parameter declarations, even if they are empty.
-      hadParamDecls = true;
-
       // We handle the `paramDecls` attribute specially, remember it for below.
-      auto paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
+      paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
       if (!paramDeclsAttr) {
         bodyOp->emitError("paramDecls attribute should be an array ")
             << namedAttr.getValue();
         hadError = true;
         return;
       }
-      // Get any parameters being declared by this operation.  Note that the
-      // top level operation is allowed to define result parameters that are
-      // visible outside of its scope (not in its body).  We don't
-      paramDecls = paramDeclsAttr.getValue();
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -165,11 +157,14 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     }
 
     // If this operation had any parameter uses or decls, remember them.
-    if (!paramUses.empty() || hadParamDecls)
+    if (!paramUses.empty() || paramDeclsAttr)
       parameters.usersAndDeclarers.push_back({bodyOp, std::move(paramUses)});
 
     // Ok, check parameter declarations if present.
-    for (Attribute attr : paramDecls) {
+    if (!paramDeclsAttr)
+      return;
+
+    for (Attribute attr : paramDeclsAttr) {
       // All the members of this array must be ParamDeclAttr's.
       auto param = attr.dyn_cast<ParamDeclAttr>();
       if (!param) {
