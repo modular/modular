@@ -26,34 +26,38 @@ namespace M::KGEN::detail {
 class ObjectCache : public llvm::ObjectCache {
 public:
   /// notifyObjectCompiled - Provides a pointer to compiled code for Module M.
-  void notifyObjectCompiled(const llvm::Module *M,
-                            llvm::MemoryBufferRef Obj) override;
+  void notifyObjectCompiled(const llvm::Module *m,
+                            llvm::MemoryBufferRef obj) override;
 
   /// Returns a pointer to a newly allocated MemoryBuffer that contains the
-  /// object which corresponds with Module M, or 0 if an object is not
+  /// object which corresponds with `m`, or `nullptr` if an object is not
   /// available.
-  std::unique_ptr<llvm::MemoryBuffer> getObject(const llvm::Module *M) override;
-
+  std::unique_ptr<llvm::MemoryBuffer> getObject(const llvm::Module *m) override;
+  /// Returns a pointer to a newly allocated MemoryBuffer that contains the
+  /// object which corresponds with the kernel named `name`, or `nullptr` if an
+  /// object is not available.
   std::unique_ptr<llvm::MemoryBuffer> getObject(llvm::StringRef name);
 
   /// Check if the cache has the object with the given name.
   bool hasObject(llvm::StringRef name) { return storage.count(name) != 0; }
 
 private:
+  /// Map of llvm::Module name to compiled object in the form of a
+  /// llvm::MemoryBuffer.
   llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> storage;
 };
 } // namespace M::KGEN::detail
 
-void detail::ObjectCache::notifyObjectCompiled(const llvm::Module *M,
-                                               llvm::MemoryBufferRef Obj) {
-  storage[M->getModuleIdentifier()] = llvm::MemoryBuffer::getMemBufferCopy(
-      Obj.getBuffer(), Obj.getBufferIdentifier());
+void detail::ObjectCache::notifyObjectCompiled(const llvm::Module *m,
+                                               llvm::MemoryBufferRef obj) {
+  storage[m->getModuleIdentifier()] = llvm::MemoryBuffer::getMemBufferCopy(
+      obj.getBuffer(), obj.getBufferIdentifier());
 }
 
 std::unique_ptr<llvm::MemoryBuffer>
-detail::ObjectCache::getObject(const llvm::Module *M) {
-  if (auto found = storage.find(M->getModuleIdentifier());
-      found != storage.end())
+detail::ObjectCache::getObject(const llvm::Module *m) {
+  auto found = storage.find(m->getModuleIdentifier());
+  if (found != storage.end())
     return llvm::MemoryBuffer::getMemBufferCopy(
         found->second->getBuffer(), found->second->getBufferIdentifier());
   return nullptr;
@@ -61,8 +65,8 @@ detail::ObjectCache::getObject(const llvm::Module *M) {
 
 std::unique_ptr<llvm::MemoryBuffer>
 detail::ObjectCache::getObject(llvm::StringRef name) {
-  if (auto found = storage.find((name + "_module").str());
-      found != storage.end())
+  auto found = storage.find((name + "_module").str());
+  if (found != storage.end())
     return llvm::MemoryBuffer::getMemBufferCopy(
         found->second->getBuffer(), found->second->getBufferIdentifier());
   return nullptr;
@@ -111,21 +115,21 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
     return machineOr.takeError();
   ee.targetMachine = std::move(*machineOr);
 
+  auto createCompileFn = [&](llvm::orc::JITTargetMachineBuilder jtmb)
+      -> llvm::Expected<
+          std::unique_ptr<llvm::orc::IRCompileLayer::IRCompiler>> {
+    jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
+    auto tm = jtmb.createTargetMachine();
+    if (!tm)
+      return tm.takeError();
+    return std::make_unique<llvm::orc::TMOwningSimpleCompiler>(std::move(*tm),
+                                                               ee.cache.get());
+  };
+
   // Create the JIT.
-  auto jitOr =
-      llvm::orc::LLJITBuilder()
-          .setCompileFunctionCreator(
-              [&](llvm::orc::JITTargetMachineBuilder jtmb)
-                  -> llvm::Expected<
-                      std::unique_ptr<llvm::orc::IRCompileLayer::IRCompiler>> {
-                jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
-                auto tm = jtmb.createTargetMachine();
-                if (!tm)
-                  return tm.takeError();
-                return std::make_unique<llvm::orc::TMOwningSimpleCompiler>(
-                    std::move(*tm), ee.cache.get());
-              })
-          .create();
+  auto jitOr = llvm::orc::LLJITBuilder()
+                   .setCompileFunctionCreator(createCompileFn)
+                   .create();
   if (!jitOr)
     return M::Error(llvm::toString(jitOr.takeError()));
 
