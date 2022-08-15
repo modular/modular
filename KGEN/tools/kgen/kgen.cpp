@@ -32,15 +32,6 @@ using namespace M;
 using namespace mlir;
 
 namespace {
-enum class PipelineStage {
-  kUnknown = 0,
-  kGenericMLIR, ///< Some MLIR file format, don't know what.
-  kHLKGEN,
-  kKGEN,
-  kElaborated,
-  kLLVM
-};
-
 class CLOptions : public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
@@ -89,51 +80,28 @@ public:
 };
 } // namespace
 
-static PipelineStage sniffInputFormat(llvm::MemoryBufferRef inputFile) {
-  // If there's nothing in the file, then we can't sniff anything.
-  if (inputFile.getBuffer().empty())
-    return PipelineStage::kUnknown;
-
-  // It's some kind of MLIR file.
-  if (inputFile.getBufferIdentifier().endswith(".mlir"))
-    return PipelineStage::kGenericMLIR;
-
-  // Don't know what it is.
-  return PipelineStage::kUnknown;
-}
-
-static bool hasOpWithDialect(llvm::iterator_range<Region::OpIterator> &&range,
-                             llvm::SmallPtrSetImpl<Dialect *> &cache,
-                             Dialect *dialect) {
-  if (cache.contains(dialect))
-    return true;
-
-  auto found = llvm::find_if(range, [&](auto &op) {
+/// This just checks that all operations have a known dialect. The default
+/// message emits a suggestion we don't want emitted in this case so produce a
+/// nice diagnostic.
+static LogicalResult
+allOpsHaveKnownDialect(llvm::iterator_range<Region::OpIterator> &&range) {
+  for (auto &op : range) {
     Dialect *thisOpDialect = op.getName().getDialect();
     // No dialect, so bail.
     if (!thisOpDialect)
-      return false;
-
-    // Insert the dialect into the cache.
-    cache.insert(thisOpDialect);
-
-    // No nested regions, just check if this op has it or not.
-    if (op.getNumRegions() == 0)
-      return thisOpDialect == dialect;
+      return mlir::emitError(
+          op.getLoc(), "operation has unknown dialect, this is not supported");
 
     // Nested regions, we have to check ops within this op.
     for (Region &region : op.getRegions())
-      if (hasOpWithDialect(region.getOps(), cache, dialect))
-        return true;
+      if (failed(allOpsHaveKnownDialect(region.getOps())))
+        return failure();
+  }
 
-    // No match found.
-    return false;
-  });
-  return found != range.end();
+  return mlir::success();
 }
 
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
-                                     PipelineStage stage,
                                      const CLOptions &clOptions) {
   DialectRegistry registry;
 
@@ -155,81 +123,39 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
-  llvm::SmallPtrSet<Dialect *, 4> seenDialectCache;
-
-  // Prime the cache with the arith dialect - all the other dialects are/have
-  // container ops so we are very likely to hit them before we would hit an
-  // arith op, so this enables us to run this walk once and prime the cache so
-  // the other calls to hasOpWithDialect are more likely to hit the cache rather
-  // than walking the IR.
-  bool hasArithDialect =
-      hasOpWithDialect(theModule->getOps(), seenDialectCache,
-                       ctx->getLoadedDialect<mlir::arith::ArithmeticDialect>());
-
-  // Finish sensing the contents.
-  if (stage == PipelineStage::kGenericMLIR) {
-    if (hasOpWithDialect(theModule->getOps(), seenDialectCache,
-                         ctx->getLoadedDialect<KGEN::HLKGENDialect>())) {
-      stage = PipelineStage::kHLKGEN;
-    } else if (hasOpWithDialect(theModule->getOps(), seenDialectCache,
-                                ctx->getLoadedDialect<KGEN::KGENDialect>())) {
-      if (theModule->getOps<KGEN::GeneratorInterfaceOp>().empty())
-        stage = PipelineStage::kElaborated;
-      else
-        stage = PipelineStage::kKGEN;
-    } else if (!theModule->getOps<mlir::LLVM::LLVMFuncOp>().empty()) {
-      stage = PipelineStage::kLLVM;
-    }
-  }
-
-  if (stage == PipelineStage::kGenericMLIR)
-    return mlir::emitError(
-        theModule->getLoc(),
-        "could not sense the contents of this file, cannot proceed");
+  if (failed(allOpsHaveKnownDialect(theModule->getOps())))
+    return failure();
 
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
-  if (stage == PipelineStage::kHLKGEN) {
-    pm.addPass(KGEN::createLowerHLKGENPass());
-    pm.addPass(mlir::createCanonicalizerPass());
-    stage = PipelineStage::kKGEN;
-  }
+  pm.addPass(KGEN::createLowerHLKGENPass());
+  pm.addPass(mlir::createCanonicalizerPass());
 
-  if (stage == PipelineStage::kKGEN) {
-    auto elaborate = KGEN::createElaborateKernelsPass();
-    std::string includes;
-    llvm::raw_string_ostream includeStr(includes);
-    for (StringRef include : clOptions.searchPaths)
-      includeStr << "search-path=" << include << " ";
+  auto elaborate = KGEN::createElaborateKernelsPass();
+  std::string includes;
+  llvm::raw_string_ostream includeStr(includes);
+  for (StringRef include : clOptions.searchPaths)
+    includeStr << "search-path=" << include << " ";
 
-    if (failed(elaborate->initializeOptions(includeStr.str())))
-      return failure(
-          clOptions.reportError("unable to initialize elaborator options"));
+  if (failed(elaborate->initializeOptions(includeStr.str())))
+    return failure(
+        clOptions.reportError("unable to initialize elaborator options"));
 
-    pm.addPass(std::move(elaborate));
-    pm.addPass(mlir::createCanonicalizerPass());
-    stage = PipelineStage::kElaborated;
-  }
+  // Elaborate and canonicalize.
+  pm.addPass(std::move(elaborate));
+  pm.addPass(mlir::createCanonicalizerPass());
 
-  if (stage == PipelineStage::kElaborated) {
-    OpPassManager &kpm = pm.nest<KGEN::KernelOp>();
-    if (hasArithDialect)
-      kpm.addPass(mlir::arith::createConvertArithmeticToLLVMPass());
-    if (hasOpWithDialect(theModule->getOps(), seenDialectCache,
-                         ctx->getLoadedDialect<mlir::scf::SCFDialect>())) {
-      kpm.addPass(mlir::createConvertSCFToCFPass());
-      kpm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
-    }
-    kpm.addPass(KGEN::createConvertPOPToLLVMPass());
-    pm.addPass(KGEN::createConvertKGENToLLVMPass());
+  // Convert to LLVM.
+  OpPassManager &kpm = pm.nest<KGEN::KernelOp>();
+  kpm.addPass(KGEN::createConvertPOPToLLVMPass());
 
-    // And finally canonicalize.
-    pm.addPass(mlir::createCanonicalizerPass());
-    stage = PipelineStage::kLLVM;
-  }
+  pm.addPass(mlir::arith::createConvertArithmeticToLLVMPass());
+  pm.addPass(mlir::createConvertSCFToCFPass());
+  pm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
+  pm.addPass(KGEN::createConvertKGENToLLVMPass());
 
-  assert(stage == PipelineStage::kLLVM &&
-         "expected LLVM at this stage of the pipeline");
+  // And finally canonicalize again before running through the JIT.
+  pm.addPass(mlir::createCanonicalizerPass());
 
   // Now create the execution engine so we can JIT.
   auto engineOr = KGEN::ExecutionEngine::create();
@@ -323,14 +249,9 @@ int main(int argc, char **argv) {
   std::unique_ptr<llvm::MemoryBuffer> inputFile =
       clOptions.openInputFileOrExit();
 
-  PipelineStage stage = sniffInputFormat(*inputFile);
-
-  if (stage == PipelineStage::kUnknown)
-    return clOptions.reportError("could not sniff the input file format");
-
   return failed(clOptions.configureMLIRContextAndSourceMgrAndExecute(
       std::move(inputFile),
       [&](MLIRContext *ctx, llvm::SourceMgr &mgr) -> LogicalResult {
-        return runToolPipeline(ctx, mgr, stage, clOptions);
+        return runToolPipeline(ctx, mgr, clOptions);
       }));
 }
