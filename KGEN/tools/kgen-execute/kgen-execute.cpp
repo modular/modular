@@ -15,14 +15,6 @@
 using namespace M;
 using namespace mlir;
 
-/// Get all the dialects the executor tool will need, and register the
-/// conversion to LLVMIR.
-static DialectRegistry getDialects() {
-  DialectRegistry registry;
-  mlir::registerLLVMDialectTranslation(registry);
-  return registry;
-}
-
 class CLOptions : public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
@@ -54,7 +46,10 @@ struct ProcessBuffer {
   CLOptions &clOptions;
 
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
-    ctx->appendDialectRegistry(getDialects());
+    DialectRegistry registry;
+    mlir::registerLLVMDialectTranslation(registry);
+
+    ctx->appendDialectRegistry(registry);
     ctx->loadAllAvailableDialects();
 
     // Open the input file.

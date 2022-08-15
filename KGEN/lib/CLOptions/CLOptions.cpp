@@ -15,11 +15,7 @@ using namespace M;
 
 bool ExecutableKernelParser::parse(llvm::cl::Option &o, StringRef argName,
                                    StringRef argValue, ExecutableKernel &val) {
-  // Split at the colon.
-  auto [kernelName, kernelSignature] = argValue.split(':');
-
-  val.name = kernelName;
-  val.signature = kernelSignature;
+  std::tie(val.name, val.signature) = argValue.split(':');
 
   return false;
 }
@@ -30,11 +26,7 @@ bool ExecutableKernelParser::parse(llvm::cl::Option &o, StringRef argName,
 
 bool EmittableKernelParser::parse(llvm::cl::Option &o, StringRef argName,
                                   StringRef argValue, EmittableKernel &val) {
-  // Split at the colon.
-  auto [kernelName, kernelOutFilename] = argValue.split(':');
-
-  val.name = kernelName;
-  val.outputFilename = kernelOutFilename;
+  std::tie(val.name, val.outputFilename) = argValue.split(':');
 
   return false;
 }
