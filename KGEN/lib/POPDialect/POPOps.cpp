@@ -42,9 +42,17 @@ static const llvm::fltSemantics &getFloatSemantics(DType dtype) {
   llvm_unreachable("unhandled floating point semantics for dtype");
 }
 
+void ConstantOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  setNameFn(getResult(), "cst");
+}
+
 /// Checks if the DType constant can be cast from the MLIR type.
 static bool isCastableFrom(Attribute value, DTypeConstantAttr dtypeAttr) {
   auto inputTy = value.cast<TypedAttr>().getType();
+  if (!inputTy.isa<IndexType, IntegerType, FloatType>())
+    return false;
+
   // The types are compatible, so we have nothing else to do.
   if (dtypeAttr.isCompatibleWith(inputTy))
     return true;
@@ -70,66 +78,78 @@ static bool isCastableFrom(Attribute value, DTypeConstantAttr dtypeAttr) {
   // Otherwise, the input is an integer value. We check if we can convert it to
   // the target type.
   assert(value.isa<IntegerAttr>() && "expected integer attribute");
-
   auto intVal = value.cast<IntegerAttr>().getValue();
-  auto truncVal = intVal.trunc(dtype.getWidthInBits());
 
-  // We check if we can truncate the input to the target type without loss of
-  // accuracy.
-  if (!APInt::isSameValue(intVal, truncVal))
-    return false;
+  // If the target type is an integer, check if the integer value can be
+  // truncated without loss.
+  if (dtype.isInt()) {
+    if (dtype.getWidthInBits() > inputTy.getIntOrFloatBitWidth())
+      return true;
+    return APInt::isSameValue(intVal, intVal.trunc(dtype.getWidthInBits()));
+  }
 
   // We now check if we can roundtrip the conversion to floating point and back.
 
   // First, convert the input to floating point for the given dtype floating
   // point semantics.
-  llvm::APFloat floatVal(getFloatSemantics(dtype));
-  floatVal.convertFromAPInt(truncVal, false,
-                            llvm::APFloat::rmNearestTiesToEven);
+  auto floatVal = llvm::APFloat(getFloatSemantics(dtype));
+  floatVal.convertFromAPInt(intVal, false, llvm::APFloat::rmNearestTiesToEven);
 
   // Then, convert the floating point value to an integer value.
-  llvm::APSInt convertedVal(truncVal);
+  llvm::APSInt convertedVal(intVal);
   bool isExact = false;
   floatVal.convertToInteger(convertedVal, llvm::APFloat::rmTowardZero,
                             &isExact);
 
   // We then check if the converted value is the same value as the one we
   // started with.
-  return isExact && APInt::isSameValue(convertedVal, truncVal);
+  return isExact && APInt::isSameValue(convertedVal, intVal);
 }
 
-void ConstantOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), "cst");
+/// Check whether an attribute can be materialized by a constant of the given
+/// result type.
+static LogicalResult
+canMaterializeConstant(TypedAttr attr, Type type,
+                       function_ref<InFlightDiagnostic(StringRef)> emitError) {
+  if (type.isa<ScalarType>()) {
+    auto checkDType = [&](DTypeConstantAttr dtype) -> LogicalResult {
+      if (isCastableFrom(attr, dtype))
+        return mlir::success();
+      return emitError("expected the type of the constant input value (")
+             << attr.getType()
+             << ") to be compatible with the dtype of the return value ('"
+             << dtype.getDType().getAsString() << "').";
+    };
+    return checkMetaCastedTypes(emitError, type, attr.getType(), checkDType);
+  }
+
+  auto elements = attr.dyn_cast<DenseElementsAttr>();
+  if (!elements)
+    return emitError(
+        "expected vector constant to be a dense elements attribute");
+  auto checkDType = [&](DTypeConstantAttr dtype) -> LogicalResult {
+    for (Attribute element : elements.getValues<Attribute>()) {
+      if (!isCastableFrom(element, dtype))
+        return emitError("cannot cast from vector element to ")
+               << dtype.getDType().getAsString() << ": " << element;
+    }
+    return mlir::success();
+  };
+  return checkMetaCastedTypes(emitError, type, attr.getType(), checkDType);
 }
 
 LogicalResult ConstantOp::verify() {
-  auto valueType = getValue().dyn_cast<TypedAttr>().getType();
-  // The value type should be a scalar type.
-  if (!isBuildableWith(getValue(), valueType))
-    return emitError(
-        "constant has to be either an integer, float or index type");
-
-  // The return type should castable from the input type or can be
-  // parameterized.
-  auto resultDType = getType().cast<ScalarType>().getDType();
-
-  if (auto resultConstantDType = resultDType.dyn_cast<DTypeConstantAttr>()) {
-    if (!isCastableFrom(getValue(), resultConstantDType))
-      return emitOpError()
-             << "expected the type of the constant input value (" << valueType
-             << ") to be compatible with the dtype of the return value ('"
-             << resultConstantDType.getDType().getAsString() << "').";
-    return success();
-  } else if (resultDType.isa<ParamDeclRefAttr>()) {
-    return success();
-  }
-
-  llvm::report_fatal_error("unhandled output type");
+  return canMaterializeConstant(getValue(), getType(), [this](StringRef msg) {
+    return emitOpError(msg);
+  });
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
-  return type.isa<IntegerType, FloatType, IndexType>();
+  return succeeded(canMaterializeConstant(value, type, [](StringRef msg) {
+    InFlightDiagnostic diag;
+    diag.abandon();
+    return diag;
+  }));
 }
 
 OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {

@@ -47,7 +47,7 @@ def ConstantOp : POPOp<"constant", [
     ```
   }];
   let arguments = (ins AnyAttr:$value);
-  let results = (outs ScalarType:$result);
+  let results = (outs ScalarOrSIMD:$result);
 
   let extraClassDeclaration = [{
     /// Whether the constant op can be constructed with a particular value and
