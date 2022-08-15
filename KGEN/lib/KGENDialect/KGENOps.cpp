@@ -82,7 +82,7 @@ static ParseResult parseParameterBindings(OpAsmParser &p,
                 parseColonTypeOrIndex(p, type) || p.parseEqual() ||
                 parseParamValue(p, value, type))
               return failure();
-            elts.push_back(ParamBindAttr::get(name, type, value));
+            elts.push_back(ParamBindAttr::get(name, value));
             return success();
           }))
     return failure();
@@ -246,7 +246,7 @@ static ParseResult parseParamBinds(AsmParser &p,
     TypedAttr value;
     if (p.parseEqual() || parseParamValue(p, value, type))
       return failure();
-    attr = ParamBindAttr::get(name, type, value);
+    attr = ParamBindAttr::get(name, value);
     return success();
   };
   return parseParamList<ParamBindAttr>(p, paramBinds, parseElement);

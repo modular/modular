@@ -561,8 +561,7 @@ Attribute
 ParamBindAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                            ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.empty());
-  return ParamBindAttr::get(replAttrs[0].cast<StringAttr>(), getType(),
-                            replAttrs[1]);
+  return ParamBindAttr::get(replAttrs[0].cast<StringAttr>(), replAttrs[1]);
 }
 
 //===----------------------------------------------------------------------===//

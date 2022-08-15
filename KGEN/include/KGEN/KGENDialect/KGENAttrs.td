@@ -117,25 +117,25 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Bind a value to a parameter declaration.";
-  let parameters = (ins
-    "StringAttr":$name,
-    DefaultValuedParameter<"Type", "IndexType::get($_ctxt)">:$type,
-    "TypedAttr":$value
-  );
+  let parameters = (ins "StringAttr":$name, "TypedAttr":$value);
 
-  let assemblyFormat =
-    "custom<ParamName>($name) (`:` $type^)? `=` $value";
+  let assemblyFormat = "custom<ParamName>($name) `=` $value";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type,
-                                        "TypedAttr":$value), [{
-      return get(name.getContext(), name, type, value);
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "TypedAttr":$value),
+    [{
+      return get(name.getContext(), name, value);
     }]>,
-    AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type,
-                                        "TypedAttr":$value), [{
-      return get(StringAttr::get(type.getContext(), name), type, value);
+    AttrBuilderWithInferredContext<(ins "StringRef":$name, "TypedAttr":$value),
+    [{
+      return get(StringAttr::get(value.getContext(), name), value);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    // Return the type of the value being bound.
+    Type getType() { return getValue().getType(); }
+  }];
 }
 
 /// An array of ParamBindAttr's.
