@@ -65,37 +65,34 @@ LogicalResult BufferAddressOp::inferReturnTypes(
 // BufferCastOp
 //===----------------------------------------------------------------------===//
 
-/// Verifies that casting the input buffer to the result buffer is OK.
-/// Allows casting to occur if
-/// inpDtype == ? || resDtype == ? || inpDtype == resDtype
-/// and
-/// inpSize == ? || resSize == ? || inpSize == resSize
+/// Verifies that casting the input buffer to the result buffer is okay.
+/// Casting is allowed so long as there isn't a statically known problem.
 LogicalResult BufferCastOp::verify() {
   BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
-  BufferType resultBufTy = getResult().getType().cast<BufferType>();
+  BufferType resultBufTy = getType();
 
   Attribute inputDtype = inputBufTy.getDType();
   Attribute resultDtype = resultBufTy.getDType();
 
-  if (inputDtype != resultDtype)
-    if (inputDtype && resultDtype)
-      // A null dtype indicates a buffer with unknown dtype.
-      // TODO: Print the string version of the dtypes instead of a number.
-      return emitOpError()
-             << "expected the dtype of the input buffer (" << inputDtype
-             << ") to the same as to the dtype you are casting to ("
-             << resultDtype << "), or one of them to be unknown.";
+  // We allow buffer<param> to be cast to buffer<42> because the parameter may
+  // be resolved to 42 during elaboration.  Be careful about ?'s which are
+  // represented as null (but which are compatible with everything).
+  if (inputDtype != resultDtype &&
+      inputDtype.isa_and_nonnull<DTypeConstantAttr>() &&
+      resultDtype.isa_and_nonnull<DTypeConstantAttr>()) {
+    // TODO: Print these attributes prettier.
+    return emitError() << "input buffer dtype '" << inputDtype
+                       << "' disagrees with result dtype '" << resultDtype
+                       << "'";
+  }
 
   Attribute inputSize = inputBufTy.getSize();
   Attribute resultSize = resultBufTy.getSize();
-
-  if (inputSize != resultSize)
-    if (inputSize && resultSize)
-      // A null size indicates a buffer with unknown size.
-      return emitOpError()
-             << "expected the size of the input buffer (" << inputSize
-             << ") to be equal to the size you are casting it to ("
-             << resultSize << "), or one of them to be unknown.";
+  if (inputSize != resultSize && inputSize.isa_and_nonnull<IntegerAttr>() &&
+      resultSize.isa_and_nonnull<IntegerAttr>())
+    // TODO: Print these attributes prettier.
+    return emitError() << "input buffer size '" << inputSize
+                       << "' disagrees with result size '" << resultSize << "'";
   return success();
 }
 

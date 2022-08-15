@@ -39,22 +39,34 @@ kgen.generator @meta_buffer_address<dt: dtype, size>(
   kgen.return %0, %1, %2 : !meta.pointer<dt>, !meta.pointer<?>, !meta.pointer<f32>
 }
 
-// CHECK-LABEL: kgen.kernel @meta_buffer_cast(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
-kgen.kernel @meta_buffer_cast(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
+// CHECK-LABEL: kgen.generator @meta_buffer_cast<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
+kgen.generator @meta_buffer_cast<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
   // CHECK: %0 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
   %0 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
-  // CHECK: %1 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
+  // CHECK: = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
   %1 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
-  // CHECK: %2 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  // CHECK: = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
   %2 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  // CHECK: %3 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
+  // CHECK: = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
   %3 = meta.buffer.cast %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
-  // CHECK: %4 = meta.buffer.cast %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
+  // CHECK: = meta.buffer.cast %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
   %4 = meta.buffer.cast %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
-  // CHECK: %5 = meta.buffer.cast %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
+  // CHECK: = meta.buffer.cast %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
   %5 = meta.buffer.cast %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
-  // CHECK: %6 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
+  // CHECK: = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
   %6 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
+
+
+  // Casts between different unknown parameters are ok.
+  // CHECK: = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
+  %7 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
+
+  // CHECK: = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
+  %8 = meta.buffer.cast %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
+
+  // CHECK:  = meta.buffer.cast %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
+  %9 = meta.buffer.cast %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
+
   // CHECK: kgen.return %0 : !meta.buffer<42, f32>
   kgen.return %0 : !meta.buffer<42, f32>
 }
