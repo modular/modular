@@ -49,7 +49,8 @@ ErrorOrSuccess ExecutableKernel::verifyKernelSignature(
     if (kernelType.getNumParams() != 0 ||
         kernelType.getReturnType() !=
             mlir::Float32Type::get(kernelType.getContext()))
-      return Error("kernel signature does not match the IR signature.");
+      return Error(
+          "command-line specified signature does not match the IR signature.");
     return M::success();
   }
 

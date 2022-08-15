@@ -17,5 +17,7 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-kgen
   TOOLS
+  llvm-objdump
+  kgen
   kgen-opt
   kgen-execute)

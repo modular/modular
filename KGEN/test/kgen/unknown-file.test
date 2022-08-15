@@ -1,0 +1,4 @@
+// RUN: not kgen %s 2>&1 | FileCheck %s
+
+// CHECK: could not sniff the input file format
+foo bar
