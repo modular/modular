@@ -109,7 +109,8 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    ParamDeclArrayAttr paramDeclsAttr;
+    bool hadParamDecls = false;
+    ArrayRef<ParamDeclAttr> paramDecls;
     SmallVector<ParamDeclRefAttr> paramUses;
 
     // Scan all the attributes and types to look for uses of parameters.  We let
@@ -118,19 +119,32 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       // For normal attributes, we scan the attribute tree looking or parameter
       // uses and reject unexpected parameter definitions.
       if (namedAttr.getName().strref() != "paramDecls") {
+        // Ignore the resultParamDecls on the top level operation, they are not
+        // in scope here.
+        if (bodyOp == topLevelOp &&
+            namedAttr.getName().strref() == "resultParamDecls")
+          continue;
+
         collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
                                      bodyOp->getLoc());
         continue;
       }
 
+      // Note that we have parameter declarations, even if they are empty.
+      hadParamDecls = true;
+
       // We handle the `paramDecls` attribute specially, remember it for below.
-      paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
+      auto paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
       if (!paramDeclsAttr) {
         bodyOp->emitError("paramDecls attribute should be an array ")
             << namedAttr.getValue();
         hadError = true;
         return;
       }
+      // Get any parameters being declared by this operation.  Note that the
+      // top level operation is allowed to define result parameters that are
+      // visible outside of its scope (not in its body).  We don't
+      paramDecls = paramDeclsAttr.getValue();
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -151,14 +165,11 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     }
 
     // If this operation had any parameter uses or decls, remember them.
-    if (!paramUses.empty() || paramDeclsAttr)
+    if (!paramUses.empty() || hadParamDecls)
       parameters.usersAndDeclarers.push_back({bodyOp, std::move(paramUses)});
 
     // Ok, check parameter declarations if present.
-    if (!paramDeclsAttr)
-      return;
-
-    for (Attribute attr : paramDeclsAttr) {
+    for (Attribute attr : paramDecls) {
       // All the members of this array must be ParamDeclAttr's.
       auto param = attr.dyn_cast<ParamDeclAttr>();
       if (!param) {

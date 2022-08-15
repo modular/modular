@@ -25,7 +25,7 @@ def KernelOp
   let summary = "Concrete kernel definition";
 
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls);
+                       ParamDeclArrayAttr:$resultParamDecls);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -42,12 +42,6 @@ def KernelOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-
-    /// Return an array of `ParamDeclAttr`s the result parameters.  kgen.kernel
-    /// implementations never have input parameters.
-    ArrayRef<ParamDeclAttr> getOutputParameters() {
-      return getParamDecls();
-    }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -77,14 +71,11 @@ def GeneratorOp
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Kernel generator definition";
 
-  /// input and result parameters are stored in a single flat array named
-  /// `paramDecls` and the `numInputParameters` field indicates which are input
-  /// and which are result parameters.  If the `implements` attribute is present
-  /// then this generator is an implementation of the specified
-  /// generator.interface.
+  /// If the `implements` attribute is present then this generator is an
+  /// implementation of the specified generator.interface.
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       I32Attr:$numInputParameters,
+                       ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
                        StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
@@ -130,7 +121,7 @@ def GeneratorInterfaceOp
   /// and which are result parameters.
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       I32Attr:$numInputParameters,
+                       ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
                        StrArrayAttr:$constraintMessages);
 

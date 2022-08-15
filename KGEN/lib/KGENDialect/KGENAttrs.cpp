@@ -1239,16 +1239,15 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 KGEN::getDeclParameterInfo(Operation *decl) {
   assert(classifyDecl(decl).has_value() && "unknown declaration");
-  ArrayRef<ParamDeclAttr> declParams = getParamDecls(decl);
-  size_t numInputParams = 0;
+  ArrayRef<ParamDeclAttr> declParams;
+  ArrayRef<ParamDeclAttr> resultParams;
   // Kernels never have input parameters, but they can have output parameters.
   if (!isa<KernelOp>(decl))
-    numInputParams = decl->getAttrOfType<IntegerAttr>("numInputParameters")
-                         .getValue()
-                         .getZExtValue();
-  assert(numInputParams <= declParams.size());
-  return std::make_pair(declParams.take_front(numInputParams),
-                        declParams.drop_front(numInputParams));
+    declParams = getParamDecls(decl);
+  if (auto resultAttr =
+          decl->getAttrOfType<ParamDeclArrayAttr>("resultParamDecls"))
+    resultParams = resultAttr.getValue();
+  return std::make_pair(declParams, resultParams);
 }
 
 SmallVector<std::pair<Attribute, StringAttr>>

@@ -334,40 +334,43 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
-    result.addAttribute("paramDecls",
+    // All kinds have result parameters.
+    result.addAttribute("resultParamDecls",
                         ParamDeclArrayAttr::get(parser.getContext(), {}));
+    // Generators and interfaces are allowed to have input parameters.
     if (opKind != GeneratorOrKernelKind::kernel)
-      result.addAttribute("numInputParameters",
-                          parser.getBuilder().getI32IntegerAttr(0));
+      result.addAttribute("paramDecls",
+                          ParamDeclArrayAttr::get(parser.getContext(), {}));
     return success();
   }
 
-  SmallVector<ParamDeclAttr> paramDecls;
+  SmallVector<ParamDeclAttr> paramDecls, resultParamDecls;
 
   // Parse the input list.
   auto loc = parser.getCurrentLocation();
   if (parseParamDecls(parser, paramDecls))
     return failure();
 
-  unsigned numInputs = paramDecls.size();
-
   // Check to see if we have results and parse them if so.
   if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamDecls(parser, paramDecls))
+    if (parseParamDecls(parser, resultParamDecls))
       return failure();
   }
 
-  result.addAttribute("paramDecls",
-                      ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
+  result.addAttribute(
+      "resultParamDecls",
+      ParamDeclArrayAttr::get(parser.getContext(), resultParamDecls));
 
-  // kgen.kernel's are not allowed to have input parameter lists.
-  if (opKind == GeneratorOrKernelKind::kernel && numInputs)
+  // Generators and interfaces are allowed to have input parameters.
+  if (opKind != GeneratorOrKernelKind::kernel) {
+    result.addAttribute(
+        "paramDecls", ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
+  } else if (!paramDecls.empty()) {
+    // kgen.kernel's are not allowed to have input parameter lists.
     return parser.emitError(
         loc, "kgen.kernel only allows output parameters, not input parameters");
+  }
 
-  if (opKind != GeneratorOrKernelKind::kernel)
-    result.addAttribute("numInputParameters",
-                        parser.getBuilder().getI32IntegerAttr(numInputs));
   return parser.parseGreater();
 }
 
@@ -693,9 +696,8 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult GeneratorOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(
-          getParamDecls().drop_front(getNumInputParameters()),
-          getResultTypes())))
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+                                              getResultTypes())))
     return failure();
 
   // See if the parameter definitions and uses within the generator are
@@ -735,7 +737,7 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
-  result.addAttribute("paramDecls",
+  result.addAttribute("resultParamDecls",
                       builder.getAttr<ParamDeclArrayAttr>(outputParams));
   result.addRegion();
 }
@@ -777,7 +779,7 @@ ParseResult KernelOp::parse(OpAsmParser &parser, OperationState &result) {
 void KernelOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult KernelOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(getOutputParameters(),
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
 
