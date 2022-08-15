@@ -1,5 +1,50 @@
 // RUN: kgen-opt -split-input-file -convert-pop-to-llvm %s | FileCheck %s
 
+// Test trivial vector conversions to LLVM.
+
+!simd = !meta.simd<4, f32>
+kgen.kernel @trivial_conversions(%a: !simd, %b: !simd, %c: !simd, %d: !meta.simd<4, bool>) {
+  // CHECK: llvm.intr.fabs
+  %0 = pop.abs %a : !simd
+  // CHECK: llvm.fneg
+  %1 = pop.neg %a : !simd
+  // CHECK: llvm.fadd
+  %2 = pop.add %a, %b : !simd
+  // CHECK: llvm.fsub
+  %3 = pop.sub %a, %b : !simd
+  // CHECK: llvm.fmul
+  %4 = pop.mul %a, %b : !simd
+  // CHECK: llvm.intr.copysign
+  %5 = pop.copysign %a, %b : !simd
+  // CHECK: llvm.intr.fma
+  %6 = pop.fma %a, %b, %c : !simd
+  // CHECK: llvm.select
+  %7 = pop.select %d, %a, %b : !simd
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: int_abs_simd
+kgen.kernel @int_abs_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+  // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false
+  %0 = pop.abs %arg0 : !meta.simd<4, si32>
+  // CHECK: "llvm.intr.abs"(%{{.*}}, %[[FALSE]])
+  kgen.return %0 : !meta.simd<4, si32>
+}
+
+// -----
+
+// CHECK-LABEL: @int_neg_simd
+kgen.kernel @int_neg_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+  // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(dense<0> : vector<4xi32>)
+  %0 = pop.neg %arg0 : !meta.simd<4, si32>
+  // CHECK: llvm.sub %[[ZERO]], %{{.*}}
+  kgen.return %0 : !meta.simd<4, si32>
+}
+
+// -----
+
 // CHECK-LABEL: @constant_simd
 kgen.kernel @constant_simd() -> !meta.simd<2, si32> {
   // CHECK: llvm.mlir.constant(dense<0>
