@@ -22,7 +22,7 @@ static LogicalResult lowerHLGenerator(KGEN::HLGeneratorOp gen) {
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getFunctionTypeAttr(), gen.getParamDeclsAttr(),
-      gen.getNumInputParametersAttr(), gen.getConstraintsAttr(),
+      gen.getResultParamDeclsAttr(), gen.getConstraintsAttr(),
       gen.getConstraintMessages(), gen.getImplementsAttr());
 
   // Move over the body unmodified.

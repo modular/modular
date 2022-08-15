@@ -22,14 +22,11 @@ def HLGeneratorOp
                            DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "High level kernel generator definition";
 
-  /// input and result parameters are stored in a single flat array named
-  /// `paramDecls` and the `numInputParameters` field indicates which are input
-  /// and which are result parameters.  If the `implements` attribute is present
-  /// then this generator is an implementation of the specified
-  /// generator.interface.
+  /// If the `implements` attribute is present then this generator is an
+  /// implementation of the specified generator.interface.
   let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       I32Attr:$numInputParameters,
+                       ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
                        StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);

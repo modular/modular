@@ -40,9 +40,8 @@ ParseResult HLGeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
 LogicalResult HLGeneratorOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(
-          getParamDecls().drop_front(getNumInputParameters()),
-          getResultTypes())))
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+                                              getResultTypes())))
     return failure();
 
   // See if the parameter definitions and uses within the generator are
