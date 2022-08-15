@@ -645,11 +645,19 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
     });
   };
 
-  if (verifyMatchingLists(originatorDecl.getArgumentTypes(),
-                          interfaceDecl.getArgumentTypes(), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          "argument", "type") ||
-      verifyMatchingLists(originatorDecl.getResultTypes(),
+  // If this is a hlkgen.generator, don't check argument types.
+  bool isNotHLK = isa<GeneratorOp, GeneratorInterfaceOp>(originatorDecl);
+  if (isNotHLK) {
+    // TODO: As hlkgen lowering takes over more and more of this logic, it will
+    // stop using it.
+    if (verifyMatchingLists(originatorDecl.getArgumentTypes(),
+                            interfaceDecl.getArgumentTypes(), originatorName,
+                            originatorDecl, interfaceName, interfaceDecl,
+                            "argument", "type"))
+      return failure();
+  }
+
+  if (verifyMatchingLists(originatorDecl.getResultTypes(),
                           interfaceDecl.getResultTypes(), originatorName,
                           originatorDecl, interfaceName, interfaceDecl,
                           "result", "type") ||
