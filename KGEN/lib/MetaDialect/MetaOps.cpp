@@ -118,36 +118,12 @@ OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
 
 static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
                                       Type standardTy) {
-  auto emitError = [&] {
+  auto emitError = [op](StringRef msg) {
     return op->emitOpError()
            << "does not support casting " << op->getOperand(0).getType()
-           << " to " << op->getResult(0).getType();
+           << " to " << op->getResult(0).getType() << ": " << msg;
   };
-
-  if (auto scalarTy = metaTy.dyn_cast<ScalarType>()) {
-    // Check that the data types match.
-    if (auto dtype = scalarTy.getDType().dyn_cast<DTypeConstantAttr>();
-        dtype && !dtype.isCompatibleWith(standardTy))
-      return emitError();
-    return success();
-  }
-
-  // Check that the standard type is a rank 1 vector with matching dimensions.
-  auto simdTy = metaTy.cast<SIMDType>();
-  auto vectorTy = standardTy.dyn_cast<VectorType>();
-  if (!vectorTy)
-    return emitError();
-  if (vectorTy.getNumScalableDims() != 0)
-    return emitError() << ": vector type should not be scalable";
-  if (vectorTy.getRank() != 1)
-    return emitError() << ": expected a rank 1 vector";
-  if (auto size = simdTy.getSize().dyn_cast<IntegerAttr>();
-      size.getInt() != vectorTy.getShape().front())
-    return emitError() << ": dimensions do not match";
-  if (auto dtype = simdTy.getDType().dyn_cast<DTypeConstantAttr>();
-      dtype && !dtype.isCompatibleWith(vectorTy.getElementType()))
-    return emitError() << ": element types do not match";
-  return success();
+  return checkMetaCastedTypes(emitError, metaTy, standardTy);
 }
 
 //===----------------------------------------------------------------------===//
