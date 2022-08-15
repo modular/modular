@@ -32,4 +32,3 @@ kgen.kernel @run_exp() -> f32 {
 // OBJ-DAG: F {{.*}}exp_f32
 // OBJ-DAG: F {{.*}}exp_intrinsic_f32,type=f32
 // OBJ-DAG: *UND* {{.*}}expf
-

@@ -1,6 +1,6 @@
 // RUN: kgen %s -verify-diagnostics
 
-// expected-error@-3 {{could not sense the contents of this file, cannot proceed}}
+// expected-error@+1 {{operation has unknown dialect, this is not supported}}
 "foo.funclikeop"() ({
   "a.b"() : () -> ()
 }) : () -> ()
