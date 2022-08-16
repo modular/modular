@@ -32,8 +32,7 @@ struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype =
-        op.getType().template cast<DataTypeInterface>().resolveDType();
+    DType dtype = op.getType().template cast<DTypeInterface>().resolveDType();
     Type type = this->getTypeConverter()->convertType(op.getType());
     if (dtype.isInt())
       rewriter.replaceOpWithNewOp<IntOp>(op, type, adaptor.getOperands(),
@@ -57,7 +56,7 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DataTypeInterface>().resolveDType();
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
@@ -85,7 +84,7 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
   LogicalResult
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DataTypeInterface>().resolveDType();
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       auto zero = rewriter.create<LLVM::ConstantOp>(
@@ -111,7 +110,7 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DataTypeInterface>().resolveDType();
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
     if (dtype.isInt()) {
       auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
                                               adaptor.getB());

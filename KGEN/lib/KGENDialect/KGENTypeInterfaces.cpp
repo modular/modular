@@ -11,7 +11,7 @@
 using namespace M;
 using namespace KGEN;
 
-DType DataTypeInterface::resolveDType() {
+DType DTypeInterface::resolveDType() {
   if (auto constant = getDType().dyn_cast_or_null<DTypeConstantAttr>())
     return constant.getDType();
   return DType::invalid;

@@ -24,7 +24,7 @@ class ParameterizedMetaType<string name, string typeMnemonic,
                             list<Trait> traits = []>
     : MetaType<name, typeMnemonic, [
         DeclareTypeInterfaceMethods<SubElementTypeInterface>,
-        DataTypeInterface
+        DTypeInterface
       ] # traits>;
 
 //===----------------------------------------------------------------------===//
