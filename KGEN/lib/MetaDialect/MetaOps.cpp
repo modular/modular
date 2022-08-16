@@ -118,6 +118,14 @@ OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
 
 static LogicalResult checkCastedTypes(Operation *op, Type metaTy,
                                       Type standardTy) {
+  // Ignore types that are opaquely casted.
+  if (metaTy.isa<PointerType, BufferType>())
+    return success();
+
+  if (!metaTy.isa<ScalarType, SIMDType>())
+    return op->emitOpError("expected a scalar or SIMD type");
+
+  // Check the builtin types.
   auto emitError = [op](StringRef msg) {
     return op->emitOpError()
            << "does not support casting " << op->getOperand(0).getType()

@@ -130,8 +130,26 @@ public:
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
-using ConvertKGENParamValue =
-    mlir::OneToOneConvertToLLVMPattern<ParamValueOp, LLVM::ConstantOp>;
+class ConvertKGENParamValue
+    : public mlir::ConvertOpToLLVMPattern<ParamValueOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (auto dtype = op.getValue().dyn_cast<DTypeConstantAttr>()) {
+      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+          op, rewriter.getI8Type(), dtype.getDType().getValue());
+    } else if (auto attr = op.getValue().dyn_cast<TypedAttr>()) {
+      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+          op, getTypeConverter()->convertType(attr.getType()), attr);
+    } else {
+      return rewriter.notifyMatchFailure(op, "unknown parameter value type");
+    }
+    return success();
+  }
+};
 
 //===----------------------------------------------------------------------===//
 // ConvertMetaCastToBuiltin
@@ -172,7 +190,8 @@ public:
 // ConvertMetaBufferSize
 //===----------------------------------------------------------------------===//
 
-/// Convert the size of a buffer to an `llvm.extractvalue`.
+/// Convert the size of a buffer with a known size to a constant. Otherwise,
+/// generate an `llvm.extractvalue`.
 class ConvertMetaBufferSize
     : public mlir::ConvertOpToLLVMPattern<BufferSizeOp> {
 public:
@@ -181,8 +200,41 @@ public:
   LogicalResult
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
-                                                      0);
+    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
+    if (Optional<int64_t> size = buffer.getSize()) {
+      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+          op, getTypeConverter()->getIndexType(), *size);
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
+                                                        *buffer.getSizeIndex());
+    }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertMetaBufferDType
+//===----------------------------------------------------------------------===//
+
+/// Convert the data type of a buffer with a known data type to a constant with
+/// the value of the `DType::getValue` enum. Otherwise, generate an
+/// `llvm.extractvalue`.
+class ConvertMetaBufferDType
+    : public mlir::ConvertOpToLLVMPattern<BufferDTypeOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferDTypeOp op, BufferDTypeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
+    if (Optional<DType> dtype = buffer.getDType()) {
+      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+          op, rewriter.getI8IntegerAttr(dtype->getValue()));
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+          op, adaptor.getValue(), *buffer.getDTypeIndex());
+    }
     return success();
   }
 };
@@ -191,8 +243,9 @@ public:
 // ConvertMetaBufferAddress
 //===----------------------------------------------------------------------===//
 
-/// The address of a dynamic buffer is the starting pointer. The address of a
-/// fixed-size buffer is the address of the first element.
+/// Convert the address of a buffer with known size and element type to itself,
+/// since those buffers are converted to raw pointers. Otherwise, generate an
+/// `llvm.extractvalue` of the pointer field.
 class ConvertMetaBufferAddress
     : public mlir::ConvertOpToLLVMPattern<BufferAddressOp> {
 public:
@@ -201,8 +254,13 @@ public:
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
-                                                      1);
+    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
+    if (buffer.isBarePtr()) {
+      rewriter.replaceOp(op, adaptor.getValue());
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
+                                                        *buffer.getPtrIndex());
+    }
     return success();
   }
 };
@@ -211,6 +269,9 @@ public:
 // ConvertMetaBufferCast
 //===----------------------------------------------------------------------===//
 
+/// A buffer cast can cast between a buffer with an unspecified size or element
+/// type to one with specified size or element type. When that happens, generate
+/// the necessary struct unpacking and repacking and bitcasts.
 class ConvertMetaBufferCast
     : public mlir::ConvertOpToLLVMPattern<BufferCastOp> {
 public:
@@ -219,27 +280,61 @@ public:
   LogicalResult
   matchAndRewrite(BufferCastOp op, BufferCastOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getBuffer());
-    return success();
-  }
-};
+    auto in = op.getBuffer().getType().cast<BufferType>();
+    auto out = op.getResult().getType().cast<BufferType>();
 
-//===----------------------------------------------------------------------===//
-// ConvertUnrealizedConversionCast
-//===----------------------------------------------------------------------===//
+    // If the input and output types are the same, fold away the op.
+    if (in == out) {
+      rewriter.replaceOp(op, adaptor.getBuffer());
+      return success();
+    }
 
-/// TODO: This shouldn't be needed and should be covered by something like
-/// `meta.cast_to/from_builtin`, but "builtin" now includes LLVM.
-class ConvertUnrealizedConversionCast
-    : public mlir::ConvertOpToLLVMPattern<mlir::UnrealizedConversionCastOp> {
-public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    // Convert the pointer.
+    Type inPtrType = getMLIRTypeForDType(op.getContext(), in.resolveDType())
+                         .value_or(rewriter.getI8Type());
+    Value inPtr = rewriter.create<BufferAddressOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(inPtrType), op.getBuffer());
+    DType outDType = out.resolveDType();
+    Type outPtrType = getMLIRTypeForDType(op.getContext(), outDType)
+                          .value_or(rewriter.getI8Type());
+    Value outPtr = inPtr;
+    if (outPtrType != inPtrType) {
+      outPtr = rewriter.create<LLVM::BitcastOp>(
+          op.getLoc(), LLVM::LLVMPointerType::get(outPtrType), inPtr);
+    }
 
-  LogicalResult
-  matchAndRewrite(mlir::UnrealizedConversionCastOp op,
-                  mlir::UnrealizedConversionCastOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, op.getInputs());
+    // Bare pointer output.
+    BufferDescriptor buffer(out);
+    if (buffer.isBarePtr()) {
+      rewriter.replaceOp(op, outPtr);
+      return success();
+    }
+
+    // Create the new struct.
+    Value outBuffer = rewriter.create<LLVM::UndefOp>(
+        op.getLoc(), getTypeConverter()->convertType(out));
+
+    // If the output buffer has an unknown size, insert it as the first field.
+    if (Optional<int64_t> index = buffer.getSizeIndex()) {
+      Value inSize = rewriter.create<BufferSizeOp>(
+          op.getLoc(), getTypeConverter()->getIndexType(), op.getBuffer());
+      outBuffer = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), outBuffer,
+                                                       inSize, *index);
+    }
+
+    // If the output buffer has an unknown data type, insert it. Its position if
+    // offset by 1 if the size is unknown.
+    if (Optional<int64_t> index = buffer.getDTypeIndex()) {
+      Value inDType = rewriter.create<BufferDTypeOp>(
+          op.getLoc(), rewriter.getI8Type(), op.getBuffer());
+      outBuffer = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), outBuffer,
+                                                       inDType, *index);
+    }
+
+    // Insert the casted pointer. Its position is offset by 1 for each unknown
+    // size or dtype.
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(op, outBuffer, outPtr,
+                                                     *buffer.getPtrIndex());
     return success();
   }
 };
@@ -254,9 +349,9 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamValue,
                   ConvertKGENReturn, ConvertMetaBufferAddress,
-                  ConvertMetaBufferCast, ConvertMetaBufferSize,
-                  ConvertMetaCastFromBuiltin, ConvertMetaCastToBuiltin,
-                  ConvertUnrealizedConversionCast>(typeConverter);
+                  ConvertMetaBufferCast, ConvertMetaBufferDType,
+                  ConvertMetaBufferSize, ConvertMetaCastFromBuiltin,
+                  ConvertMetaCastToBuiltin>(typeConverter);
 }
 
 //===----------------------------------------------------------------------===//
