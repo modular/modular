@@ -248,6 +248,13 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 
   let extraClassDeclaration = [{
+    size_t getNumOperands() {
+      return getOperands().size();
+    }
+    TypedAttr getOperand(size_t i) {
+      return getOperands()[i];
+    }
+
     /// Return (ne x, y) which is the same as (not x, y).
     static TypedAttr getNE(TypedAttr lhs, TypedAttr rhs) {
       return getNot(get(POC::EQ, lhs, rhs));

@@ -408,10 +408,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
 
     // If this is a inverted boolean sugar, handle it.
     if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
-        expr.getOperands().size() == 2 &&
-        expr.getOperands()[1].isa<IntegerAttr>()) {
+        expr.getNumOperands() == 2 && expr.getOperand(1).isa<IntegerAttr>()) {
       if (auto invertedExpr =
-              expr.getOperands()[0].dyn_cast<ParamOperatorAttr>()) {
+              expr.getOperand(0).dyn_cast<ParamOperatorAttr>()) {
         if (invertedExpr.getOpcode() == POC::EQ) {
           expr = invertedExpr;
           return printExpr("ne", expr.getOperands());
@@ -427,7 +426,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
       }
 
       // Otherwise, print as a generic "not".
-      return printExpr("not", expr.getOperands()[0]);
+      return printExpr("not", expr.getOperand(0));
     }
 
     return printExpr(stringifyEnum(expr.getOpcode()), expr.getOperands());
