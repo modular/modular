@@ -33,9 +33,9 @@ using namespace M;
 using namespace mlir;
 
 namespace {
-class CLOptions : public CommonCLOptions {
+class CLOptions : public KGENCLOptions {
 public:
-  using CommonCLOptions::CommonCLOptions;
+  using KGENCLOptions::KGENCLOptions;
 
   cl::opt<bool> ignoreFailures{
       "ignore-failure",
@@ -44,40 +44,6 @@ public:
 
   cl::list<std::string> searchPaths{
       "I", cl::desc("Path to use to search for included files.")};
-
-  cl::list<ExecutableKernel, bool, ExecutableKernelParser> exec{
-      "execute", cl::desc("Specifies the kernels to execute. Defaults to an "
-                          "empty list, which will not execute any kernel.")};
-
-  cl::list<EmittableKernel, bool, EmittableKernelParser> emit{
-      "emit",
-      cl::desc("Specifies the kernels to emit. Defaults to an empty list, "
-               "which will emit a file for each kernel in the input file.")};
-
-  Optional<EmittableKernel>
-  shouldEmitKernel(mlir::LLVM::LLVMFuncOp kernel) const {
-    if (emit.empty())
-      return EmittableKernel{kernel.getName().str(),
-                             (kernel.getName() + ".o").str()};
-
-    auto found = llvm::find_if(emit, [&](const EmittableKernel &ek) {
-      return ek.name == kernel.getName();
-    });
-    if (found == emit.end())
-      return None;
-    return *found;
-  }
-
-  Optional<ExecutableKernel>
-  shouldExecuteKernel(mlir::LLVM::LLVMFuncOp kernel) const {
-    auto found = llvm::find_if(exec, [&](const ExecutableKernel &ek) {
-      return ek.name == kernel.getName();
-    });
-
-    if (found == exec.end())
-      return None;
-    return *found;
-  }
 };
 } // namespace
 
@@ -329,48 +295,59 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return mlir::success();
   };
 
+  // Helper to execute a kernel.
+  auto execKernel = [&](mlir::LLVM::LLVMFuncOp theKernel,
+                        const CommandLineKernel &clKernel) -> LogicalResult {
+    if (auto err =
+            clKernel.verifyKernelSignature(theKernel.getFunctionType())) {
+      mlir::emitError(theKernel.getLoc(), err.getError());
+      return mlir::failure(!clOptions.ignoreFailures);
+    }
+
+    if (auto err = clKernel.executeAndPrint(engine)) {
+      mlir::emitError(theKernel.getLoc(), err.getError());
+      return mlir::failure(!clOptions.ignoreFailures);
+    }
+    return mlir::success();
+  };
+
   // Run the pass manager. This will ensure that the module has been fully
   // lowered to LLVM.
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
 
-  // Loop over the kernels and (1) add them to the engine and (2) maybe emit the
-  // kernel as an object file.
+  llvm::DenseSet<StringRef> foundKernels;
+  // Loop over the kernels and (1) add them to the engine and (2) maybe emit
+  // the kernel as an object file or maybe execute it.
   for (auto k : theModule->getOps<mlir::LLVM::LLVMFuncOp>()) {
+    foundKernels.insert(k.getName());
     // First add the kernel to the engine.
     if (ErrorOrSuccess err = engine.add(k))
       return mlir::emitError(k.getLoc(), err.getError());
 
-    // If we were asked to emit this kernel, do so.
-    if (Optional<EmittableKernel> emittableKernel =
-            clOptions.shouldEmitKernel(k))
-      if (failed(emitObjectForKernel(k, emittableKernel->outputFilename)))
-        return failure();
+    // If we were asked to handle this kernel, do so.
+    if (Optional<CommandLineKernel> clKernel =
+            clOptions.shouldHandleKernel(k)) {
+      switch (clOptions.cmd) {
+      case Command::kEmit:
+        if (failed(emitObjectForKernel(k, clKernel->outputFilename)))
+          return failure();
+        break;
+      case Command::kExecute: {
+        if (failed(execKernel(k, *clKernel)))
+          return failure();
+      }
+      }
+    }
   }
 
-  // Now, if we were asked to execute any kernels, do so.
-  for (const auto &exec : clOptions.exec) {
-    auto k = theModule->lookupSymbol<mlir::LLVM::LLVMFuncOp>(exec.name);
-    if (!k) {
-      mlir::emitError(theModule->getLoc())
-          << "could not find kernel '@" << exec.name << "'";
-      if (!clOptions.ignoreFailures)
-        return failure();
-      continue;
-    }
-
-    if (auto err = exec.verifyKernelSignature(k.getFunctionType())) {
-      mlir::emitError(k.getLoc(), err.getError());
-      if (!clOptions.ignoreFailures)
-        return failure();
-      continue;
-    }
-
-    if (auto err = exec.executeAndPrint(engine)) {
-      mlir::emitError(k.getLoc(), err.getError());
-      if (!clOptions.ignoreFailures)
-        return failure();
-    }
+  // Validate that the user didn't pass in any kernels we don't have. This would
+  // be super confusing if the user simply gets no response for something that
+  // isn't defined, so put up an actual error.
+  for (const auto &k : clOptions.kernels) {
+    if (foundKernels.find(k.name) == foundKernels.end())
+      return mlir::emitError(theModule->getLoc(),
+                             "could not find kernel '@" + k.name + "'");
   }
 
   return mlir::success();

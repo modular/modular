@@ -10,39 +10,22 @@
 using namespace M;
 
 //===--------------------------------------------------------------------===//
-// ExecutableKernelParser implementation
+// CommandLineKernel implementation
 //===--------------------------------------------------------------------===//
 
-bool ExecutableKernelParser::parse(llvm::cl::Option &o, StringRef argName,
-                                   StringRef argValue, ExecutableKernel &val) {
-  std::tie(val.name, val.signature) = argValue.split(':');
-
-  return false;
-}
-
-//===--------------------------------------------------------------------===//
-// EmittableKernelParser implementation
-//===--------------------------------------------------------------------===//
-
-bool EmittableKernelParser::parse(llvm::cl::Option &o, StringRef argName,
-                                  StringRef argValue, EmittableKernel &val) {
-  std::tie(val.name, val.outputFilename) = argValue.split(':');
-
-  return false;
-}
-
-//===--------------------------------------------------------------------===//
-// ExecutableKernel implementation
-//===--------------------------------------------------------------------===//
-
-ErrorOrSuccess ExecutableKernel::verifyKernelSignature(
+ErrorOrSuccess CommandLineKernel::verifyKernelSignature(
     mlir::LLVM::LLVMFunctionType kernelType) const {
   if (signature == "f32()") {
     if (kernelType.getNumParams() != 0 ||
         kernelType.getReturnType() !=
-            mlir::Float32Type::get(kernelType.getContext()))
-      return Error(
-          "command-line specified signature does not match the IR signature.");
+            mlir::Float32Type::get(kernelType.getContext())) {
+      std::string ktype;
+      llvm::raw_string_ostream os(ktype);
+      os << kernelType;
+      return Error("command-line specified signature does not match the IR "
+                   "signature, expected " +
+                   ktype + ", but got " + signature);
+    }
     return M::success();
   }
 
@@ -50,7 +33,7 @@ ErrorOrSuccess ExecutableKernel::verifyKernelSignature(
 }
 
 ErrorOrSuccess
-ExecutableKernel::executeAndPrint(KGEN::ExecutionEngine &engine) const {
+CommandLineKernel::executeAndPrint(KGEN::ExecutionEngine &engine) const {
   if (signature == "f32()") {
     auto outOr = engine.invoke<float>(name);
     if (outOr.isError())
@@ -61,4 +44,20 @@ ExecutableKernel::executeAndPrint(KGEN::ExecutionEngine &engine) const {
   }
 
   return Error("unhandled signature: " + signature);
+}
+
+bool CommandLineKernelParser::parse(llvm::cl::Option &o, StringRef argName,
+                                    StringRef argValue,
+                                    CommandLineKernel &val) {
+  SmallVector<StringRef, 3> parts;
+  argValue.split(parts, ':');
+
+  if (parts.size() != 3)
+    return o.error("'" + argValue +
+                   "' invalid: must provide name:signature:filename");
+
+  val.name = parts[0];
+  val.signature = parts[1];
+  val.outputFilename = parts[2];
+  return false;
 }

@@ -15,23 +15,6 @@
 using namespace M;
 using namespace mlir;
 
-class CLOptions : public CommonCLOptions {
-public:
-  using CommonCLOptions::CommonCLOptions;
-
-  cl::list<ExecutableKernel, bool, ExecutableKernelParser> kernelsToExecute{
-      "run-kernel",
-      cl::desc(
-          "Names and signatures of kernels to execute. Each name must match "
-          "the kernel's unmangled symbol name exactly, and the signature must "
-          "as well.")};
-
-  cl::list<EmittableKernel, bool, EmittableKernelParser> kernelsToEmit{
-      "emit-kernel",
-      cl::desc("Names and output filenames of kernels to emit. Each name must "
-               "match the kernel's unmangled symbol name exactly.")};
-};
-
 //===--------------------------------------------------------------------===//
 // ProcessBuffer
 //===--------------------------------------------------------------------===//
@@ -43,7 +26,7 @@ namespace {
 /// more readable.
 struct ProcessBuffer {
   KGEN::ExecutionEngine &execEngine;
-  CLOptions &clOptions;
+  KGENCLOptions &clOptions;
 
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
     DialectRegistry registry;
@@ -66,45 +49,45 @@ struct ProcessBuffer {
       return kernel;
     };
 
-    for (const auto &k : clOptions.kernelsToEmit) {
+    for (const auto &k : clOptions.kernels) {
       auto kernelOr = lookupKernel(k.name);
       if (kernelOr.isError())
         return failure(clOptions.reportError(kernelOr.getError()));
+
+      mlir::LLVM::LLVMFuncOp kernel = *kernelOr;
 
       // Compile the kernel.
-      if (auto err = execEngine.add(*kernelOr))
-        return failure(clOptions.reportError(err.getError()));
-
-      // Get the compiled object.
-      auto objOr = execEngine.getObject(*kernelOr);
-      if (objOr.isError())
-        return failure(clOptions.reportError(objOr.getError()));
-
-      // Open the output file and write the compiled object to it.
-      std::string errMsg;
-      auto outFile = mlir::openOutputFile(k.outputFilename, &errMsg);
-      if (!outFile)
-        return failure(clOptions.reportError(errMsg));
-
-      outFile->os().write((*objOr)->getBufferStart(),
-                          (*objOr)->getBufferSize());
-      outFile->keep();
-    }
-
-    for (const auto &k : clOptions.kernelsToExecute) {
-      auto kernelOr = lookupKernel(k.name);
-      if (kernelOr.isError())
-        return failure(clOptions.reportError(kernelOr.getError()));
-
-      auto kernel = *kernelOr;
-      if (auto err = k.verifyKernelSignature(kernel.getFunctionType()))
-        return failure(clOptions.reportError(err.getError()));
-
       if (auto err = execEngine.add(kernel))
         return failure(clOptions.reportError(err.getError()));
 
-      if (auto err = k.executeAndPrint(execEngine))
-        return failure(clOptions.reportError(err.getError()));
+      // And now we diverge.
+      switch (clOptions.cmd) {
+      case Command::kExecute: {
+        if (auto err = k.verifyKernelSignature(kernel.getFunctionType()))
+          return failure(clOptions.reportError(err.getError()));
+
+        if (auto err = k.executeAndPrint(execEngine))
+          return failure(clOptions.reportError(err.getError()));
+        break;
+      }
+      case Command::kEmit: {
+        // Get the compiled object.
+        auto objOr = execEngine.getObject(*kernelOr);
+        if (objOr.isError())
+          return failure(clOptions.reportError(objOr.getError()));
+
+        // Open the output file and write the compiled object to it.
+        std::string errMsg;
+        auto outFile = mlir::openOutputFile(k.outputFilename, &errMsg);
+        if (!outFile)
+          return failure(clOptions.reportError(errMsg));
+
+        outFile->os().write((*objOr)->getBufferStart(),
+                            (*objOr)->getBufferSize());
+        outFile->keep();
+        break;
+      }
+      }
     }
 
     return mlir::success();
@@ -117,7 +100,7 @@ struct ProcessBuffer {
 //===--------------------------------------------------------------------===//
 
 int main(int argc, char **argv) {
-  CLOptions clOptions(argc, argv);
+  KGENCLOptions clOptions(argc, argv);
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
