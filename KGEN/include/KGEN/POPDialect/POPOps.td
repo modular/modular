@@ -297,11 +297,15 @@ def SelectOp : POPOp<"select",
     meta.simd types (`then` and `else`) and chooses one value based on a
     condition, without IR-level branching.
 
+    When the condition is a SIMD vector, then the result is a SIMD vector
+    where the value of each element is chosen (aka blended) from the `trueVal`
+    and `falseVal` operands based on the condition's element value.
+
     Example:
 
     ```mlir
     %a = pop.select %cond, %trueVal, %falseVal : !meta.scalar<type>
-    %b = pop.select %cond, %trueVal, %falseVal : !meta.scalar<size, type>
+    %b = pop.select %cond, %trueVal, %falseVal : !meta.simd<size, type>
     ```
   }];
 
