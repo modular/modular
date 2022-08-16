@@ -30,6 +30,53 @@ add_subdirectory(include/KGEN)
 add_subdirectory(lib)
 add_subdirectory(tools)
 
+# This function takes a target name, a single source file, and a list of
+# kernels to be processed. It cannot execute kernels, but it will generate
+# the CMake targets needed to depend on them from C/C++ code. Usage:
+#
+#  add_kgen_kernel(exp
+#    SOURCE exp.mlir
+#    KERNELS run_exp
+#    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIRECTORY}/test/kernels")
+#
+# This function also respects `include_directories` directives whenever possible.
+function(add_kgen_kernel target)
+  cmake_parse_arguments(KGEN "" "SOURCE" "KERNELS;INCLUDE_DIRS" ${ARGN})
+
+  # Get the include_directories directives that are scoped to this file and below.
+  get_property(KGEN_INCLUDES DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+
+  set(KGEN_INCLUDE_FLAGS "")
+  foreach (dir ${KGEN_INCLUDES})
+    list(APPEND KGEN_INCLUDE_FLAGS "-I=${dir}")
+  endforeach ()
+
+  foreach (dir ${KGEN_INCLUDE_DIRS})
+    list(APPEND KGEN_INCLUDE_FLAGS "-I=${dir}")
+  endforeach ()
+
+  # Add a target that controls emission of all of the kernels.
+  set(OBJS "")
+  foreach (kernel ${KGEN_KERNELS})
+    set(object_file_name "${kernel}${CMAKE_CXX_OUTPUT_EXTENSION}")
+    add_custom_command(
+      OUTPUT ${object_file_name}
+      OUTPUT "${kernel}.h"
+      COMMAND $<TARGET_FILE:kgen> -emit -kernel=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      DEPENDS kgen
+    )
+
+    add_library(${target}_${kernel} ${object_file_name})
+    set_target_properties(${target}_${kernel} PROPERTIES LINKER_LANGUAGE C)
+
+    list(APPEND OBJS ${object_file_name})
+  endforeach ()
+
+  add_library(${target} ${OBJS})
+  set_target_properties(${target} PROPERTIES LINKER_LANGUAGE C)
+endfunction()
+
 # Testing infrastructure
 #add_subdirectory(unittests)
 add_subdirectory(test)
