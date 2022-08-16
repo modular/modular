@@ -1260,10 +1260,10 @@ KGEN::getDeclConstraints(Operation *decl) {
   // Must be a generator or interface.
   assert(classifyDecl(decl).has_value() && "unknown declaration");
   auto exprs = decl->getAttrOfType<ArrayAttr>("constraints").getValue();
-  auto messages =
-      decl->getAttrOfType<ArrayAttr>("constraintMessages").getValue();
+  auto messages = decl->getAttrOfType<ArrayAttr>("constraintMessages")
+                      .getAsRange<StringAttr>();
   for (auto [expr, message] : llvm::zip(exprs, messages))
-    result.push_back({expr, message.cast<StringAttr>()});
+    result.push_back({expr, message});
   return result;
 }
 

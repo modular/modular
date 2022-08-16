@@ -187,34 +187,31 @@ def ParamDeclRefAttr : ExprAttr<"ParamDeclRef", "param.decl.ref"> {
 /// Parameter Expression Opcodes.
 let cppNamespace = "M::KGEN" in {
 
-/// Fully associative variadic expressions.
-def POC_Add : I32EnumAttrCase<"Add", 0, "add">;
-def POC_Mul : I32EnumAttrCase<"Mul", 1, "mul">;
-def POC_And : I32EnumAttrCase<"And", 2, "and">;
-def POC_Or  : I32EnumAttrCase<"Or",  3, "or">;
-def POC_Xor : I32EnumAttrCase<"Xor", 4, "xor">;
-
-// Binary expressions.
-def POC_Shl : I32EnumAttrCase<"Shl", 5, "shl">;
-def POC_Shr : I32EnumAttrCase<"Shr", 6, "shr">;
-def POC_Div : I32EnumAttrCase<"Div", 7, "div">;
-def POC_Mod : I32EnumAttrCase<"Mod", 8, "mod">;
-
-// Compares.
-def POC_EQ : I32EnumAttrCase<"EQ", 9, "eq">;
-def POC_LT : I32EnumAttrCase<"LT", 10, "lt">;
-def POC_LE : I32EnumAttrCase<"LE", 11, "le">;
-
-// Complex variadic operations.
-def POC_IN : I32EnumAttrCase<"IN", 12, "in">;
-
-// TODO: Can add compares, string concat, etc as needed.
-
 /// This defines the Parameter Operator Code enum attribute.
-def POCAttr  : I32EnumAttr<"POC", "Parameter Operator Code",
-                           [POC_Add, POC_Mul, POC_And, POC_Or, POC_Xor,
-                            POC_Shl, POC_Shr, POC_Div, POC_Mod,
-                            POC_EQ, POC_LT, POC_LE, POC_IN]>;
+def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
+  /// Fully associative variadic expressions.
+  I32EnumAttrCase<"Add", 0, "add">,
+  I32EnumAttrCase<"Mul", 1, "mul">,
+  I32EnumAttrCase<"And", 2, "and">,
+  I32EnumAttrCase<"Or",  3, "or">,
+  I32EnumAttrCase<"Xor", 4, "xor">,
+
+  // Binary expressions.
+  I32EnumAttrCase<"Shl", 5, "shl">,
+  I32EnumAttrCase<"Shr", 6, "shr">,
+  I32EnumAttrCase<"Div", 7, "div">,
+  I32EnumAttrCase<"Mod", 8, "mod">,
+
+  // Compares.
+  I32EnumAttrCase<"EQ", 9, "eq">,
+  I32EnumAttrCase<"LT", 10, "lt">,
+  I32EnumAttrCase<"LE", 11, "le">,
+
+  // Complex variadic operations.
+  I32EnumAttrCase<"IN", 12, "in">,
+
+  // TODO: Can add string concat, etc as needed.
+]>;
 }
 
 def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
