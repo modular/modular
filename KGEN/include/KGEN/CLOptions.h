@@ -29,7 +29,13 @@ enum class Command {
 
 /// This struct gives us a standard way to specify a kernel, its signature, and
 /// its output filename on the command line. It also gives us a way to execute
-/// this kernel.
+/// this kernel. The format of this option is:
+///
+///  kernel ::= name `:` (signature)? `:` output-filename
+///  signature ::= return-type`(`arg-types...`)`
+///
+/// where name and output-filename are just strings. Providing the signature is
+/// optional.
 struct CommandLineKernel {
   std::string name;
   std::string signature;
