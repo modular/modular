@@ -10,10 +10,10 @@
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
-// DataTypeInterface
+// DTypeInterface
 //===----------------------------------------------------------------------===//
 
-def DataTypeInterface : TypeInterface<"DataTypeInterface"> {
+def DTypeInterface : TypeInterface<"DTypeInterface"> {
   let description = [{
     This interface is used to interact with types that contain a parametric
     data type parameter.
@@ -39,11 +39,9 @@ def DataTypeInterface : TypeInterface<"DataTypeInterface"> {
 //===----------------------------------------------------------------------===//
 
 /// A type whose data type conforms to a constraint.
-class ConstrainedDType<string constraint> : Type<
-    And<[DataTypeInterface.predicate,
-        CPred<!subst("$_self",
-                     "$_self.cast<DataTypeInterface>().resolveDType()",
-                     constraint)>]>>;
+class ConstrainedDType<string constraint> : ConfinedType<DTypeInterface,
+    [CPred<!subst("$_self", "$_self.cast<DTypeInterface>().resolveDType()",
+                 constraint)>]>;
 
 /// A type whose data type is boolean.
 def BoolDType : ConstrainedDType<"$_self.isBool()">;
