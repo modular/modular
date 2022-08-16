@@ -70,30 +70,6 @@ struct FormatKernel : public llvm::FormatAdapter<mlir::LLVM::LLVMFuncOp> {
       : llvm::FormatAdapter<mlir::LLVM::LLVMFuncOp>(std::move(func)) {}
 
   void format(llvm::raw_ostream &os, StringRef style) override {
-    // Construct a map of all structs defined in the kernel signature.
-    llvm::MapVector<mlir::LLVM::LLVMStructType, std::string> structs;
-    for (auto &t : llvm::enumerate(Item.getFunctionType().getParams())) {
-      if (auto st = t.value().dyn_cast<mlir::LLVM::LLVMStructType>()) {
-        std::string structName =
-            st.isIdentified()
-                ? st.getName().str()
-                : ("__kgen_" + Item.getName() + "_struct_" + Twine(t.index()))
-                      .str();
-        structs.insert({st, std::move(structName)});
-      }
-    }
-
-    // Insert the return type in the struct list if it's a struct.
-    if (auto st = Item.getFunctionType()
-                      .getReturnType()
-                      .dyn_cast<mlir::LLVM::LLVMStructType>()) {
-      std::string structName =
-          st.isIdentified()
-              ? st.getName().str()
-              : ("__kgen_" + Item.getName() + "_struct_result").str();
-      structs.insert({st, std::move(structName)});
-    }
-
     // Helper to print a function as a C type.
     std::function<void(Type)> printTypeAsC = [&](Type t) {
       // If it's a pointer, recurse and add a '*'.
@@ -139,16 +115,6 @@ struct FormatKernel : public llvm::FormatAdapter<mlir::LLVM::LLVMFuncOp> {
       else
         llvm::report_fatal_error("unknown type");
     };
-
-    // First, iterate the structs and print them out.
-    for (const auto &t : structs) {
-      os << "struct " << t.second << " {\n";
-      for (const auto &member : llvm::enumerate(t.first.getBody())) {
-        printTypeAsC(member.value());
-        os << " __kgen_member_" << member.index() << ";\n";
-      }
-      os << "};\n\n";
-    }
 
     // Now print the function declaration.
     os << "extern ";
