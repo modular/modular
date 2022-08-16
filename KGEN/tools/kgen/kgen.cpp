@@ -80,6 +80,24 @@ public:
 };
 } // namespace
 
+/// This function creates the elaborator pass and forwards the correct
+/// arguments. If it fails, it fails with a fatal error.
+static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
+  auto elaborate = KGEN::createElaborateKernelsPass();
+  std::string includes;
+  llvm::raw_string_ostream includeStr(includes);
+  for (StringRef include : clOptions.searchPaths)
+    includeStr << "search-path=" << include << " ";
+
+  if (failed(elaborate->initializeOptions(includeStr.str())))
+    llvm::report_fatal_error("unable to initialize elaborator options");
+
+  return elaborate;
+}
+
+/// Runs the tool pipeline on the file fragment passed in. The pipeline does not
+/// output to the specific ostream provided to it, rather it opens and writes to
+/// files that are designated by the kernels it operates on.
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      const CLOptions &clOptions) {
   DialectRegistry registry;
@@ -107,18 +125,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   pm.addPass(KGEN::createLowerHLKGENPass());
   pm.addPass(mlir::createCanonicalizerPass());
 
-  auto elaborate = KGEN::createElaborateKernelsPass();
-  std::string includes;
-  llvm::raw_string_ostream includeStr(includes);
-  for (StringRef include : clOptions.searchPaths)
-    includeStr << "search-path=" << include << " ";
-
-  if (failed(elaborate->initializeOptions(includeStr.str())))
-    return failure(
-        clOptions.reportError("unable to initialize elaborator options"));
-
   // Elaborate and canonicalize.
-  pm.addPass(std::move(elaborate));
+  pm.addPass(createElaboratorPass(clOptions));
   pm.addPass(mlir::createCanonicalizerPass());
 
   // Convert to LLVM.
