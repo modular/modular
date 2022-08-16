@@ -24,7 +24,8 @@ def KernelOp
                       SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "Concrete kernel definition";
 
-  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$resultParamDecls);
   let regions = (region SizedRegion<1>:$body);
 
@@ -73,7 +74,8 @@ def GeneratorOp
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
-  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
@@ -119,7 +121,8 @@ def GeneratorInterfaceOp
   /// input and result parameters are stored in a single flat array named
   /// `paramDecls` and the `numInputParameters` field indicates which are input
   /// and which are result parameters.
-  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,

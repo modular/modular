@@ -24,7 +24,8 @@ def HLGeneratorOp
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
-  let arguments = (ins TypeAttrOf<FunctionType>:$function_type,
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
