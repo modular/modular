@@ -1,5 +1,9 @@
 // RUN: kgen %s -execute="run_exp:f32()" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
-// RUN: kgen %s -emit="exp_f32:%t_expf32.o" -I %S/../kernels | llvm-objdump %t_expf32.o -t | FileCheck %s -check-prefix=OBJ
+// RUN: kgen %s -emit="exp_f32:%t_expf32.o" -I %S/../kernels
+// COM: Check the object file.
+// RUN: llvm-objdump %t_expf32.o -t | FileCheck %s -check-prefix=OBJ
+// COM: Check the header file.
+// RUN: cat %t_expf32.h | FileCheck %s -check-prefix=HDR
 
 kgen.include "library.mlir"
 
@@ -32,3 +36,5 @@ kgen.kernel @run_exp() -> f32 {
 // OBJ-DAG: F {{.*}}exp_f32
 // OBJ-DAG: F {{.*}}exp_intrinsic_f32,type=f32
 // OBJ-DAG: *UND* {{.*}}expf
+
+// HDR-LABEL: extern float exp_f32(float);
