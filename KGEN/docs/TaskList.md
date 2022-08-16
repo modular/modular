@@ -78,18 +78,6 @@ One nice thing about our approach is that generators are allowed to fail for a v
 
 Actual generators for memset and erf: this means we need to implement math, and the “decision tree found by search” that memset needs, dynamic switches over dtype, things like scf.for, buffer partitioning operations, etc.
 
-## ❌ Design/define/implement various UX and tooling things
-
-❌[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor KernelElaborator)
-
-❌[Issue #2126](https://github.com/modularml/modular/issues/2126) (Build über-tool)
-
-❌[Issue #2127](https://github.com/modularml/modular/issues/2127) (Add kernel + test to Faux)
-
-We will want a live and responsive system which is playful, eventually (long term) building up to interactive notebook-like experiences for building and evaluating kernels etc.  In the short term, we need to deal with more pedestrian things like “what happens if there are no expansions for a kernel that work”, “how do I reason about / chart the performance of all the possible expansions” etc.
-
-Similarly, while everything can start out as one massive .mlir file, that will eventually stop being ok.
-
 
 ## ❌ Dynamic programming to cache things
 
@@ -317,3 +305,15 @@ We need to wire up full support for invoking LLVM to generate a .o file or JIT i
 From there we’ll need the ability to collect realistic data to compare against, e.g. the mmperf [matmul dimension list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt) or the memset/memcpy “histogram of lengths” dataset.
 
 At this point the system will be able to decide which is a GOOD generated kernel.
+
+## ✅ Design/define/implement various UX and tooling things
+
+✅[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor KernelElaborator)
+
+✅[Issue #2126](https://github.com/modularml/modular/issues/2126) (Build über-tool)
+
+✅[Issue #2127](https://github.com/modularml/modular/issues/2127) (Add kernel + test to Faux)
+
+We will want a live and responsive system which is playful, eventually (long term) building up to interactive notebook-like experiences for building and evaluating kernels etc.  In the short term, we need to deal with more pedestrian things like “what happens if there are no expansions for a kernel that work”, “how do I reason about / chart the performance of all the possible expansions” etc.
+
+Similarly, while everything can start out as one massive .mlir file, that will eventually stop being ok.
