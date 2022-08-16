@@ -52,6 +52,13 @@ bool CommandLineKernelParser::parse(llvm::cl::Option &o, StringRef argName,
   SmallVector<StringRef, 3> parts;
   argValue.split(parts, ':');
 
+  // If only 2 are provided, parse it into name + output filename.
+  if (parts.size() == 2) {
+    val.name = parts[0];
+    val.outputFilename = parts[1];
+    return false;
+  }
+
   if (parts.size() != 3)
     return o.error("'" + argValue +
                    "' invalid: must provide name:signature:filename");
