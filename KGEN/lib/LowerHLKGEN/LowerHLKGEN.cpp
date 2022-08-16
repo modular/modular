@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENPasses.h"
 
+#include "ConstraintSet.h"
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -35,9 +36,7 @@ public:
   GeneratorOp generatorOp;
   GeneratorInterfaceOp interfaceOp;
 
-  // TODO: Build this into a better constraint set.
-  SmallVector<Attribute> constraints;
-  SmallVector<Attribute> constraintMessages;
+  ConstraintSet constraints;
 
   /// This string is set to information indicating context about in inferred
   /// constraint or diagnostic, e.g. that this is happening with argument #0.
@@ -47,31 +46,27 @@ public:
 
 SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp,
                                    GeneratorInterfaceOp interfaceOp)
-    : generatorOp(generatorOp), interfaceOp(interfaceOp) {
-  // TODO: Build this into a better constraint set.
-  SmallVector<Attribute> constraints;
-  SmallVector<Attribute> constraintMessages;
-  llvm::append_range(constraints, generatorOp.getConstraintsAttr().getValue());
-  llvm::append_range(constraintMessages,
-                     generatorOp.getConstraintMessages().getValue());
+    : generatorOp(generatorOp), interfaceOp(interfaceOp),
+      constraints(generatorOp.getContext()) {
+  // TODO: Generate error messages on contradictions.
+  constraints.addConstraints(generatorOp.getConstraintsAttr(),
+                             generatorOp.getConstraintMessages());
 }
 
 /// When we're done checking the conformance, this method reinstalls the
 /// (possibly updated) constraint information on the generator declaration.
 void SignatureUnifier::reinstallConstraints() {
-  Builder b(generatorOp);
-  generatorOp.setConstraintsAttr(b.getArrayAttr(constraints));
-  generatorOp.setConstraintMessagesAttr(b.getArrayAttr(constraintMessages));
+  auto [values, messages] = constraints.getConstraintsSpec();
+  generatorOp.setConstraintsAttr(values);
+  generatorOp.setConstraintMessagesAttr(messages);
 }
 
 ParseResult SignatureUnifier::addEqualityConstraintFn(ParamDeclRefAttr param,
                                                       TypedAttr value) {
-  assert(param.getType() == value.getType());
-  constraints.push_back(ParamOperatorAttr::get(POC::EQ, param, value));
-
-  auto message =
-      inferenceContext + " specifies '" + param.getName().str() + "' parameter";
-  constraintMessages.push_back(StringAttr::get(value.getContext(), message));
+  constraints.addParamEqualityConstraint(
+      param, value,
+      Twine(inferenceContext) + " specifies '" + param.getName().str() +
+          "' parameter");
 
   // TODO: when we have a better constraint set, detect contradictions on the
   // fly and report them.
