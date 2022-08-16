@@ -242,6 +242,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   if (needsForwardingThunk) {
     ImplicitLocOpBuilder b(gen.getLoc(), gen);
     auto thunk = b.create<GeneratorOp>(
+        b.getStringAttr(gen.getSymName() + "_thunk"),
         // Take the signature from the interface.
         itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
         itf.getResultParamDeclsAttr(),
@@ -251,9 +252,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // The thunk implements the interface, not the original generator.
     gen.removeImplementsAttr();
 
-    // Give the thunk a provisional name then have symbol table unique it.
-    SymbolTable::setSymbolName(thunk,
-                               b.getStringAttr(gen.getName() + "_thunk"));
+    // Have the symbol table unique our provisional name.
     symbolTable.insert(thunk);
 
     // Set up the body.
@@ -325,9 +324,10 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
 
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getFunctionTypeAttr(), gen.getParamDeclsAttr(),
-      gen.getResultParamDeclsAttr(), gen.getConstraintsAttr(),
-      gen.getConstraintMessages(), gen.getImplementsAttr());
+      gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
+      gen.getParamDeclsAttr(), gen.getResultParamDeclsAttr(),
+      gen.getConstraintsAttr(), gen.getConstraintMessages(),
+      gen.getImplementsAttr());
 
   // Move over the body unmodified.
   auto *bodyBlock = gen.getBodyBlock();
@@ -335,10 +335,8 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
   result.getBody().push_back(bodyBlock);
 
   // Move over the symbol.
-  auto symbolName = SymbolTable::getSymbolName(gen);
   symbolTable.erase(gen);
   gen = HLGeneratorOp(); // The line above also erases 'gen'.
-  SymbolTable::setSymbolName(result, symbolName);
   symbolTable.insert(result);
 
   // If the generator implemented an interface, infer additional constraints and
