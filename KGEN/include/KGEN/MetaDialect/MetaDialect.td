@@ -30,6 +30,11 @@ def MetaDialect : Dialect {
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let useDefaultTypePrinterParser = 1;
   let hasConstantMaterializer = 1;
+
+  let extraClassDeclaration = [{
+    /// Register meta dialect types.
+    void registerTypes();
+  }];
 }
 
 #endif // KGEN_METADIALECT_METADIALECT_TD
