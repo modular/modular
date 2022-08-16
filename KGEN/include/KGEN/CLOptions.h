@@ -9,7 +9,7 @@
 
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/CommandLine.h"
 
 namespace M {
@@ -17,15 +17,23 @@ namespace KGEN {
 class ExecutionEngine;
 }
 
+/// What to do with a given kernel.
+enum class Command {
+  kEmit,
+  kExecute,
+};
+
 //===----------------------------------------------------------------------===//
-// ExecutableKernel
+// CommandLineKernel
 //===----------------------------------------------------------------------===//
 
-/// This struct provides a way to parse a kernel name and signature from the
-/// command line.
-struct ExecutableKernel {
+/// This struct gives us a standard way to specify a kernel, its signature, and
+/// its output filename on the command line. It also gives us a way to execute
+/// this kernel.
+struct CommandLineKernel {
   std::string name;
   std::string signature;
+  std::string outputFilename;
 
   /// Verify that the signature of this kernel passed in on the command line
   /// matches the signature of the kernel as it exists in the IR.
@@ -35,33 +43,39 @@ struct ExecutableKernel {
   ErrorOrSuccess executeAndPrint(KGEN::ExecutionEngine &engine) const;
 };
 
-/// Parse ExecutableKernel objects from the command line flags provided.
-class ExecutableKernelParser : public llvm::cl::parser<ExecutableKernel> {
+/// Provide a parser for the CommandLineKernel object.
+class CommandLineKernelParser : public llvm::cl::parser<CommandLineKernel> {
 public:
-  using llvm::cl::parser<ExecutableKernel>::parser;
+  using llvm::cl::parser<CommandLineKernel>::parser;
 
   bool parse(llvm::cl::Option &o, StringRef argName, StringRef argValue,
-             ExecutableKernel &val);
+             CommandLineKernel &val);
 };
 
-//===----------------------------------------------------------------------===//
-// EmittableKernel
-//===----------------------------------------------------------------------===//
-
-/// This struct provides a way to parse a kernel name and an output object file
-/// from the command line.
-struct EmittableKernel {
-  std::string name;
-  std::string outputFilename;
-};
-
-/// Parse EmittableKernel objects from the command line flags provided.
-class EmittableKernelParser : public llvm::cl::parser<EmittableKernel> {
+class KGENCLOptions : public CommonCLOptions {
 public:
-  using llvm::cl::parser<EmittableKernel>::parser;
+  using CommonCLOptions::CommonCLOptions;
 
-  bool parse(llvm::cl::Option &o, StringRef argName, StringRef argValue,
-             EmittableKernel &val);
+  cl::opt<Command> cmd{
+      cl::desc("The command to execute"),
+      cl::values(
+          clEnumValN(Command::kEmit, "emit", "Emit kernels as object files."),
+          clEnumValN(Command::kExecute, "execute", "Execute kernels.")),
+      llvm::cl::Required};
+
+  cl::list<CommandLineKernel, bool, CommandLineKernelParser> kernels{
+      "kernel", cl::desc("Specifies the kernels to handle. Defaults to an "
+                         "empty list, which will do nothing.")};
+
+  Optional<CommandLineKernel>
+  shouldHandleKernel(mlir::LLVM::LLVMFuncOp kernel) const {
+    auto found = llvm::find_if(kernels, [&](const CommandLineKernel &ek) {
+      return ek.name == kernel.getName();
+    });
+    if (found == kernels.end())
+      return None;
+    return *found;
+  }
 };
 } // namespace M
 

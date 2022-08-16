@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit="someKernel:%t.o"
+// RUN: kgen %s -emit -kernel="someKernel:f32(f32,index):%t.o"
 // RUN: cat %t.h | FileCheck %s
 
 kgen.kernel @someKernel(%arg1: f32, %arg2: index) -> f32 {

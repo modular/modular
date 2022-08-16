@@ -1,5 +1,5 @@
-// RUN: kgen %s -execute="run_exp:f32()" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
-// RUN: kgen %s -emit="exp_f32:%t_expf32.o" -I %S/../kernels
+// RUN: kgen %s -execute -kernel="run_exp:f32():%t_run_exp.o" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
+// RUN: kgen %s -emit -kernel="exp_f32:f32(f32):%t_expf32.o" -I %S/../kernels
 // COM: Check the object file.
 // RUN: llvm-objdump %t_expf32.o -t | FileCheck %s -check-prefix=OBJ
 // COM: Check the header file.

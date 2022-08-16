@@ -1,4 +1,4 @@
-// RUN: kgen-execute %s -run-kernel="exec_exp:f32()" -verify-diagnostics 2>&1 >/dev/null | FileCheck %s
+// RUN: kgen-execute %s -execute -kernel="exec_exp:f32():%t_exec_exp.o" -verify-diagnostics 2>&1 >/dev/null | FileCheck %s
 
 // expected-note@+1 {{callee declared here}}
 llvm.func external @"float_constant_f32,value=1,type=f32"() -> f32
@@ -25,10 +25,4 @@ llvm.func @exec_exp() -> f32 {
 }
 
 // CHECK: could not find local callee 'float_constant_f32,value=1,type=f32' in the current module.
-
-// RUN: not kgen-execute %s -run-kernel="exec_exp:f64()" 2>&1 >/dev/null | FileCheck -check-prefix=BADSIG %s
-// BADSIG: unhandled signature: f64()
-
-// RUN: not kgen-execute %s -run-kernel="does_not_exist:f32()" 2>&1 >/dev/null | FileCheck -check-prefix=BADKERN %s
-// BADKERN: could not find kernel 'does_not_exist'
 
