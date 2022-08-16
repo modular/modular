@@ -5,6 +5,7 @@
 #===-----------------------------------------------------------------------===##
 
 add_modular_conversion_library(LowerHLKGEN
+  ConstraintSet.cpp
   LowerHLKGEN.cpp
 
   DEPENDS
