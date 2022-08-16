@@ -80,27 +80,6 @@ public:
 };
 } // namespace
 
-/// This just checks that all operations have a known dialect. The default
-/// message emits a suggestion we don't want emitted in this case so produce a
-/// nice diagnostic.
-static LogicalResult
-allOpsHaveKnownDialect(llvm::iterator_range<Region::OpIterator> &&range) {
-  for (auto &op : range) {
-    Dialect *thisOpDialect = op.getName().getDialect();
-    // No dialect, so bail.
-    if (!thisOpDialect)
-      return mlir::emitError(
-          op.getLoc(), "operation has unknown dialect, this is not supported");
-
-    // Nested regions, we have to check ops within this op.
-    for (Region &region : op.getRegions())
-      if (failed(allOpsHaveKnownDialect(region.getOps())))
-        return failure();
-  }
-
-  return mlir::success();
-}
-
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      const CLOptions &clOptions) {
   DialectRegistry registry;
@@ -122,9 +101,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   OwningOpRef<ModuleOp> theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
-
-  if (failed(allOpsHaveKnownDialect(theModule->getOps())))
-    return failure();
 
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
