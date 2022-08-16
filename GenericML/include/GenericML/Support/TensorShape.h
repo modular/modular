@@ -234,6 +234,11 @@ public:
   /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { this->operator=(elts); }
   /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { this->operator=(elts); }
 
+  template <typename ElementType>
+  TensorShape(const std::initializer_list<ElementType> &elts) {
+    assign(elts.begin(), elts.end());
+  }
+
   // Allow converting from a range of integer type, with elements that can be
   // converted to ssize_t.
   template <typename IteratorType>
@@ -245,6 +250,7 @@ public:
     storage.assign(elements);
     return *this;
   }
+
   TensorShape &operator=(ArrayRef<uint64_t> elements) {
     // Pointer cast to avoid copying the elements.
     ArrayRef<ssize_t> castedElts((const ssize_t *)elements.data(),
@@ -255,6 +261,12 @@ public:
   /// Allow assigning from 32-bit and other element widths as well.
   template <typename ElementType>
   TensorShape &operator=(ArrayRef<ElementType> elements) {
+    assign(elements.begin(), elements.end());
+    return *this;
+  }
+
+  template <typename ElementType>
+  TensorShape &operator=(const std::initializer_list<ElementType> &elements) {
     assign(elements.begin(), elements.end());
     return *this;
   }
