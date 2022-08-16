@@ -137,6 +137,7 @@ public:
   constexpr uint8_t getValue() const { return value; }
 
   // Categorization.
+  constexpr bool isValid() const { return !isInvalid(); }
   constexpr bool isInvalid() const { return value == invalid; }
   bool isBool() const { return value == DType::kBool; }
   bool isInt() const { return (value & mIsInteger) != 0; }

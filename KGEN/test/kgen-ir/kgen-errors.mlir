@@ -324,14 +324,6 @@ kgen.kernel @mutually_recursive() {
 // -----
 
 kgen.kernel @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
-  // expected-error @+1 {{'meta.cast_to_builtin' op result #0 must be integer or floating-point or vector of any type values, but got '!meta.scalar<f32>'}}
-  %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to !meta.scalar<f32>
-  kgen.return
-}
-
-// -----
-
-kgen.kernel @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
   // expected-error @+1 {{'meta.cast_to_builtin' op does not support casting '!meta.scalar<f32>' to 'i8'}}
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to i8
   kgen.return
@@ -382,14 +374,6 @@ kgen.kernel @cast_simd_to_vector(%arg0: !meta.simd<4, f32>) {
 kgen.kernel @cast_simd_to_vector(%arg0: !meta.simd<4, f32>) {
   // expected-error @+1 {{element types do not match}}
   %0 = meta.cast_to_builtin %arg0 : !meta.simd<4, f32> to vector<4xf64>
-  kgen.return
-}
-
-// -----
-
-kgen.kernel @cast_from_meta_type(%arg0: !meta.scalar<f32>) {
-  // expected-error @+1 {{'meta.cast_from_builtin' op operand #0 must be integer or floating-point or vector of any type values, but got '!meta.scalar<f32>'}}
-  %0 = meta.cast_from_builtin %arg0: !meta.scalar<f32> to !meta.scalar<f32>
   kgen.return
 }
 

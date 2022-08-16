@@ -1199,7 +1199,6 @@ bool DTypeConstantAttr::isCompatibleWith(Type type) {
   case DType::tf32:
     return false;
   }
-  llvm::report_fatal_error("unhandled DType");
 }
 
 //===----------------------------------------------------------------------===//

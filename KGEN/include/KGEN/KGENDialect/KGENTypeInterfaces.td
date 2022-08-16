@@ -24,14 +24,18 @@ def DTypeInterface : TypeInterface<"DTypeInterface"> {
   let methods = [
     InterfaceMethod<
       /*desc=*/"Get the typed expression representing the data type.",
-      "TypedAttr", "getDType">
+      "mlir::TypedAttr", "getDType">,
+    InterfaceMethod<
+      /*desc=*/[{
+        Try to resolve the data type from the parameter. Returns
+        `DType::invalid` if the type could not be resolved.
+      }], "M::DType", "resolveDType", (ins), [{}], [{
+        if (auto constant =
+                $_type.getDType().template dyn_cast_or_null<DTypeConstantAttr>())
+          return constant.getDType();
+        return DType::invalid;
+      }]>
   ];
-
-  let extraSharedClassDeclaration = [{
-    /// Try to resolve the data type from the parameter. Returns
-    /// `DType::invalid` if the type could not be resolved.
-    DType resolveDType();
-  }];
 }
 
 //===----------------------------------------------------------------------===//

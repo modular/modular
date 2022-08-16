@@ -7,12 +7,10 @@
 #ifndef KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
 #define KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "Support/DType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
-
-namespace M {
-class DType;
-} // namespace M
 
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h.inc"
 
