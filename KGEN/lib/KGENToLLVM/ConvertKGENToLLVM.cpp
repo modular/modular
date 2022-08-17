@@ -130,13 +130,13 @@ public:
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENParamValue
-    : public mlir::ConvertOpToLLVMPattern<ParamValueOp> {
+class ConvertKGENParamConstant
+    : public mlir::ConvertOpToLLVMPattern<ParamConstantOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(ParamValueOp op, ParamValueOpAdaptor adaptor,
+  matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     if (auto dtype = op.getValue().dyn_cast<DTypeConstantAttr>()) {
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
@@ -347,7 +347,7 @@ public:
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamValue,
+  patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamConstant,
                   ConvertKGENReturn, ConvertMetaBufferAddress,
                   ConvertMetaBufferCast, ConvertMetaBufferDType,
                   ConvertMetaBufferSize, ConvertMetaCastFromBuiltin,

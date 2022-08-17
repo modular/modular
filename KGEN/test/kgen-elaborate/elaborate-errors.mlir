@@ -11,7 +11,7 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 // expected-error @+1 {{failed to generate any kernels}}
 kgen.kernel @local_verif_error() {
 
-  kgen.param.bind ty : dtype = <f32>
+  kgen.param.declare ty : dtype = <f32>
   %c1 = arith.constant 1.0 : f32
   %0 = meta.cast_from_builtin %c1: f32 to !meta.scalar<ty>
 

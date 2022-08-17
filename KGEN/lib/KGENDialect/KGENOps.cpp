@@ -21,19 +21,19 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// custom<ParamValueOpValue>
+// custom<ParamConstantOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamValueOpValue(OpAsmParser &p, TypedAttr &value,
-                                          Type &resultType) {
+static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
+                                             Type &resultType) {
   if (parseColonTypeOrIndex(p, resultType) || p.parseEqual() || p.parseLess() ||
       parseParamValue(p, value, resultType) || p.parseGreater())
     return failure();
   return success();
 }
 
-static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
-                                   Attribute value, Type type) {
+static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
+                                      Attribute value, Type type) {
   printColonTypeOrIndex(p, type);
   p << " = <";
   printParamValue(p, value);
@@ -41,16 +41,16 @@ static void printParamValueOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
-// custom<ParamBindOpValue>
+// custom<ParamDeclareOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamBindOpValue(OpAsmParser &p,
-                                         ParamDeclArrayAttr &paramDecls,
-                                         TypedAttr &value) {
+static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
+                                            ParamDeclArrayAttr &paramDecls,
+                                            TypedAttr &value) {
   std::string varname;
   Type valTy;
   if (p.parseKeywordOrString(&varname) ||
-      parseParamValueOpValue(p, value, valTy))
+      parseParamConstantOpValue(p, value, valTy))
     return failure();
 
   paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
@@ -58,12 +58,12 @@ static ParseResult parseParamBindOpValue(OpAsmParser &p,
   return success();
 }
 
-static void printParamBindOpValue(OpAsmPrinter &p, Operation *,
-                                  ParamDeclArrayAttr paramDecls,
-                                  TypedAttr value) {
+static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
+                                     ParamDeclArrayAttr paramDecls,
+                                     TypedAttr value) {
   ParamDeclAttr variable = paramDecls.front();
   printParamName(p, variable.getName().getValue());
-  printParamValueOpValue(p, nullptr, value, value.getType());
+  printParamConstantOpValue(p, nullptr, value, value.getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -119,18 +119,18 @@ static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamBindOp
+// ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-void ParamBindOp::build(OpBuilder &builder, OperationState &result,
-                        ParamDeclAttr decl, Attribute value) {
+void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
+                           ParamDeclAttr decl, Attribute value) {
   build(builder, result, /*no result types*/ TypeRange{},
         builder.getAttr<ParamDeclArrayAttr>(decl), value);
 }
 
-ParamDeclAttr ParamBindOp::getParamDecl() {
+ParamDeclAttr ParamDeclareOp::getParamDecl() {
   assert(getParamDecls().size() == 1 &&
-         "ParamBindOp only allows a single parameter decl.");
+         "ParamDeclareOp only allows a single parameter decl.");
   return (*getParamDecls().begin()).cast<ParamDeclAttr>();
 }
 
@@ -941,11 +941,11 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamValueOp
+// ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ParamValueOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.empty() && "kgen.param.value has no operands");
+OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.empty() && "kgen.param.constant has no operands");
   return getValueAttr();
 }
 

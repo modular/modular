@@ -5,8 +5,8 @@ kgen.kernel @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
                               %arg1: !meta.buffer<?, f32>,
                               %arg2: !meta.buffer<42, ?>)
   -> (index, index, !kgen.dtype, !kgen.dtype) {
-  // CHECK: %0 = kgen.param.value : dtype = <f32>
-  // CHECK: %1 = kgen.param.value = <42>
+  // CHECK: %0 = kgen.param.constant : dtype = <f32>
+  // CHECK: %1 = kgen.param.constant = <42>
 
   %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
   // CHECK: %2 = meta.buffer.size %arg1

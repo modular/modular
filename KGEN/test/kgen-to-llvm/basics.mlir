@@ -44,7 +44,7 @@ kgen.kernel @convert_meta_types(
 // CHECK: [[TRUNC:%[0-9]+]] = llvm.fptrunc [[CST]] : f64 to f32
 // CHECK: llvm.return [[TRUNC]] : f32
 kgen.kernel @"float_constant_f32,value=1.1283791670955126,type=f32"() -> !meta.scalar<f32> {
-  %0 = kgen.param.value : f64 = <1.1283791670955126>
+  %0 = kgen.param.constant : f64 = <1.1283791670955126>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<f32>
   kgen.return  %2 : !meta.scalar<f32>

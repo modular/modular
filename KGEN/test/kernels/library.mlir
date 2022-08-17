@@ -55,7 +55,7 @@ kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
 kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
   (%buffer: !meta.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
   implements @buffer.loadOrValue {
-  %isLoad = kgen.param.value : i1 = <isLoad>
+  %isLoad = kgen.param.constant : i1 = <isLoad>
   %res = scf.if %isLoad -> !meta.scalar<type> {
     %t0 = kgen.call @buffer.load<type : dtype = type>(%buffer, %idx): (!meta.buffer<?, type>, index) -> !meta.scalar<type>
     scf.yield %t0 : !meta.scalar<type>
