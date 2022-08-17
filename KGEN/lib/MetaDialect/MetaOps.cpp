@@ -80,19 +80,18 @@ LogicalResult BufferRebindOp::verify() {
   if (inputDtype != resultDtype &&
       inputDtype.isa_and_nonnull<DTypeConstantAttr>() &&
       resultDtype.isa_and_nonnull<DTypeConstantAttr>()) {
-    // TODO: Print these attributes prettier.
-    return emitError() << "input buffer dtype '" << inputDtype
-                       << "' disagrees with result dtype '" << resultDtype
-                       << "'";
+    return emitError() << "input buffer dtype '" << getParamAsString(inputDtype)
+                       << "' disagrees with result dtype '"
+                       << getParamAsString(resultDtype) << "'";
   }
 
   Attribute inputSize = inputBufTy.getSize();
   Attribute resultSize = resultBufTy.getSize();
   if (inputSize != resultSize && inputSize.isa_and_nonnull<IntegerAttr>() &&
       resultSize.isa_and_nonnull<IntegerAttr>())
-    // TODO: Print these attributes prettier.
-    return emitError() << "input buffer size '" << inputSize
-                       << "' disagrees with result size '" << resultSize << "'";
+    return emitError() << "input buffer size '" << getParamAsString(inputSize)
+                       << "' disagrees with result size '"
+                       << getParamAsString(resultSize) << "'";
   return success();
 }
 

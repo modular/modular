@@ -55,7 +55,7 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
 
   return parser.parseType(type);
 }
-static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type);
+static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type);
 
 //===----------------------------------------------------------------------===//
 // ODS Boilerplate
@@ -156,18 +156,35 @@ Attribute ParamBindArrayAttr::replaceImmediateSubElements(
 // syntax so we as compiler engineers don't go bonkers looking at IR dumps.
 /// Print a parameter value that is known to be an index type.
 
+/// Returns true if the given string can be represented as a bare identifier.
+static bool isLegalMLIRIdentifier(StringRef name) {
+  // By making this unsigned, the value passed in to isalnum will always be
+  // in the range 0-255. This is important when building with MSVC because
+  // its implementation will assert. This situation can arise when dealing
+  // with UTF-8 multibyte characters.
+  if (name.empty() || (!isalpha(name[0]) && name[0] != '_'))
+    return false;
+  return llvm::all_of(name.drop_front(), [](unsigned char c) {
+    return isalnum(c) || c == '_' || c == '$' || c == '.';
+  });
+}
+
+void KGEN::printParamName(StringRef name, raw_ostream &os) {
+  // If this will conflict with a DType keyword or isn't a legal MLIR name,
+  // then we need quotes.
+  bool needsQuotes =
+      succeeded(DType::getFromString(name)) || !isLegalMLIRIdentifier(name);
+  if (needsQuotes)
+    os << '"';
+  os << name;
+  if (needsQuotes)
+    os << '"';
+}
+
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringRef name) {
-  // If this will conflict with a DType keyword, rename it.
-  if (succeeded(DType::getFromString(name))) {
-    p << '"' << name << '"';
-    return;
-  }
-
-  // Otherwise, allow MLIR to decide if the name will conflict with its keywords
-  // and avoid it if so.
-  p.printKeywordOrString(name);
+  printParamName(name, p.getStream());
 }
 
 /// Parse a bareword (a keyword in MLIR terminology) or double quoted string
@@ -351,37 +368,88 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   return p.parseAttribute(value, type);
 }
 
-static void printOperatorOperands(AsmPrinter &p, POC opcode,
+static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
   if (opcode == POC::IN || opcode == POC::EQ || opcode == POC::LT ||
       opcode == POC::LE)
-    printColonTypeOrIndexPrefix(p, operands[0].getType());
+    printColonTypeOrIndexPrefix(os, operands[0].getType());
 
   switch (opcode) {
   default:
     // operand-list ::= expr (`,` expr)*
     llvm::interleaveComma(
-        operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
+        operands, os, [&](TypedAttr operand) { printParamValue(operand, os); });
     break;
   case POC::IN:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
-    printParamValue(p, operands[0]);
-    p << ", [";
-    llvm::interleaveComma(operands.drop_front(), p, [&](TypedAttr operand) {
-      printParamValue(p, operand);
+    printParamValue(operands[0], os);
+    os << ", [";
+    llvm::interleaveComma(operands.drop_front(), os, [&](TypedAttr operand) {
+      printParamValue(operand, os);
     });
-    p << "]";
+    os << "]";
     break;
   }
 }
 
-/// When in a context that knows it is dealing with a parameter specifically,
-/// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
+/// Print a floating point value in a way that the parser will be able to
+/// round-trip losslessly.
+static void printFloatValue(const APFloat &apValue, raw_ostream &os) {
+  // We would like to output the FP constant value in exponential notation,
+  // but we cannot do this if doing so will lose precision.  Check here to
+  // make sure that we only output it in exponential format if we can parse
+  // the value back and get the same value.
+  bool isInf = apValue.isInfinity();
+  bool isNaN = apValue.isNaN();
+  if (!isInf && !isNaN) {
+    SmallString<128> strValue;
+    apValue.toString(strValue, /*FormatPrecision=*/6, /*FormatMaxPadding=*/0,
+                     /*TruncateZero=*/false);
+
+    // Check to make sure that the stringized number is not some string like
+    // "Inf" or NaN, that atof will accept, but the lexer will not.  Check
+    // that the string matches the "[-+]?[0-9]" regex.
+    assert(((strValue[0] >= '0' && strValue[0] <= '9') ||
+            ((strValue[0] == '-' || strValue[0] == '+') &&
+             (strValue[1] >= '0' && strValue[1] <= '9'))) &&
+           "[-+]?[0-9] regex does not match!");
+
+    // Parse back the stringized version and check that the value is equal
+    // (i.e., there is no precision loss).
+    if (APFloat(apValue.getSemantics(), strValue).bitwiseIsEqual(apValue)) {
+      os << strValue;
+      return;
+    }
+
+    // If it is not, use the default format of APFloat instead of the
+    // exponential notation.
+    strValue.clear();
+    apValue.toString(strValue);
+
+    // Make sure that we can parse the default form as a float.
+    if (strValue.str().contains('.')) {
+      os << strValue;
+      return;
+    }
+  }
+
+  // Print special values in hexadecimal format. The sign bit should be included
+  // in the literal.
+  SmallVector<char, 16> str;
+  APInt apInt = apValue.bitcastToAPInt();
+  apInt.toString(str, /*Radix=*/16, /*Signed=*/false,
+                 /*formatAsCLiteral=*/true);
+  os << str;
+}
+
+/// Convert a parameter value to a string when in a context that knows it is
+/// dealing with a parameter specifically.  This utilize syntactic shortcuts to
+/// make the printed syntax easier to grok.
+void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
-    printParamName(p, declRef.getName());
+    printParamName(declRef.getName(), os);
     return;
   }
 
@@ -393,7 +461,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
     // Don't allow things like complex<f64>.  We can extend this in the future
     // if there is a reason to of course.
     if (!StringRef(stringRep).contains('<')) {
-      p << stringRep;
+      os << stringRep;
       return;
     }
   }
@@ -401,9 +469,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
   // Handle expressions.
   if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
     auto printExpr = [&](StringRef opcode, ArrayRef<TypedAttr> operands) {
-      p << opcode << '(';
-      printOperatorOperands(p, expr.getOpcode(), operands);
-      p << ')';
+      os << opcode << '(';
+      printOperatorOperands(os, expr.getOpcode(), operands);
+      os << ')';
     };
 
     // If this is a inverted boolean sugar, handle it.
@@ -435,13 +503,36 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
   // If this is an i1 integer attr, print it as zero or one; not true/false
   // keywords.  This simplifies the keyword processing logic.
   if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
-    if (intAttr.getValue().getBitWidth() == 1) {
-      p << (int)intAttr.getValue().getZExtValue();
-      return;
-    }
+    // Make sure 'index' values are printed as signed.
+    bool isUnsigned = intAttr.getType().isUnsignedInteger() ||
+                      intAttr.getType().isSignlessInteger(1);
+    intAttr.getValue().print(os, !isUnsigned);
+    return;
   }
 
-  p.printAttributeWithoutType(value);
+  if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
+    printFloatValue(floatAttr.getValue(), os);
+    return;
+  }
+
+  os << value;
+}
+
+/// Return the string form for an attribute value that is printed in a <>
+/// context in the .mlir file.
+std::string KGEN::getParamAsString(TypedAttr value) {
+  SmallVector<char, 128> result;
+  {
+    llvm::raw_svector_ostream os(result);
+    printParamValue(value, os);
+  }
+  return std::string(result.data(), result.size());
+}
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the printed syntax easier to grok.
+void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
+  printParamValue(value, p.getStream());
 }
 
 /// Parse a "colon type" production if present or default to index if not.  This
@@ -471,19 +562,19 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.
-static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
+static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
   // Index type is the default so it doesn't print.
   if (type.isIndex())
     return;
-  p << ':';
+  os << ':';
 
   // Handle other special cases for parameters here: we support `dtype` as a
   // bareword for `!kgen.dtype`.
   if (type.isa<DTypeType>())
-    p << "dtype";
+    os << "dtype";
   else
-    p << type;
-  p << ' ';
+    os << type;
+  os << ' ';
 }
 
 /// Print an attribute value that is known to have index type.
