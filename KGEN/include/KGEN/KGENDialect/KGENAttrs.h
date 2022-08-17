@@ -47,6 +47,11 @@ getDeclConstraints(Operation *decl);
 // Parameter Printing and Parsing
 //
 
+/// Return the string form for an attribute value that is printed in a <>
+/// context in the .mlir file.
+std::string getParamAsString(TypedAttr value);
+void printParamValue(TypedAttr value, raw_ostream &os);
+
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
@@ -57,6 +62,7 @@ void printColonTypeOrIndex(AsmPrinter &p, Type type);
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void printParamName(AsmPrinter &p, StringRef name);
+void printParamName(StringRef name, raw_ostream &os);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.

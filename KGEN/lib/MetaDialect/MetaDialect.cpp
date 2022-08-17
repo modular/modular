@@ -41,12 +41,6 @@ Operation *MetaDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                             Type type, Location loc) {
   // Integer constants can materialize into something specific.  We need this
   // for ops that fold in the context of kgen.kernel.
-  // TODO: What should our primitive arithmetic ops be, arith?  It doesn't
-  // support signful math well.
-  // if (auto intType = type.dyn_cast<IntegerType>())
-  //   if (auto attrValue = value.dyn_cast<IntegerAttr>())
-  //     return builder.create<ConstantOp>(loc, type, attrValue);
-
   if (isValidParameterExpr(value))
     return builder.create<ParamConstantOp>(loc, type, value);
   return nullptr;
