@@ -90,3 +90,35 @@ kgen.kernel @pop_select_simd(
   %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
   kgen.return %0 : !meta.simd<4, si32>
 }
+
+// -----
+
+kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !meta.scalar<type>) {
+  // expected-error @below {{cannot cast between a scalar type and SIMD type}}
+  %0 = pop.cast %a : !meta.scalar<type> to !meta.simd<size, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @cast_simd_to_scalar<size, type: dtype>(%a: !meta.simd<size, type>) {
+  // expected-error @below {{cannot cast between a scalar type and SIMD type}}
+  %0 = pop.cast %a : !meta.simd<size, type> to !meta.scalar<type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @cast_simd_size<type: dtype>(%a: !meta.simd<2, type>) {
+  // expected-error @below {{cannot cast between SIMD types of different sizes}}
+  %0 = pop.cast %a : !meta.simd<2, type> to !meta.simd<4, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @cast_simd_size<size, type: dtype>(%a: !meta.simd<size, type>) {
+  // expected-error @below {{cannot cast between SIMD types of different sizes}}
+  %0 = pop.cast %a : !meta.simd<size, type> to !meta.simd<add(size, 1), type>
+  kgen.return
+}

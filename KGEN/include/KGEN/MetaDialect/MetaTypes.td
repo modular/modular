@@ -69,6 +69,11 @@ def SIMDType : ParameterizedMetaType<"SIMD", "simd"> {
       return $_get(size.getContext(), size, ty);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the size expression of the SIMD type to an integer.
+    Optional<int64_t> resolveSize();
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -90,6 +95,17 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
         custom<OptionalParamDTypeValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
+      return $_get(size.getContext(), size, ty);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the size expression of the buffer type to an integer.
+    Optional<int64_t> resolveSize();
+  }];
 }
 
 //===----------------------------------------------------------------------===//
