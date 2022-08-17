@@ -355,8 +355,8 @@ public:
   }
 
 private:
-  LogicalResult processParamBindOp(ParamBindOp op);
-  LogicalResult processParamValueOp(ParamValueOp op);
+  LogicalResult processParamDeclareOp(ParamDeclareOp op);
+  LogicalResult processParamConstantOp(ParamConstantOp op);
   LogicalResult processParamAssertOp(ParamAssertOp op);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
@@ -422,10 +422,10 @@ LogicalResult ParameterRewriter::rewriteOps(
     LogicalResult result = success();
     /// Process an operation that needs to be rewritten/lowered based on the
     /// context of the parameter values we know are defined.
-    if (auto bind = dyn_cast<ParamBindOp>(op))
-      result = processParamBindOp(bind);
-    else if (auto value = dyn_cast<ParamValueOp>(op))
-      result = processParamValueOp(value);
+    if (auto bind = dyn_cast<ParamDeclareOp>(op))
+      result = processParamDeclareOp(bind);
+    else if (auto value = dyn_cast<ParamConstantOp>(op))
+      result = processParamConstantOp(value);
     else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
       result = processParamAssertOp(assertOp);
     else if (auto call = dyn_cast<CallOp>(op))
@@ -457,7 +457,7 @@ LogicalResult ParameterRewriter::rewriteOps(
   return verifyResult;
 }
 
-LogicalResult ParameterRewriter::processParamBindOp(ParamBindOp op) {
+LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
   auto errorOrValue = simplifyParameterExpr(op.getValue());
   if (errorOrValue.isError())
@@ -471,8 +471,8 @@ LogicalResult ParameterRewriter::processParamBindOp(ParamBindOp op) {
   return success();
 }
 
-LogicalResult ParameterRewriter::processParamValueOp(ParamValueOp op) {
-  // ParamValueOp projects a parameter expression into an SSA value.  We can
+LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
+  // ParamConstantOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
   auto errorOrValue = simplifyParameterExpr(op.getValue());
@@ -832,8 +832,8 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
   b.setInsertionPoint(&newKernel.getBodyBlock()->front());
   for (auto [inputDecl, inputValue] :
        llvm::zip(inputParamDecls, inputParamValues)) {
-    b.create<ParamBindOp>(generator.getLoc(), inputDecl.cast<ParamDeclAttr>(),
-                          inputValue);
+    b.create<ParamDeclareOp>(generator.getLoc(),
+                             inputDecl.cast<ParamDeclAttr>(), inputValue);
   }
 
   // Now that we have a new synthesized generic kernel, run the rewriter

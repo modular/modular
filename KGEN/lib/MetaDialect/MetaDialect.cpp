@@ -48,6 +48,6 @@ Operation *MetaDialect::materializeConstant(OpBuilder &builder, Attribute value,
   //     return builder.create<ConstantOp>(loc, type, attrValue);
 
   if (isValidParameterExpr(value))
-    return builder.create<ParamValueOp>(loc, type, value);
+    return builder.create<ParamConstantOp>(loc, type, value);
   return nullptr;
 }

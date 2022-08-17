@@ -146,7 +146,7 @@ kgen.generator @fillWithOnes<type: dtype, vecLen>
 {
   %bufferLen = meta.buffer.size %dest : !meta.buffer<?xtype>
   // Parameters are not SSA values, but can be projected into them explicitly.
-  %vecLen = kgen.param.value : index = <vecLen>
+  %vecLen = kgen.param.constant : index = <vecLen>
 
   %ones = kgen.call @simd_splat<veclen, type> 1 : !simd<veclen x type>
   scf.for i = 0 ... %bufferLen step %vecLen {

@@ -26,7 +26,7 @@ kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(%in1: !meta.buffer<?, typ
   // Using 0 as a placeholder for undefined value since we do not have optional values.
   // %undef will be eliminated after kernel elaboration and simplification.
   %undef = pop.constant(0) : !meta.scalar<type>
-  kgen.param.bind no_bcst: i1 = <not(bcst)>
+  kgen.param.declare no_bcst: i1 = <not(bcst)>
   %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef) : (!meta.buffer<?, type>, index, !meta.scalar<type>) -> !meta.scalar<type>
 
   scf.for %i = %zero to %size step %one {

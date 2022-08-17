@@ -41,7 +41,7 @@ Individual parameters:
    at all.
 
 3) In cases with take arbitrary types (for example the input list to `kgen.call`, the
-   parameter expression in `kgen.param.value` etc) we allow specifying a type
+   parameter expression in `kgen.param.constant` etc) we allow specifying a type
    with `: type = value` syntax which provides full generality for dtypes,
    strings etc.  However, because almost all parameters are of type 'index',
    we allow omitting a type with `= value` syntax.  Note that an omitted type
@@ -111,7 +111,7 @@ tuple of `{void*, numElements, dtype}` at runtime.
 Because the SIMD/scalar types do not support dynamic shapes or dtypes, they also
 do not need operations like `meta.simd.size`. For any SIMD type, you either have
 an integer constant in the IR or a parameter expression.  You can materialize
-either of these into an SSA value with `kgen.param.value`:
+either of these into an SSA value with `kgen.param.constant`:
 
 ```mlir
 kgen.generator @algo<veclen, dt: dtype>(%src: !meta.simd<mul(veclen,veclen), dt>) {
@@ -120,8 +120,8 @@ kgen.generator @algo<veclen, dt: dtype>(%src: !meta.simd<mul(veclen,veclen), dt>
   %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
-  %dtypeSSAValue = kgen.param.value : dtype = <dt>
-  %veclenSSAValue = kgen.param.value = <mul(veclen,veclen)>
+  %dtypeSSAValue = kgen.param.constant : dtype = <dt>
+  %veclenSSAValue = kgen.param.constant = <mul(veclen,veclen)>
 }
 ```
 

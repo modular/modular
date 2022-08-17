@@ -195,12 +195,12 @@ def CallOp
 }
 
 //===----------------------------------------------------------------------===//
-// ParamValueOp
+// ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-def ParamValueOp : KGENOp<"param.value",
-                          [FirstAttrDerivedResultType, NoSideEffect,
-                           ConstantLike]> {
+def ParamConstantOp : KGENOp<"param.constant",
+                             [FirstAttrDerivedResultType, NoSideEffect,
+                              ConstantLike]> {
   let summary = [{
     Return the value of a parameter expression as an SSA value that may be used
     by other ops.
@@ -209,24 +209,24 @@ def ParamValueOp : KGENOp<"param.value",
   let arguments = (ins ParameterExprAttr:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat =
-     "custom<ParamValueOpValue>($value, qualified(type($result))) attr-dict";
+     "custom<ParamConstantOpValue>($value, qualified(type($result))) attr-dict";
   let hasFolder = true;
 }
 
 //===----------------------------------------------------------------------===//
-// ParamBindOp
+// ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-def ParamBindOp : KGENOp<"param.bind", [NoSideEffect]> {
+def ParamDeclareOp : KGENOp<"param.declare", [NoSideEffect]> {
   let summary = [{
-    Bind a parameter name to a temporary variable.
+    Declare a new parameter with a value.
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
                        ParameterExprAttr:$value);
   let results = (outs);
   let assemblyFormat =
-     "custom<ParamBindOpValue>($paramDecls, $value) attr-dict";
+     "custom<ParamDeclareOpValue>($paramDecls, $value) attr-dict";
 
    let builders = [
     OpBuilder<(ins "ParamDeclAttr":$decl, "Attribute":$value)>,

@@ -60,33 +60,33 @@ kgen.generator @parameter_results<p1 -> r1: i4>() {
 
 // -----
 
-// expected-error @+1 {{'kgen.param.value' shl must have two operands}}
-%0 = kgen.param.value = <shl(p1, p2, p3)>
+// expected-error @+1 {{'kgen.param.constant' shl must have two operands}}
+%0 = kgen.param.constant = <shl(p1, p2, p3)>
 
 // -----
 
-// expected-error @+1 {{'kgen.param.value' unknown expression invalid_op}}
-%0 = kgen.param.value = <invalid_op(p1, p2, p3)>
+// expected-error @+1 {{'kgen.param.constant' unknown expression invalid_op}}
+%0 = kgen.param.constant = <invalid_op(p1, p2, p3)>
 
 // -----
 
 // expected-error @+1 {{operator requires an index type}}
-%0 = kgen.param.value : i32 = <shl(1, 2)>
+%0 = kgen.param.constant : i32 = <shl(1, 2)>
 
 // -----
 
 // expected-error @+1 {{integer literal not valid for specified type}}
-kgen.param.value : !kgen.dtype = <mul(1, 4)>
+kgen.param.constant : !kgen.dtype = <mul(1, 4)>
 
 // -----
 
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
-kgen.param.value : i8 = <#kgen.dtype.constant<f32>>
+kgen.param.constant : i8 = <#kgen.dtype.constant<f32>>
 
 // -----
 
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
-kgen.param.value : i8 = <f32>
+kgen.param.constant : i8 = <f32>
 
 // -----
 
@@ -290,7 +290,7 @@ kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
 // -----
 
 // expected-error @below {{expected attribute value}}
-%0 = kgen.param.value : i32 = <[:i32]>
+%0 = kgen.param.constant : i32 = <[:i32]>
 
 // -----
 
