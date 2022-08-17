@@ -81,25 +81,46 @@ def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
-// BufferCastOp
+// BufferRebindOp
 //===----------------------------------------------------------------------===//
 
-def BufferCastOp : MetaOp<"buffer.cast", [NoSideEffect]> {
+def BufferRebindOp : MetaOp<"buffer.rebind", [NoSideEffect]> {
   let summary = [{
-    Cast the input buffer to a buffer of the specified type.
+    Rebind a parameterized buffer type to another buffer type. This operation
+    is used to convert between buffer types that are potentially dynamically
+    equal by specifying or de-specifying the size or dtype of the buffer.
 
     Example:
+
     ```mlir
-    %0 = meta.buffer.cast %unknown: !buffer<?x?> to !buffer<?xf32>
-    %1 = meta.buffer.cast %other: !buffer<1023xf32> to !buffer<?xf32>
+    // Rebind an unknown dtype to a concrete dtype.
+    %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+
+    // Rebind a concrete size to an unknown size.
+    %1 = meta.buffer.rebind %b : !meta.buffer<1024, f32> to !meta.buffer<?, f32>
+
+    // Rebind parameterized a size and dtype to a concrete size and dtype.
+    %2 = meta.buffer.rebind %c : !meta.buffer<size, type> to !meta.buffer<1024, ui32>
+
+    // Rebind a parameterized size to an unknown size.
+    %3 = meta.buffer.rebind %d : !meta.buffer<size, f32> to !meta.buffer<?, f32>
+    ```
+
+    Rebinding between different concrete sizes or dtypes is not invalid:
+
+    ```
+    // ERROR: Cannot rebind different concrete sizes.
+    %0 = meta.buffer.rebind %a : !meta.buffer<32, ?> to !meta.buffer<64, ?>
+
+    // ERROR: Cannot rebind different concrete dtypes.
+    %0 = meta.buffer.rebind %b : !meta.buffer<?, ui32> to !meta.buffer<?, si32>
     ```
   }];
 
   let arguments = (ins BufferType:$buffer);
   let results = (outs BufferType:$result);
   let assemblyFormat = [{
-    $buffer `:` qualified(type($buffer)) `to`
-     qualified(type($result)) attr-dict
+    $buffer `:` qualified(type($buffer)) `to` qualified(type($result)) attr-dict
   }];
   let hasVerifier = true;
   let hasFolder = true;

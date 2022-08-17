@@ -11,30 +11,30 @@ kgen.generator.interface @add<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.s
 -> !meta.scalar<ty>
 
 // This implementation is fine.
-// CHECK-LABEL: kgen.generator @add_f32<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.scalar<ty>) -> !meta.scalar<ty> 
-// CHECK-NEXT: constraints <eq(:dtype ty, f32), "f32 feels great"> 
-// CHECK-NEXT: implements @add { 
+// CHECK-LABEL: kgen.generator @add_f32<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.scalar<ty>) -> !meta.scalar<ty>
+// CHECK-NEXT: constraints <eq(:dtype ty, f32), "f32 feels great">
+// CHECK-NEXT: implements @add {
 kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scalar<ty>) -> !meta.scalar<ty>
   constraints <eq(:dtype ty, f32), "f32 feels great"> implements @add {
-  
-  // CHECK: %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32 
+
+  // CHECK: %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32
   %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32
-  // CHECK: %1 = meta.cast_to_builtin %arg1 : !meta.scalar<ty> to f32 
+  // CHECK: %1 = meta.cast_to_builtin %arg1 : !meta.scalar<ty> to f32
   %1 = meta.cast_to_builtin %arg1 : !meta.scalar<ty> to f32
 
-  // CHECK: %2 = llvm.fadd %0, %1 : f32 
+  // CHECK: %2 = llvm.fadd %0, %1 : f32
   %2 = llvm.fadd %0, %1 : f32
 
   // CHECK: %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<ty>
   %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<ty>
-  // CHECK: kgen.return %3 
+  // CHECK: kgen.return %3
   kgen.return %3 : !meta.scalar<ty>
 }
 
 // This should be fine, but we're missing meta.scalar cast ops.
 //hlkgen.generator @add_64<ty: dtype>(%arg0 : !meta.scalar<f64>, %arg1 : !meta.scalar<f64>)
 //    -> !meta.scalar<ty> implements @add {
-//  
+//
 //  %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f64> to f64
 //  %1 = meta.cast_to_builtin %arg1 : !meta.scalar<f64> to f64
 //
@@ -48,7 +48,7 @@ kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scala
 kgen.generator.interface @bufitf<size, ty: dtype -> xyz>(!meta.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
-hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index 
+hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index
   implements @bufitf {
   %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
   kgen.return<xyz = add(size, 2)> %0 : index
@@ -59,14 +59,11 @@ hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) 
 // CHECK-LABEL: kgen.generator @impl1_thunk<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, ty>) -> index
 // CHECK-NEXT:  constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' parameter">
 // CHECK-NEXT:  implements @bufitf {
-// CHECK-NEXT:    %0 = meta.buffer.cast %arg0 : !meta.buffer<size, ty> to !meta.buffer<size, f32>
+// CHECK-NEXT:    %0 = meta.buffer.rebind %arg0 : !meta.buffer<size, ty> to !meta.buffer<size, f32>
 // CHECK-NEXT:    %1 = kgen.call @impl1<size = size, ty: dtype = ty -> xyz>(%0) : (!meta.buffer<size, f32>) -> index
 // CHECK-NEXT:    kgen.return <xyz = xyz> %1 : index
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index
-// CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' parameter"> 
+// CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' parameter">
 // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
-
-
-
