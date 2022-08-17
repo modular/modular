@@ -255,7 +255,7 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
       return getOperands()[i];
     }
 
-    /// Return (ne x, y) which is the same as (not x, y).
+    /// Return (ne x, y) which is the same as (not (eq x, y)).
     static TypedAttr getNE(TypedAttr lhs, TypedAttr rhs) {
       return getNot(get(POC::EQ, lhs, rhs));
     }

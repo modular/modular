@@ -57,7 +57,7 @@ hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) 
 // This causes synthesization of a thunk for impl1 that adapts the calling convention.
 
 // CHECK-LABEL: kgen.generator @impl1_thunk<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, ty>) -> index
-// CHECK-NEXT:  constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' parameter">
+// CHECK-NEXT:  constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32">
 // CHECK-NEXT:  implements @bufitf {
 // CHECK-NEXT:    %0 = meta.buffer.rebind %arg0 : !meta.buffer<size, ty> to !meta.buffer<size, f32>
 // CHECK-NEXT:    %1 = kgen.call @impl1<size = size, ty: dtype = ty -> xyz>(%0) : (!meta.buffer<size, f32>) -> index
@@ -65,5 +65,5 @@ hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) 
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index
-// CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' parameter">
+// CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32">
 // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
