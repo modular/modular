@@ -24,11 +24,16 @@ class SignatureUnifier {
 public:
   SignatureUnifier(GeneratorOp generatorOp, GeneratorInterfaceOp interfaceOp);
 
+  /// Add the constraints already on the generator to the constraint set,
+  /// returning failure if a contradiction was detected.
+  LogicalResult checkExistingConstraints();
+
   ParseResult addEqualityConstraintFn(ParamDeclRefAttr param, TypedAttr value);
 
   ParseResult tryUnifyingTypes(Type itfArgTy, Type genArgTy);
   ParseResult tryUnifyingTypeParameters(Attribute itfParam, Attribute genParam);
-  ParseResult checkArgumentType(size_t argNo, Type itfArgTy, Type genArgTy);
+  ParseResult checkArgumentType(size_t argNo, Type itfArgTy, Type genArgTy,
+                                Location loc);
 
   void reinstallConstraints();
 
@@ -41,16 +46,28 @@ public:
   /// This string is set to information indicating context about in inferred
   /// constraint or diagnostic, e.g. that this is happening with argument #0.
   std::string inferenceContext;
+  Location inferenceLoc;
 };
 } // end anonymous namespace
 
 SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp,
                                    GeneratorInterfaceOp interfaceOp)
     : generatorOp(generatorOp), interfaceOp(interfaceOp),
-      constraints(generatorOp.getContext()) {
-  // TODO: Generate error messages on contradictions.
-  constraints.addConstraints(generatorOp.getConstraintsAttr(),
-                             generatorOp.getConstraintMessages());
+      constraints(generatorOp),
+      inferenceLoc(UnknownLoc::get(generatorOp.getContext())) {}
+
+/// Add the constraints already on the generator to the constraint set,
+/// returning failure if a contradiction was detected.
+LogicalResult SignatureUnifier::checkExistingConstraints() {
+  for (auto [constraint, message] :
+       llvm::zip(generatorOp.getConstraintsAttr().getValue(),
+                 generatorOp.getConstraintMessages().getValue()))
+    if (failed(constraints.addConstraint(constraint, message.cast<StringAttr>(),
+                                         // TODO: Use correct loc info.
+                                         generatorOp->getLoc())))
+      return failure();
+
+  return success();
 }
 
 /// When we're done checking the conformance, this method reinstalls the
@@ -63,14 +80,12 @@ void SignatureUnifier::reinstallConstraints() {
 
 ParseResult SignatureUnifier::addEqualityConstraintFn(ParamDeclRefAttr param,
                                                       TypedAttr value) {
-  constraints.addParamEqualityConstraint(
-      param, value,
-      Twine(inferenceContext) + " specifies '" + param.getName().str() +
-          "' parameter");
-
-  // TODO: when we have a better constraint set, detect contradictions on the
-  // fly and report them.
-  return success();
+  auto message = StringAttr::get(value.getContext(),
+                                 Twine(inferenceContext) + " specifies '" +
+                                     param.getName().str() +
+                                     "' = " + getParamAsString(value));
+  return constraints.addParamEqualityConstraint(param, value, message,
+                                                inferenceLoc);
 }
 
 ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
@@ -89,7 +104,7 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   if (!itfParam) {
     // TODO: It is possible to add inferred dynamic constraints when we have an
     // error handling model.
-    auto diag = generatorOp->emitError(inferenceContext)
+    auto diag = emitError(inferenceLoc, inferenceContext)
                 << ": dynamic `?` value cannot have static constraint: '"
                 << genParam << "'";
     diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
@@ -109,7 +124,7 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
 
   // TODO: It is possible to add inferred dynamic constraints when we have an
   // error handling model.
-  auto diag = generatorOp->emitError(inferenceContext)
+  auto diag = emitError(inferenceLoc, inferenceContext)
               << ": cannot unify : '" << genParam << "'";
   diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
   return failure();
@@ -158,7 +173,7 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
     }
 
   // If they don't match, then reject them.
-  auto diag = generatorOp->emitError(inferenceContext)
+  auto diag = emitError(inferenceLoc, inferenceContext)
               << " has type " << genArgTy << " but interface expected type "
               << itfArgTy;
   diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
@@ -166,8 +181,9 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
 }
 
 ParseResult SignatureUnifier::checkArgumentType(size_t argNo, Type itfArgTy,
-                                                Type genArgTy) {
+                                                Type genArgTy, Location loc) {
   inferenceContext = "argument #" + std::to_string(argNo);
+  inferenceLoc = loc;
 
   // Try unifying the types.  If this successed, then the signature types match.
   return tryUnifyingTypes(itfArgTy, genArgTy);
@@ -200,10 +216,15 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
                                                SymbolTable &symbolTable) {
   SignatureUnifier unifier(gen, itf);
 
+  // Verify that the constraints already imposed on the generator are
+  // satisfiable.
+  if (failed(unifier.checkExistingConstraints()))
+    return failure();
+
   // Match up the argument types with the generator's.  These are allowed to
   // be more specialized, in which case they imply argument constraints.
   auto itfArgs = itf.getArgumentTypes();
-  auto genArgs = gen.getArgumentTypes();
+  auto genArgs = gen.getArguments();
   if (itfArgs.size() != genArgs.size()) {
     auto diag = gen.emitOpError()
                 << "generator has " << genArgs.size() << " argument"
@@ -217,10 +238,11 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   // synthesize a forwarding thunk.
   bool needsForwardingThunk = false;
   size_t argNo = 0;
-  for (auto [itfArgTy, genArgTy] : llvm::zip(itfArgs, genArgs)) {
-    if (failed(unifier.checkArgumentType(argNo, itfArgTy, genArgTy)))
+  for (auto [itfArgTy, genArg] : llvm::zip(itfArgs, genArgs)) {
+    if (failed(unifier.checkArgumentType(argNo, itfArgTy, genArg.getType(),
+                                         genArg.getLoc())))
       return failure();
-    needsForwardingThunk |= itfArgTy != genArgTy;
+    needsForwardingThunk |= itfArgTy != genArg.getType();
     ++argNo;
   }
 
