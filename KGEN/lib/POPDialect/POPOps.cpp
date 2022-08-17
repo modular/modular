@@ -183,6 +183,29 @@ LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
 }
 
 //===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
+  if (getInput().getType() == getOutput().getType())
+    return getInput();
+  return {};
+}
+
+LogicalResult CastOp::verify() {
+  auto inputType = getInput().getType().cast<DTypeInterface>();
+  auto outputType = getOutput().getType().cast<DTypeInterface>();
+  if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
+    return emitOpError("cannot cast between a scalar type and SIMD type");
+
+  if (auto inputSimd = inputType.dyn_cast<SIMDType>();
+      inputSimd && inputSimd.getSize() != outputType.cast<SIMDType>().getSize())
+    return emitOpError("cannot cast between SIMD types of different sizes");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

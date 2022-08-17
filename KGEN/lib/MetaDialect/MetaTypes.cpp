@@ -6,11 +6,11 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "mlir/IR/Builders.h"
 
 using namespace M;
 using namespace KGEN;
@@ -149,6 +149,12 @@ Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return SIMDType::get(replAttrs[0], replAttrs[1]);
 }
 
+Optional<int64_t> SIMDType::resolveSize() {
+  if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
+    return intAttr.getInt();
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // BufferType
 //===----------------------------------------------------------------------===//
@@ -174,6 +180,12 @@ Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                              ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.empty());
   return BufferType::get(getContext(), replAttrs[0], replAttrs[1]);
+}
+
+Optional<int64_t> BufferType::resolveSize() {
+  if (auto intAttr = getSize().dyn_cast_or_null<IntegerAttr>())
+    return intAttr.getInt();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

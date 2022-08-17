@@ -123,6 +123,76 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPCast
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType inDType =
+        op.getInput().getType().cast<DTypeInterface>().resolveDType();
+    DType outDType =
+        op.getOutput().getType().cast<DTypeInterface>().resolveDType();
+
+    // Select the element-wise cast to perform. LLVM integer types are signless,
+    // but the signedness semantics of the operation's input and output types
+    // affect which casts are selected. `bool` is `i1`.
+    StringRef opName;
+    if (inDType.isBool() || inDType.isInt()) {
+      if (outDType.isBool() || outDType.isInt()) {
+        if (outDType.getWidthInBits() > inDType.getWidthInBits()) {
+          // Sign or zero extend.
+          opName = inDType.isSInt() ? LLVM::SExtOp::getOperationName()
+                                    : LLVM::ZExtOp::getOperationName();
+        } else if (outDType.getWidthInBits() < inDType.getWidthInBits()) {
+          // Truncate.
+          opName = LLVM::TruncOp::getOperationName();
+        }
+      } else {
+        // Cast from an integer to a float.
+        opName = inDType.isSInt() ? LLVM::SIToFPOp::getOperationName()
+                                  : LLVM::UIToFPOp::getOperationName();
+      }
+    } else if (outDType.isBool() || outDType.isInt()) {
+      // Cast from a float to an integer.
+      opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
+                                 : LLVM::FPToUIOp::getOperationName();
+    } else {
+      if (outDType.getWidthInBits() > inDType.getWidthInBits()) {
+        // Extend
+        opName = LLVM::FPExtOp::getOperationName();
+      } else if (outDType.getWidthInBits() < inDType.getWidthInBits()) {
+        // Truncate.
+        opName = LLVM::FPTruncOp::getOperationName();
+      } else if (outDType != inDType) {
+        // FIXME: Unclear how to cast between `bf16` and `f16`.
+        return rewriter.notifyMatchFailure(
+            op, "casts between 'bf16' and 'f16' unsupported");
+      }
+    }
+
+    // If no cast was selected, this is a no-op conversion between equivalent
+    // types.
+    if (opName.empty()) {
+      rewriter.replaceOp(op, adaptor.getInput());
+      return success();
+    }
+
+    // Create the cast.
+    OperationState state(op.getLoc(), opName);
+    state.addOperands(adaptor.getInput());
+    state.addTypes(getTypeConverter()->convertType(op.getOutput().getType()));
+    Operation *cast = rewriter.create(state);
+    rewriter.replaceOp(op, cast->getResults());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -147,10 +217,20 @@ using ConvertPOPSelect =
 
 static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertPOPAbs, ConvertPOPAdd, ConvertPOPConstant,
-                  ConvertPOPCopySign, ConvertPOPFMA, ConvertPOPMul,
-                  ConvertPOPNeg, ConvertPOPSelect, ConvertPOPSub>(
-      typeConverter);
+  patterns.insert<
+      // clang-format off
+      ConvertPOPAbs,
+      ConvertPOPAdd,
+      ConvertPOPCast,
+      ConvertPOPConstant,
+      ConvertPOPCopySign,
+      ConvertPOPFMA,
+      ConvertPOPMul,
+      ConvertPOPNeg,
+      ConvertPOPSelect,
+      ConvertPOPSub
+      // clang-format on
+      >(typeConverter);
 }
 
 //===----------------------------------------------------------------------===//

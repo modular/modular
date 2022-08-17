@@ -185,3 +185,31 @@ kgen.kernel @erf(%x: !meta.scalar<f32>) -> !meta.scalar<f32> {
   %x5 = pop.mul %x4, %x : !meta.scalar<f32>
   kgen.return %x5 : !meta.scalar<f32>
 }
+
+// CHECK-LABEL: @scalar_cast
+// CHECK-SAME: %[[A:.*]]:
+kgen.generator @scalar_cast<type: dtype>(%a: !meta.scalar<f32>) -> !meta.scalar<si32> {
+  // CHECK: %[[V0:.*]] = pop.cast %[[A]] : !meta.scalar<f32> to !meta.scalar<type>
+  %0 = pop.cast %a : !meta.scalar<f32> to !meta.scalar<type>
+  // CHECK: %[[V1:.*]] = pop.cast %[[V0]] : !meta.scalar<type> to !meta.scalar<f64>
+  %1 = pop.cast %0 : !meta.scalar<type> to !meta.scalar<f64>
+  // CHECK: %[[V2:.*]] = pop.cast %[[V1]] : !meta.scalar<f64> to !meta.scalar<si32>
+  %2 = pop.cast %1 : !meta.scalar<f64> to !meta.scalar<si32>
+  // CHECK: return %[[V2]]
+  kgen.return %2 : !meta.scalar<si32>
+}
+
+// CHECK-LABEL: @simd_cast
+// CHECK-SAME: %[[A:.*]]:
+kgen.generator @simd_cast<size, type: dtype>(%a: !meta.simd<size, f32>) -> !meta.simd<size, si32> {
+  // CHECK: %[[V0:.*]] = pop.cast %[[A]] : !meta.simd<size, f32> to !meta.simd<size, type>
+  %0 = pop.cast %a : !meta.simd<size, f32> to !meta.simd<size, type>
+  // CHECK: %[[V1:.*]] = pop.cast %[[V0]] : !meta.simd<size, type> to !meta.simd<size, si32>
+  %1 = pop.cast %0 : !meta.simd<size, type> to !meta.simd<size, si32>
+  // CHECK: %[[V2:.*]] = pop.cast %[[V1]] : !meta.simd<size, si32> to !meta.simd<size, f64>
+  %2 = pop.cast %1 : !meta.simd<size, si32> to !meta.simd<size, f64>
+  // CHECK: %[[V3:.*]] = pop.cast %[[V2]] : !meta.simd<size, f64> to !meta.simd<size, si32>
+  %3 = pop.cast %2 : !meta.simd<size, f64> to !meta.simd<size, si32>
+  // CHECK: return %[[V3]]
+  kgen.return %3 : !meta.simd<size, si32>
+}

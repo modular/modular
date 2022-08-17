@@ -315,3 +315,29 @@ def SelectOp : POPOp<"select",
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
 }
+
+//===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+def CastOp : POPOp<"cast", [NoSideEffect]> {
+  let summary = [{
+    Perform an element-wise cast between SIMD vectors types or between scalar
+    types. SIMD vectors must have the same size. The cast semantics are the same
+    as C casts. Only bool, integer, and floating point dtypes are supported.
+
+    Example:
+
+    ```mlir
+    %0 = meta.cast %a : !meta.scalar<si32> to !meta.scalar<f32>
+    %1 = meta.cast %b : !meta.scalar<ui64> to !meta.scalar<si32>
+    %2 = meta.cast %c : !meta.simd<4, f64> to !meta.simd<4, ui32>
+    ```
+  }];
+
+  let arguments = (ins ScalarOrSIMD:$input);
+  let results = (outs ScalarOrSIMD:$output);
+  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
