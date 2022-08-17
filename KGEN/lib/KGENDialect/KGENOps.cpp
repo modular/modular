@@ -532,12 +532,15 @@ static void printConstraints(Operation *decl, OpAsmPrinter &p) {
   if (constraints.empty())
     return;
 
-  p << "\n  constraints <";
+  p.printNewline();
+  p << "  constraints <";
   llvm::interleaveComma(
       constraints, p,
       [&](std::pair<Attribute, StringAttr> constraintAndMessage) {
-        if (constraints.size() > 1)
-          p << "\n    ";
+        if (constraints.size() > 1) {
+          p.printNewline();
+          p << "    ";
+        }
         printParamValue(p, constraintAndMessage.first);
         p << ", " << constraintAndMessage.second;
       });
@@ -569,8 +572,10 @@ void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
-  if (auto implementsAttr = op->getAttrOfType<FlatSymbolRefAttr>("implements"))
-    p << "\n  implements " << implementsAttr;
+  if (auto implementsAttr = op->getAttrOfType<FlatSymbolRefAttr>("implements")) {
+    p.printNewline();
+    p << "  implements " << implementsAttr;
+  }
 
   p << ' ';
   if (!op.getBody().empty()) {
