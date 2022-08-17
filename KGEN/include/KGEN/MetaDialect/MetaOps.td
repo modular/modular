@@ -18,7 +18,8 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 //===----------------------------------------------------------------------===//
 
 def BufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
-  let summary = [{
+  let summary = "get the size of a buffer";
+  let description = [{
     Return the size of a meta.buffer as an SSA value (of type `index`) that may
     be used by other ops.
 
@@ -40,7 +41,8 @@ def BufferSizeOp : MetaOp<"buffer.size", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def BufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
-  let summary = [{
+  let summary = "get the dtype of a buffer";
+  let description = [{
     Return the dtype of a meta.buffer as an SSA value (of type `dtype`) that may
     be used by other ops.
 
@@ -64,7 +66,8 @@ def BufferDTypeOp : MetaOp<"buffer.dtype", [NoSideEffect]> {
 def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
                       DeclareOpInterfaceMethods<InferTypeOpInterface,
                                                 ["inferReturnTypes"]>]> {
-  let summary = [{
+  let summary = "get the starting address of a buffer";
+  let description = [{
     Return the address of a meta.buffer as an SSA value (of type !meta.pointer)
     that may be used by other ops.
 
@@ -85,7 +88,8 @@ def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
 //===----------------------------------------------------------------------===//
 
 def BufferRebindOp : MetaOp<"buffer.rebind", [NoSideEffect]> {
-  let summary = [{
+  let summary = "rebind a buffer type";
+  let description = [{
     Rebind a parameterized buffer type to another buffer type. This operation
     is used to convert between buffer types that are potentially dynamically
     equal by specifying or de-specifying the size or dtype of the buffer.
@@ -131,7 +135,8 @@ def BufferRebindOp : MetaOp<"buffer.rebind", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def MetaCastToBuiltinOp : MetaOp<"cast_to_builtin", [NoSideEffect]> {
-  let summary = [{
+  let summary = "cast a meta type to a builtin type";
+  let description = [{
     Cast the input scalar / simd to the corresponding MLIR standard type.
 
     Example:
@@ -154,7 +159,8 @@ def MetaCastToBuiltinOp : MetaOp<"cast_to_builtin", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def MetaCastFromBuiltinOp : MetaOp<"cast_from_builtin", [NoSideEffect]> {
-  let summary = [{
+  let summary = "cast a builtin type to a meta type";
+  let description = [{
     Cast the input standard MLIR type to the corresponding !meta type.
 
     Example:
