@@ -266,19 +266,19 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertMetaBufferCast
+// ConvertMetaBufferRebind
 //===----------------------------------------------------------------------===//
 
-/// A buffer cast can cast between a buffer with an unspecified size or element
-/// type to one with specified size or element type. When that happens, generate
-/// the necessary struct unpacking and repacking and bitcasts.
-class ConvertMetaBufferCast
-    : public mlir::ConvertOpToLLVMPattern<BufferCastOp> {
+/// A buffer rebind can cast between a buffer with an unspecified size or
+/// element type to one with specified size or element type. When that happens,
+/// generate the necessary struct unpacking and repacking and bitcasts.
+class ConvertMetaBufferRebind
+    : public mlir::ConvertOpToLLVMPattern<BufferRebindOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(BufferCastOp op, BufferCastOpAdaptor adaptor,
+  matchAndRewrite(BufferRebindOp op, BufferRebindOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto in = op.getBuffer().getType().cast<BufferType>();
     auto out = op.getResult().getType().cast<BufferType>();
@@ -347,11 +347,20 @@ public:
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertKGENCall, ConvertKGENKernel, ConvertKGENParamConstant,
-                  ConvertKGENReturn, ConvertMetaBufferAddress,
-                  ConvertMetaBufferCast, ConvertMetaBufferDType,
-                  ConvertMetaBufferSize, ConvertMetaCastFromBuiltin,
-                  ConvertMetaCastToBuiltin>(typeConverter);
+  patterns.insert<
+      // clang-format off
+      ConvertKGENCall,
+      ConvertKGENKernel,
+      ConvertKGENParamConstant,
+      ConvertKGENReturn,
+      ConvertMetaBufferAddress,
+      ConvertMetaBufferDType,
+      ConvertMetaBufferSize,
+      ConvertMetaBufferRebind,
+      ConvertMetaCastFromBuiltin,
+      ConvertMetaCastToBuiltin
+      // clang-format on
+      >(typeConverter);
 }
 
 //===----------------------------------------------------------------------===//

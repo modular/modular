@@ -62,12 +62,12 @@ LogicalResult BufferAddressOp::inferReturnTypes(
 }
 
 //===----------------------------------------------------------------------===//
-// BufferCastOp
+// BufferRebindOp
 //===----------------------------------------------------------------------===//
 
-/// Verifies that casting the input buffer to the result buffer is okay.
-/// Casting is allowed so long as there isn't a statically known problem.
-LogicalResult BufferCastOp::verify() {
+/// Verifies that rebinding the input buffer to the result buffer is okay.
+/// Rebinding is allowed so long as there isn't a statically known problem.
+LogicalResult BufferRebindOp::verify() {
   BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
   BufferType resultBufTy = getType();
 
@@ -96,12 +96,12 @@ LogicalResult BufferCastOp::verify() {
   return success();
 }
 
-OpFoldResult BufferCastOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult BufferRebindOp::fold(ArrayRef<Attribute> constants) {
   // Fold cast x to same type.
   if (getOperand().getType() == getType())
     return getOperand();
   // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = getOperand().getDefiningOp<BufferCastOp>()) {
+  if (auto castOperand = getOperand().getDefiningOp<BufferRebindOp>()) {
     // A->B->A doesn't need a cast at all.
     if (castOperand.getOperand().getType() == getType())
       return castOperand.getOperand();

@@ -180,7 +180,7 @@ static Value insertArgumentCast(Value arg, Type type, ImplicitLocOpBuilder &b) {
     return arg;
 
   // This only needs to handle the types we're capable of unifying.
-  // TODO: We're missing most of the casts here.
+  // TODO: We're missing most of the rebinds here.
   if (type.isa<ScalarType>())
     ;
   if (type.isa<PointerType>())
@@ -188,7 +188,7 @@ static Value insertArgumentCast(Value arg, Type type, ImplicitLocOpBuilder &b) {
   if (type.isa<SIMDType>())
     ;
   if (type.isa<BufferType>())
-    return b.create<BufferCastOp>(type, arg);
+    return b.create<BufferRebindOp>(type, arg);
 
   llvm_unreachable("unknown type to unify");
 }
