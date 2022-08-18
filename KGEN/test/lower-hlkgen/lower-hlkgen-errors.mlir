@@ -49,25 +49,6 @@ hlkgen.generator @impl<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -
 
 // -----
 
-kgen.generator.interface @itf<size>()
-
-// This implementation infers that the ty argument must be f32.
-
-// expected-error @+3 {{constraint contradiction detected: "I sez that size should be 12!"}}
-// expected-note @+2 {{previously constrained "someone told us size smells like 3"}}
-// expected-note @+1 {{generator declared here}}
-hlkgen.generator @impl<size>()
-  // This has an explicit constraint saying it must be f64.
-  constraints <eq(size, 3), "someone told us size smells like 3",
-               eq(size, 12), "I sez that size should be 12!">
-  implements @itf {
-  kgen.return
-}
-
-// -----
-
-// This implementation infers that the ty argument must be f32.
-
 // expected-error @+3 {{constraint contradiction detected: "I sez that size should be 12!"}}
 // expected-note @+2 {{previously constrained "someone told us size smells like 3"}}
 // expected-note @+1 {{generator declared here}}
@@ -78,4 +59,42 @@ hlkgen.generator @impl<size>()
   kgen.return
 }
 
+// -----
+
+// expected-error @+3 {{constraint contradiction detected: "someone told us size smells like 3 but can we believe them?"}}
+// expected-note @+2 {{previously constrained "three'or'fore"}}
+// expected-note @+1 {{generator declared here}}
+hlkgen.generator @impl<size>()
+  constraints <
+    in(size, [3, 4]), "three'or'fore",
+    eq(size, 5), "someone told us size smells like 3 but can we believe them?"
+   > {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+3 {{constraint contradiction detected: "three'or'fore"}}
+// expected-note @+2 {{previously constrained "someone told us size smells like 3 but can we believe them?"}}
+// expected-note @+1 {{generator declared here}}
+hlkgen.generator @impl<size>()
+  constraints <
+    eq(size, 5), "someone told us size smells like 3 but can we believe them?",
+    in(size, [3, 4]), "three'or'fore"
+   > {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+3 {{constraint contradiction detected: "three'or'fore"}}
+// expected-note @+2 {{previously constrained "seven ate 9"}}
+// expected-note @+1 {{generator declared here}}
+hlkgen.generator @impl<size>()
+  constraints <
+    in(size, [7, 8]), "seven ate 9",
+    in(size, [3, 4]), "three'or'fore"
+   > {
+  kgen.return
+}
 

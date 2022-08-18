@@ -67,3 +67,16 @@ hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) 
 // CHECK-LABEL: kgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index
 // CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32">
 // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
+
+
+// CHECK-LABEL: kgen.generator @SetIntersect<size>()
+hlkgen.generator @SetIntersect<size>()
+// CHECK-NEXT: constraints <in(size, [8, 57]), "thing 1 merged with thing two">
+  constraints <
+    in(size, [7, 8, 57]), "thing 1",
+    in(size, [57, 8]), "thing two"
+   > {
+  kgen.return
+}
+
+
