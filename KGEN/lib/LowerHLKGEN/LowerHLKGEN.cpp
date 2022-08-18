@@ -117,8 +117,6 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   if (auto decl = itfParam.dyn_cast<ParamDeclRefAttr>())
     return addEqualityConstraintFn(decl, genParam);
 
-  // TODO: Merging two different parameters imposes equality constraints.
-
   // Otherwise we don't know how to unify this.
   // TODO: Could handle node-wise merging of expressions to find constraints
   // like "x+1" and "y+1" --> "x == y".
@@ -140,8 +138,6 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   if (itfArgTy == genArgTy)
     return success();
 
-#if 0 // We don't have any of the 'cast' operations needed for these!
-
   // If both types are scalar types, try to unify them.
   if (auto itfScalarTy = itfArgTy.dyn_cast<ScalarType>())
     if (auto genScalarTy = genArgTy.dyn_cast<ScalarType>())
@@ -162,7 +158,6 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
                                     genSIMDTy.getDType()) ||
           tryUnifyingTypeParameters(itfSIMDTy.getSize(), genSIMDTy.getSize()));
     }
-#endif
 
   // If both types are BufferType's, try to unify them.
   if (auto itfBufferTy = itfArgTy.dyn_cast<BufferType>())
@@ -197,13 +192,12 @@ static Value insertArgumentCast(Value arg, Type type, ImplicitLocOpBuilder &b) {
     return arg;
 
   // This only needs to handle the types we're capable of unifying.
-  // TODO: We're missing most of the rebinds here.
   if (type.isa<ScalarType>())
-    ;
+    return b.create<ScalarRebindOp>(type, arg);
   if (type.isa<PointerType>())
-    ;
+    return b.create<PointerRebindOp>(type, arg);
   if (type.isa<SIMDType>())
-    ;
+    return b.create<SIMDRebindOp>(type, arg);
   if (type.isa<BufferType>())
     return b.create<BufferRebindOp>(type, arg);
 
