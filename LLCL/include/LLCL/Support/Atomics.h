@@ -56,7 +56,7 @@ static void atomicAdd(std::atomic<T> &accumValue, const T &value) {
     // via a compare_exchange_weak loop.
     T prevAccumValue = accumValue;
 
-    LLCL::SpinWaiter waiter;
+    LLCL::SpinWaiter<> waiter;
     while (!accumValue.compare_exchange_weak(prevAccumValue,
                                              prevAccumValue + value)) {
       // Wait a bit and retry.
@@ -73,7 +73,7 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   T previousMax = maxValue;
 
   // Note that compare_exchange_weak updates `previousMax` on failure.
-  LLCL::SpinWaiter waiter;
+  LLCL::SpinWaiter<> waiter;
   while (previousMax < value &&
          !maxValue.compare_exchange_weak(previousMax, value)) {
     // Wait a bit and retry.
