@@ -168,6 +168,38 @@ kgen.kernel @test_only_returns() {
 
 // -----
 
+kgen.kernel @bad_scalar_rebind_dtype(%arg0: !meta.scalar<f32>) -> !meta.scalar<f64> {
+  // expected-error @below {{input scalar dtype 'f32' disagrees with result scalar dtype 'f64'}}
+  %0 = meta.scalar.rebind %arg0 : !meta.scalar<f32> to !meta.scalar<f64>
+  kgen.return %0 : !meta.scalar<f64>
+}
+
+// -----
+
+kgen.kernel @bad_pointer_rebind_dtype(%arg0: !meta.pointer<f32>) -> !meta.pointer<f64> {
+  // expected-error @below {{input pointer dtype 'f32' disagrees with result pointer dtype 'f64'}}
+  %0 = meta.pointer.rebind %arg0 : !meta.pointer<f32> to !meta.pointer<f64>
+  kgen.return %0 : !meta.pointer<f64>
+}
+
+// -----
+
+kgen.kernel @bad_simd_rebind_size(%arg0 : !meta.simd<2, f32>) -> !meta.simd<1, f32> {
+  // expected-error @+1 {{input SIMD size '2' disagrees with result SIMD size '1'}}
+  %0 = meta.simd.rebind %arg0 : !meta.simd<2, f32> to !meta.simd<1, f32>
+  kgen.return %0 : !meta.simd<1, f32>
+}
+
+// -----
+
+kgen.kernel @bad_simd_rebind_dtype(%arg0 : !meta.simd<2, f32>) -> !meta.simd<2, f64> {
+  // expected-error @+1 {{input SIMD dtype 'f32' disagrees with result SIMD dtype 'f64'}}
+  %0 = meta.simd.rebind %arg0 : !meta.simd<2, f32> to !meta.simd<2, f64>
+  kgen.return %0 : !meta.simd<2, f64>
+}
+
+// -----
+
 kgen.kernel @meta_buffer_size(%arg0: i32) -> index {
   // expected-error @+1 {{'meta.buffer.size' op operand #0 must be parameterized buffer type, but got 'i32'}}
   %0 = meta.buffer.size %arg0 : i32
@@ -175,15 +207,16 @@ kgen.kernel @meta_buffer_size(%arg0: i32) -> index {
 }
 // -----
 
-kgen.kernel @bad_cast_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
-  // expected-error @+1 {{input buffer size '42' disagrees with result size '1'}}
+kgen.kernel @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
+  // expected-error @+1 {{input buffer size '42' disagrees with result buffer size '1'}}
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
   kgen.return %0 : !meta.buffer<1, f32>
 }
 
 // -----
-kgen.kernel @bad_cast_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
-  // expected-error @+1 {{input buffer dtype 'f32' disagrees with result dtype 'f64'}}
+
+kgen.kernel @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
+  // expected-error @+1 {{input buffer dtype 'f32' disagrees with result buffer dtype 'f64'}}
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
   kgen.return %0 : !meta.buffer<42, f64>
 }

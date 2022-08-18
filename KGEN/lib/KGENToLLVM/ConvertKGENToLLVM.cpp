@@ -187,6 +187,31 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertMetaPointerRebind
+//===----------------------------------------------------------------------===//
+
+/// A fully-specific pointer rebind between an unknown dtype and a known dtype
+/// is converted to a bitcast.
+class ConvertMetaPointerRebind
+    : public mlir::ConvertOpToLLVMPattern<PointerRebindOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PointerRebindOp op, PointerRebindOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (op.getInput().getType() == op.getType()) {
+      rewriter.replaceOp(op, adaptor.getInput());
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
+          op, getTypeConverter()->convertType(op.getType()),
+          adaptor.getInput());
+    }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertMetaBufferSize
 //===----------------------------------------------------------------------===//
 
@@ -280,12 +305,12 @@ public:
   LogicalResult
   matchAndRewrite(BufferRebindOp op, BufferRebindOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto in = op.getBuffer().getType().cast<BufferType>();
-    auto out = op.getResult().getType().cast<BufferType>();
+    auto in = op.getInput().getType().cast<BufferType>();
+    auto out = op.getOutput().getType().cast<BufferType>();
 
     // If the input and output types are the same, fold away the op.
     if (in == out) {
-      rewriter.replaceOp(op, adaptor.getBuffer());
+      rewriter.replaceOp(op, adaptor.getInput());
       return success();
     }
 
@@ -293,7 +318,7 @@ public:
     Type inPtrType = getMLIRTypeForDType(op.getContext(), in.resolveDType())
                          .value_or(rewriter.getI8Type());
     Value inPtr = rewriter.create<BufferAddressOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(inPtrType), op.getBuffer());
+        op.getLoc(), LLVM::LLVMPointerType::get(inPtrType), op.getInput());
     DType outDType = out.resolveDType();
     Type outPtrType = getMLIRTypeForDType(op.getContext(), outDType)
                           .value_or(rewriter.getI8Type());
@@ -317,7 +342,7 @@ public:
     // If the output buffer has an unknown size, insert it as the first field.
     if (Optional<int64_t> index = buffer.getSizeIndex()) {
       Value inSize = rewriter.create<BufferSizeOp>(
-          op.getLoc(), getTypeConverter()->getIndexType(), op.getBuffer());
+          op.getLoc(), getTypeConverter()->getIndexType(), op.getInput());
       outBuffer = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), outBuffer,
                                                        inSize, *index);
     }
@@ -326,7 +351,7 @@ public:
     // offset by 1 if the size is unknown.
     if (Optional<int64_t> index = buffer.getDTypeIndex()) {
       Value inDType = rewriter.create<BufferDTypeOp>(
-          op.getLoc(), rewriter.getI8Type(), op.getBuffer());
+          op.getLoc(), rewriter.getI8Type(), op.getInput());
       outBuffer = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), outBuffer,
                                                        inDType, *index);
     }
@@ -358,7 +383,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertMetaBufferSize,
       ConvertMetaBufferRebind,
       ConvertMetaCastFromBuiltin,
-      ConvertMetaCastToBuiltin
+      ConvertMetaCastToBuiltin,
+      ConvertMetaPointerRebind
       // clang-format on
       >(typeConverter);
 }

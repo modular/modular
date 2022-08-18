@@ -22,6 +22,91 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// RebindOp
+//===----------------------------------------------------------------------===//
+
+/// Fold a rebind op if the input and output types are the same or through a
+/// transitory rebind.
+template <typename RebindOp>
+static OpFoldResult foldRebindOp(RebindOp op, ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "rebind op expected 1 operand");
+  // Fold cast x to same type.
+  if (op.getOperand().getType() == op.getType())
+    return op.getOperand();
+  // Fold A->B->C casts into a cast of the original cast's operand.
+  if (auto castOperand = op.getOperand().template getDefiningOp<RebindOp>()) {
+    // A->B->A doesn't need a cast at all.
+    if (castOperand.getOperand().getType() == op.getType())
+      return castOperand.getOperand();
+    op.setOperand(castOperand.getOperand());
+    return op.getResult();
+  }
+
+  return {};
+}
+
+/// Check that two parameterized fields are the same if they are concrete.
+template <typename ConcreteType>
+static LogicalResult sameIfConcrete(Operation *op, TypedAttr lhs, TypedAttr rhs,
+                                    StringRef fieldStr) {
+  if (lhs == rhs || !lhs.isa_and_nonnull<ConcreteType>() ||
+      !rhs.isa_and_nonnull<ConcreteType>())
+    return success();
+
+  // TODO: Print these attributes prettier.
+  return op->emitError() << "input " << fieldStr << " '"
+                         << getParamAsString(lhs) << "' disagrees with result "
+                         << fieldStr << " '" << getParamAsString(rhs) << "'";
+}
+
+//===----------------------------------------------------------------------===//
+// ScalarRebindOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult ScalarRebindOp::fold(ArrayRef<Attribute> operands) {
+  return foldRebindOp(*this, operands);
+}
+
+LogicalResult ScalarRebindOp::verify() {
+  return sameIfConcrete<DTypeConstantAttr>(
+      *this, getInput().getType().cast<ScalarType>().getDType(),
+      getType().getDType(), "scalar dtype");
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDRebindOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDRebindOp::fold(ArrayRef<Attribute> operands) {
+  return foldRebindOp(*this, operands);
+}
+
+LogicalResult SIMDRebindOp::verify() {
+  auto inputTy = getInput().getType().cast<SIMDType>();
+  auto outputTy = getOutput().getType().cast<SIMDType>();
+  if (failed(sameIfConcrete<DTypeConstantAttr>(
+          *this, inputTy.getDType(), outputTy.getDType(), "SIMD dtype")) ||
+      failed(sameIfConcrete<IntegerAttr>(*this, inputTy.getSize(),
+                                         outputTy.getSize(), "SIMD size")))
+    return failure();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// PointerRebindOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult PointerRebindOp::fold(ArrayRef<Attribute> operands) {
+  return foldRebindOp(*this, operands);
+}
+
+LogicalResult PointerRebindOp::verify() {
+  return sameIfConcrete<DTypeConstantAttr>(
+      *this, getInput().getType().cast<PointerType>().getDType(),
+      getType().getDType(), "pointer dtype");
+}
+
+//===----------------------------------------------------------------------===//
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 
@@ -68,47 +153,24 @@ LogicalResult BufferAddressOp::inferReturnTypes(
 /// Verifies that rebinding the input buffer to the result buffer is okay.
 /// Rebinding is allowed so long as there isn't a statically known problem.
 LogicalResult BufferRebindOp::verify() {
-  BufferType inputBufTy = getBuffer().getType().cast<BufferType>();
+  BufferType inputBufTy = getInput().getType().cast<BufferType>();
   BufferType resultBufTy = getType();
-
-  Attribute inputDtype = inputBufTy.getDType();
-  Attribute resultDtype = resultBufTy.getDType();
 
   // We allow buffer<param> to be cast to buffer<42> because the parameter may
   // be resolved to 42 during elaboration.  Be careful about ?'s which are
   // represented as null (but which are compatible with everything).
-  if (inputDtype != resultDtype &&
-      inputDtype.isa_and_nonnull<DTypeConstantAttr>() &&
-      resultDtype.isa_and_nonnull<DTypeConstantAttr>()) {
-    return emitError() << "input buffer dtype '" << getParamAsString(inputDtype)
-                       << "' disagrees with result dtype '"
-                       << getParamAsString(resultDtype) << "'";
-  }
+  if (failed(sameIfConcrete<DTypeConstantAttr>(*this, inputBufTy.getDType(),
+                                               resultBufTy.getDType(),
+                                               "buffer dtype")) ||
+      failed(sameIfConcrete<IntegerAttr>(*this, inputBufTy.getSize(),
+                                         resultBufTy.getSize(), "buffer size")))
+    return failure();
 
-  Attribute inputSize = inputBufTy.getSize();
-  Attribute resultSize = resultBufTy.getSize();
-  if (inputSize != resultSize && inputSize.isa_and_nonnull<IntegerAttr>() &&
-      resultSize.isa_and_nonnull<IntegerAttr>())
-    return emitError() << "input buffer size '" << getParamAsString(inputSize)
-                       << "' disagrees with result size '"
-                       << getParamAsString(resultSize) << "'";
   return success();
 }
 
 OpFoldResult BufferRebindOp::fold(ArrayRef<Attribute> constants) {
-  // Fold cast x to same type.
-  if (getOperand().getType() == getType())
-    return getOperand();
-  // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = getOperand().getDefiningOp<BufferRebindOp>()) {
-    // A->B->A doesn't need a cast at all.
-    if (castOperand.getOperand().getType() == getType())
-      return castOperand.getOperand();
-    setOperand(castOperand.getOperand());
-    return getResult();
-  }
-
-  return {};
+  return foldRebindOp(*this, constants);
 }
 
 //===----------------------------------------------------------------------===//
