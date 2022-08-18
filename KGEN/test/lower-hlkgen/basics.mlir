@@ -45,6 +45,10 @@ kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scala
 //}
 
 
+//===----------------------------------------------------------------------===//
+// Infer simple constraints.
+//===----------------------------------------------------------------------===//
+
 kgen.generator.interface @bufitf<size, ty: dtype -> xyz>(!meta.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
@@ -68,6 +72,9 @@ hlkgen.generator @impl1<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) 
 // CHECK-NEXT: constraints <eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32">
 // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
 
+//===----------------------------------------------------------------------===//
+// Simplify constraints.
+//===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: kgen.generator @SetIntersect<
 hlkgen.generator @SetIntersect<a, b>()
@@ -83,5 +90,3 @@ hlkgen.generator @SetIntersect<a, b>()
    > {
   kgen.return
 }
-
-

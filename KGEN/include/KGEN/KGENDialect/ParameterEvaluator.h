@@ -12,12 +12,6 @@
 
 namespace M::KGEN {
 
-/// We expect all parameter expressions to simplify down to concrete constants,
-/// we don't want anything left as a ParamOperatorAttr or ParamDeclRefAttr.
-static inline bool isSimpleConstant(Attribute attr) {
-  return attr.isa<FloatAttr, IntegerAttr, DTypeConstantAttr>();
-}
-
 /// This typedef represents a kernel/generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
 /// resolved.

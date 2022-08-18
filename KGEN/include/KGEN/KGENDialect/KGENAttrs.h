@@ -22,6 +22,7 @@
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
 
 namespace M::KGEN {
+class DTypeConstantAttr;
 class ParamDeclAttr;
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
@@ -42,6 +43,13 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 /// the constraint fails.  For a kernel this is always empty.
 SmallVector<std::pair<Attribute, StringAttr>>
 getDeclConstraints(Operation *decl);
+
+/// We expect all parameter expressions to simplify down to concrete constants
+/// after elaboration.  We don't want anything left as a ParamOperatorAttr or
+/// ParamDeclRefAttr.
+static inline bool isSimpleConstant(Attribute attr) {
+  return attr.isa<FloatAttr, IntegerAttr, DTypeConstantAttr, StringAttr>();
+}
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing

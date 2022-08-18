@@ -98,3 +98,15 @@ hlkgen.generator @impl<size>()
   kgen.return
 }
 
+// -----
+
+hlkgen.generator @equality<a, b>()
+  constraints <
+    eq(a, 1), "a is one",
+    eq(b, 2), "b is two",
+    eq(a, b), "a and b are same"
+   > {
+  kgen.return
+}
+
+
