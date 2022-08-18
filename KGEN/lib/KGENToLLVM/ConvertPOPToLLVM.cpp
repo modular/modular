@@ -193,6 +193,37 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPSIMDSplat
+//===----------------------------------------------------------------------===//
+
+/// Convert a SIMD splat to an `insertelement` into an `undef` and then a
+/// zero-initialized `shufflevector`.
+struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDSplatOp op, SIMDSplatOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto type = op.getType().cast<SIMDType>();
+    Value undef = rewriter.create<LLVM::UndefOp>(
+        op.getLoc(), getTypeConverter()->convertType(type));
+    Value zero = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), rewriter.getI32IntegerAttr(0));
+    Value vector = rewriter.create<LLVM::InsertElementOp>(
+        op.getLoc(), undef, adaptor.getScalar(), zero);
+    // If the vector is size 1, skip the shuffle.
+    int64_t size = type.getSize().cast<IntegerAttr>().getInt();
+    if (size == 1) {
+      rewriter.replaceOp(op, vector);
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+          op, vector, undef, /*mask=*/SmallVector<int32_t>(size, 0));
+    }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -227,6 +258,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPFMA,
       ConvertPOPMul,
       ConvertPOPNeg,
+      ConvertPOPSIMDSplat,
       ConvertPOPSelect,
       ConvertPOPSub
       // clang-format on

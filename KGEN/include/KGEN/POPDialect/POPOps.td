@@ -289,7 +289,8 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
 def SelectOp : POPOp<"select",
         [NoSideEffect,
          AllTypesMatch<["trueValue", "falseValue", "result"]>,
-         TypesMatchWith<"bool of same branch type", "result", "condition", "getBoolOfSameParentType($_self)">
+         TypesMatchWith<"bool of same branch type", "result", "condition",
+                        "getBoolOfSameParentType($_self)">
         ]> {
   let summary = "select";
   let description = [{
@@ -340,4 +341,35 @@ def CastOp : POPOp<"cast", [NoSideEffect]> {
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
   let hasVerifier = 1;
   let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDSplatOp
+//===----------------------------------------------------------------------===//
+
+def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
+    TypesMatchWith<"scalar of same data type", "result", "scalar",
+                   "getScalarOfSameDType($_self)">]> {
+  let summary = "SIMD splat";
+  let description = [{
+    The `simd.splat` operation takes a scalar value and replicates it across
+    a SIMD vector and returns that value. For example, splatting `%a` into a
+    `vector<4xi32>` will produce a vector valued as `[%a, %a, %a, %a]`.
+
+    ```mlir
+    %a = pop.abs %arg0 : !meta.scalar<f32>
+    %v = pop.simd.splat %a : !meta.simd<4, f32>
+
+    %u = pop.neg %arg1 : !meta.scalar<type>
+    %w = pop.simd.splat %u : !meta.simd<size, type>
+    ```
+
+    Note that `!meta.simd<1, type>` is not the same as `!meta.scalar<type>`.
+    Hence, this operation will not fold away in those cases.
+  }];
+
+  let arguments = (ins ScalarType:$scalar);
+  let results = (outs SIMDType:$result);
+
+  let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
 }
