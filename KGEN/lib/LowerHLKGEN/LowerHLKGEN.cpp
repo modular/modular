@@ -210,7 +210,8 @@ static Value insertArgumentCast(Value arg, Type type, ImplicitLocOpBuilder &b) {
 }
 
 /// If this generator is implementing an interface, check its conformance,
-/// diagnose any conflicts, and infer constraints.
+/// diagnose any conflicts, and infer constraints.  Note that 'itf' may be null
+/// if this generator is not implementing an interface.
 static LogicalResult checkInterfaceConformance(GeneratorOp gen,
                                                GeneratorInterfaceOp itf,
                                                SymbolTable &symbolTable) {
@@ -220,6 +221,11 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   // satisfiable.
   if (failed(unifier.checkExistingConstraints()))
     return failure();
+
+  // If this generator is not actually implementing an interface, just return
+  // after successfully checking the existing constraints for contradictions.
+  if (!itf)
+    return success();
 
   // Match up the argument types with the generator's.  These are allowed to
   // be more specialized, in which case they imply argument constraints.
@@ -357,16 +363,18 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
   symbolTable.insert(result);
 
   // If the generator implemented an interface, infer additional constraints and
-  // check the signature, otherwise we're done.
-  auto interfaceName = result.getImplements();
-  if (!interfaceName)
-    return success();
+  // check the signature.
+  GeneratorInterfaceOp itf;
+  if (auto interfaceName = result.getImplements()) {
+    if (!interfaceName)
+      return success();
 
-  // Check that the callee attribute was specified.
-  GeneratorInterfaceOp itf = dyn_cast_or_null<GeneratorInterfaceOp>(
-      symbolTable.lookup(interfaceName.value()));
-  if (!itf)
-    return gen.emitError("could not find implemented interface");
+    // Check that the callee attribute was specified.
+    itf = dyn_cast_or_null<GeneratorInterfaceOp>(
+        symbolTable.lookup(interfaceName.value()));
+    if (!itf)
+      return gen.emitError("could not find implemented interface");
+  }
 
   return checkInterfaceConformance(result, itf, symbolTable);
 }

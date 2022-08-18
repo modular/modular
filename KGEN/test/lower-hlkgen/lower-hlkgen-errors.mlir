@@ -64,4 +64,18 @@ hlkgen.generator @impl<size>()
   kgen.return
 }
 
+// -----
+
+// This implementation infers that the ty argument must be f32.
+
+// expected-error @+3 {{constraint contradiction detected: "I sez that size should be 12!"}}
+// expected-note @+2 {{previously constrained "someone told us size smells like 3"}}
+// expected-note @+1 {{generator declared here}}
+hlkgen.generator @impl<size>()
+  // This has an explicit constraint saying it must be f64.
+  constraints <eq(size, 3), "someone told us size smells like 3",
+               eq(size, 12), "I sez that size should be 12!"> {
+  kgen.return
+}
+
 
