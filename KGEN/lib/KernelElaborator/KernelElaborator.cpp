@@ -1144,7 +1144,7 @@ resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
       if (!std::filesystem::exists(testPath))
         continue;
 
-      modulePath = testPath;
+      modulePath = testPath.string();
       break;
     }
     if (modulePath.empty())
