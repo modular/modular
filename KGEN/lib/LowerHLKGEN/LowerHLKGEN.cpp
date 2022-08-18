@@ -84,8 +84,9 @@ ParseResult SignatureUnifier::addEqualityConstraintFn(ParamDeclRefAttr param,
                                  Twine(inferenceContext) + " specifies '" +
                                      param.getName().str() +
                                      "' = " + getParamAsString(value));
-  return constraints.addParamEqualityConstraint(param, value, message,
-                                                inferenceLoc);
+  auto constraintValue =
+      PointwiseValue::getSingleValue(value, message, inferenceLoc);
+  return constraints.addPointwiseParamConstraint(param, constraintValue);
 }
 
 ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
@@ -224,8 +225,10 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
 
   // If this generator is not actually implementing an interface, just return
   // after successfully checking the existing constraints for contradictions.
-  if (!itf)
+  if (!itf) {
+    unifier.reinstallConstraints();
     return success();
+  }
 
   // Match up the argument types with the generator's.  These are allowed to
   // be more specialized, in which case they imply argument constraints.

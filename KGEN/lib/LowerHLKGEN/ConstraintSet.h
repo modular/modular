@@ -17,13 +17,18 @@ class ParamDeclRefAttr;
 /// This maintains information about a parameter value being tracked for
 /// pointwise equivalence.
 ///
-/// TODO: We eventually want to have sets, 'x = y' equality, and != constraints.
+/// TODO: We eventually want to have 'x = y' equality, and != constraints.
 class PointwiseValue {
 public:
   static PointwiseValue getSingleValue(Attribute value, StringAttr message,
                                        Location loc) {
     return PointwiseValue{value, message, loc};
   }
+
+  /// Return a Pointwise value indicating that the parameter is equal to one of
+  /// the members of (non-empty) set of values.
+  static PointwiseValue getSetValue(ArrayRef<TypedAttr> values,
+                                    StringAttr message, Location loc);
 
   /// Merge information from another pointwise value into this, emitting a
   /// diagnostic on error or returning success if we are able to update.
@@ -37,6 +42,9 @@ public:
 private:
   PointwiseValue(Attribute value, StringAttr message, Location loc)
       : value(value), message(message), loc(loc) {}
+  // This value is either an individual constant (e.g. an IntegerAttr,
+  // FloatAttr, DTypeConstantAttr, etc) or an ArrayAttr which is a set of values
+  // that it may equal.
   Attribute value;
   StringAttr message;
   Location loc;
@@ -74,12 +82,10 @@ public:
   LogicalResult addConstraint(TypedAttr constraint, StringAttr message,
                               Location loc);
 
-  /// Add a constraint indicating the specified parameter is equal to the
-  /// specified value.  This emits a diagnostic and returns failure if a
-  /// contradiction is detected.
-  LogicalResult addParamEqualityConstraint(ParamDeclRefAttr param,
-                                           TypedAttr value, StringAttr message,
-                                           Location loc);
+  /// Add a constraint has the specified value.  This emits a diagnostic and
+  /// returns failure if a contradiction is detected.
+  LogicalResult addPointwiseParamConstraint(ParamDeclRefAttr param,
+                                            PointwiseValue value);
 
   /// Re-encode this constraint set as a array of boolean conditions and
   /// messages suitable for reinstalling on a generator.

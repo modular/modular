@@ -6,6 +6,7 @@
 
 #include "ConstraintSet.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 using namespace M;
 using namespace KGEN;
@@ -19,11 +20,21 @@ using namespace KGEN;
 LogicalResult ConstraintSet::addConstraint(TypedAttr constraint,
                                            StringAttr message, Location loc) {
   // If this is an equality constraint, handle it specially.
-  if (auto oper = constraint.dyn_cast<ParamOperatorAttr>())
-    if (oper.getOpcode() == POC::EQ)
-      if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>())
-        return addParamEqualityConstraint(param, oper.getOperand(1), message,
-                                          loc);
+  if (auto oper = constraint.dyn_cast<ParamOperatorAttr>()) {
+    if (oper.getOpcode() == POC::EQ) {
+      if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
+        auto value =
+            PointwiseValue::getSingleValue(oper.getOperand(1), message, loc);
+        return addPointwiseParamConstraint(param, value);
+      }
+    } else if (oper.getOpcode() == POC::IN) {
+      if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
+        auto value = PointwiseValue::getSetValue(
+            oper.getOperands().drop_front(), message, loc);
+        return addPointwiseParamConstraint(param, value);
+      }
+    }
+  }
 
   // Non-decodable attributes get added to the generalConstraints list so we can
   // properly maintain them when we regenerate the constraint spec.
@@ -60,16 +71,11 @@ std::pair<ArrayAttr, ArrayAttr> ConstraintSet::getConstraintsSpec() const {
 /// Add a constraint indicating the specified parameter is equal to the
 /// specified value.  This emits a diagnostic and returns failure if a
 /// contradiction is detected.
-LogicalResult ConstraintSet::addParamEqualityConstraint(ParamDeclRefAttr param,
-                                                        TypedAttr value,
-                                                        StringAttr message,
-                                                        Location loc) {
-  assert(param.getType() == value.getType());
-
-  auto newRecord = PointwiseValue::getSingleValue(value, message, loc);
+LogicalResult ConstraintSet::addPointwiseParamConstraint(ParamDeclRefAttr param,
+                                                         PointwiseValue value) {
 
   // Add the equality constraint if it doesn't exist already.
-  auto [it, isNewEntry] = pointwiseValues.insert({param, newRecord});
+  auto [it, isNewEntry] = pointwiseValues.insert({param, value});
   if (isNewEntry) {
     // If it didn't exist, just remember that we have an entry for this and we
     // are done.
@@ -79,20 +85,44 @@ LogicalResult ConstraintSet::addParamEqualityConstraint(ParamDeclRefAttr param,
 
   // If it already existed, we need to merge in information and diagnose a
   // problem.
-  return it->second.mergeIn(newRecord, decl);
+  return it->second.mergeIn(value, decl);
 }
 
 //===----------------------------------------------------------------------===//
 // PointwiseValue
 //===----------------------------------------------------------------------===//
 
+/// Return a Pointwise value indicating that the parameter is equal to one of
+/// the members of (non-empty) set of values.
+PointwiseValue PointwiseValue::getSetValue(ArrayRef<TypedAttr> values,
+                                           StringAttr message, Location loc) {
+  assert(!values.empty() && "Cannot get equality to empty set");
+  if (values.size() == 1)
+    return getSingleValue(values[0], message, loc);
+
+  SmallVector<Attribute> valuesCopy(values.begin(), values.end());
+  return PointwiseValue{ArrayAttr::get(message.getContext(), valuesCopy),
+                        message, loc};
+}
+
 /// Lower this into a constraint spec for the specified parameter.
 void PointwiseValue::addConstraintSpec(
     ParamDeclRefAttr param, SmallVectorImpl<Attribute> &values,
     SmallVectorImpl<Attribute> &messages) const {
 
-  // We add pointwise equality constraints with equals.
-  values.push_back(ParamOperatorAttr::get(POC::EQ, param, value));
+  // Set equivalence is handled with POC::IN.
+  // TODO: This would be more convenient if POC::IN was a binary operation of
+  // a value on the LHS and a typed set on the RHS.  This would make everything
+  // smoother and more efficient.
+  if (auto valueArray = value.dyn_cast<ArrayAttr>()) {
+    SmallVector<TypedAttr> operands;
+    operands.push_back(param);
+    llvm::append_range(operands, valueArray);
+    values.push_back(ParamOperatorAttr::get(POC::IN, operands));
+  } else {
+    // We add pointwise equality constraints with equals.
+    values.push_back(ParamOperatorAttr::get(POC::EQ, param, value));
+  }
   messages.push_back(message);
   // TODO: add loc.
 }
@@ -101,10 +131,49 @@ void PointwiseValue::addConstraintSpec(
 /// diagnostic on error or returning success if we are able to update.
 LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
                                       Operation *noteLoc) {
-  // We only track "p == value" right now.  If this is telling us something we
-  // already know, just accept and ignore it.
-  if (value == other.value)
-    return success();
+  // Handle the case when this is merging a set into us.
+  if (auto otherSet = other.value.dyn_cast<ArrayAttr>()) {
+    // Simplify `x = [5,6,7,8]; x = [7,8,9]` to `x = [7,8]`.
+    if (auto valueSet = value.dyn_cast<ArrayAttr>()) {
+      SmallPtrSet<Attribute, 4> elements(otherSet.begin(), otherSet.end());
+      SmallVector<TypedAttr> result;
+      for (auto value : valueSet)
+        if (elements.count(value))
+          result.push_back(value);
+      if (!result.empty()) {
+        auto newMessage = StringAttr::get(message.getContext(),
+                                          message.getValue() + " merged with " +
+                                              other.message.getValue());
+        *this = PointwiseValue::getSetValue(result, newMessage, other.loc);
+        return success();
+      }
+      // `x = [5,6]; x = [7,8,9]` ==> unsatisfiable.
+    } else {
+      // Simplify `x = 42; x = [1,42, 59]` to `x = 42`.
+      for (auto otherValue : otherSet)
+        if (value == otherValue)
+          return success();
+      // `x = 42; x = [1, 59]` ==> unsatisfiable.
+    }
+  } else {
+    // Ok, 'other' is a scalar value. If we have "param == value" that is
+    // telling us something we already know, just accept and ignore it.
+    if (value == other.value)
+      return success();
+
+    // If it is a set, check for set membership.
+    if (auto valueSet = value.dyn_cast<ArrayAttr>()) {
+      for (auto elt : valueSet) {
+        // If we are saying something like `x = [5,6,7]; x = 7` simplify to x=7.
+        if (elt == other.value) {
+          value = other.value;
+          return success();
+        }
+      }
+    }
+
+    // Otherwise, it is a contradiction.
+  }
 
   // Otherwise it must be a contradiction.
   auto diag = emitError(other.loc)
