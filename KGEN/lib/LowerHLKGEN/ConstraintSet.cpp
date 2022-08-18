@@ -140,9 +140,17 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
       for (auto value : valueSet)
         if (elements.count(value))
           result.push_back(value);
+
+      // If one set is a superset of the other, take the smaller set.
+      if (result.size() == valueSet.size())
+        return success();
+      if (result.size() == otherSet.size())
+        return *this = other, success();
+
+      // If the result is non-empty then we build the new set.
       if (!result.empty()) {
         auto newMessage = StringAttr::get(message.getContext(),
-                                          message.getValue() + " merged with " +
+                                          message.getValue() + ", and " +
                                               other.message.getValue());
         *this = PointwiseValue::getSetValue(result, newMessage, other.loc);
         return success();
