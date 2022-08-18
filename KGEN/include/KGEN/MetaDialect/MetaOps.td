@@ -14,6 +14,110 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
+// RebindOp
+//===----------------------------------------------------------------------===//
+
+class RebindOp<string mnemonic, Type type> : MetaOp<mnemonic, [NoSideEffect]> {
+  let arguments = (ins type:$input);
+  let results = (outs type:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
+  let hasVerifier = true;
+  let hasFolder = true;
+}
+
+//===----------------------------------------------------------------------===//
+// ScalarRebindOp
+//===----------------------------------------------------------------------===//
+
+def ScalarRebindOp : RebindOp<"scalar.rebind", ScalarType> {
+  let summary = "rebind a scalar type";
+  let description = [{
+    This operation rebinds the dtype of a parameterized scalar type. The dtypes
+    of scalar types can be rebound between parameter domains and concrete
+    values, but rebinding a concrete dtype to a different concrete type is
+    invalid.
+
+    Example:
+
+    ```mlir
+    // Rebind dtype from one domain to another.
+    %0 = meta.scalar.rebind %a : !meta.scalar<type1> to !meta.scalar<type2>
+
+    // Rebind dtype from a concrete dtype to a parameterized dtype.
+    %1 = meta.scalsr.rebind %b : !meta.scalar<f32> to !meta.scalar<type>
+
+    // ERROR: Cannot rebind between different concrete dtypes.
+    %2 = meta.scalar.rebind %c : !meta.scalar<ui32> to !meta.scalar<si32>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDRebindOp
+//===----------------------------------------------------------------------===//
+
+def SIMDRebindOp : RebindOp<"simd.rebind", SIMDType> {
+  let description = "rebind a SIMD type";
+  let description = [{
+    This operation rebinds the size and dtype of a parameterized SIMD type. The
+    sizes and dtypes of SIMD types can be rebound between parameter domains and
+    concrete values, but rebinding a concrete size or dtype to a different
+    concrete size or dtype is invalid.
+
+    Example:
+
+    ```mlir
+    // Rebind size from one domain to another.
+    %0 = meta.simd.rebind %a : !meta.simd<x, f32> to !meta.simd<add(y, 2), f32>
+
+    // Bind a parameterized size to a concrete size.
+    %1 = meta.simd.rebind %b : !meta.simd<size, type> to !meta.simd<4, type>
+
+    // Unbind dtype from a concrete dtype to a parameterized dtype.
+    %2 = meta.simd.rebind %c : !meta.simd<size, f32> to !meta.simd<size, type>
+
+    // ERROR: Cannot rebind between different concrete sizes.
+    %3 = meta.simd.rebind %d : !meta.simd<4, type> to !meta.simd<8, type>
+
+    // ERROR: Cannot rebind between different concrete dtypes.
+    %4 = meta.simd.rebind %e : !meta.simd<size, ui32> to !meta.simd<size, si32>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// PointerRebindOp
+//===----------------------------------------------------------------------===//
+
+def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
+  let description = "rebind a pointer type";
+  let description = [{
+    This operation rebinds the dtype of a parameterized pointer type. The dtype
+    can be rebound between parameter domains, concrete values, and unknown
+    values, but rebinding a concrete dtype to a different concrete dtype is
+    invalid.
+
+    Example:
+
+    ```mlir
+    // Rebind dtype from one domain to another.
+    %0 = meta.pointer.rebind %a : !meta.pointer<type1> to !meta.pointer<type2>
+
+    // Bind a parameterized dtype to a concrete dtype.
+    %1 = meta.pointer.rebind %b : !meta.pointer<type> to !meta.pointer<f32>
+
+    // Unbind a concrete dtype to an unknown dtype.
+    %2 = meta.pointer.rebind %c : !meta.pointer<si32> to !meta.pointer<?>
+
+    // ERROR: Cannot rebind between different concrete dtypes.
+    %3 = meta.simd.rebind %d : !meta.pointer<f32> to !meta.pointer<si32>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 
@@ -87,7 +191,7 @@ def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
 // BufferRebindOp
 //===----------------------------------------------------------------------===//
 
-def BufferRebindOp : MetaOp<"buffer.rebind", [NoSideEffect]> {
+def BufferRebindOp : RebindOp<"buffer.rebind", BufferType> {
   let summary = "rebind a buffer type";
   let description = [{
     Rebind a parameterized buffer type to another buffer type. This operation
@@ -120,14 +224,6 @@ def BufferRebindOp : MetaOp<"buffer.rebind", [NoSideEffect]> {
     %0 = meta.buffer.rebind %b : !meta.buffer<?, ui32> to !meta.buffer<?, si32>
     ```
   }];
-
-  let arguments = (ins BufferType:$buffer);
-  let results = (outs BufferType:$result);
-  let assemblyFormat = [{
-    $buffer `:` qualified(type($buffer)) `to` qualified(type($result)) attr-dict
-  }];
-  let hasVerifier = true;
-  let hasFolder = true;
 }
 
 //===----------------------------------------------------------------------===//
