@@ -60,3 +60,28 @@ kgen.kernel @constant_simd() -> !meta.simd<2, f32> {
   %0 = pop.constant(dense<[1., 2.]> : vector<2xf32>) : !meta.simd<2, f32>
   kgen.return %0 : !meta.simd<2, f32>
 }
+
+// -----
+
+// CHECK-LABEL: @simd_splat
+kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
+  // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
+  // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<2xf32>
+  // CHECK: %[[RESULT:.*]] = llvm.shufflevector %[[VECTOR]], %[[UNDEF]] [0, 0] : vector<2xf32>
+  // CHECK: unrealized_conversion_cast %[[RESULT]]
+  %0 = pop.simd.splat %a : !meta.simd<2, f32>
+  kgen.return %0 : !meta.simd<2, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @simd_splat
+kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
+  // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
+  // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<1xf32>
+  // CHECK: unrealized_conversion_cast %[[VECTOR]]
+  %0 = pop.simd.splat %a : !meta.simd<1, f32>
+  kgen.return %0 : !meta.simd<1, f32>
+}

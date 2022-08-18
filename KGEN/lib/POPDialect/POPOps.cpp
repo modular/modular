@@ -206,6 +206,15 @@ LogicalResult CastOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDSplatOp
+//===----------------------------------------------------------------------===//
+
+static Type getScalarOfSameDType(Type type) {
+  auto simd = type.cast<SIMDType>();
+  return ScalarType::get(simd.getContext(), simd.getDType());
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

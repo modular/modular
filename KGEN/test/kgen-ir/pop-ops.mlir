@@ -165,25 +165,16 @@ kgen.kernel @pop_select_simd(
   kgen.return %0 : !meta.simd<4, si32>
 }
 
-// COM: Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
-// COM: = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
-
-// CHECK-LABEL: kgen.kernel @erf
-// CHECK: %[[X:.*]]:
-kgen.kernel @erf(%x: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %[[CST:.*]] = pop.constant(1.1283791670955099 : f64) : !meta.scalar<f32>
-  %c0 = pop.constant(1.12837916709551) : !meta.scalar<f32>
-  // CHECK: %[[CST0:.*]] = pop.constant(-0.37612638903180001 : f64) : !meta.scalar<f32>
-  %c1 = pop.constant(-0.3761263890318) : !meta.scalar<f32>
-  // CHECK: %[[V0:.*]] = pop.mul %[[X]], %[[X]] : !meta.scalar<f32>
-  %x2 = pop.mul %x, %x : !meta.scalar<f32>
-  // CHECK: %[[V1:.*]] = pop.mul %[[V0]], %[[CST0]] : !meta.scalar<f32>
-  %x3 = pop.mul %x2, %c1 : !meta.scalar<f32>
-  // CHECK: %[[V2:.*]] = pop.add %[[V1]], %[[CST]] : !meta.scalar<f32>
-  %x4 = pop.add %x3, %c0 : !meta.scalar<f32>
-  // CHECK: pop.mul %[[V2]], %[[X]] : !meta.scalar<f32>
-  %x5 = pop.mul %x4, %x : !meta.scalar<f32>
-  kgen.return %x5 : !meta.scalar<f32>
+// CHECK-LABEL: @pop_simd_splat
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+kgen.generator @pop_simd_splat<size, type: dtype>(%a: !meta.scalar<f32>, %b: !meta.scalar<type>) -> (!meta.simd<4, f32>, !meta.simd<size, type>) {
+  // CHECK: %[[U:.*]] = pop.simd.splat %[[A]] : !meta.simd<4, f32>
+  %u = pop.simd.splat %a : !meta.simd<4, f32>
+  // CHECK: %[[V:.*]] = pop.simd.splat %[[B]] : !meta.simd<size, type>
+  %v = pop.simd.splat %b : !meta.simd<size, type>
+  // CHECK: return %[[U]], %[[V]]
+  kgen.return %u, %v : !meta.simd<4, f32>, !meta.simd<size, type>
 }
 
 // CHECK-LABEL: @scalar_cast
