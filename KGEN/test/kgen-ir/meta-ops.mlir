@@ -90,3 +90,12 @@ kgen.kernel @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
   // CHECK: kgen.return %1 : !meta.scalar<si32>
   kgen.return %1 : !meta.scalar<si32>
 }
+
+// CHECK-LABEL: @cast_from_builtin_vector
+// CHECK-SAME: %[[ARG:.*]]:
+kgen.kernel @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !meta.simd<1, f32> {
+  // CHECK: %[[V0:.*]] = meta.cast_from_builtin %[[ARG]] : vector<1xf32> to !meta.simd<1, f32>
+  %0 = meta.cast_from_builtin %arg0 : vector<1xf32> to !meta.simd<1, f32>
+  // CHECK: kgen.return  %[[V0:.*]] : !meta.simd<1, f32>
+  kgen.return %0 : !meta.simd<1, f32>
+}

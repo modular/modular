@@ -54,6 +54,11 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
     Type standardTy) {
   return checkMetaCastedTypes(
       emitError, metaTy, standardTy, [standardTy](DTypeConstantAttr dtype) {
+        // If the standard type is a vector, check that the element types match.
+        if (auto vecType = standardTy.dyn_cast<VectorType>())
+          return success(dtype.isCompatibleWith(vecType.getElementType()));
+        // Otherwise, the type is a scalar and we check that the data types
+        // match.
         return success(dtype.isCompatibleWith(standardTy));
       });
 }
