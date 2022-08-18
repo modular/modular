@@ -23,15 +23,23 @@ LogicalResult ConstraintSet::addConstraint(TypedAttr constraint,
   if (auto oper = constraint.dyn_cast<ParamOperatorAttr>()) {
     if (oper.getOpcode() == POC::EQ) {
       if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
-        auto value =
-            PointwiseValue::getSingleValue(oper.getOperand(1), message, loc);
-        return addPointwiseParamConstraint(param, value);
+        // 'param == 42' is equality comparable.
+        if (isSimpleConstant(oper.getOperand(1))) {
+          auto value =
+              PointwiseValue::getSingleValue(oper.getOperand(1), message, loc);
+          return addPointwiseParamConstraint(param, value);
+        }
+
+        // TODO: Handle linear expressions of relational values, e.g. x = y+4.
       }
     } else if (oper.getOpcode() == POC::IN) {
+      // 'param in {1,2,3}' is equality comparable.
       if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
-        auto value = PointwiseValue::getSetValue(
-            oper.getOperands().drop_front(), message, loc);
-        return addPointwiseParamConstraint(param, value);
+        if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
+          auto value = PointwiseValue::getSetValue(
+              oper.getOperands().drop_front(), message, loc);
+          return addPointwiseParamConstraint(param, value);
+        }
       }
     }
   }

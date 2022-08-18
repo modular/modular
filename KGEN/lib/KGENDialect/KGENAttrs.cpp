@@ -753,18 +753,28 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   if (lhs == rhs)
     return false;
 
-  // All expressions are "less than" a constant, since they appear on the right.
-  // We handle integers and dtypes consistently here, they can never occur in
-  // the same expression, since they have different types.
-  if (auto intRhs = rhs.dyn_cast<IntegerAttr>()) {
-    auto intLhs = lhs.dyn_cast<IntegerAttr>();
-    return !intLhs || intLhs.getValue().slt(intRhs.getValue());
-  } else if (auto dtypeRhs = rhs.dyn_cast<DTypeConstantAttr>()) {
-    auto dtypeLhs = lhs.dyn_cast<DTypeConstantAttr>();
-    return !dtypeLhs ||
-           dtypeLhs.getDType().getValue() < dtypeRhs.getDType().getValue();
+  // All non-constant expressions are "less than" a constant, since they appear
+  // on the right. We handle all simple constants consistently here: they can
+  // never occur in the same expression since they have different types.
+  if (isSimpleConstant(rhs)) {
+    if (auto intRhs = rhs.dyn_cast<IntegerAttr>()) {
+      auto intLhs = lhs.dyn_cast<IntegerAttr>();
+      return !intLhs || intLhs.getValue().slt(intRhs.getValue());
+    }
+    if (auto dtypeRhs = rhs.dyn_cast<DTypeConstantAttr>()) {
+      auto dtypeLhs = lhs.dyn_cast<DTypeConstantAttr>();
+      return !dtypeLhs ||
+             dtypeLhs.getDType().getValue() < dtypeRhs.getDType().getValue();
+    }
+    if (auto strRhs = rhs.dyn_cast<StringAttr>()) {
+      auto strLhs = lhs.dyn_cast<StringAttr>();
+      return !strLhs || strLhs.getValue() < strRhs.getValue();
+    }
+    auto fltRhs = rhs.cast<FloatAttr>();
+    auto fltLhs = lhs.dyn_cast<FloatAttr>();
+    return !fltLhs || fltLhs.getValue() < fltRhs.getValue();
   }
-  if (lhs.isa<IntegerAttr, DTypeConstantAttr>())
+  if (isSimpleConstant(lhs))
     return false;
 
   // Next up are named parameters.
