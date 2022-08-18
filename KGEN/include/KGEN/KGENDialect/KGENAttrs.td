@@ -15,12 +15,12 @@ include "mlir/IR/SubElementInterfaces.td"
 /// This is an attribute that is formed of valid nodes in a parameter
 /// expression.
 def ParameterExprAttr
-  : Confined<TypedAttrInterface, [AttrConstraint<
+  : ConfinedAttr<TypedAttrInterface, [AttrConstraint<
       CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
     >]>;
 
 def I1ParameterExprAttr
-  : Confined<ParameterExprAttr, [AttrConstraint<
+  : ConfinedAttr<ParameterExprAttr, [AttrConstraint<
       CPred<"$_self.cast<TypedAttr>().getType().isInteger(1)">,
             "i1 parameter expression"
     >]>;
@@ -101,7 +101,7 @@ def ParamDeclArrayAttr
 
 /// An array of ParamDeclAttr of size 1.
 def ParamDeclSize1ArrayAttr
-  : Confined<ParamDeclArrayAttr, [AttrConstraint<
+  : ConfinedAttr<ParamDeclArrayAttr, [AttrConstraint<
       CPred<"$_self.cast<ParamDeclArrayAttr>().getValue().size() == 1">,
       "single parameter declaration"
     >]>;

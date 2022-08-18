@@ -34,7 +34,7 @@ public:
   /// lifetime of the queue.
   void enqueue(T &&data) {
     std::unique_ptr<ItemType> newItem(new ItemType(nullptr, std::move(data)));
-    std::lock_guard lock(m);
+    std::lock_guard<std::mutex> lock(m);
 
     /// If the queue is empty then set head and tail to the new item.
     if (emptyImpl()) {
@@ -49,7 +49,7 @@ public:
   /// Dequeue returns failure if the queue is empty, otherwise returns the
   /// stored value to the caller and relinquishes ownership.
   T dequeue() {
-    std::lock_guard lock(m);
+    std::lock_guard<std::mutex> lock(m);
     if (emptyImpl())
       return nullptr;
 

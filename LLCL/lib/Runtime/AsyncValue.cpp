@@ -94,7 +94,7 @@ void AsyncValue::destroyWithRefCountZero() {
 ///
 void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
   WaitersAndState oldValue = loadWaitersAndState();
-  SpinWaiter spinWaiter;
+  SpinWaiter<> spinWaiter;
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
     switch (oldValue.getInt()) {
     case State::kAvailable:
@@ -197,7 +197,7 @@ public:
     --numWaiters;
     uint8_t allReadyMask = (1 << numWaiters) - 1;
     // Make sure the waiter in question finished construction.
-    SpinWaiter spinWaiter;
+    SpinWaiter<> spinWaiter;
     while (waitersCompletelyInitialized.load() != allReadyMask) {
       // If not, wait a bit and retry.
       spinWaiter.wait();
@@ -266,7 +266,7 @@ M::LogicalResult AsyncValue::moveState(WaitersAndState &oldValue,
   auto origState = oldValue.getInt();
   assert(origState != newState && "cannot transition to same state");
   auto newValue = WaitersAndState(oldValue.getPointer(), newState);
-  SpinWaiter spinWaiter;
+  SpinWaiter<> spinWaiter;
   while (!compareExchangeWaiterAndState(oldValue, newValue)) {
     // If the thing changed to a different state underneath us, return
     // failure.
@@ -341,7 +341,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     }
   }
 
-  SpinWaiter spinWaiter;
+  SpinWaiter<> spinWaiter;
   while (1) {
     // If we raced with a transition into a ready state then we can just execute
     // the waiter and be done.

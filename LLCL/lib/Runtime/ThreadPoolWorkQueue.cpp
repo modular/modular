@@ -109,7 +109,7 @@ struct SharedThreadState {
       return -1;
 
     // Iteratively compare/xchg to extract the low bit out of suspendedThreads.
-    SpinWaiter spinner;
+    SpinWaiter<> spinner;
     do {
       // Clear the lowest bit set in suspendedThreads with `x & (x-1)` idiom.
       uint64_t newSuspendedThreads =
