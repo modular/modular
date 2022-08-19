@@ -41,7 +41,7 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
   if (vectorTy.getRank() != 1)
     return emitError("expected a rank 1 vector");
   if (auto size = simdTy.getSize().dyn_cast<IntegerAttr>();
-      size.getInt() != vectorTy.getShape().front())
+      size && size.getInt() != vectorTy.getShape().front())
     return emitError("dimensions do not match");
   if (auto dtype = simdTy.getDType().dyn_cast<DTypeConstantAttr>();
       dtype && failed(checkDType(dtype)))
