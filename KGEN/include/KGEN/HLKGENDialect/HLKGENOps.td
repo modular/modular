@@ -29,7 +29,6 @@ def HLGeneratorOp
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
-                       StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
 

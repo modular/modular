@@ -17,16 +17,15 @@ using namespace KGEN;
 
 /// Add a single constraint with a single message.  This emits a diagnostic and
 /// returns failure if a contradiction is detected.
-LogicalResult ConstraintSet::addConstraint(TypedAttr constraint,
-                                           StringAttr message, Location loc) {
+LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
   // If this is an equality constraint, handle it specially.
-  if (auto oper = constraint.dyn_cast<ParamOperatorAttr>()) {
+  if (auto oper = constraint.getExpr().dyn_cast<ParamOperatorAttr>()) {
     if (oper.getOpcode() == POC::EQ) {
       if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
         // 'param == 42' is equality comparable.
         if (isSimpleConstant(oper.getOperand(1))) {
-          auto value =
-              PointwiseValue::getSingleValue(oper.getOperand(1), message, loc);
+          auto value = PointwiseValue::getSingleValue(
+            oper.getOperand(1), constraint.getMessage(), constraint.getLoc());
           return addPointwiseParamConstraint(param, value);
         }
 
@@ -37,7 +36,8 @@ LogicalResult ConstraintSet::addConstraint(TypedAttr constraint,
       if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
         if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
           auto value = PointwiseValue::getSetValue(
-              oper.getOperands().drop_front(), message, loc);
+              oper.getOperands().drop_front(), constraint.getMessage(),
+              constraint.getLoc());
           return addPointwiseParamConstraint(param, value);
         }
       }
@@ -46,16 +46,15 @@ LogicalResult ConstraintSet::addConstraint(TypedAttr constraint,
 
   // Non-decodable attributes get added to the generalConstraints list so we can
   // properly maintain them when we regenerate the constraint spec.
-  generalConstraints.push_back({constraint, message, loc});
+  generalConstraints.push_back(constraint);
   return success();
 }
 
 /// Re-encode this constraint set as a array of boolean conditions and
 /// messages suitable for reinstalling on a generator.
-std::pair<ArrayAttr, ArrayAttr> ConstraintSet::getConstraintsSpec() const {
+ConstraintArrayAttr ConstraintSet::getConstraintsSpec() const {
   Builder b(decl->getContext());
-  SmallVector<Attribute> values;
-  SmallVector<Attribute> messages;
+  SmallVector<ConstraintAttr> constraints;
 
   // Turn pointwise parameters into constraints.  We iterate through this in
   // order of parameterOrder to make sure we produce a deterministically ordered
@@ -63,17 +62,13 @@ std::pair<ArrayAttr, ArrayAttr> ConstraintSet::getConstraintsSpec() const {
   for (ParamDeclRefAttr param : parameterOrder) {
     auto it = pointwiseValues.find(param);
     assert(it != pointwiseValues.end());
-    it->second.addConstraintSpec(param, values, messages);
+    constraints.push_back(it->second.getAsConstraintSpec(param));
   }
 
   // Flatten general constraints back into values/message array.
-  for (auto [value, message, loc] : generalConstraints) {
-    values.push_back(value);
-    messages.push_back(message);
-    // TODO: Handle locations.
-  }
+  llvm::append_range(constraints, generalConstraints);
 
-  return {b.getArrayAttr(values), b.getArrayAttr(messages)};
+  return ConstraintArrayAttr::get(decl->getContext(), constraints);
 }
 
 /// Add a constraint indicating the specified parameter is equal to the
@@ -114,25 +109,23 @@ PointwiseValue PointwiseValue::getSetValue(ArrayRef<TypedAttr> values,
 }
 
 /// Lower this into a constraint spec for the specified parameter.
-void PointwiseValue::addConstraintSpec(
-    ParamDeclRefAttr param, SmallVectorImpl<Attribute> &values,
-    SmallVectorImpl<Attribute> &messages) const {
-
+ConstraintAttr
+PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
   // Set equivalence is handled with POC::IN.
   // TODO: This would be more convenient if POC::IN was a binary operation of
   // a value on the LHS and a typed set on the RHS.  This would make everything
   // smoother and more efficient.
+  TypedAttr expr;
   if (auto valueArray = value.dyn_cast<ArrayAttr>()) {
     SmallVector<TypedAttr> operands;
     operands.push_back(param);
     llvm::append_range(operands, valueArray);
-    values.push_back(ParamOperatorAttr::get(POC::IN, operands));
+    expr = ParamOperatorAttr::get(POC::IN, operands);
   } else {
     // We add pointwise equality constraints with equals.
-    values.push_back(ParamOperatorAttr::get(POC::EQ, param, value));
+    expr = ParamOperatorAttr::get(POC::EQ, param, value);
   }
-  messages.push_back(message);
-  // TODO: add loc.
+  return ConstraintAttr::get(expr, message, loc);
 }
 
 /// Merge information from another pointwise value into this, emitting a
@@ -160,7 +153,9 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
         auto newMessage = StringAttr::get(message.getContext(),
                                           message.getValue() + ", and " +
                                               other.message.getValue());
-        *this = PointwiseValue::getSetValue(result, newMessage, other.loc);
+        *this = PointwiseValue::getSetValue(
+            result, newMessage,
+            FusedLoc::get(message.getContext(), {loc, other.loc}));
         return success();
       }
       // `x = [5,6]; x = [7,8,9]` ==> unsatisfiable.

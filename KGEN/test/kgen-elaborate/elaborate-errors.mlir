@@ -27,7 +27,7 @@ kgen.generator.interface @genItf2<x>()
 // expected-note @below {{failed to expand this declaration}}
 // expected-note @+1 {{constraint failed: x must be zarooo}}
 kgen.generator @genItf2_impl0<x>()
-  constraints <eq(x, 0), "x must be zarooo"> implements @genItf2 {
+  constraints <[eq(x, 0), "x must be zarooo"]> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return
 }
@@ -90,7 +90,7 @@ kgen.kernel @k2() {
 
 kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
 
-kgen.generator @getSIMDLengthF32<dt: dtype -> length>() 
+kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
@@ -100,7 +100,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
 // expected-error @+1 {{failed to generate any kernels}}
 kgen.kernel @brokenVLenAssert() {
   kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
-  
+
   // expected-note @+1 {{vector length should be 3}}
   kgen.param.assert <eq(flen, 3)>, "vector length should be 3"
   kgen.return

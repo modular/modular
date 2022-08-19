@@ -91,7 +91,7 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
   Operation *decl = declAndInputParams.first;
 
   // If there are no constraints, we are trivially done.
-  auto constraints = getDeclConstraints(decl);
+  ArrayRef<ConstraintAttr> constraints = getDeclConstraints(decl);
   if (constraints.empty())
     return success();
 
@@ -106,8 +106,8 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
     evaluator.setParameterValue(decl.cast<ParamDeclAttr>(), value);
 
   // Each constraint must be foldable, and must fold to true.
-  for (auto [expr, message] : constraints) {
-    auto result = evaluator.simplifyParameterExpr(expr);
+  for (ConstraintAttr constraint : constraints) {
+    auto result = evaluator.simplifyParameterExpr(constraint.getExpr());
     if (failed(result))
       return Error("constraint evaluation failure: " +
                    Twine(result.getError()));
@@ -115,9 +115,9 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
     if (!resultInt || resultInt.getValue().getBitWidth() != 1)
       return Error("constraint evaluation didn't return true or false");
 
-    // If this failed, indicate why
+    // If this failed, indicate why.
     if (resultInt.getValue().isZero())
-      return Error("constraint failed: " + message.getValue());
+      return Error("constraint failed: " + constraint.getMessage().getValue());
   }
 
   // If we made it this far, then everything folded to true.

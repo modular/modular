@@ -169,17 +169,11 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
           });
         })) {
       // Ok, great, add this to the trait list of the enclosing operation.
-      auto oldConstraints = parent.getConstraints().getValue();
-      SmallVector<Attribute> constraints(oldConstraints.begin(),
-                                         oldConstraints.end());
-      auto oldMessages = parent.getConstraintMessages().getValue();
-      SmallVector<Attribute> constraintMessages(oldMessages.begin(),
-                                                oldMessages.end());
-      constraints.push_back(cond);
-      constraintMessages.push_back(op.getMessageAttr());
-      parent.setConstraintsAttr(rewriter.getArrayAttr(constraints));
-      parent.setConstraintMessagesAttr(
-          rewriter.getArrayAttr(constraintMessages));
+      SmallVector<ConstraintAttr> constraints(parent.getConstraints());
+      constraints.push_back(
+          ConstraintAttr::get(cond, op.getMessageAttr(), op.getLoc()));
+      parent.setConstraintsAttr(
+          rewriter.getAttr<ConstraintArrayAttr>(constraints));
       op.erase();
       return success();
     }
@@ -384,20 +378,14 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
   if (opKind == GeneratorOrKernelKind::kernel)
     return success();
 
-  SmallVector<Attribute> constraints, constraintMessages;
+  SmallVector<ConstraintAttr> constraints;
 
   if (succeeded(parser.parseOptionalKeyword("constraints"))) {
-    // Constraints are always i1.
-    Type int1Ty = parser.getBuilder().getI1Type();
-    std::string message;
-
     auto parseConstraint = [&]() -> ParseResult {
-      TypedAttr constraint;
-      if (parseParamValue(parser, constraint, int1Ty) || parser.parseComma() ||
-          parser.parseString(&message))
+      ConstraintAttr constraint;
+      if (parser.parseCustomAttributeWithFallback(constraint))
         return failure();
       constraints.push_back(constraint);
-      constraintMessages.push_back(parser.getBuilder().getStringAttr(message));
       return success();
     };
 
@@ -405,10 +393,8 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
                                        parseConstraint))
       return failure();
   }
-  result.addAttribute("constraints",
-                      parser.getBuilder().getArrayAttr(constraints));
-  result.addAttribute("constraintMessages",
-                      parser.getBuilder().getArrayAttr(constraintMessages));
+  result.addAttribute("constraints", ConstraintArrayAttr::get(
+                                         parser.getContext(), constraints));
   return success();
 }
 
@@ -528,23 +514,20 @@ static void printParameterList(Operation *decl, OpAsmPrinter &p) {
 
 /// Print a constraint list for a generator or interface.
 static void printConstraints(Operation *decl, OpAsmPrinter &p) {
-  auto constraints = getDeclConstraints(decl);
+  ArrayRef<ConstraintAttr> constraints = getDeclConstraints(decl);
   if (constraints.empty())
     return;
 
   p.printNewline();
   p << "  constraints <";
-  llvm::interleaveComma(
-      constraints, p,
-      [&](std::pair<Attribute, StringAttr> constraintAndMessage) {
-        if (constraints.size() > 1) {
-          p.printNewline();
-          p << "    ";
-        }
-        printParamValue(p, constraintAndMessage.first);
-        p << ", " << constraintAndMessage.second;
-      });
-  p << '>';
+  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
+    if (constraints.size() > 1) {
+      p.printNewline();
+      p << "    ";
+    }
+    constraint.print(p);
+  });
+  p << ">";
 }
 
 void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
@@ -572,7 +555,8 @@ void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
-  if (auto implementsAttr = op->getAttrOfType<FlatSymbolRefAttr>("implements")) {
+  if (auto implementsAttr =
+          op->getAttrOfType<FlatSymbolRefAttr>("implements")) {
     p.printNewline();
     p << "  implements " << implementsAttr;
   }

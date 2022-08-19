@@ -11,7 +11,7 @@ kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, 
 kgen.generator.interface @erf_scalar<type: dtype>(%in: !meta.scalar<type>) -> !meta.scalar<type>
 
 kgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <in(:dtype type, [f32, f64]), "incorrect element type"> implements @erf_scalar {
+  constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
   // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
   // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
   // = x * fma(x^2, -0.37612638903183752463, 1.1283791670955125739)
@@ -26,7 +26,7 @@ kgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !meta.
 
 // Uses the same Erf approximation found in the MLAS library.
 kgen.generator @erf_scalar_mlas<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <in(:dtype type, [f32, f64]), "incorrect element type"> implements @erf_scalar {
+  constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
   %xAbs = pop.abs %x : !meta.scalar<type>
   %branchCut = pop.constant(0.921875) : !meta.scalar<type>
   // computes xAbs < branchCut

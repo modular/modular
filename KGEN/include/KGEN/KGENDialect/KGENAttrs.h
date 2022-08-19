@@ -22,8 +22,10 @@
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
 
 namespace M::KGEN {
+class ConstraintAttr;
 class DTypeConstantAttr;
 class ParamDeclAttr;
+
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
 }
@@ -41,8 +43,7 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 /// Given a kernel, generator or interface operation, return the constraints
 /// imposed on it, which is an expression and string describing the problem when
 /// the constraint fails.  For a kernel this is always empty.
-SmallVector<std::pair<Attribute, StringAttr>>
-getDeclConstraints(Operation *decl);
+ArrayRef<ConstraintAttr> getDeclConstraints(Operation *decl);
 
 /// We expect all parameter expressions to simplify down to concrete constants
 /// after elaboration.  We don't want anything left as a ParamOperatorAttr or
@@ -58,27 +59,33 @@ static inline bool isSimpleConstant(Attribute attr) {
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
 std::string getParamAsString(TypedAttr value);
-void printParamValue(TypedAttr value, raw_ostream &os);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
-/// print `: <type>` or elide it entirely if type is an `index` type.
+/// Print `: <type>` or elide it entirely if type is an `index` type.
 void printColonTypeOrIndex(AsmPrinter &p, Type type);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
-void printParamName(AsmPrinter &p, StringRef name);
 void printParamName(StringRef name, raw_ostream &os);
+void printParamName(AsmPrinter &p, StringRef name);
+
+/// Parse a parameter name as either a keyword or double quoted string.
+ParseResult parseParamName(AsmParser &p, StringAttr &name);
+ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &name);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParamValue(AsmPrinter &p, TypedAttr value);
+void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+void printParamValue(TypedAttr value, raw_ostream &os);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
+ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &value,
+                            Type type);
 
 /// Print a parameter value that is known to be an index type.
 void printIndexParamValue(AsmPrinter &p, Attribute value);

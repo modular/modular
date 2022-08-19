@@ -89,19 +89,6 @@ struct FieldParser<DType> {
 
 } // namespace mlir
 
-/// Parse a parameter name. This is the corresponding parser to
-/// `printParamName`.
-static ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &result) {
-  std::string name;
-  if (p.parseKeywordOrString(&name))
-    return failure();
-  result = StringAttr::get(p.getContext(), name);
-  return success();
-}
-
-#define GET_ATTRDEF_CLASSES
-#include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
-
 //===----------------------------------------------------------------------===//
 // KGENDialect attribute support
 //===----------------------------------------------------------------------===//
@@ -131,6 +118,13 @@ void ParamBindArrayAttr::walkImmediateSubElements(
     walkAttrsFn(value);
 }
 
+void ConstraintArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (ConstraintAttr value : getValue())
+    walkAttrsFn(value);
+}
+
 Attribute ParamDeclArrayAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   return get(getContext(),
@@ -142,6 +136,13 @@ Attribute ParamBindArrayAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   return get(getContext(),
              {reinterpret_cast<const ParamBindAttr *>(replAttrs.begin()),
+              replAttrs.size()});
+}
+
+Attribute ConstraintArrayAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  return get(getContext(),
+             {reinterpret_cast<const ConstraintAttr *>(replAttrs.begin()),
               replAttrs.size()});
 }
 
@@ -167,6 +168,19 @@ static bool isLegalMLIRIdentifier(StringRef name) {
   return llvm::all_of(name.drop_front(), [](unsigned char c) {
     return isalnum(c) || c == '_' || c == '$' || c == '.';
   });
+}
+
+ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
+  std::string value;
+  if (p.parseKeywordOrString(&value))
+    return failure();
+  name = StringAttr::get(p.getContext(), value);
+  return success();
+}
+
+ParseResult KGEN::parseParamName(AsmParser &p, FailureOr<StringAttr> &name) {
+  name.emplace();
+  return parseParamName(p, *name);
 }
 
 void KGEN::printParamName(StringRef name, raw_ostream &os) {
@@ -368,6 +382,14 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   return p.parseAttribute(value, type);
 }
 
+ParseResult KGEN::parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
+                                  Type type) {
+  result.emplace();
+  if (parseParamValue(p, *result, type))
+    return failure();
+  return success();
+}
+
 static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
@@ -531,7 +553,7 @@ std::string KGEN::getParamAsString(TypedAttr value) {
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void KGEN::printParamValue(AsmPrinter &p, TypedAttr value) {
+void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   printParamValue(value, p.getStream());
 }
 
@@ -1349,21 +1371,14 @@ KGEN::getDeclParameterInfo(Operation *decl) {
   return std::make_pair(declParams, resultParams);
 }
 
-SmallVector<std::pair<Attribute, StringAttr>>
-KGEN::getDeclConstraints(Operation *decl) {
-  SmallVector<std::pair<Attribute, StringAttr>> result;
+ArrayRef<ConstraintAttr> KGEN::getDeclConstraints(Operation *decl) {
   // Kernels never have constraints.
   if (isa<KernelOp>(decl))
-    return result;
+    return {};
 
   // Must be a generator or interface.
   assert(classifyDecl(decl).has_value() && "unknown declaration");
-  auto exprs = decl->getAttrOfType<ArrayAttr>("constraints").getValue();
-  auto messages = decl->getAttrOfType<ArrayAttr>("constraintMessages")
-                      .getAsRange<StringAttr>();
-  for (auto [expr, message] : llvm::zip(exprs, messages))
-    result.push_back({expr, message});
-  return result;
+  return decl->getAttrOfType<ConstraintArrayAttr>("constraints").getValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1373,3 +1388,51 @@ KGEN::getDeclConstraints(Operation *decl) {
 DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, DType dtype) {
   return get(ctx, dtype, DTypeType::get(ctx));
 }
+
+//===----------------------------------------------------------------------===//
+// ConstraintAttr
+//===----------------------------------------------------------------------===//
+
+/// Parse an optional location or use the current location of the parser.
+static ParseResult parseConstraintLoc(AsmParser &parser,
+                                      FailureOr<Location> &loc) {
+  if (succeeded(parser.parseOptionalComma())) {
+    mlir::LocationAttr locAttr;
+    if (parser.parseAttribute(locAttr))
+      return failure();
+    loc.emplace(locAttr);
+  } else {
+    loc = parser.getEncodedSourceLoc(parser.getCurrentLocation());
+  }
+  return success();
+}
+
+/// Always print the location.
+static void printConstraintLoc(AsmPrinter &printer, Location loc) {
+  printer << ", ";
+  printer.printAttribute(loc);
+}
+
+void ConstraintAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getExpr());
+  walkAttrsFn(getMessage());
+  walkAttrsFn(getLoc());
+}
+
+Attribute
+ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                            ArrayRef<Type> replTypes) const {
+  assert(replTypes.empty() && "constraint has no types");
+  assert(replAttrs.size() == 3 && "expected 3 sub-elements");
+  return get(replAttrs[0].cast<TypedAttr>(), replAttrs[1].cast<StringAttr>(),
+             replAttrs[2].cast<mlir::LocationAttr>());
+}
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/KGENDialect/KGENAttrs.cpp.inc"

@@ -79,7 +79,6 @@ def GeneratorOp
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
-                       StrArrayAttr:$constraintMessages,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
 
@@ -125,8 +124,7 @@ def GeneratorInterfaceOp
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
-                       ConstraintArrayAttr:$constraints,
-                       StrArrayAttr:$constraintMessages);
+                       ConstraintArrayAttr:$constraints);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.
@@ -289,7 +287,7 @@ def ParamAssertOp : KGENOp<"param.assert", []> {
   }];
 
   let arguments = (ins I1ParameterExprAttr:$cond, StrAttr:$message);
-  let assemblyFormat = 
+  let assemblyFormat =
     "` ` `<` custom<ParamAssertOpValue>($cond) `>` `,` $message attr-dict";
 
   let hasCanonicalizeMethod = 1;
