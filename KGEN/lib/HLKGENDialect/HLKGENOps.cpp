@@ -64,9 +64,12 @@ HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitError() << "'" << interfaceSym.getValue()
                        << "' does not reference a generator interface";
 
-  // Verify that the signature of this generator matches the signature of the
-  // interface.
-  return verifyDeclMatchesInterface("generator", *this, "interface", interface);
+  // Result parameters need to match, but input parameters may be inferred.
+  auto resultParamDecls = getDeclParameterInfo(*this).second;
+  auto interfaceResultParamDecls = getDeclParameterInfo(interface).second;
+  return verifyParameterList(resultParamDecls, interfaceResultParamDecls,
+                             "generator", *this, "interface", interface,
+                             "result parameter");
 }
 
 //===----------------------------------------------------------------------===//

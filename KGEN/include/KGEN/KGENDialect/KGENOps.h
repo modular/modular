@@ -25,10 +25,6 @@ namespace M::KGEN {
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 
-LogicalResult verifyDeclMatchesInterface(
-    const char *originatorName, mlir::FunctionOpInterface originatorDecl,
-    const char *interfaceName, GeneratorInterfaceOp interfaceDecl);
-
 enum class GeneratorOrKernelKind {
   kernel,
   generator,
@@ -47,6 +43,24 @@ Optional<GeneratorOrKernelKind> classifyDecl(Operation *op);
 ParseResult parseGeneratorOrKernel(OpAsmParser &parser, OperationState &result,
                                    GeneratorOrKernelKind opKind);
 void printGeneratorOrKernel(OpAsmPrinter &p, mlir::FunctionOpInterface op);
+
+/// Verify that a list of parameter declarations from a generator or kernel
+/// matches those of an interface.  This produces an error diagnostic and
+/// returns failure when a problem is detected, or returns true if everything is
+/// ok.
+ParseResult verifyParameterList(ArrayRef<ParamDeclAttr> originatorParamDecls,
+                                ArrayRef<ParamDeclAttr> interfaceParamDecls,
+                                const char *originatorName,
+                                mlir::FunctionOpInterface originatorDecl,
+                                const char *interfaceName,
+                                GeneratorInterfaceOp interfaceDecl,
+                                const char *parameterKind);
+
+/// Check that the specified generator/interfaces matches signature
+/// information with the other interface.
+LogicalResult verifyDeclMatchesInterface(
+    const char *originatorName, mlir::FunctionOpInterface originatorDecl,
+    const char *interfaceName, GeneratorInterfaceOp interfaceDecl);
 
 } // namespace M::KGEN
 

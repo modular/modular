@@ -120,6 +120,13 @@ public:
   /// messages suitable for reinstalling on a generator.
   ConstraintArrayAttr getConstraintsSpec() const;
 
+  /// Return a set containing all of the parameters that are inferred.  This
+  /// will also include some parameters that were in the initial constraint set
+  /// as well.
+  ArrayRef<ParamDeclRefAttr> getPotentiallyInferredParameters() const {
+    return parameterOrder;
+  }
+
 private:
   Operation *decl;
 
