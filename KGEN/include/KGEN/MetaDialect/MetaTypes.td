@@ -143,6 +143,10 @@ def BoolScalar : AllOfType<[ScalarType, BoolDType]>;
 def BoolSIMD : AllOfType<[SIMDType, BoolDType]>;
 
 /// A scalar type that is constrained to be either an unbound dtype or a
+/// integeral dtype.
+def UnboundOrIntegerScalar : AllOfType<[ScalarType, IntegerOrUnboundDType],
+    "whose value is either unbound or a integral dtype">;
+/// A scalar type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
 def UnboundOrFloatScalar : AllOfType<[ScalarType, FloatOrUnboundDType],
     "whose value is either unbound or a floating-point dtype">;

@@ -135,16 +135,3 @@ kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.
   %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
   kgen.return %2 : !meta.scalar<type>
 }
-
-kgen.generator.interface @simd.extractelement<size, type: dtype>(%vec: !meta.simd<size, type>, %idx: !meta.scalar<si32>) -> !meta.scalar<type>
-
-kgen.generator @simd.extractelement_f32<size, type: dtype>(%vec: !meta.simd<size, type>, %idx: !meta.scalar<si32>) -> !meta.scalar<type>
-  constraints <[eq(:dtype type, f32), "incorrect element type"],
-               [eq(size, 1), "incorrect simd size"]>
-  implements @simd.extractelement {
-  %llvm_vec = meta.cast_to_builtin %vec: !meta.simd<size, type> to vector<1xf32>
-  %i32_idx = meta.cast_to_builtin %idx: !meta.scalar<si32> to i32
-  %val = llvm.extractelement %llvm_vec[%i32_idx: i32] : vector<1xf32>
-  %value = meta.cast_from_builtin %val: f32 to !meta.scalar<type>
-  kgen.return %value : !meta.scalar<type>
-}
