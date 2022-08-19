@@ -35,9 +35,7 @@ public:
   LogicalResult mergeIn(PointwiseValue other, Operation *noteLoc);
 
   /// Lower this into a constraint spec for the specified parameter.
-  void addConstraintSpec(ParamDeclRefAttr param,
-                         SmallVectorImpl<Attribute> &values,
-                         SmallVectorImpl<Attribute> &messages) const;
+  ConstraintAttr getAsConstraintSpec(ParamDeclRefAttr param) const;
 
 private:
   PointwiseValue(Attribute value, StringAttr message, Location loc)
@@ -79,8 +77,7 @@ public:
 
   /// Add a single constraint with a single message.  This emits a diagnostic
   /// and returns failure if a contradiction is detected.
-  LogicalResult addConstraint(TypedAttr constraint, StringAttr message,
-                              Location loc);
+  LogicalResult addConstraint(ConstraintAttr constraint);
 
   /// Add a constraint has the specified value.  This emits a diagnostic and
   /// returns failure if a contradiction is detected.
@@ -89,7 +86,7 @@ public:
 
   /// Re-encode this constraint set as a array of boolean conditions and
   /// messages suitable for reinstalling on a generator.
-  std::pair<ArrayAttr, ArrayAttr> getConstraintsSpec() const;
+  ConstraintArrayAttr getConstraintsSpec() const;
 
 private:
   Operation *decl;
@@ -104,7 +101,7 @@ private:
   SmallVector<ParamDeclRefAttr> parameterOrder;
 
   /// This stores constraints that we can't decode into parameter relationships.
-  SmallVector<std::tuple<TypedAttr, StringAttr, Location>> generalConstraints;
+  SmallVector<ConstraintAttr> generalConstraints;
 
   ConstraintSet(const ConstraintSet &) = delete;
   ConstraintSet(ConstraintSet &&) = delete;

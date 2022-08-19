@@ -59,12 +59,8 @@ SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp,
 /// Add the constraints already on the generator to the constraint set,
 /// returning failure if a contradiction was detected.
 LogicalResult SignatureUnifier::checkExistingConstraints() {
-  for (auto [constraint, message] :
-       llvm::zip(generatorOp.getConstraintsAttr().getValue(),
-                 generatorOp.getConstraintMessages().getValue()))
-    if (failed(constraints.addConstraint(constraint, message.cast<StringAttr>(),
-                                         // TODO: Use correct loc info.
-                                         generatorOp->getLoc())))
+  for (ConstraintAttr constraint : generatorOp.getConstraints())
+    if (failed(constraints.addConstraint(constraint)))
       return failure();
 
   return success();
@@ -73,9 +69,7 @@ LogicalResult SignatureUnifier::checkExistingConstraints() {
 /// When we're done checking the conformance, this method reinstalls the
 /// (possibly updated) constraint information on the generator declaration.
 void SignatureUnifier::reinstallConstraints() {
-  auto [values, messages] = constraints.getConstraintsSpec();
-  generatorOp.setConstraintsAttr(values);
-  generatorOp.setConstraintMessagesAttr(messages);
+  generatorOp.setConstraintsAttr(constraints.getConstraintsSpec());
 }
 
 ParseResult SignatureUnifier::addEqualityConstraintFn(ParamDeclRefAttr param,
@@ -267,8 +261,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
         itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
         itf.getResultParamDeclsAttr(),
         // Take the constraints from the generator.
-        gen.getConstraintsAttr(), gen.getConstraintMessages(),
-        gen.getImplementsAttr());
+        gen.getConstraintsAttr(), gen.getImplementsAttr());
     // The thunk implements the interface, not the original generator.
     gen.removeImplementsAttr();
 
@@ -346,8 +339,7 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
       gen.getParamDeclsAttr(), gen.getResultParamDeclsAttr(),
-      gen.getConstraintsAttr(), gen.getConstraintMessages(),
-      gen.getImplementsAttr());
+      gen.getConstraintsAttr(), gen.getImplementsAttr());
 
   // Move over the body unmodified.
   auto *bodyBlock = gen.getBodyBlock();

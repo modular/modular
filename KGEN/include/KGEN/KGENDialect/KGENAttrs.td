@@ -295,9 +295,38 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConstraintArrayAttr
+// ConstraintAttr
 //===----------------------------------------------------------------------===//
 
-/// An array of attributes with bool type.
+def ConstraintAttr : KGENAttr<"Constraint", "constraint",
+    [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  let summary = "kgen constraint";
+  let description = [{
+    A constraint attribute represents a constraint on a kernel generator or
+    generator interface. It consists of a boolean parameter expression that must
+    evaluate to true for the constraint to be satisfied, a message/description,
+    and an MLIR location for emitting diagnostics.
+
+    When unspecified in a `.mlir` file, the location defaults to the textual
+    location of the attribute.
+  }];
+
+  let parameters = (ins "TypedAttr":$expr, "StringAttr":$message,
+                        "Location":$loc);
+
+  let assemblyFormat = [{
+    `[` custom<ParamValue>($expr, "$_builder.getI1Type()") `,` $message
+    custom<ConstraintLoc>($loc) `]`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "TypedAttr":$expr, "StringAttr":$message, "Location":$loc), [{
+      return $_get(expr.getContext(), expr, message, loc);
+    }]>
+  ];
+}
+
+/// An array of ConstraintAttr's.
 def ConstraintArrayAttr
-  : TypedArrayAttrBase<I1ParameterExprAttr, "array of parameter constraints">;
+    : ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;

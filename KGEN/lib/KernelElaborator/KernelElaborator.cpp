@@ -1154,6 +1154,9 @@ resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
 
   auto includedModule =
       mlir::parseSourceFile<ModuleOp>(modulePath, include->getContext());
+  if (!includedModule)
+    return mlir::emitError(include.getLoc(),
+                           "failed to parse included source file");
 
   // Recursively resolve transitive includes.
   for (auto inc :

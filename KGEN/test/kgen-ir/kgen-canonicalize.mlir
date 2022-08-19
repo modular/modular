@@ -70,8 +70,8 @@ kgen.kernel @producesResultParam<() -> result>() {
 
 // CHECK-LABEL: kgen.generator @param_assert_simplify<p1: i1, p2>()
 // CHECK-NEXT: constraints <
-// CHECK-NEXT:   p1, "this is a constraint!",
-// CHECK-NEXT:   eq(add(p2, 4), 17), "also a constraint"> {
+// CHECK-NEXT:   [p1, "this is a constraint!", #
+// CHECK-NEXT:   [eq(add(p2, 4), 17), "also a constraint", #
 kgen.generator @param_assert_simplify<p1 : i1, p2>() {
 
   kgen.param.assert <p1>, "this is a constraint!"
