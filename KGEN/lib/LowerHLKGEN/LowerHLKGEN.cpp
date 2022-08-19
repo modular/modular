@@ -34,6 +34,8 @@ public:
   ParseResult tryUnifyingTypeParameters(Attribute itfParam, Attribute genParam);
   ParseResult checkArgumentType(size_t argNo, Type itfArgTy, Type genArgTy,
                                 Location loc);
+  ParseResult checkResultType(size_t argNo, Type itfResultTy, Type genResultTy,
+                              Location loc);
 
   void reinstallConstraints();
 
@@ -179,9 +181,18 @@ ParseResult SignatureUnifier::checkArgumentType(size_t argNo, Type itfArgTy,
   return tryUnifyingTypes(itfArgTy, genArgTy);
 }
 
-/// Insert a cast of 'arg' to 'type' for an argument conversion when generating
-/// a generator thunk (if needed).
-static Value insertArgumentCast(Value arg, Type type, ImplicitLocOpBuilder &b) {
+ParseResult SignatureUnifier::checkResultType(size_t argNo, Type itfResultTy,
+                                              Type genResultTy, Location loc) {
+  inferenceContext = "result #" + std::to_string(argNo);
+  inferenceLoc = loc;
+
+  // Try unifying the types.  If this successed, then the signature types match.
+  return tryUnifyingTypes(itfResultTy, genResultTy);
+}
+
+/// Insert a cast of 'arg' to 'type' for an argument/result conversion when
+/// generating a generator thunk (if needed).
+static Value insertRebindOp(Value arg, Type type, ImplicitLocOpBuilder &b) {
   if (arg.getType() == type)
     return arg;
 
@@ -218,6 +229,10 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     return success();
   }
 
+  // If the generator and the interface have differing signatures, we need to
+  // synthesize a forwarding thunk.
+  bool needsForwardingThunk = false;
+
   // Match up the argument types with the generator's.  These are allowed to
   // be more specialized, in which case they imply argument constraints.
   auto itfArgs = itf.getArgumentTypes();
@@ -230,20 +245,36 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     diag.attachNote(itf->getLoc()) << "interface declared here";
     return failure();
   }
-
-  // If the generator and the interface have differing signatures, we need to
-  // synthesize a forwarding thunk.
-  bool needsForwardingThunk = false;
-  size_t argNo = 0;
+  size_t itemNo = 0;
   for (auto [itfArgTy, genArg] : llvm::zip(itfArgs, genArgs)) {
-    if (failed(unifier.checkArgumentType(argNo, itfArgTy, genArg.getType(),
+    if (failed(unifier.checkArgumentType(itemNo, itfArgTy, genArg.getType(),
                                          genArg.getLoc())))
       return failure();
     needsForwardingThunk |= itfArgTy != genArg.getType();
-    ++argNo;
+    ++itemNo;
   }
 
-  // TODO: Should also handle result types.
+  // Check and integrate the result types.
+  auto itfResTys = itf.getResultTypes();
+  auto genResTys = gen.getResultTypes();
+  if (itfResTys.size() != genResTys.size()) {
+    auto diag = gen.emitOpError()
+                << "generator has " << genResTys.size() << " result"
+                << (genResTys.size() != 1 ? "s" : "")
+                << " but interface expects " << itfResTys.size();
+    diag.attachNote(itf->getLoc()) << "interface declared here";
+    return failure();
+  }
+  itemNo = 0;
+  for (auto [itfResTy, genResTy] : llvm::zip(itfResTys, genResTys)) {
+    // TODO: We don't have per-result location info.
+    auto resultLoc = gen.getReturnOp().getLoc();
+    if (failed(unifier.checkResultType(itemNo, itfResTy, genResTy, resultLoc)))
+      return failure();
+    needsForwardingThunk |= itfResTy != genResTy;
+    ++itemNo;
+  }
+
   // TODO: Should also infer /missing/ parameters like dtype.
 
   // Now that we have successfully completed inference, reinstall updated
@@ -283,7 +314,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
 
       // Insert a cast from the more general interface argument type to the more
       // specific type implemented by the generator.
-      castedArgs.push_back(insertArgumentCast(bodyArg, genArg.getType(), b));
+      castedArgs.push_back(insertRebindOp(bodyArg, genArg.getType(), b));
     }
 
     // The call will need to passes on all the input parameters unmodified.
@@ -315,11 +346,12 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
         b.create<CallOp>(gen.getResultTypes(), gen.getNameAttr(),
                          callInputParams, callResultParams, castedArgs);
 
-    ParamBindArrayAttr parameters = b.getAttr<ParamBindArrayAttr>(returnParams);
-
+    // Create any rebind's for the results.
     SmallVector<Value> results;
-    llvm::append_range(results, callOp.getResults());
-    b.create<ReturnOp>(parameters, results);
+    for (auto [result, resultTy] : llvm::zip(callOp.getResults(), itfResTys))
+      results.push_back(insertRebindOp(result, resultTy, b));
+
+    b.create<ReturnOp>(b.getAttr<ParamBindArrayAttr>(returnParams), results);
 
     // The thunk is required because there could be direct callers of the
     // original generator, which expect the original signature.  If there

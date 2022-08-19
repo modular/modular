@@ -111,3 +111,22 @@ hlkgen.generator @equality<a, b>()
    > {
   kgen.return
 }
+
+
+// -----
+
+kgen.generator.interface @itf<ty: dtype>(!meta.scalar<f64>) -> !meta.scalar<ty>
+
+// This implementation infers that the ty argument must be f32.
+
+// expected-note @+1 {{generator declared here}}
+hlkgen.generator @impl<ty: dtype>(%arg0: !meta.scalar<f64>) -> !meta.scalar<f64>
+  // This has an explicit constraint saying it must be si32.
+  // expected-note @below {{previously constrained "'ty' looks lovely as si32"}}
+  constraints <[eq(:dtype ty, si32), "'ty' looks lovely as si32"]>
+  implements @itf {
+  
+// expected-error @+1 {{constraint contradiction detected: "result #0 specifies 'ty' = f64"}}
+  kgen.return %arg0: !meta.scalar<f64>
+}
+

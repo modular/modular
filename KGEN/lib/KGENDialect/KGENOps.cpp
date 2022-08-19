@@ -642,15 +642,15 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
     if (verifyMatchingLists(originatorDecl.getArgumentTypes(),
                             interfaceDecl.getArgumentTypes(), originatorName,
                             originatorDecl, interfaceName, interfaceDecl,
-                            "argument", "type"))
+                            "argument", "type") ||
+        verifyMatchingLists(originatorDecl.getResultTypes(),
+                            interfaceDecl.getResultTypes(), originatorName,
+                            originatorDecl, interfaceName, interfaceDecl,
+                            "result", "type"))
       return failure();
   }
 
-  if (verifyMatchingLists(originatorDecl.getResultTypes(),
-                          interfaceDecl.getResultTypes(), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          "result", "type") ||
-      verifyMatchingLists(getParamDeclName(originatorInputParamDecls),
+  if (verifyMatchingLists(getParamDeclName(originatorInputParamDecls),
                           getParamDeclName(interfaceInputParamDecls),
                           originatorName, originatorDecl, interfaceName,
                           interfaceDecl, "input parameter", "name") ||
