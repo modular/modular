@@ -15,20 +15,36 @@ namespace M::KGEN {
 class ParamDeclRefAttr;
 
 /// This maintains information about a parameter value being tracked for
-/// pointwise equivalence.
+/// pointwise equivalence.  We track several possibilities for a pointwise
+/// (equality comparable) parameter.  We could find that it is either:
+///   1) an individual `isSimpleConstant` value like an DTypeConstantAttr, or
+///   2) an set of values (stored as an ArrayAttr of `isSimpleConstant` values)
+///   3) an equivalence constraint (stored as a ParamDeclRefAttr), which is the
+///      parameter the value information is stored on.  This is a simple
+///      implementation of Tarjan's union-find algorithm.
 ///
-/// TODO: We eventually want to have 'x = y' equality, and != constraints.
+/// TODO: We eventually want to have != constraints.
 class PointwiseValue {
 public:
   static PointwiseValue getSingleValue(Attribute value, StringAttr message,
                                        Location loc) {
+    assert(isSimpleConstant(value) &&
+           "cannot get equality constraint with non-constant "
+           "value");
     return PointwiseValue{value, message, loc};
   }
 
   /// Return a Pointwise value indicating that the parameter is equal to one of
   /// the members of (non-empty) set of values.
-  static PointwiseValue getSetValue(ArrayRef<TypedAttr> values,
-                                    StringAttr message, Location loc);
+  static PointwiseValue getInSetValue(ArrayRef<TypedAttr> values,
+                                      StringAttr message, Location loc);
+
+  /// Return a pointwise value stating that this parameter is equivalent to some
+  /// other parameter.
+  static PointwiseValue getParamEquivalence(ParamDeclRefAttr otherParam,
+                                            StringAttr message, Location loc) {
+    return PointwiseValue{otherParam, message, loc};
+  }
 
   /// Merge information from another pointwise value into this, emitting a
   /// diagnostic on error or returning success if we are able to update.
@@ -37,12 +53,27 @@ public:
   /// Lower this into a constraint spec for the specified parameter.
   ConstraintAttr getAsConstraintSpec(ParamDeclRefAttr param) const;
 
+  /// Return true if this marks equality to a simple constant.
+  bool isEquality() const { return isSimpleConstant(value); }
+
+  /// Return true if the parameter is known to be within a set of values.
+  bool isInSetValue() const { return value.isa<ArrayAttr>(); }
+
+  /// Return true if this is an equivalence relationship.
+  bool isEquivalence() const { return value.isa<ParamDeclRefAttr>(); }
+  ParamDeclRefAttr getEquivalentParam() const {
+    return value.cast<ParamDeclRefAttr>();
+  }
+
+  /// Append a message to this constraint entry.
+  void appendMessage(Twine newSuffix) {
+    message =
+        StringAttr::get(message.getContext(), message.getValue() + newSuffix);
+  }
+
 private:
   PointwiseValue(Attribute value, StringAttr message, Location loc)
       : value(value), message(message), loc(loc) {}
-  // This value is either an individual constant (e.g. an IntegerAttr,
-  // FloatAttr, DTypeConstantAttr, etc) or an ArrayAttr which is a set of values
-  // that it may equal.
   Attribute value;
   StringAttr message;
   Location loc;
@@ -64,11 +95,6 @@ private:
 /// something lightweight and predictable
 /// (https://dl.acm.org/doi/10.1145/358438.349342).
 ///
-/// TODO: We need to use a partial ordering + union-find like approach to unify
-/// away and canonicalize equality constraints between parameters.  For example,
-/// if we know `x == f32` and `y = x` then we can simplify all uses of 'y' to
-/// use 'x'.  This is important when detecting conflicts (e.g. y is also known
-/// to be f64.
 class ConstraintSet {
 public:
   /// Initialize an empty constraint set for the specified declaration.  Its
@@ -83,6 +109,12 @@ public:
   /// returns failure if a contradiction is detected.
   LogicalResult addPointwiseParamConstraint(ParamDeclRefAttr param,
                                             PointwiseValue value);
+
+  /// Add a constraint capturing that param1 and param2 are equivalent to each
+  /// other.
+  LogicalResult addParamEquivalenceConstraint(ParamDeclRefAttr param1,
+                                              ParamDeclRefAttr param2,
+                                              StringAttr message, Location loc);
 
   /// Re-encode this constraint set as a array of boolean conditions and
   /// messages suitable for reinstalling on a generator.
