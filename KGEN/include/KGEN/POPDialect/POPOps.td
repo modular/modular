@@ -344,6 +344,36 @@ def CastOp : POPOp<"cast", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDExtractElementOp
+//===----------------------------------------------------------------------===//
+
+def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
+     TypesMatchWith<"result type matches element type of vector operand",
+                    "vector", "result",
+                    "getScalarOfSameDType($_self)">]> {
+  let summary = "extractelement operation";
+  let description = [{
+    Takes a SIMD vector and an index position and extracts the meta.scalar at
+    that position.
+
+    Example:
+
+    ```mlir
+    %c = pop.constant(15) : !meta.scalar<i32>
+    %1 = pop.simd.extractelement %0[%c : !meta.scalar<i32>]: !meta.simd<16, f32>
+    ```
+  }];
+
+  let arguments = (ins SIMDType:$vector, UnboundOrIntegerScalar:$position);
+  let results = (outs ScalarType:$result);
+
+  let assemblyFormat = [{
+    $vector `[` $position `:` qualified(type($position)) `]` attr-dict `:`
+      qualified(type($vector))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
