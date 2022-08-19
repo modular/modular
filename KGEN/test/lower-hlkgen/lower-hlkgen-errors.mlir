@@ -100,9 +100,12 @@ hlkgen.generator @impl<size>()
 
 // -----
 
+// expected-note @+1 {{generator declared here}}
 hlkgen.generator @equality<a, b>()
   constraints <
+    // expected-error @+1 {{constraint contradiction detected: "a is one, and a and b are same"}}
     [eq(a, 1), "a is one"],
+    // expected-note @+1 {{previously constrained "b is two"}}
     [eq(b, 2), "b is two"],
     [eq(a, b), "a and b are same"]
    > {

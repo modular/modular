@@ -25,9 +25,14 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
         // 'param == 42' is equality comparable.
         if (isSimpleConstant(oper.getOperand(1))) {
           auto value = PointwiseValue::getSingleValue(
-            oper.getOperand(1), constraint.getMessage(), constraint.getLoc());
+              oper.getOperand(1), constraint.getMessage(), constraint.getLoc());
           return addPointwiseParamConstraint(param, value);
         }
+
+        // 'param1 = param2' merges anything known about param1 and param2.
+        if (auto param2 = oper.getOperand(1).dyn_cast<ParamDeclRefAttr>())
+          return addParamEquivalenceConstraint(
+              param, param2, constraint.getMessage(), constraint.getLoc());
 
         // TODO: Handle linear expressions of relational values, e.g. x = y+4.
       }
@@ -35,7 +40,7 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
       // 'param in {1,2,3}' is equality comparable.
       if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
         if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
-          auto value = PointwiseValue::getSetValue(
+          auto value = PointwiseValue::getInSetValue(
               oper.getOperands().drop_front(), constraint.getMessage(),
               constraint.getLoc());
           return addPointwiseParamConstraint(param, value);
@@ -77,7 +82,7 @@ ConstraintArrayAttr ConstraintSet::getConstraintsSpec() const {
 LogicalResult ConstraintSet::addPointwiseParamConstraint(ParamDeclRefAttr param,
                                                          PointwiseValue value) {
 
-  // Add the equality constraint if it doesn't exist already.
+  // Add the pointwise constraint if it doesn't exist already.
   auto [it, isNewEntry] = pointwiseValues.insert({param, value});
   if (isNewEntry) {
     // If it didn't exist, just remember that we have an entry for this and we
@@ -86,9 +91,58 @@ LogicalResult ConstraintSet::addPointwiseParamConstraint(ParamDeclRefAttr param,
     return success();
   }
 
+  // If this is an equivalence set, forward to the ultimate destination.
+  // TODO: We could do path compression if sets get really large.
+  if (it->second.isEquivalence())
+    return addPointwiseParamConstraint(it->second.getEquivalentParam(), value);
+
   // If it already existed, we need to merge in information and diagnose a
   // problem.
   return it->second.mergeIn(value, decl);
+}
+
+/// Add a constraint capturing that param1 and param2 are equivalent to each
+/// other.
+LogicalResult
+ConstraintSet::addParamEquivalenceConstraint(ParamDeclRefAttr param1,
+                                             ParamDeclRefAttr param2,
+                                             StringAttr message, Location loc) {
+  // If lack an entry for param1, then we set it and we're done.
+  auto pointwiseValue =
+      PointwiseValue::getParamEquivalence(param2, message, loc);
+  auto [it, isNewEntry] = pointwiseValues.insert({param1, pointwiseValue});
+  if (isNewEntry) {
+    parameterOrder.push_back(param1);
+    return success();
+  }
+
+  // If param1 is already known to equal something else, forward.
+  // TODO: We could do path compression if sets get really large.
+  if (it->second.isEquivalence())
+    return addParamEquivalenceConstraint(it->second.getEquivalentParam(),
+                                         param2, message, loc);
+
+  // If param1 has info, but param2 doesn't, then set param2=param1.
+  auto it2 = pointwiseValues.find(param2);
+  if (it2 == pointwiseValues.end())
+    return addParamEquivalenceConstraint(param2, param1, message, loc);
+
+  // If param2 is already known to equal something else, forward.
+  // TODO: We could do path compression if sets get really large.
+  if (it2->second.isEquivalence())
+    return addParamEquivalenceConstraint(it2->second.getEquivalentParam(),
+                                         param1, message, loc);
+
+  // Remember that we're merging due to equivalence.
+  it->second.appendMessage(", and " + message.getValue());
+
+  // Otherwise we have information for both of them.  Merge that information
+  // together into a single record and then overwrite one.
+  if (failed(it2->second.mergeIn(it->second, decl)))
+    return failure();
+
+  it->second = pointwiseValue;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -97,8 +151,8 @@ LogicalResult ConstraintSet::addPointwiseParamConstraint(ParamDeclRefAttr param,
 
 /// Return a Pointwise value indicating that the parameter is equal to one of
 /// the members of (non-empty) set of values.
-PointwiseValue PointwiseValue::getSetValue(ArrayRef<TypedAttr> values,
-                                           StringAttr message, Location loc) {
+PointwiseValue PointwiseValue::getInSetValue(ArrayRef<TypedAttr> values,
+                                             StringAttr message, Location loc) {
   assert(!values.empty() && "Cannot get equality to empty set");
   if (values.size() == 1)
     return getSingleValue(values[0], message, loc);
@@ -122,7 +176,9 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
     llvm::append_range(operands, valueArray);
     expr = ParamOperatorAttr::get(POC::IN, operands);
   } else {
-    // We add pointwise equality constraints with equals.
+    assert(isEquivalence() || isSimpleConstant(value));
+    // We add pointwise equality constraints and equivalence constraints with
+    // equals.
     expr = ParamOperatorAttr::get(POC::EQ, param, value);
   }
   return ConstraintAttr::get(expr, message, loc);
@@ -132,6 +188,9 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
 /// diagnostic on error or returning success if we are able to update.
 LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
                                       Operation *noteLoc) {
+  assert(!isEquivalence() && !other.isEquivalence() &&
+         "equivalence constraints should be resolved");
+
   // Handle the case when this is merging a set into us.
   if (auto otherSet = other.value.dyn_cast<ArrayAttr>()) {
     // Simplify `x = [5,6,7,8]; x = [7,8,9]` to `x = [7,8]`.
@@ -153,7 +212,7 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
         auto newMessage = StringAttr::get(message.getContext(),
                                           message.getValue() + ", and " +
                                               other.message.getValue());
-        *this = PointwiseValue::getSetValue(
+        *this = PointwiseValue::getInSetValue(
             result, newMessage,
             FusedLoc::get(message.getContext(), {loc, other.loc}));
         return success();
