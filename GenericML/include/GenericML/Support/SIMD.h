@@ -341,8 +341,10 @@ public:
       // with GCC.
       auto lhsInt = *reinterpret_cast<const vector_type *>(&lhs.value());
       auto rhsInt = *reinterpret_cast<const vector_type *>(&rhs.value());
-      vector_type res = (value() & lhsInt) | (~value() & rhsInt);
-      return *reinterpret_cast<typename SIMDVector<T, N>::vector_type *>(&res);
+      auto values = (value() & lhsInt) | (~value() & rhsInt);
+      SIMDVector<T, N> result;
+      std::memcpy(result.data(), &values, result.byte_count);
+      return result;
     }
     // Otherwise, we use the mask as the condition and use the ternary
     // operator.
@@ -353,15 +355,6 @@ public:
 
   /// Gets the underlying vector value.
   const vector_type &value() const { return vectorData; }
-
-private:
-  /// If the isEmulated flag is true, then we are not actually explicitly using
-  /// SIMD instructions. Instead, we are looping over the elements of the vector
-  /// and performing the operation.
-  static constexpr bool isEmulated = LLCL_SIMD_EMULATED == 1;
-
-  /// The underlying simd vector data.
-  vector_type vectorData;
 
   /// Get the underlying data of the simd vector as a pointer.
   element_type *data() {
@@ -376,6 +369,15 @@ private:
       return vectorData.data();
     return (const element_type *)&vectorData;
   }
+
+private:
+  /// If the isEmulated flag is true, then we are not actually explicitly using
+  /// SIMD instructions. Instead, we are looping over the elements of the vector
+  /// and performing the operation.
+  static constexpr bool isEmulated = LLCL_SIMD_EMULATED == 1;
+
+  /// The underlying simd vector data.
+  vector_type vectorData;
 };
 } // namespace M
 
