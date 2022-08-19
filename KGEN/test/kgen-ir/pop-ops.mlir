@@ -213,6 +213,31 @@ kgen.generator @pop_simd_extractelement<size, type: dtype>(
   kgen.return
 }
 
+// CHECK-LABEL: @pop_simd_insertelement
+// CHECK-SAME: %[[V0:[a-z0-9]+]]:
+// CHECK-SAME: %[[V1:[a-z0-9]+]]:
+// CHECK-SAME: %[[V2:[a-z0-9]+]]:
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+// CHECK-SAME: %[[C:[a-z0-9]+]]:
+kgen.generator @pop_simd_insertelement<size, type: dtype>(
+    %v0: !meta.scalar<type>,
+    %v1: !meta.scalar<f32>,
+    %v2: !meta.scalar<si32>,
+    %a: !meta.simd<size, type>,
+    %b: !meta.simd<size, f32>,
+    %c: !meta.simd<4, si32>
+  ) {
+  // CHECK: %[[IDX:.*]] =  pop.constant
+  %idx = pop.constant(2) : !meta.scalar<si32>
+  // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, type>
+  %u = pop.simd.insertelement %v0, %a[%idx : !meta.scalar<si32>] : !meta.simd<size, type>
+  // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, f32>
+  %v = pop.simd.insertelement %v1, %b[%idx : !meta.scalar<si32>] : !meta.simd<size, f32>
+  // CHECK: %[[w:.*]] = pop.simd.insertelement %[[V2]], %[[C]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<4, si32>
+  %w = pop.simd.insertelement %v2, %c[%idx : !meta.scalar<si32>] : !meta.simd<4, si32>
+  kgen.return
+}
 
 // CHECK-LABEL: @pop_simd_splat
 // CHECK-SAME: %[[A:[a-z0-9]+]]:

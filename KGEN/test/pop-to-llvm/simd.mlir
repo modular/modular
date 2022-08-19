@@ -97,3 +97,16 @@ kgen.kernel @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: !meta.scalar<si
   %0 = pop.simd.extractelement %vec[%idx : !meta.scalar<si32>] : !meta.simd<4, f32>
   kgen.return %0 : !meta.scalar<f32>
 }
+
+// -----
+
+// CHECK-LABEL: @simd_insertelement
+kgen.kernel @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32>, %idx: !meta.scalar<si32>) -> !meta.simd<4, f32> {
+  // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
+  // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast
+  // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
+  // CHECK: %[[RES:.*]] = llvm.insertelement %[[VAL]], %[[VEC]][%[[IDX]] : i32] : vector<4xf32>
+  // CHECK: unrealized_conversion_cast %[[RES]]
+  %0 = pop.simd.insertelement %val, %vec[%idx : !meta.scalar<si32>] : !meta.simd<4, f32>
+  kgen.return %0 : !meta.simd<4, f32>
+}
