@@ -130,3 +130,24 @@ hlkgen.generator @impl<ty: dtype>(%arg0: !meta.scalar<f64>) -> !meta.scalar<f64>
   kgen.return %arg0: !meta.scalar<f64>
 }
 
+// -----
+
+// expected-note @+1 {{interface defined here}}
+kgen.generator.interface @itf<ty: dtype>() 
+
+// This implementation infers that the ty argument must be f32.
+
+// expected-error @+1 {{input parameter "ty" has type 'i32' but interface expects '!kgen.dtype'}}
+hlkgen.generator @impl<ty: i32>() implements @itf {
+  kgen.return
+}
+
+// expected-error @+1 {{input parameter "size" is unexpected by interface}}
+hlkgen.generator @impl2<ty: dtype, size>() implements @itf {
+  kgen.return
+}
+
+// expected-error @+1 {{missing interface input parameter "ty" of type '!kgen.dtype'}}
+hlkgen.generator @impl3() implements @itf {
+  kgen.return
+}

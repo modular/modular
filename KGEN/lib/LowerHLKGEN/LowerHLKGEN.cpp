@@ -37,6 +37,11 @@ public:
   ParseResult checkResultType(size_t argNo, Type itfResultTy, Type genResultTy,
                               Location loc);
 
+  // Now that we've inferred parameters, we may have inferred new input
+  // parameters.  Check to see that whatever we have is a complete covering of
+  // the interfaces expectations.
+  LogicalResult verifyInputParameters();
+
   void reinstallConstraints();
 
 public:
@@ -65,6 +70,69 @@ LogicalResult SignatureUnifier::checkExistingConstraints() {
     if (failed(constraints.addConstraint(constraint)))
       return failure();
 
+  return success();
+}
+
+/// Now that we've inferred parameters, we may have inferred new input
+/// parameters.  Check to see that whatever we have is a complete covering of
+/// the interface's expectations.
+LogicalResult SignatureUnifier::verifyInputParameters() {
+  // The hlkgen.generator may have additional input parameters that are
+  // disallowed, and may be missing parameters.  We may have inferred some or
+  // all of the missing parameters, but if not, we need to reject.
+  ArrayRef<ParamDeclAttr> inputParamDecls = generatorOp.getParamDecls();
+  SmallPtrSet<Attribute, 8> inputParams(inputParamDecls.begin(),
+                                        inputParamDecls.end());
+  // Add the parameter decls that were inferred.
+  for (ParamDeclRefAttr declRef :
+       constraints.getPotentiallyInferredParameters()) {
+    // Convert ParamDeclRefAttr -> ParamDeclAttr.
+    inputParams.insert(
+        ParamDeclAttr::get(declRef.getName(), declRef.getType()));
+  }
+
+  // Ok, now that we have all the input parameters, validate that they match up.
+  // We do this by checking the set for everything that should be there and
+  // deleting them as we go.  By the end, the set should be empty.
+  for (ParamDeclAttr itfParam : interfaceOp.getParamDecls()) {
+    // In the normal case, the
+    if (inputParams.erase(itfParam))
+      continue;
+
+    // Well we have a problem to diagnose.  It could be because the parameter is
+    // missing or the type doesn't match.  Scan for a matching name.
+    for (Attribute genParamC : inputParams) {
+      ParamDeclAttr genParam = genParamC.cast<ParamDeclAttr>();
+      if (genParam.getName() == itfParam.getName()) {
+        // Ok, found matching names but the types don't match.
+        auto diag = generatorOp.emitError("input parameter ")
+                    << genParam.getName() << " has type " << genParam.getType()
+                    << " but interface expects " << itfParam.getType();
+        diag.attachNote(interfaceOp.getLoc()) << "interface defined here";
+        return failure();
+      }
+    }
+
+    // If no match is found then it is missing.
+    auto diag = generatorOp.emitError("missing interface input parameter ")
+                << itfParam.getName() << " of type " << itfParam.getType();
+    diag.attachNote(interfaceOp.getLoc()) << "interface defined here";
+    return failure();
+  }
+
+  // If we have left over entries in `inputParams` then we have extra
+  // parameters.
+  if (!inputParams.empty()) {
+    auto badParam = (*inputParams.begin()).cast<ParamDeclAttr>();
+    auto diag = generatorOp.emitError("input parameter ")
+                << badParam.getName() << " is unexpected by interface";
+    diag.attachNote(interfaceOp.getLoc()) << "interface defined here";
+    return failure();
+  }
+
+  // Finally after all this checking, we know the generator has the same
+  // input parameters as the interface so we can just take it directly!
+  generatorOp.setParamDeclsAttr(interfaceOp.getParamDeclsAttr());
   return success();
 }
 
@@ -275,7 +343,11 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     ++itemNo;
   }
 
-  // TODO: Should also infer /missing/ parameters like dtype.
+  // Now that we've inferred parameters, we may have inferred new input
+  // parameters.  Check to see that whatever we have is a complete covering of
+  // the interfaces expectations.
+  if (failed(unifier.verifyInputParameters()))
+    return failure();
 
   // Now that we have successfully completed inference, reinstall updated
   // constraint attrs.

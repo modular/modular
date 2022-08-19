@@ -82,7 +82,7 @@ hlkgen.generator @arg_inf<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>
 kgen.generator.interface @returnbufItf<size, ty: dtype>(!meta.buffer<123, f32>) -> !meta.buffer<size, ty>
 
 // This implementation infers that the ty argument must be f32 and size must be 123
-hlkgen.generator @returnbufItf_impl<size, ty: dtype>(%a : !meta.buffer<123, f32>) -> !meta.buffer<123, f32>
+hlkgen.generator @returnbufItf_impl(%a : !meta.buffer<123, f32>) -> !meta.buffer<123, f32>
   implements @returnbufItf {
   kgen.return %a : !meta.buffer<123, f32>
 }
@@ -91,8 +91,8 @@ hlkgen.generator @returnbufItf_impl<size, ty: dtype>(%a : !meta.buffer<123, f32>
 
 // CHECK-LABEL: kgen.generator @returnbufItf_impl_thunk<size, ty: dtype>(%arg0: !meta.buffer<123, f32>) -> !meta.buffer<size, ty>
 // CHECK-NEXT:   constraints <
-// CHECK-NEXT:     [eq(:dtype ty, f32), "result #0 specifies 'ty' = f32", #loc3], 
-// CHECK-NEXT:     [eq(size, 123), "result #0 specifies 'size' = 123", #loc3]>
+// CHECK-NEXT:     [eq(:dtype ty, f32), "result #0 specifies 'ty' = f32", #
+// CHECK-NEXT:     [eq(size, 123), "result #0 specifies 'size' = 123", #
 // CHECK-NEXT:   implements @returnbufItf {
 // CHECK-NEXT:   %0 = kgen.call @returnbufItf_impl<size = size, ty: dtype = ty>(%arg0
 // CHECK-NEXT:   %1 = meta.buffer.rebind %0 : !meta.buffer<123, f32> to !meta.buffer<size, ty>
