@@ -308,7 +308,7 @@ public:
 
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
-  int getParallelismLevel() const final {
+  size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created by
     // the work queue +1 for a foreign thread.
     // TODO: This isn't actually correct.  See PR1903:

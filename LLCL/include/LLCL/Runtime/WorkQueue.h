@@ -48,7 +48,7 @@ public:
   /// Return the pool size maintained by this work queue. Kernels can use
   /// this as a hint indicating the maximum useful number of work items
   /// they should break themselves into.
-  virtual int getParallelismLevel() const = 0;
+  virtual size_t getParallelismLevel() const = 0;
 
   /// Shutdown the thread pool and quiesce in preparation for destruction.
   virtual void shutdown() = 0;
