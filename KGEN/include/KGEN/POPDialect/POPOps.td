@@ -374,6 +374,36 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDInsertElementOp
+//===----------------------------------------------------------------------===//
+
+def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
+     TypesMatchWith<"result type matches element type of vector operand",
+                    "vector", "value",
+                    "getScalarOfSameDType($_self)">,
+      AllTypesMatch<["result", "vector"]>]> {
+  let summary = "extractelement operation";
+  let description = [{
+    Takes a source value, SIMD vector, and an index position and inserts the
+    source value into the vector at the proper position.
+
+    Example:
+
+    ```mlir
+    %1 = pop.simd.extractelement %val, %vec[%idx : !meta.scalar<i32>]: !meta.simd<16, f32>
+    ```
+  }];
+
+  let arguments = (ins SIMDType:$vector, ScalarType:$value, UnboundOrIntegerScalar:$position);
+  let results = (outs SIMDType:$result);
+
+  let assemblyFormat = [{
+    $value `,` $vector `[` $position `:` qualified(type($position)) `]` attr-dict `:`
+    qualified(type($vector))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
