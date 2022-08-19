@@ -35,7 +35,7 @@ public:
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
-  int getParallelismLevel() const override { return 1; }
+  size_t getParallelismLevel() const override { return 1; }
 
 private:
   template <typename Callback>
