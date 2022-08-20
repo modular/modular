@@ -166,7 +166,11 @@ public:
   }
 
   /// Returns the element at the given index.
-  element_type &operator[](size_t index) const {
+  const element_type &operator[](size_t index) const {
+    assert(index < size() && "Index out of bounds");
+    return vectorData[index];
+  }
+  element_type &operator[](size_t index) {
     assert(index < size() && "Index out of bounds");
     return vectorData[index];
   }
@@ -395,8 +399,7 @@ public:
       for (int i = 0, e = size(); i < e; ++i)
         result[i] = data()[i] ? lhs[i] : rhs[i];
       return result;
-    }
-    if constexpr (std::is_same_v<T, float>) {
+    } else if constexpr (std::is_same_v<T, float>) {
       // This is a special case for float vectors which produces better assembly
       // with GCC.
       auto lhsInt = *reinterpret_cast<const vector_type *>(&lhs.value());
@@ -405,12 +408,13 @@ public:
       SIMDVector<T, N> result;
       std::memcpy(result.data(), &values, result.byte_count);
       return result;
+    } else {
+      // Otherwise, we use the mask as the condition and use the ternary
+      // operator.
+      auto mask = value();
+      SIMDVector<T, N> result = mask ? lhs.value() : rhs.value();
+      return result;
     }
-    // Otherwise, we use the mask as the condition and use the ternary
-    // operator.
-    auto mask = value();
-    SIMDVector<T, N> result = mask ? lhs.value() : rhs.value();
-    return result;
   }
 
   /// Gets the underlying vector value.
