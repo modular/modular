@@ -11,7 +11,11 @@
 #ifndef GENERICML_SUPPORT_SIMD_H
 #define GENERICML_SUPPORT_SIMD_H
 
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Compiler.h" // for __has_builtin
+#include "llvm/Support/TypeName.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -86,13 +90,15 @@ public:
   SIMDVector(Arg arg) {
     // If the input is a simd vector, then copy the data.
     if constexpr (is_simd_vector_v<Arg>) {
-      static_assert(std::is_same_v<typename Arg::element_type, element_type>,
-                    "element type mismatch");
       static_assert(Arg::width == width, "width mismatch");
-      if constexpr (isEmulated)
-        memcpy(data(), arg.data(), byte_count);
-      else
-        vectorData = arg.value();
+      if constexpr (std::is_same_v<typename Arg::element_type, element_type>) {
+        if constexpr (isEmulated)
+          memcpy(data(), arg.data(), byte_count);
+        else
+          vectorData = arg.value();
+      } else {
+        std::copy(arg.data(), arg.data() + arg.size(), data());
+      }
     } else {
       // Otherwise, we are going to splat the arithmetic value into the vector.
       static_assert(std::is_arithmetic_v<Arg>,
@@ -129,9 +135,27 @@ public:
     return result;
   }
 
+  /// Bitcasts the vector into another SIMD vector with the same bytecount.
+  template <typename ResultElementType, size_t TargetWidth = Width>
+  SIMDVector<ResultElementType, TargetWidth> bitCast() const {
+    if constexpr (std::is_same_v<ResultElementType, ElemTy> &&
+                  TargetWidth == Width) {
+      return *this;
+    } else {
+      SIMDVector<ResultElementType, TargetWidth> result;
+      static_assert(result.getSizeInBytes() == getSizeInBytes(),
+                    "bytecount mismatch");
+      // result.value() = *reinterpret_cast<const typename SIMDVector<
+      //     ResultElementType, TargetWidth>::vector_type *>(&result.value());
+      result.assign(data(), data() + size());
+      return result;
+    }
+  }
+
   /// Loads the vector from the given memory range.
-  void assign(const element_type *begin, const element_type *end) {
-    assert(std::distance(begin, end) == width &&
+  template <typename T>
+  void assign(const T *begin, const T *end) {
+    assert(sizeof(T) * std::distance(begin, end) == getSizeInBytes() &&
            "Wrong number of elements when assigning the vector");
     memcpy(data(), begin, getSizeInBytes());
   }
@@ -226,6 +250,42 @@ public:
                      [](auto a, auto b) { return a / b; });
     else
       vectorData /= other.value();
+    return *this;
+  }
+
+  /// Performs a bitwise shift left between the given vector and this vector.
+  SIMDVector operator<<(const SIMDVector<int32_t, Width> &other) const {
+    SIMDVector result(*this);
+    result <<= other;
+    return result;
+  }
+
+  /// Performs inplace bitwise shift left between the given vector and this
+  /// vector.
+  SIMDVector operator<<=(const SIMDVector<int32_t, Width> &other) {
+    if constexpr (isEmulated)
+      std::transform(data(), data() + size(), other.data(), data(),
+                     [](auto a, auto b) { return a << b; });
+    else
+      vectorData <<= other.value();
+    return *this;
+  }
+
+  /// Performs a bitwise shift right between the given vector and this vector.
+  SIMDVector operator>>(const SIMDVector<int32_t, Width> &other) const {
+    SIMDVector result(*this);
+    result <<= other;
+    return result;
+  }
+
+  /// Performs inplace bitwise shift right between the given vector and this
+  /// vector.
+  SIMDVector operator>>=(const SIMDVector<int32_t, Width> &other) {
+    if constexpr (isEmulated)
+      std::transform(data(), data() + size(), other.data(), data(),
+                     [](auto a, auto b) { return a >> b; });
+    else
+      vectorData >>= other.value();
     return *this;
   }
 
@@ -355,6 +415,7 @@ public:
 
   /// Gets the underlying vector value.
   const vector_type &value() const { return vectorData; }
+  vector_type &value() { return vectorData; }
 
   /// Get the underlying data of the simd vector as a pointer.
   element_type *data() {
@@ -370,6 +431,14 @@ public:
     return (const element_type *)&vectorData;
   }
 
+  void print(raw_ostream &os) const {
+    os << "SIMDVector([";
+    llvm::interleave(llvm::makeArrayRef(data(), size()), os, ",");
+    os << "], dtype=" << llvm::getTypeName<element_type>()
+       << ", width=" << width << ")";
+  }
+  void dump() const { print(llvm::errs()); }
+
 private:
   /// If the isEmulated flag is true, then we are not actually explicitly using
   /// SIMD instructions. Instead, we are looping over the elements of the vector
@@ -379,6 +448,14 @@ private:
   /// The underlying simd vector data.
   vector_type vectorData;
 };
+
+template <typename ElementType, size_t Width>
+inline raw_ostream &operator<<(raw_ostream &os,
+                               const SIMDVector<ElementType, Width> &value) {
+  value.print(os);
+  return os;
+}
+
 } // namespace M
 
 #endif // GENERICML_SUPPORT_SIMD_H
