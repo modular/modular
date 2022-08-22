@@ -1,4 +1,4 @@
-//===- GenericML/Support/TensorShape.h ------------------------------------===//
+//===- Support/ML/TensorShape.h -------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_TENSORSHAPE_H
-#define GENERICML_SUPPORT_TENSORSHAPE_H
+#ifndef SUPPORT_ML_TENSORSHAPE_H
+#define SUPPORT_ML_TENSORSHAPE_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -333,4 +333,4 @@ inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
 
 } // end namespace M
 
-#endif // GENERICML_SUPPORT_TENSORSHAPE_H
+#endif // SUPPORT_ML_TENSORSHAPE_H

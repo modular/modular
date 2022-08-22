@@ -6,6 +6,8 @@
 
 add_modular_library(MSupportML
   DType.cpp
+  TensorShape.cpp
+  TensorSpec.cpp
 
   ADDITIONAL_HEADER_DIRS
 
