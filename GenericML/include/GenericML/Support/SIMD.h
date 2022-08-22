@@ -145,15 +145,14 @@ public:
       SIMDVector<ResultElementType, TargetWidth> result;
       static_assert(result.getSizeInBytes() == getSizeInBytes(),
                     "bytecount mismatch");
-      result.assign(data(), data() + size());
+      memcpy(result.data(), data(), getSizeInBytes());
       return result;
     }
   }
 
   /// Loads the vector from the given memory range.
-  template <typename T>
-  void assign(const T *begin, const T *end) {
-    assert(sizeof(T) * std::distance(begin, end) == getSizeInBytes() &&
+  void assign(const element_type *begin, const element_type *end) {
+    assert(std::distance(begin, end) == size() &&
            "Wrong number of elements when assigning the vector");
     memcpy(data(), begin, getSizeInBytes());
   }
