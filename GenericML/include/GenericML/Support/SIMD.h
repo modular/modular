@@ -145,8 +145,6 @@ public:
       SIMDVector<ResultElementType, TargetWidth> result;
       static_assert(result.getSizeInBytes() == getSizeInBytes(),
                     "bytecount mismatch");
-      // result.value() = *reinterpret_cast<const typename SIMDVector<
-      //     ResultElementType, TargetWidth>::vector_type *>(&result.value());
       result.assign(data(), data() + size());
       return result;
     }
@@ -278,7 +276,7 @@ public:
   /// Performs a bitwise shift right between the given vector and this vector.
   SIMDVector operator>>(const SIMDVector<int32_t, Width> &other) const {
     SIMDVector result(*this);
-    result <<= other;
+    result >>= other;
     return result;
   }
 
@@ -437,7 +435,7 @@ public:
 
   void print(raw_ostream &os) const {
     os << "SIMDVector([";
-    llvm::interleave(llvm::makeArrayRef(data(), size()), os, ",");
+    llvm::interleaveComma(llvm::makeArrayRef(data(), size()), os);
     os << "], dtype=" << llvm::getTypeName<element_type>()
        << ", width=" << width << ")";
   }
