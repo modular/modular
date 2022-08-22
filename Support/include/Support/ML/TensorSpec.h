@@ -1,4 +1,4 @@
-//===- GenericML/Support/TensorSpec.h -------------------------------------===//
+//===- Support/ML/TensorSpec.h --------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,11 +9,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_TENSORSPEC_H
-#define GENERICML_SUPPORT_TENSORSPEC_H
+#ifndef SUPPORT_ML_TENSORSPEC_H
+#define SUPPORT_ML_TENSORSPEC_H
 
-#include "GenericML/Support/TensorShape.h"
 #include "Support/ML/DType.h"
+#include "Support/ML/TensorShape.h"
 
 namespace M {
 
@@ -56,4 +56,4 @@ static_assert(sizeof(void *) != 8 || sizeof(TensorSpec) == 16);
 
 } // namespace M
 
-#endif // GENERICML_SUPPORT_TENSORSPEC_H
+#endif // SUPPORT_ML_TENSORSPEC_H

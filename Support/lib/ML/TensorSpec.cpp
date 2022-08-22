@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "GenericML/Support/TensorSpec.h"
+#include "Support/ML/TensorSpec.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
