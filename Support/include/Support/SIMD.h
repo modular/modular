@@ -1,4 +1,4 @@
-//===- GenericML/Support/SIMD.h -------------------------------------------===//
+//===- Support/SIMD.h -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef GENERICML_SUPPORT_SIMD_H
-#define GENERICML_SUPPORT_SIMD_H
+#ifndef SUPPORT_SIMD_H
+#define SUPPORT_SIMD_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
