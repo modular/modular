@@ -1,4 +1,4 @@
-//===- Support/DType.h ----------------------------------------------------===//
+//===- Support/ML/DType.h -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_DTYPE_H
-#define SUPPORT_DTYPE_H
+#ifndef SUPPORT_ML_DTYPE_H
+#define SUPPORT_ML_DTYPE_H
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
@@ -497,4 +497,4 @@ inline llvm::hash_code hash_value(DType dtype) {
 
 } // end namespace M
 
-#endif // SUPPORT_DTYPE_H
+#endif // SUPPORT_ML_DTYPE_H

@@ -13,4 +13,5 @@ add_modular_library(KGENKernelElaborator
   MLIRIR
   MLIRSupport
   MSupport
+  MSupportML
   )

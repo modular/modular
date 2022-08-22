@@ -5,6 +5,7 @@
 #===-----------------------------------------------------------------------===##
 
 add_subdirectory(Benchmark)
+add_subdirectory(ML)
 
 # Get the commit hash of the current branch and write it as a macro to VCSRevision.h.
 execute_process(
@@ -20,7 +21,6 @@ add_modular_library(MSupport
   AlignedAlloc.cpp
   ConcatenationTree.cpp
   CommonCLOptions.cpp
-  DType.cpp
   Error.cpp
 
   ADDITIONAL_HEADER_DIRS
