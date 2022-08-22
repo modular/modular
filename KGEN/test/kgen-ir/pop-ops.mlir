@@ -202,14 +202,14 @@ kgen.generator @pop_simd_extractelement<size, type: dtype>(
     %b: !meta.simd<size, f32>,
     %c: !meta.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  pop.constant
-  %idx = pop.constant(2) : !meta.scalar<si32>
-  // CHECK: %[[U:.*]] = pop.simd.extractelement %[[A]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, type>
-  %u = pop.simd.extractelement %a[%idx : !meta.scalar<si32>] : !meta.simd<size, type>
-  // CHECK: %[[V:.*]] = pop.simd.extractelement %[[B]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, f32>
-  %v = pop.simd.extractelement %b[%idx : !meta.scalar<si32>] : !meta.simd<size, f32>
-  // CHECK: %[[w:.*]] = pop.simd.extractelement %[[C]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<4, si32>
-  %w = pop.simd.extractelement %c[%idx : !meta.scalar<si32>] : !meta.simd<4, si32>
+  // CHECK: %[[IDX:.*]] =  arith.constant
+  %idx = arith.constant 2 : index
+  // CHECK: %[[U:.*]] = pop.simd.extractelement %[[A]][%[[IDX]]] : !meta.simd<size, type>
+  %u = pop.simd.extractelement %a[%idx] : !meta.simd<size, type>
+  // CHECK: %[[V:.*]] = pop.simd.extractelement %[[B]][%[[IDX]]] : !meta.simd<size, f32>
+  %v = pop.simd.extractelement %b[%idx] : !meta.simd<size, f32>
+  // CHECK: %[[w:.*]] = pop.simd.extractelement %[[C]][%[[IDX]]] : !meta.simd<4, si32>
+  %w = pop.simd.extractelement %c[%idx] : !meta.simd<4, si32>
   kgen.return
 }
 
@@ -228,14 +228,14 @@ kgen.generator @pop_simd_insertelement<size, type: dtype>(
     %b: !meta.simd<size, f32>,
     %c: !meta.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  pop.constant
-  %idx = pop.constant(2) : !meta.scalar<si32>
-  // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, type>
-  %u = pop.simd.insertelement %v0, %a[%idx : !meta.scalar<si32>] : !meta.simd<size, type>
-  // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<size, f32>
-  %v = pop.simd.insertelement %v1, %b[%idx : !meta.scalar<si32>] : !meta.simd<size, f32>
-  // CHECK: %[[w:.*]] = pop.simd.insertelement %[[V2]], %[[C]][%[[IDX]] : !meta.scalar<si32>] : !meta.simd<4, si32>
-  %w = pop.simd.insertelement %v2, %c[%idx : !meta.scalar<si32>] : !meta.simd<4, si32>
+  // CHECK: %[[IDX:.*]] =  arith.constant
+  %idx = arith.constant 2 : index
+  // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]]] : !meta.simd<size, type>
+  %u = pop.simd.insertelement %v0, %a[%idx] : !meta.simd<size, type>
+  // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]]] : !meta.simd<size, f32>
+  %v = pop.simd.insertelement %v1, %b[%idx] : !meta.simd<size, f32>
+  // CHECK: %[[w:.*]] = pop.simd.insertelement %[[V2]], %[[C]][%[[IDX]]] : !meta.simd<4, si32>
+  %w = pop.simd.insertelement %v2, %c[%idx] : !meta.simd<4, si32>
   kgen.return
 }
 

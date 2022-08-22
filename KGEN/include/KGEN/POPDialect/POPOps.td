@@ -354,22 +354,20 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the meta.scalar at
-    that position.
+    that position. The position must be of type index.
 
     Example:
 
     ```mlir
-    %c = pop.constant(15) : !meta.scalar<i32>
-    %1 = pop.simd.extractelement %0[%c : !meta.scalar<i32>]: !meta.simd<16, f32>
+    %1 = pop.simd.extractelement %0[%position]: !meta.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins SIMDType:$vector, UnboundOrIntegerScalar:$position);
+  let arguments = (ins SIMDType:$vector, Index:$position);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
-    $vector `[` $position `:` qualified(type($position)) `]` attr-dict `:`
-      qualified(type($vector))
+    $vector `[` $position `]` attr-dict `:` qualified(type($vector))
   }];
 }
 
@@ -385,21 +383,21 @@ def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
   let summary = "extractelement operation";
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
-    source value into the vector at the proper position.
+    source value into the vector at the proper position. The position must be
+    of type index.
 
     Example:
 
     ```mlir
-    %1 = pop.simd.extractelement %val, %vec[%idx : !meta.scalar<i32>]: !meta.simd<16, f32>
+    %1 = pop.simd.extractelement %val, %vec[%position]: !meta.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins SIMDType:$vector, ScalarType:$value, UnboundOrIntegerScalar:$position);
+  let arguments = (ins SIMDType:$vector, ScalarType:$value, Index:$position);
   let results = (outs SIMDType:$result);
 
   let assemblyFormat = [{
-    $value `,` $vector `[` $position `:` qualified(type($position)) `]` attr-dict `:`
-    qualified(type($vector))
+    $value `,` $vector `[` $position `]` attr-dict `:` qualified(type($vector))
   }];
 }
 
