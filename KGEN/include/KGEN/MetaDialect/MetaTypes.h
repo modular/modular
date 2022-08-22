@@ -14,7 +14,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
-#include "Support/DType.h"
+#include "Support/ML/DType.h"
 
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/MetaDialect/MetaTypes.h.inc"

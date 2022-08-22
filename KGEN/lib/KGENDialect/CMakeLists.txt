@@ -23,5 +23,6 @@ add_modular_dialect_library(KGENDialect
 
   LINK_LIBS PUBLIC
   MSupport
+  MSupportML
   MLIRIR
 )
