@@ -5,9 +5,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENPasses.h"
 #include "Support/ErrorOr.h"
+#include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Block.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
@@ -144,71 +153,119 @@ ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-M::ErrorOrSuccess ExecutionEngine::add(mlir::LLVM::LLVMFuncOp kernel) {
-  // Short-circuit early if we already have this kernel.
-  if (cache->hasObject(kernel.getName()))
-    return success();
-
-  // Create a new module for this single kernel. This will go away at the end of
-  // this function.
-  mlir::OwningOpRef<mlir::ModuleOp> singleModule =
-      mlir::ModuleOp::create(kernel->getLoc());
-  mlir::Block *body = singleModule->getBody(0);
-  mlir::OpBuilder builder(body, body->end());
-
-  // Clone any symbols used by this kernel into the module as well.
-  mlir::SymbolTable symtab(kernel->getParentOp());
-
-  // Traverse the call graph and clone all the callees into this module.
-  std::function<ErrorOrSuccess(mlir::LLVM::LLVMFuncOp)> dfsCloner =
-      [&](mlir::LLVM::LLVMFuncOp func) -> ErrorOrSuccess {
-    for (auto call : func.getOps<mlir::LLVM::CallOp>()) {
-      auto callee = symtab.lookup<mlir::LLVM::LLVMFuncOp>(
-          call.getCalleeAttr().getValue());
-      if (!callee || callee.isExternal()) {
-        auto error = mlir::emitError(call.getLoc())
-                     << "could not find local callee '" << call.getCalleeAttr()
-                     << "' in the current module";
-        if (callee)
-          error.attachNote(callee.getLoc()) << "callee declared here";
-        return Error("could not find local callee '" +
-                     call.getCalleeAttr().getValue() +
-                     "' in the current module.");
-      }
-
-      if (auto err = dfsCloner(callee))
-        return err.takeError();
-
-      builder.clone(*callee);
+/// Slice a kernel and all its dependencies out of the existing module. This
+/// operates using FunctionOpInterface as the 'function' op type so that we can
+/// use LLVMFuncOps as well as KGEN::KernelOp and friends. This also uses
+/// CallOpInterface to capture all callees.
+static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface kernel,
+                                   OpBuilder &builder,
+                                   const mlir::SymbolTable &symtab) {
+  for (auto call : kernel.getBody().getOps<mlir::CallOpInterface>()) {
+    auto callableForCallee = call.getCallableForCallee();
+    if (auto val = callableForCallee.dyn_cast<Value>()) {
+      auto err = mlir::emitError(call.getLoc())
+                 << "dynamic callee is not supported";
+      err.attachNote(val.getLoc()) << "dynamic callee here";
+      return Error("dynamic callee is not supported");
     }
-    return success();
-  };
+    // This is safe because in KGEN all symbols are flattened, and we don't
+    // support recursion in KGEN.
+    StringAttr calleeRef =
+        callableForCallee.get<SymbolRefAttr>().getLeafReference();
+    auto callee = symtab.lookup<mlir::FunctionOpInterface>(calleeRef);
+    if (!callee || callee.isExternal()) {
+      auto error = mlir::emitError(call.getLoc())
+                   << "could not find local callee '@" << calleeRef.getValue()
+                   << "' in the current module";
+      if (callee)
+        error.attachNote(callee.getLoc()) << "callee defined here";
 
-  if (auto err = dfsCloner(kernel))
-    return err.takeError();
+      return Error("could not find local callee '@" + calleeRef.getValue() +
+                   "' in the current module.");
+    }
 
-  // Clone the kernel into this new module. We don't want to remove it from the
-  // current module.
-  builder.clone(*kernel);
+    if (auto err = kernelSlicer(callee, builder, symtab))
+      return err.takeError();
 
-  auto llvmModule = mlir::translateModuleToLLVMIR(
-      *singleModule, *ctx.getContext(), (kernel.getName() + "_module").str());
+    builder.clone(*callee);
+  }
+  return success();
+}
 
-  llvmModule->setDataLayout(targetMachine->createDataLayout());
-  llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
+/// Set up a pass manager with the *ToLLVM passes and run it. This has the
+/// effect of taking `module` and converting it fully to LLVM.
+static LogicalResult convertToLLVM(ModuleOp module) {
+  mlir::PassManager pm(module.getContext());
 
-  // Create a new dylib so we don't have ODR violations.
-  auto dylibOr = jit->createJITDylib(kernel.getName().str());
-  if (!dylibOr)
-    return M::Error(toString(dylibOr.takeError()));
+  pm.addNestedPass<KGEN::KernelOp>(mlir::createCanonicalizerPass());
+  pm.addNestedPass<KGEN::KernelOp>(KGEN::createConvertPOPToLLVMPass());
 
-  // Resolve symbols that are statically linked in the current process.
-  dylibOr->addGenerator(
-      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-          jit->getDataLayout().getGlobalPrefix())));
+  pm.addNestedPass<KGEN::KernelOp>(
+      mlir::arith::createConvertArithmeticToLLVMPass());
+  pm.addNestedPass<KGEN::KernelOp>(mlir::createConvertSCFToCFPass());
+  pm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
+  pm.addPass(KGEN::createConvertKGENToLLVMPass());
 
-  if (auto err = jit->addIRModule(*dylibOr, {std::move(llvmModule), ctx}))
-    return M::Error(toString(std::move(err)));
+  // And finally canonicalize again before running through the JIT.
+  pm.addPass(mlir::createCanonicalizerPass());
+
+  return pm.run(module);
+}
+
+/// Add the given module to the execution engine. This slices all the kernels
+/// out of the module with their dependencies to generate self-contained object
+/// files.
+// TODO: The slicing -> convert to LLVM -> createJITDylib + compile has natural
+//       parallelism that we aren't taking advantage of.
+M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
+  // Loop over all the kernels in the module and perform non-destructive
+  // slicing, then push them to LLVM IR and compile them to objects.
+  for (auto kernel : module.getOps<KGEN::KernelOp>()) {
+    // Short-circuit early if we already have this kernel.
+    if (cache->hasObject(kernel.getName()))
+      return success();
+
+    // Create a new module for this single kernel. This will go away at the end
+    // of this function.
+    mlir::OwningOpRef<mlir::ModuleOp> singleModule =
+        mlir::ModuleOp::create(kernel->getLoc());
+    mlir::Block *body = singleModule->getBody(0);
+    mlir::OpBuilder builder(body, body->end());
+
+    // Clone any symbols used by this kernel into the module as well.
+    mlir::SymbolTable symtab(kernel->getParentOp());
+
+    // Traverse the call graph and clone all the callees into this module.
+    if (auto err = kernelSlicer(kernel, builder, symtab))
+      return err.takeError();
+
+    // Clone the kernel into this new module. We don't want to remove it from
+    // the current module.
+    builder.clone(*kernel);
+
+    if (failed(convertToLLVM(*singleModule)))
+      return Error("could not convert kernel '@" + kernel.getName() +
+                   "' to LLVM");
+
+    auto llvmModule = mlir::translateModuleToLLVMIR(
+        *singleModule, *ctx.getContext(), (kernel.getName() + "_module").str());
+
+    llvmModule->setDataLayout(targetMachine->createDataLayout());
+    llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
+
+    // Create a new dylib so that we don't have ODR violations.
+    auto dylibOr = jit->createJITDylib(kernel.getName().str());
+    if (!dylibOr)
+      return M::Error(toString(dylibOr.takeError()));
+
+    // Resolve symbols that are statically linked in the current process.
+    dylibOr->addGenerator(
+        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            jit->getDataLayout().getGlobalPrefix())));
+
+    if (auto err = jit->addIRModule(*dylibOr, {std::move(llvmModule), ctx}))
+      return M::Error(toString(std::move(err)));
+  }
 
   return success();
 }
@@ -233,6 +290,6 @@ ExecutionEngine::getObject(StringRef kernel) {
 }
 
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-ExecutionEngine::getObject(mlir::LLVM::LLVMFuncOp kernel) {
+ExecutionEngine::getObject(KGEN::KernelOp kernel) {
   return getObject(kernel.getName());
 }

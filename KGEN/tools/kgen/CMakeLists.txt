@@ -12,14 +12,9 @@ add_modular_tool(kgen
   HLKGENDialect
   KGENKernelElaborator
   KGENDialect
-  KGENToLLVM
   LowerHLKGEN
   MetaDialect
   POPDialect
 
   MLIRParser
-  MLIRSCFDialect
-  MLIRArithmeticToLLVM
-  MLIRSCFToControlFlow
-  MLIRControlFlowToLLVM
 )

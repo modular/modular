@@ -15,7 +15,11 @@ add_modular_library(KGENExecutionEngine
 
   LINK_LIBS PUBLIC
   KGENDialect
-  MLIRLLVMDialect
+  KGENToLLVM
+
+  MLIRArithmeticToLLVM
+  MLIRSCFToControlFlow
+  MLIRControlFlowToLLVM
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   )

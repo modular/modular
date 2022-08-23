@@ -7,9 +7,9 @@
 #ifndef KGEN_EXECUTION_ENGINE_H
 #define KGEN_EXECUTION_ENGINE_H
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include <functional>
 
@@ -32,12 +32,9 @@ public:
 
   static ErrorOr<ExecutionEngine> create();
 
-  /// Add a function to the executor. This will compile the LLVM function
-  /// immediately. This is safe to call multiple times on a single kernel - if
-  /// we already have the kernel in the object cache then we won't recompile it.
-  /// This produces individual objects that are somewhat self-contained in that
-  /// they will not depend on any other object in the object cache.
-  ErrorOrSuccess add(mlir::LLVM::LLVMFuncOp kernel);
+  /// Add an MLIR module to the execution engine. This will perform slicing for
+  /// every kernel and generate self-contained libraries.
+  ErrorOrSuccess add(mlir::ModuleOp module);
 
   /// Invoke a kernel with the given name. This will return an error if the
   /// kernel hasn't been previously added.
@@ -62,7 +59,7 @@ public:
   }
 
   template <typename ReturnT, typename... Args>
-  auto invoke(mlir::LLVM::LLVMFuncOp kernel, Args... args) {
+  auto invoke(KGEN::KernelOp kernel, Args... args) {
     return invoke<ReturnT, Args...>(kernel.getName(),
                                     std::forward<Args>(args)...);
   }
@@ -71,8 +68,7 @@ public:
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   getObject(llvm::StringRef kernel);
 
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getObject(mlir::LLVM::LLVMFuncOp kernel);
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject(KGEN::KernelOp kernel);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);

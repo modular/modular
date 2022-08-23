@@ -13,11 +13,11 @@ using namespace M;
 // CommandLineKernel implementation
 //===--------------------------------------------------------------------===//
 
-ErrorOrSuccess CommandLineKernel::verifyKernelSignature(
-    mlir::LLVM::LLVMFunctionType kernelType) const {
+ErrorOrSuccess
+CommandLineKernel::verifyKernelSignature(mlir::FunctionType kernelType) const {
   if (signature == "f32()") {
-    if (kernelType.getNumParams() != 0 ||
-        kernelType.getReturnType() !=
+    if (kernelType.getNumInputs() != 0 || kernelType.getNumResults() != 1 ||
+        kernelType.getResult(0) !=
             mlir::Float32Type::get(kernelType.getContext())) {
       std::string ktype;
       llvm::raw_string_ostream os(ktype);

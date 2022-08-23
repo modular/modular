@@ -6,7 +6,9 @@
 
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
+#include "KGEN/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/ToolUtilities.h"
@@ -30,35 +32,36 @@ struct ProcessBuffer {
 
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
     DialectRegistry registry;
+    // Don't need HLKGEN here.
+    registry.insert<KGEN::KGENDialect, KGEN::MetaDialect, KGEN::POPDialect>();
     mlir::registerLLVMDialectTranslation(registry);
 
     ctx->appendDialectRegistry(registry);
     ctx->loadAllAvailableDialects();
 
     // Open the input file.
-    OwningOpRef<ModuleOp> module(parseSourceFile<ModuleOp>(sourceMgr, ctx));
+    OwningOpRef<ModuleOp> module = parseSourceFile<ModuleOp>(sourceMgr, ctx);
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
     SymbolTable symtab(*module);
-    auto lookupKernel =
-        [&](StringRef kernelName) -> ErrorOr<mlir::LLVM::LLVMFuncOp> {
-      auto kernel = symtab.lookup<LLVM::LLVMFuncOp>(kernelName);
+    auto lookupKernel = [&](StringRef kernelName) -> ErrorOr<KGEN::KernelOp> {
+      auto kernel = symtab.lookup<KGEN::KernelOp>(kernelName);
       if (!kernel)
         return Error("could not find kernel '" + kernelName + "'.");
       return kernel;
     };
+
+    // Add the module to the execution engine.
+    if (auto err = execEngine.add(*module))
+      return failure(clOptions.reportError(err.getError()));
 
     for (const auto &k : clOptions.kernels) {
       auto kernelOr = lookupKernel(k.name);
       if (kernelOr.isError())
         return failure(clOptions.reportError(kernelOr.getError()));
 
-      mlir::LLVM::LLVMFuncOp kernel = *kernelOr;
-
-      // Compile the kernel.
-      if (auto err = execEngine.add(kernel))
-        return failure(clOptions.reportError(err.getError()));
+      KGEN::KernelOp kernel = *kernelOr;
 
       // And now we diverge.
       switch (clOptions.cmd) {
