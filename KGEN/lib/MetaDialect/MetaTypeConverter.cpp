@@ -157,7 +157,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
     Optional<Type> dtype = convertDType(simd);
     Optional<uint64_t> size = convertSize(simd);
     if (dtype && size)
-      return mlir::VectorType::get(*size, *dtype);
+      return LLVM::getFixedVectorType(*dtype, *size);
 
     // Emit an error.
     if (!dtype)

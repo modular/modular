@@ -83,18 +83,15 @@ struct FormatKernel : public llvm::FormatAdapter<mlir::LLVM::LLVMFuncOp> {
       if (auto st = t.dyn_cast<mlir::LLVM::LLVMStructType>())
         llvm::report_fatal_error("structs are supported through linearization");
 
-      // Fixed vector types are easy.
-      if (auto vt = t.dyn_cast<mlir::LLVM::LLVMFixedVectorType>()) {
-        printTypeAsC(vt.getElementType());
-        os << "__attribute__ ((vector_size(" << vt.getNumElements() << ")))";
-        return;
-      }
+      if (LLVM::isCompatibleVectorType(t)) {
+        if (LLVM::isScalableVectorType(t))
+          llvm::report_fatal_error("scalable vectors are not supported");
 
-      // Scalable vector types are not, just pass in a pointer and trust that
-      // we'll know what to do inside the kernel.
-      if (auto vt = t.dyn_cast<mlir::LLVM::LLVMScalableVectorType>()) {
-        printTypeAsC(vt.getElementType());
-        os << "*";
+        printTypeAsC(LLVM::getVectorElementType(t));
+        // Fixed vector types are easy and we add the simd attributes.
+        // TODO: This will only work on GNU and CLANG compilers.
+        os << " __attribute__ ((vector_size(" << LLVM::getVectorNumElements(t)
+           << ")))";
         return;
       }
 
