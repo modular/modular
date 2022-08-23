@@ -339,8 +339,9 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
     addTask(runtime, [state, elementIdx]() {
       // Invoke the per-element function with the index and all of the captured
       // state.
-      std::apply([&](auto &&...args) { state->elementFn(elementIdx, args...); },
-                 state->capturesList);
+      std::apply(
+          [&](auto &&...args) { (void)state->elementFn(elementIdx, args...); },
+          state->capturesList);
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
