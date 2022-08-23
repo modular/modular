@@ -14,6 +14,7 @@
 
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommandLine.h"
+#include <chrono>
 #include <thread>
 #include <type_traits>
 
@@ -173,10 +174,12 @@ public:
       workQueue = createSingleThreadWorkQueue();
       break;
     case WorkQueueType::kThreadPool:
-      workQueue = createThreadPoolWorkQueue(getNumThreads(), busyWaitNs);
+      workQueue = createThreadPoolWorkQueue(
+          getNumThreads(), std::chrono::nanoseconds{busyWaitNs});
       break;
     case WorkQueueType::kShardedSemaphore:
-      workQueue = createShardedSemaphoreWorkQueue(getNumThreads(), busyWaitNs);
+      workQueue = createShardedSemaphoreWorkQueue(
+          getNumThreads(), std::chrono::nanoseconds{busyWaitNs});
       break;
     }
     return Runtime(std::move(allocator), std::move(workQueue));

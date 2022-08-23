@@ -475,7 +475,8 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
+LLCL::createThreadPoolWorkQueue(size_t numThreads,
+                                std::chrono::nanoseconds busyWait) {
   TRACE_INIT_START_TIME();
 
   // We expect `numThreads` to be the total numbers of threads that are
@@ -487,6 +488,5 @@ LLCL::createThreadPoolWorkQueue(size_t numThreads, unsigned busyWaitNs) {
   // We use a 64-bit value "thread suspended" value currently so we cap at 64
   // threads.  This algorithm isn't going to scale beyond 64 threads anyway.
   numThreads = std::min(numThreads, size_t(64));
-  return std::make_unique<ThreadPoolWorkQueue>(
-      numThreads, std::chrono::nanoseconds(busyWaitNs));
+  return std::make_unique<ThreadPoolWorkQueue>(numThreads, busyWait);
 }
