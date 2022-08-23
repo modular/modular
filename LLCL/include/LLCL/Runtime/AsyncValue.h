@@ -740,7 +740,7 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
   if (isReady(waitersAndStateValue.getInt())) {
     assert(waitersAndStateValue.getPointer() == nullptr &&
            "cannot have waiter nodes when ready");
-    runOneWaiter(std::move(waiter));
+    runOneWaiter(std::forward<WaiterT>(waiter));
     return;
   }
 
