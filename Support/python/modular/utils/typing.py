@@ -3,15 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
-# TODO: code in modular should use this instead of the builtin module
-
 
 from sys import version_info
 from typing import *
 
 if version_info.minor <= 8:
-    from typing import Iterable, Iterator
+    from typing import IO, BinaryIO, Match, Pattern, TextIO
 else:
     from collections.abc import Iterable, Iterator
+
+    Tuple = tuple
 
 del version_info
