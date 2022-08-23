@@ -17,6 +17,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
 
+#include <chrono>
 #include <memory>
 
 namespace LLCL {
@@ -66,12 +67,14 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
 /// Create a thread pool. Setting 0 as the number of threads makes this default
 /// to std::thread::hardware_concurrency().
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
-                                                     unsigned busyWaitNs = 0);
+std::unique_ptr<WorkQueue>
+createThreadPoolWorkQueue(size_t numThreads = 0,
+                          std::chrono::nanoseconds busyWait = {});
 
 /// Create a thread pool work queue that uses sharded semaphore.
 std::unique_ptr<WorkQueue>
-createShardedSemaphoreWorkQueue(size_t numThreads, unsigned busyWaitNs = 0);
+createShardedSemaphoreWorkQueue(size_t numThreads,
+                                std::chrono::nanoseconds busyWait = {});
 
 } // namespace LLCL
 
