@@ -19,10 +19,10 @@ llvm.func @"float_constant_indirect"() -> f32 {
   llvm.return %0 : f32
 }
 
-llvm.func @exec_exp() -> f32 {
+kgen.kernel @exec_exp() -> f32 {
   %0 = llvm.call @"float_constant_indirect"() : () -> f32
   %1 = llvm.call @"exp_intrinsic_f32,type=f32"(%0) : (f32) -> f32
-  llvm.return %1 : f32
+  kgen.return %1 : f32
 }
 
 // COM: exec_exp computes exp(1.0)

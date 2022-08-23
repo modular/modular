@@ -7,9 +7,9 @@
 #ifndef KGEN_CLOPTIONS_H
 #define KGEN_CLOPTIONS_H
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/CommandLine.h"
 
 namespace M {
@@ -43,8 +43,7 @@ struct CommandLineKernel {
 
   /// Verify that the signature of this kernel passed in on the command line
   /// matches the signature of the kernel as it exists in the IR.
-  ErrorOrSuccess
-  verifyKernelSignature(mlir::LLVM::LLVMFunctionType kernelType) const;
+  ErrorOrSuccess verifyKernelSignature(mlir::FunctionType kernelType) const;
   /// Execute this kernel and print its result(s).
   ErrorOrSuccess executeAndPrint(KGEN::ExecutionEngine &engine) const;
 };
@@ -73,8 +72,7 @@ public:
       "kernel", cl::desc("Specifies the kernels to handle. Defaults to an "
                          "empty list, which will do nothing.")};
 
-  Optional<CommandLineKernel>
-  shouldHandleKernel(mlir::LLVM::LLVMFuncOp kernel) const {
+  Optional<CommandLineKernel> shouldHandleKernel(KGEN::KernelOp kernel) const {
     auto found = llvm::find_if(kernels, [&](const CommandLineKernel &ek) {
       return ek.name == kernel.getName();
     });
