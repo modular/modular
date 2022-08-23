@@ -27,8 +27,18 @@ function(add_kgen_library name)
 endfunction()
 
 add_subdirectory(include/KGEN)
-add_subdirectory(lib)
-add_subdirectory(tools)
+add_subdirectory(lib/KGENDialect)
+add_subdirectory(lib/HLKGENDialect)
+add_subdirectory(lib/MetaDialect)
+add_subdirectory(lib/POPDialect)
+add_subdirectory(lib/LowerHLKGEN)
+add_subdirectory(lib/KGENToLLVM)
+add_subdirectory(lib/KernelElaborator)
+add_subdirectory(lib/ExecutionEngine)
+add_subdirectory(lib/CLOptions)
+add_subdirectory(tools/kgen)
+add_subdirectory(tools/kgen-opt)
+add_subdirectory(tools/kgen-execute)
 
 # This function takes a target name, a single source file, and a list of
 # kernels to be processed. It cannot execute kernels, but it will generate
