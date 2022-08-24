@@ -331,6 +331,6 @@ inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
   return os;
 }
 
-} // end namespace M
+} // namespace M
 
 #endif // SUPPORT_ML_TENSORSHAPE_H

@@ -495,6 +495,6 @@ inline llvm::hash_code hash_value(DType dtype) {
   return llvm::hash_value(dtype.getValue());
 }
 
-} // end namespace M
+} // namespace M
 
 #endif // SUPPORT_ML_DTYPE_H

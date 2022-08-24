@@ -45,6 +45,6 @@ inline llvm::cl::ValuesClass values(OptsTy... Options) {
 
 } // namespace cl
 
-} // end namespace M
+} // namespace M
 
 #endif

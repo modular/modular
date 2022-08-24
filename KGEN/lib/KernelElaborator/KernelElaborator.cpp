@@ -130,7 +130,7 @@ private:
     entry = result;
   }
 };
-} // end anonymous namespace
+} // namespace
 
 void ElaboratedKernel::dump() const {
   if (!kernel) {
@@ -276,7 +276,7 @@ private:
   /// invalidating iterators.
   std::vector<KernelOp> kernelsToRemove;
 };
-} // end anonymous namespace
+} // namespace
 
 /// Insert a variant of an existing kernel into the primary file.
 void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
@@ -388,7 +388,7 @@ private:
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
 };
-} // end anonymous namespace
+} // namespace
 
 /// Create a clone of this rewriter, but refer with a clone of the kernel.
 /// This uses operationMap to remap our state onto the newly created kernel.

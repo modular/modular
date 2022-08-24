@@ -49,6 +49,6 @@ struct SuccessType {
 /// Return a success indicator.
 inline SuccessType success() { return SuccessType(); }
 
-} // end namespace M
+} // namespace M
 
 #endif // SUPPORT_LOGICALRESULT_H

@@ -60,7 +60,7 @@ public:
 private:
   std::unique_ptr<Allocator> baseAllocator;
 };
-} // end anonymous namespace.
+} // namespace
 
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
@@ -105,7 +105,7 @@ public:
   std::atomic<ssize_t> maxAllocations{0}, maxBytesAllocated{0};
   std::atomic<int64_t> totalAllocations{0};
 };
-} // end anonymous namespace.
+} // namespace
 
 /// Create a wrapper allocator that prints memory profiling information when it
 /// is destroyed.  This also performs leak checks.

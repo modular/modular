@@ -99,7 +99,7 @@ private:
   llvm::SmallDenseSet<Attribute> parameterLessAttrs;
   llvm::SmallDenseSet<Type> parameterLessTypes;
 };
-} // end anonymous namespace.
+} // namespace
 
 /// Walk the operation and all the operations in its body to find the
 /// definitions and uses of parameters.  This diagnoses and rejects parameter
@@ -362,7 +362,7 @@ private:
   const ParameterVerifier *verifier;
   Operation *op;
 };
-} // end anonymous namespace
+} // namespace
 
 namespace llvm {
 template <>
@@ -436,7 +436,7 @@ private:
   ParameterUseDefGraphNode node;
   unsigned useNumber;
 };
-} // end anonymous namespace
+} // namespace
 
 ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::begin() const {
   return ParameterUseDefGraphNodeIterator(*this, 0);

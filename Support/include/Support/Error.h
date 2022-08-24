@@ -116,6 +116,6 @@ private:
   StorageMode storageMode : 2;
 };
 
-} // end namespace M
+} // namespace M
 
 #endif // SUPPORT_ERROR_H

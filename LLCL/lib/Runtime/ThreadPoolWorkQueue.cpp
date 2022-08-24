@@ -132,7 +132,7 @@ struct SharedThreadState {
     return -1;
   }
 };
-} // end anonymous namespace
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // WorkQueueThread
@@ -183,7 +183,7 @@ struct WorkQueueThread {
   /// The main function invoked by std::thread.
   void runOnThread();
 };
-} // end anonymous namespace
+} // namespace
 
 void WorkQueueThread::runOnThread() {
   TIME_PROFILER_WORKER_INIT;
@@ -330,7 +330,7 @@ private:
   ///  This is the ringbuffer of work to do.
   LockFreeRingBuffer<TaskFunction> taskList;
 };
-} // end anonymous namespace
+} // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
                                          std::chrono::nanoseconds busyWaitNs)
