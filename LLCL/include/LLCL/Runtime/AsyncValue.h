@@ -600,7 +600,7 @@ private:
 
 template <typename T>
 std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(~0));
-} // end namespace Detail.
+} // namespace Detail.
 
 namespace Detail {
 /// IndirectAsyncValue represents an uncomputed AsyncValue of unspecified type.
@@ -638,7 +638,7 @@ class IndirectAsyncValue : public AsyncValue {
     AnyAsyncValueRef value;
   };
 };
-} // end namespace Detail
+} // namespace Detail
 
 //===----------------------------------------------------------------------===//
 // AsyncValue inline method implementations.

@@ -15,6 +15,6 @@ namespace LLCL {
 ///
 class Chain {};
 
-} // end namespace LLCL
+} // namespace LLCL
 
 #endif // LLCL_SUPPORT_CHAIN_H

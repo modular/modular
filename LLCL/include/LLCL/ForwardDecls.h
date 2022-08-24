@@ -44,7 +44,7 @@ class AsyncValueRef;
 class Runtime;
 using AnyAsyncValueRef = RCRef<AsyncValue>;
 
-} // end namespace LLCL
+} // namespace LLCL
 
 //===----------------------------------------------------------------------===//
 // Using Declarations

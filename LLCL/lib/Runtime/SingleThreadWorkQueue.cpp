@@ -43,7 +43,7 @@ private:
 
   ConcurrentQueue<TaskFunction> workItems;
 };
-} // end anonymous namespace
+} // namespace
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // We are done when values_remaining drops to zero.

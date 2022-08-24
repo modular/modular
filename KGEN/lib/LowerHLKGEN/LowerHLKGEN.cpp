@@ -55,7 +55,7 @@ public:
   std::string inferenceContext;
   Location inferenceLoc;
 };
-} // end anonymous namespace
+} // namespace
 
 SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp,
                                    GeneratorInterfaceOp interfaceOp)

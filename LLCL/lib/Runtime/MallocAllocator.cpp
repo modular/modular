@@ -21,7 +21,7 @@ class MallocAllocator : public Allocator {
   // Deallocate the specified pointer that has the specified size.
   void deallocateBytes(void *ptr, size_t size) override { M::alignedFree(ptr); }
 };
-} // end anonymous namespace.
+} // namespace
 
 std::unique_ptr<Allocator> LLCL::createMallocAllocator() {
   return std::make_unique<MallocAllocator>();
