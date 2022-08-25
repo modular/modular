@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypeConverter.h"
+#include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
@@ -279,13 +280,9 @@ public:
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
-    if (buffer.isBarePtr()) {
-      rewriter.replaceOp(op, adaptor.getValue());
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
-                                                        *buffer.getPtrIndex());
-    }
+    auto newOp = emitBufferAddressToLLVM(op->getLoc(), op.getValue(),
+                                         adaptor.getValue(), rewriter);
+    rewriter.replaceOp(op, newOp);
     return success();
   }
 };

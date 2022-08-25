@@ -10,6 +10,7 @@
 #include "KGEN/MetaDialect/MetaTypeConverter.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
@@ -224,6 +225,49 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertBufferLoad
+//===----------------------------------------------------------------------===//
+
+struct ConvertBufferLoad : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value bufPtr = emitBufferAddressToLLVM(op.getLoc(), op.getBuffer(),
+                                           adaptor.getBuffer(), rewriter);
+    auto ptrOffset = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), bufPtr.getType(), bufPtr,
+        ArrayRef<LLVM::GEPArg>{adaptor.getPosition()});
+
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrOffset);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertBufferStoreOp
+//===----------------------------------------------------------------------===//
+
+struct ConvertBufferStore : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value bufPtr = emitBufferAddressToLLVM(op.getLoc(), op.getBuffer(),
+                                           adaptor.getBuffer(), rewriter);
+    auto ptrOffset = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), bufPtr.getType(), bufPtr,
+        ArrayRef<LLVM::GEPArg>{adaptor.getPosition()});
+
+    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getValue(),
+                                               ptrOffset);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -256,6 +300,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
+      ConvertBufferLoad,
+      ConvertBufferStore,
       ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPCast,

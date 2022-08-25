@@ -5,8 +5,6 @@ kgen.include "library.mlir"
 // Compute erf as Taylor series expansion: erf(x) = 2/sqrt(pi) * (x - x^3/3)
 
 kgen.generator.interface @exp<type: dtype>(!meta.scalar<type>) -> !meta.scalar<type>
-kgen.generator.interface @buffer.load<type: dtype>(%buffer: !meta.buffer<?, type>, %idx: index) -> !meta.scalar<type>
-kgen.generator.interface @buffer.store<type: dtype>(%value: !meta.scalar<type>, %buffer: !meta.buffer<?, type>, %idx: index) -> ()
 
 kgen.generator.interface @erf_scalar<type: dtype>(%in: !meta.scalar<type>) -> !meta.scalar<type>
 
@@ -108,9 +106,9 @@ kgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.
   %size = meta.buffer.size %in: !meta.buffer<?, type>
 
   scf.for %i = %zero to %size step %one {
-      %src  = kgen.call @buffer.load<type:dtype = type>(%in, %i) : (!meta.buffer<?, type>, index) -> !meta.scalar<type>
+      %src  = pop.buffer.load %in[%i] : !meta.buffer<?, type>
       %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!meta.scalar<type>) -> !meta.scalar<type>
-      kgen.call @buffer.store<type:dtype = type>(%res, %out, %i) : (!meta.scalar<type>, !meta.buffer<?, type>, index) -> ()
+      pop.buffer.store %res, %out[%i] : !meta.buffer<?, type>
   }
 
   kgen.return

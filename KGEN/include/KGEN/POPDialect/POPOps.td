@@ -348,9 +348,7 @@ def CastOp : POPOp<"cast", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
-     TypesMatchWith<"result type matches element type of vector operand",
-                    "vector", "result",
-                    "getScalarOfSameDType($_self)">]> {
+     ScalarOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the meta.scalar at
@@ -376,10 +374,7 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
 //===----------------------------------------------------------------------===//
 
 def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
-     TypesMatchWith<"result type matches element type of vector operand",
-                    "vector", "value",
-                    "getScalarOfSameDType($_self)">,
-      AllTypesMatch<["result", "vector"]>]> {
+      ScalarOfSameDType<"vector", "value">, AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
@@ -406,8 +401,7 @@ def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
 //===----------------------------------------------------------------------===//
 
 def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
-    TypesMatchWith<"scalar of same data type", "result", "scalar",
-                   "getScalarOfSameDType($_self)">]> {
+      ScalarOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
     The `simd.splat` operation takes a scalar value and replicates it across
@@ -430,4 +424,56 @@ def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
   let results = (outs SIMDType:$result);
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
+}
+
+//===----------------------------------------------------------------------===//
+// BufferLoadOp
+//===----------------------------------------------------------------------===//
+
+def BufferLoadOp : POPOp<"buffer.load", [
+     ScalarOfSameDType<"buffer", "result">]> {
+  let summary = "buffer load operation";
+  let description = [{
+    Takes a Buffer and an index position and extracts the meta.scalar at
+    that position. The position must be of type index.
+
+    Example:
+
+    ```mlir
+    %1 = pop.buffer.load %0[%position]: !meta.buffer<size, dtype>
+    ```
+  }];
+
+  let arguments = (ins BufferType:$buffer, Index:$position);
+  let results = (outs ScalarType:$result);
+
+  let assemblyFormat = [{
+    $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// BufferStoreOp
+//===----------------------------------------------------------------------===//
+
+def BufferStoreOp : POPOp<"buffer.store", [
+     ScalarOfSameDType<"buffer", "value">]> {
+  let summary = "buffer store operation";
+  let description = [{
+    Takes a source value, buffer, and an index position and inserts the
+    source value into the buffer at the proper position. The position must be
+    of type index.
+
+    Example:
+
+    ```mlir
+    pop.buffer.store %val, %buf[%position]: !meta.buffer<size, dtype>
+    ```
+  }];
+
+  let arguments = (ins BufferType:$buffer, ScalarType:$value, Index:$position);
+
+  let assemblyFormat = [{
+    $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
+  }];
 }

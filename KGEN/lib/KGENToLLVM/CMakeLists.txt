@@ -7,6 +7,7 @@
 add_modular_conversion_library(KGENToLLVM
   ConvertKGENToLLVM.cpp
   ConvertPOPToLLVM.cpp
+  LLVMLoweringUtils.cpp
 
   DEPENDS
   MLIRKGENPasses
