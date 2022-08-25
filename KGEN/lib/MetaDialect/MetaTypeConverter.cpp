@@ -86,6 +86,12 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
   return {};
 }
 
+Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, DType dtype) {
+  if (Optional<Type> type = getMLIRTypeForDType(ctx, dtype))
+    return LLVM::LLVMPointerType::get(*type);
+  return LLVM::LLVMPointerType::get(ctx);
+}
+
 /// Convert a buffer type to an LLVM type. Both the element type and size can be
 /// unknown.
 ///
@@ -95,7 +101,7 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
 ///   `index`-typed size field.
 /// - The element type is unknown, the buffer is lowered to a struct with an
 ///   `i8`-typed discriminant field with the value of `DType::getValue` and the
-///   pointer becomes a opaque as `i8*`.
+///   pointer becomes untyped.
 static Type convertBufferType(mlir::LLVMTypeConverter &converter,
                               Optional<Type> dtype, Optional<uint64_t> size) {
   MLIRContext *ctx = &converter.getContext();
@@ -103,12 +109,10 @@ static Type convertBufferType(mlir::LLVMTypeConverter &converter,
   if (!size)
     fields.push_back(converter.getIndexType());
 
-  if (!dtype) {
-    IntegerType i8Type = Builder(ctx).getI8Type();
-    fields.append({LLVM::LLVMPointerType::get(i8Type), i8Type});
-  } else {
+  if (!dtype)
+    fields.append({LLVM::LLVMPointerType::get(ctx), Builder(ctx).getI8Type()});
+  else
     fields.push_back(LLVM::LLVMPointerType::get(*dtype));
-  }
 
   return fields.size() == 1 ? fields.front()
                             : LLVM::LLVMStructType::getLiteral(ctx, fields);
@@ -145,11 +149,9 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   });
 
   // Convert pointer types to bare pointers of the dtype. If the dtype is
-  // unspecified, return an opaque `i8` pointer.
+  // unspecified, return an untyped pointer.
   addConversion([=](PointerType pointer) -> Optional<Type> {
-    if (Optional<Type> dtype = convertDType(pointer))
-      return LLVM::LLVMPointerType::get(*dtype);
-    return LLVM::LLVMPointerType::get(Builder(&getContext()).getI8Type());
+    return getLLVMPointerTo(&getContext(), pointer.resolveDType());
   });
 
   // Convert SIMD types to vector types.

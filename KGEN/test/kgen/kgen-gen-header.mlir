@@ -15,4 +15,4 @@ kgen.kernel @someBufferKernel(%a: !meta.buffer<?, ?>) -> index {
   kgen.return %size : index
 }
 
-// BUFFER: extern intptr_t someBufferKernel(intptr_t, char *, int8_t);
+// BUFFER: extern intptr_t someBufferKernel(intptr_t, void *, int8_t);

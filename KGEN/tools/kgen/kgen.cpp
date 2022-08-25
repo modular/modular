@@ -103,7 +103,7 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
         if (auto dtype = ptr.resolveDType(); dtype.isValid())
           printDTypeAsC(dtype);
         else
-          os << "char";
+          os << "void";
         os << " *";
         return;
       }
@@ -114,7 +114,7 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
           printDTypeAsC(dtype);
           os << " *";
         } else {
-          os << "char *, int8_t";
+          os << "void *, int8_t";
         }
         return;
       }
