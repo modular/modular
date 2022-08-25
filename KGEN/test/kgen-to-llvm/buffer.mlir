@@ -336,3 +336,56 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
   %0 = meta.buffer.rebind %a : !meta.buffer<4, f32> to !meta.buffer<?, ?>
   kgen.return %0 : !meta.buffer<?, ?>
 }
+
+// -----
+
+// CHECK-LABEL: @buffer_construct
+// CHECK-SAME: %[[PTR:.*]]:
+kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>) -> !meta.buffer<4, f32> {
+  %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>
+  // CHECK: return %[[PTR]]
+  kgen.return %0 : !meta.buffer<4, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @buffer_construct
+// CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
+// CHECK-SAME: %[[SIZE:.*]]:
+kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>, %size: index) -> !meta.buffer<?, f32> {
+  // CHECK: %[[S0:.*]] = llvm.mlir.undef
+  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][1]
+  // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][0]
+  // CHECK: return %[[S2]]
+  %0 = meta.buffer.construct %ptr[%size] : !meta.buffer<?, f32>
+  kgen.return %0 : !meta.buffer<?, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @buffer_construct
+// CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
+// CHECK-SAME: %[[SIZE:.*]]:
+kgen.kernel @buffer_construct(%ptr: !meta.pointer<?>, %dtype: !kgen.dtype) -> !meta.buffer<4, ?> {
+  // CHECK: %[[S0:.*]] = llvm.mlir.undef
+  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][0]
+  // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][1]
+  // CHECK: return %[[S2]]
+  %0 = meta.buffer.construct %ptr of %dtype : !meta.buffer<4, ?>
+  kgen.return %0 : !meta.buffer<4, ?>
+}
+
+// -----
+
+// CHECK-LABEL: @buffer_construct
+// CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
+// CHECK-SAME: %[[SIZE:.*]]: {{.*}}, %[[DTYPE:.*]]:
+kgen.kernel @buffer_construct(%ptr: !meta.pointer<?>, %size: index, %dtype: !kgen.dtype) -> !meta.buffer<?, ?> {
+  // CHECK: %[[S0:.*]] = llvm.mlir.undef
+  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][1]
+  // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][0]
+  // CHECK: %[[S3:.*]] = llvm.insertvalue %[[DTYPE]], %[[S2]][2]
+  // CHECK: return %[[S3]]
+  %0 = meta.buffer.construct %ptr[%size] of %dtype : !meta.buffer<?, ?>
+  kgen.return %0 : !meta.buffer<?, ?>
+}

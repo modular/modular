@@ -118,6 +118,53 @@ def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
 }
 
 //===----------------------------------------------------------------------===//
+// BufferConstructOp
+//===----------------------------------------------------------------------===//
+
+def BufferConstructOp : MetaOp<"buffer.construct", [
+    NoSideEffect, AttrSizedOperandSegments,
+    TypesMatchWith<"pointer of same dtype", "result", "ptr",
+                   "getPointerOfSameDType($_self)">]> {
+  let summary = "construct a buffer with a pointer";
+  let description = [{
+    Construct a buffer around a base pointer. Requires size and/or dtype
+    operands as necessary, if they are unknown in the return type.
+
+    Example:
+
+    ```mlir
+    // Construct a buffer with a known size and type.
+    %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>
+
+    // Construct a buffer with an unknown size.
+    %1 = meta.buffer.construct %ptr[%size] : !meta.buffer<?, f32>
+
+    // Construct a buffer with an unknown dtype.
+    %2 = meta.buffer.construct %ptr of %dtype : !meta.buffer<4, ?>
+
+    // Construct a buffer with an unknown size and dtype.
+    %3 = meta.buffer.construct %ptr[%size] of %dtype : !meta.buffer<?, ?>
+    ```
+
+    A buffer with statically-known sizes and dtypes can be constructed with size
+    or dtype operands, but they will be ignored.
+
+    ```mlir
+    %4 = meta.buffer.construct %ptr[%size] of %dtype : !meta.buffer<4, f32>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$ptr, Optional<Index>:$size,
+                       Optional<DTypeType>:$dType);
+  let results = (outs BufferType:$result);
+  let assemblyFormat = [{
+    $ptr (`[` $size^ `]`)? (`of` $dType^)? attr-dict `:`
+    qualified(type($result))
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 
