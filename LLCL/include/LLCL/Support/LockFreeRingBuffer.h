@@ -13,7 +13,7 @@
 #include <cassert>
 #include <memory>
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This class provides a lock-free ring buffer for concurrent access.
 /// NOTE: Currently the size of the ring buffer is fixed at the construction
@@ -160,6 +160,6 @@ private:
   AlignedAtomic<uint64_t> published = 0;
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_LOCKFREERINGBUFFER_H

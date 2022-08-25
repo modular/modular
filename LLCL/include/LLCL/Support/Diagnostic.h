@@ -14,20 +14,20 @@
 #include "LLCL/Support/Location.h"
 #include "Support/Error.h"
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This is a combination of an `Error` message with an encoded location.  It is
 /// relatively efficient to pass around, but its location must be decoded before
 /// it can be interpreted.
 class EncodedDiagnostic {
 public:
-  EncodedDiagnostic(M::Error message, EncodedLocation location)
+  EncodedDiagnostic(Error message, EncodedLocation location)
       : message(std::move(message)), location(std::move(location)) {}
   EncodedDiagnostic(EncodedDiagnostic &&) = default;
 
   /// Access the message in the diagnostic.
-  const M::Error &getMessage() const { return message; }
-  M::Error &getMessage() { return message; }
+  const Error &getMessage() const { return message; }
+  Error &getMessage() { return message; }
 
   /// Access the location in the diagnostic.
   const EncodedLocation &getLocation() const { return location; }
@@ -37,10 +37,10 @@ public:
   DecodedLocation decodeLocation() const { return location.decode(); }
 
 private:
-  M::Error message;
+  Error message;
   EncodedLocation location;
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_DIAGNOSTIC_H

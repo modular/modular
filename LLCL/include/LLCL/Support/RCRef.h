@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <utility>
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This is a smart pointer that keeps the specified reference counted value
 /// around.  It is move-only to avoid accidental copies, but it can be copied
@@ -146,6 +146,6 @@ inline void swap(RCRef<T> &a, RCRef<T> &b) {
   a.swap(b);
 }
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_RCREF_H

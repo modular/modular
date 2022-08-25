@@ -17,9 +17,9 @@
 #include <new>
 #include <type_traits>
 
-namespace LLCL {
+namespace M::LLCL {
 
-/// Define `LLCL::hardware_destructive_interference_size` in a portable way.
+/// Define `M::LLCL::hardware_destructive_interference_size` in a portable way.
 /// This is the alignment necessary to avoid false sharing between two atomic
 /// operations.
 #if defined(__cpp_lib_hardware_interference_size) && !defined(_MSC_VER)
@@ -56,7 +56,7 @@ static void atomicAdd(std::atomic<T> &accumValue, const T &value) {
     // via a compare_exchange_weak loop.
     T prevAccumValue = accumValue;
 
-    LLCL::SpinWaiter<> waiter;
+    SpinWaiter<> waiter;
     while (!accumValue.compare_exchange_weak(prevAccumValue,
                                              prevAccumValue + value)) {
       // Wait a bit and retry.
@@ -73,7 +73,7 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   T previousMax = maxValue;
 
   // Note that compare_exchange_weak updates `previousMax` on failure.
-  LLCL::SpinWaiter<> waiter;
+  SpinWaiter<> waiter;
   while (previousMax < value &&
          !maxValue.compare_exchange_weak(previousMax, value)) {
     // Wait a bit and retry.
@@ -81,6 +81,6 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   }
 }
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_ATOMICS_H

@@ -15,7 +15,7 @@
 #include <immintrin.h> // _mm_pause
 #endif
 
-namespace LLCL {
+namespace M::LLCL {
 
 namespace Detail {
 // This is the non-templated base class of SpinWaiter.
@@ -134,6 +134,6 @@ private:
       busyWaitEndTime;
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_SPINWAITER_H

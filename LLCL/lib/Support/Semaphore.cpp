@@ -19,7 +19,7 @@
 #include <mutex>
 #endif
 
-using namespace LLCL;
+using namespace M::LLCL;
 
 /// This class provides the implementation for the Semaphore object. Because we
 /// have so many different implementation details, we encapsulate the

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the LLCL::WorkQueue interface, which allows clients of
+// This file declares the M::LLCL::WorkQueue interface, which allows clients of
 // LLCL to implement work queues that map onto their systems in a nice way.
 //
 //===----------------------------------------------------------------------===//
@@ -20,7 +20,7 @@
 #include <chrono>
 #include <memory>
 
-namespace LLCL {
+namespace M::LLCL {
 class LLCLAllocator;
 
 using TaskFunction = llvm::unique_function<void()>;
@@ -76,6 +76,6 @@ std::unique_ptr<WorkQueue>
 createShardedSemaphoreWorkQueue(size_t numThreads,
                                 std::chrono::nanoseconds busyWait = {});
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_WORKQUEUE_H

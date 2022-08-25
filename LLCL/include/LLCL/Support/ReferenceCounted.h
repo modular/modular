@@ -11,7 +11,7 @@
 #include <cassert>
 #include <cstddef>
 
-namespace LLCL {
+namespace M::LLCL {
 template <typename T>
 class RCRef;
 
@@ -105,6 +105,6 @@ inline ReferenceCounted<SubClass>::~ReferenceCounted() {
 #endif // MODULAR_DEBUG
 }
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_REFERENCE_COUNTED_H

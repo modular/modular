@@ -16,7 +16,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include <utility>
 
-namespace LLCL {
+namespace M::LLCL {
 
 //===----------------------------------------------------------------------===//
 // Internal helpers
@@ -29,7 +29,7 @@ struct UnwrapErrorOr {
   using type = T;
 };
 template <typename T>
-struct UnwrapErrorOr<M::ErrorOr<T>> {
+struct UnwrapErrorOr<ErrorOr<T>> {
   using type = T;
 };
 
@@ -458,6 +458,6 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
     await(chainResult);
 }
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ALGORITHMS_H

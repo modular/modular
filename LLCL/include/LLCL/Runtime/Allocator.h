@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the LLCL::Allocator interface, which allows clients of
+// This file declares the M::LLCL::Allocator interface, which allows clients of
 // LLCL to implement custom allocation and other fancy policies.
 //
 //===----------------------------------------------------------------------===//
@@ -14,7 +14,7 @@
 
 #include <memory>
 
-namespace LLCL {
+namespace M::LLCL {
 class LLCLAllocator;
 
 /// This class defines an abstract interface for custom allocators to implement.
@@ -88,6 +88,6 @@ createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator);
 std::unique_ptr<Allocator>
 createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ALLOCATOR_H
