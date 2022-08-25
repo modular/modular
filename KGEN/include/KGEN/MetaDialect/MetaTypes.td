@@ -154,6 +154,10 @@ def UnboundOrFloatScalar : AllOfType<[ScalarType, FloatOrUnboundDType],
 /// floating-point dtype.
 def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
+/// A buffer type with a concrete dtype.
+def ConcreteBuffer : ConfinedType<BufferType,
+    [CPred<"$_self.cast<BufferType>().getDType()">],
+    "buffer with concrete dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<
     [ScalarType, SIMDType]>;
