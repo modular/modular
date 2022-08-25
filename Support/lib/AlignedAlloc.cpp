@@ -6,7 +6,6 @@
 
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/MathExtras.h"
-#include <stdlib.h>
 using namespace M;
 
 /// This is a helper to handle host-specific system alignment functions.
@@ -20,9 +19,9 @@ void *M::alignedAlloc(size_t size, size_t alignment) {
   return _aligned_malloc(size, alignment);
 #else  // _WIN32
   if (alignment <= 8)
-    return malloc(size);
+    return std::malloc(size);
   assert(alignment >= sizeof(void *) && "caller already checked");
-  return aligned_alloc(alignment, size);
+  return std::aligned_alloc(alignment, size);
 #endif // _WIN32
 }
 

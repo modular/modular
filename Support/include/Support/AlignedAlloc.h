@@ -25,7 +25,7 @@ void *alignedAlloc(size_t size, size_t alignment);
 
 #ifndef _WIN32
 /// alignedFree deallocates a pointer allocated with alignedAlloc.
-inline void alignedFree(void *ptr) { free(ptr); }
+inline void alignedFree(void *ptr) { std::free(ptr); }
 #else
 /// alignedFree deallocates a pointer allocated with alignedAlloc.
 void alignedFree(void *ptr);
