@@ -74,7 +74,7 @@ function(add_kgen_kernel target)
       OUTPUT "${kernel}.h"
       COMMAND $<TARGET_FILE:kgen> -emit -kernel=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      DEPENDS kgen
+      DEPENDS kgen ${KGEN_SOURCE}
     )
 
     add_library(${target}_${kernel} ${object_file_name})
