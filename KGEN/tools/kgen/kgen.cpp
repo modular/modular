@@ -100,7 +100,7 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
         return;
       }
 
-      assert(t.isIndex() || llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()) &&
+      assert((t.isIndex() || llvm::isPowerOf2_64(t.getIntOrFloatBitWidth())) &&
                                 "bitwidth must be a power of 2");
 
       // Elementary type, just print it.
