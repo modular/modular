@@ -210,8 +210,8 @@ LogicalResult CastOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static Type getScalarOfSameDType(Type type) {
-  auto simd = type.cast<SIMDType>();
-  return ScalarType::get(simd.getContext(), simd.getDType());
+  return ScalarType::get(type.getContext(),
+                         type.cast<DTypeInterface>().getDType());
 }
 
 //===----------------------------------------------------------------------===//

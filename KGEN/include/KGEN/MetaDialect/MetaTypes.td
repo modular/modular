@@ -163,3 +163,9 @@ def BoolScalarOrSIMD : AnyTypeOf<
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
     [UnboundOrFloatScalar, UnboundOrFloatSIMD]>;
+
+/// Checks if the given value's type is a scalar type which matches the
+/// element dtype of the oeprand.
+class ScalarOfSameDType<string operand, string value> :
+  TypesMatchWith< value # " type matches element type of the " # operand # " operand",
+                  operand, value, "getScalarOfSameDType($_self)">;
