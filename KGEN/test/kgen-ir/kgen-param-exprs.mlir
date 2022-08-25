@@ -111,6 +111,14 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant : i1 = <ge(p1, 5)>
   %7 = kgen.param.constant: i1 = <lt(4, p1)>
 
+  // Shouldn't fold `index` constant expressions that differ for 32-/64-bit
+  // targets without target info.
+  // CHECK: = kgen.param.constant = <mul(4, 2000000000)>
+  %8 = kgen.param.constant = <mul(2000000000, 4)> // 2B*4 overflows on 32-bit.
+
+  // CHECK: = kgen.param.constant = <shl(1, 33)>
+  %9 = kgen.param.constant = <shl(1, 33)>
+
   kgen.return
 }
 
