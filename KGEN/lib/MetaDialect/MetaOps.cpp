@@ -107,6 +107,27 @@ LogicalResult PointerRebindOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// BufferConstructOp
+//===----------------------------------------------------------------------===//
+
+/// Get a pointer type of the same (potentially unknown) dtype.
+static PointerType getPointerOfSameDType(Type type) {
+  return PointerType::get(type.getContext(),
+                          type.cast<DTypeInterface>().getDType());
+}
+
+LogicalResult BufferConstructOp::verify() {
+  BufferType type = getType();
+  if (!type.getSize() && !getSize())
+    return emitOpError(
+        "requires a size operand if the result buffer has an unknown size");
+  if (!type.getDType() && !getDType())
+    return emitOpError(
+        "requires a dtype operand if the result buffer has an unknown dype");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 

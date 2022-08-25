@@ -138,3 +138,19 @@ kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.poi
   // CHECK: return %[[V2]] : !meta.pointer<f32>
   kgen.return %2 : !meta.pointer<f32>
 }
+
+// CHECK-LABEL: @meta_buffer_construct
+kgen.kernel @meta_buffer_construct(%ptr: !meta.pointer<f32>, %opaque: !meta.pointer<?>,
+                              %size: index, %dtype: !kgen.dtype) {
+  // CHECK: meta.buffer.construct %{{.*}} : !meta.buffer<4, f32>
+  %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>
+  // CHECK: meta.buffer.construct %{{.*}}[%{{.*}}] : !meta.buffer<?, f32>
+  %1 = meta.buffer.construct %ptr[%size] : !meta.buffer<?, f32>
+  // CHECK: meta.buffer.construct %{{.*}} of %{{.*}} : !meta.buffer<4, ?>
+  %2 = meta.buffer.construct %opaque of %dtype : !meta.buffer<4, ?>
+  // CHECK: meta.buffer.construct %{{.*}}[%{{.*}}] of %{{.*}} : !meta.buffer<?, ?>
+  %3 = meta.buffer.construct %opaque[%size] of %dtype : !meta.buffer<?, ?>
+  // CHECK: meta.buffer.construct %{{.*}}[%{{.*}}] of %{{.*}} : !meta.buffer<4, f32>
+  %4 = meta.buffer.construct %ptr[%size] of %dtype : !meta.buffer<4, f32>
+  kgen.return
+}

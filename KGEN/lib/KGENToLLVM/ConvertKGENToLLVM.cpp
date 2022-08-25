@@ -215,6 +215,42 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertMetaBufferConstruct
+//===----------------------------------------------------------------------===//
+
+/// Convert the construction of a buffer to building the LLVM struct.
+class ConvertMetaBufferConstruct
+    : public mlir::ConvertOpToLLVMPattern<BufferConstructOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferConstructOp op, BufferConstructOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    BufferDescriptor buffer(op.getType());
+    // Just return the pointer for a bare pointer buffer.
+    if (buffer.isBarePtr()) {
+      rewriter.replaceOp(op, adaptor.getPtr());
+      return success();
+    }
+
+    Value result = rewriter.create<LLVM::UndefOp>(
+        op.getLoc(), getTypeConverter()->convertType(op.getType()));
+    result = rewriter.create<LLVM::InsertValueOp>(
+        op.getLoc(), result, adaptor.getPtr(), *buffer.getPtrIndex());
+    if (Optional<int64_t> size = buffer.getSizeIndex()) {
+      result = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), result,
+                                                    adaptor.getSize(), *size);
+    }
+    if (Optional<int64_t> dtype = buffer.getDTypeIndex()) {
+      result = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), result,
+                                                    adaptor.getDType(), *dtype);
+    }
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertMetaBufferSize
 //===----------------------------------------------------------------------===//
 
@@ -373,6 +409,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENParamConstant,
       ConvertKGENReturn,
       ConvertMetaBufferAddress,
+      ConvertMetaBufferConstruct,
       ConvertMetaBufferDType,
       ConvertMetaBufferSize,
       ConvertMetaBufferRebind,

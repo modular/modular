@@ -61,3 +61,19 @@ kgen.kernel @cast_from_meta_type(%arg0: f64) {
   %0 = meta.cast_from_builtin %arg0: f64 to !meta.scalar<f32>
   kgen.return
 }
+
+// -----
+
+kgen.kernel @meta_buffer_construct(%ptr: !meta.pointer<f32>) {
+  // expected-error @below {{requires a size operand}}
+  %0 = meta.buffer.construct %ptr : !meta.buffer<?, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.kernel @meta_buffer_construct(%ptr: !meta.pointer<?>) {
+  // expected-error @below {{requires a dtype operand}}
+  %0 = meta.buffer.construct %ptr : !meta.buffer<4, ?>
+  kgen.return
+}
