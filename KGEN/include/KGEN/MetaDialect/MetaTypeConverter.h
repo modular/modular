@@ -64,6 +64,10 @@ private:
 llvm::Optional<mlir::Type> getMLIRTypeForDType(mlir::MLIRContext *ctx,
                                                DType dtype);
 
+/// Get an LLVM pointer to the given dtype. If the dtype is unknown, return an
+/// untyped pointer.
+mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, DType dtype);
+
 /// This type converter maps fully-specified meta dialect parametric types and
 /// built-in MLIR types to LLVM types.
 class MetaToLLVMTypeConverter : public mlir::LLVMTypeConverter {

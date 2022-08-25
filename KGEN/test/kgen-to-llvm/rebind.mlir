@@ -18,15 +18,15 @@ kgen.kernel @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
 }
 
 // CHECK-LABEL: llvm.func @pointer_rebind
-// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<f32>, %[[ARG1:.*]]: !llvm.ptr<i8>, %[[ARG2:.*]]: !llvm.ptr<i64>
+// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<f32>, %[[ARG1:.*]]: !llvm.ptr, %[[ARG2:.*]]: !llvm.ptr<i64>
 kgen.kernel @pointer_rebind(
   %arg0: !meta.pointer<f32>,
   %arg1: !meta.pointer<?>,
   %arg2: !meta.pointer<ui64>
 ) -> (!meta.pointer<?>, !meta.pointer<si32>, !meta.pointer<ui64>) {
-  // CHECK: %[[V0:.*]] = llvm.bitcast %[[ARG0]] : !llvm.ptr<f32> to !llvm.ptr<i8>
+  // CHECK: %[[V0:.*]] = llvm.bitcast %[[ARG0]] : !llvm.ptr<f32> to !llvm.ptr
   %0 = meta.pointer.rebind %arg0 : !meta.pointer<f32> to !meta.pointer<?>
-  // CHECK: %[[V1:.*]] = llvm.bitcast %[[ARG1]] : !llvm.ptr<i8> to !llvm.ptr<i32>
+  // CHECK: %[[V1:.*]] = llvm.bitcast %[[ARG1]] : !llvm.ptr to !llvm.ptr<i32>
   %1 = meta.pointer.rebind %arg1 : !meta.pointer<?> to !meta.pointer<si32>
   %2 = meta.pointer.rebind %arg2 : !meta.pointer<ui64> to !meta.pointer<ui64>
   // CHECK: llvm.insertvalue %[[V0]], {{.*}}[0]

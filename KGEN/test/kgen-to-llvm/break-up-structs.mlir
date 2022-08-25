@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=top-level="kernel" | FileCheck %s
 
 // CHECK-LABEL: @kernel
-// CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr<i8>, %[[DTYPE:.*]]: i8
-// CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr<i8>>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
+// CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
+// CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
 // CHECK: %[[BUFFER:.*]] = llvm.mlir.undef
 // CHECK: %[[B0:.*]] = llvm.insertvalue %[[SIZE]], %[[BUFFER]][0]
 // CHECK: %[[B1:.*]] = llvm.insertvalue %[[PTR]], %[[B0]][1]

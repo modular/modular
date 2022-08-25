@@ -314,18 +314,13 @@ public:
     }
 
     // Convert the pointer.
-    Type inPtrType = getMLIRTypeForDType(op.getContext(), in.resolveDType())
-                         .value_or(rewriter.getI8Type());
-    Value inPtr = rewriter.create<BufferAddressOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(inPtrType), op.getInput());
-    DType outDType = out.resolveDType();
-    Type outPtrType = getMLIRTypeForDType(op.getContext(), outDType)
-                          .value_or(rewriter.getI8Type());
+    Type inPtrType = getLLVMPointerTo(op.getContext(), in.resolveDType());
+    Value inPtr =
+        rewriter.create<BufferAddressOp>(op.getLoc(), inPtrType, op.getInput());
+    Type outPtrType = getLLVMPointerTo(op.getContext(), out.resolveDType());
     Value outPtr = inPtr;
-    if (outPtrType != inPtrType) {
-      outPtr = rewriter.create<LLVM::BitcastOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(outPtrType), inPtr);
-    }
+    if (outPtrType != inPtrType)
+      outPtr = rewriter.create<LLVM::BitcastOp>(op.getLoc(), outPtrType, inPtr);
 
     // Bare pointer output.
     BufferDescriptor buffer(out);

@@ -61,9 +61,9 @@ kgen.kernel @buffer_size(%a: !meta.buffer<?, f32>) -> index {
 // -----
 
 // CHECK-LABEL: @buffer_size
-// CHECK-SAME: %[[A:.*]]: !llvm.struct<(i64, ptr<i8>, i8)>
+// CHECK-SAME: %[[A:.*]]: !llvm.struct<(i64, ptr, i8)>
 // INDEX32-LABEL: @buffer_size
-// INDEX32-SAME: %[[A:.*]]: !llvm.struct<(i32, ptr<i8>, i8)>
+// INDEX32-SAME: %[[A:.*]]: !llvm.struct<(i32, ptr, i8)>
 kgen.kernel @buffer_size(%a: !meta.buffer<?, ?>) -> index {
   // CHECK: %[[S:.*]] = llvm.extractvalue %[[A]][0]
   // INDEX32: %[[S:.*]] = llvm.extractvalue %[[A]][0]
@@ -143,7 +143,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<?, f32>) -> !meta.pointer<f32> {
 kgen.kernel @buffer_address(%a: !meta.buffer<4, ?>) -> !meta.pointer<?> {
   // CHECK: %[[ADDR:.*]] = llvm.extractvalue %[[A]][0]
   %0 = meta.buffer.address %a : !meta.buffer<4, ?>
-  // CHECK: return %[[ADDR]] : !llvm.ptr<i8>
+  // CHECK: return %[[ADDR]] : !llvm.ptr
   kgen.return %0 : !meta.pointer<?>
 }
 
@@ -154,7 +154,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<4, ?>) -> !meta.pointer<?> {
 kgen.kernel @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
   // CHECK: %[[ADDR:.*]] = llvm.extractvalue %[[A]][1]
   %0 = meta.buffer.address %a : !meta.buffer<?, ?>
-  // CHECK: return %[[ADDR]] : !llvm.ptr<i8>
+  // CHECK: return %[[ADDR]] : !llvm.ptr
   kgen.return %0 : !meta.pointer<?>
 }
 
@@ -164,7 +164,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
-  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<i8> to !llvm.ptr<f32>
+  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
@@ -176,7 +176,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
-  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<i8> to !llvm.ptr<f32>
+  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   %0 = meta.buffer.rebind %a : !meta.buffer<4, ?> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
@@ -199,7 +199,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<i8> to !llvm.ptr<f32>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
@@ -215,7 +215,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<i8> to !llvm.ptr<f32>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
@@ -260,7 +260,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr<i8>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[DTYPE]], %[[S0]][1]
@@ -275,7 +275,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr<i8>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[DTYPE]], %[[S0]][1]
@@ -308,7 +308,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr<i8>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant
@@ -325,7 +325,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
 kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
-  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr<i8>
+  // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant({{.*}}) : i8
