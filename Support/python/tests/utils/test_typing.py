@@ -4,4 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-from modular.utils import typing
+
+def test_imports():
+    from modular.utils.typing import (  # noqa: F401
+        IO,
+        BinaryIO,
+        Iterable,
+        Iterator,
+        Match,
+        Pattern,
+        TextIO,
+        Tuple,
+    )

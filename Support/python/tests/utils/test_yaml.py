@@ -13,14 +13,6 @@ from ruamel.yaml.compat import StringIO
 from modular.utils.typing import Any
 from modular.utils.yaml import YAML, represent_as_string
 
-EXPECTED_NO_ALIAS_DUMP = """a_dict:
-  a_value: 123
-  ref: [a, b, c]
-another_dict:
-  same_ref: [a, b, c]
-  same_value: 123
-"""
-
 
 def _dump_str(data: Any, *, sort: bool = True) -> str:
     stream = StringIO()
@@ -28,14 +20,32 @@ def _dump_str(data: Any, *, sort: bool = True) -> str:
     return stream.getvalue()
 
 
+EXPECTED_NO_ALIAS_DUMP = """a_dict:
+  a_value: 123
+  ref:
+    - a
+    - b
+another_dict:
+  same_ref:
+    - a
+    - b
+  same_value: 123
+"""
+
+
 def test_YAML_dumps():
-    ref_list = ["a", "b", "c"]
+    ref_list = ["a", "b"]
     test_dict = {
         "a_dict": {"a_value": 123, "ref": ref_list},
         "another_dict": {"same_value": 123, "same_ref": ref_list},
     }
-    yaml_str = _dump_str(test_dict)
-    assert yaml_str == EXPECTED_NO_ALIAS_DUMP
+    assert _dump_str(test_dict) == EXPECTED_NO_ALIAS_DUMP
+
+
+EXPECTED_PATHS_DUMP = """  - some/posix/path
+  - foo
+  - Bar
+"""
 
 
 def test_represent_as_string():
@@ -49,5 +59,4 @@ def test_represent_as_string():
     represent_as_string([SomeData, PosixPath, WindowsPath])
 
     test_list = [Path("some/posix/path"), SomeData.FOO, SomeData.BAR]
-    yaml_str = _dump_str(test_list)
-    assert yaml_str == "[some/posix/path, foo, Bar]\n"
+    assert _dump_str(test_list) == EXPECTED_PATHS_DUMP
