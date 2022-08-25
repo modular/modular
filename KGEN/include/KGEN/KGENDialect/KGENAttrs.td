@@ -1,4 +1,4 @@
-//===- KGENAttrs.td - Attributes for KGEN dialect -------------------------===//
+//===- KGENAttrs.td -------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

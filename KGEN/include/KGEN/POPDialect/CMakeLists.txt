@@ -1,8 +1,8 @@
-#===- CMakeLists.txt ------------------------------------------*- cmake -*-===##
+##===- CMakeLists.txt -----------------------------------------------------===##
 #
 # This file is Modular Inc proprietary.
 #
-#===-----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
 
 # Generating POP filename prefix into the "kgen" C++ namespace.
 add_mlir_dialect(POP pop -dialect=pop)

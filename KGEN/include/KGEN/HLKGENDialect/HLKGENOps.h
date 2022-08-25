@@ -1,4 +1,4 @@
-//===- HLKGENOps.h --------------------------------------------------------===//
+//===- KGEN/HLKGENDialect/HLKGENOps.h -------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

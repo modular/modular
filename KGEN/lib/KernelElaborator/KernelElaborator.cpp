@@ -1,10 +1,10 @@
-//===- KernelElaborator.cpp - Core kernel elaborator algorithm ------------===//
+//===- KernelElaborator.cpp -----------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains logic to lower a file full of kernel into concrete
+// This file contains core logic to lower a file full of kernel into concrete
 // implementations of the kernels.
 //
 //===----------------------------------------------------------------------===//

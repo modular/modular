@@ -1,4 +1,4 @@
-//===- KGENTypes.h --------------------------------------------------------===//
+//===- KGEN/KGENDialect/KGENTypes.h ---------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
