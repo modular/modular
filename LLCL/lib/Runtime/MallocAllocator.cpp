@@ -15,7 +15,7 @@ namespace {
 class MallocAllocator : public Allocator {
   // Allocate the specified number of bytes with the specified alignment.
   void *allocateBytes(size_t size, size_t alignment) override {
-    return M::alignedAlloc(size, alignment);
+    return M::alignedAlloc(alignment, size);
   }
 
   // Deallocate the specified pointer that has the specified size.
