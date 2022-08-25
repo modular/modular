@@ -14,7 +14,7 @@ namespace M {
 class Error;
 }
 
-namespace LLCL {
+namespace M::LLCL {
 class EncodedLocation;
 class EncodedDiagnostic;
 
@@ -74,6 +74,6 @@ private:
   /// decoded `Location` object.
   RCRef<LocationDecoder> decoder;
 };
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_LOCATION_H

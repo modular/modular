@@ -7,7 +7,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "Support/AlignedAlloc.h"
 
-using namespace LLCL;
+using namespace M::LLCL;
 
 namespace {
 /// This is an implementation of the Allocator interface that just calls to
@@ -23,6 +23,6 @@ class MallocAllocator : public Allocator {
 };
 } // namespace
 
-std::unique_ptr<Allocator> LLCL::createMallocAllocator() {
+std::unique_ptr<Allocator> M::LLCL::createMallocAllocator() {
   return std::make_unique<MallocAllocator>();
 }

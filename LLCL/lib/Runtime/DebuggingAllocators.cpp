@@ -15,7 +15,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include <atomic>
 
-using namespace LLCL;
+using namespace M::LLCL;
 
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator
@@ -65,7 +65,7 @@ private:
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
 std::unique_ptr<Allocator>
-LLCL::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
+M::LLCL::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
   return std::make_unique<LeakCheckAllocator>(std::move(baseAllocator));
 }
 
@@ -89,7 +89,7 @@ public:
   }
 
   ~ProfilingAllocator() override {
-    printf("LLCL::Allocator profile:\n");
+    printf("M::LLCL::Allocator profile:\n");
     printf("Max number of allocations = %lld\n",
            (long long)maxAllocations.load());
     printf("Total number of allocations = %lld\n",
@@ -110,6 +110,6 @@ public:
 /// Create a wrapper allocator that prints memory profiling information when it
 /// is destroyed.  This also performs leak checks.
 std::unique_ptr<Allocator>
-LLCL::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
+M::LLCL::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
   return std::make_unique<ProfilingAllocator>(std::move(baseAllocator));
 }

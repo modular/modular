@@ -10,7 +10,7 @@
 
 #include "LLCL/Support/Location.h"
 
-using namespace LLCL;
+using namespace M::LLCL;
 
 void LocationDecoder::VtableAnchor() {}
 

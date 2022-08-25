@@ -9,7 +9,7 @@
 
 #include "LLCL/Runtime/AsyncValue.h"
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This class is a typed smart pointer that automatically maintains the
 /// reference count and static type for an underlying AsyncValue object.
@@ -198,7 +198,7 @@ public:
       default;
 
   /// Fill this AsyncValue with an error that has the specified message.
-  void setToError(M::Error message) const {
+  void setToError(Error message) const {
     this->getPointer()->setToError({std::move(message), loc.copy()});
   }
 
@@ -208,6 +208,6 @@ public:
 private:
   EncodedLocation loc;
 };
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ASYNCVALUEREF_H

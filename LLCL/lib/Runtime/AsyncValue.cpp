@@ -9,7 +9,7 @@
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "LLCL/Support/SpinWaiter.h"
-using namespace LLCL;
+using namespace M::LLCL;
 
 std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
 
@@ -144,7 +144,7 @@ void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
   }
 }
 
-namespace LLCL {
+namespace M::LLCL {
 /// This class provides a singly linked list of nodes that each contain four
 /// waiters.  The AsyncValue itself stores the first waiter added to an
 /// AsyncValue inline in the same space as its payload field, then stores
@@ -225,7 +225,7 @@ private:
   WaiterListNode(const WaiterListNode &) = delete;
   void operator=(const WaiterListNode &) = delete;
 };
-} // namespace LLCL
+} // namespace M::LLCL
 
 /// Invoke all of the waiters specified by the list of waiter nodes, and
 /// deallocate the nodes.  We know we have ownership of `list` here, but there

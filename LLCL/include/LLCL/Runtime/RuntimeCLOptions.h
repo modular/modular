@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file exposes a basic set of command line options for setting up and
-// configuring an LLCL::Runtime for tools to use.
+// configuring an M::LLCL::Runtime for tools to use.
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,7 +18,7 @@
 #include <thread>
 #include <type_traits>
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// Contains a number of command-line options that are shared among binaries
 /// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
@@ -251,6 +251,6 @@ public:
   }
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_RUNTIMECLOPTIONS_H

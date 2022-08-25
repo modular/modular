@@ -6,7 +6,7 @@
 
 #include "LLCL/Support/SpinWaiter.h"
 
-using namespace LLCL;
+using namespace M::LLCL;
 
 bool Detail::SpinWaiterBase::yieldToOS() {
   // If that didn't work, we yield the thread back to the OS.  This is much

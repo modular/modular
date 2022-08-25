@@ -18,7 +18,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Threading.h"
 
-using namespace LLCL;
+using namespace M::LLCL;
 using llvm::ArrayRef;
 using llvm::Optional;
 using mlir::failure;
@@ -475,8 +475,8 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-LLCL::createThreadPoolWorkQueue(size_t numThreads,
-                                std::chrono::nanoseconds busyWait) {
+M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
+                                   std::chrono::nanoseconds busyWait) {
   TRACE_INIT_START_TIME();
 
   // We expect `numThreads` to be the total numbers of threads that are

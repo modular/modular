@@ -18,7 +18,7 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
-namespace LLCL {
+namespace M::LLCL {
 class Runtime;
 class WaiterListNode;
 class AsyncValue;
@@ -395,7 +395,7 @@ private:
   std::atomic<intptr_t> waitersAndState;
 
 protected:
-  M::LogicalResult moveState(WaitersAndState &oldValue, State newState);
+  LogicalResult moveState(WaitersAndState &oldValue, State newState);
   void runWaitersAndDeallocate(WaiterListNode *list, size_t numEntriesValid);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
@@ -543,7 +543,7 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
     assert(ConcreteAsyncValue<T>::staticTypeID.load(
                std::memory_order_relaxed) != uint16_t(~0U) &&
            "AsyncValue type not registered");
-    auto *ptr = (ConcreteAsyncValue<T> *)M::alignedAlloc(
+    auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         sizeof(ConcreteAsyncValue<T>), alignof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
                                     getTypeID<T>(), runtime);
@@ -811,6 +811,6 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
   return &static_cast<Detail::IndirectAsyncValue *>(this)->waiter;
 }
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ASYNCVALUE_H

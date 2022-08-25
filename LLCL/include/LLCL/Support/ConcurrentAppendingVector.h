@@ -17,7 +17,7 @@
 #include <mutex>
 #include <utility>
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This is a sequential container that allows concurrent lock-free reads and
 /// locked append operations.  It is designed for the usage pattern where
@@ -142,6 +142,6 @@ private:
   std::pair<T *, size_t> allocatedVectors[32];
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H

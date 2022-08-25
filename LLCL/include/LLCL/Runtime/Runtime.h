@@ -25,7 +25,7 @@ namespace M {
 class Error;
 }
 
-namespace LLCL {
+namespace M::LLCL {
 class Allocator;
 class WorkQueue;
 
@@ -143,6 +143,6 @@ private:
   std::atomic<AsyncValue *> cancelValue{nullptr};
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_H

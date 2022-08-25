@@ -17,7 +17,7 @@
 // Forward Declarations
 //===----------------------------------------------------------------------===//
 
-namespace LLCL {
+namespace M::LLCL {
 // LLCL/Support Declarations
 class Chain;
 
@@ -44,7 +44,7 @@ class AsyncValueRef;
 class Runtime;
 using AnyAsyncValueRef = RCRef<AsyncValue>;
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 //===----------------------------------------------------------------------===//
 // Using Declarations

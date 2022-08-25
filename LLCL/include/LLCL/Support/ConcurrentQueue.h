@@ -11,7 +11,7 @@
 #include <memory>
 #include <mutex>
 
-namespace LLCL {
+namespace M::LLCL {
 
 /// This class provides a concurrent-safe ordered queue. Items in the queue
 /// cannot be re-ordered.
@@ -76,6 +76,6 @@ private:
   ItemType *tail;
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_CONCURRENTQUEUE_H

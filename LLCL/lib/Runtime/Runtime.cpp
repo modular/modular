@@ -15,7 +15,7 @@
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/TimeProfiler.h"
 #include "llvm/ADT/ArrayRef.h"
-using namespace LLCL;
+using namespace M::LLCL;
 
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}

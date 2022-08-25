@@ -10,7 +10,7 @@
 #include "LLCL/Support/ConcurrentQueue.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
-using namespace LLCL;
+using namespace M::LLCL;
 
 namespace {
 
@@ -71,6 +71,6 @@ void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
   }
 }
 
-std::unique_ptr<WorkQueue> LLCL::createSingleThreadWorkQueue() {
+std::unique_ptr<WorkQueue> M::LLCL::createSingleThreadWorkQueue() {
   return std::make_unique<SingleThreadWorkQueue>();
 }

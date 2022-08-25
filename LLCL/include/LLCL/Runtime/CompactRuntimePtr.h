@@ -14,7 +14,7 @@
 #include <cassert>
 #include <cstdint>
 
-namespace LLCL {
+namespace M::LLCL {
 
 class Runtime;
 
@@ -55,6 +55,6 @@ private:
   uint8_t index = kInvalidIndex;
 };
 
-} // namespace LLCL
+} // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
