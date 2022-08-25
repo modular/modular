@@ -444,7 +444,7 @@ def BufferLoadOp : POPOp<"buffer.load", [
     ```
   }];
 
-  let arguments = (ins BufferType:$buffer, Index:$position);
+  let arguments = (ins Arg<BufferType, "", [MemRead]>:$buffer, Index:$position);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
@@ -471,7 +471,8 @@ def BufferStoreOp : POPOp<"buffer.store", [
     ```
   }];
 
-  let arguments = (ins BufferType:$buffer, ScalarType:$value, Index:$position);
+  let arguments = (ins Arg<BufferType, "", [MemWrite]>:$buffer,
+                       ScalarType:$value, Index:$position);
 
   let assemblyFormat = [{
     $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
