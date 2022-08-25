@@ -194,7 +194,7 @@ static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface kernel,
 
 /// Set up a pass manager with the *ToLLVM passes and run it. This has the
 /// effect of taking `module` and converting it fully to LLVM.
-static LogicalResult convertToLLVM(ModuleOp module) {
+static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   mlir::PassManager pm(module.getContext());
 
   pm.addNestedPass<KGEN::KernelOp>(mlir::createCanonicalizerPass());
@@ -204,7 +204,7 @@ static LogicalResult convertToLLVM(ModuleOp module) {
       mlir::arith::createConvertArithmeticToLLVMPass());
   pm.addNestedPass<KGEN::KernelOp>(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
-  pm.addPass(KGEN::createConvertKGENToLLVMPass());
+  pm.addPass(KGEN::createConvertKGENToLLVMPass(name));
 
   // And finally canonicalize again before running through the JIT.
   pm.addPass(mlir::createCanonicalizerPass());
@@ -243,7 +243,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
     // the current module.
     builder.clone(*kernel);
 
-    if (failed(convertToLLVM(*singleModule)))
+    if (failed(convertToLLVM(*singleModule, kernel.getName())))
       return Error("could not convert kernel '@" + kernel.getName() +
                    "' to LLVM");
 

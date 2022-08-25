@@ -6,6 +6,10 @@
 
 include "mlir/Pass/PassBase.td"
 
+//===----------------------------------------------------------------------===//
+// LowerHLKGEN
+//===----------------------------------------------------------------------===//
+
 def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
   let summary = "Lower the `hlkgen` dialects to the `kgen` dialect.";
   let description = [{
@@ -17,6 +21,10 @@ def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
 
   let constructor = "::M::KGEN::createLowerHLKGENPass()";
 }
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENToLLVM
+//===----------------------------------------------------------------------===//
 
 def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower the `kgen` and `meta` dialects to the `llvm` dialect.";
@@ -34,8 +42,14 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
            /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
            "Bitwidth of the index type, 0 to use size of machine word">,
+    ListOption<"topLevelKernels", "top-level", "std::string",
+               "top-level kernels to make callable from C">
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPToLLVM
+//===----------------------------------------------------------------------===//
 
 def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "KernelOp"> {
   let summary = "Lower the `pop` dialect to the `llvm` dialect.";
@@ -53,6 +67,10 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "KernelOp"> {
            "Bitwidth of the index type, 0 to use size of machine word">,
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// ElaborateKernels
+//===----------------------------------------------------------------------===//
 
 def ElaborateKernels : Pass<"elaborate-kernels", "mlir::ModuleOp"> {
   let summary = "elaborate generators into fully concrete kernels";

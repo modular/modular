@@ -31,7 +31,8 @@ class KernelOp;
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
-std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass();
+std::unique_ptr<mlir::Pass> createConvertKGENToLLVMPass(
+    llvm::ArrayRef<llvm::StringRef> topLevelKernels = {});
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createElaborateKernelsPass();
 
