@@ -49,10 +49,10 @@ class ConstrainedDType<string constraint> : ConfinedType<DTypeInterface,
 
 /// A type whose data type is boolean.
 def BoolDType : ConstrainedDType<"$_self.isBool()">;
-/// A type whose data type is either unboard or integral.
+/// A type whose data type is either unbound or integral.
 def IntegerOrUnboundDType :
     ConstrainedDType<"$_self.isInvalid() || $_self.isInt()">;
-/// A type whose data type is either unboard or floating point.
+/// A type whose data type is either unbound or floating point.
 def FloatOrUnboundDType :
     ConstrainedDType<"$_self.isInvalid() || $_self.isFloat()">;
 
