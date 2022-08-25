@@ -1,4 +1,4 @@
-//===- POPAttrs.h ---------------------------------------------------------===//
+//===- KGEN/POPDialect/POPAttrs.h -----------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

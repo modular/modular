@@ -1,4 +1,4 @@
-//===- KGENParameters.cpp - KGEN Parameter utilities ----------------------===//
+//===- KGENParameters.cpp -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

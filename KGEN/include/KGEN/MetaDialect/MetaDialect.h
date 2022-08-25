@@ -1,4 +1,4 @@
-//===- MetaDialect.h ------------------------------------------------------===//
+//===- KGEN/MetaDialect/MetaDialect.h -------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

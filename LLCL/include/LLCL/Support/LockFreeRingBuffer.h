@@ -1,4 +1,4 @@
-//===- LockFreeRingBuffer.h -----------------------------------------------===//
+//===- LLCL/Support/LockFreeRingBuffer.h ----------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

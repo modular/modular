@@ -1,4 +1,4 @@
-//===- KGENAttrs.cpp - Implement KGEN attributes --------------------------===//
+//===- KGENAttrs.cpp ------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

@@ -1,4 +1,4 @@
-//===- KGENParameters.h ---------------------------------------------------===//
+//===- KGEN/KGENDialect/KGENParameters.h ----------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

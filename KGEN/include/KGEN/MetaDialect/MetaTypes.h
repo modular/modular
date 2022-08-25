@@ -1,4 +1,4 @@
-//===- MetaTypes.h --------------------------------------------------------===//
+//===- KGEN/MetaDialect/MetaTypes.h ---------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

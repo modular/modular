@@ -1,8 +1,8 @@
-#===- CMakeLists.txt ------------------------------------------*- cmake -*-===##
+##===- CMakeLists.txt -----------------------------------------------------===##
 #
 # This file is Modular Inc proprietary.
 #
-#===-----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
 
 # Check for sem_timedwait. The semaphore implementation will use unnamed POSIX
 # semaphores and sem_timedwait if they're available.

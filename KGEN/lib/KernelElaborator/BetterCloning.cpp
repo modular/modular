@@ -1,4 +1,4 @@
-//===- BetterCloning.cpp - Improved Operation cloning ---------------------===//
+//===- BetterCloning.cpp --------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

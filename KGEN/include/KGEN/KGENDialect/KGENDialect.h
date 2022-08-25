@@ -1,4 +1,4 @@
-//===- KGENDialect.h ------------------------------------------------------===//
+//===- KGEN/KGENDialect/KGENDialect.h -------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

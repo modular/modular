@@ -1,4 +1,4 @@
-//===- SpinWaiter.h -------------------------------------------------------===//
+//===- LLCL/Support/SpinWaiter.h ------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

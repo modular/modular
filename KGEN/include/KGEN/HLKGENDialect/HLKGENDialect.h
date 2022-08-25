@@ -1,4 +1,4 @@
-//===- HLKGENDialect.h ----------------------------------------------------===//
+//===- KGEN/HLKGENDialect/HLKGENDialect.h ---------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
