@@ -13,12 +13,6 @@
 using namespace M;
 using namespace M::KGEN;
 
-static std::string getString(Attribute attr) {
-  std::string str;
-  llvm::raw_string_ostream(str) << attr;
-  return str;
-}
-
 LogicalResult ParameterEvaluator::collectParameterReferences(
     Attribute expr, SmallVector<ParamDeclRefAttr> &results) {
   // Simple constants don't have parameter references.
@@ -75,12 +69,12 @@ ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(TypedAttr expr) {
     // things like div.
     auto result = ParamOperatorAttr::get(oper.getOpcode(), simplifiedOperands);
     if (!isSimpleConstant(result))
-      return Error("could not simplify operator " + getString(expr));
+      return Error("could not simplify operator " + getParamAsString(result));
     return result;
   }
 
   // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return Error("unknown expression to fold: " + getString(expr));
+  return Error("unknown expression to fold: " + getParamAsString(expr));
 }
 
 /// Given a generator or interface declaration operation, evaluate any
