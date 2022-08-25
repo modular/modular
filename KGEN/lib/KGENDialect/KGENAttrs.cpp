@@ -837,6 +837,43 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   return false;
 }
 
+/// Given a function_ref from `(APInt,APInt)->T` and two APInt's, compute the
+/// result value T and return it.  Note that this function has special behavior
+/// when 'valueTy' (the MLIR type of the two operand values) is 'index' type. In
+/// this case, it does extra work to make sure that a 32-bit and 64-bit target
+/// will compute the same result.  If so it returns that value wrapped in an
+/// IntegerAttr, if not, it returns a null Attribute.
+template <typename ResultTy>
+static IntegerAttr foldBinaryValues(
+    const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
+        &calculateFn,
+    const APInt &lhs, const APInt &rhs, Type valueTy, Type resultTy = {}) {
+
+  // Clients can specify resultTy if it differs from valueTy (e.g. for
+  // compares), but not specifying it defaults to the result being the same type
+  // as the operands.
+  if (!resultTy)
+    resultTy = valueTy;
+
+  auto result1 = calculateFn(lhs, rhs);
+  if (!valueTy.isa<IndexType>())
+    return IntegerAttr::get(resultTy, result1);
+
+  // If this is an index computation, then we just did the 64-bit computation,
+  // see what would happen on a 32-bit host.
+  assert(lhs.getBitWidth() == 64);
+  auto result2 = calculateFn(lhs.trunc(32), rhs.trunc(32));
+
+  // If not bool result, sign extend back to 64-bit.
+  if constexpr (!std::is_same_v<bool, ResultTy>) {
+    result2 = result2.sext(64);
+  }
+
+  if (result1 == result2)
+    return IntegerAttr::get(resultTy, result1);
+  return IntegerAttr();
+}
+
 /// Given a fully associative variadic integer operation, constant fold any
 /// constant operands and move them to the right.  If the whole expression is
 /// constant, then return that, otherwise update the operands list.
@@ -871,10 +908,16 @@ static Attribute simplifyAssocOp(
   if (operands.back().isa<IntegerAttr>()) {
     while (operands.size() >= 2 &&
            operands[operands.size() - 2].isa<IntegerAttr>()) {
-      APInt c1 = operands.pop_back_val().cast<IntegerAttr>().getValue();
-      APInt c2 = operands.pop_back_val().cast<IntegerAttr>().getValue();
-      auto resultConstant = IntegerAttr::get(type, calculateFn(c1, c2));
-      operands.push_back(resultConstant);
+      APInt c1 = operands[operands.size() - 2].cast<IntegerAttr>().getValue();
+      APInt c2 = operands.back().cast<IntegerAttr>().getValue();
+      if (auto resultConstant = foldBinaryValues(calculateFn, c1, c2, type)) {
+        operands.pop_back();
+        operands.pop_back();
+        operands.push_back(resultConstant);
+      } else {
+        // If we couldn't fold the two values, bail.
+        break;
+      }
     }
 
     auto resultCst = operands.back().cast<IntegerAttr>();
@@ -1020,9 +1063,11 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
   assert(operands.size() == 2 && "binary operator always has two operands");
   if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
     if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
-      auto result = (lhs.getType().isSignedInteger() ? signedFn : unsignedfn)(
-          lhs.getValue(), rhs.getValue());
-      return IntegerAttr::get(lhs.getType(), result);
+      const auto &fn =
+          (lhs.getType().isSignedInteger() ? signedFn : unsignedfn);
+      if (auto resultConstant = foldBinaryValues(fn, lhs.getValue(),
+                                                 rhs.getValue(), lhs.getType()))
+        return resultConstant;
     }
   return {};
 }
@@ -1035,8 +1080,10 @@ static Attribute foldCompareOp(
   assert(operands.size() == 2 && "compare operator always has two operands");
   if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
     if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
-      bool result = compareFn(lhs.getValue(), rhs.getValue());
-      return BoolAttr::get(rhs.getContext(), result);
+      if (auto resultConstant = foldBinaryValues(
+              compareFn, lhs.getValue(), rhs.getValue(), lhs.getType(),
+              IntegerType::get(rhs.getContext(), 1)))
+        return resultConstant;
     }
   return {};
 }
@@ -1045,10 +1092,14 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
-    auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
-                                      rhs.getValue().getZExtValue());
-    return ParamOperatorAttr::get(POC::Mul, operands[0],
-                                  IntegerAttr::get(rhs.getType(), rhsCst));
+    // If this is an 'index' type expression and >=31 shift amount, don't fold
+    // because the result will be target specific.
+    if (!rhs.getType().isa<IndexType>() || rhs.getValue().getZExtValue() < 31) {
+      auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
+                                        rhs.getValue().getZExtValue());
+      return ParamOperatorAttr::get(POC::Mul, operands[0],
+                                    IntegerAttr::get(rhs.getType(), rhsCst));
+    }
   }
   return {};
 }
@@ -1133,8 +1184,8 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
   return foldCompareOp(operands, [](auto a, auto b) { return a.sle(b); });
 }
 
-/// Simplifies an `in` (also `in:dtype`) operator.  We know the all the operands
-/// have the same type.
+/// Simplifies an `in` (also `in:dtype`) operator.  We know the all the
+/// operands have the same type.
 static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
   MutableArrayRef<TypedAttr> trailing =
@@ -1161,8 +1212,8 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
       return b.getBoolAttr(true);
     allConst &= isConst(operand);
   }
-  // If all operands are constants and a match was not found, then definitively
-  // fold to false.
+  // If all operands are constants and a match was not found, then
+  // definitively fold to false.
   if (allConst && isConst(lhs))
     return b.getBoolAttr(false);
 
@@ -1205,8 +1256,8 @@ TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
 
 TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
-  // All operands must have the same type.  The result type is usually the same
-  // as the operands, but is i1 for comparisons (overridden below).
+  // All operands must have the same type.  The result type is usually the
+  // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
   assert(llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
@@ -1354,9 +1405,10 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
   return {};
 }
 
-/// Given a kernel, generator, or generator interface operation, return an array
-/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A concrete kernel will always never have input params.
+/// Given a kernel, generator, or generator interface operation, return an
+/// array of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s
+/// for the result parameters.  A concrete kernel will always never have input
+/// params.
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 KGEN::getDeclParameterInfo(Operation *decl) {
   assert(classifyDecl(decl).has_value() && "unknown declaration");
