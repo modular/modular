@@ -21,7 +21,7 @@ namespace M {
 ///  NOTE: The returned pointer *must* be deallocated with alignedFree().
 /// Deallocating with e.g. free() instead causes runtime issues on Windows that
 /// are hard to debug.
-void *alignedAlloc(size_t size, size_t alignment);
+void *alignedAlloc(size_t alignment, size_t size);
 
 #ifndef _WIN32
 /// alignedFree deallocates a pointer allocated with alignedAlloc.

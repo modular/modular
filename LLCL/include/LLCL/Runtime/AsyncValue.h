@@ -544,7 +544,7 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
                std::memory_order_relaxed) != uint16_t(~0U) &&
            "AsyncValue type not registered");
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
-        sizeof(ConcreteAsyncValue<T>), alignof(ConcreteAsyncValue<T>));
+        alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
                                     getTypeID<T>(), runtime);
     return ptr;

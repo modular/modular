@@ -9,7 +9,7 @@
 using namespace M;
 
 /// This is a helper to handle host-specific system alignment functions.
-void *M::alignedAlloc(size_t size, size_t alignment) {
+void *M::alignedAlloc(size_t alignment, size_t size) {
   assert(llvm::isPowerOf2_64(alignment) && "non-power-of-2 alignment!");
 
 #ifdef _WIN32
