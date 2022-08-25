@@ -83,7 +83,7 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
           os << "double";
           return;
         }
-        assert(false && "TODO: unhandled float type");
+        llvm_unreachable("TODO: unhandled float type");
       }
       if (dt.isInt())
         os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
@@ -92,11 +92,30 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
     // Helper to print a function as a C type.
     std::function<void(Type)> printTypeAsC = [&](Type t) {
       if (auto simd = t.dyn_cast<SIMDType>()) {
-        printDTypeAsC(simd.getDType().cast<DTypeConstantAttr>().getDType());
+        printDTypeAsC(simd.resolveDType());
         // Fixed vector types are easy and we add the simd attributes.
         // TODO: This will only work on GNU and CLANG compilers.
         os << " __attribute__ ((vector_size("
            << simd.getSize().cast<IntegerAttr>().getValue() << ")))";
+        return;
+      }
+      if (auto ptr = t.dyn_cast<PointerType>()) {
+        if (auto dtype = ptr.resolveDType(); dtype.isValid())
+          printDTypeAsC(dtype);
+        else
+          os << "char";
+        os << " *";
+        return;
+      }
+      if (auto buffer = t.dyn_cast<BufferType>()) {
+        if (!buffer.getSize())
+          os << "intptr_t, ";
+        if (auto dtype = buffer.resolveDType(); dtype.isValid()) {
+          printDTypeAsC(dtype);
+          os << " *";
+        } else {
+          os << "char *, int8_t";
+        }
         return;
       }
 
@@ -120,7 +139,10 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
 
     // Now print the function declaration.
     os << "extern ";
-    printTypeAsC(Item.getFunctionType().getResult(0));
+    if (Item.getNumResults())
+      printTypeAsC(Item.getResultTypes().front());
+    else
+      os << "void";
     os << " " << Item.getName() << "(";
     llvm::interleaveComma(Item.getFunctionType().getInputs(), os, printTypeAsC);
     os << ");";
