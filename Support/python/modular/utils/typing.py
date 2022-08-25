@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 from sys import version_info
-from typing import *
+from typing import *  # noqa: F403
 
 if version_info.minor <= 8:
     from typing import IO, BinaryIO, Match, Pattern, TextIO
