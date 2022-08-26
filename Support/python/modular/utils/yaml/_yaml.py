@@ -7,7 +7,6 @@
 from pathlib import Path, PosixPath, WindowsPath
 
 from ruamel import yaml
-from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.compat import StringIO
 
 from modular.utils.typing import (
@@ -43,10 +42,10 @@ def sort_dict(d: _T) -> _T:
 
     Sorts dictionary-type objects by key, and returns others without changes.
     """
-    if isinstance(d, CommentedMap):
-        return d.sort()
     if isinstance(d, dict):
-        return {k: sort_dict(v) for k, v in sorted(d.items())}
+        return {  # type: ignore [reportGeneralTypeIssues]
+            k: sort_dict(v) for k, v in sorted(d.items())
+        }
     return d
 
 
@@ -72,7 +71,7 @@ class YAML(yaml.YAML):
     def dump(
         self,
         data: Any,
-        stream: Union[Path, StreamType] = None,
+        stream: Union[Path, StreamType, None] = None,
         *,
         sort: bool = True,
         **kwargs: Any,
@@ -104,7 +103,9 @@ def represent_as_string(
         return tag.represent_str(str(mapping))
 
     for cls in classes:
-        representer.add_representer(cls, _represent_as_string)
+        representer.add_representer(  # type: ignore [reportGeneralTypeIssues]
+            cls, _represent_as_string
+        )
 
 
 represent_as_string([PosixPath, WindowsPath])
