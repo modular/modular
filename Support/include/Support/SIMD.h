@@ -23,13 +23,15 @@
 #include <type_traits>
 
 namespace M {
-// TODO: Add the kPreferredSIMDBitWidth by detecting the SIMD width at compile
-// time.
-#ifdef __AVX2__
+#if defined(__AVX512__)
+static constexpr size_t kPreferredSIMDBitWidth = 512;
+#elif defined(__AVX2__) || defined(__AVX__)
 static constexpr size_t kPreferredSIMDBitWidth = 256;
-#else  // __AVX2__
+#elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 static constexpr size_t kPreferredSIMDBitWidth = 128;
-#endif // __AVX2__
+#else
+static constexpr size_t kPreferredSIMDBitWidth = 128;
+#endif
 
 /// For our optimized representation of SIMDVector, we use Clang's extended
 /// vector type.  For compatibility, we use std::array.
