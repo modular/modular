@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-kernels="search-path=%S" | FileCheck %s
+// RUN: kgen-opt %s -lower-hlkgen -elaborate-kernels="search-path=%S" | FileCheck %s
 
 kgen.include "library.mlir"
 
@@ -8,7 +8,7 @@ kgen.generator.interface @exp<type: dtype>(!meta.scalar<type>) -> !meta.scalar<t
 
 kgen.generator.interface @erf_scalar<type: dtype>(%in: !meta.scalar<type>) -> !meta.scalar<type>
 
-kgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+hlkgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
   // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
   // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
@@ -46,7 +46,7 @@ kgen.kernel @erf_scalar_f64(%arg0: f64) -> f64 {
 
 kgen.generator.interface @erf<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
 
-kgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
+hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
   implements @erf {
   %zero = arith.constant 0 : index
   %one = arith.constant 1 : index
