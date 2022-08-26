@@ -264,14 +264,10 @@ public:
   LogicalResult
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
-    if (Optional<int64_t> size = buffer.getSize()) {
-      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-          op, getTypeConverter()->getIndexType(), *size);
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getValue(),
-                                                        *buffer.getSizeIndex());
-    }
+    Value size =
+        emitBufferSizeToLLVM(op.getLoc(), op.getValue(), adaptor.getValue(),
+                             rewriter, *getTypeConverter());
+    rewriter.replaceOp(op, size);
     return success();
   }
 };
@@ -291,14 +287,9 @@ public:
   LogicalResult
   matchAndRewrite(BufferDTypeOp op, BufferDTypeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    BufferDescriptor buffer(op.getValue().getType().cast<BufferType>());
-    if (Optional<DType> dtype = buffer.getDType()) {
-      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-          op, rewriter.getI8IntegerAttr(dtype->getValue()));
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-          op, adaptor.getValue(), *buffer.getDTypeIndex());
-    }
+    Value dtype = emitBufferDTypeToLLVM(op.getLoc(), op.getValue(),
+                                        adaptor.getValue(), rewriter);
+    rewriter.replaceOp(op, dtype);
     return success();
   }
 };
@@ -318,9 +309,9 @@ public:
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto newOp = emitBufferAddressToLLVM(op->getLoc(), op.getValue(),
+    Value addr = emitBufferAddressToLLVM(op.getLoc(), op.getValue(),
                                          adaptor.getValue(), rewriter);
-    rewriter.replaceOp(op, newOp);
+    rewriter.replaceOp(op, addr);
     return success();
   }
 };
@@ -352,7 +343,7 @@ public:
     // Convert the pointer.
     Type inPtrType = getLLVMPointerTo(op.getContext(), in.resolveDType());
     Value inPtr =
-        rewriter.create<BufferAddressOp>(op.getLoc(), inPtrType, op.getInput());
+        emitBufferAddressToLLVM(op.getLoc(), in, adaptor.getInput(), rewriter);
     Type outPtrType = getLLVMPointerTo(op.getContext(), out.resolveDType());
     Value outPtr = inPtr;
     if (outPtrType != inPtrType)
@@ -371,8 +362,8 @@ public:
 
     // If the output buffer has an unknown size, insert it as the first field.
     if (Optional<int64_t> index = buffer.getSizeIndex()) {
-      Value inSize = rewriter.create<BufferSizeOp>(
-          op.getLoc(), getTypeConverter()->getIndexType(), op.getInput());
+      Value inSize = emitBufferSizeToLLVM(op.getLoc(), in, adaptor.getInput(),
+                                          rewriter, *getTypeConverter());
       outBuffer = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), outBuffer,
                                                        inSize, *index);
     }
