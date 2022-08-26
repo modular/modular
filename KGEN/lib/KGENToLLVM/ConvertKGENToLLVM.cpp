@@ -8,7 +8,6 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MetaDialect/MetaOps.h"
-#include "KGEN/MetaDialect/MetaTypeConverter.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

@@ -7,7 +7,6 @@
 #include "KGEN/KGENPasses.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/MetaDialect/MetaTypeConverter.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
