@@ -398,9 +398,10 @@ public:
       for (int i = 0, e = size(); i < e; ++i)
         result[i] = data()[i] ? lhs[i] : rhs[i];
       return result;
-    } else if constexpr (std::is_same_v<T, float>) {
-      // This is a special case for float vectors which produces better assembly
-      // with GCC.
+    } else if constexpr (sizeof(T) == sizeof(element_type)) {
+      // This is a special case optimization for 32-bit types. For example, when
+      // the element_type is a float, then compilers such as GCC produces better
+      // assembly instructions.
       auto lhsInt = *reinterpret_cast<const vector_type *>(&lhs.value());
       auto rhsInt = *reinterpret_cast<const vector_type *>(&rhs.value());
       auto values = (value() & lhsInt) | (~value() & rhsInt);
