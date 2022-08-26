@@ -21,57 +21,6 @@ kgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !meta.
   kgen.return %t1 : !meta.scalar<type>
 }
 
-
-// Uses the same Erf approximation found in the MLAS library.
-kgen.generator @erf_scalar_mlas<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
-  %xAbs = pop.abs %x : !meta.scalar<type>
-  %branchCut = pop.constant(0.921875) : !meta.scalar<type>
-  // computes xAbs < branchCut
-  %branch0 = pop.cmp lt, %xAbs, %branchCut : !meta.scalar<type>
-  %branch = meta.cast_to_builtin %branch0: !meta.scalar<bool> to i1
-  %res = scf.if %branch -> !meta.scalar<type> {
-    %c0 = pop.constant(1.72948930e-5 : f32) : !meta.scalar<type>
-    %c1 = pop.constant(-3.83208680e-4 : f32) : !meta.scalar<type>
-    %c2 = pop.constant(3.88393435e-3 : f32) : !meta.scalar<type>
-    %c3 = pop.constant(-2.42545605e-2 : f32) : !meta.scalar<type>
-    %c4 = pop.constant(1.06777847e-1 : f32) : !meta.scalar<type>
-    %c5 = pop.constant(6.34846687e-1 : f32) : !meta.scalar<type>
-    %c6 = pop.constant(1.28717512e-1 : f32) : !meta.scalar<type>
-    %t0 = pop.fma %xAbs, %c1, %c6 : !meta.scalar<type>
-    %t1 = pop.fma %xAbs, %t0, %c5 : !meta.scalar<type>
-    %t2 = pop.fma %xAbs, %t1, %c4 : !meta.scalar<type>
-    %t3 = pop.fma %xAbs, %t2, %c3 : !meta.scalar<type>
-    %t4 = pop.fma %xAbs, %t3, %c2 : !meta.scalar<type>
-    %t5 = pop.fma %xAbs, %t4, %c1 : !meta.scalar<type>
-    %t6 = pop.fma %xAbs, %t5, %c0 : !meta.scalar<type>
-    %t7 = pop.fma %t6, %xAbs, %xAbs : !meta.scalar<type>
-    %t8 = pop.neg %t7 : !meta.scalar<type>
-    %t9 = kgen.call @exp<type : dtype = type>(%t8) : (!meta.scalar<type>) -> !meta.scalar<type>
-    %one = pop.constant(1) : !meta.scalar<type>
-    %t10 = pop.sub %one, %t9 : !meta.scalar<type>
-    %t11 = pop.copysign %t10, %x : !meta.scalar<type>
-    scf.yield %t11 : !meta.scalar<type>
-  } else {
-    %c0 = pop.constant(-5.99104969e-4 : f32) : !meta.scalar<type>
-    %c1 = pop.constant(4.99339588e-3 : f32) : !meta.scalar<type>
-    %c2 = pop.constant(-2.67667342e-2 : f32) : !meta.scalar<type>
-    %c3 = pop.constant(1.12818025e-1 : f32) : !meta.scalar<type>
-    %c4 = pop.constant(-3.76124859e-1 : f32) : !meta.scalar<type>
-    %c5 = pop.constant(1.28379151e-1 : f32) : !meta.scalar<type>
-    %xSquared = pop.mul %x, %x : !meta.scalar<type>
-    %t0 = pop.fma %xSquared, %c1, %c5 : !meta.scalar<type>
-    %t1 = pop.fma %xSquared, %t0, %c4 : !meta.scalar<type>
-    %t2 = pop.fma %xSquared, %t1, %c3 : !meta.scalar<type>
-    %t3 = pop.fma %xSquared, %t2, %c2 : !meta.scalar<type>
-    %t4 = pop.fma %xSquared, %t3, %c1 : !meta.scalar<type>
-    %t5 = pop.fma %xSquared, %t4, %c0 : !meta.scalar<type>
-    %t6 = pop.fma %t5, %x, %x : !meta.scalar<type>
-    scf.yield %t6 : !meta.scalar<type>
-  }
-  kgen.return %res : !meta.scalar<type>
-}
-
 // CHECK-LABEL: kgen.kernel @"erf_scalar_taylor,type=f32"(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 // CHECK-LABEL: kgen.kernel @"erf_scalar_taylor,type=f64"(%arg0: !meta.scalar<f64>) -> !meta.scalar<f64> {
 
