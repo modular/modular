@@ -50,10 +50,59 @@ Optional<int64_t> BufferDescriptor::getSize() const {
   return size.getInt();
 }
 
-Optional<DType> BufferDescriptor::getDType() const {
+DType BufferDescriptor::getDType() const {
   if (!dtype)
-    return None;
+    return DType::invalid;
   return dtype.getDType();
+}
+
+//===----------------------------------------------------------------------===//
+// BufferDescriptorBuilder
+//===----------------------------------------------------------------------===//
+
+Value BufferDescriptorBuilder::emitGetSize(Value buf) {
+  if (Optional<int64_t> size = getSize()) {
+    return builder.create<LLVM::ConstantOp>(loc, converter.getIndexType(),
+                                            builder.getIndexAttr(*size));
+  }
+  return builder.create<LLVM::ExtractValueOp>(loc, buf, *getSizeIndex());
+}
+
+Value BufferDescriptorBuilder::emitGetDType(Value buf) {
+  if (DType dtype = getDType(); dtype.isValid()) {
+    return builder.create<LLVM::ConstantOp>(
+        loc, builder.getI8IntegerAttr(dtype.getValue()));
+  }
+  return builder.create<LLVM::ExtractValueOp>(loc, buf, *getDTypeIndex());
+}
+
+Value BufferDescriptorBuilder::emitGetPtr(Value buf) {
+  if (Optional<int64_t> idx = getPtrIndex())
+    return builder.create<LLVM::ExtractValueOp>(loc, buf, *idx);
+  return buf;
+}
+
+Value BufferDescriptorBuilder::emitSetSize(Value buf, Value size) {
+  if (Optional<int64_t> idx = getSizeIndex())
+    return builder.create<LLVM::InsertValueOp>(loc, buf, size, *idx);
+  return buf;
+}
+
+Value BufferDescriptorBuilder::emitSetDType(Value buf, Value dtype) {
+  if (Optional<int64_t> idx = getDTypeIndex())
+    return builder.create<LLVM::InsertValueOp>(loc, buf, dtype, *idx);
+  return buf;
+}
+
+Value BufferDescriptorBuilder::emitSetPtr(Value buf, Value addr) {
+  if (Optional<int64_t> idx = getPtrIndex())
+    return builder.create<LLVM::InsertValueOp>(loc, buf, addr, *idx);
+  return addr;
+}
+
+Value BufferDescriptorBuilder::emitUndef() {
+  assert(!isBarePtr() && "cannot create an undef bare pointer buffer");
+  return builder.create<LLVM::UndefOp>(loc, converter.convertType(getType()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -177,39 +226,4 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   addConversion([=](DTypeType dtype) -> Optional<Type> {
     return Builder(&getContext()).getI8Type();
   });
-}
-
-//===----------------------------------------------------------------------===//
-// LLVM Code Emitters
-//===----------------------------------------------------------------------===//
-
-Value M::KGEN::emitBufferSizeToLLVM(Location loc, BufferType type, Value buf,
-                                    ConversionPatternRewriter &rewriter,
-                                    mlir::LLVMTypeConverter &converter) {
-  BufferDescriptor buffer(type);
-  if (Optional<int64_t> size = buffer.getSize()) {
-    return rewriter.create<LLVM::ConstantOp>(loc, converter.getIndexType(),
-                                             rewriter.getIndexAttr(*size));
-  }
-  return rewriter.create<LLVM::ExtractValueOp>(loc, buf,
-                                               *buffer.getSizeIndex());
-}
-
-Value M::KGEN::emitBufferAddressToLLVM(Location loc, BufferType type, Value buf,
-                                       ConversionPatternRewriter &rewriter) {
-  BufferDescriptor buffer(type);
-  if (buffer.isBarePtr())
-    return buf;
-  return rewriter.create<LLVM::ExtractValueOp>(loc, buf, *buffer.getPtrIndex());
-}
-
-Value M::KGEN::emitBufferDTypeToLLVM(Location loc, BufferType type, Value buf,
-                                     ConversionPatternRewriter &rewriter) {
-  BufferDescriptor buffer(type);
-  if (Optional<DType> dtype = buffer.getDType()) {
-    return rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getI8IntegerAttr(dtype->getValue()));
-  }
-  return rewriter.create<LLVM::ExtractValueOp>(loc, buf,
-                                               *buffer.getDTypeIndex());
 }

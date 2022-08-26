@@ -233,11 +233,11 @@ struct ConvertBufferLoad : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
   LogicalResult
   matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value bufPtr = emitBufferAddressToLLVM(op.getLoc(), op.getBuffer(),
-                                           adaptor.getBuffer(), rewriter);
+    BufferDescriptorBuilder buffer(op.getBuffer(), op.getLoc(), rewriter,
+                                   *getTypeConverter());
+    Value bufPtr = buffer.emitGetPtr(adaptor.getBuffer());
     auto ptrOffset = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), bufPtr.getType(), bufPtr,
-        ArrayRef<LLVM::GEPArg>{adaptor.getPosition()});
+        op.getLoc(), bufPtr.getType(), bufPtr, adaptor.getPosition());
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrOffset);
     return success();
@@ -254,11 +254,11 @@ struct ConvertBufferStore : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
   LogicalResult
   matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value bufPtr = emitBufferAddressToLLVM(op.getLoc(), op.getBuffer(),
-                                           adaptor.getBuffer(), rewriter);
+    BufferDescriptorBuilder buffer(op.getBuffer(), op.getLoc(), rewriter,
+                                   *getTypeConverter());
+    Value bufPtr = buffer.emitGetPtr(adaptor.getBuffer());
     auto ptrOffset = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), bufPtr.getType(), bufPtr,
-        ArrayRef<LLVM::GEPArg>{adaptor.getPosition()});
+        op.getLoc(), bufPtr.getType(), bufPtr, adaptor.getPosition());
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getValue(),
                                                ptrOffset);

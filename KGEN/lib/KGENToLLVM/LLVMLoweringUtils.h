@@ -44,8 +44,11 @@ public:
   llvm::Optional<int64_t> getPtrIndex() const;
   /// Returns the known size of the buffer, if it has one.
   llvm::Optional<int64_t> getSize() const;
-  /// Returns the known dtype of the buffer, if it has one.
-  llvm::Optional<DType> getDType() const;
+  /// Returns the known dtype of the buffer or invalid if it lacks one.
+  DType getDType() const;
+
+  /// Get the buffer type.
+  BufferType getType() { return buffer; }
 
 private:
   /// The buffer type.
@@ -54,6 +57,49 @@ private:
   mlir::IntegerAttr size;
   /// An optional known dtype of the buffer.
   DTypeConstantAttr dtype;
+};
+
+//===----------------------------------------------------------------------===//
+// BufferDescriptorBuilder
+//===----------------------------------------------------------------------===//
+
+/// This helper class generates the LLVM code to interact with concrete buffers.
+class BufferDescriptorBuilder : public BufferDescriptor {
+public:
+  /// Create a builder given the original buffer value.
+  BufferDescriptorBuilder(Value buf, Location loc, OpBuilder &builder,
+                          mlir::LLVMTypeConverter &converter)
+      : BufferDescriptorBuilder(buf.getType().cast<BufferType>(), loc, builder,
+                                converter) {}
+  /// Create a builder given the buffer type.
+  BufferDescriptorBuilder(BufferType type, Location loc, OpBuilder &builder,
+                          mlir::LLVMTypeConverter &converter)
+      : BufferDescriptor(type), loc(loc), builder(builder),
+        converter(converter) {}
+
+  /// Emit the code to get the size of the buffer.
+  Value emitGetSize(Value buf);
+  /// Emit the code to get the dtype of the buffer.
+  Value emitGetDType(Value buf);
+  /// Emit the code to get the address of the buffer.
+  Value emitGetPtr(Value buf);
+  /// Emit the code to set the size of the buffer.
+  Value emitSetSize(Value buf, Value size);
+  /// Emit the code to set the dtype of the buffer.
+  Value emitSetDType(Value buf, Value dtype);
+  /// Emit the code to set the address of the buffer.
+  Value emitSetPtr(Value buf, Value addr);
+
+  /// Get an empty buffer.
+  Value emitUndef();
+
+private:
+  /// The location to use when building ops.
+  Location loc;
+  /// The op builder to use.
+  OpBuilder &builder;
+  /// The LLVM type converter to use.
+  mlir::LLVMTypeConverter &converter;
 };
 
 //===----------------------------------------------------------------------===//
@@ -85,37 +131,6 @@ private:
   /// A location used to report conversion failures.
   mlir::Location loc;
 };
-
-//===----------------------------------------------------------------------===//
-// LLVM Code Emitters
-//===----------------------------------------------------------------------===//
-
-/// Emit the LLVM code to get the size of a buffer. Return the size value.
-Value emitBufferSizeToLLVM(Location loc, BufferType type, Value buf,
-                           ConversionPatternRewriter &rewriter,
-                           mlir::LLVMTypeConverter &converter);
-inline Value emitBufferSizeToLLVM(Location loc, Value buf, Value adaptorBuf,
-                                  ConversionPatternRewriter &rewriter,
-                                  mlir::LLVMTypeConverter &converter) {
-  return emitBufferSizeToLLVM(loc, buf.getType().cast<BufferType>(), adaptorBuf,
-                              rewriter, converter);
-}
-/// Emit the LLVM code to get the address of a buffer. Return the address value.
-Value emitBufferAddressToLLVM(Location loc, BufferType type, Value buf,
-                              ConversionPatternRewriter &rewriter);
-inline Value emitBufferAddressToLLVM(Location loc, Value buf, Value adaptorBuf,
-                                     ConversionPatternRewriter &rewriter) {
-  return emitBufferAddressToLLVM(loc, buf.getType().cast<BufferType>(),
-                                 adaptorBuf, rewriter);
-}
-/// Emit the LLVM code to get the dtype of a buffer. Return the dtype value.
-Value emitBufferDTypeToLLVM(Location loc, BufferType type, Value buf,
-                            ConversionPatternRewriter &rewriter);
-inline Value emitBufferDTypeToLLVM(Location loc, Value buf, Value adaptorBuf,
-                                   ConversionPatternRewriter &rewriter) {
-  return emitBufferDTypeToLLVM(loc, buf.getType().cast<BufferType>(),
-                               adaptorBuf, rewriter);
-}
 
 } // namespace M::KGEN
 
