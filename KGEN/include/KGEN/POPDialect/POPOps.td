@@ -192,6 +192,91 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
+// ShlOp
+//===----------------------------------------------------------------------===//
+
+def ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
+  let summary = "shift left";
+  let description = [{
+    The pop.shl instruction returns the first operand shifted to the left a
+    specified number of bits. Both arguments to the shl instruction must be
+    the same integer or vector of integer type. rhs is treated as an unsigned
+    value.
+
+    The value produced is lhs * 2^{rhs} mod 2^n, where n is the width of the
+    result. If rhs is (statically or dynamically) equal to or larger than the
+    number of bits in lhs, this instruction returns a poison value. If the
+    arguments are vectors, each vector element of op1 is shifted by the
+    corresponding shift amount in op2.
+
+    Example:
+
+    ```mlir
+    %0 = pop.shl %val, %shft: !meta.scalar<type>
+    %0 = pop.shl %val, %shft: !meta.simd<size, type>
+    ```
+  }];
+  let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
+                       UnboundOrIntegerScalarOrSIMD:$rhs);
+}
+
+//===----------------------------------------------------------------------===//
+// ShRSOp
+//===----------------------------------------------------------------------===//
+
+def ShRSOp : POP_MetaArithmeticBinaryOp<"shrs"> {
+  let summary = "arithmetic shift right";
+  let description = [{
+    The pop.shrs instruction (arithmetic shift right) returns the first operand
+    shifted to the right a specified number of bits with sign extension. Both
+    arguments to the ashr instruction must be the same integer or vector of
+    integer type. rhs is treated as an unsigned value.
+
+    This instruction always performs an arithmetic shift right operation, The
+    most significant bits of the result will be filled with the sign bit of
+    op1. If rhs is (statically or dynamically) equal to or larger than the
+    number of bits in lhs, this instruction returns a poison value. If the
+    arguments are vectors, each vector element of op1 is shifted by the
+    corresponding shift amount in rhs.
+
+    ```mlir
+    %0 = pop.shrs %val, %shft: !meta.scalar<type>
+    %0 = pop.shrs %val, %shft: !meta.simd<size, type>
+    ```
+  }];
+  let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
+                       UnboundOrIntegerScalarOrSIMD:$rhs);
+}
+
+//===----------------------------------------------------------------------===//
+// ShRUOp
+//===----------------------------------------------------------------------===//
+
+def ShRUOp : POP_MetaArithmeticBinaryOp<"shru"> {
+  let summary = "logical shift right";
+  let description = [{
+    The pop.shru instruction (logical shift right) returns the first operand
+    shifted to the right a specified number of bits with zero fill. Both
+    arguments to the lshr opration must be the same integer or vector of
+    integer type. `rhs` is treated as an unsigned value.
+
+    This instruction always performs a logical shift right operation. The most
+    significant bits of the result will be filled with zero bits after the shift.
+    If rhs is (statically or dynamically) equal to or larger than the number of
+    bits in lhs, this instruction returns a poison value. If the arguments are
+    vectors, each vector element of lhs is shifted by the corresponding shift
+    amount in rhs.
+
+    ```mlir
+    %0 = pop.shru %val, %shft: !meta.scalar<type>
+    %0 = pop.shru %val, %shft: !meta.simd<size, type>
+    ```
+  }];
+  let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
+                       UnboundOrIntegerScalarOrSIMD:$rhs);
+}
+
+//===----------------------------------------------------------------------===//
 // CopySignOp
 //===----------------------------------------------------------------------===//
 

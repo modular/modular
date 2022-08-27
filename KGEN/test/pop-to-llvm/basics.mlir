@@ -169,3 +169,37 @@ kgen.kernel @store(%p: !meta.pointer<si32>, %v: !meta.scalar<si32>) {
   pop.store %v, %p : !meta.pointer<si32>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @shifts
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.kernel @shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK: llvm.shl %[[LHS]], %[[RHS]]
+  %0 = pop.shl %arg0, %arg1 : !meta.scalar<si32>
+  // CHECK: llvm.ashr %[[LHS]], %[[RHS]]
+  %1 = pop.shrs %arg0, %arg1 : !meta.scalar<si32>
+  // CHECK: llvm.lshr %[[LHS]], %[[RHS]]
+  %2 = pop.shru %arg0, %arg1 : !meta.scalar<si32>
+  kgen.return %2 : !meta.scalar<si32>
+}
+
+// -----
+
+// CHECK-LABEL: @simd_shift
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.kernel @simd_shift(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK: llvm.shl %[[LHS]], %[[RHS]]
+  %0 = pop.shl %arg0, %arg1 : !meta.simd<4, si32>
+  // CHECK: llvm.ashr %[[LHS]], %[[RHS]]
+  %1 = pop.shrs %arg0, %arg1 : !meta.simd<4, si32>
+  // CHECK: llvm.lshr %[[LHS]], %[[RHS]]
+  %2 = pop.shru %arg0, %arg1 : !meta.simd<4, si32>
+  kgen.return %2 : !meta.simd<4, si32>
+}

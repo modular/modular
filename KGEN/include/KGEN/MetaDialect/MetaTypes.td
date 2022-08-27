@@ -142,7 +142,7 @@ def BoolScalar : AllOfType<[ScalarType, BoolDType]>;
 /// A simd type that is constrained to have a bool dtype.
 def BoolSIMD : AllOfType<[SIMDType, BoolDType]>;
 
-/// A scalar type that is constrained to be either an unbound dtype or a
+/// A scalar type that is constrained to be either an unbound dtype or an
 /// integeral dtype.
 def UnboundOrIntegerScalar : AllOfType<[ScalarType, IntegerOrUnboundDType],
     "whose value is either unbound or a integral dtype">;
@@ -150,6 +150,10 @@ def UnboundOrIntegerScalar : AllOfType<[ScalarType, IntegerOrUnboundDType],
 /// floating-point dtype.
 def UnboundOrFloatScalar : AllOfType<[ScalarType, FloatOrUnboundDType],
     "whose value is either unbound or a floating-point dtype">;
+/// A simd type that is constrained to be either an unbound dtype or an
+/// integral dtype.
+def UnboundOrIntegerSIMD : AllOfType<[SIMDType, IntegerOrUnboundDType],
+    "whose element type is either unbound or a integral dtype">;
 /// A simd type that is constrained to be either an unbound dtype or a
 /// floating-point dtype.
 def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
@@ -170,6 +174,9 @@ def BoolScalarOrSIMD : AnyTypeOf<
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
     [UnboundOrFloatScalar, UnboundOrFloatSIMD]>;
+
+def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
+    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD]>;
 
 /// Checks if the given value's type is a scalar type which matches the
 /// element dtype of the oeprand.
