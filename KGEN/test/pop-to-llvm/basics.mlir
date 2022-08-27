@@ -146,8 +146,26 @@ kgen.kernel @fma(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.
 // -----
 
 // CHECK-LABEL: @select
-kgen.kernel @select(%arg0 : !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @select(%arg0: !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
   // CHECK: llvm.select
   %0 = pop.select %arg0, %arg1, %arg2 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
+
+// CHECK-LABEL: @load
+kgen.kernel @load(%p: !meta.pointer<f32>) -> !meta.scalar<f32> {
+  // CHECK: llvm.load
+  %0 = pop.load %p : !meta.pointer<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
+
+// CHECK: @store
+kgen.kernel @store(%p: !meta.pointer<si32>, %v: !meta.scalar<si32>) {
+  // CHECK: llvm.store
+  pop.store %v, %p : !meta.pointer<si32>
+  kgen.return
 }

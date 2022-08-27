@@ -296,3 +296,16 @@ kgen.generator @pop_buffer_store<size, type: dtype>(
   pop.buffer.store %v2, %c[%idx] : !meta.buffer<4, si32>
   kgen.return
 }
+
+// CHECK-LABEL: @pop_load_store
+kgen.generator @pop_load_store<type: dtype>(%p0: !meta.pointer<f32>, %p1: !meta.pointer<type>) {
+  // CHECK: %[[V0:.*]] = pop.load %{{.*}} : !meta.pointer<f32>
+  %0 = pop.load %p0 : !meta.pointer<f32>
+  // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !meta.pointer<type>
+  %1 = pop.load %p1 : !meta.pointer<type>
+  // CHECK: pop.store %[[V0]], %{{.*}} : !meta.pointer<f32>
+  pop.store %0, %p0 : !meta.pointer<f32>
+  // CHECK: pop.store %[[V1]], %{{.*}} : !meta.pointer<type>
+  pop.store %1, %p1 : !meta.pointer<type>
+  kgen.return
+}
