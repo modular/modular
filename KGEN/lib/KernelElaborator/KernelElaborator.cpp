@@ -1101,7 +1101,7 @@ static void emitElaborationError(InFlightDiagnostic &diag,
     // If there is one error in this batch, or if they are all at the same point
     // and are the same problem, collapse them together.  These forks must have
     // been different earlier in their elaboration but fail for the same reason.
-    if (llvm::is_splat(batch))
+    if (llvm::all_equal(batch))
       batch = batch.take_front();
 
     // If there are multiple alternative declarations in batches, emit a header
