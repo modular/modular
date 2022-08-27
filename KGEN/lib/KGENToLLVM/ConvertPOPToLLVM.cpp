@@ -288,6 +288,9 @@ using ConvertPOPSIMDExtractElement =
 using ConvertPOPSIMDInsertElement =
     mlir::OneToOneConvertToLLVMPattern<SIMDInsertElementOp,
                                        LLVM::InsertElementOp>;
+using ConvertPOPLoad = mlir::OneToOneConvertToLLVMPattern<LoadOp, LLVM::LoadOp>;
+using ConvertPOPStore =
+    mlir::OneToOneConvertToLLVMPattern<StoreOp, LLVM::StoreOp>;
 
 } // namespace
 
@@ -307,9 +310,11 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPConstant,
       ConvertPOPCopySign,
       ConvertPOPFMA,
+      ConvertPOPLoad,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPSelect,
+      ConvertPOPStore,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
       ConvertPOPSIMDSplat,

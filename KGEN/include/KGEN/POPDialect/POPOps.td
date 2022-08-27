@@ -427,6 +427,51 @@ def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// LoadOp
+//===----------------------------------------------------------------------===//
+
+def LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
+  let summary = "pointer load operation";
+  let description = [{
+    Loads the data at the given pointer. Returns a scalar of the same dtype. The
+    pointer cannot have a `?` dtype.
+
+    Example:
+
+    ```mlir
+    %0 = pop.load %ptr0 : !meta.pointer<f32>
+    %1 = pop.load %ptr1 : !meta.pointer<type>
+    ```
+  }];
+
+  let arguments = (ins Arg<ConcretePointer, "", [MemRead]>:$ptr);
+  let results = (outs ScalarType:$result);
+  let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
+// StoreOp
+//===----------------------------------------------------------------------===//
+
+def StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
+  let summary = "pointer store operation";
+  let description = [{
+    Store the given scalar data to the given pointer of the same dtype. The
+    pointer cannot have a `?` dtype.
+
+    Example:
+
+    ```mlir
+    pop.store %0, %ptr0 : !meta.pointer<f32>
+    pop.store %1, %ptr1 : !meta.pointer<type>
+    ```
+  }];
+
+  let arguments = (ins ScalarType:$arg, ConcretePointer:$ptr);
+  let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 

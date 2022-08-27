@@ -154,6 +154,9 @@ def UnboundOrFloatScalar : AllOfType<[ScalarType, FloatOrUnboundDType],
 /// floating-point dtype.
 def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
+/// A pointer to a concrete dtype.
+def ConcretePointer : ConfinedType<PointerType,
+    [CPred<"$_self.cast<PointerType>().getDType()">]>;
 /// A buffer type with a concrete dtype.
 def ConcreteBuffer : ConfinedType<BufferType,
     [CPred<"$_self.cast<BufferType>().getDType()">],
