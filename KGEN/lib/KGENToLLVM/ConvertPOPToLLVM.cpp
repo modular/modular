@@ -280,6 +280,9 @@ using ConvertPOPSub =
     OneToOneIntOrFloatConversion<SubOp, LLVM::SubOp, LLVM::FSubOp>;
 using ConvertPOPMul =
     OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
+using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
+using ConvertPOPShRS = mlir::OneToOneConvertToLLVMPattern<ShRSOp, LLVM::AShrOp>;
+using ConvertPOPShRU = mlir::OneToOneConvertToLLVMPattern<ShRUOp, LLVM::LShrOp>;
 using ConvertPOPSelect =
     mlir::OneToOneConvertToLLVMPattern<SelectOp, LLVM::SelectOp>;
 using ConvertPOPSIMDExtractElement =
@@ -314,10 +317,13 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPSelect,
-      ConvertPOPStore,
+      ConvertPOPShl,
+      ConvertPOPShRS,
+      ConvertPOPShRU,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
       ConvertPOPSIMDSplat,
+      ConvertPOPStore,
       ConvertPOPSub
       // clang-format on
       >(typeConverter);
