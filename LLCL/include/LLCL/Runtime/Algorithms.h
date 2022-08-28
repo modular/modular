@@ -135,8 +135,10 @@ inline static void andThenArrayImpl(ArrayRefType values,
                                     CompletionFn completionFn,
                                     CopyOrMoveFn copyOrMoveFn) {
   // Avoid malloc overhead for trivial cases.
-  if (values.empty())
+  if (values.empty()) {
+    completionFn(values);
     return;
+  }
   if (values.size() == 1) {
     values[0]->andThen([completionFn = std::move(completionFn)](
                            const AnyAsyncValueRef &value) mutable {
