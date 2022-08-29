@@ -125,3 +125,12 @@ kgen.kernel @unfoldableIndex() {
   kgen.return
 }
 
+
+// -----
+
+kgen.generator.interface @genItf2<x>()
+
+// expected-error @+1 {{unlowered hlkgen.generator discovered in KGEN elaborator}}
+hlkgen.generator @genItf2_impl0<x>() implements @genItf2 {
+  kgen.return
+}
