@@ -99,3 +99,18 @@ kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.
   %2 = meta.cast_from_builtin %1 : f64 to !meta.scalar<type>
   kgen.return %2 : !meta.scalar<type>
 }
+
+//===----------------------------------------------------------------------===//
+// index2D
+//===----------------------------------------------------------------------===//
+// Computes the 1D index from a 2D index (i, j) and the stride of the 2D array.
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @index2D(%row: index, %col: index, %stride: index) -> index
+
+kgen.generator @index2DImpl(%row: index, %col: index, %stride: index) -> index
+  implements @index2D {
+  %0 = arith.muli %row, %stride : index
+  %1 = arith.addi %0, %col : index
+  kgen.return %1 : index
+}
