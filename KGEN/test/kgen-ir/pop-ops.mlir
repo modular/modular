@@ -187,6 +187,40 @@ kgen.kernel @pop_select_simd(
   kgen.return %0 : !meta.simd<4, si32>
 }
 
+// CHECK-LABEL: @scalar_bitcast
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.generator @scalar_bitcast(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f64>) -> !meta.scalar<f32> {
+  // CHECK: %[[V0:.*]] = pop.bitcast %[[ARG0]] : !meta.scalar<f32> to !meta.scalar<si32>
+  %0 = pop.bitcast %arg0 : !meta.scalar<f32> to !meta.scalar<si32>
+  // CHECK: %[[V1:.*]] = pop.bitcast %[[ARG1]] : !meta.scalar<f64> to !meta.scalar<f64>
+  %1 = pop.bitcast %arg1 : !meta.scalar<f64> to !meta.scalar<f64>
+  // CHECK: %[[V2:.*]] = pop.bitcast %[[V0]] : !meta.scalar<si32> to !meta.scalar<ui32>
+  %2 = pop.bitcast %0 : !meta.scalar<si32> to !meta.scalar<ui32>
+  // CHECK: %[[V3:.*]] = pop.bitcast %[[V2]] : !meta.scalar<ui32> to !meta.scalar<f32>
+  %3 = pop.bitcast %2 : !meta.scalar<ui32> to !meta.scalar<f32>
+  // CHECK: return %[[V3]]
+  kgen.return %3 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: @simd_bitcast
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.generator @simd_bitcast(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f64>) -> !meta.simd<4, f32> {
+  // CHECK: %[[V0:.*]] = pop.bitcast %[[ARG0]] : !meta.simd<4, f32> to !meta.simd<4, si32>
+  %0 = pop.bitcast %arg0 : !meta.simd<4, f32> to !meta.simd<4, si32>
+  // CHECK: %[[V1:.*]] = pop.bitcast %[[ARG1]] : !meta.simd<4, f64> to !meta.simd<4, f64>
+  %1 = pop.bitcast %arg1 : !meta.simd<4, f64> to !meta.simd<4, f64>
+  // CHECK: %[[V2:.*]] = pop.bitcast %[[V0]] : !meta.simd<4, si32> to !meta.simd<4, ui32>
+  %2 = pop.bitcast %0 : !meta.simd<4, si32> to !meta.simd<4, ui32>
+  // CHECK: %[[V3:.*]] = pop.bitcast %[[V2]] : !meta.simd<4, ui32> to !meta.simd<4, f32>
+  %3 = pop.bitcast %2 : !meta.simd<4, ui32> to !meta.simd<4, f32>
+  // CHECK: %[[V4:.*]] = pop.bitcast %[[V2]] : !meta.simd<4, ui32> to !meta.simd<2, f64>
+  %4 = pop.bitcast %2 : !meta.simd<4, ui32> to !meta.simd<2, f64>
+  // CHECK: return %[[V3]]
+  kgen.return %3 : !meta.simd<4, f32>
+}
+
 // CHECK-LABEL: @scalar_cast
 // CHECK-SAME: %[[A:.*]]:
 kgen.generator @scalar_cast<type: dtype>(%a: !meta.scalar<f32>) -> !meta.scalar<si32> {

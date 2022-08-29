@@ -13,6 +13,7 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 

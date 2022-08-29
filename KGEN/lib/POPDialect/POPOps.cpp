@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "mlir/IR/TypeRange.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -180,6 +181,50 @@ LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
     return success();
   return mlir::emitError(loc.value_or(operands[0].getLoc()),
                          "expected a scalar or simd operand type");
+}
+
+//===----------------------------------------------------------------------===//
+// BitcastOp
+//===----------------------------------------------------------------------===//
+
+bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  if (inputs.size() != 1 || outputs.size() != 1)
+    return false;
+
+  auto inputType = inputs.front().cast<DTypeInterface>();
+  auto outputType = outputs.front().cast<DTypeInterface>();
+  // The input and output types must be of the same kind.
+  // TODO: In theory we can support casting a scalar type to a vector type (e.g.
+  // f64 to a 2xf32) or vice versa. We should support this when the use case
+  // arises.
+  if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
+    return false;
+
+  auto inputDType = inputType.resolveDType();
+  auto outputDType = outputType.resolveDType();
+
+  // If we cannot resolve the dtype, then we cannot cast.
+  if (inputDType.isInvalid() || outputDType.isInvalid())
+    return false;
+
+  auto inputDTypeWidth = inputDType.getWidthInBits();
+  auto outputDTypeWidth = outputDType.getWidthInBits();
+
+  // If we have a scalar type, then the bitwidths must match.
+  if (auto inputSimd = inputType.dyn_cast<SIMDType>()) {
+    auto outputSimd = outputType.cast<SIMDType>();
+    auto inputSimdSize = inputSimd.resolveSize();
+    auto outputSimdSize = outputSimd.resolveSize();
+    // If we cannot resolve the sizes, then we cannot verify the cast.
+    if (!inputSimdSize || !outputSimdSize)
+      return false;
+    // If the sizes do not match, then we cannot cast.
+    return inputSimdSize.value() * inputDTypeWidth ==
+           outputSimdSize.value() * outputDTypeWidth;
+  }
+
+  // Otherwise, we have a scalar type. So the bitwidths must match.
+  return inputDTypeWidth == outputDTypeWidth;
 }
 
 //===----------------------------------------------------------------------===//

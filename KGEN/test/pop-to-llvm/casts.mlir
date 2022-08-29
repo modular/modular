@@ -1,5 +1,54 @@
 // RUN: kgen-opt -split-input-file -convert-pop-to-llvm -convert-kgen-to-llvm -canonicalize %s | FileCheck %s
 
+// CHECK-LABEL: @scalar_bitcast
+// CHECK-SAME: %[[UI32:[a-z0-9]+]]:
+// CHECK-SAME: %[[F32:[a-z0-9]+]]:
+// CHECK-SAME: %[[F64:[a-z0-9]+]]:
+kgen.kernel @scalar_bitcast(
+    %ui32: !meta.scalar<ui32>,
+    %f32: !meta.scalar<f32>,
+    %f64: !meta.scalar<f64>) -> (
+      !meta.scalar<f32>,
+      !meta.scalar<si32>,
+      !meta.scalar<ui64>
+    ) {
+  // CHECK: lvm.bitcast %[[UI32]]
+  %0 = pop.bitcast %ui32 : !meta.scalar<ui32> to !meta.scalar<f32>
+  // CHECK: llvm.bitcast %[[F32]]
+  %1 = pop.bitcast %f32 : !meta.scalar<f32> to !meta.scalar<si32>
+  // CHECK: llvm.bitcast %[[F64]]
+  %2 = pop.bitcast %f64 : !meta.scalar<f64> to !meta.scalar<ui64>
+  kgen.return %0, %1, %2 :
+      !meta.scalar<f32>,
+      !meta.scalar<si32>,
+      !meta.scalar<ui64>
+}
+
+
+// CHECK-LABEL: @simd_bitcast
+// CHECK-SAME: %[[UI32:[a-z0-9]+]]:
+// CHECK-SAME: %[[F32:[a-z0-9]+]]:
+// CHECK-SAME: %[[F64:[a-z0-9]+]]:
+kgen.kernel @simd_bitcast(
+    %ui32:!meta.simd<4, ui32>,
+    %f32:!meta.simd<4, f32>,
+    %f64:!meta.simd<2, f64>) -> (
+     !meta.simd<4, f32>,
+     !meta.simd<4, si32>,
+     !meta.simd<4, ui32>
+    ) {
+  // CHECK: lvm.bitcast %[[UI32]]
+  %0 = pop.bitcast %ui32 :!meta.simd<4, ui32> to!meta.simd<4, f32>
+  // CHECK: llvm.bitcast %[[F32]]
+  %1 = pop.bitcast %f32 :!meta.simd<4, f32> to!meta.simd<4, si32>
+  // CHECK: llvm.bitcast %[[F64]]
+  %2 = pop.bitcast %f64 :!meta.simd<2, f64> to!meta.simd<4, ui32>
+  kgen.return %0, %1, %2 :
+     !meta.simd<4, f32>,
+     !meta.simd<4, si32>,
+     !meta.simd<4, ui32>
+}
+
 // CHECK-LABEL: @scalar_cast
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[SI32:[a-z0-9]+]]:

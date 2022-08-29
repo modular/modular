@@ -280,6 +280,8 @@ using ConvertPOPSub =
     OneToOneIntOrFloatConversion<SubOp, LLVM::SubOp, LLVM::FSubOp>;
 using ConvertPOPMul =
     OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
+using ConvertPOPBitCast =
+    mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
 using ConvertPOPShRS = mlir::OneToOneConvertToLLVMPattern<ShRSOp, LLVM::AShrOp>;
 using ConvertPOPShRU = mlir::OneToOneConvertToLLVMPattern<ShRUOp, LLVM::LShrOp>;
@@ -309,6 +311,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertBufferStore,
       ConvertPOPAbs,
       ConvertPOPAdd,
+      ConvertPOPBitCast,
       ConvertPOPCast,
       ConvertPOPConstant,
       ConvertPOPCopySign,

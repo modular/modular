@@ -93,6 +93,30 @@ kgen.kernel @pop_select_simd(
 
 // -----
 
+kgen.generator @bitcast_scalar(%a: !meta.scalar<f32>) {
+  // expected-error @below {{'pop.bitcast' op operand type '!meta.scalar<f32>' and result type '!meta.scalar<si8>' are cast incompatible}}
+  %0 = pop.bitcast %a : !meta.scalar<f32> to !meta.scalar<si8>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @bitcast_simd(%a: !meta.simd<4, f32>) {
+  // expected-error @below {{'pop.bitcast' op operand type '!meta.simd<4, f32>' and result type '!meta.simd<8, f32>' are cast incompatible}}
+  %0 = pop.bitcast %a : !meta.simd<4, f32> to !meta.simd<8, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @bitcast_simd(%a: !meta.simd<4, f32>) {
+  // expected-error @below {{'pop.bitcast' op operand type '!meta.simd<4, f32>' and result type '!meta.simd<4, f64>' are cast incompatible}}
+  %0 = pop.bitcast %a : !meta.simd<4, f32> to !meta.simd<4, f64>
+  kgen.return
+}
+
+// -----
+
 kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !meta.scalar<type>) {
   // expected-error @below {{cannot cast between a scalar type and SIMD type}}
   %0 = pop.cast %a : !meta.scalar<type> to !meta.simd<size, type>
