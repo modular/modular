@@ -578,7 +578,7 @@ def StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
     ```
   }];
 
-  let arguments = (ins ScalarType:$arg, ConcretePointer:$ptr);
+  let arguments = (ins ScalarType:$arg, Arg<ConcretePointer, "", [MemWrite]>:$ptr);
   let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
 }
 
