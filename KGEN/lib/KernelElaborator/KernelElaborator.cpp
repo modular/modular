@@ -944,36 +944,47 @@ ParseResult Elaborator::collectInterfaces() {
   // that implement a given interface, starting with the libraries.  These will
   // already have been type checked within the library.
   DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
-  for (auto &libraryModule : libraryModules) {
-    for (auto itf : libraryModule.get().getOps<GeneratorInterfaceOp>())
-      libraryInterfaces[itf.getNameAttr()] = itf;
 
-    // Collect all the kernel generators that implement a given interface. These
-    // will already have been type checked within the library.
-    for (auto generator : libraryModule.get().getOps<GeneratorOp>())
-      if (auto interface = generator.getImplementsAttr())
-        interfaceImpls[interface.getAttr()].push_back(generator);
-  }
+  // Scan the specified module collecting all the generators that implement an
+  // interface and checking the interfaces between library files line up.
+  auto collectGeneratorsAndInterfaces = [&](ModuleOp module) -> ParseResult {
+    for (auto &op : module.getOps()) {
+      // Collect interfaces, and if we have seen another one already, verify
+      // their signatures match.
+      if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
+        auto [it, inserted] =
+            libraryInterfaces.insert({itf.getNameAttr(), itf});
+        if (inserted) // Just remember it on the first hit.
+          continue;
 
-  // Collect the kernel generators from the primary module.  Start by checking
-  // that any generator implementations that exist in both modules match in
-  // signature exactly.
-  for (auto itf : primaryModule.getOps<GeneratorInterfaceOp>()) {
-    auto it = libraryInterfaces.find(itf.getNameAttr());
-    if (it == libraryInterfaces.end())
-      continue;
-    if (failed(verifyDeclMatchesInterface("interface", itf, "library interface",
-                                          it->second)))
+        // If this is the second match, check that the signatures match.
+        if (failed(verifyDeclMatchesInterface("interface", itf,
+                                              "library interface", it->second)))
+          return failure();
+        continue;
+      }
+
+      // If this is a generator, keep track of it.
+      if (auto generator = dyn_cast<GeneratorOp>(op))
+        if (auto interface = generator.getImplementsAttr())
+          interfaceImpls[interface.getAttr()].push_back(generator);
+
+      // Detect a common error cleanly, and report it.
+      if (op.getName().getStringRef() == "hlkgen.generator")
+        return op.emitError(
+            "unlowered hlkgen.generator discovered in KGEN elaborator");
+    }
+    return success();
+  };
+
+  for (auto &module : libraryModules) {
+    if (failed(collectGeneratorsAndInterfaces(module.get())))
       return failure();
   }
 
   // If they all match up, collect the generator implementations from the
   // primary module.
-  for (auto generator : primaryModule.getOps<GeneratorOp>())
-    if (auto interface = generator.getImplementsAttr())
-      interfaceImpls[interface.getAttr()].push_back(generator);
-
-  return success();
+  return collectGeneratorsAndInterfaces(primaryModule);
 }
 
 namespace {
