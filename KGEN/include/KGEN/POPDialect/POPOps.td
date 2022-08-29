@@ -10,6 +10,7 @@
 
 include "KGEN/MetaDialect/MetaDialect.td"
 include "KGEN/MetaDialect/MetaTypes.td"
+include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
@@ -400,6 +401,31 @@ def SelectOp : POPOp<"select",
   let results = (outs ScalarOrSIMD:$result);
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+def BitcastOp : POPOp<"bitcast", [NoSideEffect,
+                                  DeclareOpInterfaceMethods<CastOpInterface>]> {
+  let summary = [{
+    Bitcast an integer or floating point value to an integer or floating point
+    value of equal bit width.
+
+    Example:
+
+    ```mlir
+    %0 = meta.bitcast %a : !meta.scalar<si32> to !meta.scalar<f32>
+    %1 = meta.bitcast %b : !meta.scalar<ui64> to !meta.scalar<si64>
+    %2 = meta.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
+    %3 = meta.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
+    ```
+  }];
+
+  let arguments = (ins ScalarOrSIMD:$input);
+  let results = (outs ScalarOrSIMD:$output);
+  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
 }
 
 //===----------------------------------------------------------------------===//
