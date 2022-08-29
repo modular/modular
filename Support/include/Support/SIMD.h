@@ -20,6 +20,8 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <functional>
+#include <numeric>
 #include <type_traits>
 
 namespace M {
@@ -415,6 +417,44 @@ public:
       SIMDVector<T, N> result = mask ? lhs.value() : rhs.value();
       return result;
     }
+  }
+
+  /// Reduces the values within the vector using the addition operator.
+  element_type reduceAdd() const {
+    if constexpr (isEmulated || !__has_builtin(__builtin_reduce_add))
+      return std::reduce(data(), data() + size(), element_type(0),
+                         std::plus<>());
+    else
+      return __builtin_reduce_add(value());
+  }
+
+  /// Reduces the values within the vector using the multiplication operator.
+  element_type reduceMul() const {
+    if constexpr (isEmulated || !__has_builtin(__builtin_reduce_mul))
+      return std::reduce(data(), data() + size(), element_type(1),
+                         std::multiplies<>());
+    else
+      return __builtin_reduce_mul(value());
+  }
+
+  /// Reduces the values within the vector using the max operator.
+  element_type reduceMax() const {
+    if constexpr (isEmulated || !__has_builtin(__builtin_reduce_max))
+      return std::reduce(data(), data() + size(),
+                         std::numeric_limits<element_type>::lowest(),
+                         [](auto a, auto b) { return std::max(a, b); });
+    else
+      return __builtin_reduce_max(value());
+  }
+
+  /// Reduces the values within the vector using the min operator.
+  element_type reduceMin() const {
+    if constexpr (isEmulated || !__has_builtin(__builtin_reduce_min))
+      return std::reduce(data(), data() + size(),
+                         std::numeric_limits<element_type>::max(),
+                         [](auto a, auto b) { return std::min(a, b); });
+    else
+      return __builtin_reduce_min(value());
   }
 
   /// Gets the underlying vector value.
