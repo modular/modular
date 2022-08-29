@@ -43,7 +43,7 @@ public:
 
 /// This method atomically adds 'accumValue' into 'accum'. This exists because
 /// std::atomic doesn't provide a native add operation for floating point
-/// values. It only works on arithmetic values.
+/// values. atomicAdd only works on arithmetic values.
 template <typename T>
 static void atomicAdd(std::atomic<T> &accumValue, const T &value) {
   static_assert(std::is_arithmetic_v<T>,
@@ -65,6 +65,25 @@ static void atomicAdd(std::atomic<T> &accumValue, const T &value) {
   }
 }
 
+/// This method atomically multiplies 'prodValue' into 'prod'. This exists
+/// because std::atomic doesn't provide a native multiply operation. atomicMul
+/// only works on arithmetic values.
+template <typename T>
+static void atomicMul(std::atomic<T> &prodValue, const T &prod) {
+  static_assert(std::is_arithmetic_v<T>,
+                "the input type T must be an arithmetic type.");
+  // No multiplication operation exists in the C++17 standard so we perform the
+  // addition via a compare_exchange_weak loop.
+  T prevProdValue = prodValue;
+
+  LLCL::SpinWaiter<> waiter;
+  while (
+      !prodValue.compare_exchange_weak(prevProdValue, prevProdValue * prod)) {
+    // Wait a bit and retry.
+    waiter.wait();
+  }
+}
+
 /// This method atomically updates 'maxValue' to 'value' if it is less than it
 /// is already.  This exists because std::atomic doesn't provide a native max
 /// operation.
@@ -76,6 +95,22 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   SpinWaiter<> waiter;
   while (previousMax < value &&
          !maxValue.compare_exchange_weak(previousMax, value)) {
+    // Wait a bit and retry.
+    waiter.wait();
+  }
+}
+
+/// This method atomically updates 'minValue' to 'value' if it is greater than
+/// it is already.  This exists because std::atomic doesn't provide a native min
+/// operation.
+template <typename T>
+static void atomicMin(std::atomic<T> &minValue, const T &value) {
+  T previousMin = minValue;
+
+  // Note that compare_exchange_weak updates `previousMin` on failure.
+  LLCL::SpinWaiter<> waiter;
+  while (previousMin > value &&
+         !minValue.compare_exchange_weak(previousMin, value)) {
     // Wait a bit and retry.
     waiter.wait();
   }
