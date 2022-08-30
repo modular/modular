@@ -155,8 +155,8 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
   if (GeneratorOp parent = op->getParentOfType<GeneratorOp>();
-      succeeded(ParameterEvaluator::collectParameterReferences(
-          cond, parameterRefs))) {
+      parent && succeeded(ParameterEvaluator::collectParameterReferences(
+                    cond, parameterRefs))) {
     ArrayRef<ParamDeclAttr> generatorInputParams =
         getDeclParameterInfo(parent).first;
 
