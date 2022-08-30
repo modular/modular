@@ -99,11 +99,6 @@ def GeneratorOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-
-    /// Return an array of `ParamDeclAttr`s for the inputs and the array of
-    /// `ParamDeclAttr`s for the result parameters.
-    std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-    getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -139,11 +134,6 @@ def GeneratorInterfaceOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-
-    /// Return an array of `ParamDeclAttr`s for the inputs and the array of
-    /// `ParamDeclAttr`s for the result parameters.
-    std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-    getParameterInfo();
   }];
 
   let hasCustomAssemblyFormat = 1;

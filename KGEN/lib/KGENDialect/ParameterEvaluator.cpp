@@ -93,12 +93,12 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
   // Otherwise, we have constraints to evaluate.  Bind each of the input
   // parameter names.
   ParameterEvaluator evaluator;
-  auto inputParamDecls = getDeclParameterInfo(decl).first;
+  auto inputParamDecls = getParamDecls(decl);
   ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
-  for (auto [decl, value] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(decl.cast<ParamDeclAttr>(), value);
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
 
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {

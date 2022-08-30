@@ -157,8 +157,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   if (KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
       parent && succeeded(ParameterEvaluator::collectParameterReferences(
                     cond, parameterRefs))) {
-    ArrayRef<ParamDeclAttr> generatorInputParams =
-        getDeclParameterInfo(parent).first;
+    ArrayRef<ParamDeclAttr> generatorInputParams = getParamDecls(parent);
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
@@ -487,8 +486,8 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
 }
 
 /// Print a parameter list for a generator, kernel or interface.
-static void printParameterList(Operation *decl, OpAsmPrinter &p) {
-  auto [inputParams, outputParams] = getDeclParameterInfo(decl);
+static void printParameterList(KGENDeclInterface decl, OpAsmPrinter &p) {
+  auto [inputParams, outputParams] = decl.getParameterInfo();
 
   if (inputParams.empty() && outputParams.empty())
     return;
@@ -513,9 +512,8 @@ static void printParameterList(Operation *decl, OpAsmPrinter &p) {
 }
 
 /// Print a constraint list for a generator or interface.
-static void printConstraints(Operation *decl, OpAsmPrinter &p) {
-  ArrayRef<ConstraintAttr> constraints =
-      cast<KGENDeclInterface>(decl).getConstraints();
+static void printConstraints(KGENDeclInterface decl, OpAsmPrinter &p) {
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
   if (constraints.empty())
     return;
 
@@ -535,6 +533,9 @@ void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
                                   mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
 
+  // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
+  auto opDecl = cast<KGENDeclInterface>((Operation *)op);
+
   // Print the operation and the function name.
   auto funcName =
       op->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName())
@@ -545,14 +546,14 @@ void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
   if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
     p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
-  printParameterList(op, p);
+  printParameterList(opDecl, p);
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
   printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           GeneratorOp::getAttributeNames());
-  printConstraints(op, p);
+  printConstraints(opDecl, p);
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
@@ -654,9 +655,10 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
 
   auto [originatorInputParamDecls, originatorResultParamDecls] =
-      getDeclParameterInfo(originatorDecl);
+      // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
+      cast<KGENDeclInterface>((Operation *)originatorDecl).getParameterInfo();
   auto [interfaceInputParamDecls, interfaceResultParamDecls] =
-      getDeclParameterInfo(interfaceDecl);
+      interfaceDecl.getParameterInfo();
 
   if (verifyMatchingLists(originatorDecl.getArgumentTypes(),
                           interfaceDecl.getArgumentTypes(), originatorName,
@@ -682,7 +684,7 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
 
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 GeneratorOp::getParameterInfo() {
-  return getDeclParameterInfo(getOperation());
+  return {getParamDecls(), getResultParamDecls()};
 }
 
 ReturnOp GeneratorOp::getReturnOp() {
@@ -764,6 +766,11 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
   body->addArguments(signature.getInputs(), argLocs);
 }
 
+std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
+KernelOp::getParameterInfo() {
+  return {{}, getResultParamDecls()};
+}
+
 ReturnOp KernelOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
@@ -808,7 +815,7 @@ void KernelOp::setConstraintsAttr(ConstraintArrayAttr attr) {
 
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 GeneratorInterfaceOp::getParameterInfo() {
-  return getDeclParameterInfo(getOperation());
+  return {getParamDecls(), getResultParamDecls()};
 }
 
 /// Parses a KGEN generator interface.
@@ -849,8 +856,9 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
-  Operation *callee = symbolTable.lookupNearestSymbolFrom(*this, calleeAttr);
-  if (!isa_and_nonnull<GeneratorOp, KernelOp, GeneratorInterfaceOp>(callee))
+  auto callee = dyn_cast_or_null<KGENDeclInterface>(
+      symbolTable.lookupNearestSymbolFrom(*this, calleeAttr));
+  if (!callee)
     return emitError() << "'" << calleeAttr.getValue()
                        << "' does not reference a valid callee";
 
@@ -858,7 +866,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // results don't need to match, but the parameter names on the argument
   // bindings do.  The types always need to match.
   auto [calleeInputParamDecls, calleeOutputParamDecls] =
-      getDeclParameterInfo(callee);
+      callee.getParameterInfo();
 
   // Check the parameter values specified to the input parameters.
   ArrayRef<ParamBindAttr> callerInputParams = getParamValues();

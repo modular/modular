@@ -23,7 +23,7 @@ using namespace KGEN;
 
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 HLGeneratorOp::getParameterInfo() {
-  return getDeclParameterInfo(getOperation());
+  return {getParamDecls(), getResultParamDecls()};
 }
 
 ReturnOp HLGeneratorOp::getReturnOp() {
@@ -65,8 +65,8 @@ HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                        << "' does not reference a generator interface";
 
   // Result parameters need to match, but input parameters may be inferred.
-  auto resultParamDecls = getDeclParameterInfo(*this).second;
-  auto interfaceResultParamDecls = getDeclParameterInfo(interface).second;
+  auto resultParamDecls = getResultParamDecls();
+  auto interfaceResultParamDecls = interface.getResultParamDecls();
   return verifyParameterList(resultParamDecls, interfaceResultParamDecls,
                              "generator", *this, "interface", interface,
                              "result parameter");

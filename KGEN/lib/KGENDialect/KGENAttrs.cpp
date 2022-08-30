@@ -1389,24 +1389,6 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
   return {};
 }
 
-/// Given a kernel, generator, or generator interface operation, return an
-/// array of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s
-/// for the result parameters.  A concrete kernel will always never have input
-/// params.
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-KGEN::getDeclParameterInfo(Operation *decl) {
-  assert(isa<KGENDeclInterface>(decl) && "unknown declaration");
-  ArrayRef<ParamDeclAttr> declParams;
-  ArrayRef<ParamDeclAttr> resultParams;
-  // Kernels never have input parameters, but they can have output parameters.
-  if (!isa<KernelOp>(decl))
-    declParams = getParamDecls(decl);
-  if (auto resultAttr =
-          decl->getAttrOfType<ParamDeclArrayAttr>("resultParamDecls"))
-    resultParams = resultAttr.getValue();
-  return std::make_pair(declParams, resultParams);
-}
-
 //===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
