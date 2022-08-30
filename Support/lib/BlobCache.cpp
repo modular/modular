@@ -103,6 +103,8 @@ std::unique_ptr<BlobCacheBackend> M::getInMemoryBackend() {
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Provides a filesystem-backed backend that stores the buffers in binary files
+/// on disk.
 struct FilesystemBackend : public BlobCacheBackend {
   explicit FilesystemBackend(StringRef basePath) : basePath(basePath.str()) {}
 
@@ -136,7 +138,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     auto outputIter =
         std::copy(obj.getBufferStart(), obj.getBufferEnd(), buf.begin());
     // And compute the HMAC and copy that in as well.
-    SHA256Hash hash = hmacSHA256(obj.getBuffer(), integrityKey);
+    SHA256Hash hash = hmacSHA256(obj.getBuffer(), kIntegrityKey);
     std::copy(hash.begin(), hash.end(), outputIter);
     return success();
   }
@@ -165,7 +167,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     // Get a StringRef of the contents without the HMAC.
     StringRef contents(contentsAndHMAC.begin(),
                        contentsAndHMAC.size() - sha256Bytes);
-    SHA256Hash hmac = hmacSHA256(contents, integrityKey);
+    SHA256Hash hmac = hmacSHA256(contents, kIntegrityKey);
     auto storedHMACRange = llvm::make_range(
         contentsAndHMAC.begin() + contents.size(), contentsAndHMAC.end());
 
@@ -190,8 +192,11 @@ struct FilesystemBackend : public BlobCacheBackend {
     return std::filesystem::absolute(filepath);
   }
 
-  static constexpr llvm::StringLiteral integrityKey =
+  /// This is a CSPRNG-generated 32-byte string. It's used for integrity
+  /// checking in the HMAC.
+  static constexpr llvm::StringLiteral kIntegrityKey =
       "bedcaea9f09fa9fe565a8088ea66547c06c7c8e9c47fa46e0fb768a157d640a6";
+  /// The base path for the filesystem cache.
   std::string basePath;
 };
 } // namespace

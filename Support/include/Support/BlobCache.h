@@ -12,11 +12,11 @@
 #include "llvm/Support/MemoryBufferRef.h"
 
 namespace M {
-/// This class is the interface for a backend for a BlobCache. The backend
-/// contains a pointer to its delegate, which is meant to be used as an option
-/// if this backend has a cache miss. This means that the backends should be
-/// ordered on priority - i.e. have an in-memory backend delegate to a remote
-/// backend, not the other way around!
+/// This class is the backend interface for a BlobCache. The backend contains a
+/// pointer to its delegate, which is meant to be used as an option if this
+/// backend has a cache miss. This means that the backends should be ordered on
+/// priority - i.e. have an in-memory backend delegate to a remote backend, not
+/// the other way around!
 ///
 /// Conceptually, the backends form a linked-list that's sorted in priority
 /// order that the BlobCache below will use to find an item.
@@ -39,7 +39,7 @@ public:
 
   /// Overwrite the current delegate.
   void setDelegate(std::unique_ptr<BlobCacheBackend> &&d) {
-    delegate = std::forward<std::unique_ptr<BlobCacheBackend> &&>(d);
+    delegate = std::move(d);
   }
 
 protected:
@@ -80,8 +80,7 @@ template <typename KeyInfo>
 class BlobCache {
 public:
   explicit BlobCache(std::unique_ptr<BlobCacheBackend> &&backendList)
-      : backendList(
-            std::forward<std::unique_ptr<BlobCacheBackend> &&>(backendList)) {}
+      : backendList(std::move(backendList)) {}
 
   using KeyTy = typename KeyInfo::KeyTy;
 
