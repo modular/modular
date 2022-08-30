@@ -100,11 +100,11 @@ public:
 
   /// These are the bindings used to produce the kernel.  The results are
   /// transitively flattened, so we don't need to maintain a tree of bindings.
-  SmallDenseMap<GeneratorAndInputParamsPair, KernelOp> bindings;
+  SmallDenseMap<DeclAndInputParamsPair, KernelOp> bindings;
 
   /// If we have a binding for the specified generator+InputParamSet, return it,
   /// otherwise return null.
-  KernelOp getBinding(GeneratorAndInputParamsPair key) const {
+  KernelOp getBinding(DeclAndInputParamsPair key) const {
     auto it = bindings.find(key);
     return it != bindings.end() ? it->second : KernelOp();
   }
@@ -116,13 +116,13 @@ public:
   /// Declare that we're resolving the specified `declAndInputParams` to a
   /// specified callee.  The callee is known to have bindings that are
   /// consistent with ours, but may have additional entries to merge in.
-  void addBinding(GeneratorAndInputParamsPair declAndInputParams,
+  void addBinding(DeclAndInputParamsPair declAndInputParams,
                   const ElaboratedKernel &newCallee);
 
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  void addOneBinding(GeneratorAndInputParamsPair declAndInputParams,
+  void addOneBinding(DeclAndInputParamsPair declAndInputParams,
                      KernelOp result) {
     auto &entry = bindings[declAndInputParams];
     assert((entry == KernelOp() || entry == result) &&
@@ -161,9 +161,8 @@ bool ElaboratedKernel::isConsistentWith(const ElaboratedKernel &other) const {
 /// Declare that we're resolving the specified `declAndInputParams` to a
 /// specified callee.  The callee is known to have bindings that are
 /// consistent with ours, but may have additional entries to merge in.
-void ElaboratedKernel::addBinding(
-    GeneratorAndInputParamsPair declAndInputParams,
-    const ElaboratedKernel &newCallee) {
+void ElaboratedKernel::addBinding(DeclAndInputParamsPair declAndInputParams,
+                                  const ElaboratedKernel &newCallee) {
 
   // Remember the generator+inputParams to resolved callee binding.
   addOneBinding(declAndInputParams, newCallee.kernel);
@@ -176,11 +175,6 @@ void ElaboratedKernel::addBinding(
 
 using ElaboratedKernelOrCalleeError =
     std::variant<ElaboratedKernel, CalleeExpansionError>;
-
-/// This typedef represents a kernel/generator declaration + a set of input
-/// parameters that provide a complete binding for something that can be
-/// resolved.
-using GeneratorAndInputParamsPair = std::pair<Operation *, ArrayAttr>;
 
 //===----------------------------------------------------------------------===//
 // Elaborator class definition
@@ -211,7 +205,7 @@ public:
   /// `insertionPoint` is always a point in the primary module where a new
   /// kernel should be placed if necessary.
   ArrayRef<ElaboratedKernelOrCalleeError>
-  getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
+  getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                        Operation *insertionPoint);
 
   /// Insert a variant of an existing kernel into the primary file.
@@ -236,14 +230,14 @@ private:
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
   SmallVector<ElaboratedKernelOrCalleeError>
-  specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
+  specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
   /// Specialize a kernel interface with the specified input parameters and
   /// return the generated kernel.  `insertionPoint` is always a point in the
   /// primary module where a new kernel should be placed if necessary.
   SmallVector<ElaboratedKernelOrCalleeError>
-  specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
+  specializeInterface(DeclAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
   SymbolTable &getPrimaryModuleSymbolTable() {
@@ -266,8 +260,7 @@ private:
   /// This is a cache of already-instantiated declarations.  The key is the
   /// kernel/generator/interface and input parameters, the result are
   /// all-possible kernels that could be generated from this.
-  DenseMap<GeneratorAndInputParamsPair,
-           SmallVector<ElaboratedKernelOrCalleeError>>
+  DenseMap<DeclAndInputParamsPair, SmallVector<ElaboratedKernelOrCalleeError>>
       generatedKernels;
 
   /// This keeps track of kernels that were found to be non viable and need to
@@ -360,12 +353,11 @@ private:
   LogicalResult processParamAssertOp(ParamAssertOp op);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
-  void
-  completeCallOpProcessing(CallOp call,
-                           GeneratorAndInputParamsPair calleeAndInputParams,
-                           const ElaboratedKernel &newCallee);
+  void completeCallOpProcessing(CallOp call,
+                                DeclAndInputParamsPair calleeAndInputParams,
+                                const ElaboratedKernel &newCallee);
   void spawnNewKernelClone(CallOp call,
-                           GeneratorAndInputParamsPair calleeAndInputParams,
+                           DeclAndInputParamsPair calleeAndInputParams,
                            const ElaboratedKernel &callee,
                            SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
@@ -529,14 +521,14 @@ LogicalResult ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more KernelOp's, depending on what the
   // callee is.
-  Operation *callee =
-      elaborator.lookupCallee(call.getCalleeAttr(), sourceModule);
+  auto callee = dyn_cast_or_null<KGENDeclInterface>(
+      elaborator.lookupCallee(call.getCalleeAttr(), sourceModule));
   if (!callee)
     return error(call->getLoc(),
                  Twine("could not find callee '@") +
                      call.getCalleeAttr().getLeafReference().strref() + "'");
 
-  GeneratorAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
+  DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
   // If we already have a binding for this decl/inputParam set, then reuse the
   // consistent callee.
@@ -596,7 +588,7 @@ LogicalResult ParameterRewriter::processCallOp(
 }
 
 void ParameterRewriter::completeCallOpProcessing(
-    CallOp call, GeneratorAndInputParamsPair calleeAndInputParams,
+    CallOp call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedKernel &newCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
@@ -635,7 +627,7 @@ void ParameterRewriter::completeCallOpProcessing(
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewKernelClone(
-    CallOp call, GeneratorAndInputParamsPair calleeAndInputParams,
+    CallOp call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedKernel &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
 
@@ -793,7 +785,7 @@ Elaborator::specializeKernel(KernelOp kernel, ModuleOp sourceModule) {
 /// point in the primary module where a new kernel should be placed if
 /// necessary.
 SmallVector<ElaboratedKernelOrCalleeError>
-Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
+Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
 
@@ -846,7 +838,7 @@ Elaborator::specializeGenerator(GeneratorAndInputParamsPair declAndInputParams,
 /// return the generated kernel.  `insertionPoint` is always a point in the
 /// primary module where a new kernel should be placed if necessary.
 SmallVector<ElaboratedKernelOrCalleeError>
-Elaborator::specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
+Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
   SmallVector<ElaboratedKernelOrCalleeError> result;
@@ -880,7 +872,7 @@ Elaborator::specializeInterface(GeneratorAndInputParamsPair declAndInputParams,
 /// `insertionPoint` is always a point in the primary module where a new
 /// kernel should be placed if necessary.
 ArrayRef<ElaboratedKernelOrCalleeError>
-Elaborator::getAllInstantiations(GeneratorAndInputParamsPair declAndInputParams,
+Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  Operation *insertionPoint) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
