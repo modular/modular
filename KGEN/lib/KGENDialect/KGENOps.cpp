@@ -154,10 +154,9 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // signature of the generator.  If so, we can fold it into the constraint
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
-  if (Operation *parent = op->getParentWithTrait<KGENDeclInterface::Trait>();
+  if (KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
       parent && succeeded(ParameterEvaluator::collectParameterReferences(
                     cond, parameterRefs))) {
-    auto parentDecl = cast<KGENDeclInterface>(parent);
     ArrayRef<ParamDeclAttr> generatorInputParams =
         getDeclParameterInfo(parent).first;
 
@@ -170,10 +169,10 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
           });
         })) {
       // Ok, great, add this to the trait list of the enclosing operation.
-      SmallVector<ConstraintAttr> constraints(parentDecl.getConstraints());
+      SmallVector<ConstraintAttr> constraints(parent.getConstraints());
       constraints.push_back(
           ConstraintAttr::get(cond, op.getMessageAttr(), op.getLoc()));
-      parentDecl.setConstraintsAttr(
+      parent.setConstraintsAttr(
           rewriter.getAttr<ConstraintArrayAttr>(constraints));
       op.erase();
       return success();
