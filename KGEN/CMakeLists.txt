@@ -95,7 +95,7 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "OBJECT" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
 
