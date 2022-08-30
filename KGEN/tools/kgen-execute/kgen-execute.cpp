@@ -65,6 +65,7 @@ struct ProcessBuffer {
 
       // And now we diverge.
       switch (clOptions.cmd) {
+      case Command::kGenLibraryFile:
       case Command::kElaborate:
         break;
       case Command::kExecute: {
