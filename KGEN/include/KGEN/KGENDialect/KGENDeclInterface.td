@@ -17,6 +17,13 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
   let cppNamespace = "::M::KGEN";
 
   let methods = [
+    /// Parameters.
+    InterfaceMethod<[{
+      Return the list of input and output parameters.
+    }], "std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>",
+        "getParameterInfo">,
+
+    /// Constraints.
     InterfaceMethod<[{
       Return the list of constraints.
     }], "ArrayRef<ConstraintAttr>", "getConstraints">,

@@ -30,12 +30,6 @@ inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
 }
 
-/// Given a kernel, generator, or generator interface operation, return an array
-/// of `ParamDeclAttr`s for the inputs and the array of `ParamDeclAttr`s for the
-/// result parameters.  A kernel will always never have input parameters.
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-getDeclParameterInfo(Operation *decl);
-
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
