@@ -10,6 +10,7 @@
 
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "KGEN/KGENDialect/KGENDeclInterface.td"
 
 //===----------------------------------------------------------------------===//
 // HLGeneratorOp
@@ -19,7 +20,8 @@ def HLGeneratorOp
   : HLKGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                            Symbol, IsolatedFromAbove,
                            SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
-                           DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+                           DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                           DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "High level kernel generator definition";
 
   /// If the `implements` attribute is present then this generator is an

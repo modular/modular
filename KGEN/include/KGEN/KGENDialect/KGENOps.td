@@ -13,6 +13,7 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "KGEN/KGENDialect/KGENDeclInterface.td"
 
 //===----------------------------------------------------------------------===//
 // KernelOp
@@ -21,7 +22,8 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 def KernelOp
   : KGENOp<"kernel", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                       Symbol, IsolatedFromAbove,
-                      SingleBlockImplicitTerminator<"ReturnOp">]> {
+                      SingleBlockImplicitTerminator<"ReturnOp">,
+                      DeclareOpInterfaceMethods<KGENDeclInterface, ["getConstraints"]>]> {
   let summary = "Concrete kernel definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
@@ -69,7 +71,8 @@ def GeneratorOp
   : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
                          SingleBlockImplicitTerminator<"ReturnOp">,
-                         DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+                         DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                         DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "Kernel generator definition";
 
   /// If the `implements` attribute is present then this generator is an
@@ -114,7 +117,7 @@ def GeneratorOp
 def GeneratorInterfaceOp
   : KGENOp<"generator.interface",
            [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
-            IsolatedFromAbove]> {
+            IsolatedFromAbove, DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
