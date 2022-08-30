@@ -19,6 +19,7 @@ class ExecutionEngine;
 
 /// What to do with a given kernel.
 enum class Command {
+  kElaborate,
   kEmit,
   kExecute,
 };
@@ -64,6 +65,7 @@ public:
   cl::opt<Command> cmd{
       cl::desc("The command to execute"),
       cl::values(
+          clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
           clEnumValN(Command::kEmit, "emit", "Emit kernels as object files."),
           clEnumValN(Command::kExecute, "execute", "Execute kernels.")),
       llvm::cl::Required};
