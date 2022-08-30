@@ -13,6 +13,7 @@
 
 #include "KGEN/HLKGENDialect/HLKGENDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
