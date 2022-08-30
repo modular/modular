@@ -14,14 +14,9 @@ function(add_msupport_test target)
     TOP_LEVEL_CHECK check-support
     LINK_LIBS PRIVATE
     MSupport
-    llvm_gtest_main
-    llvm_gtest
     )
-    # TODO: look into why Google Test through LLVM triggers
-    # declaration requiring a global constructor for TEST macro
-  target_compile_options(${target} PRIVATE -Wno-global-constructors)
 endfunction()
 
-# TODO: change add_modular_test to create one executable for a fileset
 add_msupport_test(HMACTest HMACTest.cpp)
 add_msupport_test(BlobCacheTest BlobCacheTest.cpp)
+
