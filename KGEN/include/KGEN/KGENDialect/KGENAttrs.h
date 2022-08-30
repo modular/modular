@@ -40,11 +40,6 @@ getDeclParameterInfo(Operation *decl);
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 
-/// Given a kernel, generator or interface operation, return the constraints
-/// imposed on it, which is an expression and string describing the problem when
-/// the constraint fails.  For a kernel this is always empty.
-ArrayRef<ConstraintAttr> getDeclConstraints(Operation *decl);
-
 /// We expect all parameter expressions to simplify down to concrete constants
 /// after elaboration.  We don't want anything left as a ParamOperatorAttr or
 /// ParamDeclRefAttr.

@@ -515,7 +515,8 @@ static void printParameterList(Operation *decl, OpAsmPrinter &p) {
 
 /// Print a constraint list for a generator or interface.
 static void printConstraints(Operation *decl, OpAsmPrinter &p) {
-  ArrayRef<ConstraintAttr> constraints = getDeclConstraints(decl);
+  ArrayRef<ConstraintAttr> constraints =
+      cast<KGENDeclInterface>(decl).getConstraints();
   if (constraints.empty())
     return;
 

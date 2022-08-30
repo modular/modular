@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -85,7 +86,8 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
   Operation *decl = declAndInputParams.first;
 
   // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints = getDeclConstraints(decl);
+  ArrayRef<ConstraintAttr> constraints =
+      cast<KGENDeclInterface>(decl).getConstraints();
   if (constraints.empty())
     return success();
 
