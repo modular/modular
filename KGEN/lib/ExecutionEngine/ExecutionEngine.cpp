@@ -7,7 +7,9 @@
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "Support/BlobCache.h"
 #include "Support/ErrorOr.h"
+#include "Support/VCSRevision.h"
 #include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
@@ -20,7 +22,9 @@
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/Support/TargetSelect.h"
+#include <filesystem>
 
 using namespace M;
 using namespace KGEN;
@@ -29,11 +33,28 @@ using namespace KGEN;
 // ObjectCache
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// Basic string key info. This uses SHA256 as the hash function to provide
+/// strong collision resistance.
+struct StringKeyInfo {
+  using KeyTy = StringRef;
+
+  static std::string hashKey(KeyTy key) {
+    ArrayRef<uint8_t> bytes((const uint8_t *)key.data(), key.size());
+    return llvm::toHex(llvm::SHA256::hash(bytes), true);
+  }
+};
+} // namespace
+
 namespace M::KGEN::detail {
 /// Provides a simple object cache. Users shouldn't be interacting directly with
 /// this cache, they should interact with `ExecutionEngine` below.
 class ObjectCache : public llvm::ObjectCache {
 public:
+  template <typename... Args>
+  explicit ObjectCache(Args &&...args)
+      : storage(std::forward<Args &&>(args)...) {}
+
   /// notifyObjectCompiled - Provides a pointer to compiled code for Module M.
   void notifyObjectCompiled(const llvm::Module *m,
                             llvm::MemoryBufferRef obj) override;
@@ -48,37 +69,37 @@ public:
   std::unique_ptr<llvm::MemoryBuffer> getObject(llvm::StringRef name);
 
   /// Check if the cache has the object with the given name.
-  bool hasObject(llvm::StringRef name) { return storage.count(name) != 0; }
+  bool hasObject(llvm::StringRef name) { return storage.contains(name); }
 
 private:
   /// Map of llvm::Module name to compiled object in the form of a
   /// llvm::MemoryBuffer.
-  llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> storage;
+  BlobCache<StringKeyInfo> storage;
 };
 } // namespace M::KGEN::detail
 
 void detail::ObjectCache::notifyObjectCompiled(const llvm::Module *m,
                                                llvm::MemoryBufferRef obj) {
-  storage[m->getModuleIdentifier()] = llvm::MemoryBuffer::getMemBufferCopy(
-      obj.getBuffer(), obj.getBufferIdentifier());
+  // report_fatal_error here is not great, but the API doesn't allow us to
+  // report an error any other way!
+  if (auto err = storage.insert(m->getModuleIdentifier(), obj))
+    llvm::report_fatal_error(err.getError());
 }
 
 std::unique_ptr<llvm::MemoryBuffer>
 detail::ObjectCache::getObject(const llvm::Module *m) {
   auto found = storage.find(m->getModuleIdentifier());
-  if (found != storage.end())
-    return llvm::MemoryBuffer::getMemBufferCopy(
-        found->second->getBuffer(), found->second->getBufferIdentifier());
-  return nullptr;
+  if (failed(found))
+    return nullptr;
+  return std::move(*found);
 }
 
 std::unique_ptr<llvm::MemoryBuffer>
 detail::ObjectCache::getObject(llvm::StringRef name) {
   auto found = storage.find((name + "_module").str());
-  if (found != storage.end())
-    return llvm::MemoryBuffer::getMemBufferCopy(
-        found->second->getBuffer(), found->second->getBufferIdentifier());
-  return nullptr;
+  if (failed(found))
+    return nullptr;
+  return std::move(*found);
 }
 
 /// Setup the machine properties from the current architecture.
@@ -147,8 +168,17 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
 }
 
 ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
-    : ctx(std::make_unique<llvm::LLVMContext>()),
-      cache(new KGEN::detail::ObjectCache), jit(std::move(jit)) {}
+    : ctx(std::make_unique<llvm::LLVMContext>()), jit(std::move(jit)) {
+  auto basePath =
+      llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("");
+
+  std::filesystem::path filepath(basePath);
+  filepath /= ".kgen_cache";
+  filepath /= MODULAR_VCS_VERSION;
+
+  cache = std::make_unique<KGEN::detail::ObjectCache>(
+      getDefaultBackendChain(filepath.string()));
+}
 
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
