@@ -18,4 +18,5 @@ function(add_msupport_test target)
 endfunction()
 
 add_msupport_test(HMACTest HMACTest.cpp)
+add_msupport_test(BlobCacheTest BlobCacheTest.cpp)
 
