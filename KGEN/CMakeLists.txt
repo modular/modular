@@ -40,6 +40,49 @@ add_subdirectory(tools/kgen)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
 
+# This function reads ${KGEN_LINK_LIBS} and puts the include flags into
+# ${KGEN_INCLUDE_FLAGS}.
+macro(_setup_libs)
+  set(KGEN_LIB_DEPENDS "")
+  foreach (lib ${KGEN_LINK_LIBS})
+    if (NOT TARGET ${lib})
+      message(FATAL_ERROR "${lib} is not a target, it can't be linked")
+    endif ()
+    get_target_property(lib_include_dir ${lib} INCLUDE_DIRECTORIES)
+    list(APPEND KGEN_INCLUDE_FLAGS "-I=${lib_include_dir}")
+    list(APPEND KGEN_LIB_DEPENDS "${lib}")
+  endforeach ()
+endmacro()
+
+# This function takes a target name, a single source file, and a list of
+# targets to link. It generates the pre-elaboration library files to be used
+# by other kgen files.
+#
+#  add_kgen_library(lib
+#    SOURCE library.mlir
+#    LINK_LIBS someother-lib)
+#
+# This attaches the directory for the output to the target, so you can simply
+# specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
+# and the include flags will be setup correctly.
+function(add_kgen_library target)
+  cmake_parse_arguments(KGEN "" "SOURCE" "LINK_LIBS" ${ARGN})
+
+  _setup_libs()
+
+  get_filename_component(outfile ${KGEN_SOURCE} NAME_WLE)
+
+  add_custom_command(
+    OUTPUT "${outfile}.mlir"
+    COMMAND $<TARGET_FILE:kgen> -gen-lib ${KGEN_SOURCE} ${KGEN_INCLUDE_FLAGS} -o "${outfile}.mlir"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
+  )
+
+  add_custom_target(${target} DEPENDS "${outfile}.mlir")
+  set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
+endfunction()
+
 # This function takes a target name, a single source file, and a list of
 # kernels to be processed. It cannot execute kernels, but it will generate
 # the CMake targets needed to depend on them from C/C++ code. Usage:
@@ -47,23 +90,14 @@ add_subdirectory(tools/kgen-execute)
 #  add_kgen_kernel(exp
 #    SOURCE exp.mlir
 #    KERNELS run_exp
-#    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIRECTORY}/test/kernels")
+#    LINK_LIBS lib)
 #
-# This function also respects `include_directories` directives whenever possible.
+# This function will pull its include flags from the linked libs to avoid
+# having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "" "SOURCE" "KERNELS;INCLUDE_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN "OBJECT" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
 
-  # Get the include_directories directives that are scoped to this file and below.
-  get_property(KGEN_INCLUDES DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
-
-  set(KGEN_INCLUDE_FLAGS "")
-  foreach (dir ${KGEN_INCLUDES})
-    list(APPEND KGEN_INCLUDE_FLAGS "-I=${dir}")
-  endforeach ()
-
-  foreach (dir ${KGEN_INCLUDE_DIRS})
-    list(APPEND KGEN_INCLUDE_FLAGS "-I=${dir}")
-  endforeach ()
+  _setup_libs()
 
   # Add a target that controls emission of all of the kernels.
   set(OBJS "")
@@ -74,7 +108,7 @@ function(add_kgen_kernel target)
       OUTPUT "${kernel}.h"
       COMMAND $<TARGET_FILE:kgen> -emit -kernel=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      DEPENDS kgen ${KGEN_SOURCE}
+      DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
     )
 
     add_library(${target}_${kernel} ${object_file_name})
