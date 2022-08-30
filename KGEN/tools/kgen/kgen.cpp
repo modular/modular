@@ -65,7 +65,7 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   // TODO: change this to `true` when we emit the module in its binary format.
-  auto outFile = opts.getOutputFile(false);
+  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false);
   if (!outFile)
     return mlir::failure();
 
