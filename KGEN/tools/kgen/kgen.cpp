@@ -62,6 +62,18 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
   return elaborate;
 }
 
+/// Emit the IR for `theModule` to a file.
+static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
+  // TODO: change this to `true` when we emit the module in its binary format.
+  auto outFile = opts.getOutputFile(false);
+  if (!outFile)
+    return mlir::failure();
+
+  theModule->print(outFile->os());
+  outFile->keep();
+  return mlir::success();
+}
+
 /// Runs the tool pipeline on the file fragment passed in. The pipeline does not
 /// output to the specific ostream provided to it, rather it opens and writes to
 /// files that are designated by the kernels it operates on.
@@ -96,6 +108,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Run the pass manager.
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
+
+  // If all we're doing is elaborating, we're done now.
+  if (clOptions.cmd == Command::kElaborate)
+    return emitModuleIR(*theModule, clOptions);
 
   // Now create the execution engine so we can JIT.
   auto engineOr = ExecutionEngine::create();
