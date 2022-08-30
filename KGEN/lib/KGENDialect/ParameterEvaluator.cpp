@@ -82,12 +82,11 @@ ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(TypedAttr expr) {
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
 ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
-    GeneratorAndInputParamsPair declAndInputParams) {
-  Operation *decl = declAndInputParams.first;
+    DeclAndInputParamsPair declAndInputParams) {
+  KGENDeclInterface decl = declAndInputParams.first;
 
   // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints =
-      cast<KGENDeclInterface>(decl).getConstraints();
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
   if (constraints.empty())
     return success();
 

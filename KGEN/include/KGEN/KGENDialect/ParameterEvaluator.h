@@ -11,11 +11,12 @@
 #include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
+class KGENDeclInterface;
 
 /// This typedef represents a kernel/generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
 /// resolved.
-using GeneratorAndInputParamsPair = std::pair<Operation *, ArrayAttr>;
+using DeclAndInputParamsPair = std::pair<KGENDeclInterface, ArrayAttr>;
 
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify parameter expressions based on those values.
@@ -29,7 +30,7 @@ public:
   /// constraints against inputParamValues.  If the constraints are met, return
   /// success, otherwise return why they aren't.
   static ErrorOrSuccess
-  evaluateConstraints(GeneratorAndInputParamsPair declAndInputParams);
+  evaluateConstraints(DeclAndInputParamsPair declAndInputParams);
 
   /// Given a parameter expression, walk it and return any references to named
   /// parameters.  This fails if an unknown parameter expression exists.
