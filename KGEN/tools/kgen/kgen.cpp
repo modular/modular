@@ -103,14 +103,17 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerHLKGENPass());
   pm.addPass(mlir::createCanonicalizerPass());
-  pm.addPass(createElaboratorPass(clOptions));
+  if (clOptions.cmd != Command::kGenLibraryFile)
+    pm.addPass(createElaboratorPass(clOptions));
 
   // Run the pass manager.
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
 
-  // If all we're doing is elaborating, we're done now.
-  if (clOptions.cmd == Command::kElaborate)
+  // If all we're doing is generating a library file or elaborating, we're done
+  // now.
+  if (clOptions.cmd == Command::kGenLibraryFile ||
+      clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
   // Now create the execution engine so we can JIT.
@@ -151,6 +154,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (Optional<CommandLineKernel> clKernel =
             clOptions.shouldHandleKernel(k)) {
       switch (clOptions.cmd) {
+      case Command::kGenLibraryFile:
       case Command::kElaborate:
         break;
       case Command::kEmit: {
