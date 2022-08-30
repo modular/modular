@@ -65,6 +65,8 @@ struct ProcessBuffer {
 
       // And now we diverge.
       switch (clOptions.cmd) {
+      case Command::kElaborate:
+        break;
       case Command::kExecute: {
         if (auto err = k.verifyKernelSignature(kernel.getFunctionType()))
           return failure(clOptions.reportError(err.getError()));

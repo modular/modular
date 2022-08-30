@@ -151,6 +151,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (Optional<CommandLineKernel> clKernel =
             clOptions.shouldHandleKernel(k)) {
       switch (clOptions.cmd) {
+      case Command::kElaborate:
+        break;
       case Command::kEmit: {
         // If the filename is not provided, then default to the current working
         // directory.
