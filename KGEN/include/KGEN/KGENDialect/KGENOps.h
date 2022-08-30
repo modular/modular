@@ -35,10 +35,6 @@ enum class GeneratorOrKernelKind {
   hlgenerator,
 };
 
-/// Given an arbitrary MLIR operation, classify it into a declaration kind or
-/// return None if unknown.
-Optional<GeneratorOrKernelKind> classifyDecl(Operation *op);
-
 /// Parse the MLIR syntax for a kgen.generator, kgen.kernel and related
 /// operators.
 ParseResult parseGeneratorOrKernel(OpAsmParser &parser, OperationState &result,

@@ -25,22 +25,6 @@ using mlir::OptionalParseResult;
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
 
-/// Given an arbitrary MLIR operation, classify it into a declaration kind or
-/// return None if unknown.
-Optional<GeneratorOrKernelKind> KGEN::classifyDecl(Operation *op) {
-  if (isa<KernelOp>(op))
-    return GeneratorOrKernelKind::kernel;
-  if (isa<GeneratorOp>(op))
-    return GeneratorOrKernelKind::generator;
-
-  if (isa<GeneratorInterfaceOp>(op))
-    return GeneratorOrKernelKind::interface;
-  // Classify hlkgen.generator even though kgen cannot depend on hlkgen libs.
-  if (op->getName().getStringRef() == "hlkgen.generator")
-    return GeneratorOrKernelKind::hlgenerator;
-  return {};
-}
-
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
                                                   Type &type) {
   if (failed(parser.parseOptionalColon()))
@@ -1411,7 +1395,7 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
 /// params.
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
 KGEN::getDeclParameterInfo(Operation *decl) {
-  assert(classifyDecl(decl).has_value() && "unknown declaration");
+  assert(isa<KGENDeclInterface>(decl) && "unknown declaration");
   ArrayRef<ParamDeclAttr> declParams;
   ArrayRef<ParamDeclAttr> resultParams;
   // Kernels never have input parameters, but they can have output parameters.
@@ -1421,16 +1405,6 @@ KGEN::getDeclParameterInfo(Operation *decl) {
           decl->getAttrOfType<ParamDeclArrayAttr>("resultParamDecls"))
     resultParams = resultAttr.getValue();
   return std::make_pair(declParams, resultParams);
-}
-
-ArrayRef<ConstraintAttr> KGEN::getDeclConstraints(Operation *decl) {
-  // Kernels never have constraints.
-  if (isa<KernelOp>(decl))
-    return {};
-
-  // Must be a generator or interface.
-  assert(classifyDecl(decl).has_value() && "unknown declaration");
-  return decl->getAttrOfType<ConstraintArrayAttr>("constraints").getValue();
 }
 
 //===----------------------------------------------------------------------===//
