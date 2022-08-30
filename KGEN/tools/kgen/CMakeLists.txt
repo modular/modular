@@ -6,6 +6,7 @@
 
 add_modular_tool(kgen
   EmitKernelHeader.cpp
+  EmitKernelObject.cpp
   kgen.cpp
 
   LINK_LIBS PRIVATE
@@ -18,4 +19,4 @@ add_modular_tool(kgen
   POPDialect
 
   MLIRParser
-  )
+)

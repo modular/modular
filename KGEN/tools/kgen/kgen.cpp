@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "EmitKernelHeader.h"
+#include "EmitKernelObject.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
@@ -59,28 +60,6 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
     llvm::report_fatal_error("unable to initialize elaborator options");
 
   return elaborate;
-}
-
-/// Given a kernel, emit the object file to `objPath`.
-static LogicalResult emitObjectForKernel(ExecutionEngine &engine, KernelOp k,
-                                         const std::filesystem::path &objPath) {
-  // Open the output file so we can emit to it.
-  std::string err;
-  auto outFile = mlir::openOutputFile(objPath.string(), &err);
-  if (!outFile)
-    return mlir::emitError(k.getLoc(), err);
-
-  auto objOr = engine.getObject(k);
-  if (failed(objOr))
-    return mlir::emitError(k.getLoc(),
-                           "could not get the object for the kernel '@" +
-                               k.getName() + "': " + objOr.getError());
-
-  std::unique_ptr<llvm::MemoryBuffer> obj = std::move(*objOr);
-  outFile->os().write(obj->getBufferStart(), obj->getBufferSize());
-  outFile->keep();
-
-  return mlir::success();
 }
 
 /// Runs the tool pipeline on the file fragment passed in. The pipeline does not
