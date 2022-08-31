@@ -46,6 +46,10 @@ static constexpr size_t kPreferredSIMDBitWidth = 128;
 template <typename T, size_t Width>
 class SIMDVector;
 
+//===----------------------------------------------------------------------===//
+// is_simd_vector
+//===----------------------------------------------------------------------===//
+
 template <typename...>
 struct is_simd_vector : std::false_type {};
 template <typename T, size_t Width>
@@ -53,6 +57,10 @@ struct is_simd_vector<SIMDVector<T, Width>> : std::true_type {};
 
 template <typename... T>
 inline constexpr bool is_simd_vector_v = is_simd_vector<T...>::value;
+
+//===----------------------------------------------------------------------===//
+// SIMDVector
+//===----------------------------------------------------------------------===//
 
 /// The SIMDVector class is an architecture independent wrapper for operating on
 /// SIMD types. Width is the number of elements in the SIMDVector (and not the
