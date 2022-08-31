@@ -94,9 +94,9 @@ static void cloneRegion(Region &original, Region &dest,
           [&](Value operand) { return mapper.lookupOrDefault(operand); });
       clone.setOperands(operands);
 
-      for (auto regions : llvm::zip(source.getRegions(), clone.getRegions()))
-        cloneRegion(std::get<0>(regions), std::get<1>(regions), mapper,
-                    operationMap);
+      for (auto [sourceRegion, destRegion] :
+           llvm::zip(source.getRegions(), clone.getRegions()))
+        cloneRegion(sourceRegion, destRegion, mapper, operationMap);
     }
   }
 }
