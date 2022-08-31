@@ -76,10 +76,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype>()  {
   %19 = kgen.param.constant: i1 = <xor(int1, 1)>
 
   // CHECK: = kgen.param.constant : i1 = <not(int1)>
-  %a19 = kgen.param.constant: i1 = <not(int1)>
+  %20 = kgen.param.constant: i1 = <not(int1)>
 
   // CHECK: = kgen.param.constant : i1 = <ne(:dtype type, f32)>
-  %20 = kgen.param.constant: i1 = <xor(eq(:dtype type, f32), 1)>
+  %21 = kgen.param.constant: i1 = <xor(eq(:dtype type, f32), 1)>
 
   kgen.return
 }
@@ -118,6 +118,36 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 
   // CHECK: = kgen.param.constant = <shl(1, 33)>
   %9 = kgen.param.constant = <shl(1, 33)>
+
+  // CHECK: = kgen.param.constant : i1 = <not(in(p1, [add(p2, 1), p2, 1, 3]))>
+  %10 = kgen.param.constant: i1 = <not_in(p1, [3, 1, p2, add(p2, 1), 1])>
+
+  // CHECK: = kgen.param.constant : i1 = <1>
+  %11 = kgen.param.constant: i1 = <not_in(0, [1, 2])>
+
+  // CHECK: = kgen.param.constant : i1 = <1>
+  %12 = kgen.param.constant: i1 = <not_in(p1, [])>
+
+  // CHECK: = kgen.param.constant : i1 = <0>
+  %13 = kgen.param.constant: i1 = <not_in(p1, [p1, 1])>
+
+  // CHECK: = kgen.param.constant : i1 = <ne(p1, 1)>
+  %14 = kgen.param.constant: i1 = <not_in(p1, [1])>
+
+  // CHECK: = kgen.param.constant : i1 = <not(in(:dtype f32, [type, f64]))>
+  %15 = kgen.param.constant: i1 = <not_in(:dtype f32, [f64, type, f64, type])>
+
+  // CHECK: = kgen.param.constant : i1 = <1>
+  %16 = kgen.param.constant: i1 = <not_in(:dtype f32, [si64, f64])>
+
+  // CHECK: = kgen.param.constant : i1 = <1>
+  %17 = kgen.param.constant: i1 = <not_in(:dtype type, [])>
+
+  // CHECK: = kgen.param.constant : i1 = <0>
+  %18 = kgen.param.constant: i1 = <not_in(:dtype type, [type, f32])>
+
+  // CHECK: = kgen.param.constant : i1 = <ne(:dtype type, f32)>
+  %19 = kgen.param.constant: i1 = <not_in(:dtype type, [f32])>
 
   kgen.return
 }
