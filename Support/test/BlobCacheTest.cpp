@@ -10,6 +10,8 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "gtest/gtest.h"
+
 using namespace M;
 
 namespace {
@@ -22,52 +24,48 @@ struct StringKeyInfo {
     return llvm::toHex(llvm::SHA256::hash(bytes), true);
   }
 };
+
+class BlobCacheTest : public testing::Test {
+protected:
+  BlobCache<StringKeyInfo> cache{getDefaultBackendChain("")};
+};
+
 } // namespace
 
-int main() {
-  BlobCache<StringKeyInfo> cache(getDefaultBackendChain(""));
+TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
+  EXPECT_FALSE(cache.contains("does not exist"))
+      << "expected not to have item named 'does not exist'\n";
+}
 
+TEST_F(BlobCacheTest, FindShouldReturnErrorForNonexistantItem) {
+  auto dneOr = cache.find("does not exist");
+  EXPECT_FALSE(succeeded(dneOr))
+      << "expected not to have item named 'does not exist'\n";
+}
+
+TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
   auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
 
-  if (auto err = cache.insert("zeros", *zerosBuf)) {
-    llvm::outs() << err.getError() << "\n";
-    return EXIT_FAILURE;
-  }
+  auto err = cache.insert("zeros", *zerosBuf);
+  EXPECT_FALSE(failed(err)) << err.getError() << '\n';
+  EXPECT_TRUE(cache.contains("zeros"))
+      << "expected to have item named 'zeros'\n";
+}
 
-  if (!cache.contains("zeros")) {
-    llvm::outs() << "expected to have item named 'zeros'\n";
-    return EXIT_FAILURE;
-  }
+TEST_F(BlobCacheTest, FindItemThatExists) {
+  // Get an uninitialized buffer. We don't care what's in this, as long as it
+  // goes in and comes out the same.
+  auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
 
-  if (cache.contains("does not exist")) {
-    llvm::outs() << "expected not to have item named 'does not exist'\n";
-    return EXIT_FAILURE;
-  }
-
+  auto err = cache.insert("zeros", *zerosBuf);
   auto zerosOr = cache.find("zeros");
-  if (failed(zerosOr)) {
-    llvm::outs() << zerosOr.getError() << "\n";
-    return EXIT_FAILURE;
-  }
+  EXPECT_FALSE(failed(zerosOr)) << zerosOr.getError();
 
-  auto dneOr = cache.find("does not exist");
-  if (succeeded(dneOr)) {
-    llvm::outs() << "expected not to have item named 'does not exist'\n";
-    return EXIT_FAILURE;
-  }
-
-  if ((*zerosOr)->getBufferSize() != zerosBuf->getBufferSize()) {
-    llvm::outs() << "output buffer size did not match input buffer size\n";
-    return EXIT_FAILURE;
-  }
-
-  if ((*zerosOr)->getBuffer() !=
-      StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize())) {
-    llvm::outs() << "buffer returned did not match the buffer inputted\n";
-    return EXIT_FAILURE;
-  }
-
-  return EXIT_SUCCESS;
+  ASSERT_TRUE((*zerosOr)->getBufferSize() == zerosBuf->getBufferSize())
+      << "output buffer size did not match input buffer size\n";
+  EXPECT_TRUE((*zerosOr)->getBuffer() ==
+              StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
+      << "buffer returned did not match the buffer inputted\n";
 }
