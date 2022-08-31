@@ -7,12 +7,6 @@
 set(KGEN_SOURCE_DIR ${MODULAR_SOURCE_DIR}/KGEN)
 set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
-# Add KGEN files to the include path
-set(KGEN_INCLUDE_DIR ${KGEN_SOURCE_DIR}/include)
-include_directories(${KGEN_INCLUDE_DIR})
-set(KGEN_INCLUDE_DIR ${KGEN_BINARY_DIR}/include)
-include_directories(${KGEN_INCLUDE_DIR})
-
 # add_kgen_translation_library is a wrapper around add_modular_library that
 # automatically links the library into kgen-translate.
 function(add_kgen_translation_library name)
@@ -118,7 +112,9 @@ function(add_kgen_kernel target)
   endforeach ()
 
   add_library(${target} ${OBJS})
-  set_target_properties(${target} PROPERTIES LINKER_LANGUAGE C)
+  set_target_properties(${target}
+      PROPERTIES LINKER_LANGUAGE C
+                 INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
 # Testing infrastructure
