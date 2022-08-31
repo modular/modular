@@ -516,7 +516,7 @@ inline raw_ostream &operator<<(raw_ostream &os,
 // fashion. It takes 2 functions, one that is used to transform the values on
 // SIMD vectors and another that is used to transform values on scalar values.
 // The function then applies those two functions on the ranges provided. It is
-// supposed to look like std::transform.
+// functionally similar to std::transform.
 //
 //===----------------------------------------------------------------------===//
 template <typename InputElemTy, typename OutputElemTy,
@@ -527,7 +527,7 @@ OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
                              OutputElemTy *result, UnarySIMDFunctionTy simdFunc,
                              UnaryScalarFunctionTy scalarFunc) {
   // If we are emulating the SIMD vector, then there is no point of using
-  // simd_transform.. So, fallback to std::transform.
+  // simd_transform. So, fallback to std::transform.
 #if LLCL_SIMD_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
@@ -554,7 +554,7 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
                              BinarySIMDFunctionTy simdFunc,
                              BinaryScalarFunctionTy scalarFunc) {
   // If we are emulating the SIMD vector, then there is no point of using
-  // simd_transform.. So, fallback to std::transform.
+  // simd_transform. So, fallback to std::transform.
 #if LLCL_SIMD_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
@@ -571,6 +571,41 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
   // size.
 #endif // LLCL_SIMD_EMULATED
   return std::transform(first1, last1, first2, result, scalarFunc);
+}
+
+//===----------------------------------------------------------------------===//
+// simd_reduce
+//===----------------------------------------------------------------------===//
+//
+// This is a helper function that is used to reduce a range of values in SIMD
+// fashion. It takes 2 functions, one that is used to reduce the values on
+// SIMD vectors and another that is used to reduce values on scalar values.
+// The function then reduces those two functions on the ranges provided. It is
+// functionally similar to std::reduce
+//
+//===----------------------------------------------------------------------===//
+template <typename InputElemTy, typename T, typename SIMDReductionFunctionTy,
+          typename ScalarReductionFunctionTy,
+          size_t Width = kPreferredSIMDBitWidth /
+                         (CHAR_BIT * sizeof(InputElemTy))>
+T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
+              SIMDReductionFunctionTy simdFunc,
+              ScalarReductionFunctionTy scalarFunc) {
+  T result(init);
+  // If we are emulating the SIMD vector, then there is no point of using
+  // simd_transform. So, fallback to std::transform.
+#if LLCL_SIMD_EMULATED == 0
+  using InputSIMDType = SIMDVector<InputElemTy, Width>;
+  // Apply the simd function on the input buffer in batches of simd size.
+  for (; first <= last - InputSIMDType::size();
+       first += InputSIMDType::size()) {
+    InputSIMDType input(InputSIMDType::loadFrom(first));
+    result = simdFunc(result, input);
+  }
+  // Handle the remaining elements when the buffer is not a multiple of simd
+  // size.
+#endif // LLCL_SIMD_EMULATED
+  return std::reduce(first, last, result, scalarFunc);
 }
 
 } // namespace M
