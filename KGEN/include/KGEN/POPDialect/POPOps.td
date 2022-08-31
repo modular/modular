@@ -355,8 +355,8 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
     Example:
 
     ```mlir
-    %b0 = pop.cmp lt, %a, %b : !meta.scalar<type>
-    %b1 = pop.cmp ge, %c, %d : !meta.simd<?, type>
+    %b0 = pop.cmp lt(%a, %b) : !meta.scalar<type>
+    %b1 = pop.cmp ge(%c, %d) : !meta.simd<?, type>
     ```
   }];
 
@@ -364,7 +364,7 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
                        ScalarOrSIMD:$rhs);
   let results = (outs BoolScalarOrSIMD:$result);
 
-  let assemblyFormat = "$pred `,` $lhs `,` $rhs attr-dict `:` type($lhs)";
+  let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)";
 }
 
 
