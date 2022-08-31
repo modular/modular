@@ -25,20 +25,9 @@ using mlir::failure;
 using mlir::LogicalResult;
 using mlir::success;
 
-// Optionally enable tracing.
-//
-// TRACE_LEVEL is the density of logging.  0 = Off, 1 = Events, 2 = All work
-// items, 3 includes shutdown activity.
-#define TRACE_LEVEL 0
-#include "PrintfTracing.h"
-
 /// This value is set to a number for workqueue threads.  Foreign threads always
 /// have index #0.
 static thread_local ssize_t workerIDInTLS = 0;
-
-/// TRACE - When trace level is >= the specified level, we print the log.
-#define TRACE(LEVEL, FORMAT, ...)                                              \
-  TRACE_IMPL(workerID, LEVEL, FORMAT, ##__VA_ARGS__)
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
@@ -46,17 +35,8 @@ static thread_local ssize_t workerIDInTLS = 0;
 
 // Execute a single work item with tracing support.
 static void doWork(TaskFunction &workFn, size_t workerID) {
-  TRACE(2, "work start.");
-#if TRACE_LEVEL > 1
-  auto workStartTime = std::chrono::high_resolution_clock::now();
-#endif
+  TIME_PROFILER_SCOPE(1, "doWork");
   workFn();
-
-#if TRACE_LEVEL > 1
-  auto diff = std::chrono::high_resolution_clock::now() - workStartTime;
-  auto ms = std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
-  TRACE(2, "work end, %lldµs.", (long long)ms);
-#endif
 }
 
 namespace {
@@ -196,7 +176,7 @@ void WorkQueueThread::runOnThread() {
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
-  TRACE(1, "worker starting.");
+  TIME_PROFILER_BEGIN(4, "runOnThread", "");
 
   // Run work items until the system is asked to shut down.
   runItems(/*isAwait*/ false,
@@ -209,7 +189,7 @@ void WorkQueueThread::runOnThread() {
              return sharedState.doneFlag.load(std::memory_order_acquire);
            });
 
-  TRACE(3, "worker destroying.");
+  TIME_PROFILER_END(4);
   TIME_PROFILER_WORKER_WRAPUP;
 }
 
@@ -230,14 +210,14 @@ KeepRunning:
       continue;
     }
 
-    TRACE(1, "%s spinning.", isAwait ? "await thread" : "worker");
+    TIME_PROFILER_BEGIN(3, "spinning", isAwait ? "await thread" : "worker");
 
     // If we've run out of work to do, we need to quiesce and ultimately block
     // in the kernel on the semaphore.  However, we don't want to immediately
     // give up hope, because we may be "right about to" get new work incoming.
     // We also want to make sure to use exponential backoff to avoid pummeling
-    // the memory hierarchy of the threads that are doing useful work.  As such,
-    // we use a BusyWaitSpinWaiter.
+    // the memory hierarchy of the threads that are doing useful work.  As
+    // such, we use a BusyWaitSpinWaiter.
     BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
 
     // Spin until we find some work to do.
@@ -245,7 +225,7 @@ KeepRunning:
       // If we ever succeed in finding work to do, go back to running like
       // normal.
       if (auto work = taskList.dequeue()) {
-        TRACE(1, "%s spin done.", isAwait ? "await thread" : "worker");
+        TIME_PROFILER_END(3);
         doWork(work, workerID);
         goto KeepRunning;
       }
@@ -253,11 +233,15 @@ KeepRunning:
       // If we're spinning and the early or the late stop condition happens,
       // then we're done.  Checking the late stop condition here make sure our
       // threads shut down promptly when a runtime is torn down.
-      if (earlyStopPredicate() || lateStopPredicate())
+      if (earlyStopPredicate() || lateStopPredicate()) {
+        TIME_PROFILER_END(3);
         return;
+      }
     }
 
-    TRACE(1, "%s sleeping.", isAwait ? "await thread" : "worker");
+    TIME_PROFILER_END(3);
+    TIME_PROFILER_SCOPE(3, (isAwait ? "await thread" : "worker") +
+                               std::string(" sleeping"));
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
     // don't burn power and starve other tasks on the system.
@@ -273,8 +257,6 @@ KeepRunning:
 
     // Ok, finally block.
     sema.wait();
-
-    TRACE(1, "%s woke.", isAwait ? "await thread" : "worker");
 
     // On wakeup, check the 'slow' predicate to see if we should stop (this is
     // how worker threads know to exit).  The early predicate is checked as part
@@ -344,8 +326,8 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
 }
 
 void ThreadPoolWorkQueue::shutdown() {
+  TIME_PROFILER_SCOPE(4, "shutdown");
   int workerID = workerIDInTLS;
-  TRACE(3, "ThreadPoolWorkQueue::shutdown() start.");
 
   // Donate this thread to help drain the work queue if there's anything left.
   while (auto work = taskList.dequeue())
@@ -367,23 +349,19 @@ void ThreadPoolWorkQueue::shutdown() {
   // Join all the threads when they shut down cleanly.
   for (auto &worker : workers)
     worker.join();
-
-  TRACE(3, "ThreadPoolWorkQueue::shutdown() done.");
 }
 
 void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   auto workerID = workerIDInTLS;
   (void)workerID;
   // Try to add this work to the RingBuffer.
-  TRACE(1, "addTask [0x%0X]\t\t[%p]", (int)sharedState.suspendedThreads.load(),
-        __builtin_return_address(0));
+  TIME_PROFILER_SCOPE(2, "addTask");
   if (taskList.enqueue(work)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
     int workerToPoke = sharedState.takeAnySuspendedThread();
     if (workerToPoke != -1) {
       assert(workerToPoke < int(numWorkers));
-      TRACE(1, "  poke sleeping thread %d", workerToPoke);
       workers[workerToPoke].sema.post();
     }
     return;
@@ -392,7 +370,6 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   // If we failed to add it, then the ring buffer is full: just run the work
   // item locally on the current stack.
   // NOTE: This runs the risk of stack overflow, but we don't have a choice.
-  TRACE(1, "WORK QUEUE FULL: running locally");
   doWork(work, workerID);
 }
 
@@ -400,15 +377,13 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av->isReady(); }))
     return;
+  TIME_PROFILER_SCOPE(2, "await");
 
   // Figure out which WorkerThread this is being invoked from.  This could be
   // something in the WorkQueue or could be an external foreign thread (index
   // #0).
   ssize_t workerID = workerIDInTLS;
   WorkQueueThread *thisWorker = &workers[workerID];
-
-  TRACE(1, "await() start %s.\t[%p]", workerID != 0 ? "worker" : "foreign",
-        __builtin_return_address(0));
 
   // We are done when values_remaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
@@ -418,6 +393,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // fell asleep.
   for (auto &value : values)
     value->andThen([&numRemaining, thisWorker, this]() {
+      TIME_PROFILER_SCOPE(3, "await andThen");
       // Decremenet the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
@@ -436,8 +412,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       // If the worker doing the await() has suspended, make sure to wake it up
       // so it notices that it is done.
       if (sharedState.takeSuspendedThread(awaitingWorkerID)) {
-        TRACE(1, "   await() andThen completed POKE %d.",
-              (int)awaitingWorkerID);
         // NOTE: This wakes up exactly one sleeping thread, but (in the case of
         // foreign threads) it is possible we have multiple threads blocked on
         // it, so the semaphore could be (e.g.) at -3 or something.    If/when
@@ -445,11 +419,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
         // threads we've seen and post that many times.
         thisWorker->sema.post();
       }
-
-      // This trace is useful when looking at latency between work completing
-      // and await returning in the blocked thread, but right now that isn't
-      // the problem we're working on solving.
-      TRACE(1, "await() andThen completed %d.", (int)awaitingWorkerID);
     });
 
   // Run work items until the system is asked to shut down.
@@ -467,7 +436,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
                        });
 
   assert(numRemaining.load() == 0);
-  TRACE(1, "await() returning.");
 }
 
 //===----------------------------------------------------------------------===//
@@ -477,8 +445,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 std::unique_ptr<WorkQueue>
 M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
                                    std::chrono::nanoseconds busyWait) {
-  TRACE_INIT_START_TIME();
-
   // We expect `numThreads` to be the total numbers of threads that are
   // accessing the work queue. As there will be an external thread that will
   // access the work queue and take items from it by calling `await`, we create
