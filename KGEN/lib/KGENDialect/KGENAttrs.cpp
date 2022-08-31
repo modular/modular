@@ -25,6 +25,19 @@ using mlir::OptionalParseResult;
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
 
+enum class POCAliases : uint32_t {
+  // The builtin opcodes have 0...127.
+  FIRST_PSEUDO = 128,
+  NOT,
+  NE, // !(==)
+  GT, // !(<)
+  GE, // !(<=)
+  NOT_IN,
+
+  // This is an unknown opcode name.
+  kInvalid,
+};
+
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
                                                   Type &type) {
   if (failed(parser.parseOptionalColon()))
@@ -211,6 +224,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return p.parseCommaSeparatedList(
         [&] { return parseParamValue(p, operands.emplace_back(), type); });
   case (uint32_t)POC::IN:
+  case (uint32_t)POCAliases::NOT_IN:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
@@ -222,18 +236,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   }
   llvm_unreachable("unknown operator");
 }
-
-enum class POCAliases : uint32_t {
-  // The builtin opcodes have 0...127.
-  FIRST_PSEUDO = 128,
-  NOT,
-  NE, // !(==)
-  GT, // !(<)
-  GE, // !(<=)
-
-  // This is an unknown opcode name.
-  kInvalid,
-};
 
 static uint32_t getOpcodeFromString(StringRef keyword) {
   // All the valid and builtin opcodes are legal.
@@ -249,6 +251,8 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
     return (uint32_t)POCAliases::GT;
   if (keyword == "ge")
     return (uint32_t)POCAliases::GE;
+  if (keyword == "not_in")
+    return (uint32_t)POCAliases::NOT_IN;
 
   return (uint32_t)POCAliases::kInvalid;
 }
@@ -305,6 +309,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       case (uint32_t)POCAliases::NE:
       case (uint32_t)POCAliases::GE:
       case (uint32_t)POCAliases::GT:
+      case (uint32_t)POCAliases::NOT_IN:
       case (uint32_t)POC::IN:
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
@@ -337,6 +342,10 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       break;
     case (uint32_t)POCAliases::GT:
       opcode = (uint32_t)POC::LE;
+      needsInvert = true;
+      break;
+    case (uint32_t)POCAliases::NOT_IN:
+      opcode = (uint32_t)POC::IN;
       needsInvert = true;
       break;
     case (uint32_t)POCAliases::NOT:
