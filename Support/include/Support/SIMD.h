@@ -67,7 +67,7 @@ inline constexpr bool is_simd_vector_v = is_simd_vector<T...>::value;
 /// bytecount nor the bitcount). The SIMDVector is designed to emulate the SIMD
 /// operations if they do not exist on the target architecture or host compiler.
 template <typename ElemTy,
-          size_t Width = kPreferredSIMDBitWidth / (8 * sizeof(ElemTy))>
+          size_t Width = kPreferredSIMDBitWidth / (CHAR_BIT * sizeof(ElemTy))>
 class SIMDVector {
 
   static_assert(Width != 0, "Width must be positive");
@@ -76,7 +76,7 @@ class SIMDVector {
 public:
   using element_type = ElemTy;
   static constexpr size_t byte_count = Width * sizeof(ElemTy);
-  static constexpr size_t bit_count = 8 * byte_count;
+  static constexpr size_t bit_count = CHAR_BIT * byte_count;
   static constexpr size_t width = Width;
 
 #if LLCL_SIMD_EMULATED
@@ -506,6 +506,71 @@ inline raw_ostream &operator<<(raw_ostream &os,
                                const SIMDVector<ElementType, Width> &value) {
   value.print(os);
   return os;
+}
+
+//===----------------------------------------------------------------------===//
+// simd_transform
+//===----------------------------------------------------------------------===//
+//
+// This is a helper function that is used to transform a range of values in SIMD
+// fashion. It takes 2 functions, one that is used to transform the values on
+// SIMD vectors and another that is used to transform values on scalar values.
+// The function then applies those two functions on the ranges provided. It is
+// supposed to look like std::transform.
+//
+//===----------------------------------------------------------------------===//
+template <typename InputElemTy, typename OutputElemTy,
+          typename UnarySIMDFunctionTy, typename UnaryScalarFunctionTy,
+          size_t Width = kPreferredSIMDBitWidth /
+                         (CHAR_BIT * sizeof(InputElemTy))>
+OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
+                             OutputElemTy *result, UnarySIMDFunctionTy simdFunc,
+                             UnaryScalarFunctionTy scalarFunc) {
+  // If we are emulating the SIMD vector, then there is no point of using
+  // simd_transform.. So, fallback to std::transform.
+#if LLCL_SIMD_EMULATED == 0
+  using InputSIMDType = SIMDVector<InputElemTy, Width>;
+  using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
+  // Apply the simd function on the input buffer in batches of simd size.
+  for (; first <= last - InputSIMDType::size();
+       first += InputSIMDType::size(), result += OutputSIMDType::size()) {
+    InputSIMDType input(InputSIMDType::loadFrom(first));
+    OutputSIMDType output(simdFunc(input));
+    output.storeTo(result);
+  }
+  // Handle the remaining elements when the buffer is not a multiple of simd
+  // size.
+#endif // LLCL_SIMD_EMULATED
+  return std::transform(first, last, result, scalarFunc);
+}
+
+template <typename InputElemTy, typename OutputElemTy,
+          typename BinarySIMDFunctionTy, typename BinaryScalarFunctionTy,
+          size_t Width = kPreferredSIMDBitWidth /
+                         (CHAR_BIT * sizeof(InputElemTy))>
+OutputElemTy *simd_transform(const InputElemTy *first1,
+                             const InputElemTy *last1,
+                             const InputElemTy *first2, OutputElemTy *result,
+                             BinarySIMDFunctionTy simdFunc,
+                             BinaryScalarFunctionTy scalarFunc) {
+  // If we are emulating the SIMD vector, then there is no point of using
+  // simd_transform.. So, fallback to std::transform.
+#if LLCL_SIMD_EMULATED == 0
+  using InputSIMDType = SIMDVector<InputElemTy, Width>;
+  using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
+  // Apply the simd function on the input buffers in batches of simd size.
+  for (; first1 <= last1 - InputSIMDType::size();
+       first1 += InputSIMDType::size(), first2 += InputSIMDType::size(),
+       result += OutputSIMDType::size()) {
+    InputSIMDType input1(InputSIMDType::loadFrom(first1));
+    InputSIMDType input2(InputSIMDType::loadFrom(first2));
+    OutputSIMDType output(simdFunc(input1, input2));
+    output.storeTo(result);
+  }
+  // Handle the remaining elements when the buffer is not a multiple of simd
+  // size.
+#endif // LLCL_SIMD_EMULATED
+  return std::transform(first1, last1, first2, result, scalarFunc);
 }
 
 } // namespace M
