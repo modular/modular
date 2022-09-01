@@ -120,8 +120,8 @@ kgen.kernel @unfoldableIndex() {
   // Index type parameter expressions can only fold when they are known the
   // same on 32-bit and 64-bit systems or if target-specific information is
   // known.
-  // expected-note @+1 {{could not simplify operator mul(4, 2000000000)}}
-  %1 = kgen.param.constant = <mul(2000000000, x)> // 2B*4 overflows on 32-bit.
+  // expected-note @+1 {{could not simplify operator div(8000000000, 4)}}
+  %1 = kgen.param.constant = <div(8000000000, x)> // 8B/4 differs on 32-bit.
   kgen.return
 }
 
