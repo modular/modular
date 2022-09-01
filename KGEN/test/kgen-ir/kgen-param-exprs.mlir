@@ -113,10 +113,10 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 
   // Shouldn't fold `index` constant expressions that differ for 32-/64-bit
   // targets without target info.
-  // CHECK: = kgen.param.constant = <mul(4, 2000000000)>
-  %8 = kgen.param.constant = <mul(2000000000, 4)> // 2B*4 overflows on 32-bit.
+  // CHECK: = kgen.param.constant = <div(6000000000, 4)>
+  %8 = kgen.param.constant = <div(6000000000, 4)> // 6B/4 differs.
 
-  // CHECK: = kgen.param.constant = <shl(1, 33)>
+  // CHECK: = kgen.param.constant = <8589934592>
   %9 = kgen.param.constant = <shl(1, 33)>
 
   // CHECK: = kgen.param.constant : i1 = <not(in(p1, [add(p2, 1), p2, 1, 3]))>

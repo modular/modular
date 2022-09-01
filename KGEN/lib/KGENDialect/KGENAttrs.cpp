@@ -831,11 +831,13 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
 }
 
 /// Given a function_ref from `(APInt,APInt)->T` and two APInt's, compute the
-/// result value T and return it.  Note that this function has special behavior
-/// when 'valueTy' (the MLIR type of the two operand values) is 'index' type. In
-/// this case, it does extra work to make sure that a 32-bit and 64-bit target
-/// will compute the same result.  If so it returns that value wrapped in an
-/// IntegerAttr, if not, it returns a null Attribute.
+/// result value T and return it.
+///
+/// Note that this function has special behavior when 'valueTy' (the MLIR type
+/// of the two operand values) is 'index' type. In this case, it does extra work
+/// to make sure that a 32-bit and 64-bit target will compute the same result
+/// using the same approach as the index dialect.  If they differ, this refuses
+/// to fold the operation, returning a null IntegerAttr.
 template <typename ResultTy>
 static IntegerAttr foldBinaryValues(
     const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
@@ -855,16 +857,21 @@ static IntegerAttr foldBinaryValues(
   // If this is an index computation, then we just did the 64-bit computation,
   // see what would happen on a 32-bit host.
   assert(lhs.getBitWidth() == 64);
+
+  // We require that the computation satisfy the invariant that:
+  //   trunc(f(a, b)) = f(trunc(a), trunc(b))
   auto result2 = calculateFn(lhs.trunc(32), rhs.trunc(32));
 
-  // If not bool result, sign extend back to 64-bit.
+  // If not bool result (e.g. a compare), truncate the LHS for our check.
+  auto result1test = result1;
   if constexpr (!std::is_same_v<bool, ResultTy>) {
-    result2 = result2.sext(64);
+    result1test = result1.trunc(result2.getBitWidth());
   }
 
-  if (result1 == result2)
-    return IntegerAttr::get(resultTy, result1);
-  return IntegerAttr();
+  // We can use the full 64-bit folded result if they match, otherwise leave
+  // unfolded.
+  return result1test == result2 ? IntegerAttr::get(resultTy, result1)
+                                : IntegerAttr();
 }
 
 /// Given a fully associative variadic integer operation, constant fold any
@@ -1085,14 +1092,14 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
   if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
-    // If this is an 'index' type expression and >=31 shift amount, don't fold
-    // because the result will be target specific.
-    if (!rhs.getType().isa<IndexType>() || rhs.getValue().getZExtValue() < 31) {
-      auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
-                                        rhs.getValue().getZExtValue());
-      return ParamOperatorAttr::get(POC::Mul, operands[0],
-                                    IntegerAttr::get(rhs.getType(), rhsCst));
-    }
+    // NOTE: This is correct even for index types because an overlong shift will
+    // turn the result to zero.
+    // FIXME: getOneBitSet asserts the shift amount should be in-range.  We need
+    // to check this.
+    auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
+                                      rhs.getValue().getZExtValue());
+    return ParamOperatorAttr::get(POC::Mul, operands[0],
+                                  IntegerAttr::get(rhs.getType(), rhsCst));
   }
   return {};
 }
@@ -1103,6 +1110,7 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
       return operands[0]; // `x >> 0 = x`.
   // TODO: 0 >> x, -1 >>> x
 
+  // FIXME: Must care about high bits.
   return foldBinaryOp(
       operands, [](auto a, auto b) { return a.lshr(b); },
       [](auto a, auto b) { return a.ashr(b); });

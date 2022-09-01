@@ -154,8 +154,8 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // signature of the generator.  If so, we can fold it into the constraint
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
-  if (KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
-      parent && succeeded(ParameterEvaluator::collectParameterReferences(
+  KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
+  if (parent && succeeded(ParameterEvaluator::collectParameterReferences(
                     cond, parameterRefs))) {
     ArrayRef<ParamDeclAttr> generatorInputParams = getParamDecls(parent);
 
