@@ -37,6 +37,9 @@ class CLOptions : public KGENCLOptions {
 public:
   using KGENCLOptions::KGENCLOptions;
 
+  cl::list<std::string> inputFiles{llvm::cl::Positional,
+                                   cl::desc("<input files>")};
+
   cl::opt<bool> ignoreFailures{
       "ignore-failure",
       cl::desc("Ignore execution failures. Any messages are still printed, but "
@@ -44,8 +47,34 @@ public:
 
   cl::list<std::string> searchPaths{
       "I", cl::desc("Path to use to search for included files.")};
+
+  /// Add all the input files provided on the command line to the SourceMgr.
+  /// This is how MLIR parses multiple files.
+  ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
+  void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
 };
 } // namespace
+
+ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
+  if (inputFiles.empty())
+    mgr.AddNewSourceBuffer(openInputFileOrExit(), llvm::SMLoc());
+
+  for (StringRef in : inputFiles) {
+    std::string errorMsg;
+    auto result = mlir::openInputFile(in, &errorMsg);
+    if (!result)
+      return Error(errorMsg);
+
+    mgr.AddNewSourceBuffer(std::move(result), llvm::SMLoc());
+  }
+
+  return M::success();
+}
+
+void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
+  if (auto err = addInputFilesToSourceMgr(mgr))
+    exit(reportError(err.getError()));
+}
 
 /// This function creates the elaborator pass and forwards the correct
 /// arguments. If it fails, it fails with a fatal error.
@@ -199,13 +228,12 @@ int main(int argc, char **argv) {
   registerAsmPrinterCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  // Set up the input file.
-  std::unique_ptr<llvm::MemoryBuffer> inputFile =
-      clOptions.openInputFileOrExit();
+  // Set up the input file(s).
+  llvm::SourceMgr sourceManager;
+  clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
 
-  return failed(clOptions.configureMLIRContextAndSourceMgrAndExecute(
-      std::move(inputFile),
-      [&](MLIRContext *ctx, llvm::SourceMgr &mgr) -> LogicalResult {
-        return runToolPipeline(ctx, mgr, clOptions);
+  return failed(clOptions.configureMLIRContextAndExecute(
+      sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
+        return runToolPipeline(ctx, sourceManager, clOptions);
       }));
 }
