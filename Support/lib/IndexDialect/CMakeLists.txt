@@ -4,9 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(include/Support/IndexDialect)
-#add_subdirectory(integration_test)
-add_subdirectory(lib)
-add_subdirectory(tools/index-opt)
-add_subdirectory(test)
-add_subdirectory(unittests)
+add_modular_dialect_library(IndexDialect
+  IndexAttrs.cpp
+  IndexDialect.cpp
+  IndexOps.cpp
+
+  DEPENDS
+  MLIRIndexIncGen
+
+  LINK_LIBS PUBLIC
+  MLIRIR
+  MLIRCastInterfaces
+  MLIRSideEffectInterfaces
+)
