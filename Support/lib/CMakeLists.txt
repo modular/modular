@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(Benchmark)
+add_subdirectory(IndexDialect)
 add_subdirectory(ML)
 
 # Get the commit hash of the current branch and write it as a macro to VCSRevision.h.

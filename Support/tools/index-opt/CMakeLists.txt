@@ -4,9 +4,11 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(include/Support/IndexDialect)
-#add_subdirectory(integration_test)
-add_subdirectory(lib)
-add_subdirectory(tools/index-opt)
-add_subdirectory(test)
-add_subdirectory(unittests)
+add_modular_tool(index-opt
+  index-opt.cpp
+
+  LINK_LIBS PRIVATE
+  IndexDialect
+  MLIRFuncDialect
+  MLIROptLib
+)
