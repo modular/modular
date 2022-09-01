@@ -1456,6 +1456,89 @@ ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
+// HistogramParam
+//===----------------------------------------------------------------------===//
+
+void M::KGEN::printHistogram(AsmPrinter &p,
+                             ArrayRef<std::pair<size_t, uint64_t>> histogram) {
+  p << "[";
+  llvm::interleaveComma(histogram, p, [&](auto elt) {
+    p << "(" << elt.first << ", " << elt.second << ")";
+  });
+  p << "]";
+}
+
+FailureOr<SmallVector<std::pair<size_t, uint64_t>>>
+M::KGEN::parseHistogram(AsmParser &p) {
+  SmallVector<std::pair<size_t, uint64_t>> out;
+  auto elementParser = [&]() -> ParseResult {
+    size_t size;
+    uint64_t weight;
+    if (p.parseLParen() || p.parseInteger(size) || p.parseComma() ||
+        p.parseInteger(weight) || p.parseRParen())
+      return failure();
+
+    out.emplace_back(size, weight);
+    return success();
+  };
+
+  if (p.parseLSquare() || p.parseCommaSeparatedList(elementParser) ||
+      p.parseRSquare())
+    return failure();
+
+  return out;
+}
+
+//===----------------------------------------------------------------------===//
+// InputGenKind(Attr)
+//===----------------------------------------------------------------------===//
+
+namespace mlir {
+template <>
+struct mlir::FieldParser<InputGenKind> {
+  static FailureOr<InputGenKind> parse(AsmParser &p) {
+    // Stash the current location for caret diagnostics.
+    llvm::SMLoc currentLoc = p.getCurrentLocation();
+
+    StringRef kw;
+    if (p.parseKeyword(&kw))
+      return failure();
+
+    auto inputGenKindOr = symbolizeInputGenKind(kw);
+    if (!inputGenKindOr)
+      return p.emitError(currentLoc) << "unknown InputGenKind '" << kw << "'";
+
+    return *inputGenKindOr;
+  }
+};
+} // namespace mlir
+
+//===----------------------------------------------------------------------===//
+// EvalConfigurationAttr
+//===----------------------------------------------------------------------===//
+
+void EvalConfigurationAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (EvalArgConfigurationAttr v : getValue())
+    walkAttrsFn(v);
+}
+
+Attribute EvalConfigurationAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  assert(replTypes.empty() && "constraint has no types");
+  assert(replAttrs.size() == getValue().size());
+  if (!llvm::all_of(replAttrs, [](Attribute attr) {
+        return attr.isa<EvalConfigurationAttr>();
+      }))
+    return {};
+
+  return get(
+      {reinterpret_cast<const EvalArgConfigurationAttr *>(replAttrs.data()),
+       replAttrs.size()});
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
