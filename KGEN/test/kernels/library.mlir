@@ -49,30 +49,28 @@ kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
 }
 
 //===----------------------------------------------------------------------===//
-// horner evaluator
+// polynomial_evaluate
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @horner<type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<?, type>) -> !meta.scalar<type>
+kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
 
-// The horner(val, coeffs) where val is a scalar and coeffs is a list of
-// coefficients  [c0, c1, c2, ..., cn] is defined by the following equation:
-// horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
-//                     = fma(val, horner(val, coeffs[1:]), c0)
-kgen.generator @horner_impl<type: dtype>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<?, type>) -> !meta.scalar<type>
-  constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @horner {
+/// Evaluates a polynomial using the horner scheme.
+///
+/// The horner(val, coeffs) where val is a scalar and coeffs is a list of
+/// coefficients [c0, c1, c2, ..., cn] is defined by the following equation:
+/// horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
+///                     = fma(val, horner(val, coeffs[1:]), c0)
+kgen.generator @horner<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+  constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @polynomial_evaluate {
   %zero = arith.constant 0 : index
   %one = arith.constant 1 : index
-  %zerofVal = pop.constant(0.0) : !meta.scalar<type>
-  %zerof = meta.cast_to_builtin %zerofVal: !meta.scalar<type> to f32
-  %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<?, type>
-  %res = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> (f32) {
-    %sumVal = meta.cast_from_builtin %sum : f32 to !meta.scalar<type>
-    %coeff = pop.buffer.load %coefficients[%i] : !meta.buffer<?, type>
-    %resVal = pop.fma %sumVal, %val, %coeff : !meta.scalar<type>
-    %res = meta.cast_to_builtin %resVal: !meta.scalar<type> to f32
-    scf.yield %res : f32
+  %zerof = pop.constant(0.0) : !meta.scalar<type>
+  %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<size, type>
+  %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !meta.scalar<type> {
+    %coeff = pop.buffer.load %coefficients[%i] : !meta.buffer<size, type>
+    %res = pop.fma %sum, %val, %coeff : !meta.scalar<type>
+    scf.yield %res : !meta.scalar<type>
   }
-  %result = meta.cast_from_builtin %res : f32 to !meta.scalar<type>
   kgen.return %result : !meta.scalar<type>
 }
 
