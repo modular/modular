@@ -62,6 +62,6 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["llvm-objdump", "kgen", "kgen-opt", "kgen-execute"]
+tools = ["index-opt"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
