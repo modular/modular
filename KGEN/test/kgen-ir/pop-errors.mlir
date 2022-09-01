@@ -146,3 +146,19 @@ kgen.generator @cast_simd_size<size, type: dtype>(%a: !meta.simd<size, type>) {
   %0 = pop.cast %a : !meta.simd<size, type> to !meta.simd<add(size, 1), type>
   kgen.return
 }
+
+// -----
+
+kgen.generator @buffer_stack_allocation() {
+  // expected-error @below {{'pop.buffer.stack_allocation' op cannot stack allocate a buffer of unknown size}}
+  %0 = pop.buffer.stack_allocation : !meta.buffer<?, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @buffer_stack_allocation<size>() {
+  // expected-error @below {{'pop.buffer.stack_allocation' op result #0 must be buffer with concrete dtype, but got '!meta.buffer<size, ?>'}}
+  %0 = pop.buffer.stack_allocation : !meta.buffer<size, ?>
+  kgen.return
+}

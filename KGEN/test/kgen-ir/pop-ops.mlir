@@ -365,3 +365,14 @@ kgen.generator @pop_load_store<type: dtype>(%p0: !meta.pointer<f32>, %p1: !meta.
   pop.store %1, %p1 : !meta.pointer<type>
   kgen.return
 }
+
+// CHECK-LABEL: @pop_buffer_stack_allocation
+kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
+  // CHECK: pop.buffer.stack_allocation : !meta.buffer<4, f32>
+  %0 = pop.buffer.stack_allocation : !meta.buffer<4, f32>
+  // CHECK: pop.buffer.stack_allocation : !meta.buffer<size, f32>
+  %1 = pop.buffer.stack_allocation : !meta.buffer<size, f32>
+  // CHECK: pop.buffer.stack_allocation : !meta.buffer<size, type>
+  %2 = pop.buffer.stack_allocation : !meta.buffer<size, type>
+  kgen.return
+}
