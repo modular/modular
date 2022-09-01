@@ -656,9 +656,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // don't know how to calculate the new value for a defined parameter.  If
   // there is a reason to allow open extension of operations that define
   // parameters, we could genericize this into a op interface.
-  if (!getParamDecls(op).empty() &&
-      // Kernels are allowed to declare parameters, they don't need rewriting.
-      !isa<KernelOp>(op))
+  if (!getParamDecls(op).empty())
     return error(op->getLoc(),
                  "unknown parameter-defining operator in GenerateKernels");
 
@@ -910,6 +908,8 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
       kernel = cast<KernelOp>(cloned);
     }
 
+    // FIXME: There is no need to specialize it.  All this does in practice is
+    // pull in other recursively referenced kernels.
     newCallees = specializeKernel(kernel, sourceModule);
   } else if (isa<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(declAndInputParams, insertionPoint);
@@ -961,7 +961,7 @@ ParseResult Elaborator::collectInterfaces() {
         if (auto interface = generator.getImplementsAttr())
           interfaceImpls[interface.getAttr()].push_back(generator);
 
-      // Detect a common error cleanly, and report it.
+      // Detect common errors cleanly, and report it.
       if (op.getName().getStringRef() == "hlkgen.generator")
         return op.emitError(
             "unlowered hlkgen.generator discovered in KGEN elaborator");
@@ -1196,17 +1196,22 @@ LogicalResult M::elaborateKernels(ModuleOp primary,
 
   auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
 
-  // Elaborate all the kernels at the top-level.
+  // Elaborate the bodies of all generators without input parameters in the
+  // primary module.  These are roots that will cause callees to get recursively
+  // elaborated.
+  // TODO: When we have access control, we can limit this to just the publicly
+  // exposed ones.
   bool didFail = false;
-  for (auto kernel : primary.getOps<KernelOp>()) {
-    // Ignore kernels with an empty body, they are things found to be non
-    // viable.
-    if (kernel.getBodyBlock()->empty())
+  for (auto kernelRoot : primary.getOps<GeneratorOp>()) {
+    // Ignore generators with input parameters, they can't be turned into
+    // concrete kernels anyway, but will get specialized if anything uses them.
+    if (!kernelRoot.getInputParamDecls().empty())
       continue;
 
     // Elaborate the kernel into concrete versions.
     ArrayRef<ElaboratedKernelOrCalleeError> results =
-        elaborator.getAllInstantiations({kernel, emptyInputParamKey}, kernel);
+        elaborator.getAllInstantiations({kernelRoot, emptyInputParamKey},
+                                        kernelRoot);
 
     // If the kernel failed to expand into /anything/ then emit an error.  Note
     // that the kernel will have been deleted.

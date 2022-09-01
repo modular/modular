@@ -9,7 +9,7 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 
 // This yields a verification error when elaborated.
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @local_verif_error() {
+kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
   %c1 = arith.constant 1.0 : f32
@@ -40,7 +40,7 @@ kgen.generator @genItf2_impl1<x>() implements @genItf2 {
 
 // This has no expansions, so it should generate an error message.
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @use_Itf2two() {
+kgen.generator @use_Itf2two() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf2<x = 2>() : () -> ()
   kgen.return
@@ -60,7 +60,7 @@ kgen.generator @genItf3_impl<x>() implements @genItf3 {
   kgen.return
 }
 
-kgen.kernel @use_Itf3two() {
+kgen.generator @use_Itf3two() {
   kgen.call @genItf3<x = 2>() : () -> ()
   kgen.return
 }
@@ -73,14 +73,14 @@ kgen.kernel @use_Itf3two() {
 kgen.generator.interface @itf<x>()
 
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @k1() {
+kgen.generator @k1() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @itf<x = 2>() : () -> ()
   kgen.return
 }
 
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @k2() {
+kgen.generator @k2() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @k1() : () -> ()
   kgen.return
@@ -98,7 +98,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
 }
 
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @brokenVLenAssert() {
+kgen.generator @brokenVLenAssert() {
   kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
 
   // expected-note @+1 {{vector length should be 3}}
@@ -114,7 +114,7 @@ kgen.include "does-not-exist.mlir"
 // -----
 
 // expected-error @+1 {{failed to generate any kernels}}
-kgen.kernel @unfoldableIndex() {
+kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
 
   // Index type parameter expressions can only fold when they are known the
