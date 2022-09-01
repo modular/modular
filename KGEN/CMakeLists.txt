@@ -53,27 +53,31 @@ endmacro()
 # by other kgen files.
 #
 #  add_kgen_library(lib
-#    SOURCE library.mlir
+#    OUTPUT library.mlir
+#    source_file_1.lib.mlir
+#    source_file_2.lib.mlir
 #    LINK_LIBS someother-lib)
 #
 # This attaches the directory for the output to the target, so you can simply
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "" "SOURCE" "LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
 
-  get_filename_component(outfile ${KGEN_SOURCE} NAME_WLE)
+  if (NOT KGEN_OUTPUT)
+    set(KGEN_OUTPUT ${target}.lib.mlir)
+  endif ()
 
   add_custom_command(
-    OUTPUT "${outfile}.mlir"
-    COMMAND $<TARGET_FILE:kgen> -gen-lib ${KGEN_SOURCE} ${KGEN_INCLUDE_FLAGS} -o "${outfile}.mlir"
+    OUTPUT ${KGEN_OUTPUT}
+    COMMAND $<TARGET_FILE:kgen> -gen-lib ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_INCLUDE_FLAGS} -o ${KGEN_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
+    DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGS}
   )
 
-  add_custom_target(${target} DEPENDS "${outfile}.mlir")
+  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LIB_DEPENDS})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
@@ -112,6 +116,7 @@ function(add_kgen_kernel target)
   endforeach ()
 
   add_library(${target} ${OBJS})
+  add_dependencies(${target} ${KGEN_LIB_DEPENDS})
   set_target_properties(${target}
       PROPERTIES LINKER_LANGUAGE C
                  INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
