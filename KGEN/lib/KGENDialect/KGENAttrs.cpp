@@ -1495,7 +1495,7 @@ M::KGEN::parseHistogram(AsmParser &p) {
 
 namespace mlir {
 template <>
-struct mlir::FieldParser<InputGenKind> {
+struct FieldParser<InputGenKind> {
   static FailureOr<InputGenKind> parse(AsmParser &p) {
     // Stash the current location for caret diagnostics.
     llvm::SMLoc currentLoc = p.getCurrentLocation();
