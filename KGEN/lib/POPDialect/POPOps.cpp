@@ -260,6 +260,16 @@ static Type getScalarOfSameDType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// BufferStackAllocationOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult BufferStackAllocationOp::verify() {
+  if (!getType().cast<BufferType>().getSize())
+    return emitOpError("cannot stack allocate a buffer of unknown size");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

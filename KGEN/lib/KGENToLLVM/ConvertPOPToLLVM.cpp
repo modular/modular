@@ -227,7 +227,8 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
 // ConvertBufferLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertBufferLoad : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
+struct ConvertPOPBufferLoad
+    : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -248,7 +249,8 @@ struct ConvertBufferLoad : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
 // ConvertBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-struct ConvertBufferStore : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
+struct ConvertPOPBufferStore
+    : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -262,6 +264,31 @@ struct ConvertBufferStore : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getValue(),
                                                ptrOffset);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPBufferStackAllocationOp
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPBufferStackAllocationOp
+    : public mlir::ConvertOpToLLVMPattern<BufferStackAllocationOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(BufferStackAllocationOp op,
+                  BufferStackAllocationOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    MLIRContext *ctx = op->getContext();
+    BufferDescriptorBuilder buffer(op.getResult(), op.getLoc(), rewriter,
+                                   *getTypeConverter());
+    DType dtype = buffer.getDType();
+    Type elemType = *getMLIRTypeForDType(ctx, dtype);
+    Type ptrType = LLVM::LLVMPointerType::get(elemType);
+
+    Value size = buffer.emitGetSize(op.getResult());
+    rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(op, ptrType, elemType, size);
     return success();
   }
 };
@@ -307,11 +334,12 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
-      ConvertBufferLoad,
-      ConvertBufferStore,
       ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPBitCast,
+      ConvertPOPBufferLoad,
+      ConvertPOPBufferStackAllocationOp,
+      ConvertPOPBufferStore,
       ConvertPOPCast,
       ConvertPOPConstant,
       ConvertPOPCopySign,

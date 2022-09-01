@@ -633,3 +633,39 @@ def BufferStoreOp : POPOp<"buffer.store", [
     $value `,` $buffer `[` $position `]` attr-dict `:` type($buffer)
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// BufferStackAllocationOp
+//===----------------------------------------------------------------------===//
+
+def BufferStackAllocationOp : POPOp<"buffer.stack_allocation"> {
+  let summary = "stack memory allocation operation";
+  let description = [{
+    The `pop.buffer.stack_allocation` operation allocates memory on the stack.
+    The allocated memory is automatically released when control transfers back
+    from the region of its closest surrounding operation with an
+    AutomaticAllocationScope trait. The amount of memory allocated is specified
+    by its buffer type.
+
+    The resulting buffer type must be concrete in both the size and dtype.
+    I.e. The buffer type cannot have `?` as either the size or dtype.
+
+    Example:
+
+    ```mlir
+    %0 = pop.buffer.stack_allocation : !meta.buffer<4, f32>
+    %1 = pop.buffer.stack_allocation : !meta.buffer<size, f32>
+    %2 = pop.buffer.stack_allocation : !meta.buffer<size, type>
+    // the following is not allowed
+    %3 = pop.buffer.stack_allocation : !meta.buffer<?, f32>
+    ```
+  }];
+
+  let results = (outs
+    Res<ConcreteBuffer, "",
+        [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
+
+  let assemblyFormat = "attr-dict `:` type($result)";
+
+  let hasVerifier = 1;
+}
