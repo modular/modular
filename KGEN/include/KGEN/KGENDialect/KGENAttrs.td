@@ -330,3 +330,104 @@ def ConstraintAttr : KGENAttr<"Constraint", "constraint",
 /// An array of ConstraintAttr's.
 def ConstraintArrayAttr
     : ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
+
+//===----------------------------------------------------------------------===//
+// HistogramAttr
+//===----------------------------------------------------------------------===//
+
+/// Custom histogram parameter - just a vector of std::pair.
+def HistogramParam
+  : ArrayRefParameter<"std::pair<size_t, uint64_t>",
+                      "Histogram parameter for Attributes"> {
+  let printer = "printHistogram($_printer, $_self)";
+  let parser = "parseHistogram($_parser)";
+}
+
+/// Histogram attribute that applies per-unknown-size. The bucket label is the
+/// dimension size in this usage.
+def HistogramAttr : KGENAttr<"Histogram", "eval.histogram"> {
+  let summary = "histogram of (bucket label, weight)";
+  let description = [{
+    This attribute describes a histogram represented as a list of
+    (bucket label, weight). The list should be read as:
+
+    ```mlir
+    #kgen.eval.histogram<[
+      (3, 256), ///< The first bucket is of label "3" and has 256 occurrences.
+      (1, 10)   ///< The second bucket is of label "1" and has 10 occurrences.
+    ]>
+    ```
+  }];
+
+  let parameters = (ins HistogramParam:$buckets);
+
+  let assemblyFormat = "`<` $buckets `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// InputGenKindAttr
+//===----------------------------------------------------------------------===//
+
+/// Input generation kinds.
+let cppNamespace = "M::KGEN" in {
+
+/// This defines the Input Generation Kind enum attribute.
+def InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind", [
+  I32EnumAttrCase<"Zeros", 0, "zeros">,
+  I32EnumAttrCase<"Ones", 1, "ones">,
+  I32EnumAttrCase<"Random", 2, "random">,
+]> {
+  let genSpecializedAttr = 0;
+}
+}
+
+//===----------------------------------------------------------------------===//
+// EvalConfigurationAttr
+//===----------------------------------------------------------------------===//
+
+/// Eval configuration for a single argument. Binds size integers in order, so
+/// if there are 2 unknown sizes, the first size will bind to the first
+/// histogram, the second will bind to the second histogram, and so on.
+def EvalArgConfigurationAttr
+  : KGENAttr<"EvalArgConfiguration", "eval.arg.configuration"> {
+  let summary = "evaluation configuration for a single argument";
+  let parameters = (ins "InputGenKind":$genKind,
+                        ArrayRefParameter<"HistogramAttr">:$sizeHistograms);
+
+  let assemblyFormat = "`<` $genKind `,` $sizeHistograms `>`";
+}
+
+/// Eval configuration for a whole generator interface. The user should specify
+/// single EvalArgConfiguration for each argument on the interface that has a
+/// dynamic/unbound shape.
+def EvalConfigurationAttr
+  : ArrayOfAttrsAttr<"EvalConfiguration", "eval.configuration",
+                     "EvalArgConfigurationAttr"> {
+  let summary = "how to evaluate this generator interface";
+  let description = [{
+    This attribute provides a list of configuration attributes for each
+    argument to the attached operation (generally
+    `kgen.generator.interface`). This attribute is used by the elaborator
+    to determine which implementations of a given interface are 'good'.
+
+    The user should provide for each argument:
+    ```mlir
+    kgen.generator.interface(%arg0 : !meta.buffer<?, f32>, ...) attributes {
+    evalCfg = [
+      #kgen.eval.arg.configuration<
+        zeros, ///< What kind of inputs to generate.
+        #kgen.eval.histogram<[(3, 256), (1, 10)]> ///< The sizes/weights to use
+                                                  ///< for the `?` size
+      >,
+      ...
+    ]}
+    ```
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "ArrayRef<EvalArgConfigurationAttr>":$args), [{
+      return $_get(args.front().getContext(), args);
+    }]>
+  ];
+}

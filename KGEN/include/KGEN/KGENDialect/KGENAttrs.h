@@ -30,6 +30,10 @@ inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
 }
 
+inline raw_ostream &operator<<(raw_ostream &os, InputGenKind opcode) {
+  return os << stringifyEnum(opcode);
+}
+
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
@@ -90,6 +94,13 @@ void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
 /// results in a null attribute.
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
+
+/// Print a histogram parameter.
+void printHistogram(AsmPrinter &p,
+                    ArrayRef<std::pair<size_t, uint64_t>> histogram);
+/// Parse a histogram.
+FailureOr<SmallVector<std::pair<size_t, uint64_t>>>
+parseHistogram(AsmParser &p);
 
 } // namespace M::KGEN
 
