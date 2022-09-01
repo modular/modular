@@ -22,7 +22,13 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
       Return the list of input and output parameters.
     }], "std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>",
         "getParameterInfo">,
-
+    InterfaceMethod<[{
+      Return the list of input parameters.
+    }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins), 
+        "return getParamDecls($_op);", "return getParamDecls($_op);">,
+    InterfaceMethod<[{
+      Return the list of output parameters.
+    }], "ArrayRef<ParamDeclAttr>", "getResultParamDecls">,
     /// Constraints.
     InterfaceMethod<[{
       Return the list of constraints.

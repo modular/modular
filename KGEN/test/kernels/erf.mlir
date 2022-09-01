@@ -26,18 +26,18 @@ hlkgen.generator @erf_scalar_taylor<type: dtype>(%x: !meta.scalar<type>) -> !met
 
 // Instantiate erf_scalar for f32 and f64.
 
-// CHECK-LABEL: kgen.kernel @erf_scalar_f32(%arg0: f32) -> f32
+// CHECK-LABEL: kgen.kernel @erf_scalar_f32_kernel(%arg0: f32) -> f32
 // CHECK: kgen.call @"erf_scalar_taylor,type=f32"(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
-kgen.kernel @erf_scalar_f32(%arg0: f32) -> f32 {
+kgen.generator @erf_scalar_f32(%arg0: f32) -> f32 {
   %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
   %1 = kgen.call @erf_scalar<type: dtype = f32>(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
   %2 = meta.cast_to_builtin %1 : !meta.scalar<f32> to f32
   kgen.return %2 : f32
 }
 
-// CHECK-LABEL: kgen.kernel @erf_scalar_f64(%arg0: f64) -> f64
+// CHECK-LABEL: kgen.kernel @erf_scalar_f64_kernel(%arg0: f64) -> f64
 // CHECK: kgen.call @"erf_scalar_taylor,type=f64"(%0) : (!meta.scalar<f64>) -> !meta.scalar<f64>
-kgen.kernel @erf_scalar_f64(%arg0: f64) -> f64 {
+kgen.generator @erf_scalar_f64(%arg0: f64) -> f64 {
   %0 = meta.cast_from_builtin %arg0 : f64 to !meta.scalar<f64>
   %1 = kgen.call @erf_scalar<type: dtype = f64>(%0) : (!meta.scalar<f64>) -> !meta.scalar<f64>
   %2 = meta.cast_to_builtin %1 : !meta.scalar<f64> to f64
@@ -65,9 +65,9 @@ hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !met
 
 // Instantiate @erf for concrete buffer size and element type
 
-// CHECK-LABEL: kgen.kernel @erf_f32(%arg0: !meta.buffer<?, f32>, %arg1: !meta.buffer<?, f32>)
+// CHECK-LABEL: kgen.kernel @erf_f32_kernel(%arg0: !meta.buffer<?, f32>, %arg1: !meta.buffer<?, f32>)
 // CHECK: kgen.call @"erf_impl1,type=f32"(%arg0, %arg1) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
-kgen.kernel @erf_f32(%in: !meta.buffer<?, f32>, %out: !meta.buffer<?, f32>) {
+kgen.generator @erf_f32(%in: !meta.buffer<?, f32>, %out: !meta.buffer<?, f32>) {
   kgen.call @erf<type: dtype = f32>(%in, %out) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
   kgen.return
 }
