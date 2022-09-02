@@ -1,4 +1,9 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=top-level="kernel" -verify-diagnostics
+// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=break-up-structs="kernel" -verify-diagnostics
+
+// expected-error @below {{cannot find kernel}}
+module {}
+
+// -----
 
 // expected-error @below {{kernel is not top-level}}
 kgen.kernel @kernel() {

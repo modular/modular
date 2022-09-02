@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=top-level="kernel" | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=break-up-structs="kernel" | FileCheck %s
 
 // CHECK-LABEL: @kernel
 // CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
@@ -67,4 +67,29 @@ kgen.kernel @kernel(%a: !meta.buffer<?, f32>) -> i64 {
 // CHECK-NEXT: return %{{.*}}: f32
 kgen.kernel @kernel(%a: f32) -> f32 {
   kgen.return %a : f32
+}
+
+// -----
+
+!structTy = !llvm.struct<(i32, struct<(struct<(i32)>, f32)>)>
+
+// CHECK-LABEL: @kernel
+// CHECK-SAME: (%{{.*}}: i32, %{{.*}}: i32, %{{.*}}: f32, %{{.*}}: i1,
+// CHECK-SAME: %[[A:.*]]: !llvm.ptr<i32>, %[[B:.*]]: !llvm.ptr<i32>, %[[C:.*]]: !llvm.ptr<f32>)
+llvm.func @kernel(%a: !structTy, %c: i1) -> !structTy {
+  llvm.cond_br %c, ^bb1, ^bb2
+
+// CHECK: ^bb1
+^bb1:
+  // CHECK: llvm.store %{{.*}}, %[[A]]
+  // CHECK: llvm.store %{{.*}}, %[[B]]
+  // CHECK: llvm.store %{{.*}}, %[[C]]
+  llvm.return %a : !structTy
+
+// CHECK: ^bb2
+^bb2:
+  // CHECK: llvm.store %{{.*}}, %[[A]]
+  // CHECK: llvm.store %{{.*}}, %[[B]]
+  // CHECK: llvm.store %{{.*}}, %[[C]]
+  llvm.return %a : !structTy
 }
