@@ -45,6 +45,28 @@ struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPDiv
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPDiv : public mlir::ConvertOpToLLVMPattern<DivOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(DivOp op, DivOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isSInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::SDivOp>(op, adaptor.getOperands());
+    } else if (dtype.isUInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::UDivOp>(op, adaptor.getOperands());
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::FDivOp>(op, adaptor.getOperands());
+    }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPNeg
 //===----------------------------------------------------------------------===//
 
@@ -343,6 +365,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCast,
       ConvertPOPConstant,
       ConvertPOPCopySign,
+      ConvertPOPDiv,
       ConvertPOPFMA,
       ConvertPOPLoad,
       ConvertPOPMul,

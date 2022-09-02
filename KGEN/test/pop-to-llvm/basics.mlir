@@ -112,6 +112,24 @@ kgen.kernel @mul(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 // -----
 
+// CHECK-LABEL: @div
+kgen.kernel @div(%arg0: !meta.scalar<si32>,
+                 %arg1: !meta.scalar<ui32>,
+                 %arg2: !meta.scalar<f32>) -> (
+                  !meta.scalar<si32>,
+                  !meta.scalar<ui32>,
+                  !meta.scalar<f32>) {
+  // CHECK: llvm.sdiv
+  %0 = pop.div %arg0, %arg0 : !meta.scalar<si32>
+  // CHECK: llvm.udiv
+  %1 = pop.div %arg1, %arg1 : !meta.scalar<ui32>
+  // CHECK: llvm.fdiv
+  %2 = pop.div %arg2, %arg2 : !meta.scalar<f32>
+  kgen.return %0, %1, %2 : !meta.scalar<si32>,!meta.scalar<ui32>,!meta.scalar<f32>
+}
+
+// -----
+
 // CHECK-LABEL: @copysign
 kgen.kernel @copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
   // CHECK: llvm.intr.copysign
