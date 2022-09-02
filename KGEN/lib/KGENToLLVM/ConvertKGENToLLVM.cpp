@@ -415,89 +415,239 @@ static Value flattenArgumentStruct(ImplicitLocOpBuilder &b,
   return result;
 }
 
-/// Recursively flatten a result struct type. Unpack the struct and store the
-/// nested values into pointer arguments.
+/// Recursively flatten a result struct type into the argument list.
+static unsigned flattenResultStruct(Location loc, LLVM::LLVMStructType structTy,
+                                    Block *body) {
+  unsigned numAdded = 0;
+  for (Type type : structTy.getBody()) {
+    if (auto nestedStruct = type.dyn_cast<LLVM::LLVMStructType>()) {
+      numAdded += flattenResultStruct(loc, nestedStruct, body);
+    } else {
+      body->addArgument(LLVM::LLVMPointerType::get(type), loc);
+      ++numAdded;
+    }
+  }
+  return numAdded;
+}
+
+/// Recursively unpack the struct and store the nested values into pointer
+/// arguments.
 static void flattenResultStruct(ImplicitLocOpBuilder &b,
                                 LLVM::LLVMStructType structTy, Value result,
-                                Block *body) {
+                                ArrayRef<BlockArgument> results,
+                                unsigned &idx) {
   for (auto &type : llvm::enumerate(structTy.getBody())) {
     Value value = b.create<LLVM::ExtractValueOp>(result, type.index());
-    if (auto nestedStruct = type.value().dyn_cast<LLVM::LLVMStructType>()) {
-      flattenResultStruct(b, nestedStruct, value, body);
-    } else {
-      Value ptr = body->addArgument(LLVM::LLVMPointerType::get(type.value()),
-                                    b.getLoc());
-      b.create<LLVM::StoreOp>(value, ptr);
-    }
+    if (auto nestedStruct = type.value().dyn_cast<LLVM::LLVMStructType>())
+      flattenResultStruct(b, nestedStruct, value, results, idx);
+    else
+      b.create<LLVM::StoreOp>(value, results[idx++]);
   }
 }
 
-/// Break up structs in the arguments and results of the given LLVM function.
-/// For example, consider the following function that accepts and returns a
-/// buffer:
-///
-/// ```mlir
-/// llvm.func @slice(%a: !llvm.struct<(i64, ptr<f32>)>, %i: !llvm.ptr<i64>)
-///     -> !llvm.struct<(i64, ptr<f32>)>
-/// ```
-///
-/// The resulting signature will be:
-///
-/// ```mlir
-/// llvm.func @slice(%a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
-///                  %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
-///     -> !llvm.void
-/// ```
-///
-static void breakUpStructs(LLVM::LLVMFuncOp func) {
+/// Break up the structs in the given arguments and result type. Append new
+/// arguments to `body` and populate `newArgs` with the packed structs created
+/// at the top of the body. Return the slice of arguments that represent the
+/// result arguments.
+static ArrayRef<BlockArgument> breakUpStructs(Location loc, Block *body,
+                                              ArrayRef<BlockArgument> args,
+                                              Type resultTy,
+                                              SmallVectorImpl<Value> &newArgs) {
+  // Flatten structs in the argument list.
+  ImplicitLocOpBuilder b(loc, loc.getContext());
+  b.setInsertionPointToStart(body);
+  for (Value arg : args) {
+    b.setLoc(arg.getLoc());
+    if (auto structTy = arg.getType().dyn_cast<LLVM::LLVMStructType>())
+      newArgs.push_back(flattenArgumentStruct(b, structTy, body));
+    else
+      newArgs.push_back(body->addArgument(arg.getType(), arg.getLoc()));
+  }
+
+  // Flatten the results if necessary at all the return points.
+  ArrayRef<BlockArgument> results;
+  if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
+    unsigned numAdded = flattenResultStruct(loc, structTy, body);
+    results = body->getArguments().take_back(numAdded);
+  }
+
+  return results;
+}
+
+/// Break up structs in the arguments and results of the given LLVM function
+/// in-place. The function must be top-level as callsites are not modified.
+static void breakUpStructsInPlace(LLVM::LLVMFuncOp func) {
   // If there are no structs to flatten, exit early.
   auto isStruct = [](Type type) { return type.isa<LLVM::LLVMStructType>(); };
   if (!llvm::any_of(func.getArgumentTypes(), isStruct) &&
       !isStruct(func.getResultTypes().front()))
     return;
 
-  // Create the wrapper body.
-  ImplicitLocOpBuilder b(func.getLoc(), func.getContext());
-  Block *body = &func.getBody().front();
-  SmallVector<Value> args;
-
-  // Flatten structs in the argument list.
-  b.setInsertionPointToStart(body);
-  for (Value arg : llvm::to_vector(func.getArguments())) {
-    b.setLoc(arg.getLoc());
-    if (auto structTy = arg.getType().dyn_cast<LLVM::LLVMStructType>())
-      args.push_back(flattenArgumentStruct(b, structTy, body));
-    else
-      args.push_back(body->addArgument(arg.getType(), b.getLoc()));
-    arg.replaceAllUsesWith(args.back());
-  }
-
-  // Erase the old arguments.
-  llvm::BitVector indices(body->getNumArguments());
-  indices.set(0, func.getNumArguments());
-  body->eraseArguments(indices);
+  Block *entry = &func.getBody().front();
+  Type resultTy = func.getResultTypes().front();
+  SmallVector<Value> newArgs;
+  ArrayRef<BlockArgument> results =
+      breakUpStructs(func.getLoc(), entry, llvm::to_vector(func.getArguments()),
+                     resultTy, newArgs);
 
   // Flatten the results if necessary at all the return points.
-  Type resultTy = func.getNumResults() ? func.getResultTypes().front()
-                                       : b.getType<LLVM::LLVMVoidType>();
   if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
-    resultTy = b.getType<LLVM::LLVMVoidType>();
+    resultTy = LLVM::LLVMVoidType::get(func.getContext());
     for (auto ret : llvm::make_early_inc_range(func.getOps<LLVM::ReturnOp>())) {
-      flattenResultStruct(b, structTy, ret.getOperand(0), body);
-      b.setInsertionPoint(ret);
+      ImplicitLocOpBuilder b(ret.getLoc(), ret);
+      unsigned idx = 0;
+      flattenResultStruct(b, structTy, ret.getOperand(0), results, idx);
       b.create<LLVM::ReturnOp>(ValueRange());
       ret->erase();
     }
   }
 
+  // Replace and erase the old arguments.
+  for (auto [arg, newArg] : llvm::zip(
+           entry->getArguments().take_front(func.getNumArguments()), newArgs))
+    arg.replaceAllUsesWith(newArg);
+  entry->eraseArguments(0, func.getNumArguments());
+
   // Update the function type.
   func.setFunctionTypeAttr(TypeAttr::get(LLVM::LLVMFunctionType::get(
-      resultTy, llvm::to_vector(body->getArgumentTypes()))));
+      resultTy, llvm::to_vector(entry->getArgumentTypes()))));
 }
 
-/// Emit C wrappers for all LLVM functions in the given module.
-static LogicalResult breakUpStructs(ModuleOp theModule,
-                                    ArrayRef<std::string> topLevelKernels) {
+/// Walk the terminal types of a struct with their positions in the struct.
+static void
+walkFlattenedStruct(LLVM::LLVMStructType structTy,
+                    function_ref<void(Type, ArrayRef<LLVM::GEPArg>)> eachFn,
+                    SmallVectorImpl<LLVM::GEPArg> &pos) {
+  pos.emplace_back(nullptr);
+  for (auto &type : llvm::enumerate(structTy.getBody())) {
+    pos.back() = LLVM::GEPArg(type.index());
+    if (auto nested = type.value().dyn_cast<LLVM::LLVMStructType>())
+      walkFlattenedStruct(nested, eachFn, pos);
+    else
+      eachFn(type.value(), pos);
+  }
+  pos.pop_back();
+}
+static void
+walkFlattenedStruct(LLVM::LLVMStructType structTy,
+                    function_ref<void(Type, ArrayRef<LLVM::GEPArg>)> eachFn) {
+  SmallVector<LLVM::GEPArg> pos;
+  walkFlattenedStruct(structTy, eachFn, pos);
+}
+
+/// Recursively pack the struct and put it in a pointer type.
+// FIXME: LLVMStructType doesn't support replaceSubElements.
+static LLVM::LLVMStructType recursivelyPack(LLVM::LLVMStructType structTy) {
+  SmallVector<Type> body;
+  body.reserve(structTy.getBody().size());
+  for (Type type : structTy.getBody()) {
+    if (auto structTy = type.dyn_cast<LLVM::LLVMStructType>())
+      body.push_back(recursivelyPack(structTy));
+    else
+      body.push_back(type);
+  }
+  return LLVM::LLVMStructType::getLiteral(structTy.getContext(), body, true);
+}
+
+/// Emit a wrapper function that takes opaque pointers to packed argument and
+/// result structs.
+static LLVM::LLVMFuncOp emitOpaqueWrapper(LLVM::LLVMFuncOp func,
+                                          LLVM::LLVMFunctionType funcTy) {
+  Block *entry = new Block;
+  ImplicitLocOpBuilder b(func.getLoc(), func.getContext());
+  b.setInsertionPointToStart(entry);
+
+  // Unpack dense packed structs into flat arguments.
+  SmallVector<Value> callArgs;
+  callArgs.reserve(func.getNumArguments());
+  for (Type argTy : funcTy.getParams()) {
+    auto structTy = argTy.dyn_cast<LLVM::LLVMStructType>();
+    if (!structTy) {
+      callArgs.push_back(entry->addArgument(argTy, func.getLoc()));
+      continue;
+    }
+    // Unpack the densely packed struct.
+    Value ptr = entry->addArgument(
+        LLVM::LLVMPointerType::get(recursivelyPack(structTy)), func.getLoc());
+    walkFlattenedStruct(structTy, [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
+      Value curPtr =
+          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(type), ptr, pos);
+      callArgs.push_back(b.create<LLVM::LoadOp>(curPtr));
+    });
+  }
+
+  // The results are already flattened so just index into the provided pointer.
+  if (auto structTy = funcTy.getReturnType().dyn_cast<LLVM::LLVMStructType>()) {
+    Value ptr = entry->addArgument(
+        LLVM::LLVMPointerType::get(recursivelyPack(structTy)), func.getLoc());
+    walkFlattenedStruct(structTy, [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
+      callArgs.push_back(
+          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(type), ptr, pos));
+    });
+  }
+
+  // Emit the call to the flattened version.
+  assert(callArgs.size() == func.getNumArguments());
+  auto call = b.create<LLVM::CallOp>(func, callArgs);
+
+  // Check for a primitive result type.
+  if (func.getNumResults())
+    b.create<LLVM::ReturnOp>(call.getResult());
+  else
+    b.create<LLVM::ReturnOp>(ValueRange());
+
+  // Create the function.
+  auto newFuncTy =
+      LLVM::LLVMFunctionType::get(func.getFunctionType().getReturnType(),
+                                  llvm::to_vector(entry->getArgumentTypes()));
+  b.clearInsertionPoint();
+  auto newFunc = b.create<LLVM::LLVMFuncOp>(
+      (func.getName() + "_opaque_wrapper").str(), newFuncTy);
+  newFunc.getBody().push_back(entry);
+  return newFunc;
+}
+
+/// Emit a wrapper for a function with structs broken up in the arguments and
+/// results.
+static LLVM::LLVMFuncOp emitCWrapper(LLVM::LLVMFuncOp func) {
+  Block *entry = new Block;
+  Type resultTy = func.getResultTypes().front();
+  SmallVector<Value> newArgs;
+  ArrayRef<BlockArgument> results = breakUpStructs(
+      func.getLoc(), entry, func.getArguments(), resultTy, newArgs);
+
+  // Create the nested call.
+  ImplicitLocOpBuilder b(func.getLoc(), func.getContext());
+  b.setInsertionPointToEnd(entry);
+  auto call = b.create<LLVM::CallOp>(func, newArgs);
+
+  // Unpack and store the results.
+  SmallVector<Value> newResults;
+  if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
+    resultTy = LLVM::LLVMVoidType::get(func.getContext());
+    unsigned idx = 0;
+    flattenResultStruct(b, structTy, call.getResult(), results, idx);
+  } else if (call.getNumResults()) {
+    newResults.push_back(call.getResult());
+  }
+  b.create<LLVM::ReturnOp>(newResults);
+
+  // Create the new function.
+  auto funcTy = LLVM::LLVMFunctionType::get(
+      resultTy, llvm::to_vector(entry->getArgumentTypes()));
+  b.clearInsertionPoint();
+  auto newFunc =
+      b.create<LLVM::LLVMFuncOp>((func.getName() + "_c_wrapper").str(), funcTy);
+  newFunc.getBody().push_back(entry);
+  return newFunc;
+}
+
+/// Break up argument and result structs in-place for the given top-level
+/// kernels and emit C wrappers for specific non-top-level kernels.
+static LogicalResult emitWrappers(ModuleOp theModule,
+                                  ArrayRef<std::string> breakUpStructs,
+                                  ArrayRef<std::string> emitCWrappers,
+                                  bool emitOpaqueWrappers) {
   // Ensure that top-level kernels do not have callsites.
   llvm::StringMap<LLVM::CallOp> callsites;
   for (auto func : theModule.getOps<LLVM::LLVMFuncOp>())
@@ -505,10 +655,15 @@ static LogicalResult breakUpStructs(ModuleOp theModule,
       if (Optional<StringRef> callee = call.getCallee())
         callsites.try_emplace(*callee, call);
 
+  // Break up structs in-place in the specific top-level kernels.
   SymbolTable symtab(theModule);
-  for (StringRef topLevelKernel : topLevelKernels) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(topLevelKernel);
-    if (auto it = callsites.find(topLevelKernel); it != callsites.end()) {
+  auto opaqueWrapperAttrName =
+      StringAttr::get(theModule.getContext(), "opaque_wrapper");
+  for (StringRef kernel : breakUpStructs) {
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(kernel);
+    if (!func)
+      return theModule.emitError("cannot find kernel: @") << kernel;
+    if (auto it = callsites.find(kernel); it != callsites.end()) {
       return func.emitError("kernel is not top-level")
                  .attachNote(it->second.getLoc())
              << "callsite here";
@@ -516,8 +671,29 @@ static LogicalResult breakUpStructs(ModuleOp theModule,
     if (func.isExternal())
       return func.emitError("cannot break up structs of an external function");
 
-    breakUpStructs(func);
+    LLVM::LLVMFunctionType funcTy = func.getFunctionType();
+    breakUpStructsInPlace(func);
+    if (emitOpaqueWrappers) {
+      LLVM::LLVMFuncOp wrapper = emitOpaqueWrapper(func, funcTy);
+      StringAttr wrapperRef = symtab.insert(wrapper, ++Block::iterator(func));
+      func->setAttr(opaqueWrapperAttrName, FlatSymbolRefAttr::get(wrapperRef));
+    }
   }
+
+  // Emit C wrappers for the specific kernels.
+  auto cWrapperAttrName = StringAttr::get(theModule.getContext(), "c_wrapper");
+  for (StringRef kernel : emitCWrappers) {
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(kernel);
+    if (!func)
+      return theModule.emitError("cannot find kernel: @") << kernel;
+
+    // Emit the wrapper, insert it and rename it if necessary, then store a
+    // reference to the wrapper on the original function.
+    LLVM::LLVMFuncOp wrapper = emitCWrapper(func);
+    StringAttr wrapperRef = symtab.insert(wrapper, ++Block::iterator(func));
+    func->setAttr(cWrapperAttrName, FlatSymbolRefAttr::get(wrapperRef));
+  }
+
   return success();
 }
 
@@ -525,15 +701,19 @@ static LogicalResult breakUpStructs(ModuleOp theModule,
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
+static void setStringListOption(Pass::ListOption<std::string> &opt,
+                                ArrayRef<StringRef> values) {
+  for (StringRef value : values)
+    opt.push_back(value.str());
+}
+
 namespace {
 struct ConvertKGENToLLVMPass
     : public ConvertKGENToLLVMBase<ConvertKGENToLLVMPass> {
-  explicit ConvertKGENToLLVMPass(ArrayRef<StringRef> topLevelKernels) {
-    SmallVector<std::string> names;
-    names.reserve(topLevelKernels.size());
-    for (StringRef topLevelKernel : topLevelKernels)
-      names.push_back(topLevelKernel.str());
-    this->topLevelKernels = names;
+  explicit ConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
+                                 ArrayRef<StringRef> emitCWrappers) {
+    setStringListOption(this->breakUpStructs, breakUpStructs);
+    setStringListOption(this->emitCWrappers, emitCWrappers);
   }
 
   void runOnOperation() override;
@@ -563,11 +743,13 @@ void ConvertKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Break up structs in top-level kernels exposed to C.
-  if (failed(breakUpStructs(theModule, topLevelKernels)))
+  if (failed(emitWrappers(theModule, breakUpStructs, emitCWrappers,
+                          emitOpaqueWrappers)))
     signalPassFailure();
 }
 
 std::unique_ptr<mlir::Pass>
-M::KGEN::createConvertKGENToLLVMPass(ArrayRef<StringRef> topLevelKernels) {
-  return std::make_unique<ConvertKGENToLLVMPass>(topLevelKernels);
+M::KGEN::createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
+                                     ArrayRef<StringRef> emitCWrappers) {
+  return std::make_unique<ConvertKGENToLLVMPass>(breakUpStructs, emitCWrappers);
 }
