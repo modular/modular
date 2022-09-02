@@ -68,8 +68,6 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   // Register the C scalar types as async value types.
   AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
                             uint32_t, int64_t, uint64_t, float, double>();
-
-  TIME_PROFILER_MAIN_INIT;
 }
 
 Runtime::~Runtime() {
@@ -87,8 +85,6 @@ Runtime::~Runtime() {
   // ID (allowing it to be reused).  This is best-effort but not guaranteed.
   uint8_t expected = runtimeIndex + 1;
   (void)nextRuntimeIndex.compare_exchange_strong(expected, runtimeIndex);
-
-  TIME_PROFILER_MAIN_WRAPUP;
 }
 
 /// Cancel the current BEF Execution. This transitions this Runtime to the
