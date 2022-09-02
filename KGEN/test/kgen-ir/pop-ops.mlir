@@ -100,6 +100,20 @@ kgen.kernel @pop_mul_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
+// CHECK-LABEL: kgen.kernel @pop_div(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.kernel @pop_div(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK-NEXT: %0 = pop.div %arg0, %arg1 : !meta.scalar<f32>
+  %0 = pop.div %arg0, %arg1 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// CHECK-LABEL: kgen.kernel @pop_div_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+kgen.kernel @pop_div_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+  // CHECK-NEXT: %0 = pop.div %arg0, %arg1 : !meta.simd<4, f32>
+  %0 = pop.div %arg0, %arg1 : !meta.simd<4, f32>
+  kgen.return %0 : !meta.simd<4, f32>
+}
+
 // CHECK-LABEL: kgen.kernel @pop_shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
 kgen.kernel @pop_shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
   // CHECK: %0 = pop.shl %arg0, %arg1 : !meta.scalar<si32>

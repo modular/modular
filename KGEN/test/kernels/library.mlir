@@ -3,31 +3,6 @@
 
 // RUN: kgen-opt %s | kgen-opt -o /dev/null
 
-
-//===----------------------------------------------------------------------===//
-// div
-//===----------------------------------------------------------------------===//
-
-kgen.generator.interface @div<type: dtype>(!meta.scalar<type>, !meta.scalar<type>) -> !meta.scalar<type>
-
-kgen.generator @div_f32<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <[eq(:dtype type, f32), "incorrect element type"]> implements @div {
-  %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f32
-  %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f32
-  %2 = llvm.fdiv %0, %1 : f32
-  %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<type>
-  kgen.return %3 : !meta.scalar<type>
-}
-
-kgen.generator @div_f64<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type>
-  constraints <[eq(:dtype type, f64), "incorrect element type"]> implements @div {
-  %0 = meta.cast_to_builtin %arg0: !meta.scalar<type> to f64
-  %1 = meta.cast_to_builtin %arg1: !meta.scalar<type> to f64
-  %2 = llvm.fdiv %0, %1 : f64
-  %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<type>
-  kgen.return %3 : !meta.scalar<type>
-}
-
 //===----------------------------------------------------------------------===//
 // buffer.loadOrValue
 //===----------------------------------------------------------------------===//

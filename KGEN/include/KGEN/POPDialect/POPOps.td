@@ -193,6 +193,25 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
+// DivOp
+//===----------------------------------------------------------------------===//
+
+def DivOp : POP_MetaArithmeticBinaryOp<"div"> {
+  let summary = "divide";
+  let description = [{
+    The `div` operation takes two meta.scalar or meta.simd types and divdes
+    them. The operand and result types must be the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.div %a, %b : !meta.scalar<type>
+    %c = pop.div %a, %b : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ShlOp
 //===----------------------------------------------------------------------===//
 
