@@ -80,6 +80,11 @@ public:
   static constexpr size_t bit_count = CHAR_BIT * byte_count;
   static constexpr size_t width = Width;
 
+  /// If the isEmulated flag is true, then we are not actually explicitly using
+  /// SIMD instructions. Instead, we are looping over the elements of the vector
+  /// and performing the operation.
+  static constexpr bool isEmulated = LLCL_SIMD_EMULATED == 1;
+
 #if LLCL_SIMD_EMULATED
   // We are just going to emulate the SIMD type using an array.
   using vector_type = std::array<element_type, width>;
@@ -493,11 +498,6 @@ public:
   void dump() const { print(llvm::errs()); }
 
 private:
-  /// If the isEmulated flag is true, then we are not actually explicitly using
-  /// SIMD instructions. Instead, we are looping over the elements of the vector
-  /// and performing the operation.
-  static constexpr bool isEmulated = LLCL_SIMD_EMULATED == 1;
-
   /// The underlying simd vector data.
   vector_type vectorData;
 };
