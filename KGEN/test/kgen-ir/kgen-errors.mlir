@@ -401,3 +401,17 @@ kgen.generator.interface @badInputGenKindNoString() attributes {
   // expected-error@+1 {{expected valid keyword}}
   arg = #kgen.eval.arg.configuration<3, <[]>>
 }
+
+// -----
+
+// Reject uses of parameters in kgen.kernel since the elaborator should remove them.
+kgen.kernel @test() {  // expected-note {{within this kgen.kernel}}
+  // Declaring parameters in a kernel is ok.
+  kgen.param.declare someParam = <42>
+
+  // Using them is not.
+  // expected-error@+1 {{invalid use of parameter "someParam" in kgen.kernel}}
+  "someop" () {} : () -> !meta.simd<someParam, f32>
+
+  kgen.return
+}
