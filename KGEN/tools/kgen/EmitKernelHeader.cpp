@@ -41,6 +41,9 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
 
     // Helper to print a function as a C type.
     std::function<void(Type)> printTypeAsC = [&](Type t) {
+      if (auto scalar = t.dyn_cast<ScalarType>())
+        return printDTypeAsC(scalar.resolveDType());
+
       if (auto simd = t.dyn_cast<SIMDType>()) {
         printDTypeAsC(simd.resolveDType());
         // Get the vector size in bytes to be used by the vector_size attribute.
@@ -53,7 +56,8 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
         return;
       }
       if (auto ptr = t.dyn_cast<PointerType>()) {
-        if (auto dtype = ptr.resolveDType(); dtype.isValid())
+        auto dtype = ptr.resolveDType();
+        if (dtype.isValid())
           printDTypeAsC(dtype);
         else
           os << "void";
