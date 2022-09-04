@@ -278,7 +278,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   if (succeeded(parseOptionalParamKeywordOrString(p, &keyword, isBareword))) {
     // If this is a KGEN keyword (a bareword with a known identifier), process
     // it.
-    if (isBareword) {
+    if (isBareword && type.isa<DTypeType>()) {
       auto dtype = DType::getFromString(keyword);
       if (succeeded(dtype)) {
         value = DTypeConstantAttr::getChecked(
@@ -287,7 +287,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       }
     }
 
-    // Just a bareword with no trailing `(`?  Must be a parameter reference.
+    // A bareword or string with no trailing `(` must be a parameter reference.
     if (failed(p.parseOptionalLParen())) {
       value = ParamDeclRefAttr::get(keyword, type);
       return success();
@@ -615,6 +615,21 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
   else
     os << type;
   os << ' ';
+}
+
+/// Print a parameter value that is known to have `type` type.
+void KGEN::printTypeParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, value);
+}
+
+/// Parse a parameter value that is known to have `type` type.
+ParseResult KGEN::parseTypeParamValue(AsmParser &p,
+                                      FailureOr<TypedAttr> &value) {
+  TypedAttr result;
+  if (parseParamValue(p, result, MLIRTypeType::get(p.getContext())))
+    return failure();
+  value = result;
+  return success();
 }
 
 /// Print an attribute value that is known to have index type.

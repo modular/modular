@@ -20,12 +20,34 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// Dialect Type Parsing and Printing
+// Dialect Types
 //===----------------------------------------------------------------------===//
 
 // Pull in the dialect definition.
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
+
+Type ParamType::get(TypedAttr param) {
+  // If the parameter is already resolved to a constant, fold this to the
+  // indicated type.
+  if (auto constant = param.dyn_cast<MLIRTypeConstantAttr>())
+    return constant.getValue();
+
+  // Otherwise, form the ParamType like normal.
+  return Base::get(param.getContext(), param);
+}
+
+void ParamType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getParam());
+}
+
+Type ParamType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                            ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.empty());
+  return ParamType::get(replAttrs[0]);
+}
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.
