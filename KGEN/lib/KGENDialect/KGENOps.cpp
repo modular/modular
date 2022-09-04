@@ -795,7 +795,29 @@ LogicalResult KernelOp::verifyRegions() {
 
   // See if the parameter definitions and uses within the kernel are
   // structured correctly.
-  return ParameterDeclsAndUses::calculate(*this);
+  FailureOr<ParameterDeclsAndUses> paramInfo =
+      ParameterDeclsAndUses::calculate(*this);
+  if (failed(paramInfo))
+    return failure();
+
+  // In a kgen.kernel, parameters are allowed to be defined (e.g. by calls with
+  // output parameters), but not used.  This is because the elaborator must
+  // already have been run, lowering these to concrete attibute values.
+
+  // TODO: In the future, we could ban specific uses (e.g. in types) but have an
+  // allow-list of operations that can use parameters.  This could be useful if
+  // we want something to be able to use the result parameters of a call or
+  // something.  Until then, a blanked ban on parameter use is sufficient.
+
+  for (auto &[usingOp, uses] : paramInfo.value().usersAndDeclarers) {
+    if (!uses.empty()) {
+      auto diag = usingOp->emitError("invalid use of parameter ")
+                  << uses[0].getName() << " in kgen.kernel";
+      diag.attachNote(this->getLoc()) << "within this kgen.kernel";
+      return failure();
+    }
+  }
+  return success();
 }
 
 // KernelOp doesn't allow constraints, because it doesn't have any input
