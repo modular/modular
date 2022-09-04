@@ -808,12 +808,13 @@ LogicalResult KernelOp::verifyRegions() {
   // allow-list of operations that can use parameters.  This could be useful if
   // we want something to be able to use the result parameters of a call or
   // something.  Until then, a blanked ban on parameter use is sufficient.
-
   for (auto &[usingOp, uses] : paramInfo.value().usersAndDeclarers) {
     if (!uses.empty()) {
       auto diag = usingOp->emitError("invalid use of parameter ")
                   << uses[0].getName() << " in kgen.kernel";
-      diag.attachNote(this->getLoc()) << "within this kgen.kernel";
+      diag.attachNote(this->getLoc())
+          << "within kgen.kernel '" << getName() << "'";
+
       return failure();
     }
   }
@@ -826,6 +827,7 @@ ArrayRef<ConstraintAttr> KernelOp::getConstraints() { return {}; }
 ConstraintArrayAttr KernelOp::getConstraintsAttr() {
   return ConstraintArrayAttr();
 }
+
 void KernelOp::setConstraintsAttr(ConstraintArrayAttr attr) {
   assert(0 &&
          "kgen.kernel doesn't have input parameters to add constraints to");
@@ -962,6 +964,20 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       verifyMatchingCallLists(getResultTypes(), calleeResultTypes, *this,
                               callee, "result", "type"))
     return failure();
+
+  // Ok, the call looks good.  Last check, make sure that calls within a
+  // kgen.kernel do not pass input arguments.  Input arguments are invalid to a
+  // kernel, so it must be a generator or generator interface, and these will
+  // not be elaborated unless they have zero input arguments.
+  if (!callerInputParams.empty()) {
+    if (auto kernelParent = getOperation()->getParentOfType<KernelOp>()) {
+      auto diag = emitError() << "cannot call generator with input arguments "
+                                 "from concrete kgen.kernel";
+      diag.attachNote(kernelParent->getLoc())
+          << "within kgen.kernel '" << kernelParent.getName() << "'";
+      return failure();
+    }
+  }
 
   return success();
 }

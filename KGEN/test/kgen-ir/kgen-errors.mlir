@@ -405,7 +405,7 @@ kgen.generator.interface @badInputGenKindNoString() attributes {
 // -----
 
 // Reject uses of parameters in kgen.kernel since the elaborator should remove them.
-kgen.kernel @test() {  // expected-note {{within this kgen.kernel}}
+kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
   // Declaring parameters in a kernel is ok.
   kgen.param.declare someParam = <42>
 
@@ -413,5 +413,27 @@ kgen.kernel @test() {  // expected-note {{within this kgen.kernel}}
   // expected-error@+1 {{invalid use of parameter "someParam" in kgen.kernel}}
   "someop" () {} : () -> !meta.simd<someParam, f32>
 
+  kgen.return
+}
+
+// -----
+
+// kgen.kernel isn't allowed to call generators that take input parameters,
+// but they are allowed to call generators with no input parameters.
+
+kgen.generator @hasInputParam<param>() {
+  kgen.return
+}
+kgen.generator @hasResultParam<() -> param>() {
+  kgen.return<param = 42>
+}
+
+kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
+  // ok
+  kgen.call @hasResultParam<() -> result>() : () -> ()
+  
+  // expected-error@+1 {{cannot call generator with input arguments from concrete kgen.kernel}}
+  kgen.call @hasInputParam<param = 42>() : () -> ()
+  
   kgen.return
 }
