@@ -205,6 +205,14 @@ kgen.generator @type_params<dt: dtype>() {
   // CHECK: kgen.param.declare ty2: type = <!meta.scalar<dt>>
   kgen.param.declare ty2: type = <!meta.scalar<dt>>
 
+  // This op returns an SSA value whose type is specified by a type parameter.
+  // CHECK: "someop"() : () -> !kgen.paramtype<ty2>
+  "someop"() : () -> !kgen.paramtype<ty2>
+
+  // kgen.paramtype auto-folds non-parameterized types on construction.
+  // CHECK: "someop"() : () -> !meta.scalar<f32>
+  "someop"() : () -> !kgen.paramtype<!meta.scalar<f32>>
+
   kgen.return
 }
 

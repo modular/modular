@@ -9,7 +9,35 @@
 //===----------------------------------------------------------------------===//
 
 // Base class for other typedefs. Provides dialact-specific defaults.
-class KGENType<string name> : TypeDef<KGENDialect, name> { }
+class KGENType<string name, list<Trait> traits = []>
+  : TypeDef<KGENDialect, name, traits> { }
+
+def ParamType
+  : KGENType<"Param",
+             [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "Type specified by a parameter expression";
+  let description = [{
+    This is a symbolic type represented with a parameter expression that is
+    resolved by the KGEN elaborator.  Once this parameter is substituted, the
+    type disappears.
+  }];
+
+  let mnemonic = "paramtype";
+  let parameters = (ins "mlir::TypedAttr":$param);
+  let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
+
+  // Our builders create ParamType but fold to the base type if not
+  // parameterized.
+  let skipDefaultBuilders = 1;
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "mlir::TypedAttr":$param),
+                                   [{}], "Type">,
+     // This is needed for ODS generated uses.
+    TypeBuilderWithInferredContext<(ins "mlir::MLIRContext *":$context,
+                                        "mlir::TypedAttr":$param),
+                                   [{ return get(param); }], "Type">,
+  ];
+}
 
 def MLIRTypeType : KGENType<"MLIRType"> {
   let summary = "Arbitrary MLIR type";
@@ -19,7 +47,7 @@ def MLIRTypeType : KGENType<"MLIRType"> {
     because it has no runtime representation.
   }];
 
-  let mnemonic = "type";
+  let mnemonic = "mlirtype";
   let parameters = (ins);
 }
 

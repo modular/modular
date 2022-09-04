@@ -85,8 +85,11 @@ kgen.param.constant : i8 = <#kgen.dtype.constant<f32>>
 
 // -----
 
-// expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
-kgen.param.constant : i8 = <f32>
+kgen.generator @foo() {
+  // expected-error @+1 {{invalid use of parameter with no declaration "f32"}}
+  kgen.param.constant : i8 = <f32>
+  kgen.return
+}
 
 // -----
 
