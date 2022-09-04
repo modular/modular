@@ -196,3 +196,15 @@ kgen.generator @dtype_params<dt: !kgen.dtype, "f32", "ui32">() {
   kgen.param.constant : dtype = <ui128>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @type_params<dt: dtype>()
+kgen.generator @type_params<dt: dtype>() {
+  // CHECK: kgen.param.declare ty1: type = <!meta.scalar<f32>>
+  kgen.param.declare ty1: type = <!meta.scalar<f32>>
+
+  // CHECK: kgen.param.declare ty2: type = <!meta.scalar<dt>>
+  kgen.param.declare ty2: type = <!meta.scalar<dt>>
+
+  kgen.return
+}
+

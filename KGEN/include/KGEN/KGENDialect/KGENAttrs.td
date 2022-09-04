@@ -267,6 +267,26 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 }
 
 //===----------------------------------------------------------------------===//
+// MLIRTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+/// This represents a parameter whose value is an MLIR type.  It is like
+/// TypeAttr but carries a 'kgen.type' type itself.
+def MLIRTypeConstantAttr : ExprAttr<"MLIRTypeConstant", "mlirtype.constant"> {
+  let summary = "Constant !kgen.type MLIR type";
+  let description = [{
+    This is constant value for `type`, representing a bound MLIR type.
+  }];
+
+  /// The value of a DTypeConstantAttr is always signless i8 constant value
+  /// and the type is always !kgen.dtype.
+  let parameters = (ins "Type":$value, AttributeSelfTypeParameter<"">:$type);
+
+  let builders = [AttrBuilderWithInferredContext<(ins "Type":$value)>];
+  let assemblyFormat = "`<` $value `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 

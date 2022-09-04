@@ -43,6 +43,13 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
   if (failed(parser.parseOptionalColon()))
     return None;
 
+  // In addition to standard types, we support 'type' as a sugared form of
+  // !kgen.type.
+  if (succeeded(parser.parseOptionalKeyword("type"))) {
+    type = parser.getBuilder().getType<MLIRTypeType>();
+    return OptionalParseResult(LogicalResult::success());
+  }
+
   // In addition to standard types, we support 'dtype' as a sugared form of
   // !kgen.dtype.
   if (succeeded(parser.parseOptionalKeyword("dtype"))) {
@@ -52,6 +59,7 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
 
   return parser.parseType(type);
 }
+
 static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type);
 
 //===----------------------------------------------------------------------===//
@@ -370,6 +378,15 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
+  // If this parameter is a type, parse it as such.
+  if (type.isa<MLIRTypeType>()) {
+    Type result;
+    if (p.parseType(result))
+      return failure();
+    value = MLIRTypeConstantAttr::get(result);
+    return success();
+  }
+
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, etc.
   return p.parseAttribute(value, type);
@@ -465,6 +482,12 @@ static void printFloatValue(const APFloat &apValue, raw_ostream &os) {
 void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
     printParamName(declRef.getName(), os);
+    return;
+  }
+
+  // If this is an MLIRType constant, print it as a bare type.
+  if (auto mlirTypeConstant = value.dyn_cast<MLIRTypeConstantAttr>()) {
+    os << mlirTypeConstant.getValue();
     return;
   }
 
@@ -568,10 +591,11 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
     return;
   p << ": ";
 
-  // Handle other special cases for parameters here: we support `dtype` as a
-  // bareword for `!kgen.dtype`.
-  if (type.isa<DTypeType>())
-    p << "dtype";
+  // Handle other special cases for parameters here.
+  if (type.isa<MLIRTypeType>())
+    p << "type"; // `type` => `!kgen.type`.
+  else if (type.isa<DTypeType>())
+    p << "dtype"; // `dtype` => `!kgen.dtype`.
   else
     p << type;
 }
@@ -583,10 +607,11 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
     return;
   os << ':';
 
-  // Handle other special cases for parameters here: we support `dtype` as a
-  // bareword for `!kgen.dtype`.
-  if (type.isa<DTypeType>())
-    os << "dtype";
+  // Handle other special cases for parameters here.
+  if (type.isa<MLIRTypeType>())
+    os << "type"; // `type` => `!kgen.type`.
+  else if (type.isa<DTypeType>())
+    os << "dtype"; // `dtype` => `!kgen.dtype`.
   else
     os << type;
   os << ' ';
@@ -1339,8 +1364,21 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
+// MLIRTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+MLIRTypeConstantAttr MLIRTypeConstantAttr::get(Type type) {
+  auto *ctx = type.getContext();
+  return get(ctx, type, MLIRTypeType::get(ctx));
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
+
+DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, DType dtype) {
+  return get(ctx, dtype, DTypeType::get(ctx));
+}
 
 LogicalResult
 DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -1383,7 +1421,7 @@ bool DTypeConstantAttr::isCompatibleWith(Type type) {
 /// Return true if the attribute is a valid parameter expression.
 bool KGEN::isValidParameterExpr(Attribute value) {
   // Leaf constants and references to parameter declarations are valid.
-  if (value.isa<IntegerAttr, FloatAttr, DTypeConstantAttr, ParamDeclRefAttr>())
+  if (isSimpleConstant(value) || value.isa<ParamDeclRefAttr>())
     return true;
 
   // Expressions composed of other expressions are valid.
@@ -1404,14 +1442,6 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
           op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
     return paramDeclsArray.getValue();
   return {};
-}
-
-//===----------------------------------------------------------------------===//
-// DTypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, DType dtype) {
-  return get(ctx, dtype, DTypeType::get(ctx));
 }
 
 //===----------------------------------------------------------------------===//
