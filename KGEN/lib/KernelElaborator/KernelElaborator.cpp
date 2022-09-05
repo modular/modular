@@ -599,7 +599,7 @@ void ParameterRewriter::completeCallOpProcessing(
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (auto result : call.getResultTypes())
-    resultTypes.push_back(getReboundType(result, call.getLoc()));
+    resultTypes.push_back(getReboundType(result));
 
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
@@ -672,8 +672,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     }
 
     newAttrs.push_back(NamedAttribute(
-        namedAttr.getName(),
-        getReboundAttribute(namedAttr.getValue(), op->getLoc())));
+        namedAttr.getName(), getReboundAttribute(namedAttr.getValue())));
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
@@ -683,7 +682,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // types.  We don't have to check operands because they are always checked
   // when being defined.
   for (OpResult result : op->getResults())
-    result.setType(getReboundType(result.getType(), op->getLoc()));
+    result.setType(getReboundType(result.getType()));
 
   // Scan the region list if present.  The walker will automatically recurse
   // for us, but we have to check the block arguments.
@@ -691,7 +690,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (auto &region : op->getRegions())
       for (auto &block : region)
         for (Value arg : block.getArguments())
-          arg.setType(getReboundType(arg.getType(), op->getLoc()));
+          arg.setType(getReboundType(arg.getType()));
   }
   return success();
 }

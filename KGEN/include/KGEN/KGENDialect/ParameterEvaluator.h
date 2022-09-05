@@ -54,13 +54,13 @@ public:
   /// rewritten.  This can fail with incompatible IR (not due to expansion
   /// errors).  In that case, an error is emitted at the specified location and
   /// the attribute is returned unmodified.
-  Attribute getReboundAttribute(Attribute attr, Location loc);
+  Attribute getReboundAttribute(Attribute attr);
 
   /// Get the specified type with any nested parameter expressions rewritten.
   /// This can fail with incompatible IR (not due to expansion errors).  In that
   /// case, an error is emitted at the specified location and the type is
   /// returned unmodified.
-  Type getReboundType(Type type, Location loc);
+  Type getReboundType(Type type);
 
 private:
   /// These are the bound parameter values, captured in simplified form.
