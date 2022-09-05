@@ -951,7 +951,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
 
   auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type, callee->getLoc());
+    return evaluator.getReboundType(type);
   };
 
   auto calleeInputTypes = llvm::map_range(fnType.getInputs(), remapType);

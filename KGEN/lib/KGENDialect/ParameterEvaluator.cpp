@@ -121,10 +121,8 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
 
 /// Get the specified attribute with any nested parameter expressions
 /// rewritten.  This can fail with incompatible IR (not due to expansion
-/// errors).  In that case, an error is emitted at the specified location and
-/// the attribute is returned unmodified.
-Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
-                                                  Location loc) {
+/// errors).
+Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
   if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
                         DTypeConstantAttr>())
@@ -135,14 +133,6 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
   if (iter != rewrittenAttrs.end())
     return iter->second;
 
-  // Otherwise, check the type of typed attributes.
-  if (auto typedAttr = attr.dyn_cast<TypedAttr>()) {
-    if (getReboundType(typedAttr.getType(), loc) != typedAttr.getType()) {
-      emitError(loc, "unsupported parameterized type in attribute ") << attr;
-      return rewrittenAttrs[attr] = attr;
-    }
-  }
-
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
   if (attr.isa<ParamDeclRefAttr, ParamOperatorAttr>()) {
@@ -152,20 +142,16 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
 
   } else if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
     // TODO: Capture types using SubElementAttrInterface.
-    Type newType = getReboundType(typeAttr.getValue(), loc);
+    auto newType = getReboundType(typeAttr.getValue());
     if (newType != typeAttr.getValue())
       result = TypeAttr::get(newType);
   } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          newAttrs.push_back(getReboundAttribute(attr, loc));
-        },
-        [&](Type type) { newTypes.push_back(getReboundType(type, loc)); });
+        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
+        [&](Type type) { newTypes.push_back(getReboundType(type)); });
     result = itf.replaceImmediateSubElements(newAttrs, newTypes);
-  } else {
-    emitError(loc, "unknown attribute in parameterized operation ") << attr;
   }
 
   return rewrittenAttrs[attr] = result;
@@ -175,7 +161,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr,
 /// can fail with incompatible IR (not due to expansion errors).  In that case,
 /// an error is emitted at the specified location and the type is returned
 /// unmodified.
-Type ParameterEvaluator::getReboundType(Type type, Location loc) {
+Type ParameterEvaluator::getReboundType(Type type) {
   // These are known leaf types that don't participate with
   // SubElementTypeInterface and have no attributes or types within them.
   if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>())
@@ -196,11 +182,11 @@ Type ParameterEvaluator::getReboundType(Type type, Location loc) {
     SmallVector<Type> inputs, results;
     bool changed = false;
     for (Type input : fnType.getInputs()) {
-      inputs.push_back(getReboundType(input, loc));
+      inputs.push_back(getReboundType(input));
       changed |= inputs.back() != input;
     }
     for (Type result : fnType.getResults()) {
-      results.push_back(getReboundType(result, loc));
+      results.push_back(getReboundType(result));
       changed |= results.back() != result;
     }
 
@@ -211,13 +197,9 @@ Type ParameterEvaluator::getReboundType(Type type, Location loc) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          newAttrs.push_back(getReboundAttribute(attr, loc));
-        },
-        [&](Type type) { newTypes.push_back(getReboundType(type, loc)); });
+        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
+        [&](Type type) { newTypes.push_back(getReboundType(type)); });
     result = itf.replaceImmediateSubElements(newAttrs, newTypes);
-  } else {
-    emitError(loc, "unknown type in parameterized operation ") << type;
   }
 
   return rewrittenTypes[type] = result;
