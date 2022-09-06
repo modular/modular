@@ -1,4 +1,4 @@
-//===- KernelElaborator.cpp -----------------------------------------------===//
+//===- Elaborator.cpp -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KernelElaborator.h"
+#include "KGEN/Elaborator.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -1171,10 +1171,11 @@ resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
   return success();
 }
 
-/// Elaborate kernels in the specified module, incorporating implementation
+/// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
-LogicalResult M::elaborateKernels(ModuleOp primary,
-                                  ArrayRef<std::filesystem::path> searchPaths) {
+LogicalResult
+M::elaborateGenerators(ModuleOp primary,
+                       ArrayRef<std::filesystem::path> searchPaths) {
   SmallVector<OwningOpRef<ModuleOp>> includedModules;
   DenseSet<StringAttr> loadedFiles;
   for (auto include : llvm::make_early_inc_range(primary.getOps<IncludeOp>()))
@@ -1268,7 +1269,7 @@ public:
 
     paths.push_back(std::filesystem::path("."));
 
-    if (failed(elaborateKernels(theModule, paths)))
+    if (failed(elaborateGenerators(theModule, paths)))
       return signalPassFailure();
   }
 };

@@ -4,9 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENKernelElaborator
+add_modular_library(KGENElaborator
   BetterCloning.cpp
-  KernelElaborator.cpp
+  Elaborator.cpp
 
   LINK_LIBS PUBLIC
   KGENDialect
