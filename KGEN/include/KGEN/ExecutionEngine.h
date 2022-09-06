@@ -65,9 +65,6 @@ public:
   }
 
   /// Get the compiled object that corresponds to this kernel.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getObject(llvm::StringRef kernel);
-
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject(KGEN::KernelOp kernel);
 
 private:
@@ -80,6 +77,7 @@ private:
   std::unique_ptr<detail::ObjectCache> cache;
   std::unique_ptr<llvm::TargetMachine> targetMachine;
   std::unique_ptr<llvm::orc::LLJIT> jit;
+  std::vector<llvm::orc::ThreadSafeModule> compiledModules;
 };
 } // namespace M::KGEN
 
