@@ -11,9 +11,6 @@
 #include "Support/ErrorOr.h"
 #include "Support/VCSRevision.h"
 #include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
-#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
-#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Block.h"
 #include "mlir/Pass/PassManager.h"
@@ -245,13 +242,15 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface kernel,
                                    OpBuilder &builder,
                                    const mlir::SymbolTable &symtab) {
-  for (auto call : kernel.getBody().getOps<mlir::CallOpInterface>()) {
+  Optional<Error> error;
+  auto extractDependencies = [&](mlir::CallOpInterface call) {
     auto callableForCallee = call.getCallableForCallee();
     if (auto val = callableForCallee.dyn_cast<Value>()) {
       auto err = mlir::emitError(call.getLoc())
                  << "dynamic callee is not supported";
       err.attachNote(val.getLoc()) << "dynamic callee here";
-      return Error("dynamic callee is not supported");
+      error = Error("dynamic callee is not supported");
+      return WalkResult::interrupt();
     }
     // This is safe because in KGEN all symbols are flattened, and we don't
     // support recursion in KGEN.
@@ -259,21 +258,27 @@ static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface kernel,
         callableForCallee.get<SymbolRefAttr>().getLeafReference();
     auto callee = symtab.lookup<mlir::FunctionOpInterface>(calleeRef);
     if (!callee || callee.isExternal()) {
-      auto error = mlir::emitError(call.getLoc())
-                   << "could not find local callee '@" << calleeRef.getValue()
-                   << "' in the current module";
+      auto err = mlir::emitError(call.getLoc())
+                 << "could not find local callee '@" << calleeRef.getValue()
+                 << "' in the current module";
       if (callee)
-        error.attachNote(callee.getLoc()) << "callee defined here";
+        err.attachNote(callee.getLoc()) << "callee defined here";
 
-      return Error("could not find local callee '@" + calleeRef.getValue() +
-                   "' in the current module.");
+      error = Error("could not find local callee '@" + calleeRef.getValue() +
+                    "' in the current module.");
+      return WalkResult::interrupt();
     }
 
-    if (auto err = kernelSlicer(callee, builder, symtab))
-      return err.takeError();
+    if (auto err = kernelSlicer(callee, builder, symtab)) {
+      error = err.takeError();
+      return WalkResult::interrupt();
+    }
 
     builder.clone(*callee);
-  }
+    return WalkResult::advance();
+  };
+  if (kernel->walk(extractDependencies).wasInterrupted())
+    return std::move(*error);
   return success();
 }
 
@@ -287,12 +292,11 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
 
   pm.addNestedPass<KGEN::KernelOp>(
       mlir::arith::createConvertArithmeticToLLVMPass());
-  pm.addNestedPass<KGEN::KernelOp>(mlir::createConvertSCFToCFPass());
-  pm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
   pm.addPass(KGEN::createConvertKGENToLLVMPass(name));
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
 
   // And finally canonicalize again before running through the JIT.
-  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
 
   return pm.run(module);
 }

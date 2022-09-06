@@ -129,6 +129,27 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "KernelOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertSCFToLLVM
+//===----------------------------------------------------------------------===//
+
+def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm", "mlir::LLVM::LLVMFuncOp"> {
+  let summary = "Lower the `scf` dialect to the `llvm` dialect.";
+  let description = [{
+    This pass converts structured control-flow operations to LLVM operations and
+    control-flow graph regions.
+  }];
+
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+  let constructor = "::M::KGEN::createConvertSCFToLLVMPass()";
+
+  let options = [
+    Option<"indexBitwidth", "index-bitwidth", "unsigned",
+           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
+           "Bitwidth of the index type, 0 to use size of machine word">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ElaborateKernels
 //===----------------------------------------------------------------------===//
 
