@@ -18,8 +18,6 @@ add_modular_library(KGENExecutionEngine
   KGENToLLVM
 
   MLIRArithmeticToLLVM
-  MLIRSCFToControlFlow
-  MLIRControlFlowToLLVM
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   )

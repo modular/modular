@@ -20,6 +20,7 @@ namespace mlir {
 class ModuleOp;
 namespace LLVM {
 class LLVMDialect;
+class LLVMFuncOp;
 } // namespace LLVM
 } // namespace mlir
 
@@ -36,6 +37,7 @@ std::unique_ptr<mlir::Pass>
 createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
                             ArrayRef<StringRef> emitCWrappers = {});
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
+std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
 std::unique_ptr<mlir::Pass> createElaborateKernelsPass();
 
 //===----------------------------------------------------------------------===//
