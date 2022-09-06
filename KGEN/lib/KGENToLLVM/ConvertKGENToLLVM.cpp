@@ -528,10 +528,16 @@ walkFlattenedStruct(LLVM::LLVMStructType structTy,
   }
   pos.pop_back();
 }
-static void
-walkFlattenedStruct(LLVM::LLVMStructType structTy,
-                    function_ref<void(Type, ArrayRef<LLVM::GEPArg>)> eachFn) {
-  SmallVector<LLVM::GEPArg> pos;
+/// Walk the terminal types of the provided struct with their positions. This
+/// also unwraps the top-level pointer, assuming that the value is of type
+/// `!llvm.ptr<struct>`.
+/// CAUTION: Do not use this to index into an array of structs! Use
+/// `walkFlattenedStruct` directly for that.
+static void walkFlattenedPtrToStruct(
+    LLVM::LLVMStructType structTy,
+    function_ref<void(Type, ArrayRef<LLVM::GEPArg>)> eachFn) {
+  // This zero is to unwrap the top-level pointer.
+  SmallVector<LLVM::GEPArg> pos = {0};
   walkFlattenedStruct(structTy, eachFn, pos);
 }
 
@@ -557,33 +563,52 @@ static LLVM::LLVMFuncOp emitOpaqueWrapper(LLVM::LLVMFuncOp func,
   ImplicitLocOpBuilder b(func.getLoc(), func.getContext());
   b.setInsertionPointToStart(entry);
 
-  // Unpack dense packed structs into flat arguments.
+  // Unpack dense packed structs into a single flat argument. To make this
+  // easier, we pack every argument into one struct.
+  SmallVector<Type> flattenedTypes;
+  flattenedTypes.reserve(func.getNumArguments());
   SmallVector<Value> callArgs;
   callArgs.reserve(func.getNumArguments());
   for (Type argTy : funcTy.getParams()) {
     auto structTy = argTy.dyn_cast<LLVM::LLVMStructType>();
+    // Add a non-struct arg to the parameter pack.
     if (!structTy) {
-      callArgs.push_back(entry->addArgument(argTy, func.getLoc()));
+      flattenedTypes.push_back(argTy);
       continue;
     }
     // Unpack the densely packed struct.
-    Value ptr = entry->addArgument(
-        LLVM::LLVMPointerType::get(recursivelyPack(structTy)), func.getLoc());
-    walkFlattenedStruct(structTy, [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
-      Value curPtr =
-          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(type), ptr, pos);
-      callArgs.push_back(b.create<LLVM::LoadOp>(curPtr));
-    });
+    flattenedTypes.push_back(recursivelyPack(structTy));
+  }
+
+  if (!flattenedTypes.empty()) {
+    // Create the correct struct type. We always create a struct even if there's
+    // only a single element in it because from a memory perspective, it doesn't
+    // matter.
+    LLVM::LLVMStructType allArgs =
+        LLVM::LLVMStructType::getLiteral(b.getContext(), flattenedTypes, true);
+
+    // One block argument for all the arguments. We'll walk this struct to get
+    // the call arguments.
+    Value arg =
+        entry->addArgument(LLVM::LLVMPointerType::get(allArgs), func.getLoc());
+    // Walk this struct and extract all the values to pass into the call.
+    walkFlattenedPtrToStruct(
+        allArgs, [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
+          Value curPtr =
+              b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(type), arg, pos);
+          callArgs.push_back(b.create<LLVM::LoadOp>(curPtr));
+        });
   }
 
   // The results are already flattened so just index into the provided pointer.
   if (auto structTy = funcTy.getReturnType().dyn_cast<LLVM::LLVMStructType>()) {
     Value ptr = entry->addArgument(
         LLVM::LLVMPointerType::get(recursivelyPack(structTy)), func.getLoc());
-    walkFlattenedStruct(structTy, [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
-      callArgs.push_back(
-          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(type), ptr, pos));
-    });
+    walkFlattenedPtrToStruct(structTy,
+                             [&](Type type, ArrayRef<LLVM::GEPArg> pos) {
+                               callArgs.push_back(b.create<LLVM::GEPOp>(
+                                   LLVM::LLVMPointerType::get(type), ptr, pos));
+                             });
   }
 
   // Emit the call to the flattened version.

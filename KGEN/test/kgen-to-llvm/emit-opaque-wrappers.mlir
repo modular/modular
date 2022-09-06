@@ -7,18 +7,20 @@ kgen.kernel @kernel(%a: !meta.buffer<?, ?>, %i: i32) -> !meta.buffer<?, ?> {
 }
 
 // CHECK: llvm.func @kernel_opaque_wrapper
-// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<struct<packed (i64, ptr, i8)>>, %[[I:.*]]: i32,
+// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<struct<packed (struct<packed (i64, ptr, i8)>, i32)>>,
 // CHECK-SAME: %[[RES:.*]]: !llvm.ptr<struct<packed (i64, ptr, i8)>>) {
-// CHECK: %[[PTR0:.*]] = llvm.getelementptr %arg0[0]
+// CHECK: %[[PTR0:.*]] = llvm.getelementptr %arg0[0, 0, 0]
 // CHECK: %[[CALL0:.*]] = llvm.load %0 : !llvm.ptr<i64>
-// CHECK: %[[PTR1:.*]] = llvm.getelementptr %arg0[1]
+// CHECK: %[[PTR1:.*]] = llvm.getelementptr %arg0[0, 0, 1]
 // CHECK: %[[CALL1:.*]] = llvm.load %2 : !llvm.ptr<ptr>
-// CHECK: %[[PTR2:.*]] = llvm.getelementptr %arg0[2]
+// CHECK: %[[PTR2:.*]] = llvm.getelementptr %arg0[0, 0, 2]
 // CHECK: %[[CALL2:.*]] = llvm.load %4 : !llvm.ptr<i8>
-// CHECK: %[[RES0:.*]] = llvm.getelementptr %arg2[0]
-// CHECK: %[[RES1:.*]] = llvm.getelementptr %arg2[1]
-// CHECK: %[[RES2:.*]] = llvm.getelementptr %arg2[2]
-// CHECK: llvm.call @kernel(%[[CALL0]], %[[CALL1]], %[[CALL2]], %[[I]], %[[RES0]], %[[RES1]], %[[RES2]])
+// CHECK: %[[PTR3:.*]] = llvm.getelementptr %arg0[0, 1]
+// CHECK: %[[CALL3:.*]] = llvm.load %[[PTR3]] : !llvm.ptr<i32>
+// CHECK: %[[RES0:.*]] = llvm.getelementptr %arg1[0, 0]
+// CHECK: %[[RES1:.*]] = llvm.getelementptr %arg1[0, 1]
+// CHECK: %[[RES2:.*]] = llvm.getelementptr %arg1[0, 2]
+// CHECK: llvm.call @kernel(%[[CALL0]], %[[CALL1]], %[[CALL2]], %[[CALL3]], %[[RES0]], %[[RES1]], %[[RES2]])
 // CHECK: llvm.return
 
 // -----
@@ -54,8 +56,34 @@ kgen.kernel @kernel(%a: !nestedStruct) -> !nestedStruct {
 }
 
 // CHECK: llvm.func @kernel_opaque_wrapper
-// CHECK-SAME: %[[IN:.*]]: !llvm.ptr<struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>>,
+// CHECK-SAME: %[[IN:.*]]: !llvm.ptr<struct<packed (struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>)>>,
 // CHECK-SAME: %[[OUT:.*]]: !llvm.ptr<struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>>
-// CHECK: getelementptr %[[IN]][0]
-// CHECK: getelementptr %[[IN]][1, 0]
-// CHECK: getelementptr %[[IN]][1, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 0, 0]
+// CHECK: getelementptr %[[IN]][0, 0, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 0, 1, 1, 0]
+
+// -----
+
+!nestedStruct = !llvm.struct<(i8, struct<(i16, struct<(i32)>)>)>
+
+// CHECK-LABEL: llvm.func @kernel(
+kgen.kernel @kernel(%a: !nestedStruct, %b: !nestedStruct) -> (!nestedStruct, !nestedStruct) {
+  kgen.return %a, %b : !nestedStruct, !nestedStruct
+}
+
+// CHECK: llvm.func @kernel_opaque_wrapper
+// CHECK-SAME: %[[IN:.*]]: !llvm.ptr<struct<packed (struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>, struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>)>>,
+// CHECK-SAME: %[[OUT:.*]]: !llvm.ptr<struct<packed (struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>, struct<packed (i8, struct<packed (i16, struct<packed (i32)>)>)>)>>
+// CHECK: getelementptr %[[IN]][0, 0, 0]
+// CHECK: getelementptr %[[IN]][0, 0, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 0, 1, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 1, 1, 0]
+// CHECK: getelementptr %[[IN]][0, 1, 1, 1, 0]
+// CHECK: getelementptr %[[OUT]][0, 0, 0]
+// CHECK: getelementptr %[[OUT]][0, 0, 1, 0]
+// CHECK: getelementptr %[[OUT]][0, 0, 1, 1, 0]
+// CHECK: getelementptr %[[OUT]][0, 1, 0]
+// CHECK: getelementptr %[[OUT]][0, 1, 1, 0]
+// CHECK: getelementptr %[[OUT]][0, 1, 1, 1, 0]
+
