@@ -20,9 +20,6 @@ using namespace M::KGEN;
 
 /// Given a parameter expression, walk it and return any references to named
 /// parameters.  This fails if an unknown parameter expression exists.
-///
-/// NOTE: This must be kept in sync with
-/// ParameterEvaluator::simplifyParameterExpr.
 LogicalResult
 KGEN::collectParameterReferences(TypedAttr expr,
                                  SmallVector<ParamDeclRefAttr> &results) {
@@ -105,100 +102,10 @@ bool KGEN::isParameterizedType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterEvaluator implementation.
+// ParameterEvaluator core implementation.
 //===----------------------------------------------------------------------===//
 
-/// Given a generic parameter expression, simplify it by folding the
-/// expression according to known parameter values.  This returns an error if
-/// the expression cannot be folded for one reason or another.
-///
-/// Note: this must be kept in sync with KGEN::isValidParameterExpr.
-ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(TypedAttr expr) {
-  // Simple constants don't need simplification.
-  if (isSimpleConstant(expr))
-    return expr;
-
-  // We can directly substitute declaration references given our known table of
-  // bindings.
-  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
-    auto value = paramValues[declRef.getName()];
-    assert(value && "Verifier should check that all parameters are defined");
-    return value;
-  }
-
-  // Simplify operators by recursively simplifying their operands, then
-  // refolding the expression.
-  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
-    SmallVector<TypedAttr> simplifiedOperands;
-    for (auto value : oper.getOperands()) {
-      auto simplified = simplifyParameterExpr(value);
-      if (simplified.isError())
-        return simplified;
-      simplifiedOperands.push_back(simplified.takeValue());
-    }
-
-    // FIXME: 'index' folding should require target information to simplify
-    // things like div.
-    auto result = ParamOperatorAttr::get(oper.getOpcode(), simplifiedOperands);
-    if (!isSimpleConstant(result))
-      return Error("could not simplify operator " + getParamAsString(result));
-    return result;
-  }
-
-  // Simplify the types contained within a parameterized MLIR type constant,
-  // folding to a ConcreteTypeConstantAttr.
-  if (auto typeConstant = expr.dyn_cast<ParameterizedTypeConstantAttr>())
-    return ConcreteTypeConstantAttr::get(
-        getReboundType(typeConstant.getValue()));
-
-  // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return Error("unknown expression to fold: " + getParamAsString(expr));
-}
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues.  If the constraints are met, return
-/// success, otherwise return why they aren't.
-ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
-    DeclAndInputParamsPair declAndInputParams) {
-  KGENDeclInterface decl = declAndInputParams.first;
-
-  // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Otherwise, we have constraints to evaluate.  Bind each of the input
-  // parameter names.
-  ParameterEvaluator evaluator;
-  auto inputParamDecls = getParamDecls(decl);
-  ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
-  assert(inputParamDecls.size() == inputParamValues.size() &&
-         "incorrect number of input parameters");
-  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
-
-  // Each constraint must be foldable, and must fold to true.
-  for (ConstraintAttr constraint : constraints) {
-    auto result = evaluator.simplifyParameterExpr(constraint.getExpr());
-    if (failed(result))
-      return Error("constraint evaluation failure: " +
-                   Twine(result.getError()));
-    auto resultInt = (*result).dyn_cast<IntegerAttr>();
-    if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-      return Error("constraint evaluation didn't return true or false");
-
-    // If this failed, indicate why.
-    if (resultInt.getValue().isZero())
-      return Error("constraint failed: " + constraint.getMessage().getValue());
-  }
-
-  // If we made it this far, then everything folded to true.
-  return success();
-}
-
-/// Get the specified attribute with any nested parameter expressions
-/// rewritten.  This can fail with incompatible IR (not due to expansion
-/// errors).
+/// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
   if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
@@ -212,15 +119,9 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
-  if (attr.isa<ParamDeclRefAttr, ParamOperatorAttr>()) {
-    auto newVal = simplifyParameterExpr(attr);
-    if (!newVal.isError())
-      result = newVal.takeValue();
-  } else if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
-    // TODO: Capture types using SubElementAttrInterface.
-    auto newType = getReboundType(typeAttr.getValue());
-    if (newType != typeAttr.getValue())
-      result = TypeAttr::get(newType);
+  if (auto declRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+    result = paramValues[declRef.getName()];
+    assert(result && "Verifier should check that all parameters are defined");
   } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
@@ -233,13 +134,9 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   return rewrittenAttrs[attr] = result;
 }
 
-/// Get the specified type with any nested parameter expressions rewritten. This
-/// can fail with incompatible IR (not due to expansion errors).  In that case,
-/// an error is emitted at the specified location and the type is returned
-/// unmodified.
+/// Get the specified type with any nested parameter expressions rewritten.
 ///
 /// NOTE: This must be kept in sync with KGEN::isParameterizedType.
-///
 Type ParameterEvaluator::getReboundType(Type type) {
   // These are known leaf types that don't participate with
   // SubElementTypeInterface and have no attributes or types within them.
@@ -266,4 +163,67 @@ Type ParameterEvaluator::getReboundType(Type type) {
   }
 
   return rewrittenTypes[type] = result;
+}
+
+/// Given a generic parameter expression, simplify it by folding the
+/// expression according to known parameter values.  This returns an error if
+/// the expression cannot be folded for one reason or another.
+ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
+  // If we can fold this to a simple constant result, do.
+  auto result = getReboundAttribute(expr);
+  if (isSimpleConstant(result))
+    return result;
+
+  // If this was an unfoldable operator expression, error.  This can happen for
+  // things like 'index' arithmetic that has target-specific results.
+  if (auto oper = result.dyn_cast<ParamOperatorAttr>())
+    return Error("could not simplify operator " + getParamAsString(result));
+
+  // Otherwise, we don't know how to simplify this attribute, it's an error.
+  return Error("unknown expression to fold: " + getParamAsString(result));
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterEvaluator::evaluateConstraints implementation.
+//===----------------------------------------------------------------------===//
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
+    DeclAndInputParamsPair declAndInputParams) {
+  KGENDeclInterface decl = declAndInputParams.first;
+
+  // If there are no constraints, we are trivially done.
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
+  if (constraints.empty())
+    return success();
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ParameterEvaluator evaluator;
+  auto inputParamDecls = getParamDecls(decl);
+  ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
+
+  // Each constraint must be foldable, and must fold to true.
+  for (ConstraintAttr constraint : constraints) {
+    auto result = evaluator.concretizeParameterExpr(constraint.getExpr());
+    if (failed(result))
+      return Error("constraint evaluation failure: " +
+                   Twine(result.getError()));
+    auto resultInt = (*result).dyn_cast<IntegerAttr>();
+    if (!resultInt || resultInt.getValue().getBitWidth() != 1)
+      return Error("constraint evaluation didn't return true or false");
+
+    // If this failed, indicate why.
+    if (resultInt.getValue().isZero())
+      return Error("constraint failed: " + constraint.getMessage().getValue());
+  }
+
+  // If we made it this far, then everything folded to true.
+  return success();
 }

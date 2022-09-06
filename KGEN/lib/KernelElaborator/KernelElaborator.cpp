@@ -451,7 +451,7 @@ LogicalResult ParameterRewriter::rewriteOps(
 
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
-  auto errorOrValue = simplifyParameterExpr(op.getValue());
+  auto errorOrValue = concretizeParameterExpr(op.getValue());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
@@ -467,7 +467,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // ParamConstantOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
-  auto errorOrValue = simplifyParameterExpr(op.getValue());
+  auto errorOrValue = concretizeParameterExpr(op.getValue());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
@@ -477,7 +477,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
 
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
-  auto errorOrValue = simplifyParameterExpr(op.getCond());
+  auto errorOrValue = concretizeParameterExpr(op.getCond());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
@@ -501,8 +501,8 @@ static ArrayAttr resolveCallInputParams(CallOp call,
                                         ParameterRewriter &rewriter) {
   SmallVector<Attribute> boundInputParams;
   for (auto param : call.getParamValues()) {
-    auto value =
-        rewriter.simplifyParameterExpr(param.cast<ParamBindAttr>().getValue());
+    auto value = rewriter.concretizeParameterExpr(
+        param.cast<ParamBindAttr>().getValue());
     if (value.isError())
       return (void)rewriter.error(call->getLoc(), value.takeError()),
              ArrayAttr();

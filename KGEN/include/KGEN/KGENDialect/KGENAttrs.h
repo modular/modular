@@ -54,7 +54,7 @@ static inline bool isSimpleConstant(Attribute attr) {
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
-std::string getParamAsString(TypedAttr value);
+std::string getParamAsString(Attribute value);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
