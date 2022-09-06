@@ -19,10 +19,11 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Analysis/IRSimilarityIdentifier.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
-#include "llvm/Support/SHA256.h"
 #include "llvm/Support/TargetSelect.h"
 #include <filesystem>
 
@@ -34,14 +35,35 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Basic string key info. This uses SHA256 as the hash function to provide
-/// strong collision resistance.
-struct StringKeyInfo {
-  using KeyTy = StringRef;
+/// This allows the BlobCache to key off of a module pointer by hashing the
+/// contents of the module.
+struct ModulePtrKeyInfo {
+  using KeyTy = const llvm::Module *;
 
+  /// Hash the signature of each function in the module, as well as each
+  /// instruction and its operands. This should produce a stable hash that is
+  /// unique between modules.
   static std::string hashKey(KeyTy key) {
-    ArrayRef<uint8_t> bytes((const uint8_t *)key.data(), key.size());
-    return llvm::toHex(llvm::SHA256::hash(bytes), true);
+    // Make sure we hash the data layout!
+    llvm::hash_code moduleHash = llvm::hash_value(key->getDataLayoutStr());
+    for (auto &func : key->functions()) {
+      moduleHash =
+          llvm::hash_combine(moduleHash, func.getReturnType()->getTypeID());
+      for (auto *in : func.getFunctionType()->params())
+        moduleHash = llvm::hash_combine(moduleHash, in->getTypeID());
+
+      for (auto &instruction : llvm::instructions(func)) {
+        // Add any instruction operands to the hash as well.
+        for (auto &operand : instruction.operands()) {
+          if (auto inst = dyn_cast<llvm::Instruction>(operand.get()))
+            moduleHash = llvm::hash_combine(moduleHash, inst->getOpcode());
+        }
+        // And finally add the opcode for this instruction itself to the hash.
+        moduleHash = llvm::hash_combine(moduleHash, instruction.getOpcode());
+      }
+    }
+
+    return std::to_string(size_t(moduleHash));
   }
 };
 } // namespace
@@ -66,15 +88,37 @@ public:
   /// Returns a pointer to a newly allocated MemoryBuffer that contains the
   /// object which corresponds with the kernel named `name`, or `nullptr` if an
   /// object is not available.
-  std::unique_ptr<llvm::MemoryBuffer> getObject(llvm::StringRef name);
+  std::unique_ptr<llvm::MemoryBuffer> getObject(KernelOp kernel);
 
-  /// Check if the cache has the object with the given name.
-  bool hasObject(llvm::StringRef name) { return storage.contains(name); }
+  /// Check if the cache has the object corresponding to the given kernel.
+  bool hasObject(KernelOp kernel);
+
+  /// Map a KernelOp to an llvm::Module.
+  void mapKernelToModule(KernelOp kernel, const llvm::Module *module) {
+    auto didEmplace = kernelToModule.try_emplace(kernel, module);
+    assert(
+        didEmplace.second ||
+        (didEmplace.first->getFirst() == kernel &&
+         didEmplace.first->getSecond() == module) &&
+            "tried to overwrite a kernel/module pair with a new kernel/module "
+            "pair");
+  }
 
 private:
+  /// Lookup the module corresponding to the provided kernel. Returns nullptr if
+  /// no such module exists.
+  const llvm::Module *getModuleForKernel(KernelOp kernel) const {
+    auto found = kernelToModule.find(kernel);
+    if (found == kernelToModule.end())
+      return nullptr;
+    return found->getSecond();
+  }
+
   /// Map of llvm::Module name to compiled object in the form of a
   /// llvm::MemoryBuffer.
-  BlobCache<StringKeyInfo> storage;
+  BlobCache<ModulePtrKeyInfo> storage;
+  /// Map from a KernelOp to the corresponding LLVM module.
+  llvm::DenseMap<KernelOp, const llvm::Module *> kernelToModule;
 };
 } // namespace M::KGEN::detail
 
@@ -82,24 +126,35 @@ void detail::ObjectCache::notifyObjectCompiled(const llvm::Module *m,
                                                llvm::MemoryBufferRef obj) {
   // report_fatal_error here is not great, but the API doesn't allow us to
   // report an error any other way!
-  if (auto err = storage.insert(m->getModuleIdentifier(), obj))
+  if (auto err = storage.insert(m, obj))
     llvm::report_fatal_error(err.getError());
 }
 
 std::unique_ptr<llvm::MemoryBuffer>
 detail::ObjectCache::getObject(const llvm::Module *m) {
-  auto found = storage.find(m->getModuleIdentifier());
+  auto found = storage.find(m);
   if (failed(found))
     return nullptr;
   return std::move(*found);
 }
 
 std::unique_ptr<llvm::MemoryBuffer>
-detail::ObjectCache::getObject(llvm::StringRef name) {
-  auto found = storage.find((name + "_module").str());
-  if (failed(found))
+detail::ObjectCache::getObject(KernelOp kernel) {
+  const llvm::Module *module = getModuleForKernel(kernel);
+  if (!module)
     return nullptr;
-  return std::move(*found);
+
+  auto storageFound = storage.find(module);
+  if (failed(storageFound))
+    return nullptr;
+  return std::move(*storageFound);
+}
+
+bool detail::ObjectCache::hasObject(KernelOp kernel) {
+  const llvm::Module *module = getModuleForKernel(kernel);
+  if (!module)
+    return false;
+  return storage.contains(module);
 }
 
 /// Setup the machine properties from the current architecture.
@@ -251,10 +306,6 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
   // Loop over all the kernels in the module and perform non-destructive
   // slicing, then push them to LLVM IR and compile them to objects.
   for (auto kernel : module.getOps<KGEN::KernelOp>()) {
-    // Short-circuit early if we already have this kernel.
-    if (cache->hasObject(kernel.getName()))
-      return success();
-
     // Create a new module for this single kernel. This will go away at the end
     // of this function.
     mlir::OwningOpRef<mlir::ModuleOp> singleModule =
@@ -278,22 +329,49 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
                    "' to LLVM");
 
     auto llvmModule = mlir::translateModuleToLLVMIR(
-        *singleModule, *ctx.getContext(), (kernel.getName() + "_module").str());
+        *singleModule, *ctx.getContext(), kernel.getName());
 
-    llvmModule->setDataLayout(targetMachine->createDataLayout());
-    llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
+    // Map this kernel to the llvm::Module pointer we just got. This will allow
+    // us to look up objects in the cache with the KernelOp as the key.
+    cache->mapKernelToModule(kernel, llvmModule.get());
 
     // Create a new dylib so that we don't have ODR violations.
     auto dylibOr = jit->createJITDylib(kernel.getName().str());
     if (!dylibOr)
       return M::Error(toString(dylibOr.takeError()));
 
+    // Short-circuit if we already have this kernel. We have to do this here
+    // because we key off the module contents, which aren't known until here.
+    if (auto mbuf = cache->getObject(kernel)) {
+      // Add the object file to the JIT so it can be looked-up later.
+      if (auto err = jit->addObjectFile(*dylibOr, std::move(mbuf)))
+        return Error(toString(std::move(err)));
+
+      // And hold onto the module in our vector of modules.
+      compiledModules.emplace_back(std::move(llvmModule), ctx);
+      continue;
+    }
+
+    llvmModule->setDataLayout(targetMachine->createDataLayout());
+    llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
+
     // Resolve symbols that are statically linked in the current process.
     dylibOr->addGenerator(
         cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
             jit->getDataLayout().getGlobalPrefix())));
 
-    if (auto err = jit->addIRModule(*dylibOr, {std::move(llvmModule), ctx}))
+    llvm::orc::ThreadSafeModule tsm(std::move(llvmModule), ctx);
+
+    jit->getIRCompileLayer().setNotifyCompiled(
+        [=](auto &&r, llvm::orc::ThreadSafeModule tsm) {
+          compiledModules.push_back(std::move(tsm));
+        });
+
+    // Map the kernel to the module we just created. This pointer should be
+    // stable; the JIT just takes ownership of the pointer.
+    cache->mapKernelToModule(kernel, tsm.getModuleUnlocked());
+
+    if (auto err = jit->addIRModule(*dylibOr, std::move(tsm)))
       return M::Error(toString(std::move(err)));
   }
 
@@ -301,25 +379,25 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
 }
 
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-ExecutionEngine::getObject(StringRef kernel) {
-  auto *dylib = jit->getJITDylibByName(kernel);
+ExecutionEngine::getObject(KernelOp kernel) {
+  // If we already have the thing, then return it.
+  if (auto mbuf = cache->getObject(kernel))
+    return mbuf;
+
+  // Otherwise, look up the JITDylib to compile it.
+  auto *dylib = jit->getJITDylibByName(kernel.getName());
   if (!dylib)
-    return Error("could not find JITDylib for " + kernel);
+    return Error("could not find JITDylib for " + kernel.getName());
 
   // Do the lookup to ensure it's compiled. We don't actually care about the
   // address of the result.
-  auto addr = jit->lookup(*dylib, kernel);
+  auto addr = jit->lookup(*dylib, kernel.getName());
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
   if (auto mbuf = cache->getObject(kernel))
     return mbuf;
 
-  return Error("could not find kernel '" + kernel +
+  return Error("could not find kernel '" + kernel.getName() +
                "' in cache, please call Executor::addKernel.");
-}
-
-ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-ExecutionEngine::getObject(KGEN::KernelOp kernel) {
-  return getObject(kernel.getName());
 }
