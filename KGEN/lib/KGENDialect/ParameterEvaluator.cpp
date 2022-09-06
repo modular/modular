@@ -72,7 +72,9 @@ KGEN::collectParameterReferences(Type type,
   LogicalResult result = success();
   itf.walkImmediateSubElements(
       [&](Attribute attr) {
-        if (succeeded(result))
+        // Skip ConcreteTypeConstantAttr's since we know they can never have
+        // parameters.
+        if (succeeded(result) && !attr.isa<ConcreteTypeConstantAttr>())
           result = collectParameterReferences(attr, results);
       },
       [&](Type type) {
@@ -143,6 +145,12 @@ ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(TypedAttr expr) {
     return result;
   }
 
+  // Simplify the types contained within a parameterized MLIR type constant,
+  // folding to a ConcreteTypeConstantAttr.
+  if (auto typeConstant = expr.dyn_cast<ParameterizedTypeConstantAttr>())
+    return ConcreteTypeConstantAttr::get(
+        getReboundType(typeConstant.getValue()));
+
   // Otherwise, we don't know how to simplify this attribute, it's an error.
   return Error("unknown expression to fold: " + getParamAsString(expr));
 }
@@ -208,7 +216,6 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     auto newVal = simplifyParameterExpr(attr);
     if (!newVal.isError())
       result = newVal.takeValue();
-
   } else if (auto typeAttr = attr.dyn_cast<TypeAttr>()) {
     // TODO: Capture types using SubElementAttrInterface.
     auto newType = getReboundType(typeAttr.getValue());
@@ -236,7 +243,8 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 Type ParameterEvaluator::getReboundType(Type type) {
   // These are known leaf types that don't participate with
   // SubElementTypeInterface and have no attributes or types within them.
-  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>())
+  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType,
+               MLIRTypeType>())
     return type;
 
   // If we've already processed this type, just reuse the memoized result.
@@ -250,6 +258,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
   if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
+
     itf.walkImmediateSubElements(
         [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
         [&](Type type) { newTypes.push_back(getReboundType(type)); });

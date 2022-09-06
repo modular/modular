@@ -327,3 +327,15 @@ kgen.generator @paramAssertExample() {
   kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
   kgen.return
 }
+
+// CHECK-LABEL: kgen.kernel @parametricType_kernel() {
+kgen.generator @parametricType() {
+  kgen.param.declare dt: dtype = <ui32>
+  kgen.param.declare ty1: type = <!meta.scalar<dt>>
+
+  // CHECK-NEXT:   "impl0"() : () -> !meta.scalar<ui32>
+  "impl0"() : () -> !kgen.paramtype<ty1>
+  kgen.return
+}
+
+

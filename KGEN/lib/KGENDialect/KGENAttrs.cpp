@@ -107,27 +107,39 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ArrayOfAttrsAttr
+// Attribute implementations
 //===----------------------------------------------------------------------===//
+
+void ConcreteTypeConstantAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getValue());
+}
+
+Attribute ConcreteTypeConstantAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  assert(replAttrs.empty() && replTypes.size() == 1);
+  return get(replTypes[0]);
+}
+
+void ParameterizedTypeConstantAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getValue());
+}
+
+Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  assert(replAttrs.empty() && replTypes.size() == 1);
+  // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
+  // subtype is non-parametric.
+  return get(replTypes[0]);
+}
 
 void ParamDeclArrayAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   for (ParamDeclAttr value : getValue())
-    walkAttrsFn(value);
-}
-
-void ParamBindArrayAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (ParamBindAttr value : getValue())
-    walkAttrsFn(value);
-}
-
-void ConstraintArrayAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (ConstraintAttr value : getValue())
     walkAttrsFn(value);
 }
 
@@ -138,11 +150,25 @@ Attribute ParamDeclArrayAttr::replaceImmediateSubElements(
               replAttrs.size()});
 }
 
+void ParamBindArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (ParamBindAttr value : getValue())
+    walkAttrsFn(value);
+}
+
 Attribute ParamBindArrayAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   return get(getContext(),
              {reinterpret_cast<const ParamBindAttr *>(replAttrs.begin()),
               replAttrs.size()});
+}
+
+void ConstraintArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (ConstraintAttr value : getValue())
+    walkAttrsFn(value);
 }
 
 Attribute ConstraintArrayAttr::replaceImmediateSubElements(
