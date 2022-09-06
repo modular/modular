@@ -308,7 +308,7 @@ At this point the system will be able to decide which is a GOOD generated kernel
 
 ## ✅ Design/define/implement various UX and tooling things
 
-✅[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor KernelElaborator)
+✅[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor Elaborator)
 
 ✅[Issue #2126](https://github.com/modularml/modular/issues/2126) (Build über-tool)
 

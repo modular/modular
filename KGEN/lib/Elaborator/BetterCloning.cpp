@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KernelElaborator.h"
+#include "KGEN/Elaborator.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Operation.h"
 
