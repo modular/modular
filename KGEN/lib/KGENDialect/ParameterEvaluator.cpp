@@ -14,8 +14,18 @@
 using namespace M;
 using namespace M::KGEN;
 
-LogicalResult ParameterEvaluator::collectParameterReferences(
-    Attribute expr, SmallVector<ParamDeclRefAttr> &results) {
+//===----------------------------------------------------------------------===//
+// Helper methods for inspecting possibly-parameterized attributes and types.
+//===----------------------------------------------------------------------===//
+
+/// Given a parameter expression, walk it and return any references to named
+/// parameters.  This fails if an unknown parameter expression exists.
+///
+/// NOTE: This must be kept in sync with
+/// ParameterEvaluator::simplifyParameterExpr.
+LogicalResult
+KGEN::collectParameterReferences(TypedAttr expr,
+                                 SmallVector<ParamDeclRefAttr> &results) {
   // Simple constants don't have parameter references.
   if (isSimpleConstant(expr))
     return success();
@@ -35,13 +45,72 @@ LogicalResult ParameterEvaluator::collectParameterReferences(
     }
     return success();
   }
+
+  // Dig parameters out of parameterized types.
+  if (auto typeConstant = expr.dyn_cast<ParameterizedTypeConstantAttr>())
+    return collectParameterReferences(typeConstant.getValue(), results);
+
   // Otherwise, we don't know how to walk this attribute.
   return failure();
 }
 
+/// Given a potentially-parameterized MLIR type, walk it and return any
+/// references to named parameters.  This fails if an invalid parameter
+/// expression exists.
+LogicalResult
+KGEN::collectParameterReferences(Type type,
+                                 SmallVector<ParamDeclRefAttr> &results) {
+  // These are known leaf types that don't participate with
+  // SubElementTypeInterface and have no attributes or types within them.
+  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>())
+    return success();
+
+  auto itf = type.dyn_cast<mlir::SubElementTypeInterface>();
+  if (!itf)
+    return success();
+
+  LogicalResult result = success();
+  itf.walkImmediateSubElements(
+      [&](Attribute attr) {
+        if (succeeded(result))
+          result = collectParameterReferences(attr, results);
+      },
+      [&](Type type) {
+        if (succeeded(result))
+          result = collectParameterReferences(type, results);
+      });
+  return result;
+}
+
+/// Return true if the attribute is a valid parameter expression.
+///
+bool KGEN::isValidParameterExpr(TypedAttr value) {
+  SmallVector<ParamDeclRefAttr> paramDecls;
+  return succeeded(collectParameterReferences(value, paramDecls));
+}
+
+/// Return true if the specified type contains parameter references, e.g.
+/// `!meta.scalar<dt>` returns true, but `!meta.scalar<f32>` returns false.
+///
+/// NOTE: This must be kept in sync with ParameterEvaluator::getReboundType.
+///
+/// TODO: This isn't an efficient method, it walks the entire type graph without
+/// caching.
+bool KGEN::isParameterizedType(Type type) {
+  SmallVector<ParamDeclRefAttr> paramDecls;
+  (void)collectParameterReferences(type, paramDecls);
+  return !paramDecls.empty();
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterEvaluator implementation.
+//===----------------------------------------------------------------------===//
+
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
+///
+/// Note: this must be kept in sync with KGEN::isValidParameterExpr.
 ErrorOr<TypedAttr> ParameterEvaluator::simplifyParameterExpr(TypedAttr expr) {
   // Simple constants don't need simplification.
   if (isSimpleConstant(expr))
@@ -161,6 +230,9 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 /// can fail with incompatible IR (not due to expansion errors).  In that case,
 /// an error is emitted at the specified location and the type is returned
 /// unmodified.
+///
+/// NOTE: This must be kept in sync with KGEN::isParameterizedType.
+///
 Type ParameterEvaluator::getReboundType(Type type) {
   // These are known leaf types that don't participate with
   // SubElementTypeInterface and have no attributes or types within them.
