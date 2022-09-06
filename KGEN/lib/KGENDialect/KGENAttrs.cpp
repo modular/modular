@@ -1536,8 +1536,8 @@ ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 // HistogramParam
 //===----------------------------------------------------------------------===//
 
-void M::KGEN::printHistogram(AsmPrinter &p,
-                             ArrayRef<std::pair<size_t, uint64_t>> histogram) {
+void M::KGEN::printHistogram(
+    AsmPrinter &p, ArrayRef<std::pair<Attribute, uint64_t>> histogram) {
   p << "[";
   llvm::interleaveComma(histogram, p, [&](auto elt) {
     p << "(" << elt.first << ", " << elt.second << ")";
@@ -1545,17 +1545,17 @@ void M::KGEN::printHistogram(AsmPrinter &p,
   p << "]";
 }
 
-FailureOr<SmallVector<std::pair<size_t, uint64_t>>>
+FailureOr<SmallVector<std::pair<Attribute, uint64_t>>>
 M::KGEN::parseHistogram(AsmParser &p) {
-  SmallVector<std::pair<size_t, uint64_t>> out;
+  SmallVector<std::pair<Attribute, uint64_t>> out;
   auto elementParser = [&]() -> ParseResult {
-    size_t size;
+    Attribute attr;
     uint64_t weight;
-    if (p.parseLParen() || p.parseInteger(size) || p.parseComma() ||
+    if (p.parseLParen() || p.parseAttribute(attr) || p.parseComma() ||
         p.parseInteger(weight) || p.parseRParen())
       return failure();
 
-    out.emplace_back(size, weight);
+    out.emplace_back(attr, weight);
     return success();
   };
 

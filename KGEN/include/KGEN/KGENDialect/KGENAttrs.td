@@ -398,7 +398,7 @@ def ConstraintArrayAttr
 
 /// Custom histogram parameter - just a vector of std::pair.
 def HistogramParam
-  : ArrayRefParameter<"std::pair<size_t, uint64_t>",
+  : ArrayRefParameter<"std::pair<Attribute, uint64_t>",
                       "Histogram parameter for Attributes"> {
   let printer = "printHistogram($_printer, $_self)";
   let parser = "parseHistogram($_parser)";

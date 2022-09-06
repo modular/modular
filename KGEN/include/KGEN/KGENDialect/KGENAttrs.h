@@ -102,11 +102,11 @@ void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
 
-/// Print a histogram parameter.
+/// Print a histogram.
 void printHistogram(AsmPrinter &p,
-                    ArrayRef<std::pair<size_t, uint64_t>> histogram);
+                    ArrayRef<std::pair<Attribute, uint64_t>> histogram);
 /// Parse a histogram.
-FailureOr<SmallVector<std::pair<size_t, uint64_t>>>
+FailureOr<SmallVector<std::pair<Attribute, uint64_t>>>
 parseHistogram(AsmParser &p);
 
 } // namespace M::KGEN
