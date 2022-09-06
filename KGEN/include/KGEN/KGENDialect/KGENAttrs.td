@@ -271,7 +271,8 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 //===----------------------------------------------------------------------===//
 
 def ConcreteTypeConstantAttr
-  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant"> {
+  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant",
+             [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -302,7 +303,8 @@ def ConcreteTypeConstantAttr
 /// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
 /// refers to an MLIR type and has 'kgen.type' itself.
 def ParameterizedTypeConstantAttr
-  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant"> {
+  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",
+             [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
