@@ -267,23 +267,62 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 }
 
 //===----------------------------------------------------------------------===//
-// MLIRTypeConstantAttr
+// ConcreteTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+def ConcreteTypeConstantAttr
+  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant"> {
+  let summary = "Constant !kgen.type MLIR type without parameter references";
+  let description = [{
+    This represents a parameter whose value is an MLIR type.  It is similar to
+    `TypeAttr` in that it is an attribute referrs to a type.  The difference is
+    that it is a `TypedAttr` so it can be a parameter expression, and has
+    'kgen.type' itself.
+
+    The bound type must not have type parameters.
+  }];
+
+  let parameters = (ins "Type":$value, AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $value `>`";
+  let skipDefaultBuilders = 1;
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "mlir::Type":$value)>,
+    // This builder is required by ODS.
+    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$attrType), [{
+      assert(attrType.isa<KGEN::MLIRTypeType>()); return get(value);
+    }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
 /// This represents a parameter whose value is an MLIR type.  It is like
-/// TypeAttr but carries a 'kgen.type' type itself.
-def MLIRTypeConstantAttr : ExprAttr<"MLIRTypeConstant", "mlirtype.constant"> {
-  let summary = "Constant !kgen.type MLIR type";
+/// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
+/// refers to an MLIR type and has 'kgen.type' itself.
+def ParameterizedTypeConstantAttr
+  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant"> {
+  let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
-    This is constant value for `type`, representing a bound MLIR type.
+    This represents a parameter whose value is an MLIR type.  It is similar to
+    `TypeAttr` in that it is an attribute referrs to a type.  The difference is
+    that it is a `TypedAttr` so it can be a parameter expression, and has
+    'kgen.type' itself.
+
+    The bound type is known to have type parameters.
   }];
 
-  /// The value of a DTypeConstantAttr is always signless i8 constant value
-  /// and the type is always !kgen.dtype.
   let parameters = (ins "Type":$value, AttributeSelfTypeParameter<"">:$type);
-
-  let builders = [AttrBuilderWithInferredContext<(ins "Type":$value)>];
   let assemblyFormat = "`<` $value `>`";
+  let skipDefaultBuilders = 1;
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "mlir::Type":$value)>,
+    // This builder is required by ODS.
+    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$attrType), [{
+      assert(attrType.isa<KGEN::MLIRTypeType>()); return get(value);
+    }]>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
