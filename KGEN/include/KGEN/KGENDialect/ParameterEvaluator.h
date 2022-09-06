@@ -69,22 +69,19 @@ public:
     paramValues[decl.getName()] = value;
   }
 
-  /// Given a generic parameter expression, simplify it by folding the
-  /// expression according to known parameter values.  This returns an error if
-  /// the expression cannot be folded for one reason or another.
-  ErrorOr<TypedAttr> simplifyParameterExpr(TypedAttr expr);
-
-  /// Get the specified attribute with any nested parameter expressions
-  /// rewritten.  This can fail with incompatible IR (not due to expansion
-  /// errors).  In that case, an error is emitted at the specified location and
-  /// the attribute is returned unmodified.
-  Attribute getReboundAttribute(Attribute attr);
+  /// Given a generic parameter expression, substitute known values for
+  /// parameters into it and fold it down to a simple constant.  This returns an
+  /// error if a simple constant cannot be produced (e.g. because there is some
+  /// dependence on target information that isn't available).
+  ErrorOr<Attribute> concretizeParameterExpr(Attribute expr);
 
   /// Get the specified type with any nested parameter expressions rewritten.
-  /// This can fail with incompatible IR (not due to expansion errors).  In that
-  /// case, an error is emitted at the specified location and the type is
-  /// returned unmodified.
   Type getReboundType(Type type);
+
+  /// Get the specified attribute with any nested parameter expressions
+  /// rewritten.  The substituted attributes are not necessarily fully folded:
+  /// for that use concretizeParameterExpr.
+  Attribute getReboundAttribute(Attribute attr);
 
 private:
   /// These are the bound parameter values, captured in simplified form.

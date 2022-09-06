@@ -592,11 +592,14 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
-std::string KGEN::getParamAsString(TypedAttr value) {
+std::string KGEN::getParamAsString(Attribute value) {
   SmallVector<char, 128> result;
   {
     llvm::raw_svector_ostream os(result);
-    printParamValue(value, os);
+    if (auto ta = value.dyn_cast<TypedAttr>())
+      printParamValue(ta, os);
+    else
+      os << value;
   }
   return std::string(result.data(), result.size());
 }
@@ -1404,12 +1407,14 @@ Attribute
 ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                                ArrayRef<Type> replTypes) const {
   assert(!replAttrs.empty() && replTypes.empty());
-  if (!llvm::all_of(replAttrs,
-                    [](Attribute attr) { return attr.isa<TypedAttr>(); }))
-    return nullptr;
-  return ParamOperatorAttr::get(
-      getOpcode(), {reinterpret_cast<const TypedAttr *>(replAttrs.data()),
-                    replAttrs.size()});
+  SmallVector<TypedAttr> castedAttrs;
+  for (auto attr : replAttrs) {
+    castedAttrs.push_back(attr.dyn_cast<TypedAttr>());
+    // Reject attempts to change an operand to something that isn't a TypedAttr.
+    if (!castedAttrs.back())
+      return {};
+  }
+  return ParamOperatorAttr::get(getOpcode(), castedAttrs);
 }
 
 //===----------------------------------------------------------------------===//
