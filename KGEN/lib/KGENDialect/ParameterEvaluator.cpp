@@ -174,26 +174,8 @@ Type ParameterEvaluator::getReboundType(Type type) {
 
   Type result = type;
 
-  // Rebind types in aggregates that we know, but otherwise just scan the types
-  // that we don't.
-  if (auto fnType = type.dyn_cast<FunctionType>()) {
-    // Function types show up in kernel signatures.
-    // TODO: Capture function subtypes using SubElementAttrInterface.
-    SmallVector<Type> inputs, results;
-    bool changed = false;
-    for (Type input : fnType.getInputs()) {
-      inputs.push_back(getReboundType(input));
-      changed |= inputs.back() != input;
-    }
-    for (Type result : fnType.getResults()) {
-      results.push_back(getReboundType(result));
-      changed |= results.back() != result;
-    }
-
-    if (changed)
-      result = FunctionType::get(type.getContext(), inputs, results);
-
-  } else if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+  // Rebind types in aggregates that implement SubElementTypeInterface.
+  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
