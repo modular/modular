@@ -23,7 +23,8 @@
 
 namespace M::KGEN {
 class ConstraintAttr;
-class MLIRTypeConstantAttr;
+class ConcreteTypeConstantAttr;
+class ParameterizedTypeConstantAttr;
 class DTypeConstantAttr;
 class ParamDeclAttr;
 
@@ -41,10 +42,10 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 
 /// We expect all parameter expressions to simplify down to concrete constants
 /// after elaboration.  We don't want anything left as a ParamOperatorAttr or
-/// ParamDeclRefAttr.
+/// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
 static inline bool isSimpleConstant(Attribute attr) {
   return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
-                  MLIRTypeConstantAttr>();
+                  ConcreteTypeConstantAttr>();
 }
 
 //===----------------------------------------------------------------------===//

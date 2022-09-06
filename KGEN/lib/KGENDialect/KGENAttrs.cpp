@@ -383,7 +383,10 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     Type result;
     if (p.parseType(result))
       return failure();
-    value = MLIRTypeConstantAttr::get(result);
+    // We always parse this as a parameterized type, but the builder will form
+    // a concrete type if there are no type parameters in it.  We could add
+    // specific syntax to differentiate them if there is a reason to.
+    value = ParameterizedTypeConstantAttr::get(result);
     return success();
   }
 
@@ -485,9 +488,13 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
     return;
   }
 
-  // If this is an MLIRType constant, print it as a bare type.
-  if (auto mlirTypeConstant = value.dyn_cast<MLIRTypeConstantAttr>()) {
-    os << mlirTypeConstant.getValue();
+  // If this is a type constant, print it as a bare type.
+  if (auto typeConstant = value.dyn_cast<ConcreteTypeConstantAttr>()) {
+    os << typeConstant.getValue();
+    return;
+  }
+  if (auto typeConstant = value.dyn_cast<ParameterizedTypeConstantAttr>()) {
+    os << typeConstant.getValue();
     return;
   }
 
@@ -1379,12 +1386,21 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
-// MLIRTypeConstantAttr
+// ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-MLIRTypeConstantAttr MLIRTypeConstantAttr::get(Type type) {
+ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
   auto *ctx = type.getContext();
-  return get(ctx, type, MLIRTypeType::get(ctx));
+  return Base::get(ctx, type, MLIRTypeType::get(ctx));
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterizedTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+ParameterizedTypeConstantAttr ParameterizedTypeConstantAttr::get(Type type) {
+  auto *ctx = type.getContext();
+  return Base::get(ctx, type, MLIRTypeType::get(ctx));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1436,7 +1452,8 @@ bool DTypeConstantAttr::isCompatibleWith(Type type) {
 /// Return true if the attribute is a valid parameter expression.
 bool KGEN::isValidParameterExpr(Attribute value) {
   // Leaf constants and references to parameter declarations are valid.
-  if (isSimpleConstant(value) || value.isa<ParamDeclRefAttr>())
+  if (isSimpleConstant(value) ||
+      value.isa<ParamDeclRefAttr, ParameterizedTypeConstantAttr>())
     return true;
 
   // Expressions composed of other expressions are valid.
