@@ -38,7 +38,7 @@ createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
                             ArrayRef<StringRef> emitCWrappers = {});
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
-std::unique_ptr<mlir::Pass> createElaborateKernelsPass();
+std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
 
 //===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration

@@ -1252,13 +1252,14 @@ M::elaborateGenerators(ModuleOp primary,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaborateKernelsPass
+// ElaborateGeneratorsPass
 //===----------------------------------------------------------------------===//
 
 namespace {
 /// Run the kernel elaborator as a pass. The elaborator requires imports to be
 /// resolved, so first resolve imports and then elaborate.
-class ElaborateKernelsPass : public ElaborateKernelsBase<ElaborateKernelsPass> {
+class ElaborateGeneratorsPass
+    : public ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
 public:
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
@@ -1275,6 +1276,6 @@ public:
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass> M::KGEN::createElaborateKernelsPass() {
-  return std::make_unique<ElaborateKernelsPass>();
+std::unique_ptr<mlir::Pass> M::KGEN::createElaborateGeneratorsPass() {
+  return std::make_unique<ElaborateGeneratorsPass>();
 }

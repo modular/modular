@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-hlkgen -elaborate-kernels="search-path=%S" | FileCheck %s
+// RUN: kgen-opt %s -lower-hlkgen -elaborate-generators="search-path=%S" | FileCheck %s
 
 kgen.include "library.mlir"
 

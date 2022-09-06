@@ -150,10 +150,10 @@ def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm", "mlir::LLVM::LLVMFuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaborateKernels
+// ElaborateGenerators
 //===----------------------------------------------------------------------===//
 
-def ElaborateKernels : Pass<"elaborate-kernels", "mlir::ModuleOp"> {
+def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
   let summary = "elaborate generators into fully concrete kernels";
   let description = [{
     This pass performs the elaboration step for the kgen pipeline,
@@ -162,7 +162,7 @@ def ElaborateKernels : Pass<"elaborate-kernels", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::M::KGEN::KGENDialect"];
-  let constructor = "::M::KGEN::createElaborateKernelsPass()";
+  let constructor = "::M::KGEN::createElaborateGeneratorsPass()";
 
   let options = [
     ListOption<"searchPaths", "search-path", "std::string",

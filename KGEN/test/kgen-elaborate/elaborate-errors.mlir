@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-kernels="search-path=%S" -verify-diagnostics -o /dev/null -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="search-path=%S" -verify-diagnostics -o /dev/null -split-input-file -allow-unregistered-dialect
 
 kgen.include "library-test.mlir"
 

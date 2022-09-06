@@ -79,7 +79,7 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 /// This function creates the elaborator pass and forwards the correct
 /// arguments. If it fails, it fails with a fatal error.
 static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
-  auto elaborate = createElaborateKernelsPass();
+  auto elaborate = createElaborateGeneratorsPass();
   std::string includes;
   llvm::raw_string_ostream includeStr(includes);
   for (StringRef include : clOptions.searchPaths)
