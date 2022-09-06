@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
@@ -1391,6 +1392,8 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 
 ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
   auto *ctx = type.getContext();
+  assert(!isParameterizedType(type) &&
+         "Cannot create a ConcreteTypeConstantAttr with parameterized type");
   return Base::get(ctx, type, MLIRTypeType::get(ctx));
 }
 
@@ -1398,9 +1401,13 @@ ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-ParameterizedTypeConstantAttr ParameterizedTypeConstantAttr::get(Type type) {
+TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
   auto *ctx = type.getContext();
-  return Base::get(ctx, type, MLIRTypeType::get(ctx));
+  auto typeType = MLIRTypeType::get(ctx);
+
+  if (isParameterizedType(type))
+    return Base::get(ctx, type, typeType);
+  return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1448,24 +1455,6 @@ bool DTypeConstantAttr::isCompatibleWith(Type type) {
 //===----------------------------------------------------------------------===//
 // Parameter Helper Functions
 //===----------------------------------------------------------------------===//
-
-/// Return true if the attribute is a valid parameter expression.
-bool KGEN::isValidParameterExpr(Attribute value) {
-  // Leaf constants and references to parameter declarations are valid.
-  if (isSimpleConstant(value) ||
-      value.isa<ParamDeclRefAttr, ParameterizedTypeConstantAttr>())
-    return true;
-
-  // Expressions composed of other expressions are valid.
-  if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
-    return llvm::all_of(expr.getOperands(), [](Attribute operand) -> bool {
-      return isValidParameterExpr(operand);
-    });
-  }
-
-  // Nothing else is.
-  return false;
-}
 
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.

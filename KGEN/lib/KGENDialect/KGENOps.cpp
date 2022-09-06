@@ -155,8 +155,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
   KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
-  if (parent && succeeded(ParameterEvaluator::collectParameterReferences(
-                    cond, parameterRefs))) {
+  if (parent && succeeded(collectParameterReferences(cond, parameterRefs))) {
     ArrayRef<ParamDeclAttr> generatorInputParams = getParamDecls(parent);
 
     // Check to see if the parameters referenced by the condition are all

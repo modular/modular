@@ -228,13 +228,13 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
     AttrBuilder<(ins
       "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands,
       "mlir::Type":$type
-    ), [{}], "TypedAttr">,
+    ), "", "TypedAttr">,
 
     // Build a parameter expression.  This automatically canonicalizes and
     // folds, so it may not necessarily return a ParamOperatorAttr.
     AttrBuilderWithInferredContext<(ins
       "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands
-    ), [{}], "TypedAttr">,
+    ), "", "TypedAttr">,
 
     // Build a binary parameter expression for convenience.
     AttrBuilderWithInferredContext<(ins "POC":$opcode, "TypedAttr":$lhs,
@@ -317,11 +317,11 @@ def ParameterizedTypeConstantAttr
   let assemblyFormat = "`<` $value `>`";
   let skipDefaultBuilders = 1;
   let builders = [
-    AttrBuilderWithInferredContext<(ins "mlir::Type":$value)>,
+    AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
     // This builder is required by ODS.
     AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$attrType), [{
       assert(attrType.isa<KGEN::MLIRTypeType>()); return get(value);
-    }]>,
+    }], "TypedAttr">,
   ];
 }
 

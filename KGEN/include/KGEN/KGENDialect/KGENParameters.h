@@ -18,9 +18,6 @@ namespace M::KGEN {
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 
-/// Return true if the attribute is a valid parameter expression.
-bool isValidParameterExpr(Attribute value);
-
 /// This class holds descriptions about parameter definitions and uses in a
 /// kernel or kernel generator context.
 class ParameterDeclsAndUses {

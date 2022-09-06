@@ -13,6 +13,36 @@
 namespace M::KGEN {
 class KGENDeclInterface;
 
+//===----------------------------------------------------------------------===//
+// Helper methods for inspecting possibly-parameterized attributes and types.
+//===----------------------------------------------------------------------===//
+
+// NOTE: None of these are particularly efficient, because they walk the whole
+// IR tree without caching.
+
+/// Given a parameter expression, walk it and return any references to named
+/// parameters.  This fails if an invalid parameter expression exists.
+LogicalResult
+collectParameterReferences(TypedAttr expr,
+                           SmallVector<ParamDeclRefAttr> &results);
+
+/// Given a potentially-parameterized MLIR type, walk it and return any
+/// references to named parameters.  This fails if an invalid parameter
+/// expression exists.
+LogicalResult
+collectParameterReferences(Type type, SmallVector<ParamDeclRefAttr> &results);
+
+/// Return true if the attribute is a valid parameter expression.
+bool isValidParameterExpr(TypedAttr value);
+
+/// Return true if the specified type contains parameter references, e.g.
+/// `!meta.scalar<dt>` returns true, but `!meta.scalar<f32>` returns false.
+bool isParameterizedType(Type type);
+
+//===----------------------------------------------------------------------===//
+// ParameterEvaluator
+//===----------------------------------------------------------------------===//
+
 /// This typedef represents a kernel/generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
 /// resolved.
@@ -31,12 +61,6 @@ public:
   /// success, otherwise return why they aren't.
   static ErrorOrSuccess
   evaluateConstraints(DeclAndInputParamsPair declAndInputParams);
-
-  /// Given a parameter expression, walk it and return any references to named
-  /// parameters.  This fails if an unknown parameter expression exists.
-  static LogicalResult
-  collectParameterReferences(Attribute expr,
-                             SmallVector<ParamDeclRefAttr> &results);
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
