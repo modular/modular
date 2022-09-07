@@ -15,6 +15,10 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 
+// Base class for the operation in this dialect.
+class KGENOp<string mnemonic, list<Trait> traits = []> :
+    Op<KGENDialect, mnemonic, traits>;
+
 //===----------------------------------------------------------------------===//
 // KernelOp
 //===----------------------------------------------------------------------===//

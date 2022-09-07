@@ -9,9 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
-include "KGEN/MetaDialect/MetaDialect.td"
-include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/SubElementInterfaces.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class MetaType<string name, string typeMnemonic, list<Trait> traits = []>
@@ -167,16 +165,16 @@ def ConcreteBuffer : ConfinedType<BufferType,
     "buffer with concrete dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<
-    [ScalarType, SIMDType]>;
+    [ScalarType, SIMDType, ParamType]>;
 
 def BoolScalarOrSIMD : AnyTypeOf<
-    [BoolScalar, BoolSIMD]>;
+    [BoolScalar, BoolSIMD, ParamType]>;
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
-    [UnboundOrFloatScalar, UnboundOrFloatSIMD]>;
+    [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamType]>;
 
 def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
-    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD]>;
+    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamType]>;
 
 /// Checks if the given value's type is a scalar type which matches the
 /// element dtype of the oeprand.

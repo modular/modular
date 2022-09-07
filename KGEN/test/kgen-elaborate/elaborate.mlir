@@ -328,14 +328,34 @@ kgen.generator @paramAssertExample() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @parametricType_kernel() {
-kgen.generator @parametricType() {
+// CHECK-LABEL: kgen.kernel @parametricTypes_kernel(
+kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
   kgen.param.declare ty1: type = <!meta.scalar<dt>>
 
   // CHECK-NEXT:   "impl0"() : () -> !meta.scalar<ui32>
   "impl0"() : () -> !kgen.paramtype<ty1>
+
+  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0, %arg0) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
+  %0 = kgen.call @parametricAdd<ty: type = !meta.scalar<ui64>>(%arg0, %arg0) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
+
+  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.simd<2, f32>"(%arg1, %arg1) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
+  %1 = kgen.call @parametricAdd<ty: type = !meta.simd<2, f32>>(%arg1, %arg1) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
+
   kgen.return
 }
 
+// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0: !meta.scalar<ui64>, %arg1: !meta.scalar<ui64>) -> !meta.scalar<ui64> { 
+// CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.scalar<ui64> 
+// CHECK-NEXT: kgen.return %0 : !meta.scalar<ui64>
+
+// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.simd<2, f32>"(%arg0: !meta.simd<2, f32>, %arg1: !meta.simd<2, f32>) -> !meta.simd<2, f32> { 
+// CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.simd<2, f32>
+// CHECK-NEXT: kgen.return %0 : !meta.simd<2, f32>
+
+kgen.generator @parametricAdd<ty: type>
+  (%a: !kgen.paramtype<ty>, %b: !kgen.paramtype<ty>) -> !kgen.paramtype<ty> {
+  %res = pop.add %a, %b : !kgen.paramtype<ty>
+  kgen.return %res : !kgen.paramtype<ty>
+}
 

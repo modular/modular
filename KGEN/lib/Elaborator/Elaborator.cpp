@@ -723,6 +723,10 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       os << str;
     } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
       os << dtypeAttr.getDType();
+    } else if (auto typeConstant = value.dyn_cast<ConcreteTypeConstantAttr>()) {
+      // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
+      // something if these get too verbose.
+      os << typeConstant.getValue();
     } else {
       assert(!isSimpleConstant(value) && "not handling all simple constants");
       os << "??";

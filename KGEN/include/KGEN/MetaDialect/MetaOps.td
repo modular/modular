@@ -8,10 +8,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "KGEN/KGENDialect/KGENDialect.td"
-include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+
+// Base class for the operation in this dialect.
+class MetaOp<string mnemonic, list<Trait> traits = []> :
+    Op<MetaDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // RebindOp

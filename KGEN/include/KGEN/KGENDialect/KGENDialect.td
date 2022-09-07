@@ -11,6 +11,8 @@
 #ifndef KGEN_KGENDIALECT_KGENDIALECT_TD
 #define KGEN_KGENDIALECT_KGENDIALECT_TD
 
+include "mlir/IR/OpBase.td"
+
 def KGENDialect : Dialect {
   let name = "kgen";
 
