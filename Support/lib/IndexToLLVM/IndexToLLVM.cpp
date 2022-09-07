@@ -212,7 +212,7 @@ struct ConvertIndexCmp : public mlir::ConvertOpToLLVMPattern<CmpOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertIndxConstant
+// ConvertIndexConstant
 //===----------------------------------------------------------------------===//
 
 /// Convert an index constant. Truncate the value as appropriate.
@@ -249,6 +249,8 @@ using ConvertIndexMaxS =
     mlir::OneToOneConvertToLLVMPattern<MaxSOp, LLVM::SMaxOp>;
 using ConvertIndexMaxU =
     mlir::OneToOneConvertToLLVMPattern<MaxUOp, LLVM::UMaxOp>;
+using ConvertIndexBoolConstant =
+    mlir::OneToOneConvertToLLVMPattern<BoolConstantOp, LLVM::ConstantOp>;
 
 } // namespace
 
@@ -275,7 +277,8 @@ static void populateIndexToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertIndexCastS,
       ConvertIndexCastU,
       ConvertIndexCmp,
-      ConvertIndexConstant
+      ConvertIndexConstant,
+      ConvertIndexBoolConstant
       // clang-format on
       >(typeConverter);
 }
@@ -292,6 +295,7 @@ namespace M::index {
 //===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
+
 namespace {
 struct IndexToLLVMPass : public impl::IndexToLLVMBase<IndexToLLVMPass> {
   using Base::Base;

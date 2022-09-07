@@ -12,4 +12,5 @@ add_modular_tool(index-opt
   IndexToLLVM
   MLIRFuncDialect
   MLIROptLib
+  MLIRTransforms
 )

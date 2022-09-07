@@ -67,6 +67,15 @@ func.func @constant_op() {
   return
 }
 
+// CHECK-LABEL: @bool_constant_op
+func.func @bool_constant_op() {
+  // CHECK-NEXT: index.bool.constant true
+  %0 = index.bool.constant true
+  // CHECK-NEXT: index.bool.constant false
+  %1 = index.bool.constant false
+  return
+}
+
 // CHECK-LABEL: @cast_op
 // CHECK-SAME: %[[A:.*]]: index, %[[B:.*]]: i32, %[[C:.*]]: i64
 func.func @cast_op(%a: index, %b: i32, %c: i64) {
