@@ -119,8 +119,8 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // If the file doesn't exist, just touch and close immediately. We resize in
     // the next step, and then mmap it in as a writable buffer.
-    if (!containsImpl(filePath.c_str()))
-      fclose(fopen(filePath.c_str(), "w"));
+    if (!containsImpl(filePath.string().c_str()))
+      fclose(fopen(filePath.string().c_str(), "w"));
 
     // Resize the file to contain enough bytes.
     std::filesystem::resize_file(filePath, obj.getBufferSize() + sha256Bytes,
