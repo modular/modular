@@ -14,6 +14,7 @@ add_modular_tool(kgen
   HLKGENDialect
   KGENElaborator
   KGENDialect
+  LitDialect
   LowerHLKGEN
   MetaDialect
   POPDialect
