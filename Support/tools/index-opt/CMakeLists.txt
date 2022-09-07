@@ -9,7 +9,6 @@ add_modular_tool(index-opt
 
   LINK_LIBS PRIVATE
   IndexDialect
-  IndexToLLVM
   MLIRFuncDialect
   MLIROptLib
 )
