@@ -64,8 +64,8 @@ def IndexDialect : Dialect {
     latter results in a high bit shifted into the lower 32 bits. For example,
     `div(0x100000002, 2)` is `0x80000001` in 64-bit but `0x01` in 32-bit; it
     cannot be folded. However, `div(0x200000002, 2)` can be folded. The 64-bit
-    result is `0x100000001`, which truncated to 32 bits is `0x01`. This is the
-    same as the 32-bit result with truncated operands `div(0x02, 2)` which is
+    result is `0x100000001`, which truncated to 32 bits is `0x01`. The 32-bit
+    result of the operation with truncated operands `div(0x02, 2)` which is
     `0x01`, the same as truncating the 64-bit result.
   }];
 
@@ -78,6 +78,7 @@ def IndexDialect : Dialect {
     void registerOperations();
   }];
 
+  let hasConstantMaterializer = 1;
   let useDefaultAttributePrinterParser = 1;
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
 }

@@ -22,6 +22,8 @@ func.func @trivial_ops(%a: index, %b: index) {
   %7 = index.maxs %a, %b
   // CHECK: llvm.intr.umax
   %8 = index.maxu %a, %b
+  // CHECK: llvm.mlir.constant(true
+  %9 = index.bool.constant true
   return
 }
 

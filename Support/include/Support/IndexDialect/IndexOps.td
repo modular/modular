@@ -8,6 +8,7 @@
 #define INDEXOPS_TD
 
 include "Support/IndexDialect/IndexDialect.td"
+include "Support/IndexDialect/IndexEnums.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpBase.td"
@@ -30,6 +31,7 @@ class IndexBinaryOp<string mnemonic, list<Trait> traits = []>
   let arguments = (ins Index:$lhs, Index:$rhs);
   let results = (outs Index:$result);
   let assemblyFormat = "$lhs `,` $rhs attr-dict";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -98,6 +100,8 @@ def Index_DivSOp : IndexBinaryOp<"divs"> {
     quotient. Treats the leading bit as the sign and rounds towards zero, i.e.
     `6 / -2 = -3`.
 
+    Note: division by zero and signed division overflow are undefined behaviour.
+
     Example:
 
     ```mlir
@@ -117,6 +121,8 @@ def Index_DivUOp : IndexBinaryOp<"divu"> {
     The `divu` operation takes two index values and computes their unsigned
     quotient. Treats the leading bit as the most significant and rounds towards
     zero, i.e. `6 / -2 = 0`.
+
+    Note: division by zero is undefined behaviour.
 
     Example:
 
@@ -138,6 +144,8 @@ def Index_CeilDivSOp : IndexBinaryOp<"ceildivs"> {
     quotient. Treats the leading bit as the sign and rounds towards positive
     infinity, i.e. `7 / -2 = -3`.
 
+    Note: division by zero and signed division overflow are undefined behaviour.
+
     Example:
 
     ```mlir
@@ -158,6 +166,8 @@ def Index_CeilDivUOp : IndexBinaryOp<"ceildivu"> {
     quotient. Treats the leading bit as the most significant and rounds towards
     positive infinity, i.e. `6 / -2 = 1`.
 
+    Note: division by zero is undefined behaviour.
+
     Example:
 
     ```mlir
@@ -177,6 +187,8 @@ def Index_FloorDivSOp : IndexBinaryOp<"floordivs"> {
     The `floordivs` operation takes two index values and computes their signed
     quotient. Treats the leading bit as the sign and rounds towards negative
     infinity, i.e. `5 / -2 = -3`.
+
+    Note: division by zero and signed division overflow are undefined behaviour.
 
     Example:
 
@@ -360,7 +372,8 @@ def Index_CmpOp : IndexOp<"cmp"> {
 
   let arguments = (ins IndexCmpPredicateAttr:$pred, Index:$lhs, Index:$rhs);
   let results = (outs I1:$result);
-  let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict";
+  let assemblyFormat = "`` $pred `(` $lhs `,` $rhs `)` attr-dict";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -383,6 +396,33 @@ def Index_ConstantOp : IndexOp<"constant", [ConstantLike]> {
   let arguments = (ins IndexAttr:$value);
   let results = (outs Index:$result);
   let assemblyFormat = "attr-dict $value";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BoolConstantOp
+//===----------------------------------------------------------------------===//
+
+def Index_BoolConstantOp : IndexOp<"bool.constant", [ConstantLike]> {
+  let summary = "boolean constant";
+  let description = [{
+    The `bool.constant` operation produces an bool-typed SSA value equal to
+    either `true` or `false`.
+
+    This operation is used to materialize bool constants that arise when folding
+    `index.cmp`.
+
+    Example:
+
+    ```mlir
+    %0 = index.bool.constant true
+    ```
+  }];
+
+  let arguments = (ins BoolAttr:$value);
+  let results = (outs I1:$result);
+  let assemblyFormat = "attr-dict $value";
+  let hasFolder = 1;
 }
 
 #endif // INDEXOPS_TD
