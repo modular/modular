@@ -27,19 +27,30 @@ CommandLineKernel::verifyKernelSignature(mlir::FunctionType kernelType) const {
                    ktype + ", but got " + signature);
     }
     return M::success();
+  } else if (signature == "()") {
+    if (kernelType.getNumResults() != 0 || kernelType.getNumInputs() != 0) {
+      std::string ktype;
+      llvm::raw_string_ostream os(ktype);
+      os << kernelType;
+      return Error("command-line specified signature does not match the IR "
+                   "signature, expected " +
+                   ktype + ", but got " + signature);
+    }
+    return M::success();
   }
 
   return Error("unhandled signature: " + signature);
 }
 
 ErrorOrSuccess
-CommandLineKernel::executeAndPrint(KGEN::ExecutionEngine &engine) const {
+CommandLineKernel::executeAndPrint(KGEN::CompiledKernel &compiledKernel) const {
   if (signature == "f32()") {
-    auto outOr = engine.invoke<float>(name);
-    if (outOr.isError())
-      return outOr.takeError();
-
-    printf("--- Kernel '%s' returned %f\n", name.c_str(), *outOr);
+    printf("--- Kernel '%s' returned %f\n", name.c_str(),
+           compiledKernel.invoke<float>());
+    return M::success();
+  } else if (signature == "()") {
+    compiledKernel.invoke<void>();
+    printf("--- Kernel '%s' finished\n", name.c_str());
     return M::success();
   }
 

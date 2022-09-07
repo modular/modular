@@ -18,6 +18,46 @@ namespace detail {
 class ObjectCache;
 } // namespace detail
 
+/// This class provides an interface to interact with a compiled kernel. You
+/// can either invoke the kernel, or get it as an object. The lifetime of one of
+/// these objects is tied to the ExecutionEngine through the `cache` member.
+/// This could be relaxed by using a pointer instead, but that would require
+/// getObject to fail if the cache is unavailable, and there's currently no use
+/// case for such a feature so we will leave it to the future.
+class CompiledKernel {
+public:
+  /// Invoke this kernel. This has exactly the signature the compiled kernel
+  /// does. Intended to have perfect forwarding of arguments into the
+  /// function, and of return values from the function.
+  template <typename ReturnT, typename... Args>
+  ReturnT invoke(Args... args) {
+    // Cast the function pointer and invoke it directly.
+    return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
+  }
+
+  /// Get the compiled object that corresponds to this kernel from `cache`.
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject();
+
+private:
+  /// Construct a CompiledKernel object. This constructor is private because it
+  /// needs a reference to the cache that the ExecutionEngine holds, so it
+  /// should really only be constructed from the ExecutionEngine or something
+  /// like it.
+  CompiledKernel(void *ptr, KernelOp kernel, detail::ObjectCache &cache)
+      : fn(ptr), kernel(kernel), cache(cache) {}
+  friend class ExecutionEngine;
+
+  /// Pointer to the function to invoke.
+  void *fn;
+
+  /// This handle corresponds to this KernelOp.
+  KernelOp kernel;
+
+  /// Pointer to the object cache. This allows us to look up the compiled
+  /// object as a memory buffer.
+  detail::ObjectCache &cache;
+};
+
 /// This class provides an interface to the LLVM ORCJIT. It can compile
 /// individual kernels (already lowered to the LLVM dialect) to object code. It
 /// caches the objects themselves so we can retrieve them later and write them
@@ -36,36 +76,9 @@ public:
   /// every kernel and generate self-contained libraries.
   ErrorOrSuccess add(mlir::ModuleOp module);
 
-  /// Invoke a kernel with the given name. This will return an error if the
-  /// kernel hasn't been previously added.
-  template <typename ReturnT, typename... Args>
-  ErrorOr<std::conditional_t<std::is_void_v<ReturnT>, SuccessType, ReturnT>>
-  invoke(llvm::StringRef kernel, Args... args) {
-    auto *dylib = jit->getJITDylibByName(kernel);
-    if (!dylib)
-      return Error("could not find JITDylib for " + kernel);
-
-    auto fnOr = jit->lookup(*dylib, kernel);
-    if (!fnOr)
-      return Error(llvm::toString(fnOr.takeError()));
-
-    // Get the function pointer out of the ExecutorAddr.
-    auto *fnPtr = fnOr->template toPtr<ReturnT (*)(Args...)>();
-
-    // Invoke the function. If `ReturnT` is `void` then this will default to
-    // returning a value of type `ErrorOrSuccess` set to `success()`. Otherwise,
-    // it will return the result of the function, an object of type `ReturnT`.
-    return invokeWithDefaultResultType<DefaultSuccess>(fnPtr, args...);
-  }
-
-  template <typename ReturnT, typename... Args>
-  auto invoke(KGEN::KernelOp kernel, Args... args) {
-    return invoke<ReturnT, Args...>(kernel.getName(),
-                                    std::forward<Args>(args)...);
-  }
-
-  /// Get the compiled object that corresponds to this kernel.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject(KGEN::KernelOp kernel);
+  /// Look up a kernel and return it as a CompiledKernel object if we can find
+  /// it.
+  ErrorOr<CompiledKernel> lookup(KGEN::KernelOp kernel);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);

@@ -62,6 +62,9 @@ struct ProcessBuffer {
         return failure(clOptions.reportError(kernelOr.getError()));
 
       KGEN::KernelOp kernel = *kernelOr;
+      auto compiledKernelOr = execEngine.lookup(kernel);
+      if (failed(compiledKernelOr))
+        return failure(clOptions.reportError(compiledKernelOr.getError()));
 
       // And now we diverge.
       switch (clOptions.cmd) {
@@ -72,13 +75,13 @@ struct ProcessBuffer {
         if (auto err = k.verifyKernelSignature(kernel.getFunctionType()))
           return failure(clOptions.reportError(err.getError()));
 
-        if (auto err = k.executeAndPrint(execEngine))
+        if (auto err = k.executeAndPrint(*compiledKernelOr))
           return failure(clOptions.reportError(err.getError()));
         break;
       }
       case Command::kEmit: {
         // Get the compiled object.
-        auto objOr = execEngine.getObject(*kernelOr);
+        auto objOr = compiledKernelOr->getObject();
         if (objOr.isError())
           return failure(clOptions.reportError(objOr.getError()));
 

@@ -22,7 +22,13 @@ M::KGEN::emitObjectForKernel(ExecutionEngine &engine, KernelOp k,
   if (!outFile)
     return mlir::emitError(k.getLoc(), err);
 
-  auto objOr = engine.getObject(k);
+  auto kernelOr = engine.lookup(k);
+  if (failed(kernelOr))
+    return mlir::emitError(k.getLoc(), "could not lookup the kernel '@" +
+                                           k.getName() +
+                                           "': " + kernelOr.getError());
+
+  auto objOr = kernelOr->getObject();
   if (failed(objOr))
     return mlir::emitError(k.getLoc(),
                            "could not get the object for the kernel '@" +

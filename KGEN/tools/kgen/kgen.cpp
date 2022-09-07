@@ -160,13 +160,17 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Helper to execute a kernel.
   auto execKernel = [&](KernelOp theKernel,
                         const CommandLineKernel &clKernel) -> LogicalResult {
+    auto compiledKernelOr = engine.lookup(theKernel);
+    if (failed(compiledKernelOr))
+      return failure(clOptions.reportError(compiledKernelOr.getError()));
+
     if (auto err =
             clKernel.verifyKernelSignature(theKernel.getFunctionType())) {
       mlir::emitError(theKernel.getLoc(), err.getError());
       return mlir::failure(!clOptions.ignoreFailures);
     }
 
-    if (auto err = clKernel.executeAndPrint(engine)) {
+    if (auto err = clKernel.executeAndPrint(*compiledKernelOr)) {
       mlir::emitError(theKernel.getLoc(), err.getError());
       return mlir::failure(!clOptions.ignoreFailures);
     }

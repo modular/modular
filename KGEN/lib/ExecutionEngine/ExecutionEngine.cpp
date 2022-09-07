@@ -181,6 +181,18 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
 }
 
 //===----------------------------------------------------------------------===//
+// CompiledKernel implementation
+//===----------------------------------------------------------------------===//
+
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> CompiledKernel::getObject() {
+  if (auto mbuf = cache.getObject(kernel))
+    return mbuf;
+
+  return Error("could not find kernel '" + kernel.getName() +
+               "' in cache, please call `ExecutionEngine::add`.");
+}
+
+//===----------------------------------------------------------------------===//
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
@@ -382,13 +394,9 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
   return success();
 }
 
-ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-ExecutionEngine::getObject(KernelOp kernel) {
-  // If we already have the thing, then return it.
-  if (auto mbuf = cache->getObject(kernel))
-    return mbuf;
-
-  // Otherwise, look up the JITDylib to compile it.
+ErrorOr<CompiledKernel> ExecutionEngine::lookup(KGEN::KernelOp kernel) {
+  // Look up the jit dylib to compile the kernel if it hasn't already been
+  // compiled.
   auto *dylib = jit->getJITDylibByName(kernel.getName());
   if (!dylib)
     return Error("could not find JITDylib for " + kernel.getName());
@@ -399,9 +407,5 @@ ExecutionEngine::getObject(KernelOp kernel) {
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  if (auto mbuf = cache->getObject(kernel))
-    return mbuf;
-
-  return Error("could not find kernel '" + kernel.getName() +
-               "' in cache, please call Executor::addKernel.");
+  return CompiledKernel(addr->toPtr<void *>(), kernel, *cache);
 }
