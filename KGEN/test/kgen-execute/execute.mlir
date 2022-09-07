@@ -1,4 +1,4 @@
-// RUN: kgen-execute %s -execute -kernel="exec_exp:f32():%t_exec_exp.o" | FileCheck %s
+// RUN: kgen-execute %s -execute -kernel="exec_exp:f32():%t_exec_exp.o" -kernel="void:():%t_void.o" | FileCheck %s
 
 llvm.func @"exp_intrinsic_f32,type=f32"(%arg0: f32) -> f32 {
   %0 = "llvm.intr.exp"(%arg0) : (f32) -> f32
@@ -25,6 +25,12 @@ kgen.kernel @exec_exp() -> f32 {
   kgen.return %1 : f32
 }
 
+kgen.kernel @void() {
+  %0 = llvm.call @"float_constant_indirect"() : () -> f32
+  kgen.return
+}
+
 // COM: exec_exp computes exp(1.0)
 // CHECK: --- Kernel 'exec_exp' returned 2.7{{[0-9]+}}
+// CHECK: --- Kernel 'void' finished
 

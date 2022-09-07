@@ -14,6 +14,7 @@
 
 namespace M {
 namespace KGEN {
+class CompiledKernel;
 class ExecutionEngine;
 }
 
@@ -47,7 +48,7 @@ struct CommandLineKernel {
   /// matches the signature of the kernel as it exists in the IR.
   ErrorOrSuccess verifyKernelSignature(mlir::FunctionType kernelType) const;
   /// Execute this kernel and print its result(s).
-  ErrorOrSuccess executeAndPrint(KGEN::ExecutionEngine &engine) const;
+  ErrorOrSuccess executeAndPrint(KGEN::CompiledKernel &compiledKernel) const;
 };
 
 /// Provide a parser for the CommandLineKernel object.
