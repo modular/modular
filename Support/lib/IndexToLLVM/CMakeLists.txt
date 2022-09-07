@@ -4,12 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
+add_modular_conversion_library(IndexToLLVM
+  IndexToLLVM.cpp
 
-  LINK_LIBS PRIVATE
+  DEPENDS
+  IndexToLLVMIncGen
+
+  LINK_LIBS PUBLIC
   IndexDialect
-  IndexToLLVM
-  MLIRFuncDialect
-  MLIROptLib
+  MLIRLLVMCommonConversion
+  MLIRLLVMDialect
+  MLIRPass
 )

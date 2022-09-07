@@ -4,12 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
-
-  LINK_LIBS PRIVATE
-  IndexDialect
-  IndexToLLVM
-  MLIRFuncDialect
-  MLIROptLib
-)
+set(LLVM_TARGET_DEFINITIONS IndexToLLVM.td)
+mlir_tablegen(IndexToLLVM.h.inc -gen-pass-decls)
+add_public_tablegen_target(IndexToLLVMIncGen)
