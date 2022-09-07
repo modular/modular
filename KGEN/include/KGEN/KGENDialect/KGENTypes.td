@@ -8,6 +8,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_KGENDIALECT_KGENTYPES_TD
+#define KGEN_KGENDIALECT_KGENTYPES_TD
+
+include "KGEN/KGENDialect/KGENDialect.td"
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/SubElementInterfaces.td"
+
 // Base class for other typedefs. Provides dialact-specific defaults.
 class KGENType<string name, list<Trait> traits = []>
   : TypeDef<KGENDialect, name, traits> { }
@@ -61,3 +68,5 @@ def DTypeType : KGENType<"DType"> {
   let mnemonic = "dtype";
   let parameters = (ins);
 }
+
+#endif // KGEN_KGENDIALECT_KGENTYPES_TD

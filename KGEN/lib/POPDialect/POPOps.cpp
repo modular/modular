@@ -10,6 +10,7 @@
 
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "mlir/IR/TypeRange.h"

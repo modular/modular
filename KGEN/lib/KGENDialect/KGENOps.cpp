@@ -806,7 +806,7 @@ LogicalResult KernelOp::verifyRegions() {
   // TODO: In the future, we could ban specific uses (e.g. in types) but have an
   // allow-list of operations that can use parameters.  This could be useful if
   // we want something to be able to use the result parameters of a call or
-  // something.  Until then, a blanked ban on parameter use is sufficient.
+  // something.  Until then, a blanket ban on parameter use is sufficient.
   for (auto &[usingOp, uses] : paramInfo.value().usersAndDeclarers) {
     if (!uses.empty()) {
       auto diag = usingOp->emitError("invalid use of parameter ")

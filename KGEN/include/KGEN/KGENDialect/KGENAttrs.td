@@ -8,6 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_KGENDIALECT_KGENATTRS_TD
+#define KGEN_KGENDIALECT_KGENATTRS_TD
+
+include "KGEN/KGENDialect/KGENDialect.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/SubElementInterfaces.td"
@@ -489,3 +493,5 @@ def EvalConfigurationAttr
     }]>
   ];
 }
+
+#endif // KGEN_KGENDIALECT_KGENATTRS_TD

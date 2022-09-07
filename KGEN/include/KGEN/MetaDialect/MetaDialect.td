@@ -11,6 +11,8 @@
 #ifndef KGEN_METADIALECT_METADIALECT_TD
 #define KGEN_METADIALECT_METADIALECT_TD
 
+include "mlir/IR/OpBase.td"
+
 def MetaDialect : Dialect {
   let name = "meta";
 

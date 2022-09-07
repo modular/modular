@@ -12,6 +12,10 @@ include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 
+// Base class for the operation in this dialect.
+class HLKGENOp<string mnemonic, list<Trait> traits = []> :
+    Op<HLKGENDialect, mnemonic, traits>;
+
 //===----------------------------------------------------------------------===//
 // HLGeneratorOp
 //===----------------------------------------------------------------------===//
