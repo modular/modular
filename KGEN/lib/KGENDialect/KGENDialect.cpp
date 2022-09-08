@@ -27,7 +27,7 @@ using namespace KGEN;
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
 
-Type ParamType::get(TypedAttr param) {
+Type ParamRefType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
   if (auto constant = param.dyn_cast<ConcreteTypeConstantAttr>())
@@ -35,20 +35,20 @@ Type ParamType::get(TypedAttr param) {
   if (auto constant = param.dyn_cast<ParameterizedTypeConstantAttr>())
     return constant.getValue();
 
-  // Otherwise, form the ParamType like normal.
+  // Otherwise, form the ParamRefType like normal.
   return Base::get(param.getContext(), param);
 }
 
-void ParamType::walkImmediateSubElements(
+void ParamRefType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   walkAttrsFn(getParam());
 }
 
-Type ParamType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                            ArrayRef<Type> replTypes) const {
+Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                               ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 1 && replTypes.empty());
-  return ParamType::get(replAttrs[0]);
+  return ParamRefType::get(replAttrs[0]);
 }
 
 //===----------------------------------------------------------------------===//

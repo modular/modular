@@ -334,7 +334,7 @@ kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, 
   kgen.param.declare ty1: type = <!meta.scalar<dt>>
 
   // CHECK-NEXT:   "impl0"() : () -> !meta.scalar<ui32>
-  "impl0"() : () -> !kgen.paramtype<ty1>
+  "impl0"() : () -> !kgen.paramref<ty1>
 
   // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0, %arg0) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
   %0 = kgen.call @parametricAdd<ty: type = !meta.scalar<ui64>>(%arg0, %arg0) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
@@ -354,8 +354,8 @@ kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, 
 // CHECK-NEXT: kgen.return %0 : !meta.simd<2, f32>
 
 kgen.generator @parametricAdd<ty: type>
-  (%a: !kgen.paramtype<ty>, %b: !kgen.paramtype<ty>) -> !kgen.paramtype<ty> {
-  %res = pop.add %a, %b : !kgen.paramtype<ty>
-  kgen.return %res : !kgen.paramtype<ty>
+  (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
+  %res = pop.add %a, %b : !kgen.paramref<ty>
+  kgen.return %res : !kgen.paramref<ty>
 }
 
