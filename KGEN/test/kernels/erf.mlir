@@ -48,8 +48,8 @@ kgen.generator.interface @erf<type: dtype>(%in: !meta.buffer<?, type>, %out : !m
 
 hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
   implements @erf {
-  %zero = arith.constant 0 : index
-  %one = arith.constant 1 : index
+  %zero = index.constant 0
+  %one = index.constant 1
 
   // TODO: Must assert that size of in and out buffers are the same
   %size = meta.buffer.size %in: !meta.buffer<?, type>

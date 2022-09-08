@@ -37,8 +37,8 @@ kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !meta.sca
 ///                     = fma(val, horner(val, coeffs[1:]), c0)
 kgen.generator @horner<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @polynomial_evaluate {
-  %zero = arith.constant 0 : index
-  %one = arith.constant 1 : index
+  %zero = index.constant 0
+  %one = index.constant 1
   %zerof = pop.constant(0.0) : !meta.scalar<type>
   %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<size, type>
   %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !meta.scalar<type> {
@@ -83,7 +83,7 @@ kgen.generator.interface @index2D(%row: index, %col: index, %stride: index) -> i
 
 kgen.generator @index2DImpl(%row: index, %col: index, %stride: index) -> index
   implements @index2D {
-  %0 = arith.muli %row, %stride : index
-  %1 = arith.addi %0, %col : index
+  %0 = index.mul %row, %stride
+  %1 = index.add %0, %col
   kgen.return %1 : index
 }

@@ -12,6 +12,7 @@ add_modular_tool(kgen
   LINK_LIBS PRIVATE
   KGENCLOptions
   HLKGENDialect
+  IndexDialect
   KGENElaborator
   KGENDialect
   LitDialect

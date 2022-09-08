@@ -8,6 +8,7 @@ add_modular_tool(kgen-opt
   kgen-opt.cpp
   LINK_LIBS PRIVATE
   HLKGENDialect
+  IndexDialect
   KGENDialect
   LitDialect
   MetaDialect
@@ -16,7 +17,6 @@ add_modular_tool(kgen-opt
   KGENElaborator
   LowerHLKGEN
 
-  MLIRArithmeticDialect
   MLIRIR
   MLIRLLVMDialect
   MLIROptLib

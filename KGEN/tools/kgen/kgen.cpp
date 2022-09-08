@@ -13,8 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/CommonCLOptions.h"
-#include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "Support/IndexDialect/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Parser/Parser.h"
@@ -112,7 +111,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<mlir::arith::ArithmeticDialect, mlir::LLVM::LLVMDialect,
+  registry.insert<index::IndexDialect, mlir::LLVM::LLVMDialect,
                   mlir::scf::SCFDialect>();
 
   mlir::registerLLVMDialectTranslation(registry);

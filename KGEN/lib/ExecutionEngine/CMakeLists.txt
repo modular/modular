@@ -14,10 +14,10 @@ add_modular_library(KGENExecutionEngine
   nativecodegen
 
   LINK_LIBS PUBLIC
+  IndexToLLVM
   KGENDialect
   KGENToLLVM
 
-  MLIRArithmeticToLLVM
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   )

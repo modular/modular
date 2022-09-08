@@ -23,8 +23,8 @@ hlkgen.generator @matmaul_naive<type: dtype>(
     %N: index,
     %K: index)
     implements @matmul {
-  %zero = arith.constant 0 : index
-  %one = arith.constant 1 : index
+  %zero = index.constant 0
+  %one = index.constant 1
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
       %init = pop.constant(0) : !meta.scalar<type>

@@ -9,8 +9,8 @@
 #include "KGEN/KGENPasses.h"
 #include "Support/BlobCache.h"
 #include "Support/ErrorOr.h"
+#include "Support/IndexToLLVM/IndexToLLVM.h"
 #include "Support/VCSRevision.h"
-#include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Block.h"
 #include "mlir/Pass/PassManager.h"
@@ -302,8 +302,7 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   pm.addNestedPass<KGEN::KernelOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<KGEN::KernelOp>(KGEN::createConvertPOPToLLVMPass());
 
-  pm.addNestedPass<KGEN::KernelOp>(
-      mlir::arith::createConvertArithmeticToLLVMPass());
+  pm.addNestedPass<KGEN::KernelOp>(index::createIndexToLLVM());
   pm.addPass(KGEN::createConvertKGENToLLVMPass(name));
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
 

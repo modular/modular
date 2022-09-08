@@ -222,8 +222,7 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // deleted.
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %c1 = arith.constant 1.0 : f32
-  %0 = meta.cast_from_builtin %c1: f32 to !meta.scalar<ty>
+  %0 = pop.constant(1.0 : f32) : !meta.scalar<ty>
   %1 = meta.cast_to_builtin %0: !meta.scalar<ty> to i8
   kgen.return
 }
@@ -345,11 +344,11 @@ kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, 
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0: !meta.scalar<ui64>, %arg1: !meta.scalar<ui64>) -> !meta.scalar<ui64> { 
-// CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.scalar<ui64> 
+// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0: !meta.scalar<ui64>, %arg1: !meta.scalar<ui64>) -> !meta.scalar<ui64> {
+// CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.scalar<ui64>
 // CHECK-NEXT: kgen.return %0 : !meta.scalar<ui64>
 
-// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.simd<2, f32>"(%arg0: !meta.simd<2, f32>, %arg1: !meta.simd<2, f32>) -> !meta.simd<2, f32> { 
+// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.simd<2, f32>"(%arg0: !meta.simd<2, f32>, %arg1: !meta.simd<2, f32>) -> !meta.simd<2, f32> {
 // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.simd<2, f32>
 // CHECK-NEXT: kgen.return %0 : !meta.simd<2, f32>
 
@@ -358,4 +357,3 @@ kgen.generator @parametricAdd<ty: type>
   %res = pop.add %a, %b : !kgen.paramref<ty>
   kgen.return %res : !kgen.paramref<ty>
 }
-
