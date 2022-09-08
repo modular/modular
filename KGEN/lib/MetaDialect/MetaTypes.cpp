@@ -6,6 +6,7 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/InputGeneration.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -125,6 +126,80 @@ Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return ScalarType::get(replAttrs[0]);
 }
 
+/// Resolve the dtype of a DTypeInterface Type. If the interface has `invalid`
+/// DType, then given a `tag` attribute, if it's a DTypeConstantAttr then pull
+/// out the DType and return it. Otherwise, return failure.
+static FailureOr<DType> resolveDTypeWithTag(DTypeInterface itf, Location loc,
+                                            Attribute tag) {
+  DType dtype = itf.resolveDType();
+  if (dtype != DType::invalid)
+    return dtype;
+
+  if (auto dt = tag.dyn_cast<DTypeConstantAttr>())
+    return dt.getDType();
+
+  return emitError(loc) << "could not resolve dtype";
+}
+
+/// Fill `obj` according to `kind`, `dtype`, and `numElements`. Despite `obj`
+/// being suggestively named, `obj` can be any pointer - it does not have to be
+/// the pointer passed to ::populate.
+static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
+                            size_t numElements, void *obj) {
+  switch (kind) {
+  case InputGenKind::Zeros:
+    memset(obj, 0, dtype.getSizeInBytes(numElements));
+    return success();
+  case InputGenKind::Ones: {
+    char one[16];
+    if (auto err = getScalarOne(one, dtype))
+      return emitError(loc) << err.getError();
+
+    if (auto err = fillHomogeneous(obj, numElements, dtype, one))
+      return emitError(loc) << err.getError();
+
+    return success();
+  }
+  case InputGenKind::Random:
+    if (auto err = fillRandom(obj, numElements, dtype))
+      return emitError(loc) << err.getError();
+
+    return success();
+  }
+
+  return emitError(loc) << "could not fill with gen kind: "
+                        << stringifyInputGenKind(kind);
+}
+
+/// This implements `OpaqueObjectInterface::populate`. It generates a single
+/// scalar according to the method prescribed by `kind`. If the dtype is
+/// unknown, then this expects the tag attribute to be a type attr. Otherwise,
+/// it expects UnitAttr.
+LogicalResult ScalarType::populate(Location loc, InputGenKind kind,
+                                   Attribute tag, void *obj) const {
+  // Resolve the dtype.
+  auto dtypeOr = resolveDTypeWithTag(*this, loc, tag);
+  if (failed(dtypeOr))
+    return failure();
+  DType dtype = *dtypeOr;
+
+  return doFill(loc, kind, dtype, 1, obj);
+}
+
+/// This implements `OpaqueObjectInterface::destroy`. Nothing to be done for
+/// ScalarType, there are no additional allocations.
+void ScalarType::destroy(Attribute tag, void *obj) const { return; }
+
+/// This implements `OpaqueObjectInterface::getSizeInBytes`.
+FailureOr<size_t> ScalarType::getSizeInBytes(Location loc,
+                                             Attribute tag) const {
+  auto dtypeOr = resolveDTypeWithTag(*this, loc, tag);
+  if (failed(dtypeOr))
+    return failure();
+
+  return dtypeOr->getSizeInBytes(1);
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
@@ -154,10 +229,49 @@ Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return SIMDType::get(replAttrs[0], replAttrs[1]);
 }
 
-Optional<int64_t> SIMDType::resolveSize() {
+Optional<int64_t> SIMDType::resolveSize() const {
   if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
     return intAttr.getInt();
   return {};
+}
+
+/// This implements `OpaqueObjectInterface::populate`. It generates a SIMD
+/// vector (really an array of elements) according to `kind` and stores it in
+/// `obj`.
+LogicalResult SIMDType::populate(Location loc, InputGenKind kind, Attribute tag,
+                                 void *obj) const {
+  DType dtype = resolveDType();
+  // If the dtype is invalid, we can't do anything. Note that we aren't trying
+  // to get anything from the tag here!
+  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+
+  auto sizeOr = resolveSize();
+  if (!sizeOr.has_value())
+    return failure();
+  size_t numElements = *sizeOr;
+
+  return doFill(loc, kind, dtype, numElements, obj);
+}
+
+/// This implements `OpaqueObjectInterface::destroy`. Nothing to be done for
+/// SIMDType, there are no additional allocations.
+void SIMDType::destroy(Attribute tag, void *obj) const { return; }
+
+/// This implements `OpaqueObjectInterface::getSizeInBytes`. Since a SIMD vector
+/// has all its elements inline, compute the size of the array needed to hold
+/// tightly-packed elements for this type.
+FailureOr<size_t> SIMDType::getSizeInBytes(Location loc, Attribute tag) const {
+  DType dtype = resolveDType();
+  // If the dtype is invalid, we can't do anything. Note that we aren't trying
+  // to get anything from the tag here!
+  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+
+  // Same with the size, if it's unknown (which it should not be) then
+  // we can't do anything.
+  auto sizeOr = resolveSize();
+  assert(sizeOr.has_value() && "SIMDType must have known size");
+
+  return dtype.getSizeInBytes(*sizeOr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -187,10 +301,60 @@ Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return BufferType::get(getContext(), replAttrs[0], replAttrs[1]);
 }
 
-Optional<int64_t> BufferType::resolveSize() {
+Optional<int64_t> BufferType::resolveSize() const {
   if (auto intAttr = getSize().dyn_cast_or_null<IntegerAttr>())
     return intAttr.getInt();
   return {};
+}
+
+/// This implements `OpaqueObjectInterface::populate`. It generates a buffer
+/// object, and furthermore allocates memory for the buffer's backing storage
+/// and places that in the pointer field of the buffer structure itself.
+LogicalResult BufferType::populate(Location loc, InputGenKind kind,
+                                   Attribute tag, void *obj) const {
+  // FIXME: This doesn't currently handle dynamic size/type buffers - we need
+  //        the tag to contain size, type, or both. Come up with a nice
+  //        attribute structure that enables that use case.
+
+  // Resolve the dtype.
+  DType dtype = resolveDType();
+  if (dtype == DType::invalid)
+    return emitError(loc) << "TODO: " << *this;
+
+  auto sizeOr = resolveSize();
+  if (!sizeOr.has_value())
+    return emitError(loc) << "TODO: " << *this;
+
+  int64_t numElements = *sizeOr;
+  auto *ptr = (std::byte *)malloc(dtype.getSizeInBytes(numElements));
+
+  // When the number of elements is statically-knowable, the object is just a
+  // pointer.
+  *((std::byte **)obj) = ptr;
+
+  // Do the fill.
+  return doFill(loc, kind, dtype, numElements, ptr);
+}
+
+/// This implements `OpaqueObjectInterface::destroy`. This deallocates any
+/// memory allocated in `populate`.
+void BufferType::destroy(Attribute tag, void *obj) const {
+  free(*((uint8_t **)obj));
+}
+
+/// This implements `OpaqueObjectInterface::getSizeInBytes`. We don't care about
+/// the buffer's allocation, we care about the size of the buffer itself.
+FailureOr<size_t> BufferType::getSizeInBytes(Location loc,
+                                             Attribute tag) const {
+  // The size of a buffer is at worst size of (length, pointer, dtype).
+  size_t size = sizeof(intptr_t) + sizeof(void *) + sizeof(int8_t);
+  if (resolveSize().has_value())
+    size -= sizeof(intptr_t);
+
+  if (resolveDType() != M::DType::invalid)
+    size -= sizeof(int8_t);
+
+  return size;
 }
 
 //===----------------------------------------------------------------------===//
@@ -215,6 +379,29 @@ Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                               ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 1 && replTypes.empty());
   return PointerType::get(replAttrs[0]);
+}
+
+/// Implements `OpaqueObjectInterface::populate`. Because we don't know anything
+/// about the pointer's size, for now, we will leave this as impossible to
+/// populate. This could be changed in the future by passing the size of the
+/// backing buffer into `tag`.
+LogicalResult PointerType::populate(Location loc, InputGenKind kind,
+                                    Attribute tag, void *obj) const {
+  return emitError(loc) << "could not populate type: " << *this;
+}
+
+/// This implements `OpaqueObjectInterface::destroy`. This deallocates any
+/// memory allocated in `populate`. For now, we can leave it alone because
+/// PointerType cannot be populated.
+void PointerType::destroy(Attribute tag, void *obj) const { return; }
+
+/// Implements `OpaqueObjectInterface::populate`. We care about the size of a
+/// pointer, and all pointers have the same size on a given platform.
+FailureOr<size_t> PointerType::getSizeInBytes(Location loc,
+                                              Attribute tag) const {
+  // FIXME: This is incorrect once we start talking about cross-compilation.
+  //        c.f. #2717
+  return sizeof(void *);
 }
 
 //===----------------------------------------------------------------------===//

@@ -11,6 +11,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
+#include "mlir/IR/Location.h"
 
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h.inc"
 

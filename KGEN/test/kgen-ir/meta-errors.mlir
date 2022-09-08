@@ -77,3 +77,17 @@ kgen.kernel @meta_buffer_construct(%ptr: !meta.pointer<?>) {
   %0 = meta.buffer.construct %ptr : !meta.buffer<4, ?>
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{expected attribute value}}
+kgen.kernel @unknown_size_simd(%arg0: !meta.simd<?, f32>) -> !meta.simd<?, f32> {
+  kgen.return %arg0 : !meta.simd<?, f32>
+}
+
+// -----
+
+// expected-error @+1 {{expected attribute value}}
+kgen.kernel @unknown_type_simd(%arg0: !meta.simd<4, ?>) -> !meta.simd<4, ?> {
+  kgen.return %arg0 : !meta.simd<4, ?>
+}
