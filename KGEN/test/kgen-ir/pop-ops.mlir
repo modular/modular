@@ -387,6 +387,13 @@ kgen.generator @pop_load_store<type: dtype>(%p0: !meta.pointer<f32>, %p1: !meta.
   kgen.return
 }
 
+// CHECK-LABEL: @pop_offset
+kgen.generator @pop_offset<type: dtype>(%p: !meta.pointer<f32>, %idx: index) {
+  // pop.offset %{{.*}}[{{.*}}] : !meta.pointer<f32>
+  %0 = pop.offset %p[%idx] : !meta.pointer<f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @pop_buffer_stack_allocation
 kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
   // CHECK: pop.buffer.stack_allocation : !meta.buffer<4, f32>

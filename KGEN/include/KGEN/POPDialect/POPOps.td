@@ -627,8 +627,33 @@ def StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
     ```
   }];
 
-  let arguments = (ins ScalarType:$arg, Arg<ConcretePointer, "", [MemWrite]>:$ptr);
+  let arguments = (ins ScalarType:$arg,
+                       Arg<ConcretePointer, "", [MemWrite]>:$ptr);
   let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
+// OffsetOp
+//===----------------------------------------------------------------------===//
+
+def OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
+  let summary = "pointer offset operation";
+  let description = [{
+    The `offset` operation takes a pointer and increments or decrements its
+    position by a certain amount.
+
+    Example:
+
+    ```mlir
+    %addr = pop.offset %base[%idx] : !meta.pointer<f32>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$ptr, Index:$index);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = [{
+    $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
+  }];
 }
 
 //===----------------------------------------------------------------------===//

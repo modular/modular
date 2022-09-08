@@ -246,6 +246,22 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPOffset
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPOffset : public mlir::ConvertOpToLLVMPattern<OffsetOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(OffsetOp op, OffsetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, adaptor.getPtr().getType(), adaptor.getPtr(), adaptor.getIndex());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertBufferLoad
 //===----------------------------------------------------------------------===//
 
@@ -372,6 +388,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPLoad,
       ConvertPOPMul,
       ConvertPOPNeg,
+      ConvertPOPOffset,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShRS,
