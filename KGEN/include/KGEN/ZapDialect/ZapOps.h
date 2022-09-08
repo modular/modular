@@ -1,11 +1,11 @@
-//===- KGEN/LitDialect/LitOps.h -------------------------------------------===//
+//===- KGEN/ZapDialect/ZapOps.h -------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LITDIALECT_LITOPS_H
-#define KGEN_LITDIALECT_LITOPS_H
+#ifndef KGEN_ZAPDIALECT_ZAPOPS_H
+#define KGEN_ZAPDIALECT_ZAPOPS_H
 
 #include "mlir/IR/OpDefinition.h"
 
@@ -14,6 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "KGEN/LitDialect/Lit.h.inc"
+#include "KGEN/ZapDialect/Zap.h.inc"
 
-#endif // KGEN_LITDIALECT_LITOPS_H
+#endif // KGEN_ZAPDIALECT_ZAPOPS_H

@@ -13,9 +13,9 @@
 
 #include "KGEN/HLKGENDialect/HLKGENDialect.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
-#include "KGEN/LitDialect/LitDialect.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/ZapDialect/ZapDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
@@ -25,7 +25,7 @@ inline void registerAllKGENDialects(DialectRegistry &registry) {
   registry.insert<KGEN::HLKGENDialect>();
   registry.insert<KGEN::MetaDialect>();
   registry.insert<KGEN::POPDialect>();
-  registry.insert<KGEN::LitDialect>();
+  registry.insert<KGEN::ZapDialect>();
 }
 
 } // namespace M
