@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -1048,5 +1049,6 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<ParamDeclAttr> paramDecls,
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.cpp.inc"
 
-// KGENDeclInterface.
+// Generated interface definitions.
+#include "KGEN/KGENDialect/ElaboratorOpInterface.cpp.inc"
 #include "KGEN/KGENDialect/KGENDeclInterface.cpp.inc"
