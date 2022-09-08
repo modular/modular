@@ -309,6 +309,13 @@ kgen.generator @pop_simd_insertelement<size, type: dtype>(
   kgen.return
 }
 
+// CHECK-LABEL: @pop_simd_shuffle
+kgen.generator @pop_simd_shuffle<size>(%a: !meta.simd<size, f32>, %b: !meta.simd<size, f32>) -> !meta.simd<2, f32> {
+  // CHECK: pop.simd.shuffle %{{.*}}, %{{.*}} [1, 2] : !meta.simd<size, f32> -> !meta.simd<2, f32>
+  %0 = pop.simd.shuffle %a, %b [1, 2] : !meta.simd<size, f32> -> !meta.simd<2, f32>
+  kgen.return %0 : !meta.simd<2, f32>
+}
+
 // CHECK-LABEL: @pop_simd_splat
 // CHECK-SAME: %[[A:[a-z0-9]+]]:
 // CHECK-SAME: %[[B:[a-z0-9]+]]:

@@ -162,3 +162,35 @@ kgen.generator @buffer_stack_allocation<size>() {
   %0 = pop.buffer.stack_allocation : !meta.buffer<size, ?>
   kgen.return
 }
+
+// -----
+
+kgen.generator @simd_shuffle(%a: !meta.simd<2, f32>) {
+  // expected-error @below {{expected result dtype to match operand dtypes}}
+  %0 = pop.simd.shuffle %a, %a [1] : !meta.simd<2, f32> -> !meta.simd<1, f64>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @simd_shuffle<type: dtype>(%a: !meta.simd<2, f32>) {
+  // expected-error @below {{expected result dtype to match operand dtypes}}
+  %0 = pop.simd.shuffle %a, %a [1] : !meta.simd<2, f32> -> !meta.simd<1, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @simd_shuffle<size>(%a: !meta.simd<2, f32>) {
+  // expected-error @below {{expected result to be a vector of 1 elements}}
+  %0 = pop.simd.shuffle %a, %a [1] : !meta.simd<2, f32> -> !meta.simd<size, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @simd_shuffle<size>(%a: !meta.simd<2, f32>) {
+  // expected-error @below {{mask element 4 is out of bounds}}
+  %0 = pop.simd.shuffle %a, %a [4] : !meta.simd<2, f32> -> !meta.simd<1, f32>
+  kgen.return
+}

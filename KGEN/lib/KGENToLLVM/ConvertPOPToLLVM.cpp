@@ -342,6 +342,8 @@ using ConvertPOPSIMDExtractElement =
 using ConvertPOPSIMDInsertElement =
     mlir::OneToOneConvertToLLVMPattern<SIMDInsertElementOp,
                                        LLVM::InsertElementOp>;
+using ConvertPOPSIMDShuffle =
+    mlir::OneToOneConvertToLLVMPattern<SIMDShuffleOp, LLVM::ShuffleVectorOp>;
 using ConvertPOPLoad = mlir::OneToOneConvertToLLVMPattern<LoadOp, LLVM::LoadOp>;
 using ConvertPOPStore =
     mlir::OneToOneConvertToLLVMPattern<StoreOp, LLVM::StoreOp>;
@@ -376,6 +378,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPShRU,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
+      ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPSub

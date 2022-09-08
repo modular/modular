@@ -478,7 +478,7 @@ def CastOp : POPOp<"cast", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
-     ScalarOfSameDType<"vector", "result">]> {
+    ScalarOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the meta.scalar at
@@ -487,7 +487,7 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
     Example:
 
     ```mlir
-    %1 = pop.simd.extractelement %0[%position]: !meta.simd<16, f32>
+    %0 = pop.simd.extractelement %0[%position]: !meta.simd<16, f32>
     ```
   }];
 
@@ -504,7 +504,7 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
 //===----------------------------------------------------------------------===//
 
 def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
-      ScalarOfSameDType<"vector", "value">, AllTypesMatch<["result", "vector"]>]> {
+    ScalarOfSameDType<"vector", "value">, AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
@@ -514,7 +514,7 @@ def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
     Example:
 
     ```mlir
-    %1 = pop.simd.extractelement %val, %vec[%position]: !meta.simd<16, f32>
+    %0 = pop.simd.extractelement %val, %vec[%position]: !meta.simd<16, f32>
     ```
   }];
 
@@ -527,11 +527,41 @@ def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDShuffle
+//===----------------------------------------------------------------------===//
+
+def SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
+    AllTypesMatch<["lhs", "rhs"]>]> {
+  let summary = "shufflevector operation";
+  let description = [{
+    The `simd.shuffle` operation constructs a permutation of two vectors of the
+    same length and returns a vector of the same element type with the same
+    length as the provided mask, and thus must be a non-parametric constant.
+
+    Example:
+
+    ```mlir
+    %0 = pop.simd.shuffle %lhs, %rhs [0, 1, 2, 3]
+        : !meta.simd<2, f32> -> !meta.simd<4, f32>
+    ```
+  }];
+
+  let arguments = (ins SIMDType:$lhs, SIMDType:$rhs, DenseI32ArrayAttr:$mask);
+  let results = (outs SIMDType:$result);
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs $mask attr-dict `:` qualified(type($lhs)) `->`
+    qualified(type($result))
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
 def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
-      ScalarOfSameDType<"result", "scalar">]> {
+    ScalarOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
     The `simd.splat` operation takes a scalar value and replicates it across
