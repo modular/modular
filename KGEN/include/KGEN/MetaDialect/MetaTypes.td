@@ -165,16 +165,16 @@ def ConcreteBuffer : ConfinedType<BufferType,
     "buffer with concrete dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<
-    [ScalarType, SIMDType, ParamType]>;
+    [ScalarType, SIMDType, ParamRefType]>;
 
 def BoolScalarOrSIMD : AnyTypeOf<
-    [BoolScalar, BoolSIMD, ParamType]>;
+    [BoolScalar, BoolSIMD, ParamRefType]>;
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
-    [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamType]>;
+    [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
 
 def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
-    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamType]>;
+    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
 
 /// Checks if the given value's type is a scalar type which matches the
 /// element dtype of the oeprand.

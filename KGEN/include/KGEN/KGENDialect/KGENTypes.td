@@ -19,8 +19,8 @@ include "mlir/IR/SubElementInterfaces.td"
 class KGENType<string name, list<Trait> traits = []>
   : TypeDef<KGENDialect, name, traits> { }
 
-def ParamType
-  : KGENType<"Param",
+def ParamRefType
+  : KGENType<"ParamRef",
              [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Type specified by a parameter expression";
   let description = [{
@@ -29,7 +29,7 @@ def ParamType
     type disappears.
   }];
 
-  let mnemonic = "paramtype";
+  let mnemonic = "paramref";
   let parameters = (ins "mlir::TypedAttr":$param);
   let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
 

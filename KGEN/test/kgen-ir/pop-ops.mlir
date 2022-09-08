@@ -400,10 +400,10 @@ kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
 
 // CHECK-LABEL: kgen.generator @parametricAdd
 kgen.generator @parametricAdd<ty: type>
-  (%arg0: !kgen.paramtype<ty>, %arg1: !kgen.paramtype<ty>) -> !kgen.paramtype<ty> {
+  (%arg0: !kgen.paramref<ty>, %arg1: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
 
   // Fully parametric operations are ok!
-  // CHECK: %0 = pop.add %arg0, %arg1 : !kgen.paramtype<ty>
-  %0 = pop.add %arg0, %arg1 : !kgen.paramtype<ty>
-  kgen.return %0 : !kgen.paramtype<ty>
+  // CHECK: %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
+  %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
+  kgen.return %0 : !kgen.paramref<ty>
 }
