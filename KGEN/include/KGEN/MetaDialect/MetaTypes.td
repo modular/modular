@@ -13,7 +13,9 @@ include "KGEN/KGENDialect/KGENTypes.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class MetaType<string name, string typeMnemonic, list<Trait> traits = []>
-    : TypeDef<MetaDialect, name, traits> {
+    : TypeDef<MetaDialect, name, [
+        DeclareTypeInterfaceMethods<OpaqueObjectInterface>
+      ] # traits> {
   let mnemonic = typeMnemonic;
 }
 
@@ -70,7 +72,7 @@ def SIMDType : ParameterizedMetaType<"SIMD", "simd"> {
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> resolveSize();
+    Optional<int64_t> resolveSize() const;
   }];
 }
 
@@ -102,7 +104,7 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the buffer type to an integer.
-    Optional<int64_t> resolveSize();
+    Optional<int64_t> resolveSize() const;
   }];
 }
 
