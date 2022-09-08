@@ -12,8 +12,7 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
-  %c1 = arith.constant 1.0 : f32
-  %0 = meta.cast_from_builtin %c1: f32 to !meta.scalar<ty>
+  %0 = pop.constant(1.0 : f32) : !meta.scalar<ty>
 
   // expected-note @+1 {{verification error: 'meta.cast_to_builtin' op does not support casting '!meta.scalar<f32>' to 'i8'}}
   %1 = meta.cast_to_builtin %0: !meta.scalar<ty> to i8

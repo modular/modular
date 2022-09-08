@@ -15,8 +15,8 @@ kgen.generator.interface @add_bcst<bcst: i1, type: dtype>(%in1: !meta.buffer<?, 
 kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(%in1: !meta.buffer<?, type>, %in2: !meta.buffer<?, type>,
   %out : !meta.buffer<?, type>)
   implements @add_bcst {
-  %zero = arith.constant 0 : index
-  %one = arith.constant 1 : index
+  %zero = index.constant 0
+  %one = index.constant 1
 
   // TODO: Must assert that buffers have the same size or we are doing broadcast.
   %size = meta.buffer.size %out: !meta.buffer<?, type>
@@ -42,16 +42,16 @@ kgen.generator.interface @add<type: dtype>(%in1: !meta.buffer<?, type>, %in2: !m
 kgen.generator @add_impl<type: dtype>(%in1:  !meta.buffer<?, type>, %in2: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
   implements @add {
   // If %in1.size == 1
-  %one = arith.constant 1 : index
+  %one = index.constant 1
   %size1 = meta.buffer.size %in1 : !meta.buffer<?, type>
-  %broadcastLeft = arith.cmpi eq, %size1, %one : index
+  %broadcastLeft = index.cmp eq(%size1, %one)
   scf.if %broadcastLeft {
     // Broadcast first input buffer
     kgen.call @add_bcst<bcst:i1=1, type:dtype=type>(%in1, %in2, %out) : (!meta.buffer<?, type>, !meta.buffer<?, type>, !meta.buffer<?, type>) -> ()
   } else {
     // If %in2.size == 1
     %size2 = meta.buffer.size %in2 : !meta.buffer<?, type>
-    %broadcastRight = arith.cmpi eq, %size2, %one : index
+    %broadcastRight = index.cmp eq(%size2, %one)
     scf.if %broadcastRight {
       // Broadcast second input buffer. Addition is commutative, so just swap operands.
       kgen.call @add_bcst<bcst:i1=1, type:dtype=type>(%in2, %in1, %out) : (!meta.buffer<?, type>, !meta.buffer<?, type>, !meta.buffer<?, type>) -> ()

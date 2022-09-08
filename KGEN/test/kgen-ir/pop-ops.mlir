@@ -272,8 +272,8 @@ kgen.generator @pop_simd_extractelement<size, type: dtype>(
     %b: !meta.simd<size, f32>,
     %c: !meta.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  arith.constant
-  %idx = arith.constant 2 : index
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
   // CHECK: %[[U:.*]] = pop.simd.extractelement %[[A]][%[[IDX]]] : !meta.simd<size, type>
   %u = pop.simd.extractelement %a[%idx] : !meta.simd<size, type>
   // CHECK: %[[V:.*]] = pop.simd.extractelement %[[B]][%[[IDX]]] : !meta.simd<size, f32>
@@ -298,8 +298,8 @@ kgen.generator @pop_simd_insertelement<size, type: dtype>(
     %b: !meta.simd<size, f32>,
     %c: !meta.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  arith.constant
-  %idx = arith.constant 2 : index
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
   // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]]] : !meta.simd<size, type>
   %u = pop.simd.insertelement %v0, %a[%idx] : !meta.simd<size, type>
   // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]]] : !meta.simd<size, f32>
@@ -337,8 +337,8 @@ kgen.generator @pop_buffer_load<size, type: dtype>(
     %b: !meta.buffer<size, f32>,
     %c: !meta.buffer<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  arith.constant
-  %idx = arith.constant 2 : index
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
   // CHECK: %[[U:.*]] = pop.buffer.load %[[A]][%[[IDX]]] : !meta.buffer<size, type>
   %u = pop.buffer.load %a[%idx] : !meta.buffer<size, type>
   // CHECK: %[[V:.*]] = pop.buffer.load %[[B]][%[[IDX]]] : !meta.buffer<size, f32>
@@ -363,8 +363,8 @@ kgen.generator @pop_buffer_store<size, type: dtype>(
     %b: !meta.buffer<size, f32>,
     %c: !meta.buffer<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  arith.constant
-  %idx = arith.constant 2 : index
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
   // CHECK: pop.buffer.store %[[V0]], %[[A]][%[[IDX]]] : !meta.buffer<size, type>
   pop.buffer.store %v0, %a[%idx] : !meta.buffer<size, type>
   // CHECK: pop.buffer.store %[[V1]], %[[B]][%[[IDX]]] : !meta.buffer<size, f32>

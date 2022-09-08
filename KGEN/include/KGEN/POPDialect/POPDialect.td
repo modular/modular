@@ -12,8 +12,8 @@ def POPDialect : Dialect {
 
   let summary = "The 'pop' dialect";
   let description = [{
-    This dialect defines the `pop` dialect, which defines parametric
-    operations on top of both the LLVM and arith dialects.
+    This dialect defines the `pop` dialect, which defines parametric operations
+    on top of the LLVM dialect.
   }];
 
   let cppNamespace = "::M::KGEN";
