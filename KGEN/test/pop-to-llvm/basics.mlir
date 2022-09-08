@@ -181,11 +181,20 @@ kgen.kernel @load(%p: !meta.pointer<f32>) -> !meta.scalar<f32> {
 
 // -----
 
-// CHECK: @store
+// CHECK-LABEL: @store
 kgen.kernel @store(%p: !meta.pointer<si32>, %v: !meta.scalar<si32>) {
   // CHECK: llvm.store
   pop.store %v, %p : !meta.pointer<si32>
   kgen.return
+}
+
+// ----
+
+// CHECK-LABEL: @offset
+kgen.kernel @offset(%p: !meta.pointer<f32>, %i: index) -> !meta.pointer<f32> {
+  // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
+  %0 = pop.offset %p[%i] : !meta.pointer<f32>
+  kgen.return %0 : !meta.pointer<f32>
 }
 
 // -----
