@@ -10,6 +10,7 @@
 
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
+include "KGEN/MetaDialect/MetaDialect.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class MetaType<string name, string typeMnemonic, list<Trait> traits = []>

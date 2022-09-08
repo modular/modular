@@ -10,6 +10,7 @@
 
 #include "KGEN/HLKGENDialect/HLKGENDialect.h"
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
+#include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"

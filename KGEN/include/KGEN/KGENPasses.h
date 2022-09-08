@@ -26,6 +26,8 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDialect;
+class MetaDialect;
+class POPDialect;
 class KernelOp;
 
 //===----------------------------------------------------------------------===//
@@ -39,6 +41,7 @@ createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
 std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
+std::unique_ptr<mlir::Pass> createLowerZAPToPOPPass();
 
 //===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration

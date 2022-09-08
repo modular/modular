@@ -13,7 +13,6 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
-#include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/ML/DType.h"
 
 #define GET_TYPEDEF_CLASSES
@@ -33,6 +32,10 @@ checkMetaCastedTypes(function_ref<InFlightDiagnostic(StringRef)> emitError,
 LogicalResult
 checkMetaCastedTypes(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      Type metaTy, Type standardTy);
+
+/// Given a type that implements `DTypeInterface`, return a scalar type of the
+/// same dtype as the given type.
+Type getScalarOfSameDType(Type type);
 } // namespace M::KGEN
 
 #endif // KGEN_METADIALECT_METATYPES_H

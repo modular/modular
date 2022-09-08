@@ -4,22 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen
-  EmitKernelHeader.cpp
-  EmitKernelObject.cpp
-  kgen.cpp
+add_modular_conversion_library(LowerZAPToPOP
+  LowerZAPToPOP.cpp
 
-  LINK_LIBS PRIVATE
-  KGENCLOptions
-  HLKGENDialect
-  IndexDialect
-  KGENElaborator
-  KGENDialect
-  ZapDialect
-  LowerHLKGEN
-  LowerZAPToPOP
+  DEPENDS
+  MLIRKGENPasses
+
+  LINK_LIBS PUBLIC
   MetaDialect
   POPDialect
+  ZapDialect
 
-  MLIRParser
+  MLIRTransforms
 )

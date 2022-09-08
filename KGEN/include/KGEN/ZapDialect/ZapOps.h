@@ -7,7 +7,9 @@
 #ifndef KGEN_ZAPDIALECT_ZAPOPS_H
 #define KGEN_ZAPDIALECT_ZAPOPS_H
 
+#include "KGEN/MetaDialect/MetaTypes.h"
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

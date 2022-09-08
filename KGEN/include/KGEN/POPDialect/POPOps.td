@@ -8,7 +8,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "KGEN/MetaDialect/MetaDialect.td"
 include "KGEN/MetaDialect/MetaTypes.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
@@ -607,6 +606,8 @@ def LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
   let arguments = (ins Arg<ConcretePointer, "", [MemRead]>:$ptr);
   let results = (outs ScalarType:$result);
   let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
+
+  let builders = [OpBuilder<(ins "Value":$ptr)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -653,58 +654,6 @@ def OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// BufferLoadOp
-//===----------------------------------------------------------------------===//
-
-def BufferLoadOp : POPOp<"buffer.load", [
-     ScalarOfSameDType<"buffer", "result">]> {
-  let summary = "buffer load operation";
-  let description = [{
-    Takes a Buffer and an index position and extracts the meta.scalar at
-    that position. The position must be of type index.
-
-    Example:
-
-    ```mlir
-    %1 = pop.buffer.load %0[%position]: !meta.buffer<size, dtype>
-    ```
-  }];
-
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemRead]>:$buffer,
-                       Index:$position);
-  let results = (outs ScalarType:$result);
-
-  let assemblyFormat = "$buffer `[` $position `]` attr-dict `:` type($buffer)";
-}
-
-//===----------------------------------------------------------------------===//
-// BufferStoreOp
-//===----------------------------------------------------------------------===//
-
-def BufferStoreOp : POPOp<"buffer.store", [
-     ScalarOfSameDType<"buffer", "value">]> {
-  let summary = "buffer store operation";
-  let description = [{
-    Takes a source value, buffer, and an index position and inserts the
-    source value into the buffer at the proper position. The position must be
-    of type index.
-
-    Example:
-
-    ```mlir
-    pop.buffer.store %val, %buf[%position]: !meta.buffer<size, dtype>
-    ```
-  }];
-
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemWrite]>:$buffer,
-                       ScalarType:$value, Index:$position);
-
-  let assemblyFormat = [{
-    $value `,` $buffer `[` $position `]` attr-dict `:` type($buffer)
   }];
 }
 

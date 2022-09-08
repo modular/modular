@@ -15,7 +15,7 @@ kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
   implements @buffer.loadOrValue {
   %isLoad = kgen.param.constant : i1 = <isLoad>
   %res = scf.if %isLoad -> !meta.scalar<type> {
-    %t0 = pop.buffer.load %buffer[%idx] : !meta.buffer<?, type>
+    %t0 = zap.buffer.load %buffer[%idx] : !meta.buffer<?, type>
     scf.yield %t0 : !meta.scalar<type>
   } else {
     scf.yield %val : !meta.scalar<type>
@@ -42,7 +42,7 @@ kgen.generator @horner<type: dtype, size>(%val: !meta.scalar<type>, %coefficient
   %zerof = pop.constant(0.0) : !meta.scalar<type>
   %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<size, type>
   %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !meta.scalar<type> {
-    %coeff = pop.buffer.load %coefficients[%i] : !meta.buffer<size, type>
+    %coeff = zap.buffer.load %coefficients[%i] : !meta.buffer<size, type>
     %res = pop.fma %sum, %val, %coeff : !meta.scalar<type>
     scf.yield %res : !meta.scalar<type>
   }
