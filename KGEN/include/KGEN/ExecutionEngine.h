@@ -80,11 +80,19 @@ public:
   /// it.
   ErrorOr<CompiledKernel> lookup(KGEN::KernelOp kernel);
 
+  /// Look up the opaque wrapper for a kernel and return it as a CompiledKernel
+  /// object.
+  ErrorOr<CompiledKernel> lookupOpaqueWrapper(KGEN::KernelOp kernel);
+
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
+
+  /// Lookup the JIT address for a name rather than a KGEN::Kernel object. This
+  /// is private because we may want to somehow munge/unique the names.
+  ErrorOr<llvm::orc::ExecutorAddr> lookup(StringRef name);
 
   llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<detail::ObjectCache> cache;

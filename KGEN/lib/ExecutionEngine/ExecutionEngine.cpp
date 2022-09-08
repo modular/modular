@@ -395,17 +395,38 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
 }
 
 ErrorOr<CompiledKernel> ExecutionEngine::lookup(KGEN::KernelOp kernel) {
-  // Look up the jit dylib to compile the kernel if it hasn't already been
-  // compiled.
-  auto *dylib = jit->getJITDylibByName(kernel.getName());
+  auto addrOr = lookup(kernel.getName());
+  if (failed(addrOr))
+    return addrOr.takeError();
+
+  return CompiledKernel(addrOr->toPtr<void *>(), kernel, *cache);
+}
+
+ErrorOr<CompiledKernel>
+ExecutionEngine::lookupOpaqueWrapper(KGEN::KernelOp kernel) {
+  auto opaqueWrapper =
+      kernel->getAttrOfType<FlatSymbolRefAttr>("opaque_wrapper");
+  if (!opaqueWrapper)
+    return Error("kernel '@" + kernel.getName() +
+                 "' did not have an opaque wrapper generated");
+
+  auto addrOr = lookup(opaqueWrapper.getValue());
+  if (failed(addrOr))
+    return addrOr.takeError();
+
+  return CompiledKernel(addrOr->toPtr<void *>(), kernel, *cache);
+}
+
+ErrorOr<llvm::orc::ExecutorAddr> ExecutionEngine::lookup(StringRef name) {
+  auto *dylib = jit->getJITDylibByName(name);
   if (!dylib)
-    return Error("could not find JITDylib for " + kernel.getName());
+    return Error("could not find JITDylib for " + name);
 
   // Do the lookup to ensure it's compiled. We don't actually care about the
   // address of the result.
-  auto addr = jit->lookup(*dylib, kernel.getName());
+  auto addr = jit->lookup(*dylib, name);
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  return CompiledKernel(addr->toPtr<void *>(), kernel, *cache);
+  return *addr;
 }
