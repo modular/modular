@@ -55,9 +55,9 @@ hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !met
   %size = meta.buffer.size %in: !meta.buffer<?, type>
 
   scf.for %i = %zero to %size step %one {
-      %src  = pop.buffer.load %in[%i] : !meta.buffer<?, type>
+      %src  = zap.buffer.load %in[%i] : !meta.buffer<?, type>
       %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!meta.scalar<type>) -> !meta.scalar<type>
-      pop.buffer.store %res, %out[%i] : !meta.buffer<?, type>
+      zap.buffer.store %res, %out[%i] : !meta.buffer<?, type>
   }
 
   kgen.return

@@ -29,9 +29,9 @@ kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(%in1: !meta.buffer<?, typ
 
   scf.for %i = %zero to %size step %one {
       %src1 = kgen.call @buffer.loadOrValue<isLoad:i1=no_bcst, type:dtype=type>(%in1, %i, %bcst_val) : (!meta.buffer<?, type>, index, !meta.scalar<type>) -> !meta.scalar<type>
-      %src2 = pop.buffer.load %in2[%i] : !meta.buffer<?, type>
+      %src2 = zap.buffer.load %in2[%i] : !meta.buffer<?, type>
       %res = pop.add %src1, %src2 : !meta.scalar<type>
-      pop.buffer.store %res, %out[%i] : !meta.buffer<?, type>
+      zap.buffer.store %res, %out[%i] : !meta.buffer<?, type>
   }
   kgen.return
 }

@@ -23,6 +23,22 @@ def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertZAPToPOP
+//===----------------------------------------------------------------------===//
+
+def LowerZAPToPOP : Pass<"lower-zap-to-pop"> {
+  let summary = "Lower the `zap` dialects to the `pop` and `meta` dialects.";
+  let description = [{
+    This pass lowers `zap` dialect operations to combinations of `pop` and
+    `meta` dialect operations. This pass can run pre-elaboration.
+  }];
+
+  let dependentDialects = ["MetaDialect", "POPDialect"];
+
+  let constructor = "createLowerZAPToPOPPass()";
+}
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENToLLVM
 //===----------------------------------------------------------------------===//
 

@@ -6,6 +6,8 @@
 
 #include "KGEN/ZapDialect/ZapOps.h"
 #include "KGEN/ZapDialect/ZapDialect.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/OpImplementation.h"
 
 using namespace M::KGEN;
 

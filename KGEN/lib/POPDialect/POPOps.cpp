@@ -275,12 +275,11 @@ LogicalResult SIMDShuffleOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDSplatOp
+// LoadOp
 //===----------------------------------------------------------------------===//
 
-static Type getScalarOfSameDType(Type type) {
-  return ScalarType::get(type.getContext(),
-                         type.cast<DTypeInterface>().getDType());
+void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
+  build(b, state, getScalarOfSameDType(ptr.getType()), ptr);
 }
 
 //===----------------------------------------------------------------------===//

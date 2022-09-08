@@ -262,51 +262,6 @@ struct ConvertPOPOffset : public mlir::ConvertOpToLLVMPattern<OffsetOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertBufferLoad
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPBufferLoad
-    : public mlir::ConvertOpToLLVMPattern<BufferLoadOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    BufferDescriptorBuilder buffer(op.getBuffer(), op.getLoc(), rewriter,
-                                   *getTypeConverter());
-    Value bufPtr = buffer.emitGetPtr(adaptor.getBuffer());
-    auto ptrOffset = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), bufPtr.getType(), bufPtr, adaptor.getPosition());
-
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrOffset);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertBufferStoreOp
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPBufferStore
-    : public mlir::ConvertOpToLLVMPattern<BufferStoreOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    BufferDescriptorBuilder buffer(op.getBuffer(), op.getLoc(), rewriter,
-                                   *getTypeConverter());
-    Value bufPtr = buffer.emitGetPtr(adaptor.getBuffer());
-    auto ptrOffset = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), bufPtr.getType(), bufPtr, adaptor.getPosition());
-
-    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getValue(),
-                                               ptrOffset);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPBufferStackAllocationOp
 //===----------------------------------------------------------------------===//
 
@@ -377,9 +332,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPBitCast,
-      ConvertPOPBufferLoad,
       ConvertPOPBufferStackAllocationOp,
-      ConvertPOPBufferStore,
       ConvertPOPCast,
       ConvertPOPConstant,
       ConvertPOPCopySign,

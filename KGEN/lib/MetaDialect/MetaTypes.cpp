@@ -6,6 +6,7 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/InputGeneration.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -62,6 +63,15 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
         // match.
         return success(dtype.isCompatibleWith(standardTy));
       });
+}
+
+//===----------------------------------------------------------------------===//
+// Meta Type Constraints
+//===----------------------------------------------------------------------===//
+
+Type M::KGEN::getScalarOfSameDType(Type type) {
+  return ScalarType::get(type.getContext(),
+                         type.cast<DTypeInterface>().getDType());
 }
 
 //===----------------------------------------------------------------------===//

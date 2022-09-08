@@ -12,5 +12,8 @@ add_modular_dialect_library(ZapDialect
   MLIRZapIncGen
 
   LINK_LIBS PUBLIC
+  MetaDialect
+  MLIRSideEffectInterfaces
+
   MLIRIR
 )

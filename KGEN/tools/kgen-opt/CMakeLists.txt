@@ -16,6 +16,7 @@ add_modular_tool(kgen-opt
   KGENToLLVM
   KGENElaborator
   LowerHLKGEN
+  LowerZAPToPOP
 
   MLIRIR
   MLIRLLVMDialect
