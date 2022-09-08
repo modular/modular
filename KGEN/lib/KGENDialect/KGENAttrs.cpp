@@ -1538,40 +1538,6 @@ ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
-// HistogramParam
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::printHistogram(
-    AsmPrinter &p, ArrayRef<std::pair<Attribute, uint64_t>> histogram) {
-  p << "[";
-  llvm::interleaveComma(histogram, p, [&](auto elt) {
-    p << "(" << elt.first << ", " << elt.second << ")";
-  });
-  p << "]";
-}
-
-FailureOr<SmallVector<std::pair<Attribute, uint64_t>>>
-M::KGEN::parseHistogram(AsmParser &p) {
-  SmallVector<std::pair<Attribute, uint64_t>> out;
-  auto elementParser = [&]() -> ParseResult {
-    Attribute attr;
-    uint64_t weight;
-    if (p.parseLParen() || p.parseAttribute(attr) || p.parseComma() ||
-        p.parseInteger(weight) || p.parseRParen())
-      return failure();
-
-    out.emplace_back(attr, weight);
-    return success();
-  };
-
-  if (p.parseLSquare() || p.parseCommaSeparatedList(elementParser) ||
-      p.parseRSquare())
-    return failure();
-
-  return out;
-}
-
-//===----------------------------------------------------------------------===//
 // InputGenKind(Attr)
 //===----------------------------------------------------------------------===//
 
@@ -1602,22 +1568,41 @@ struct FieldParser<InputGenKind> {
 void EvalConfigurationAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
-  for (EvalArgConfigurationAttr v : getValue())
-    walkAttrsFn(v);
+  walkAttrsFn(getBindings());
 }
 
 Attribute EvalConfigurationAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  assert(replTypes.empty() && "constraint has no types");
-  assert(replAttrs.size() == getValue().size());
-  if (!llvm::all_of(replAttrs, [](Attribute attr) {
-        return attr.isa<EvalConfigurationAttr>();
-      }))
-    return {};
+  assert(replTypes.empty() && "eval.configuration has no types");
+  assert(replAttrs.size() == 1 && replAttrs.front().isa<ArrayAttr>());
 
-  return get(
-      {reinterpret_cast<const EvalArgConfigurationAttr *>(replAttrs.data()),
-       replAttrs.size()});
+  return get(getContext(), getGenKind(), replAttrs.front().cast<ArrayAttr>(),
+             getWeight());
+}
+
+//===----------------------------------------------------------------------===//
+// EvalConfigurationArrayAttr
+//===----------------------------------------------------------------------===//
+
+void EvalConfigurationArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (auto attr : getValue())
+    walkAttrsFn(attr);
+}
+
+Attribute EvalConfigurationArrayAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  assert(replTypes.empty() && "eval.configurations have no types");
+  assert(llvm::all_of(replAttrs,
+                      [](Attribute attr) {
+                        return attr.isa<EvalConfigurationAttr>();
+                      }) &&
+         "eval.configurations is a list of eval.configuration");
+
+  return get(getContext(),
+             {reinterpret_cast<const EvalConfigurationAttr *>(replAttrs.data()),
+              replAttrs.size()});
 }
 
 //===----------------------------------------------------------------------===//
