@@ -532,9 +532,20 @@ OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
 #if LLCL_SIMD_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
+  size_t simdSize = InputSIMDType::size();
+  // Unroll the loop by 4.
+  constexpr size_t unrollFactor = 4;
+  for (; first <= last - unrollFactor * simdSize;
+       first += unrollFactor * simdSize, result += unrollFactor * simdSize) {
+#pragma unroll
+    for (size_t k = 0; k < unrollFactor; ++k) {
+      InputSIMDType input(InputSIMDType::loadFrom(first + k * simdSize));
+      OutputSIMDType output(simdFunc(input));
+      output.storeTo(result + k * simdSize);
+    }
+  }
   // Apply the simd function on the input buffer in batches of simd size.
-  for (; first <= last - InputSIMDType::size();
-       first += InputSIMDType::size(), result += OutputSIMDType::size()) {
+  for (; first <= last - simdSize; first += simdSize, result += simdSize) {
     InputSIMDType input(InputSIMDType::loadFrom(first));
     OutputSIMDType output(simdFunc(input));
     output.storeTo(result);
@@ -559,10 +570,23 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
 #if LLCL_SIMD_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
+  size_t simdSize = InputSIMDType::size();
+  // Unroll the loop by 4.
+  constexpr size_t unrollFactor = 4;
+  for (; first1 <= last1 - unrollFactor * simdSize;
+       first1 += unrollFactor * simdSize, first2 += unrollFactor * simdSize,
+       result += unrollFactor * simdSize) {
+#pragma unroll
+    for (size_t k = 0; k < unrollFactor; ++k) {
+      InputSIMDType input1(InputSIMDType::loadFrom(first1 + k * simdSize));
+      InputSIMDType input2(InputSIMDType::loadFrom(first2 + k * simdSize));
+      OutputSIMDType output(simdFunc(input1, input2));
+      output.storeTo(result + k * simdSize);
+    }
+  }
   // Apply the simd function on the input buffers in batches of simd size.
-  for (; first1 <= last1 - InputSIMDType::size();
-       first1 += InputSIMDType::size(), first2 += InputSIMDType::size(),
-       result += OutputSIMDType::size()) {
+  for (; first1 <= last1 - simdSize;
+       first1 += simdSize, first2 += simdSize, result += simdSize) {
     InputSIMDType input1(InputSIMDType::loadFrom(first1));
     InputSIMDType input2(InputSIMDType::loadFrom(first2));
     OutputSIMDType output(simdFunc(input1, input2));
@@ -597,9 +621,19 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
   // simd_transform. So, fallback to std::transform.
 #if LLCL_SIMD_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
+  size_t simdSize = InputSIMDType::size();
+  // Unroll the loop by 4.
+  constexpr size_t unrollFactor = 4;
+  for (; first <= last - unrollFactor * simdSize;
+       first += unrollFactor * simdSize) {
+#pragma unroll
+    for (size_t k = 0; k < unrollFactor; ++k) {
+      InputSIMDType input(InputSIMDType::loadFrom(first + k * simdSize));
+      result = simdFunc(result, input);
+    }
+  }
   // Apply the simd function on the input buffer in batches of simd size.
-  for (; first <= last - InputSIMDType::size();
-       first += InputSIMDType::size()) {
+  for (; first <= last - simdSize; first += simdSize) {
     InputSIMDType input(InputSIMDType::loadFrom(first));
     result = simdFunc(result, input);
   }
