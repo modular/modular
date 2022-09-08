@@ -188,7 +188,7 @@ started out as:
 and `someFPType` got resolve to `f32` by the elaborator, which generically
 resolves type parameters without making other adjustments to the operation.
 
-Some amout of type fluidity makes sense, but there are other designs we could
+Some amount of type fluidity makes sense, but there are other designs we could
 investigate:
 
 1) We could reject `%c3` with an error or warning, for the same reason that
