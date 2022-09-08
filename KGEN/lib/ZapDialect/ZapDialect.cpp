@@ -1,21 +1,21 @@
-//===- LitDialect.cpp -----------------------------------------------------===//
+//===- ZapDialect.cpp -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/LitDialect/LitDialect.h"
+#include "KGEN/ZapDialect/ZapDialect.h"
 
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
-// LitDialect
+// ZapDialect
 //===----------------------------------------------------------------------===//
 
-void LitDialect::initialize() { registerOperations(); }
+void ZapDialect::initialize() { registerOperations(); }
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/LitDialect/LitDialect.cpp.inc"
+#include "KGEN/ZapDialect/ZapDialect.cpp.inc"

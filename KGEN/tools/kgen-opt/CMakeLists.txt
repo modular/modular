@@ -10,7 +10,7 @@ add_modular_tool(kgen-opt
   HLKGENDialect
   IndexDialect
   KGENDialect
-  LitDialect
+  ZapDialect
   MetaDialect
   POPDialect
   KGENToLLVM

@@ -1,22 +1,22 @@
-//===- LitOps.cpp ---------------------------------------------------------===//
+//===- ZapOps.cpp ---------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/LitDialect/LitOps.h"
-#include "KGEN/LitDialect/LitDialect.h"
+#include "KGEN/ZapDialect/ZapOps.h"
+#include "KGEN/ZapDialect/ZapDialect.h"
 
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
-// LitDialect
+// ZapDialect
 //===----------------------------------------------------------------------===//
 
-void LitDialect::registerOperations() {
+void ZapDialect::registerOperations() {
   addOperations<
 #define GET_OP_LIST
-#include "KGEN/LitDialect/Lit.cpp.inc"
+#include "KGEN/ZapDialect/Zap.cpp.inc"
       >();
 }
 
@@ -25,4 +25,4 @@ void LitDialect::registerOperations() {
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "KGEN/LitDialect/Lit.cpp.inc"
+#include "KGEN/ZapDialect/Zap.cpp.inc"

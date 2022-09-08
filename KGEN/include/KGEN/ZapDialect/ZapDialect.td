@@ -1,4 +1,4 @@
-//===- LitDialect.td ------------------------------------------------------===//
+//===- ZapDialect.td ------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -6,19 +6,19 @@
 
 include "mlir/IR/DialectBase.td"
 
-#ifndef LITDIALECT_TD
-#define LITDIALECT_TD
+#ifndef ZAPDIALECT_TD
+#define ZAPDIALECT_TD
 
 //===----------------------------------------------------------------------===//
-// LitDialect
+// ZapDialect
 //===----------------------------------------------------------------------===//
 
-def LitDialect : Dialect {
-  let name = "lit";
+def ZapDialect : Dialect {
+  let name = "zap";
 
-  let summary = "The Lightning ⚡️ dialect";
+  let summary = "The Zap ⚡️ dialect";
   let description = [{
-    The Lightning ⚡️ dialect contains parametric high-level operations that model
+    The Zap ⚡️ dialect contains parametric high-level operations that model
     language-level features and/or provide syntax sugar on top of lower level
     operations. It is meant as a substitute for a kernel programming language
     and its standard libraries until they exist.
@@ -37,4 +37,4 @@ def LitDialect : Dialect {
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
 }
 
-#endif // LITDIALECT_TD
+#endif // ZAPDIALECT_TD

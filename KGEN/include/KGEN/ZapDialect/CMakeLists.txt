@@ -4,13 +4,5 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_dialect_library(LitDialect
-  LitDialect.cpp
-  LitOps.cpp
-
-  DEPENDS
-  MLIRLitIncGen
-
-  LINK_LIBS PUBLIC
-  MLIRIR
-)
+add_mlir_dialect(Zap zap -dialect=zap)
+add_modular_doc(Zap -gen-dialect-doc ZapDialect KGEN/docs/ -dialect=zap)
