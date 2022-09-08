@@ -391,22 +391,6 @@ kgen.generator @caller<type : dtype>(%arg0: !meta.scalar<type>) {
 
 // -----
 
-kgen.generator.interface @badInputGenKind() attributes {
-  // expected-error@+2 {{failed to parse EvalArgConfigurationAttr parameter 'genKind' which is to be a `InputGenKind`}}
-  // expected-error@+1 {{unknown InputGenKind 'doesNotExist'}}
-  arg = #kgen.eval.arg.configuration<doesNotExist, <[]>>
-}
-
-// -----
-
-kgen.generator.interface @badInputGenKindNoString() attributes {
-  // expected-error@+2 {{failed to parse EvalArgConfigurationAttr parameter 'genKind' which is to be a `InputGenKind`}}
-  // expected-error@+1 {{expected valid keyword}}
-  arg = #kgen.eval.arg.configuration<3, <[]>>
-}
-
-// -----
-
 // Reject uses of parameters in kgen.kernel since the elaborator should remove them.
 kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
   // Declaring parameters in a kernel is ok.

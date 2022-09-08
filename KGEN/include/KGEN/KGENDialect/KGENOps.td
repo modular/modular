@@ -127,7 +127,7 @@ def GeneratorInterfaceOp
                        ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<EvalConfigurationAttr>:$evalConfig);
+                       OptionalAttr<EvalConfigurationArrayAttr>:$evalConfigs);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.
