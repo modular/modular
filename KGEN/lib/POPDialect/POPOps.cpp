@@ -252,6 +252,29 @@ LogicalResult CastOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDShuffleOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult SIMDShuffleOp::verify() {
+  Optional<int64_t> size = getType().resolveSize();
+  if (!size || static_cast<size_t>(*size) != getMask().size())
+    return emitOpError("expected result to be a vector of ")
+           << getMask().size() << " elements";
+
+  auto lhsType = getLhs().getType().cast<SIMDType>();
+  if (lhsType.getDType() != getType().getDType())
+    return emitOpError("expected result dtype to match operand dtypes");
+
+  if (Optional<int64_t> size = lhsType.resolveSize()) {
+    for (int32_t index : getMask())
+      if (index >= *size * 2)
+        return emitOpError("mask element ") << index << " is out of bounds";
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 

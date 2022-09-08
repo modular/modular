@@ -110,3 +110,11 @@ kgen.kernel @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32
   %0 = pop.simd.insertelement %val, %vec[%idx] : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
+
+// -----
+
+kgen.kernel @simd_shuffle(%a: !meta.simd<2, f32>, %b: !meta.simd<2, f32>) -> !meta.simd<4, f32> {
+  // CHECK: llvm.shufflevector %{{.*}}, %{{.*}} [2, 3, 1, 0]
+  %0 = pop.simd.shuffle %a, %b [2, 3, 1, 0] : !meta.simd<2, f32> -> !meta.simd<4, f32>
+  kgen.return %0 : !meta.simd<4, f32>
+}
