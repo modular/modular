@@ -1,21 +1,21 @@
-//===- ZapDialect.cpp -----------------------------------------------------===//
+//===- ZAPDialect.cpp -----------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ZapDialect/ZapDialect.h"
+#include "KGEN/ZAPDialect/ZAPDialect.h"
 
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
-// ZapDialect
+// ZAPDialect
 //===----------------------------------------------------------------------===//
 
-void ZapDialect::initialize() { registerOperations(); }
+void ZAPDialect::initialize() { registerOperations(); }
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ZapDialect/ZapDialect.cpp.inc"
+#include "KGEN/ZAPDialect/ZAPDialect.cpp.inc"

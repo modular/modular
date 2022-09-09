@@ -9,7 +9,7 @@
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/ZapDialect/ZapOps.h"
+#include "KGEN/ZAPDialect/ZAPOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 

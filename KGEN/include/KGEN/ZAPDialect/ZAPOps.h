@@ -1,4 +1,4 @@
-//===- KGEN/ZapDialect/ZapOps.h -------------------------------------------===//
+//===- KGEN/ZAPDialect/ZAPOps.h -------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -16,6 +16,6 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "KGEN/ZapDialect/Zap.h.inc"
+#include "KGEN/ZAPDialect/ZAP.h.inc"
 
 #endif // KGEN_ZAPDIALECT_ZAPOPS_H
