@@ -166,7 +166,7 @@ The `pop` dialect solves two problems for KGEN:
 This section captures other specific design points that may be surprising about
 its design and why.
 
-## `pop.constant` allows its attribute value to mismatch the result type
+### `pop.constant` allows its attribute value to mismatch the result type
 
 The `pop.constant` operation allows things like this, which have mismatched
 attribute types and the result type:
@@ -199,3 +199,14 @@ investigate:
    operation to fix itself after elaboration or report an error.
 
 The benefit of #2 is that it would lead to a simpler IR.
+
+## `zap` dialect design
+
+The `zap` dialect is a substitute for language-level features and libraries
+until those can exist. The `zap` dialect exists only pre-elaboration and is
+lowered to the `pop` and `meta` dialect before elaboration.
+
+For example, `meta.buffer` is a substitute for a user-defined/library type.
+Operations on buffers should reside in the `zap` dialect. The meta dialect
+contains basic operations for interfacing with buffers until a model for
+lowering custom types is devised.
