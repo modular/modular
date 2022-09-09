@@ -10,6 +10,7 @@
 
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "KGEN/HLKGENDialect/HLKGENDialect.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 
 // Base class for the operation in this dialect.

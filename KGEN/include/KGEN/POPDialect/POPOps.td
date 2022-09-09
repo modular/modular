@@ -9,11 +9,15 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/MetaDialect/MetaTypes.td"
+include "KGEN/POPDialect/POPDialect.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/IR/EnumAttr.td"
-include "mlir/IR/OpAsmInterface.td"
+
+// Base class for the operation in this dialect.
+class POPOp<string mnemonic, list<Trait> traits = []> :
+    Op<POPDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // ConstantOp

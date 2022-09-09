@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "mlir/IR/DialectBase.td"
-
 #ifndef ZAPDIALECT_TD
 #define ZAPDIALECT_TD
+
+include "mlir/IR/DialectBase.td"
 
 //===----------------------------------------------------------------------===//
 // ZAPDialect

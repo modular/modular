@@ -11,7 +11,6 @@
 #ifndef META_TD
 #define META_TD
 
-include "KGEN/MetaDialect/MetaDialect.td"
 include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/MetaDialect/MetaOps.td"
 

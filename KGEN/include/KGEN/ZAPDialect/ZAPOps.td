@@ -10,7 +10,6 @@
 include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
 // ZAPOp
