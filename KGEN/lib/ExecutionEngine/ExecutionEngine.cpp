@@ -320,10 +320,16 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
 /// files.
 // TODO: The slicing -> convert to LLVM -> createJITDylib + compile has natural
 //       parallelism that we aren't taking advantage of.
-M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
+M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
+                                       ArrayRef<KernelOp> only) {
   // Loop over all the kernels in the module and perform non-destructive
   // slicing, then push them to LLVM IR and compile them to objects.
   for (auto kernel : module.getOps<KGEN::KernelOp>()) {
+    // If we've added a filter and this kernel isn't one we want, don't deal
+    // with it.
+    if (!only.empty() && !llvm::is_contained(only, kernel))
+      continue;
+
     // Create a new module for this single kernel. This will go away at the end
     // of this function.
     mlir::OwningOpRef<mlir::ModuleOp> singleModule =
@@ -397,38 +403,30 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
 }
 
 ErrorOr<CompiledKernel> ExecutionEngine::lookup(KGEN::KernelOp kernel) {
-  auto addrOr = lookup(kernel.getName());
-  if (failed(addrOr))
-    return addrOr.takeError();
+  auto *dylib = jit->getJITDylibByName(kernel.getName());
+  if (!dylib)
+    return Error("could not find JITDylib for " + kernel.getName());
 
-  return CompiledKernel(addrOr->toPtr<void *>(), kernel, *cache);
+  auto addr = jit->lookup(*dylib, kernel.getName().str());
+  if (!addr)
+    return M::Error(toString(addr.takeError()));
+
+  return CompiledKernel(addr->toPtr<void *>(), kernel, *cache);
 }
 
 ErrorOr<CompiledKernel>
 ExecutionEngine::lookupOpaqueWrapper(KGEN::KernelOp kernel) {
-  auto opaqueWrapper =
-      kernel->getAttrOfType<FlatSymbolRefAttr>("opaque_wrapper");
-  if (!opaqueWrapper)
-    return Error("kernel '@" + kernel.getName() +
-                 "' did not have an opaque wrapper generated");
-
-  auto addrOr = lookup(opaqueWrapper.getValue());
-  if (failed(addrOr))
-    return addrOr.takeError();
-
-  return CompiledKernel(addrOr->toPtr<void *>(), kernel, *cache);
-}
-
-ErrorOr<llvm::orc::ExecutorAddr> ExecutionEngine::lookup(StringRef name) {
-  auto *dylib = jit->getJITDylibByName(name);
+  // TODO: The opaque_wrapper attr is added to the llvm.func op, not the
+  //       KernelOp so we gotta have a map or something for that - we don't
+  //       currently save the LLVM-dialect IR. For now, just suffix it manually.
+  //       It'll be in the dylib for the original kernel.
+  auto *dylib = jit->getJITDylibByName(kernel.getName());
   if (!dylib)
-    return Error("could not find JITDylib for " + name);
+    return Error("could not find JITDylib for " + kernel.getName());
 
-  // Do the lookup to ensure it's compiled. We don't actually care about the
-  // address of the result.
-  auto addr = jit->lookup(*dylib, name);
+  auto addr = jit->lookup(*dylib, kernel.getName().str() + "_opaque_wrapper");
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  return *addr;
+  return CompiledKernel(addr->toPtr<void *>(), kernel, *cache);
 }
