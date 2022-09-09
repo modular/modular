@@ -1,10 +1,10 @@
-//===- EmitKernelHeader.cpp -----------------------------------------------===//
+//===- EmitFuncHeader.cpp -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "EmitKernelHeader.h"
+#include "EmitFuncHeader.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "Support/ML/DType.h"
 #include "mlir/Support/FileUtilities.h"

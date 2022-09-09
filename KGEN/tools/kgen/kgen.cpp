@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "EmitKernelHeader.h"
-#include "EmitKernelObject.h"
+#include "EmitFuncHeader.h"
+#include "EmitFuncObject.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/Elaborator.h"
 #include "KGEN/ExecutionEngine.h"
