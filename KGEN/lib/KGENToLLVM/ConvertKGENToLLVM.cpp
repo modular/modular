@@ -737,9 +737,11 @@ namespace {
 struct ConvertKGENToLLVMPass
     : public ConvertKGENToLLVMBase<ConvertKGENToLLVMPass> {
   explicit ConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
-                                 ArrayRef<StringRef> emitCWrappers) {
+                                 ArrayRef<StringRef> emitCWrappers,
+                                 bool emitOpaqueWrappers) {
     setStringListOption(this->breakUpStructs, breakUpStructs);
     setStringListOption(this->emitCWrappers, emitCWrappers);
+    this->emitOpaqueWrappers = emitOpaqueWrappers;
   }
 
   void runOnOperation() override;
@@ -776,6 +778,8 @@ void ConvertKGENToLLVMPass::runOnOperation() {
 
 std::unique_ptr<mlir::Pass>
 M::KGEN::createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
-                                     ArrayRef<StringRef> emitCWrappers) {
-  return std::make_unique<ConvertKGENToLLVMPass>(breakUpStructs, emitCWrappers);
+                                     ArrayRef<StringRef> emitCWrappers,
+                                     bool emitOpaqueWrappers) {
+  return std::make_unique<ConvertKGENToLLVMPass>(breakUpStructs, emitCWrappers,
+                                                 emitOpaqueWrappers);
 }
