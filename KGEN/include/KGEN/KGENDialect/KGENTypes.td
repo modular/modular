@@ -33,7 +33,7 @@ def ParamRefType
   let parameters = (ins "mlir::TypedAttr":$param);
   let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
 
-  // Our builders create ParamType but fold to the base type if not
+  // Our builders create ParamRefType but fold to the base type if not
   // parameterized.
   let skipDefaultBuilders = 1;
   let builders = [

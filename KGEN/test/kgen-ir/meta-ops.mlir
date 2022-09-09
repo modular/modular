@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: kgen.kernel @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
-kgen.kernel @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
+// CHECK-LABEL: kgen.func @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
+kgen.func @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
   // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
   %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
   // CHECK: %1 = meta.buffer.size %arg1 : !meta.buffer<?, f32>
@@ -10,8 +10,8 @@ kgen.kernel @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<
   kgen.return %1 : index
 }
 
-// CHECK-LABEL: kgen.kernel @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
-kgen.kernel @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
+// CHECK-LABEL: kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
+kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
   // CHECK: %0 = meta.buffer.dtype %arg0 : !meta.buffer<42, f32>
   %0 = meta.buffer.dtype %arg0 : !meta.buffer<42, f32>
   // CHECK: %1 = meta.buffer.dtype %arg1 : !meta.buffer<42, ?>
@@ -71,8 +71,8 @@ kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?
   kgen.return %0 : !meta.buffer<42, f32>
 }
 
-// CHECK-LABEL: kgen.kernel @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
-kgen.kernel @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
+// CHECK-LABEL: kgen.func @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
+kgen.func @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
   // CHECK: %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to f32
   // CHECK: %1 = meta.cast_to_builtin %arg1 : !meta.scalar<si32> to ui32
@@ -81,8 +81,8 @@ kgen.kernel @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>
   kgen.return %1 : ui32
 }
 
-// CHECK-LABEL: kgen.kernel @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
-kgen.kernel @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
+// CHECK-LABEL: kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
+kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
   // CHECK: %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
   %0 = meta.cast_from_builtin %arg0: f32 to !meta.scalar<f32>
   // CHECK: %1 = meta.cast_from_builtin %arg1 : ui32 to !meta.scalar<si32>
@@ -93,7 +93,7 @@ kgen.kernel @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
 
 // CHECK-LABEL: @cast_from_builtin_vector
 // CHECK-SAME: %[[ARG:.*]]:
-kgen.kernel @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !meta.simd<1, f32> {
+kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !meta.simd<1, f32> {
   // CHECK: %[[V0:.*]] = meta.cast_from_builtin %[[ARG]] : vector<1xf32> to !meta.simd<1, f32>
   %0 = meta.cast_from_builtin %arg0 : vector<1xf32> to !meta.simd<1, f32>
   // CHECK: kgen.return  %[[V0:.*]] : !meta.simd<1, f32>
@@ -140,7 +140,7 @@ kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.poi
 }
 
 // CHECK-LABEL: @meta_buffer_construct
-kgen.kernel @meta_buffer_construct(%ptr: !meta.pointer<f32>, %opaque: !meta.pointer<?>,
+kgen.func @meta_buffer_construct(%ptr: !meta.pointer<f32>, %opaque: !meta.pointer<?>,
                               %size: index, %dtype: !kgen.dtype) {
   // CHECK: meta.buffer.construct %{{.*}} : !meta.buffer<4, f32>
   %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>

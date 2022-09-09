@@ -14,7 +14,7 @@ llvm.func @get(i32) -> i32
 // CHECK:   llvm.br ^bb1(%[[NEXT]], %[[V0]]
 // CHECK: ^bb3:
 // CHECK    llvm.return %[[V]]
-kgen.kernel @loop(%init: i32, %lb: index, %ub: index, %step: index) -> i32 {
+kgen.func @loop(%init: i32, %lb: index, %ub: index, %step: index) -> i32 {
   %result = scf.for %i = %lb to %ub step %step iter_args(%v = %init) -> i32 {
     %0 = llvm.call @get(%v) : (i32) -> i32
     scf.yield %0 : i32
@@ -34,7 +34,7 @@ kgen.kernel @loop(%init: i32, %lb: index, %ub: index, %step: index) -> i32 {
 // CHECK:   llvm.br ^bb4
 // CHECK: ^bb4:
 // CHECK:   llvm.return %[[RES]]
-kgen.kernel @cond(%cond: i1, %a: i32, %b: i32) -> i32 {
+kgen.func @cond(%cond: i1, %a: i32, %b: i32) -> i32 {
   %result = scf.if %cond -> i32 {
     %0 = llvm.call @get(%a) : (i32) -> i32
     scf.yield %0 : i32

@@ -28,7 +28,7 @@ namespace M::KGEN {
 class KGENDialect;
 class MetaDialect;
 class POPDialect;
-class KernelOp;
+class FuncOp;
 
 //===----------------------------------------------------------------------===//
 // Pass creation

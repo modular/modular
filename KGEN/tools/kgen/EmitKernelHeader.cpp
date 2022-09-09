@@ -18,9 +18,9 @@ using namespace KGEN;
 namespace {
 /// This provides a method by which we can emit a kernel's signature to an
 /// llvm::formatv stream.
-struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
-  FormatKernel(KernelOp func)
-      : llvm::FormatAdapter<KernelOp>(std::forward<KernelOp &&>(func)) {}
+struct FormatKernel : public llvm::FormatAdapter<FuncOp> {
+  FormatKernel(FuncOp func)
+      : llvm::FormatAdapter<FuncOp>(std::forward<FuncOp &&>(func)) {}
 
   void format(llvm::raw_ostream &os, StringRef style) override {
     auto printDTypeAsC = [&](DType dt) {
@@ -109,8 +109,7 @@ struct FormatKernel : public llvm::FormatAdapter<KernelOp> {
 
 /// This allows us to emit a header file for the given kernel so that we can
 /// `#include` it and get nice autocompletion/etc. in users' IDEs.
-LogicalResult M::KGEN::emitHeaderForKernel(KernelOp kernel,
-                                           StringRef filename) {
+LogicalResult M::KGEN::emitHeaderForKernel(FuncOp kernel, StringRef filename) {
   std::string err;
   auto outFile = mlir::openOutputFile(filename, &err);
   if (!outFile)

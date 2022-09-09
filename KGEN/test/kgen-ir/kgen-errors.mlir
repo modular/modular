@@ -140,8 +140,8 @@ kgen.generator @g2<>() { // expected-note {{callee declared here}}
 
 // -----
 
-// expected-error @+1 {{kgen.kernel only allows output parameters, not input parameters}}
-kgen.kernel @bad_kernel_param<x>() {
+// expected-error @+1 {{kgen.func only allows output parameters, not input parameters}}
+kgen.func @bad_kernel_param<x>() {
   kgen.return
 }
 
@@ -163,7 +163,7 @@ kgen.generator @only_returns<p1 -> p2>() {
   kgen.return <p2 = p1>
 }
 
-kgen.kernel @test_only_returns() {
+kgen.func @test_only_returns() {
   // expected-error @+1 {{caller has 0 input parameters but callee expects 1}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
@@ -171,7 +171,7 @@ kgen.kernel @test_only_returns() {
 
 // -----
 
-kgen.kernel @bad_scalar_rebind_dtype(%arg0: !meta.scalar<f32>) -> !meta.scalar<f64> {
+kgen.func @bad_scalar_rebind_dtype(%arg0: !meta.scalar<f32>) -> !meta.scalar<f64> {
   // expected-error @below {{input scalar dtype 'f32' disagrees with result scalar dtype 'f64'}}
   %0 = meta.scalar.rebind %arg0 : !meta.scalar<f32> to !meta.scalar<f64>
   kgen.return %0 : !meta.scalar<f64>
@@ -179,7 +179,7 @@ kgen.kernel @bad_scalar_rebind_dtype(%arg0: !meta.scalar<f32>) -> !meta.scalar<f
 
 // -----
 
-kgen.kernel @bad_pointer_rebind_dtype(%arg0: !meta.pointer<f32>) -> !meta.pointer<f64> {
+kgen.func @bad_pointer_rebind_dtype(%arg0: !meta.pointer<f32>) -> !meta.pointer<f64> {
   // expected-error @below {{input pointer dtype 'f32' disagrees with result pointer dtype 'f64'}}
   %0 = meta.pointer.rebind %arg0 : !meta.pointer<f32> to !meta.pointer<f64>
   kgen.return %0 : !meta.pointer<f64>
@@ -187,7 +187,7 @@ kgen.kernel @bad_pointer_rebind_dtype(%arg0: !meta.pointer<f32>) -> !meta.pointe
 
 // -----
 
-kgen.kernel @bad_simd_rebind_size(%arg0 : !meta.simd<2, f32>) -> !meta.simd<1, f32> {
+kgen.func @bad_simd_rebind_size(%arg0 : !meta.simd<2, f32>) -> !meta.simd<1, f32> {
   // expected-error @+1 {{input SIMD size '2' disagrees with result SIMD size '1'}}
   %0 = meta.simd.rebind %arg0 : !meta.simd<2, f32> to !meta.simd<1, f32>
   kgen.return %0 : !meta.simd<1, f32>
@@ -195,7 +195,7 @@ kgen.kernel @bad_simd_rebind_size(%arg0 : !meta.simd<2, f32>) -> !meta.simd<1, f
 
 // -----
 
-kgen.kernel @bad_simd_rebind_dtype(%arg0 : !meta.simd<2, f32>) -> !meta.simd<2, f64> {
+kgen.func @bad_simd_rebind_dtype(%arg0 : !meta.simd<2, f32>) -> !meta.simd<2, f64> {
   // expected-error @+1 {{input SIMD dtype 'f32' disagrees with result SIMD dtype 'f64'}}
   %0 = meta.simd.rebind %arg0 : !meta.simd<2, f32> to !meta.simd<2, f64>
   kgen.return %0 : !meta.simd<2, f64>
@@ -203,14 +203,14 @@ kgen.kernel @bad_simd_rebind_dtype(%arg0 : !meta.simd<2, f32>) -> !meta.simd<2, 
 
 // -----
 
-kgen.kernel @meta_buffer_size(%arg0: i32) -> index {
+kgen.func @meta_buffer_size(%arg0: i32) -> index {
   // expected-error @+1 {{'meta.buffer.size' op operand #0 must be parameterized buffer type, but got 'i32'}}
   %0 = meta.buffer.size %arg0 : i32
   kgen.return %0 : index
 }
 // -----
 
-kgen.kernel @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
+kgen.func @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
   // expected-error @+1 {{input buffer size '42' disagrees with result buffer size '1'}}
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
   kgen.return %0 : !meta.buffer<1, f32>
@@ -218,7 +218,7 @@ kgen.kernel @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buff
 
 // -----
 
-kgen.kernel @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
+kgen.func @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
   // expected-error @+1 {{input buffer dtype 'f32' disagrees with result buffer dtype 'f64'}}
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
   kgen.return %0 : !meta.buffer<42, f64>
@@ -226,7 +226,7 @@ kgen.kernel @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buf
 
 // -----
 
-kgen.kernel @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
+kgen.func @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
   // expected-error @+1 {{'meta.buffer.dtype' op operand #0 must be parameterized buffer type, but got 'i32'}}
   %0 = meta.buffer.dtype %arg0 : i32
   kgen.return %0 : !kgen.dtype
@@ -239,7 +239,7 @@ kgen.generator @only_returns<() -> p2: i4>() {
   kgen.return <p2: i4 = 2>
 }
 
-kgen.kernel @test_only_returns() {
+kgen.func @test_only_returns() {
   // expected-error @+1 {{caller output parameter #0 has type 'index' but callee expected type 'i4'}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
@@ -252,7 +252,7 @@ kgen.generator @fn<p2>() {
   kgen.return
 }
 
-kgen.kernel @input_param_name() {
+kgen.func @input_param_name() {
   // expected-error @+1 {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
   kgen.call @fn<p1 = 42>() : () -> ()
   kgen.return
@@ -265,7 +265,7 @@ kgen.generator @fn(%a: i1) -> i1 {
   kgen.return %a : i1
 }
 
-kgen.kernel @result_type(%a: i1) {
+kgen.func @result_type(%a: i1) {
   // expected-error @+1 {{caller result #0 has type 'f32' but callee expected type 'i1'}}
   kgen.call @fn(%a) : (i1) -> f32
   kgen.return
@@ -333,7 +333,7 @@ kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
 kgen.generator.interface @take_and_return<p1 -> r1>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
-kgen.kernel @self_cyclic() {
+kgen.func @self_cyclic() {
   // Uses r1 and defines r1
   kgen.call @take_and_return<p1 = r1 -> r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r1", which is defined by itself}}
@@ -345,7 +345,7 @@ kgen.kernel @self_cyclic() {
 kgen.generator.interface @take_and_return<p1 -> r1>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
-kgen.kernel @mutually_recursive() {
+kgen.func @mutually_recursive() {
   // Uses r2 and defines r1
   kgen.call @take_and_return<p1 = r2 -> r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r2", which is defined by the first operation}}
@@ -391,13 +391,13 @@ kgen.generator @caller<type : dtype>(%arg0: !meta.scalar<type>) {
 
 // -----
 
-// Reject uses of parameters in kgen.kernel since the elaborator should remove them.
-kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
+// Reject uses of parameters in kgen.func since the elaborator should remove them.
+kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
   // Declaring parameters in a kernel is ok.
   kgen.param.declare someParam = <42>
 
   // Using them is not.
-  // expected-error@+1 {{invalid use of parameter "someParam" in kgen.kernel}}
+  // expected-error@+1 {{invalid use of parameter "someParam" in kgen.func}}
   "someop" () {} : () -> !meta.simd<someParam, f32>
 
   kgen.return
@@ -405,7 +405,7 @@ kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
 
 // -----
 
-// kgen.kernel isn't allowed to call generators that take input parameters,
+// kgen.func isn't allowed to call generators that take input parameters,
 // but they are allowed to call generators with no input parameters.
 
 kgen.generator @hasInputParam<param>() {
@@ -415,11 +415,11 @@ kgen.generator @hasResultParam<() -> param>() {
   kgen.return<param = 42>
 }
 
-kgen.kernel @test() {  // expected-note {{within kgen.kernel 'test'}}
+kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
   // ok
   kgen.call @hasResultParam<() -> result>() : () -> ()
   
-  // expected-error@+1 {{cannot call generator with input arguments from concrete kgen.kernel}}
+  // expected-error@+1 {{cannot call generator with input arguments from concrete kgen.func}}
   kgen.call @hasInputParam<param = 42>() : () -> ()
   
   kgen.return

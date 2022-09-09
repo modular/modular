@@ -34,7 +34,7 @@ enum class GeneratorOrKernelKind {
   hlgenerator,
 };
 
-/// Parse the MLIR syntax for a kgen.generator, kgen.kernel and related
+/// Parse the MLIR syntax for a kgen.generator, kgen.func and related
 /// operators.
 ParseResult parseGeneratorOrKernel(OpAsmParser &parser, OperationState &result,
                                    GeneratorOrKernelKind opKind);

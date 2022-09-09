@@ -4,7 +4,7 @@
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
-kgen.kernel @scalar_bitcast(
+kgen.func @scalar_bitcast(
     %ui32: !meta.scalar<ui32>,
     %f32: !meta.scalar<f32>,
     %f64: !meta.scalar<f64>) -> (
@@ -29,7 +29,7 @@ kgen.kernel @scalar_bitcast(
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
-kgen.kernel @simd_bitcast(
+kgen.func @simd_bitcast(
     %ui32:!meta.simd<4, ui32>,
     %f32:!meta.simd<4, f32>,
     %f64:!meta.simd<2, f64>) -> (
@@ -54,7 +54,7 @@ kgen.kernel @simd_bitcast(
 // CHECK-SAME: %[[SI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
-kgen.kernel @scalar_cast(
+kgen.func @scalar_cast(
     %ui32: !meta.scalar<ui32>,
     %si32: !meta.scalar<si32>,
     %f32: !meta.scalar<f32>,
@@ -121,7 +121,7 @@ kgen.kernel @scalar_cast(
 // CHECK-SAME: %[[SI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
-kgen.kernel @simd_cast(
+kgen.func @simd_cast(
     %ui32: !meta.simd<2, ui32>,
     %si32: !meta.simd<2, si32>,
     %f32: !meta.simd<2, f32>,

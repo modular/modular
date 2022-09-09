@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: @cast_to_builtin
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @cast_to_builtin(%a: !meta.buffer<4, f32>) -> !llvm.ptr<f32> {
+kgen.func @cast_to_builtin(%a: !meta.buffer<4, f32>) -> !llvm.ptr<f32> {
   // CHECK: return %[[A]]
   %0 = meta.cast_to_builtin %a : !meta.buffer<4, f32> to !llvm.ptr<f32>
   kgen.return %0 : !llvm.ptr<f32>
@@ -13,7 +13,7 @@ kgen.kernel @cast_to_builtin(%a: !meta.buffer<4, f32>) -> !llvm.ptr<f32> {
 
 // CHECK-LABEL: @cast_from_builtin
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @cast_from_builtin(%a: !llvm.ptr<f64>) -> !meta.buffer<4, f64> {
+kgen.func @cast_from_builtin(%a: !llvm.ptr<f64>) -> !meta.buffer<4, f64> {
   // CHECK: return %[[A]]
   %0 = meta.cast_from_builtin %a : !llvm.ptr<f64> to !meta.buffer<4, f64>
   kgen.return %0 : !meta.buffer<4, f64>
@@ -23,7 +23,7 @@ kgen.kernel @cast_from_builtin(%a: !llvm.ptr<f64>) -> !meta.buffer<4, f64> {
 
 // CHECK-LABEL: @buffer_size
 // INDEX32-LABEL: @buffer_size
-kgen.kernel @buffer_size(%a: !meta.buffer<4, f32>) -> index {
+kgen.func @buffer_size(%a: !meta.buffer<4, f32>) -> index {
   // CHECK: %[[S:.*]] = llvm.mlir.constant(4 : index) : i64
   // INDEX32: %[[S:.*]] = llvm.mlir.constant(4 : index) : i32
   %0 = meta.buffer.size %a : !meta.buffer<4, f32>
@@ -36,7 +36,7 @@ kgen.kernel @buffer_size(%a: !meta.buffer<4, f32>) -> index {
 
 // CHECK-LABEL: @buffer_size
 // INDEX32-LABEL: @buffer_size
-kgen.kernel @buffer_size(%a: !meta.buffer<4, ?>) -> index {
+kgen.func @buffer_size(%a: !meta.buffer<4, ?>) -> index {
   // CHECK: %[[S:.*]] = llvm.mlir.constant(4 : index)
   %0 = meta.buffer.size %a : !meta.buffer<4, ?>
   // CHECK: return %[[S]]
@@ -49,7 +49,7 @@ kgen.kernel @buffer_size(%a: !meta.buffer<4, ?>) -> index {
 // CHECK-SAME: %[[A:.*]]: !llvm.struct<(i64, ptr<f32>)>
 // INDEX32-LABEL: @buffer_size
 // INDEX32-SAME: %[[A:.*]]: !llvm.struct<(i32, ptr<f32>)>
-kgen.kernel @buffer_size(%a: !meta.buffer<?, f32>) -> index {
+kgen.func @buffer_size(%a: !meta.buffer<?, f32>) -> index {
   // CHECK: %[[S:.*]] = llvm.extractvalue %[[A]][0]
   // INDEX32: %[[S:.*]] = llvm.extractvalue %[[A]][0]
   %0 = meta.buffer.size %a : !meta.buffer<?, f32>
@@ -64,7 +64,7 @@ kgen.kernel @buffer_size(%a: !meta.buffer<?, f32>) -> index {
 // CHECK-SAME: %[[A:.*]]: !llvm.struct<(i64, ptr, i8)>
 // INDEX32-LABEL: @buffer_size
 // INDEX32-SAME: %[[A:.*]]: !llvm.struct<(i32, ptr, i8)>
-kgen.kernel @buffer_size(%a: !meta.buffer<?, ?>) -> index {
+kgen.func @buffer_size(%a: !meta.buffer<?, ?>) -> index {
   // CHECK: %[[S:.*]] = llvm.extractvalue %[[A]][0]
   // INDEX32: %[[S:.*]] = llvm.extractvalue %[[A]][0]
   %0 = meta.buffer.size %a : !meta.buffer<?, ?>
@@ -77,7 +77,7 @@ kgen.kernel @buffer_size(%a: !meta.buffer<?, ?>) -> index {
 
 // CHECK-LABEL: @buffer_dtype
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_dtype(%a: !meta.buffer<4, f32>) -> !kgen.dtype {
+kgen.func @buffer_dtype(%a: !meta.buffer<4, f32>) -> !kgen.dtype {
   // CHECK: llvm.mlir.constant({{[0-9]+}} : i8) : i8
   %0 = meta.buffer.dtype %a : !meta.buffer<4, f32>
   kgen.return %0 : !kgen.dtype
@@ -87,7 +87,7 @@ kgen.kernel @buffer_dtype(%a: !meta.buffer<4, f32>) -> !kgen.dtype {
 
 // CHECK-LABEL: @buffer_dtype
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_dtype(%a: !meta.buffer<?, f32>) -> !kgen.dtype {
+kgen.func @buffer_dtype(%a: !meta.buffer<?, f32>) -> !kgen.dtype {
   // CHECK: llvm.mlir.constant({{[0-9]+}} : i8) : i8
   %0 = meta.buffer.dtype %a : !meta.buffer<?, f32>
   kgen.return %0 : !kgen.dtype
@@ -97,7 +97,7 @@ kgen.kernel @buffer_dtype(%a: !meta.buffer<?, f32>) -> !kgen.dtype {
 
 // CHECK-LABEL: @buffer_dtype
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_dtype(%a: !meta.buffer<4, ?>) -> !kgen.dtype {
+kgen.func @buffer_dtype(%a: !meta.buffer<4, ?>) -> !kgen.dtype {
   // CHECK: %[[DTYPE:.*]] = llvm.extractvalue %[[A]][1]
   %0 = meta.buffer.dtype %a : !meta.buffer<4, ?>
   // CHECK: return %[[DTYPE]]
@@ -108,7 +108,7 @@ kgen.kernel @buffer_dtype(%a: !meta.buffer<4, ?>) -> !kgen.dtype {
 
 // CHECK-LABEL: @buffer_dtype
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_dtype(%a: !meta.buffer<?, ?>) -> !kgen.dtype {
+kgen.func @buffer_dtype(%a: !meta.buffer<?, ?>) -> !kgen.dtype {
   // CHECK: %[[DTYPE:.*]] = llvm.extractvalue %[[A]][2]
   %0 = meta.buffer.dtype %a : !meta.buffer<?, ?>
   // CHECK: return %[[DTYPE]]
@@ -119,7 +119,7 @@ kgen.kernel @buffer_dtype(%a: !meta.buffer<?, ?>) -> !kgen.dtype {
 
 // CHECK-LABEL: @buffer_address
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_address(%a: !meta.buffer<4, f32>) -> !meta.pointer<f32> {
+kgen.func @buffer_address(%a: !meta.buffer<4, f32>) -> !meta.pointer<f32> {
   // CHECK: return %[[A]]
   %0 = meta.buffer.address %a : !meta.buffer<4, f32>
   kgen.return %0 : !meta.pointer<f32>
@@ -129,7 +129,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<4, f32>) -> !meta.pointer<f32> {
 
 // CHECK-LABEL: @buffer_address
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_address(%a: !meta.buffer<?, f32>) -> !meta.pointer<f32> {
+kgen.func @buffer_address(%a: !meta.buffer<?, f32>) -> !meta.pointer<f32> {
   // CHECK: %[[ADDR:.*]] = llvm.extractvalue %[[A]][1]
   %0 = meta.buffer.address %a : !meta.buffer<?, f32>
   // CHECK: return %[[ADDR]]
@@ -140,7 +140,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<?, f32>) -> !meta.pointer<f32> {
 
 // CHECK-LABEL: @buffer_address
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_address(%a: !meta.buffer<4, ?>) -> !meta.pointer<?> {
+kgen.func @buffer_address(%a: !meta.buffer<4, ?>) -> !meta.pointer<?> {
   // CHECK: %[[ADDR:.*]] = llvm.extractvalue %[[A]][0]
   %0 = meta.buffer.address %a : !meta.buffer<4, ?>
   // CHECK: return %[[ADDR]] : !llvm.ptr
@@ -151,7 +151,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<4, ?>) -> !meta.pointer<?> {
 
 // CHECK-LABEL: @buffer_address
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
+kgen.func @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
   // CHECK: %[[ADDR:.*]] = llvm.extractvalue %[[A]][1]
   %0 = meta.buffer.address %a : !meta.buffer<?, ?>
   // CHECK: return %[[ADDR]] : !llvm.ptr
@@ -162,7 +162,7 @@ kgen.kernel @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<4, f32>
@@ -174,7 +174,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   %0 = meta.buffer.rebind %a : !meta.buffer<4, ?> to !meta.buffer<4, f32>
@@ -186,7 +186,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
   // CHECK: %[[PTR:.*]] = llvm.extractvalue %[[A]][1]
   %0 = meta.buffer.rebind %a : !meta.buffer<?, f32> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
@@ -197,7 +197,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -213,7 +213,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -229,7 +229,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
@@ -243,7 +243,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, f32> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.extractvalue %[[A]][2]
@@ -258,7 +258,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -274,7 +274,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant
@@ -289,7 +289,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant
@@ -306,7 +306,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -324,7 +324,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
 
 // CHECK-LABEL: @buffer_cast
 // CHECK-SAME: %[[A:.*]]:
-kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
@@ -341,7 +341,7 @@ kgen.kernel @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
 
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]:
-kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_construct(%ptr: !meta.pointer<f32>) -> !meta.buffer<4, f32> {
   %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
@@ -352,7 +352,7 @@ kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>) -> !meta.buffer<4, f32> 
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
 // CHECK-SAME: %[[SIZE:.*]]:
-kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>, %size: index) -> !meta.buffer<?, f32> {
+kgen.func @buffer_construct(%ptr: !meta.pointer<f32>, %size: index) -> !meta.buffer<?, f32> {
   // CHECK: %[[S0:.*]] = llvm.mlir.undef
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][1]
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][0]
@@ -366,7 +366,7 @@ kgen.kernel @buffer_construct(%ptr: !meta.pointer<f32>, %size: index) -> !meta.b
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
 // CHECK-SAME: %[[SIZE:.*]]:
-kgen.kernel @buffer_construct(%ptr: !meta.pointer<?>, %dtype: !kgen.dtype) -> !meta.buffer<4, ?> {
+kgen.func @buffer_construct(%ptr: !meta.pointer<?>, %dtype: !kgen.dtype) -> !meta.buffer<4, ?> {
   // CHECK: %[[S0:.*]] = llvm.mlir.undef
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][0]
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][1]
@@ -380,7 +380,7 @@ kgen.kernel @buffer_construct(%ptr: !meta.pointer<?>, %dtype: !kgen.dtype) -> !m
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !llvm.ptr
 // CHECK-SAME: %[[SIZE:.*]]: {{.*}}, %[[DTYPE:.*]]:
-kgen.kernel @buffer_construct(%ptr: !meta.pointer<?>, %size: index, %dtype: !kgen.dtype) -> !meta.buffer<?, ?> {
+kgen.func @buffer_construct(%ptr: !meta.pointer<?>, %size: index, %dtype: !kgen.dtype) -> !meta.buffer<?, ?> {
   // CHECK: %[[S0:.*]] = llvm.mlir.undef
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[PTR]], %[[S0]][1]
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[SIZE]], %[[S1]][0]

@@ -40,7 +40,7 @@ void MetaDialect::initialize() {
 Operation *MetaDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                             Type type, Location loc) {
   // Integer constants can materialize into something specific.  We need this
-  // for ops that fold in the context of kgen.kernel.
+  // for ops that fold in the context of kgen.func.
   if (isValidParameterExpr(value))
     return builder.create<ParamConstantOp>(loc, type, value);
   return nullptr;

@@ -182,7 +182,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// Logic shared between KernelOp, GeneratorOp, and CallOp
+// Logic shared between FuncOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
 
 /// Parse a parameter list if present.
@@ -359,9 +359,9 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
     result.addAttribute(
         "paramDecls", ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
   } else if (!paramDecls.empty()) {
-    // kgen.kernel's are not allowed to have input parameter lists.
+    // kgen.func's are not allowed to have input parameter lists.
     return parser.emitError(
-        loc, "kgen.kernel only allows output parameters, not input parameters");
+        loc, "kgen.func only allows output parameters, not input parameters");
   }
 
   return parser.parseGreater();
@@ -397,7 +397,7 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
   return success();
 }
 
-/// Parse either a kgen.generator or kgen.kernel declaration, depending on what
+/// Parse either a kgen.generator or kgen.func declaration, depending on what
 /// `isGenerator` is set to.
 ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
                                          OperationState &result,
@@ -731,14 +731,14 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
-// KernelOp
+// FuncOp
 //===----------------------------------------------------------------------===//
 
 /// Create a kernel with no body block.  The caller must create it and fill
 /// it in.
-void KernelOp::build(OpBuilder &builder, OperationState &result,
-                     StringAttr name, FunctionType signature,
-                     ArrayRef<ParamDeclAttr> outputParams) {
+void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
+                   FunctionType signature,
+                   ArrayRef<ParamDeclAttr> outputParams) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
@@ -749,10 +749,9 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
 
 /// Create a kernel with an empty body, `argLocs` specifies the locations for
 /// all the block arguments.
-void KernelOp::build(OpBuilder &builder, OperationState &result,
-                     StringAttr name, FunctionType signature,
-                     ArrayRef<ParamDeclAttr> outputParams,
-                     ArrayRef<Location> argLocs) {
+void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
+                   FunctionType signature, ArrayRef<ParamDeclAttr> outputParams,
+                   ArrayRef<Location> argLocs) {
   build(builder, result, name, signature, outputParams);
 
   // Create a block for the body.
@@ -767,28 +766,28 @@ void KernelOp::build(OpBuilder &builder, OperationState &result,
 }
 
 std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-KernelOp::getParameterInfo() {
+FuncOp::getParameterInfo() {
   return {{}, getResultParamDecls()};
 }
 
-ReturnOp KernelOp::getReturnOp() {
+ReturnOp FuncOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
 
 /// Parses a concrete KGEN Kernel.
 ///
 /// operation ::=
-///   `kgen.kernel` function-signature function-attributes? function-body
+///   `kgen.func` function-signature function-attributes? function-body
 ///
-ParseResult KernelOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return parseGeneratorOrKernel(parser, result, GeneratorOrKernelKind::kernel);
 }
 
-/// Print the KernelOp. We use a shared printer with the GeneratorOp since it is
+/// Print the FuncOp. We use a shared printer with the GeneratorOp since it is
 /// a superset of what a kernel is.
-void KernelOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
+void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
 
-LogicalResult KernelOp::verifyRegions() {
+LogicalResult FuncOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
@@ -800,7 +799,7 @@ LogicalResult KernelOp::verifyRegions() {
   if (failed(paramInfo))
     return failure();
 
-  // In a kgen.kernel, parameters are allowed to be defined (e.g. by calls with
+  // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
   // output parameters), but not used.  This is because the elaborator must
   // already have been run, lowering these to concrete attibute values.
 
@@ -811,9 +810,9 @@ LogicalResult KernelOp::verifyRegions() {
   for (auto &[usingOp, uses] : paramInfo.value().usersAndDeclarers) {
     if (!uses.empty()) {
       auto diag = usingOp->emitError("invalid use of parameter ")
-                  << uses[0].getName() << " in kgen.kernel";
+                  << uses[0].getName() << " in kgen.func";
       diag.attachNote(this->getLoc())
-          << "within kgen.kernel '" << getName() << "'";
+          << "within kgen.func '" << getName() << "'";
 
       return failure();
     }
@@ -821,16 +820,15 @@ LogicalResult KernelOp::verifyRegions() {
   return success();
 }
 
-// KernelOp doesn't allow constraints, because it doesn't have any input
+// FuncOp doesn't allow constraints, because it doesn't have any input
 // parameters.
-ArrayRef<ConstraintAttr> KernelOp::getConstraints() { return {}; }
-ConstraintArrayAttr KernelOp::getConstraintsAttr() {
+ArrayRef<ConstraintAttr> FuncOp::getConstraints() { return {}; }
+ConstraintArrayAttr FuncOp::getConstraintsAttr() {
   return ConstraintArrayAttr();
 }
 
-void KernelOp::setConstraintsAttr(ConstraintArrayAttr attr) {
-  assert(0 &&
-         "kgen.kernel doesn't have input parameters to add constraints to");
+void FuncOp::setConstraintsAttr(ConstraintArrayAttr attr) {
+  assert(0 && "kgen.func doesn't have input parameters to add constraints to");
 }
 
 //===----------------------------------------------------------------------===//
@@ -966,15 +964,15 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return failure();
 
   // Ok, the call looks good.  Last check, make sure that calls within a
-  // kgen.kernel do not pass input arguments.  Input arguments are invalid to a
+  // kgen.func do not pass input arguments.  Input arguments are invalid to a
   // kernel, so it must be a generator or generator interface, and these will
   // not be elaborated unless they have zero input arguments.
   if (!callerInputParams.empty()) {
-    if (auto kernelParent = getOperation()->getParentOfType<KernelOp>()) {
+    if (auto kernelParent = getOperation()->getParentOfType<FuncOp>()) {
       auto diag = emitError() << "cannot call generator with input arguments "
-                                 "from concrete kgen.kernel";
+                                 "from concrete kgen.func";
       diag.attachNote(kernelParent->getLoc())
-          << "within kgen.kernel '" << kernelParent.getName() << "'";
+          << "within kgen.func '" << kernelParent.getName() << "'";
       return failure();
     }
   }

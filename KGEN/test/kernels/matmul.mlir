@@ -45,7 +45,7 @@ hlkgen.generator @matmaul_naive<type: dtype>(
 
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: kgen.kernel @matmul_f32
+// CHECK-LABEL: kgen.func @matmul_f32
 // CHECK: kgen.call @"matmaul_naive,type=f32"
 kgen.generator @matmul_f32(
     %A: !meta.buffer<?, f32>,

@@ -158,7 +158,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(err.getError()));
 
   // Helper to execute a kernel.
-  auto execKernel = [&](KernelOp theKernel,
+  auto execKernel = [&](FuncOp theKernel,
                         const CommandLineKernel &clKernel) -> LogicalResult {
     auto compiledKernelOr = engine.lookup(theKernel);
     if (failed(compiledKernelOr))
@@ -180,7 +180,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   llvm::DenseSet<StringRef> foundKernels;
   // Loop over the kernels and maybe emit the kernel as an object file or maybe
   // execute it.
-  for (auto k : theModule->getOps<KernelOp>()) {
+  for (auto k : theModule->getOps<FuncOp>()) {
     foundKernels.insert(k.getName());
 
     // If we were asked to handle this kernel, do so.

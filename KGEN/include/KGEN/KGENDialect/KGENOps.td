@@ -20,15 +20,15 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
     Op<KGENDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// KernelOp
+// FuncOp
 //===----------------------------------------------------------------------===//
 
-def KernelOp
-  : KGENOp<"kernel", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
-                      Symbol, IsolatedFromAbove,
-                      SingleBlockImplicitTerminator<"ReturnOp">,
-                      DeclareOpInterfaceMethods<KGENDeclInterface, ["getConstraints"]>]> {
-  let summary = "Concrete kernel definition";
+def FuncOp
+  : KGENOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
+                    Symbol, IsolatedFromAbove,
+                    SingleBlockImplicitTerminator<"ReturnOp">,
+                    DeclareOpInterfaceMethods<KGENDeclInterface, ["getConstraints"]>]> {
+  let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,

@@ -1,7 +1,7 @@
 // RUN: kgen-opt -canonicalize %s | FileCheck %s
 
-// CHECK-LABEL: kgen.kernel @buffer_size_dtype_folds
-kgen.kernel @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
+// CHECK-LABEL: kgen.func @buffer_size_dtype_folds
+kgen.func @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
                               %arg1: !meta.buffer<?, f32>,
                               %arg2: !meta.buffer<42, ?>)
   -> (index, index, !kgen.dtype, !kgen.dtype) {
@@ -20,8 +20,8 @@ kgen.kernel @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
   kgen.return %0, %1, %2, %3 : index, index, !kgen.dtype, !kgen.dtype
 }
 
-// CHECK-LABEL: kgen.kernel @buffer_rebind_folds
-kgen.kernel @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
+// CHECK-LABEL: kgen.func @buffer_rebind_folds
+kgen.func @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
  -> (!meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>) {
   // Noop casts get folded away.
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, ?>
@@ -40,8 +40,8 @@ kgen.kernel @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<
 }
 
 
-// CHECK-LABEL: kgen.kernel @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
-kgen.kernel @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
   // A-B-A cast.
   %1 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
@@ -52,8 +52,8 @@ kgen.kernel @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32>
   kgen.return %2 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
-kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
+// CHECK-LABEL: kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
+kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
   %1 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
@@ -63,7 +63,7 @@ kgen.kernel @meta_cast_to_folds(%arg0: f32) -> f32 {
   kgen.return %2 : f32
 }
 
-kgen.kernel @producesResultParam<() -> result>() {
+kgen.func @producesResultParam<() -> result>() {
   kgen.return<result = 42>
 }
 

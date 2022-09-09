@@ -14,7 +14,7 @@ using namespace M;
 using namespace KGEN;
 
 LogicalResult
-M::KGEN::emitObjectForKernel(ExecutionEngine &engine, KernelOp k,
+M::KGEN::emitObjectForKernel(ExecutionEngine &engine, FuncOp k,
                              const std::filesystem::path &objPath) {
   // Open the output file so we can emit to it.
   std::string err;

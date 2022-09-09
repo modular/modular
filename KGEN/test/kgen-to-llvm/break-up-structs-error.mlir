@@ -6,11 +6,11 @@ module {}
 // -----
 
 // expected-error @below {{kernel is not top-level}}
-kgen.kernel @kernel() {
+kgen.func @kernel() {
   kgen.return
 }
 
-kgen.kernel @toplevel() {
+kgen.func @toplevel() {
   // expected-note @below {{callsite here}}
   kgen.call @kernel() : () -> ()
   kgen.return
