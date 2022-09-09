@@ -37,7 +37,8 @@ class KernelOp;
 std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
 std::unique_ptr<mlir::Pass>
 createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
-                            ArrayRef<StringRef> emitCWrappers = {});
+                            ArrayRef<StringRef> emitCWrappers = {},
+                            bool emitOpaqueWrappers = false);
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
 std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();

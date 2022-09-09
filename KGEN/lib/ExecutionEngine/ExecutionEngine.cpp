@@ -303,7 +303,10 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   pm.addNestedPass<KGEN::KernelOp>(KGEN::createConvertPOPToLLVMPass());
 
   pm.addNestedPass<KGEN::KernelOp>(index::createIndexToLLVM());
-  pm.addPass(KGEN::createConvertKGENToLLVMPass(name));
+  // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
+  //        code up better because there's 2 semi-separate compilation models
+  //        here.
+  pm.addPass(KGEN::createConvertKGENToLLVMPass(name, {}, true));
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
 
   // And finally canonicalize again before running through the JIT.
