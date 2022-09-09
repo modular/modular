@@ -1,4 +1,4 @@
-// RUN: not kgen-execute %s -execute -kernel="exec_exp:f32():%t_exec_exp.o" -verify-diagnostics 2>&1 >/dev/null | FileCheck %s
+// RUN: not kgen-execute %s -execute -func="exec_exp:f32():%t_exec_exp.o" -verify-diagnostics 2>&1 >/dev/null | FileCheck %s
 
 // expected-note@+1 {{callee declared here}}
 llvm.func external @"float_constant_f32,value=1,type=f32"() -> f32
