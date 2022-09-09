@@ -1,11 +1,11 @@
-//===- EmitKernelHeader.h -------------------------------------------------===//
+//===- EmitFuncHeader.h ---------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef EMIT_KERNEL_HEADER_H
-#define EMIT_KERNEL_HEADER_H
+#ifndef EMIT_FUNC_HEADER_H
+#define EMIT_FUNC_HEADER_H
 
 #include "KGEN/KGENDialect/KGENOps.h"
 
@@ -14,4 +14,4 @@ namespace M::KGEN {
 LogicalResult emitHeaderForFunc(FuncOp func, StringRef filename);
 } // namespace M::KGEN
 
-#endif // EMIT_KERNEL_HEADER_H
+#endif // EMIT_FUNC_HEADER_H

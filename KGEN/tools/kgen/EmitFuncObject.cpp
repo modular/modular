@@ -1,10 +1,10 @@
-//===- EmitKernelObject.cpp -----------------------------------------------===//
+//===- EmitFuncObject.cpp -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#include "EmitKernelObject.h"
+#include "EmitFuncObject.h"
 #include "KGEN/ExecutionEngine.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/Support/FileUtilities.h"

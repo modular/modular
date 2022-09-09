@@ -1,11 +1,11 @@
-//===- EmitKernelObject.h -------------------------------------------------===//
+//===- EmitFuncObject.h ---------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef EMIT_KERNEL_OBJECT_H
-#define EMIT_KERNEL_OBJECT_H
+#ifndef EMIT_FUNC_OBJECT_H
+#define EMIT_FUNC_OBJECT_H
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ErrorOr.h"
@@ -20,4 +20,4 @@ LogicalResult emitObjectForFunc(ExecutionEngine &engine, FuncOp fn,
 
 } // namespace M::KGEN
 
-#endif // EMIT_KERNEL_OBJECT_H
+#endif // EMIT_FUNC_OBJECT_H
