@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/MetaDialect/MetaDialect.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 

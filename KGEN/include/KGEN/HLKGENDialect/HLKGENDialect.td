@@ -11,7 +11,7 @@
 #ifndef KGEN_HLKGENDIALECT_HLKGENDIALECT_TD
 #define KGEN_HLKGENDIALECT_HLKGENDIALECT_TD
 
-include "mlir/IR/OpBase.td"
+include "mlir/IR/DialectBase.td"
 
 def HLKGENDialect : Dialect {
   let name = "hlkgen";

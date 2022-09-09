@@ -11,8 +11,6 @@
 #ifndef HLKGEN_TD
 #define HLKGEN_TD
 
-include "KGEN/HLKGENDialect/HLKGENDialect.td"
-
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/HLKGENDialect/HLKGENOps.td"
 

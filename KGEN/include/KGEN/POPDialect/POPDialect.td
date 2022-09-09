@@ -7,6 +7,8 @@
 #ifndef KGEN_POPDIALECT_POPDIALECT_TD
 #define KGEN_POPDIALECT_POPDIALECT_TD
 
+include "mlir/IR/DialectBase.td"
+
 def POPDialect : Dialect {
   let name = "pop";
 

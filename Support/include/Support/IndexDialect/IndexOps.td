@@ -7,11 +7,9 @@
 #ifndef INDEXOPS_TD
 #define INDEXOPS_TD
 
-include "Support/IndexDialect/IndexDialect.td"
 include "Support/IndexDialect/IndexEnums.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
 // IndexOp
