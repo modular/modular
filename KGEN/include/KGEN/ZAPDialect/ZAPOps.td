@@ -1,4 +1,4 @@
-//===- ZapOps.td ----------------------------------------------------------===//
+//===- ZAPOps.td ----------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -8,23 +8,23 @@
 #define ZAPOPS_TD
 
 include "KGEN/MetaDialect/MetaTypes.td"
-include "KGEN/ZapDialect/ZapDialect.td"
+include "KGEN/ZAPDialect/ZAPDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
-// ZapOp
+// ZAPOp
 //===----------------------------------------------------------------------===//
 
-/// Base class for Zap dialect operations.
-class ZapOp<string mnemonic, list<Trait> traits = []>
-    : Op<ZapDialect, mnemonic, traits>;
+/// Base class for ZAP dialect operations.
+class ZAPOp<string mnemonic, list<Trait> traits = []>
+    : Op<ZAPDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def BufferLoadOp : ZapOp<"buffer.load", [
+def BufferLoadOp : ZAPOp<"buffer.load", [
      ScalarOfSameDType<"buffer", "result">]> {
   let summary = "buffer load operation";
   let description = [{
@@ -50,7 +50,7 @@ def BufferLoadOp : ZapOp<"buffer.load", [
 // BufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def BufferStoreOp : ZapOp<"buffer.store", [
+def BufferStoreOp : ZAPOp<"buffer.store", [
      ScalarOfSameDType<"buffer", "value">]> {
   let summary = "buffer store operation";
   let description = [{

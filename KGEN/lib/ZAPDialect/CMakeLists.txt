@@ -4,5 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_mlir_dialect(Zap zap -dialect=zap)
-add_modular_doc(Zap -gen-dialect-doc ZapDialect KGEN/docs/ -dialect=zap)
+add_modular_dialect_library(ZAPDialect
+  ZAPDialect.cpp
+  ZAPOps.cpp
+
+  DEPENDS
+  MLIRZAPIncGen
+
+  LINK_LIBS PUBLIC
+  MetaDialect
+  MLIRSideEffectInterfaces
+
+  MLIRIR
+)

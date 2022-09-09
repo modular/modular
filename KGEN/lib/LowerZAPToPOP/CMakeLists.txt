@@ -13,7 +13,7 @@ add_modular_conversion_library(LowerZAPToPOP
   LINK_LIBS PUBLIC
   MetaDialect
   POPDialect
-  ZapDialect
+  ZAPDialect
 
   MLIRTransforms
 )

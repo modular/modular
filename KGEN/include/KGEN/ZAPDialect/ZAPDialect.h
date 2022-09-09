@@ -1,4 +1,4 @@
-//===- KGEN/ZapDialect/ZapDialect.h ---------------------------------------===//
+//===- KGEN/ZAPDialect/ZAPDialect.h ---------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -13,6 +13,6 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ZapDialect/ZapDialect.h.inc"
+#include "KGEN/ZAPDialect/ZAPDialect.h.inc"
 
 #endif // KGEN_ZAPDIALECT_ZAPDIALECT_H
