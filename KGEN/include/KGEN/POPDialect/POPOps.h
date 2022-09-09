@@ -17,10 +17,10 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-namespace M::KGEN {
+namespace M::KGEN::POP {
 enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
-} // namespace M::KGEN
+} // namespace M::KGEN::POP
 
 #define GET_OP_CLASSES
 #include "KGEN/POPDialect/POP.h.inc"

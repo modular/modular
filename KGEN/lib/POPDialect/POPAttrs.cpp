@@ -17,10 +17,7 @@
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/POPDialect/POPAttrs.cpp.inc"
 
-using namespace M;
-using namespace KGEN;
-
-void POPDialect::registerAttributes() {
+void M::KGEN::POP::POPDialect::registerAttributes() {
   addAttributes<
 #define GET_ATTRDEF_LIST
 #include "KGEN/POPDialect/POPAttrs.cpp.inc"

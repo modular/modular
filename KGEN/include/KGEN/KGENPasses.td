@@ -33,7 +33,7 @@ def LowerZAPToPOP : Pass<"lower-zap-to-pop"> {
     `meta` dialect operations. This pass can run pre-elaboration.
   }];
 
-  let dependentDialects = ["MetaDialect", "POPDialect"];
+  let dependentDialects = ["MetaDialect", "POP::POPDialect"];
 
   let constructor = "createLowerZAPToPOPPass()";
 }

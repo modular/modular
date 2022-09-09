@@ -21,7 +21,7 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace mlir;
+using namespace POP;
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
@@ -174,7 +174,7 @@ static Type getBoolOfSameParentType(Type type) {
 
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
                                       ValueRange operands, DictionaryAttr attrs,
-                                      RegionRange regions,
+                                      mlir::RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
   Type argType = operands[0].getType();
   types.push_back(getBoolOfSameParentType(argType));

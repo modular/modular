@@ -23,7 +23,7 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-def ConstantOp : POPOp<"constant", [
+def POP_ConstantOp : POPOp<"constant", [
       ConstantLike,
       NoSideEffect,
       DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
@@ -85,7 +85,7 @@ class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 // AbsOp
 //===----------------------------------------------------------------------===//
 
-def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
+def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
     The `abs` operation takes a meta.scalar or meta.simd type and
@@ -105,7 +105,7 @@ def AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 // NegOp
 //===----------------------------------------------------------------------===//
 
-def NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
+def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
     The `neg` operation takes a meta.scalar or meta.simd type and
@@ -141,7 +141,7 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
+def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
     The `add` operation takes two meta.scalar or meta.simd types
@@ -161,7 +161,7 @@ def AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
+def POP_SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
     The `sub` operation takes two meta.scalar or meta.simd types
@@ -180,7 +180,7 @@ def SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
+def POP_MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
     The `mul` operation takes two meta.scalar or meta.simd types and returns
@@ -199,7 +199,7 @@ def MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 // DivOp
 //===----------------------------------------------------------------------===//
 
-def DivOp : POP_MetaArithmeticBinaryOp<"div"> {
+def POP_DivOp : POP_MetaArithmeticBinaryOp<"div"> {
   let summary = "divide";
   let description = [{
     The `div` operation takes two meta.scalar or meta.simd types and divdes
@@ -218,7 +218,7 @@ def DivOp : POP_MetaArithmeticBinaryOp<"div"> {
 // ShlOp
 //===----------------------------------------------------------------------===//
 
-def ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
+def POP_ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
   let summary = "shift left";
   let description = [{
     The pop.shl instruction returns the first operand shifted to the left a
@@ -247,7 +247,7 @@ def ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
 // ShRSOp
 //===----------------------------------------------------------------------===//
 
-def ShRSOp : POP_MetaArithmeticBinaryOp<"shrs"> {
+def POP_ShRSOp : POP_MetaArithmeticBinaryOp<"shrs"> {
   let summary = "arithmetic shift right";
   let description = [{
     The pop.shrs instruction (arithmetic shift right) returns the first operand
@@ -275,7 +275,7 @@ def ShRSOp : POP_MetaArithmeticBinaryOp<"shrs"> {
 // ShRUOp
 //===----------------------------------------------------------------------===//
 
-def ShRUOp : POP_MetaArithmeticBinaryOp<"shru"> {
+def POP_ShRUOp : POP_MetaArithmeticBinaryOp<"shru"> {
   let summary = "logical shift right";
   let description = [{
     The pop.shru instruction (logical shift right) returns the first operand
@@ -303,7 +303,7 @@ def ShRUOp : POP_MetaArithmeticBinaryOp<"shru"> {
 // CopySignOp
 //===----------------------------------------------------------------------===//
 
-def CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
+def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
     The `copysign` operation takes two meta.scalar or meta.simd types
@@ -344,7 +344,7 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 // FMAOp
 //===----------------------------------------------------------------------===//
 
-def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
+def POP_FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
     The `fma` operation takes three meta.scalar or meta.simd types
@@ -364,7 +364,7 @@ def FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
+def POP_CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
                           DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "comparison";
   let description = [{
@@ -382,7 +382,7 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
     ```
   }];
 
-  let arguments = (ins CmpPredicateAttr:$pred, ScalarOrSIMD:$lhs,
+  let arguments = (ins POP_CmpPredicateAttr:$pred, ScalarOrSIMD:$lhs,
                        ScalarOrSIMD:$rhs);
   let results = (outs BoolScalarOrSIMD:$result);
 
@@ -394,7 +394,7 @@ def CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
 // SelectOp
 //===----------------------------------------------------------------------===//
 
-def SelectOp : POPOp<"select",
+def POP_SelectOp : POPOp<"select",
         [NoSideEffect,
          AllTypesMatch<["trueValue", "falseValue", "result"]>,
          TypesMatchWith<"bool of same branch type", "result", "condition",
@@ -429,7 +429,7 @@ def SelectOp : POPOp<"select",
 // BitCastOp
 //===----------------------------------------------------------------------===//
 
-def BitcastOp : POPOp<"bitcast", [NoSideEffect,
+def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
                                   DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = [{
     Bitcast an integer or floating point value to an integer or floating point
@@ -454,7 +454,7 @@ def BitcastOp : POPOp<"bitcast", [NoSideEffect,
 // CastOp
 //===----------------------------------------------------------------------===//
 
-def CastOp : POPOp<"cast", [NoSideEffect]> {
+def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
   let summary = [{
     Perform an element-wise cast between SIMD vectors types or between scalar
     types. SIMD vectors must have the same size. The cast semantics are the same
@@ -480,7 +480,7 @@ def CastOp : POPOp<"cast", [NoSideEffect]> {
 // SIMDExtractElementOp
 //===----------------------------------------------------------------------===//
 
-def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
+def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
     ScalarOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
@@ -506,8 +506,9 @@ def SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
 // SIMDInsertElementOp
 //===----------------------------------------------------------------------===//
 
-def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
-    ScalarOfSameDType<"vector", "value">, AllTypesMatch<["result", "vector"]>]> {
+def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
+    ScalarOfSameDType<"vector", "value">,
+    AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
@@ -533,7 +534,7 @@ def SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
 // SIMDShuffle
 //===----------------------------------------------------------------------===//
 
-def SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
+def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
     AllTypesMatch<["lhs", "rhs"]>]> {
   let summary = "shufflevector operation";
   let description = [{
@@ -563,7 +564,7 @@ def SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
-def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
+def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
     ScalarOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
@@ -593,7 +594,7 @@ def SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-def LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
+def POP_LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
@@ -618,7 +619,7 @@ def LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-def StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
+def POP_StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
   let summary = "pointer store operation";
   let description = [{
     Store the given scalar data to the given pointer of the same dtype. The
@@ -641,7 +642,7 @@ def StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-def OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
+def POP_OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
   let summary = "pointer offset operation";
   let description = [{
     The `offset` operation takes a pointer and increments or decrements its
@@ -665,7 +666,7 @@ def OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
 // BufferStackAllocationOp
 //===----------------------------------------------------------------------===//
 
-def BufferStackAllocationOp : POPOp<"buffer.stack_allocation"> {
+def POP_BufferStackAllocationOp : POPOp<"buffer.stack_allocation"> {
   let summary = "stack memory allocation operation";
   let description = [{
     The `pop.buffer.stack_allocation` operation allocates memory on the stack.

@@ -14,7 +14,8 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace M;
-using namespace M::KGEN;
+using namespace KGEN;
+using namespace POP;
 
 namespace {
 
