@@ -24,9 +24,9 @@ class ObjectCache;
 /// This could be relaxed by using a pointer instead, but that would require
 /// getObject to fail if the cache is unavailable, and there's currently no use
 /// case for such a feature so we will leave it to the future.
-class CompiledKernel {
+class CompiledFunc {
 public:
-  /// Invoke this kernel. This has exactly the signature the compiled kernel
+  /// Invoke this func. This has exactly the signature the compiled func
   /// does. Intended to have perfect forwarding of arguments into the
   /// function, and of return values from the function.
   template <typename ReturnT, typename... Args>
@@ -35,15 +35,15 @@ public:
     return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
   }
 
-  /// Get the compiled object that corresponds to this kernel from `cache`.
+  /// Get the compiled object that corresponds to this func from `cache`.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject();
 
 private:
-  /// Construct a CompiledKernel object. This constructor is private because it
+  /// Construct a CompiledFunc object. This constructor is private because it
   /// needs a reference to the cache that the ExecutionEngine holds, so it
   /// should really only be constructed from the ExecutionEngine or something
   /// like it.
-  CompiledKernel(void *ptr, FuncOp func, detail::ObjectCache &cache)
+  CompiledFunc(void *ptr, FuncOp func, detail::ObjectCache &cache)
       : fn(ptr), func(func), cache(cache) {}
   friend class ExecutionEngine;
 
@@ -59,7 +59,7 @@ private:
 };
 
 /// This class provides an interface to the LLVM ORCJIT. It can compile
-/// individual kernels (already lowered to the LLVM dialect) to object code. It
+/// individual funcs (already lowered to the LLVM dialect) to object code. It
 /// caches the objects themselves so we can retrieve them later and write them
 /// to a file. The fundamental unit this class deals with is a single llvm
 /// function because that's the minimum granularity we would want to use for
@@ -73,17 +73,16 @@ public:
   static ErrorOr<ExecutionEngine> create();
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
-  /// every kernel and generate self-contained libraries. `only` is a list of
-  /// kernels to process, if empty, adds all the kernels in the module.
+  /// every func and generate self-contained libraries. `only` is a list of
+  /// funcs to process, if empty, adds all the funcs in the module.
   ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<FuncOp> only = {});
 
-  /// Look up a kernel and return it as a CompiledKernel object if we can find
-  /// it.
-  ErrorOr<CompiledKernel> lookup(KGEN::FuncOp kernel);
+  /// Look up a func and return it as a CompiledFunc object if we can find it.
+  ErrorOr<CompiledFunc> lookup(KGEN::FuncOp func);
 
-  /// Look up the opaque wrapper for a kernel and return it as a CompiledKernel
+  /// Look up the opaque wrapper for a func and return it as a CompiledFunc
   /// object.
-  ErrorOr<CompiledKernel> lookupOpaqueWrapper(KGEN::FuncOp kernel);
+  ErrorOr<CompiledFunc> lookupOpaqueWrapper(KGEN::FuncOp func);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);

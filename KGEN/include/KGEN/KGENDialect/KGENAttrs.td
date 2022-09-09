@@ -49,7 +49,7 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   let summary = "Parameter declaration";
   let description = [{
     This is a declaration of a parameter in the meta-programming domain for
-    kernel generators and related infrastructure.  These are typically owned by
+    generators and related infrastructure.  These are typically owned by
     kgen.generator instances or other things that produce new attributes.
   }];
 
@@ -367,7 +367,7 @@ def ConstraintAttr : KGENAttr<"Constraint", "constraint",
     [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "kgen constraint";
   let description = [{
-    A constraint attribute represents a constraint on a kernel generator or
+    A constraint attribute represents a constraint on a generator or
     generator interface. It consists of a boolean parameter expression that must
     evaluate to true for the constraint to be satisfied, a message/description,
     and an MLIR location for emitting diagnostics.

@@ -80,7 +80,7 @@ private:
 };
 
 /// This class maintains a decoded constraint specification list for a generator
-/// or kernel.  It decomposes the list of constraints into a set of
+/// or func.  It decomposes the list of constraints into a set of
 /// per-parameter constraints along with a list of arbitrary undecodable
 /// constraints.  When adding constraints to the set it can detect conflicts
 /// which make a candidate impossible, and it generates a diagnostic when so.

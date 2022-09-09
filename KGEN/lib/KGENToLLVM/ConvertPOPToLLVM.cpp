@@ -368,7 +368,7 @@ struct ConvertPOPToLLVMPass
 } // namespace
 
 void ConvertPOPToLLVMPass::runOnOperation() {
-  Operation *kernel = getOperation();
+  Operation *func = getOperation();
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
@@ -379,13 +379,13 @@ void ConvertPOPToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  MetaToLLVMTypeConverter typeConverter(kernel->getLoc(), options);
+  MetaToLLVMTypeConverter typeConverter(func->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
 
-  if (failed(mlir::applyPartialConversion(kernel, target, std::move(patterns))))
+  if (failed(mlir::applyPartialConversion(func, target, std::move(patterns))))
     return signalPassFailure();
 }
 

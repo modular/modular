@@ -25,8 +25,8 @@ namespace M::KGEN {
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 
-enum class GeneratorOrKernelKind {
-  kernel,
+enum class GeneratorOrFuncKind {
+  func,
   generator,
   interface,
 
@@ -36,11 +36,11 @@ enum class GeneratorOrKernelKind {
 
 /// Parse the MLIR syntax for a kgen.generator, kgen.func and related
 /// operators.
-ParseResult parseGeneratorOrKernel(OpAsmParser &parser, OperationState &result,
-                                   GeneratorOrKernelKind opKind);
-void printGeneratorOrKernel(OpAsmPrinter &p, mlir::FunctionOpInterface op);
+ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
+                                 GeneratorOrFuncKind opKind);
+void printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op);
 
-/// Verify that a list of parameter declarations from a generator or kernel
+/// Verify that a list of parameter declarations from a generator or func
 /// matches those of an interface.  This produces an error diagnostic and
 /// returns failure when a problem is detected, or returns true if everything is
 /// ok.

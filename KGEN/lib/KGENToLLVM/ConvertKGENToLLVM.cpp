@@ -22,30 +22,30 @@ namespace LLVM = mlir::LLVM;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENKernel
+// ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENKernel : public mlir::ConvertOpToLLVMPattern<FuncOp> {
+class ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(FuncOp kernel, FuncOpAdaptor adaptor,
+  matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // Convert the kernel signature.
-    TypeConverter::SignatureConversion result(kernel.getNumArguments());
+    // Convert the func signature.
+    TypeConverter::SignatureConversion result(func.getNumArguments());
     Type funcType = getTypeConverter()->convertFunctionSignature(
-        kernel.getFunctionType(),
+        func.getFunctionType(),
         /*isVariadic=*/false, result);
     if (!funcType)
-      return emitError(kernel.getLoc(), "failed to convert kernel signature");
+      return emitError(func.getLoc(), "failed to convert func signature");
 
     // Create the LLVM function.
     auto funcOp = rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
-        kernel, kernel.getNameAttr(), funcType);
+        func, func.getNameAttr(), funcType);
 
-    // And move the kernel's body into the new function.
-    rewriter.inlineRegionBefore(kernel.getBodyRegion(0), funcOp.getBody(),
+    // And move the func's body into the new function.
+    rewriter.inlineRegionBefore(func.getBodyRegion(0), funcOp.getBody(),
                                 funcOp.end());
     (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
     return success();
@@ -381,7 +381,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
   patterns.insert<
       // clang-format off
       ConvertKGENCall,
-      ConvertKGENKernel,
+      ConvertKGENFunc,
       ConvertKGENParamConstant,
       ConvertKGENReturn,
       ConvertMetaBufferAddress,
@@ -669,28 +669,28 @@ static LLVM::LLVMFuncOp emitCWrapper(LLVM::LLVMFuncOp func) {
 }
 
 /// Break up argument and result structs in-place for the given top-level
-/// kernels and emit C wrappers for specific non-top-level kernels.
+/// funcs and emit C wrappers for specific non-top-level funcs.
 static LogicalResult emitWrappers(ModuleOp theModule,
                                   ArrayRef<std::string> breakUpStructs,
                                   ArrayRef<std::string> emitCWrappers,
                                   bool emitOpaqueWrappers) {
-  // Ensure that top-level kernels do not have callsites.
+  // Ensure that top-level funcs do not have callsites.
   llvm::StringMap<LLVM::CallOp> callsites;
   for (auto func : theModule.getOps<LLVM::LLVMFuncOp>())
     for (auto call : func.getOps<LLVM::CallOp>())
       if (Optional<StringRef> callee = call.getCallee())
         callsites.try_emplace(*callee, call);
 
-  // Break up structs in-place in the specific top-level kernels.
+  // Break up structs in-place in the specific top-level funcs.
   SymbolTable symtab(theModule);
   auto opaqueWrapperAttrName =
       StringAttr::get(theModule.getContext(), "opaque_wrapper");
-  for (StringRef kernel : breakUpStructs) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(kernel);
+  for (StringRef funcName : breakUpStructs) {
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
-      return theModule.emitError("cannot find kernel: @") << kernel;
-    if (auto it = callsites.find(kernel); it != callsites.end()) {
-      return func.emitError("kernel is not top-level")
+      return theModule.emitError("cannot find func: @") << funcName;
+    if (auto it = callsites.find(funcName); it != callsites.end()) {
+      return func.emitError("func is not top-level")
                  .attachNote(it->second.getLoc())
              << "callsite here";
     }
@@ -706,12 +706,12 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     }
   }
 
-  // Emit C wrappers for the specific kernels.
+  // Emit C wrappers for the specific funcs.
   auto cWrapperAttrName = StringAttr::get(theModule.getContext(), "c_wrapper");
-  for (StringRef kernel : emitCWrappers) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(kernel);
+  for (StringRef funcName : emitCWrappers) {
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
-      return theModule.emitError("cannot find kernel: @") << kernel;
+      return theModule.emitError("cannot find func: @") << funcName;
 
     // Emit the wrapper, insert it and rename it if necessary, then store a
     // reference to the wrapper on the original function.
@@ -770,7 +770,7 @@ void ConvertKGENToLLVMPass::runOnOperation() {
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 
-  // Break up structs in top-level kernels exposed to C.
+  // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, breakUpStructs, emitCWrappers,
                           emitOpaqueWrappers)))
     signalPassFailure();

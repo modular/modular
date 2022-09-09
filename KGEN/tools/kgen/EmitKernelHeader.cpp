@@ -16,10 +16,10 @@ using namespace M;
 using namespace KGEN;
 
 namespace {
-/// This provides a method by which we can emit a kernel's signature to an
+/// This provides a method by which we can emit a func's signature to an
 /// llvm::formatv stream.
-struct FormatKernel : public llvm::FormatAdapter<FuncOp> {
-  FormatKernel(FuncOp func)
+struct FormatFunc : public llvm::FormatAdapter<FuncOp> {
+  FormatFunc(FuncOp func)
       : llvm::FormatAdapter<FuncOp>(std::forward<FuncOp &&>(func)) {}
 
   void format(llvm::raw_ostream &os, StringRef style) override {
@@ -107,13 +107,13 @@ struct FormatKernel : public llvm::FormatAdapter<FuncOp> {
 };
 } // namespace
 
-/// This allows us to emit a header file for the given kernel so that we can
+/// This allows us to emit a header file for the given func so that we can
 /// `#include` it and get nice autocompletion/etc. in users' IDEs.
-LogicalResult M::KGEN::emitHeaderForKernel(FuncOp kernel, StringRef filename) {
+LogicalResult M::KGEN::emitHeaderForFunc(FuncOp func, StringRef filename) {
   std::string err;
   auto outFile = mlir::openOutputFile(filename, &err);
   if (!outFile)
-    return mlir::emitError(kernel.getLoc(), err);
+    return mlir::emitError(func.getLoc(), err);
 
   llvm::StringLiteral fmtStr = R"literal(//===-{0}-===//
 //
@@ -144,10 +144,10 @@ extern "C" {
 
   outFile->os() << llvm::formatv(
       fmtStr.data(),
-      llvm::fmt_align(" " + kernel.getName() + ".h ", llvm::AlignStyle::Left,
+      llvm::fmt_align(" " + func.getName() + ".h ", llvm::AlignStyle::Left,
                       80 - 2 * strlen("//===-"), '-'),
       llvm::fmt_repeat('-', 80 - 2 * strlen("//===")),
-      "__KGEN_" + kernel.getName().upper() + "_H", FormatKernel(kernel));
+      "__KGEN_" + func.getName().upper() + "_H", FormatFunc(func));
 
   outFile->keep();
 

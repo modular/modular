@@ -210,7 +210,7 @@ public:
                        Operation *insertionPoint);
 
   /// Insert a variant of an existing func into the primary file.
-  void insertKernelVariant(FuncOp existing, FuncOp newFunc);
+  void insertFuncVariant(FuncOp existing, FuncOp newFunc);
 
   ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
     auto it = interfaceImpls.find(itf.getNameAttr());
@@ -264,7 +264,7 @@ private:
   /// funcs that could be generated from this.
   DenseMap<DeclAndInputParamsPair,
            SmallVector<ElaboratedGeneratorOrCalleeError>>
-      generatedKernels;
+      generatedFuncs;
 
   /// This keeps track of funcs that were found to be non viable and need to
   /// be removed.  Their body block is empty (no terminator) so they are known
@@ -275,14 +275,14 @@ private:
 } // namespace
 
 /// Insert a variant of an existing func into the primary file.
-void Elaborator::insertKernelVariant(FuncOp existing, FuncOp newFunc) {
+void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
   getPrimaryModuleSymbolTable().insert(newFunc,
                                        /*insertionPoint*/ ++insertPt);
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator Algorithm for one Kernel
+// Elaborator Algorithm for one func implementation
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -319,7 +319,7 @@ public:
   /// If elaboration of this func fails, then the client can get the error
   /// out.  This also deletes the dead husk of the func which may not even
   /// verify correctly.
-  CalleeExpansionError takeDiagnosticAndEraseKernel() {
+  CalleeExpansionError takeDiagnosticAndEraseFunc() {
     assert(diagnostic.has_value() &&
            "cannot get diagnostic when none was generated");
     // The generator is not viable so we need to delete it.  This op can appear
@@ -359,10 +359,10 @@ private:
   void completeCallOpProcessing(CallOp call,
                                 DeclAndInputParamsPair calleeAndInputParams,
                                 const ElaboratedGenerator &newCallee);
-  void spawnNewKernelClone(CallOp call,
-                           DeclAndInputParamsPair calleeAndInputParams,
-                           const ElaboratedGenerator &callee,
-                           SmallVectorImpl<ParameterRewriter> &rewriters);
+  void spawnNewFuncClone(CallOp call,
+                         DeclAndInputParamsPair calleeAndInputParams,
+                         const ElaboratedGenerator &callee,
+                         SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
 
   /// This is maintains global information about the file we're generating into.
@@ -574,8 +574,8 @@ LogicalResult ParameterRewriter::processCallOp(
       thisCallee = calleeCandidate;
     else
       /// All other callees gets spawned as sub-evaluators.
-      spawnNewKernelClone(call, calleeDeclAndInputParams, calleeCandidate,
-                          rewriters);
+      spawnNewFuncClone(call, calleeDeclAndInputParams, calleeCandidate,
+                        rewriters);
   }
 
   // If all the expansions failed, then this call fails overall.
@@ -630,7 +630,7 @@ void ParameterRewriter::completeCallOpProcessing(
 /// rewriters with state copied from the current one, but which resolve the call
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
-void ParameterRewriter::spawnNewKernelClone(
+void ParameterRewriter::spawnNewFuncClone(
     CallOp call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
@@ -642,7 +642,7 @@ void ParameterRewriter::spawnNewKernelClone(
       cloneOperation(elaboratedGenerator.func, blocksAndValues, operationMap));
 
   // Insert the func into the output file and auto-unique the symbol.
-  elaborator.insertKernelVariant(elaboratedGenerator.func, newFunc);
+  elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
 
   // Generate the new rewriter which will process this.
   auto &newRewriter = rewriters.emplace_back(*this, operationMap);
@@ -662,7 +662,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // parameters, we could genericize this into a op interface.
   if (!getParamDecls(op).empty())
     return error(op->getLoc(),
-                 "unknown parameter-defining operator in GenerateKernels");
+                 "unknown parameter-defining operator in elaboration");
 
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
@@ -789,7 +789,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
       // If elaborating the func fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
       // a func that didn't make it.
-      results.push_back(rewriter.takeDiagnosticAndEraseKernel());
+      results.push_back(rewriter.takeDiagnosticAndEraseFunc());
     }
   }
   return results;
@@ -892,8 +892,8 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  Operation *insertionPoint) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
-  auto cacheIt = generatedKernels.find(declAndInputParams);
-  if (cacheIt != generatedKernels.end())
+  auto cacheIt = generatedFuncs.find(declAndInputParams);
+  if (cacheIt != generatedFuncs.end())
     return cacheIt->second;
 
   Operation *decl = declAndInputParams.first;
@@ -938,13 +938,13 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     localError("call to an unknown kind of declaration");
   }
 
-  auto &result = generatedKernels[declAndInputParams];
+  auto &result = generatedFuncs[declAndInputParams];
   result = std::move(newCallees);
   return result;
 }
 
 //===----------------------------------------------------------------------===//
-// generateKernels Driver
+// Elaborator Driver
 //===----------------------------------------------------------------------===//
 
 /// Scan the primary and library modules to collect all the interfaces,

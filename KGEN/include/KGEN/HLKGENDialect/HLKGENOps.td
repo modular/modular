@@ -26,7 +26,7 @@ def HLGeneratorOp
                            SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
                            DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                            DeclareOpInterfaceMethods<KGENDeclInterface>]> {
-  let summary = "High level kernel generator definition";
+  let summary = "High level generator definition";
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.

@@ -19,7 +19,7 @@ class ParamDeclAttr;
 class ParamDeclRefAttr;
 
 /// This class holds descriptions about parameter definitions and uses in a
-/// kernel or kernel generator context.
+/// func or generator context.
 class ParameterDeclsAndUses {
 public:
   ParameterDeclsAndUses(ParameterDeclsAndUses &&other) = default;

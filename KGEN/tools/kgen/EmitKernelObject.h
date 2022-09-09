@@ -14,9 +14,9 @@
 namespace M::KGEN {
 class ExecutionEngine;
 
-/// Emit the object file for the kernel `k` to the path `objPath.
-LogicalResult emitObjectForKernel(ExecutionEngine &engine, FuncOp k,
-                                  const std::filesystem::path &objPath);
+/// Emit the object file for the func `fn` to the path `objPath.
+LogicalResult emitObjectForFunc(ExecutionEngine &engine, FuncOp fn,
+                                const std::filesystem::path &objPath);
 
 } // namespace M::KGEN
 

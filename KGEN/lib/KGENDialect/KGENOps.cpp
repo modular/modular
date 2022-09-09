@@ -314,7 +314,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
-// Logic shared between kernels, generators, and generator interfaces
+// Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
 /// Parse an parameter list if present.
@@ -323,7 +323,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
                                               OperationState &result,
-                                              GeneratorOrKernelKind opKind) {
+                                              GeneratorOrFuncKind opKind) {
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
@@ -331,7 +331,7 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
     result.addAttribute("resultParamDecls",
                         ParamDeclArrayAttr::get(parser.getContext(), {}));
     // Generators and interfaces are allowed to have input parameters.
-    if (opKind != GeneratorOrKernelKind::kernel)
+    if (opKind != GeneratorOrFuncKind::func)
       result.addAttribute("paramDecls",
                           ParamDeclArrayAttr::get(parser.getContext(), {}));
     return success();
@@ -355,7 +355,7 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
       ParamDeclArrayAttr::get(parser.getContext(), resultParamDecls));
 
   // Generators and interfaces are allowed to have input parameters.
-  if (opKind != GeneratorOrKernelKind::kernel) {
+  if (opKind != GeneratorOrFuncKind::func) {
     result.addAttribute(
         "paramDecls", ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
   } else if (!paramDecls.empty()) {
@@ -372,9 +372,9 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
 ///    `constraints` `<` attribute-value (`,` attribute-value)? `>`
 static ParseResult parseOptionalConstraints(OpAsmParser &parser,
                                             OperationState &result,
-                                            GeneratorOrKernelKind opKind) {
-  // Kernels cannot have constraint specifications.
-  if (opKind == GeneratorOrKernelKind::kernel)
+                                            GeneratorOrFuncKind opKind) {
+  // Funcs cannot have constraint specifications.
+  if (opKind == GeneratorOrFuncKind::func)
     return success();
 
   SmallVector<ConstraintAttr> constraints;
@@ -399,9 +399,9 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
 
 /// Parse either a kgen.generator or kgen.func declaration, depending on what
 /// `isGenerator` is set to.
-ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
-                                         OperationState &result,
-                                         GeneratorOrKernelKind opKind) {
+ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
+                                       OperationState &result,
+                                       GeneratorOrFuncKind opKind) {
   using namespace mlir::function_interface_impl;
 
   SmallVector<OpAsmParser::Argument> entryArgs;
@@ -441,8 +441,8 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
 
   // If this is a generator, see if it is an implementation of a generator
   // interface.
-  if ((opKind == GeneratorOrKernelKind::generator ||
-       opKind == GeneratorOrKernelKind::hlgenerator) &&
+  if ((opKind == GeneratorOrFuncKind::generator ||
+       opKind == GeneratorOrFuncKind::hlgenerator) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
     ::mlir::FlatSymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
@@ -470,7 +470,7 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
   auto *body = result.addRegion();
 
   // If this is a generator interface, no body block is allowed.
-  if (opKind == GeneratorOrKernelKind::interface)
+  if (opKind == GeneratorOrFuncKind::interface)
     return success();
 
   llvm::SMLoc loc = parser.getCurrentLocation();
@@ -485,7 +485,7 @@ ParseResult KGEN::parseGeneratorOrKernel(OpAsmParser &parser,
   return success();
 }
 
-/// Print a parameter list for a generator, kernel or interface.
+/// Print a parameter list for a generator, func or interface.
 static void printParameterList(KGENDeclInterface decl, OpAsmPrinter &p) {
   auto [inputParams, outputParams] = decl.getParameterInfo();
 
@@ -529,8 +529,7 @@ static void printConstraints(KGENDeclInterface decl, OpAsmPrinter &p) {
   p << ">";
 }
 
-void KGEN::printGeneratorOrKernel(OpAsmPrinter &p,
-                                  mlir::FunctionOpInterface op) {
+void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
 
   // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
@@ -614,7 +613,7 @@ static ParseResult verifyMatchingLists(
   return success();
 }
 
-/// Verify that a list of parameter declarations from a generator or kernel
+/// Verify that a list of parameter declarations from a generator or func
 /// matches those of an interface.  This produces an error diagnostic and
 /// returns failure when a problem is detected, or returns true if everything is
 /// ok.
@@ -693,12 +692,11 @@ ReturnOp GeneratorOp::getReturnOp() {
 
 /// Parses a KGEN Generator.
 ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrKernel(parser, result,
-                                GeneratorOrKernelKind::generator);
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::generator);
 }
 
 // Print the GeneratorOp using the shared printing logic.
-void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
+void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult GeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
@@ -734,7 +732,7 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-/// Create a kernel with no body block.  The caller must create it and fill
+/// Create a func with no body block.  The caller must create it and fill
 /// it in.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
                    FunctionType signature,
@@ -747,7 +745,7 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
   result.addRegion();
 }
 
-/// Create a kernel with an empty body, `argLocs` specifies the locations for
+/// Create a func with an empty body, `argLocs` specifies the locations for
 /// all the block arguments.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
                    FunctionType signature, ArrayRef<ParamDeclAttr> outputParams,
@@ -774,25 +772,25 @@ ReturnOp FuncOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
 
-/// Parses a concrete KGEN Kernel.
+/// Parses a concrete KGEN func.
 ///
 /// operation ::=
 ///   `kgen.func` function-signature function-attributes? function-body
 ///
 ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrKernel(parser, result, GeneratorOrKernelKind::kernel);
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::func);
 }
 
 /// Print the FuncOp. We use a shared printer with the GeneratorOp since it is
-/// a superset of what a kernel is.
-void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
+/// a superset of what a func is.
+void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
 
-  // See if the parameter definitions and uses within the kernel are
+  // See if the parameter definitions and uses within the func are
   // structured correctly.
   FailureOr<ParameterDeclsAndUses> paramInfo =
       ParameterDeclsAndUses::calculate(*this);
@@ -843,13 +841,12 @@ GeneratorInterfaceOp::getParameterInfo() {
 /// Parses a KGEN generator interface.
 ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
                                         OperationState &result) {
-  return parseGeneratorOrKernel(parser, result,
-                                GeneratorOrKernelKind::interface);
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::interface);
 }
 
 // Print the GeneratorInterfaceOp using the shared printing logic.
 void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
-  printGeneratorOrKernel(p, *this);
+  printGeneratorOrFunc(p, *this);
 }
 
 LogicalResult GeneratorInterfaceOp::verify() {
@@ -965,14 +962,14 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Ok, the call looks good.  Last check, make sure that calls within a
   // kgen.func do not pass input arguments.  Input arguments are invalid to a
-  // kernel, so it must be a generator or generator interface, and these will
+  // func, so it must be a generator or generator interface, and these will
   // not be elaborated unless they have zero input arguments.
   if (!callerInputParams.empty()) {
-    if (auto kernelParent = getOperation()->getParentOfType<FuncOp>()) {
+    if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
       auto diag = emitError() << "cannot call generator with input arguments "
                                  "from concrete kgen.func";
-      diag.attachNote(kernelParent->getLoc())
-          << "within kgen.func '" << kernelParent.getName() << "'";
+      diag.attachNote(funcParent->getLoc())
+          << "within kgen.func '" << funcParent.getName() << "'";
       return failure();
     }
   }

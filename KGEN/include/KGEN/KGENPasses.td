@@ -49,8 +49,8 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
     kgen.func ops and kgen/meta types to the corresponding LLVM-dialect
     structures/types/ops.
 
-    Set `break-up-structs` to the names of top-level kernels for which to break
-    up argument and results structs in-place. If any of the specified kernels
+    Set `break-up-structs` to the names of top-level funcs for which to break
+    up argument and results structs in-place. If any of the specified funcs
     have callsites in the module, the pass fails.
 
     For example, consider the following function that accepts and returns a
@@ -68,9 +68,9 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
                      %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
     ```
 
-    Set `emit-c-wrappers` to the names of any kernels for which to emit C
+    Set `emit-c-wrappers` to the names of any funcs for which to emit C
     wrappers. C wrappers contain unpacked struct arguments and results. They
-    re-pack the struct and invoke the original kernel. For example:
+    re-pack the struct and invoke the original func. For example:
 
     ```mlir
     llvm.func @slice(%a: !llvm.struct<(i64, ptr<f32>)>, %i: !llvm.ptr<i64>)
@@ -87,7 +87,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
     wrapper is still generated for the function, but since the original function
     will have no structs, the wrapper will be a forwarding call.
 
-    If `emit-opaque-wrappers` is set, top-level kernels listed under
+    If `emit-opaque-wrappers` is set, top-level funcs listed under
     `break-up-structs` will get an additional opaque wrapper in the form:
 
     ```
@@ -101,7 +101,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
     element types. If the result was a struct, then a pointer to a packed result
     struct is appended to the argument list.
 
-    The opaque wrapper can be used to generically invoke kernels with instances
+    The opaque wrapper can be used to generically invoke funcs with instances
     of custom types if those custom types have some way to generically allocate
     and populate themselves into a packed struct.
   }];
@@ -115,11 +115,11 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
            /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
            "Bitwidth of the index type, 0 to use size of machine word">,
     ListOption<"breakUpStructs", "break-up-structs", "std::string",
-               "top-level kernels to make callable from C">,
+               "top-level funcs to make callable from C">,
     Option<"emitOpaqueWrappers", "emit-opaque-wrappers", "bool",
            /*default=*/"false", "whether to emit opaque wrappers">,
     ListOption<"emitCWrappers", "emit-c-wrappers", "std::string",
-               "kernels for which to emit C wrappers">
+               "funcs for which to emit C wrappers">
   ];
 }
 
@@ -170,11 +170,11 @@ def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm", "mlir::LLVM::LLVMFuncOp"> {
 //===----------------------------------------------------------------------===//
 
 def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
-  let summary = "elaborate generators into fully concrete kernels";
+  let summary = "elaborate generators into fully concrete funcs";
   let description = [{
     This pass performs the elaboration step for the kgen pipeline,
     converting generators and generator interfaces into concrete
-    kernels.
+    funcs.
   }];
 
   let dependentDialects = ["::M::KGEN::KGENDialect"];

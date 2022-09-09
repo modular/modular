@@ -30,7 +30,7 @@ kgen.generator @run_exp() -> f32 {
   kgen.return %1 : f32
 }
 
-// EXEC: --- Kernel 'run_exp_kernel' returned 2.7{{[0-9]+}}
+// EXEC: --- 'run_exp_kernel' returned 2.7{{[0-9]+}}
 
 // OBJ-LABEL: SYMBOL TABLE
 // OBJ-DAG: F {{.*}}exp_f32_kernel

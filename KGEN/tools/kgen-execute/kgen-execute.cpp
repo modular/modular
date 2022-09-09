@@ -45,26 +45,26 @@ struct ProcessBuffer {
       return failure(clOptions.reportError("could not parse input file"));
 
     SymbolTable symtab(*module);
-    auto lookupKernel = [&](StringRef kernelName) -> ErrorOr<KGEN::FuncOp> {
-      auto kernel = symtab.lookup<KGEN::FuncOp>(kernelName);
-      if (!kernel)
-        return Error("could not find kernel '" + kernelName + "'.");
-      return kernel;
+    auto lookupFunc = [&](StringRef funcName) -> ErrorOr<KGEN::FuncOp> {
+      auto func = symtab.lookup<KGEN::FuncOp>(funcName);
+      if (!func)
+        return Error("could not find func '" + funcName + "'.");
+      return func;
     };
 
     // Add the module to the execution engine.
     if (auto err = execEngine.add(*module))
       return failure(clOptions.reportError(err.getError()));
 
-    for (const auto &k : clOptions.kernels) {
-      auto kernelOr = lookupKernel(k.name);
-      if (kernelOr.isError())
-        return failure(clOptions.reportError(kernelOr.getError()));
+    for (const auto &k : clOptions.funcs) {
+      auto funcOr = lookupFunc(k.name);
+      if (funcOr.isError())
+        return failure(clOptions.reportError(funcOr.getError()));
 
-      KGEN::FuncOp kernel = *kernelOr;
-      auto compiledKernelOr = execEngine.lookup(kernel);
-      if (failed(compiledKernelOr))
-        return failure(clOptions.reportError(compiledKernelOr.getError()));
+      KGEN::FuncOp func = *funcOr;
+      auto compiledFuncOr = execEngine.lookup(func);
+      if (failed(compiledFuncOr))
+        return failure(clOptions.reportError(compiledFuncOr.getError()));
 
       // And now we diverge.
       switch (clOptions.cmd) {
@@ -72,16 +72,16 @@ struct ProcessBuffer {
       case Command::kElaborate:
         break;
       case Command::kExecute: {
-        if (auto err = k.verifyKernelSignature(kernel.getFunctionType()))
+        if (auto err = k.verifyFuncSignature(func.getFunctionType()))
           return failure(clOptions.reportError(err.getError()));
 
-        if (auto err = k.executeAndPrint(*compiledKernelOr))
+        if (auto err = k.executeAndPrint(*compiledFuncOr))
           return failure(clOptions.reportError(err.getError()));
         break;
       }
       case Command::kEmit: {
         // Get the compiled object.
-        auto objOr = compiledKernelOr->getObject();
+        auto objOr = compiledFuncOr->getObject();
         if (objOr.isError())
           return failure(clOptions.reportError(objOr.getError()));
 

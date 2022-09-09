@@ -1,6 +1,6 @@
 // RUN: kgen %s -execute -kernel="exp_f32_kernel:f32():%t_exp_f32_bad.o" -kernel="exp_f32_kernel:f32(f32):%t_exp_f32_good.o" -kernel="badkernel:f32():%t_badkernel.o" -ignore-failure -I %S/../kernels -verify-diagnostics
 
-// expected-error@-3 {{could not find kernel '@badkernel'}}
+// expected-error@-3 {{could not find func '@badkernel'}}
 
 kgen.include "library.mlir"
 

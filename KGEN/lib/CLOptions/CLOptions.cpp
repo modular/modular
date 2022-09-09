@@ -10,28 +10,28 @@
 using namespace M;
 
 //===--------------------------------------------------------------------===//
-// CommandLineKernel implementation
+// CommandLineFunc implementation
 //===--------------------------------------------------------------------===//
 
 ErrorOrSuccess
-CommandLineKernel::verifyKernelSignature(mlir::FunctionType kernelType) const {
+CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
   if (signature == "f32()") {
-    if (kernelType.getNumInputs() != 0 || kernelType.getNumResults() != 1 ||
-        kernelType.getResult(0) !=
-            mlir::Float32Type::get(kernelType.getContext())) {
+    if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1 ||
+        funcType.getResult(0) !=
+            mlir::Float32Type::get(funcType.getContext())) {
       std::string ktype;
       llvm::raw_string_ostream os(ktype);
-      os << kernelType;
+      os << funcType;
       return Error("command-line specified signature does not match the IR "
                    "signature, expected " +
                    ktype + ", but got " + signature);
     }
     return M::success();
   } else if (signature == "()") {
-    if (kernelType.getNumResults() != 0 || kernelType.getNumInputs() != 0) {
+    if (funcType.getNumResults() != 0 || funcType.getNumInputs() != 0) {
       std::string ktype;
       llvm::raw_string_ostream os(ktype);
-      os << kernelType;
+      os << funcType;
       return Error("command-line specified signature does not match the IR "
                    "signature, expected " +
                    ktype + ", but got " + signature);
@@ -43,23 +43,22 @@ CommandLineKernel::verifyKernelSignature(mlir::FunctionType kernelType) const {
 }
 
 ErrorOrSuccess
-CommandLineKernel::executeAndPrint(KGEN::CompiledKernel &compiledKernel) const {
+CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
   if (signature == "f32()") {
-    printf("--- Kernel '%s' returned %f\n", name.c_str(),
-           compiledKernel.invoke<float>());
+    printf("--- '%s' returned %f\n", name.c_str(),
+           compiledFunc.invoke<float>());
     return M::success();
   } else if (signature == "()") {
-    compiledKernel.invoke<void>();
-    printf("--- Kernel '%s' finished\n", name.c_str());
+    compiledFunc.invoke<void>();
+    printf("--- '%s' finished\n", name.c_str());
     return M::success();
   }
 
   return Error("unhandled signature: " + signature);
 }
 
-bool CommandLineKernelParser::parse(llvm::cl::Option &o, StringRef argName,
-                                    StringRef argValue,
-                                    CommandLineKernel &val) {
+bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
+                                  StringRef argValue, CommandLineFunc &val) {
   SmallVector<StringRef, 3> parts;
   argValue.split(parts, ':');
 

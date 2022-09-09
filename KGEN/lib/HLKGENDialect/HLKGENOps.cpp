@@ -32,12 +32,11 @@ ReturnOp HLGeneratorOp::getReturnOp() {
 
 /// Parses a HLKGEN Generator.
 ParseResult HLGeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrKernel(parser, result,
-                                GeneratorOrKernelKind::hlgenerator);
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::hlgenerator);
 }
 
 // Print the HLGeneratorOp using the shared printing logic.
-void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrKernel(p, *this); }
+void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult HLGeneratorOp::verifyRegions() {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
