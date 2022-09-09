@@ -27,8 +27,10 @@ class LLVMFuncOp;
 namespace M::KGEN {
 class KGENDialect;
 class MetaDialect;
-class POPDialect;
 class FuncOp;
+namespace POP {
+class POPDialect;
+} // namespace POP
 
 //===----------------------------------------------------------------------===//
 // Pass creation

@@ -33,7 +33,7 @@ struct ProcessBuffer {
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
     DialectRegistry registry;
     // Don't need HLKGEN here.
-    registry.insert<KGEN::KGENDialect, KGEN::MetaDialect, KGEN::POPDialect>();
+    registry.insert<KGEN::KGENDialect, KGEN::MetaDialect, KGEN::POP::POPDialect>();
     mlir::registerLLVMDialectTranslation(registry);
 
     ctx->appendDialectRegistry(registry);

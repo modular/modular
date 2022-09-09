@@ -18,7 +18,7 @@ def POPDialect : Dialect {
     on top of the LLVM dialect.
   }];
 
-  let cppNamespace = "::M::KGEN";
+  let cppNamespace = "::M::KGEN::POP";
 
   // Use LLVM-style accessor prefixes.
   let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;

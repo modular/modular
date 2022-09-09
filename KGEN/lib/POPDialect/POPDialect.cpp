@@ -15,6 +15,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace POP;
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.

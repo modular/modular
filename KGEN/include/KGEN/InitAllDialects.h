@@ -24,7 +24,7 @@ inline void registerAllKGENDialects(DialectRegistry &registry) {
   registry.insert<KGEN::KGENDialect>();
   registry.insert<KGEN::HLKGENDialect>();
   registry.insert<KGEN::MetaDialect>();
-  registry.insert<KGEN::POPDialect>();
+  registry.insert<KGEN::POP::POPDialect>();
   registry.insert<KGEN::ZAPDialect>();
 }
 
