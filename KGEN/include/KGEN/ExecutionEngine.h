@@ -73,8 +73,9 @@ public:
   static ErrorOr<ExecutionEngine> create();
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
-  /// every kernel and generate self-contained libraries.
-  ErrorOrSuccess add(mlir::ModuleOp module);
+  /// every kernel and generate self-contained libraries. `only` is a list of
+  /// kernels to process, if empty, adds all the kernels in the module.
+  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<KernelOp> only = {});
 
   /// Look up a kernel and return it as a CompiledKernel object if we can find
   /// it.
@@ -89,10 +90,6 @@ private:
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
-
-  /// Lookup the JIT address for a name rather than a KGEN::Kernel object. This
-  /// is private because we may want to somehow munge/unique the names.
-  ErrorOr<llvm::orc::ExecutorAddr> lookup(StringRef name);
 
   llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<detail::ObjectCache> cache;
