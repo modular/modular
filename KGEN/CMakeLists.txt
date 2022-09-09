@@ -106,7 +106,7 @@ function(add_kgen_kernel target)
     add_custom_command(
       OUTPUT ${object_file_name}
       OUTPUT "${kernel}.h"
-      COMMAND $<TARGET_FILE:kgen> -emit -kernel=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+      COMMAND $<TARGET_FILE:kgen> -emit -func=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
     )

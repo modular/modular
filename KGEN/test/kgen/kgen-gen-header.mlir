@@ -1,10 +1,10 @@
-// RUN: kgen %s -emit -kernel="someKernel:f32(f32,index):%t.o"
+// RUN: kgen %s -emit -func="someKernel:f32(f32,index):%t.o"
 // RUN: cat %t.h | FileCheck %s --check-prefixes=SCALAR
 
-// RUN: kgen %s -emit -kernel="someBufferKernel:%t.o"
+// RUN: kgen %s -emit -func="someBufferKernel:%t.o"
 // RUN: cat %t.h | FileCheck %s --check-prefixes=BUFFER
 
-// RUN: kgen %s -emit -kernel="someMetaScalarKernel:%t.o"
+// RUN: kgen %s -emit -func="someMetaScalarKernel:%t.o"
 // RUN: cat %t.h | FileCheck %s --check-prefixes=SCALARMETA
 
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {

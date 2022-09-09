@@ -18,7 +18,7 @@ class CompiledFunc;
 class ExecutionEngine;
 }
 
-/// What to do with a given kernel.
+/// What to do with a given KGEN file.
 enum class Command {
   kGenLibraryFile,
   kElaborate,
@@ -30,11 +30,11 @@ enum class Command {
 // CommandLineFunc
 //===----------------------------------------------------------------------===//
 
-/// This struct gives us a standard way to specify a kernel, its signature, and
+/// This struct gives us a standard way to specify a func, its signature, and
 /// its output filename on the command line. It also gives us a way to execute
-/// this kernel. The format of this option is:
+/// this func. The format of this option is:
 ///
-///  kernel ::= name `:` (signature)? `:` output-filename
+///  func ::= name `:` (signature)? `:` output-filename
 ///  signature ::= return-type`(`arg-types...`)`
 ///
 /// where name and output-filename are just strings. Providing the signature is
@@ -44,10 +44,10 @@ struct CommandLineFunc {
   std::string signature;
   std::string outputFilename;
 
-  /// Verify that the signature of this kernel passed in on the command line
-  /// matches the signature of the kernel as it exists in the IR.
+  /// Verify that the signature of this func passed in on the command line
+  /// matches the signature of the func as it exists in the IR.
   ErrorOrSuccess verifyFuncSignature(mlir::FunctionType funcType) const;
-  /// Execute this kernel and print its result(s).
+  /// Execute this func and print its result(s).
   ErrorOrSuccess executeAndPrint(KGEN::CompiledFunc &compiledFunc) const;
 };
 
@@ -75,12 +75,12 @@ public:
       llvm::cl::Required};
 
   cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
-      "kernel", cl::desc("Specifies the funcs to handle. Defaults to an "
-                         "empty list, which will do nothing.")};
+      "func", cl::desc("Specifies the funcs to handle. Defaults to an "
+                       "empty list, which will do nothing.")};
 
-  Optional<CommandLineFunc> shouldHandleFunc(KGEN::FuncOp kernel) const {
+  Optional<CommandLineFunc> shouldHandleFunc(KGEN::FuncOp func) const {
     auto found = llvm::find_if(funcs, [&](const CommandLineFunc &ek) {
-      return ek.name == kernel.getName();
+      return ek.name == func.getName();
     });
     if (found == funcs.end())
       return None;
