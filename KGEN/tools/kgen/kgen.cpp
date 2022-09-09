@@ -104,7 +104,7 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
 
 /// Runs the tool pipeline on the file fragment passed in. The pipeline does not
 /// output to the specific ostream provided to it, rather it opens and writes to
-/// files that are designated by the kernels it operates on.
+/// files that are designated by the funcs it operates on.
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      const CLOptions &clOptions) {
   DialectRegistry registry;
@@ -157,35 +157,33 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (auto err = engine.add(*theModule))
     return failure(clOptions.reportError(err.getError()));
 
-  // Helper to execute a kernel.
-  auto execKernel = [&](FuncOp theKernel,
-                        const CommandLineKernel &clKernel) -> LogicalResult {
-    auto compiledKernelOr = engine.lookup(theKernel);
-    if (failed(compiledKernelOr))
-      return failure(clOptions.reportError(compiledKernelOr.getError()));
+  // Helper to execute a func.
+  auto execFunc = [&](FuncOp theFunc,
+                      const CommandLineFunc &clFunc) -> LogicalResult {
+    auto compiledFuncOr = engine.lookup(theFunc);
+    if (failed(compiledFuncOr))
+      return failure(clOptions.reportError(compiledFuncOr.getError()));
 
-    if (auto err =
-            clKernel.verifyKernelSignature(theKernel.getFunctionType())) {
-      mlir::emitError(theKernel.getLoc(), err.getError());
+    if (auto err = clFunc.verifyFuncSignature(theFunc.getFunctionType())) {
+      mlir::emitError(theFunc.getLoc(), err.getError());
       return mlir::failure(!clOptions.ignoreFailures);
     }
 
-    if (auto err = clKernel.executeAndPrint(*compiledKernelOr)) {
-      mlir::emitError(theKernel.getLoc(), err.getError());
+    if (auto err = clFunc.executeAndPrint(*compiledFuncOr)) {
+      mlir::emitError(theFunc.getLoc(), err.getError());
       return mlir::failure(!clOptions.ignoreFailures);
     }
     return mlir::success();
   };
 
-  llvm::DenseSet<StringRef> foundKernels;
-  // Loop over the kernels and maybe emit the kernel as an object file or maybe
+  llvm::DenseSet<StringRef> foundFuncs;
+  // Loop over the funcs and maybe emit the func as an object file or maybe
   // execute it.
-  for (auto k : theModule->getOps<FuncOp>()) {
-    foundKernels.insert(k.getName());
+  for (auto fn : theModule->getOps<FuncOp>()) {
+    foundFuncs.insert(fn.getName());
 
-    // If we were asked to handle this kernel, do so.
-    if (Optional<CommandLineKernel> clKernel =
-            clOptions.shouldHandleKernel(k)) {
+    // If we were asked to handle this func, do so.
+    if (Optional<CommandLineFunc> clFunc = clOptions.shouldHandleFunc(fn)) {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
@@ -193,33 +191,33 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       case Command::kEmit: {
         // If the filename is not provided, then default to the current working
         // directory.
-        std::filesystem::path objPath = clKernel->outputFilename;
+        std::filesystem::path objPath = clFunc->outputFilename;
         if (!objPath.is_absolute())
-          objPath = std::filesystem::current_path() / clKernel->outputFilename;
+          objPath = std::filesystem::current_path() / clFunc->outputFilename;
 
-        if (failed(emitObjectForKernel(engine, k, objPath)))
+        if (failed(emitObjectForFunc(engine, fn, objPath)))
           return failure();
 
-        if (failed(emitHeaderForKernel(
-                k, objPath.replace_extension(".h").string())))
+        if (failed(emitHeaderForFunc(fn,
+                                     objPath.replace_extension(".h").string())))
           return failure();
         break;
       }
       case Command::kExecute: {
-        if (failed(execKernel(k, *clKernel)))
+        if (failed(execFunc(fn, *clFunc)))
           return failure();
       }
       }
     }
   }
 
-  // Validate that the user didn't pass in any kernels we don't have. This would
+  // Validate that the user didn't pass in any funcs we don't have. This would
   // be super confusing if the user simply gets no response for something that
   // isn't defined, so put up an actual error.
-  for (const auto &k : clOptions.kernels) {
-    if (foundKernels.find(k.name) == foundKernels.end())
+  for (const auto &fn : clOptions.funcs) {
+    if (!foundFuncs.count(fn.name))
       return mlir::emitError(theModule->getLoc(),
-                             "could not find kernel '@" + k.name + "'");
+                             "could not find func '@" + fn.name + "'");
   }
 
   return mlir::success();

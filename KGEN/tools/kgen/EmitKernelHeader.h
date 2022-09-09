@@ -10,8 +10,8 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 
 namespace M::KGEN {
-/// Emit the header for a kernel.
-LogicalResult emitHeaderForKernel(FuncOp kernel, StringRef filename);
+/// Emit the header for a func.
+LogicalResult emitHeaderForFunc(FuncOp func, StringRef filename);
 } // namespace M::KGEN
 
 #endif // EMIT_KERNEL_HEADER_H

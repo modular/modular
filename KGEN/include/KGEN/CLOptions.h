@@ -14,7 +14,7 @@
 
 namespace M {
 namespace KGEN {
-class CompiledKernel;
+class CompiledFunc;
 class ExecutionEngine;
 }
 
@@ -27,7 +27,7 @@ enum class Command {
 };
 
 //===----------------------------------------------------------------------===//
-// CommandLineKernel
+// CommandLineFunc
 //===----------------------------------------------------------------------===//
 
 /// This struct gives us a standard way to specify a kernel, its signature, and
@@ -39,25 +39,25 @@ enum class Command {
 ///
 /// where name and output-filename are just strings. Providing the signature is
 /// optional.
-struct CommandLineKernel {
+struct CommandLineFunc {
   std::string name;
   std::string signature;
   std::string outputFilename;
 
   /// Verify that the signature of this kernel passed in on the command line
   /// matches the signature of the kernel as it exists in the IR.
-  ErrorOrSuccess verifyKernelSignature(mlir::FunctionType kernelType) const;
+  ErrorOrSuccess verifyFuncSignature(mlir::FunctionType funcType) const;
   /// Execute this kernel and print its result(s).
-  ErrorOrSuccess executeAndPrint(KGEN::CompiledKernel &compiledKernel) const;
+  ErrorOrSuccess executeAndPrint(KGEN::CompiledFunc &compiledFunc) const;
 };
 
-/// Provide a parser for the CommandLineKernel object.
-class CommandLineKernelParser : public llvm::cl::parser<CommandLineKernel> {
+/// Provide a parser for the CommandLineFunc object.
+class CommandLineFuncParser : public llvm::cl::parser<CommandLineFunc> {
 public:
-  using llvm::cl::parser<CommandLineKernel>::parser;
+  using llvm::cl::parser<CommandLineFunc>::parser;
 
   bool parse(llvm::cl::Option &o, StringRef argName, StringRef argValue,
-             CommandLineKernel &val);
+             CommandLineFunc &val);
 };
 
 class KGENCLOptions : public CommonCLOptions {
@@ -70,19 +70,19 @@ public:
           clEnumValN(Command::kGenLibraryFile, "gen-lib",
                      "Generate a distributable library file."),
           clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
-          clEnumValN(Command::kEmit, "emit", "Emit kernels as object files."),
-          clEnumValN(Command::kExecute, "execute", "Execute kernels.")),
+          clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
       llvm::cl::Required};
 
-  cl::list<CommandLineKernel, bool, CommandLineKernelParser> kernels{
-      "kernel", cl::desc("Specifies the kernels to handle. Defaults to an "
+  cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
+      "kernel", cl::desc("Specifies the funcs to handle. Defaults to an "
                          "empty list, which will do nothing.")};
 
-  Optional<CommandLineKernel> shouldHandleKernel(KGEN::FuncOp kernel) const {
-    auto found = llvm::find_if(kernels, [&](const CommandLineKernel &ek) {
+  Optional<CommandLineFunc> shouldHandleFunc(KGEN::FuncOp kernel) const {
+    auto found = llvm::find_if(funcs, [&](const CommandLineFunc &ek) {
       return ek.name == kernel.getName();
     });
-    if (found == kernels.end())
+    if (found == funcs.end())
       return None;
     return *found;
   }

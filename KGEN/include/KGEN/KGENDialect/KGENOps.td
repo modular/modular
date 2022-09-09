@@ -55,11 +55,11 @@ def FuncOp
   let hasRegionVerifier = 1;
 
   let builders = [
-    // Create a kernel with a region but no body block.  The caller must create
+    // Create a func with a region but no body block.  The caller must create
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
                    "ArrayRef<ParamDeclAttr>":$outputParams)>,
-    // Create a kernel with an empty body, `argLocs` specifies the locations for
+    // Create a func with an empty body, `argLocs` specifies the locations for
     // all the block arguments.
     OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
                    "ArrayRef<ParamDeclAttr>":$outputParams,
@@ -77,7 +77,7 @@ def GeneratorOp
                          SingleBlockImplicitTerminator<"ReturnOp">,
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                          DeclareOpInterfaceMethods<KGENDeclInterface>]> {
-  let summary = "Kernel generator definition";
+  let summary = "Function generator definition";
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
@@ -153,7 +153,7 @@ def CallOp
   : KGENOp<"call", [CallOpInterface,
                     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
 
-  let summary = "Call a kernel or generator";
+  let summary = "Call a func, generator, or generator interface";
 
   let arguments =
    (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
@@ -242,7 +242,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let summary = "return operation for kgen generators";
   let description = [{
     The `kgen.return` operation specifies the returned values for a generated
-    kernel and output parameters from the metaprogram.
+    func and output parameters from the metaprogram.
 
     The operation takes variable number of operands and produces no results.
     The operand number and types must match the signature of the

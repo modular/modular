@@ -43,7 +43,7 @@ bool isParameterizedType(Type type);
 // ParameterEvaluator
 //===----------------------------------------------------------------------===//
 
-/// This typedef represents a kernel/generator declaration + a set of input
+/// This typedef represents a generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
 /// resolved.
 using DeclAndInputParamsPair = std::pair<KGENDeclInterface, ArrayAttr>;

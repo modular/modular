@@ -31,6 +31,6 @@ kgen.func @void() {
 }
 
 // COM: exec_exp computes exp(1.0)
-// CHECK: --- Kernel 'exec_exp' returned 2.7{{[0-9]+}}
-// CHECK: --- Kernel 'void' finished
+// CHECK: --- 'exec_exp' returned 2.7{{[0-9]+}}
+// CHECK: --- 'void' finished
 

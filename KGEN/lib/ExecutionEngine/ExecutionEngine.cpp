@@ -91,8 +91,8 @@ public:
   bool hasObject(FuncOp func);
 
   /// Map a FuncOp to an llvm::Module.
-  void mapKernelToModule(FuncOp func, const llvm::Module *module) {
-    auto didEmplace = kernelToModule.try_emplace(func, module);
+  void mapFuncToModule(FuncOp func, const llvm::Module *module) {
+    auto didEmplace = funcToModule.try_emplace(func, module);
     assert(didEmplace.second ||
            (didEmplace.first->getFirst() == func &&
             didEmplace.first->getSecond() == module) &&
@@ -103,9 +103,9 @@ public:
 private:
   /// Lookup the module corresponding to the provided func. Returns nullptr if
   /// no such module exists.
-  const llvm::Module *getModuleForKernel(FuncOp func) const {
-    auto found = kernelToModule.find(func);
-    if (found == kernelToModule.end())
+  const llvm::Module *getModuleForFunc(FuncOp func) const {
+    auto found = funcToModule.find(func);
+    if (found == funcToModule.end())
       return nullptr;
     return found->getSecond();
   }
@@ -114,7 +114,7 @@ private:
   /// llvm::MemoryBuffer.
   BlobCache<ModulePtrKeyInfo> storage;
   /// Map from a FuncOp to the corresponding LLVM module.
-  llvm::DenseMap<FuncOp, const llvm::Module *> kernelToModule;
+  llvm::DenseMap<FuncOp, const llvm::Module *> funcToModule;
 };
 } // namespace M::KGEN::detail
 
@@ -136,7 +136,7 @@ detail::ObjectCache::getObject(const llvm::Module *m) {
 
 std::unique_ptr<llvm::MemoryBuffer>
 detail::ObjectCache::getObject(FuncOp func) {
-  const llvm::Module *module = getModuleForKernel(func);
+  const llvm::Module *module = getModuleForFunc(func);
   if (!module)
     return nullptr;
 
@@ -147,7 +147,7 @@ detail::ObjectCache::getObject(FuncOp func) {
 }
 
 bool detail::ObjectCache::hasObject(FuncOp func) {
-  const llvm::Module *module = getModuleForKernel(func);
+  const llvm::Module *module = getModuleForFunc(func);
   if (!module)
     return false;
   return storage.contains(module);
@@ -180,14 +180,14 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
 }
 
 //===----------------------------------------------------------------------===//
-// CompiledKernel implementation
+// CompiledFunc implementation
 //===----------------------------------------------------------------------===//
 
-ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> CompiledKernel::getObject() {
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> CompiledFunc::getObject() {
   if (auto mbuf = cache.getObject(func))
     return mbuf;
 
-  return Error("could not find kernel '" + func.getName() +
+  return Error("could not find func '" + func.getName() +
                "' in cache, please call `ExecutionEngine::add`.");
 }
 
@@ -246,13 +246,13 @@ ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-/// Slice a kernel and all its dependencies out of the existing module. This
+/// Slice a func and all its dependencies out of the existing module. This
 /// operates using FunctionOpInterface as the 'function' op type so that we can
 /// use LLVMFuncOps as well as KGEN::FuncOp and friends. This also uses
 /// CallOpInterface to capture all callees.
-static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface func,
-                                   OpBuilder &builder,
-                                   const mlir::SymbolTable &symtab) {
+static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
+                                 OpBuilder &builder,
+                                 const mlir::SymbolTable &symtab) {
   Optional<Error> error;
   auto extractDependencies = [&](mlir::CallOpInterface call) {
     auto callableForCallee = call.getCallableForCallee();
@@ -280,7 +280,7 @@ static ErrorOrSuccess kernelSlicer(mlir::FunctionOpInterface func,
       return WalkResult::interrupt();
     }
 
-    if (auto err = kernelSlicer(callee, builder, symtab)) {
+    if (auto err = funcSlicer(callee, builder, symtab)) {
       error = err.takeError();
       return WalkResult::interrupt();
     }
@@ -340,7 +340,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     mlir::SymbolTable symtab(func->getParentOp());
 
     // Traverse the call graph and clone all the callees into this module.
-    if (auto err = kernelSlicer(func, builder, symtab))
+    if (auto err = funcSlicer(func, builder, symtab))
       return err.takeError();
 
     // Clone the func into this new module. We don't want to remove it from
@@ -355,7 +355,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
 
     // Map this func to the llvm::Module pointer we just got. This will allow
     // us to look up objects in the cache with the FuncOp as the key.
-    cache->mapKernelToModule(func, llvmModule.get());
+    cache->mapFuncToModule(func, llvmModule.get());
 
     // Create a new dylib so that we don't have ODR violations.
     auto dylibOr = jit->createJITDylib(func.getName().str());
@@ -391,7 +391,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
 
     // Map the func to the module we just created. This pointer should be
     // stable; the JIT just takes ownership of the pointer.
-    cache->mapKernelToModule(func, tsm.getModuleUnlocked());
+    cache->mapFuncToModule(func, tsm.getModuleUnlocked());
 
     if (auto err = jit->addIRModule(*dylibOr, std::move(tsm)))
       return M::Error(toString(std::move(err)));
@@ -400,7 +400,7 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
   return success();
 }
 
-ErrorOr<CompiledKernel> ExecutionEngine::lookup(KGEN::FuncOp func) {
+ErrorOr<CompiledFunc> ExecutionEngine::lookup(KGEN::FuncOp func) {
   auto *dylib = jit->getJITDylibByName(func.getName());
   if (!dylib)
     return Error("could not find JITDylib for " + func.getName());
@@ -409,11 +409,10 @@ ErrorOr<CompiledKernel> ExecutionEngine::lookup(KGEN::FuncOp func) {
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  return CompiledKernel(addr->toPtr<void *>(), func, *cache);
+  return CompiledFunc(addr->toPtr<void *>(), func, *cache);
 }
 
-ErrorOr<CompiledKernel>
-ExecutionEngine::lookupOpaqueWrapper(KGEN::FuncOp func) {
+ErrorOr<CompiledFunc> ExecutionEngine::lookupOpaqueWrapper(KGEN::FuncOp func) {
   // TODO: The opaque_wrapper attr is added to the llvm.func op, not the
   //       FuncOp so we gotta have a map or something for that - we don't
   //       currently save the LLVM-dialect IR. For now, just suffix it manually.
@@ -426,5 +425,5 @@ ExecutionEngine::lookupOpaqueWrapper(KGEN::FuncOp func) {
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  return CompiledKernel(addr->toPtr<void *>(), func, *cache);
+  return CompiledFunc(addr->toPtr<void *>(), func, *cache);
 }
