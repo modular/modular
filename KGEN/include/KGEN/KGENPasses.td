@@ -46,7 +46,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower the `kgen` and `meta` dialects to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion from the fully-elaborated and specified
-    kgen.kernel ops and kgen/meta types to the corresponding LLVM-dialect
+    kgen.func ops and kgen/meta types to the corresponding LLVM-dialect
     structures/types/ops.
 
     Set `break-up-structs` to the names of top-level kernels for which to break
@@ -127,7 +127,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
 // ConvertPOPToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "KernelOp"> {
+def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "FuncOp"> {
   let summary = "Lower the `pop` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion of fully-elaborated and specified `pop`

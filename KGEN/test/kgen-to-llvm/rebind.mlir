@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: llvm.func @scalar_rebind
 // CHECK-SAME: %[[ARG0:.*]]: f32
-kgen.kernel @scalar_rebind(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.func @scalar_rebind(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
   // CHECK: return %[[ARG0]] : f32
   %0 = meta.scalar.rebind %arg0 : !meta.scalar<f32> to !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
@@ -11,7 +11,7 @@ kgen.kernel @scalar_rebind(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 // CHECK-LABEL: llvm.func @simd_rebind
 // CHECK-SAME: %[[ARG0:.*]]: vector<2xi64>
-kgen.kernel @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
+kgen.func @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
   %0 = meta.simd.rebind %arg0 : !meta.simd<2, si64> to !meta.simd<2, si64>
   // CHECK: return %[[ARG0]] : vector<2xi64>
   kgen.return %0 : !meta.simd<2, si64>
@@ -19,7 +19,7 @@ kgen.kernel @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
 
 // CHECK-LABEL: llvm.func @pointer_rebind
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<f32>, %[[ARG1:.*]]: !llvm.ptr, %[[ARG2:.*]]: !llvm.ptr<i64>
-kgen.kernel @pointer_rebind(
+kgen.func @pointer_rebind(
   %arg0: !meta.pointer<f32>,
   %arg1: !meta.pointer<?>,
   %arg2: !meta.pointer<ui64>

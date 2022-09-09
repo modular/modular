@@ -25,12 +25,12 @@ namespace {
 // ConvertKGENKernel
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENKernel : public mlir::ConvertOpToLLVMPattern<KernelOp> {
+class ConvertKGENKernel : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(KernelOp kernel, KernelOpAdaptor adaptor,
+  matchAndRewrite(FuncOp kernel, FuncOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Convert the kernel signature.
     TypeConverter::SignatureConversion result(kernel.getNumArguments());

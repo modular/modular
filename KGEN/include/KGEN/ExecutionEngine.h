@@ -18,8 +18,8 @@ namespace detail {
 class ObjectCache;
 } // namespace detail
 
-/// This class provides an interface to interact with a compiled kernel. You
-/// can either invoke the kernel, or get it as an object. The lifetime of one of
+/// This class provides an interface to interact with a compiled func. You
+/// can either invoke the func, or get it as an object. The lifetime of one of
 /// these objects is tied to the ExecutionEngine through the `cache` member.
 /// This could be relaxed by using a pointer instead, but that would require
 /// getObject to fail if the cache is unavailable, and there's currently no use
@@ -43,15 +43,15 @@ private:
   /// needs a reference to the cache that the ExecutionEngine holds, so it
   /// should really only be constructed from the ExecutionEngine or something
   /// like it.
-  CompiledKernel(void *ptr, KernelOp kernel, detail::ObjectCache &cache)
-      : fn(ptr), kernel(kernel), cache(cache) {}
+  CompiledKernel(void *ptr, FuncOp func, detail::ObjectCache &cache)
+      : fn(ptr), func(func), cache(cache) {}
   friend class ExecutionEngine;
 
   /// Pointer to the function to invoke.
   void *fn;
 
-  /// This handle corresponds to this KernelOp.
-  KernelOp kernel;
+  /// This handle corresponds to this FuncOp.
+  FuncOp func;
 
   /// Pointer to the object cache. This allows us to look up the compiled
   /// object as a memory buffer.
@@ -75,15 +75,15 @@ public:
   /// Add an MLIR module to the execution engine. This will perform slicing for
   /// every kernel and generate self-contained libraries. `only` is a list of
   /// kernels to process, if empty, adds all the kernels in the module.
-  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<KernelOp> only = {});
+  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<FuncOp> only = {});
 
   /// Look up a kernel and return it as a CompiledKernel object if we can find
   /// it.
-  ErrorOr<CompiledKernel> lookup(KGEN::KernelOp kernel);
+  ErrorOr<CompiledKernel> lookup(KGEN::FuncOp kernel);
 
   /// Look up the opaque wrapper for a kernel and return it as a CompiledKernel
   /// object.
-  ErrorOr<CompiledKernel> lookupOpaqueWrapper(KGEN::KernelOp kernel);
+  ErrorOr<CompiledKernel> lookupOpaqueWrapper(KGEN::FuncOp kernel);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);

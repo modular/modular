@@ -3,9 +3,9 @@
 // COM: Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
 // COM: = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
 
-// CHECK-LABEL: kgen.kernel @erf
+// CHECK-LABEL: kgen.func @erf
 // CHECK: %[[X:.*]]:
-kgen.kernel @erf(%x: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.func @erf(%x: !meta.scalar<f32>) -> !meta.scalar<f32> {
   // CHECK: %[[CST:.*]] = pop.constant(1.1283791670955099 : f64) : !meta.scalar<f32>
   %c0 = pop.constant(1.12837916709551) : !meta.scalar<f32>
   // CHECK: %[[CST0:.*]] = pop.constant(-0.37612638903180001 : f64) : !meta.scalar<f32>

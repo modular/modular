@@ -242,20 +242,16 @@ The first one returns an i8 value corresponding to the enums in `DType`.  The la
 
 One key idea in the design is that we can have multiple implementations of a generator interface.  This means that we need to be able to separate the declaration of a generator interface from the implementations of it.  We need, for example:
 
-
-
-1. ✅[Issue #1086](https://github.com/modularml/modular/issues/1086) The ability to declare a generator interface.  This is the `kgen.kernel.interface` thing mentioned in the whitepaper.  Given this, we need `kernel` declarations to be able to say which ones they are implementing, and we need type checking to make sure the declaration and implementation are compatible.  There isn’t a perfect analog for this CIRCT, the closest is [hw.module.generated](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L287) which refers to a generator declaration, but this is a conceptually different thing.
+1. ✅[Issue #1086](https://github.com/modularml/modular/issues/1086) The ability to declare a generator interface.  This is the `kgen.generator.interface` thing mentioned in the whitepaper.  Given this, we need `generator` declarations to be able to say which ones they are implementing, and we need type checking to make sure the declaration and implementation are compatible.  There isn’t a perfect analog for this CIRCT, the closest is [hw.module.generated](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L287) which refers to a generator declaration, but this is a conceptually different thing.
 2. ✅Add support for remapping concrete information at call sites through to generic things in interface definitions by binding types at the call site to generic parameters on the declaration side.  This requires being able to pass down parameters, requires reifiying now-concrete types with the expectations of the generator:
 
     ```mlir
-    kgen.kernel.interface @thing<dtype=?>(%dest: !meta.buffer<?xdtype>)
+    kgen.generator.interface @thing<dtype=?>(%dest: !meta.buffer<?xdtype>)
           ...
     %dstCast = meta.buffer.cast %dest to buffer<?xi32>
     meta.call @thing<i32>(%dstCast)
 
     ```
-
-
 
 ## ✅ Constraints for Generators + Interfaces
 

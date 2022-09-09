@@ -78,7 +78,7 @@ public:
       "kernel", cl::desc("Specifies the kernels to handle. Defaults to an "
                          "empty list, which will do nothing.")};
 
-  Optional<CommandLineKernel> shouldHandleKernel(KGEN::KernelOp kernel) const {
+  Optional<CommandLineKernel> shouldHandleKernel(KGEN::FuncOp kernel) const {
     auto found = llvm::find_if(kernels, [&](const CommandLineKernel &ek) {
       return ek.name == kernel.getName();
     });

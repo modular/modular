@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains core logic to lower a file full of kernel into concrete
-// implementations of the kernels.
+// This file contains core logic to parameterized generators into concrete
+// function implementations.
 //
 //===----------------------------------------------------------------------===//
 
@@ -41,10 +41,10 @@ class ElaborationDiagnostic;
 /// with the reason why it failed.
 using CalleeExpansionError = std::pair<Location, ElaborationDiagnostic>;
 
-/// This class represents the reason that a kernel or generator could not be
-/// elaborated.  It is either a local problem in the kernel (e.g. an operator
+/// This class represents the reason that a  generator could not be elaborated.
+///  It is either a local problem in the generator (e.g. an operator
 /// defining a parameter that is unknown) or it is a call to another set of
-/// kernel/generators that had problems expanding.
+/// generators that had problems expanding.
 class ElaborationDiagnostic {
 public:
   ElaborationDiagnostic(Location failureLoc, Error error)
@@ -85,61 +85,60 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ElaboratedKernel class definition
+// ElaboratedGenerator class definition
 //===----------------------------------------------------------------------===//
 
 namespace {
 /// This class keeps track of one result from binding a generator to a set of
-/// input parameters.  It holds both the kernel that gets produced as well as
+/// input parameters.  It holds both the func that gets produced as well as
 /// the (transitive) set of generator bindings used to create it.  This is used
-/// to ensure that further derived kernels are only done with consistent
-/// bindings.
-class ElaboratedKernel {
+/// to ensure that further-derived generators are only elaborated with
+/// consistent bindings.
+class ElaboratedGenerator {
 public:
-  /// This is the kernel that is produced.
-  KernelOp kernel;
+  /// This is the func that is produced.
+  FuncOp func;
 
-  /// These are the bindings used to produce the kernel.  The results are
+  /// These are the bindings used to produce the func.  The results are
   /// transitively flattened, so we don't need to maintain a tree of bindings.
-  SmallDenseMap<DeclAndInputParamsPair, KernelOp> bindings;
+  SmallDenseMap<DeclAndInputParamsPair, FuncOp> bindings;
 
   /// If we have a binding for the specified generator+InputParamSet, return it,
   /// otherwise return null.
-  KernelOp getBinding(DeclAndInputParamsPair key) const {
+  FuncOp getBinding(DeclAndInputParamsPair key) const {
     auto it = bindings.find(key);
-    return it != bindings.end() ? it->second : KernelOp();
+    return it != bindings.end() ? it->second : FuncOp();
   }
 
-  /// Return true if the set of bindings in this elaborated kernel are
+  /// Return true if the set of bindings in this elaborated func are
   /// consistent with the specified set of bindings.
-  bool isConsistentWith(const ElaboratedKernel &other) const;
+  bool isConsistentWith(const ElaboratedGenerator &other) const;
 
   /// Declare that we're resolving the specified `declAndInputParams` to a
   /// specified callee.  The callee is known to have bindings that are
   /// consistent with ours, but may have additional entries to merge in.
   void addBinding(DeclAndInputParamsPair declAndInputParams,
-                  const ElaboratedKernel &newCallee);
+                  const ElaboratedGenerator &newCallee);
 
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  void addOneBinding(DeclAndInputParamsPair declAndInputParams,
-                     KernelOp result) {
+  void addOneBinding(DeclAndInputParamsPair declAndInputParams, FuncOp result) {
     auto &entry = bindings[declAndInputParams];
-    assert((entry == KernelOp() || entry == result) &&
+    assert((entry == FuncOp() || entry == result) &&
            "merged bindings must be consistent with each other");
     entry = result;
   }
 };
 } // namespace
 
-void ElaboratedKernel::dump() const {
-  if (!kernel) {
-    llvm::errs() << "NULL ElaboratedKernel\n";
+void ElaboratedGenerator::dump() const {
+  if (!func) {
+    llvm::errs() << "NULL ElaboratedGenerator\n";
     return;
   }
 
-  llvm::errs() << "ElaboratedKernel @" << KernelOp(kernel).getName() << "\n";
+  llvm::errs() << "ElaboratedGenerator @" << FuncOp(func).getName() << "\n";
   unsigned entryNo = 0;
   for (auto entry : bindings) {
     StringAttr name = SymbolTable::getSymbolName(entry.first.first);
@@ -148,11 +147,12 @@ void ElaboratedKernel::dump() const {
   }
 }
 
-/// Return true if the set of bindings in this elaborated kernel are
+/// Return true if the set of bindings in this elaborated func are
 /// consistent with the specified set of bindings.
-bool ElaboratedKernel::isConsistentWith(const ElaboratedKernel &other) const {
+bool ElaboratedGenerator::isConsistentWith(
+    const ElaboratedGenerator &other) const {
   for (auto &binding : bindings) {
-    if (KernelOp result = other.getBinding(binding.first))
+    if (FuncOp result = other.getBinding(binding.first))
       if (result != binding.second)
         return false;
   }
@@ -162,11 +162,11 @@ bool ElaboratedKernel::isConsistentWith(const ElaboratedKernel &other) const {
 /// Declare that we're resolving the specified `declAndInputParams` to a
 /// specified callee.  The callee is known to have bindings that are
 /// consistent with ours, but may have additional entries to merge in.
-void ElaboratedKernel::addBinding(DeclAndInputParamsPair declAndInputParams,
-                                  const ElaboratedKernel &newCallee) {
+void ElaboratedGenerator::addBinding(DeclAndInputParamsPair declAndInputParams,
+                                     const ElaboratedGenerator &newCallee) {
 
   // Remember the generator+inputParams to resolved callee binding.
-  addOneBinding(declAndInputParams, newCallee.kernel);
+  addOneBinding(declAndInputParams, newCallee.func);
 
   // We know the callee is consistent with our current binding set, but it may
   // also have bound generators that we haven't seen yet.  Remember them.
@@ -174,8 +174,8 @@ void ElaboratedKernel::addBinding(DeclAndInputParamsPair declAndInputParams,
     addOneBinding(binding.first, binding.second);
 }
 
-using ElaboratedKernelOrCalleeError =
-    std::variant<ElaboratedKernel, CalleeExpansionError>;
+using ElaboratedGeneratorOrCalleeError =
+    std::variant<ElaboratedGenerator, CalleeExpansionError>;
 
 //===----------------------------------------------------------------------===//
 // Elaborator class definition
@@ -193,7 +193,7 @@ public:
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
 
-  // Check the kernel/generator call graph to reject any recursion.
+  // Check the generator call graph to reject any recursion.
   ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
@@ -201,16 +201,16 @@ public:
     return symbolTable.lookupNearestSymbolFrom(sourceModule, symbolRef);
   }
 
-  /// Return all instantiations of the specified declaration (a kernel,
+  /// Return all instantiations of the specified declaration (a func,
   /// generator, or interface) with the specified input parameter values.
   /// `insertionPoint` is always a point in the primary module where a new
-  /// kernel should be placed if necessary.
-  ArrayRef<ElaboratedKernelOrCalleeError>
+  /// func should be placed if necessary.
+  ArrayRef<ElaboratedGeneratorOrCalleeError>
   getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                        Operation *insertionPoint);
 
-  /// Insert a variant of an existing kernel into the primary file.
-  void insertKernelVariant(KernelOp existing, KernelOp newKernel);
+  /// Insert a variant of an existing func into the primary file.
+  void insertKernelVariant(FuncOp existing, FuncOp newFunc);
 
   ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
     auto it = interfaceImpls.find(itf.getNameAttr());
@@ -218,26 +218,27 @@ public:
   }
 
 private:
-  /// Specialize a kernel body, generating one variant or each viable
-  /// instantiation of that body.  Kernels do not have parameters, but they can
-  /// invoke interfaces etc which can cause them to produce multiple variants.
+  /// Specialize a func body, generating one variant or each viable
+  /// instantiation of that body.  Funcs do not have input parameters, but they
+  /// can invoke interfaces etc which can cause them to produce multiple
+  /// variants.
   ///
   /// SourceModule indicates which module in the included library this
   /// originally came from (likely not the primary module).
-  SmallVector<ElaboratedKernelOrCalleeError>
-  specializeKernel(KernelOp kernel, ModuleOp sourceModule);
+  SmallVector<ElaboratedGeneratorOrCalleeError>
+  specializeFunc(FuncOp func, ModuleOp sourceModule);
 
-  /// Specialize a kernel generator with the specified input parameters and
-  /// return the generated kernel.  `insertionPoint` is always a point in the
-  /// primary module where a new kernel should be placed if necessary.
-  SmallVector<ElaboratedKernelOrCalleeError>
+  /// Specialize a generator with the specified input parameters and return the
+  /// generated func.  `insertionPoint` is always a point in the primary module
+  /// where a new func should be placed if necessary.
+  SmallVector<ElaboratedGeneratorOrCalleeError>
   specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
-  /// Specialize a kernel interface with the specified input parameters and
-  /// return the generated kernel.  `insertionPoint` is always a point in the
-  /// primary module where a new kernel should be placed if necessary.
-  SmallVector<ElaboratedKernelOrCalleeError>
+  /// Specialize a generator interface with the specified input parameters and
+  /// return the generated func.  `insertionPoint` is always a point in the
+  /// primary module where a new func should be placed if necessary.
+  SmallVector<ElaboratedGeneratorOrCalleeError>
   specializeInterface(DeclAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
@@ -259,23 +260,24 @@ private:
   DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
 
   /// This is a cache of already-instantiated declarations.  The key is the
-  /// kernel/generator/interface and input parameters, the result are
-  /// all-possible kernels that could be generated from this.
-  DenseMap<DeclAndInputParamsPair, SmallVector<ElaboratedKernelOrCalleeError>>
+  /// generator/interface and input parameters, the result are all-possible
+  /// funcs that could be generated from this.
+  DenseMap<DeclAndInputParamsPair,
+           SmallVector<ElaboratedGeneratorOrCalleeError>>
       generatedKernels;
 
-  /// This keeps track of kernels that were found to be non viable and need to
+  /// This keeps track of funcs that were found to be non viable and need to
   /// be removed.  Their body block is empty (no terminator) so they are known
   /// to be invalid.  We keep them around to the end of elaboration to avoid
   /// invalidating iterators.
-  std::vector<KernelOp> kernelsToRemove;
+  std::vector<FuncOp> funcsToRemove;
 };
 } // namespace
 
-/// Insert a variant of an existing kernel into the primary file.
-void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
+/// Insert a variant of an existing func into the primary file.
+void Elaborator::insertKernelVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
-  getPrimaryModuleSymbolTable().insert(newKernel,
+  getPrimaryModuleSymbolTable().insert(newFunc,
                                        /*insertionPoint*/ ++insertPt);
 }
 
@@ -285,51 +287,51 @@ void Elaborator::insertKernelVariant(KernelOp existing, KernelOp newKernel) {
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
-/// and simplify operations in a kernel based on those values.  If an error
+/// and simplify operations in a func based on those values.  If an error
 /// happens during rewriting, the diagnostic is filled in and failure() is
 /// returned.
 class ParameterRewriter : public ParameterEvaluator {
 public:
-  ParameterRewriter(Elaborator &elaborator, KernelOp kernel,
-                    ModuleOp sourceModule,
+  ParameterRewriter(Elaborator &elaborator, FuncOp func, ModuleOp sourceModule,
                     SmallVector<Operation *> opsToRewrite)
       : elaborator(elaborator), sourceModule(sourceModule),
         opsToRewrite(std::move(opsToRewrite)) {
-    elaboratedKernel.kernel = kernel;
+    elaboratedGenerator.func = func;
   }
 
-  /// Create a clone of this rewriter, but refer with a clone of the kernel.
-  /// This uses operationMap to remap our state onto the newly created kernel.
+  /// Create a clone of this rewriter, but refer with a clone of the func.
+  /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
 
-  /// Process all the `opsToRewrite`, simplifying this kernel.  If new variants
-  /// of this kernel are necessary, they are added to rewriterWorklist.
+  /// Process all the `opsToRewrite`, simplifying this func.  If new variants
+  /// of this func are necessary, they are added to rewriterWorklist.
   LogicalResult
   rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
 
-  /// Return the kernel we're generating into, along with its bindings.
-  ElaboratedKernel takeElaboratedKernel() {
+  /// Return the func we're generating into, along with its bindings.
+  ElaboratedGenerator takeElaboratedGenerator() {
     assert(!diagnostic.has_value() &&
-           "can't get the result kernel when a diagnostic was generated");
-    return std::move(elaboratedKernel);
+           "can't get the result func when a diagnostic was generated");
+    return std::move(elaboratedGenerator);
   }
 
-  /// If elaboration of this kernel fails, then the client can get the error
-  /// out.  This also deletes the dead husk of the kernel which may not even
+  /// If elaboration of this func fails, then the client can get the error
+  /// out.  This also deletes the dead husk of the func which may not even
   /// verify correctly.
   CalleeExpansionError takeDiagnosticAndEraseKernel() {
     assert(diagnostic.has_value() &&
            "cannot get diagnostic when none was generated");
-    // The kernel is not viable so we need to delete it.  This op can appear in
-    // various maps though, so instead of actually deleting it, we just delete
-    // its body.  The cleanup pass at the end of elaboration will remove it.
-    elaboratedKernel.kernel.getBodyBlock()->clear();
-    return CalleeExpansionError(elaboratedKernel.kernel->getLoc(),
+    // The generator is not viable so we need to delete it.  This op can appear
+    // in various maps though, so instead of actually deleting it, we just
+    // delete its body.  The cleanup pass at the end of elaboration will remove
+    // it.
+    elaboratedGenerator.func.getBodyBlock()->clear();
+    return CalleeExpansionError(elaboratedGenerator.func->getLoc(),
                                 std::move(diagnostic.value()));
   }
 
-  /// Generate a error expanding this kernel.  The location specified is the
+  /// Generate a error expanding this generator.  The location specified is the
   /// operation with the problem, and the message is the problem with it.
   LogicalResult error(Location loc, Error message) {
     assert(!diagnostic.has_value() && "Already emitted an error");
@@ -337,10 +339,10 @@ public:
     return failure();
   }
 
-  /// Generate an error expanding this kernel for a call expansion problem.  The
-  /// location specified is for the call.  Each entry in calleeErrors includes
-  /// the location of the declaration that failed to expand along with why it
-  /// failed.
+  /// Generate an error expanding this generator for a call expansion problem.
+  /// The location specified is for the call.  Each entry in calleeErrors
+  /// includes the location of the declaration that failed to expand along with
+  /// why it failed.
   LogicalResult errorCalling(Location callLoc,
                              ArrayRef<CalleeExpansionError> calleeErrors) {
     assert(!diagnostic.has_value() && "Already emitted an error");
@@ -356,23 +358,23 @@ private:
                               SmallVectorImpl<ParameterRewriter> &rewriters);
   void completeCallOpProcessing(CallOp call,
                                 DeclAndInputParamsPair calleeAndInputParams,
-                                const ElaboratedKernel &newCallee);
+                                const ElaboratedGenerator &newCallee);
   void spawnNewKernelClone(CallOp call,
                            DeclAndInputParamsPair calleeAndInputParams,
-                           const ElaboratedKernel &callee,
+                           const ElaboratedGenerator &callee,
                            SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
 
   /// This is maintains global information about the file we're generating into.
   Elaborator &elaborator;
 
-  /// This indicates which module this kernel originally came from (e.g. one of
+  /// This indicates which module this func originally came from (e.g. one of
   /// the imported files).  This is important to know so we can correctly
   /// resolve callee symbols.
   ModuleOp sourceModule;
 
-  /// This is the kernel we're working on.
-  ElaboratedKernel elaboratedKernel;
+  /// This is the generator -> func we're working on.
+  ElaboratedGenerator elaboratedGenerator;
 
   /// This is a diagnostic explaining the expansion failure if something goes
   /// wrong.
@@ -383,18 +385,18 @@ private:
 };
 } // namespace
 
-/// Create a clone of this rewriter, but refer with a clone of the kernel.
-/// This uses operationMap to remap our state onto the newly created kernel.
+/// Create a clone of this rewriter, but refer with a clone of the func.
+/// This uses operationMap to remap our state onto the newly created func.
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
     : ParameterEvaluator(existing), elaborator(existing.elaborator),
       sourceModule(existing.sourceModule),
-      elaboratedKernel(existing.elaboratedKernel) {
-  // Remap the kernel operation.
-  elaboratedKernel.kernel =
-      cast<KernelOp>(operationMap[existing.elaboratedKernel.kernel]);
-  assert(elaboratedKernel.kernel && "didn't remap kernel correctly");
+      elaboratedGenerator(existing.elaboratedGenerator) {
+  // Remap the func operation.
+  elaboratedGenerator.func =
+      cast<FuncOp>(operationMap[existing.elaboratedGenerator.func]);
+  assert(elaboratedGenerator.func && "didn't remap func correctly");
 
   // Remap the operation worklist.
   opsToRewrite.reserve(existing.opsToRewrite.size());
@@ -426,7 +428,7 @@ LogicalResult ParameterRewriter::rewriteOps(
     else
       result = processGenericOp(op);
 
-    // If processing any operation failed, then this entire kernel elaboration
+    // If processing any operation failed, then this entire func elaboration
     // failed.
     if (failed(result))
       return failure();
@@ -437,7 +439,7 @@ LogicalResult ParameterRewriter::rewriteOps(
   // emitted.
   bool hadError = false;
   mlir::ScopedDiagnosticHandler diagHandler(
-      elaboratedKernel.kernel.getContext(),
+      elaboratedGenerator.func.getContext(),
       [&](Diagnostic &diag) -> LogicalResult {
         (void)error(diag.getLocation(),
                     Twine("verification error: ") + diag.str());
@@ -445,7 +447,7 @@ LogicalResult ParameterRewriter::rewriteOps(
         return success();
       });
 
-  LogicalResult verifyResult = verify(elaboratedKernel.kernel);
+  LogicalResult verifyResult = verify(elaboratedGenerator.func);
   assert(hadError == failed(verifyResult) && "Result of verify is unexpected");
   return verifyResult;
 }
@@ -520,7 +522,7 @@ LogicalResult ParameterRewriter::processCallOp(
   if (!inputParamKey)
     return failure();
 
-  // Instantiate the callee into one or more KernelOp's, depending on what the
+  // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
   auto callee = dyn_cast_or_null<KGENDeclInterface>(
       elaborator.lookupCallee(call.getCalleeAttr(), sourceModule));
@@ -533,41 +535,42 @@ LogicalResult ParameterRewriter::processCallOp(
 
   // If we already have a binding for this decl/inputParam set, then reuse the
   // consistent callee.
-  if (KernelOp callee = elaboratedKernel.getBinding(calleeDeclAndInputParams)) {
-    ElaboratedKernel elaboratedCallee;
-    elaboratedCallee.kernel = callee;
+  if (FuncOp callee =
+          elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
+    ElaboratedGenerator elaboratedCallee;
+    elaboratedCallee.func = callee;
     completeCallOpProcessing(call, calleeDeclAndInputParams, elaboratedCallee);
     return success();
   }
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
-  ArrayRef<ElaboratedKernelOrCalleeError> newCalleesRef =
+  ArrayRef<ElaboratedGeneratorOrCalleeError> newCalleesRef =
       elaborator.getAllInstantiations(calleeDeclAndInputParams,
-                                      elaboratedKernel.kernel);
+                                      elaboratedGenerator.func);
 
-  // Copy the list of kernels instead of referring to the cache entry to avoid
+  // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
-  SmallVector<ElaboratedKernelOrCalleeError> newCallees(newCalleesRef.begin(),
-                                                        newCalleesRef.end());
+  SmallVector<ElaboratedGeneratorOrCalleeError> newCallees(
+      newCalleesRef.begin(), newCalleesRef.end());
 
   // If we found more than one callee to produce then we need to spawn
-  // multiple versions of the kernel we are currently constructing, each
+  // multiple versions of the func we are currently constructing, each
   // which get a different callee.
-  ElaboratedKernel thisCallee;
-  for (const ElaboratedKernelOrCalleeError &candidate : newCallees) {
+  ElaboratedGenerator thisCallee;
+  for (const ElaboratedGeneratorOrCalleeError &candidate : newCallees) {
     // Ignore erroneous callees.
     if (std::holds_alternative<CalleeExpansionError>(candidate))
       continue;
-    // Ignore the candidate if the elaborated kernel is inconsistent with our
+    // Ignore the candidate if the elaborated func is inconsistent with our
     // current bindings.
-    const ElaboratedKernel &calleeCandidate =
-        std::get<ElaboratedKernel>(candidate);
-    if (!calleeCandidate.isConsistentWith(elaboratedKernel))
+    const ElaboratedGenerator &calleeCandidate =
+        std::get<ElaboratedGenerator>(candidate);
+    if (!calleeCandidate.isConsistentWith(elaboratedGenerator))
       continue;
 
     // If this is the first viable candidates, then we will pursue it locally.
-    if (!thisCallee.kernel)
+    if (!thisCallee.func)
       thisCallee = calleeCandidate;
     else
       /// All other callees gets spawned as sub-evaluators.
@@ -576,7 +579,7 @@ LogicalResult ParameterRewriter::processCallOp(
   }
 
   // If all the expansions failed, then this call fails overall.
-  if (!thisCallee.kernel) {
+  if (!thisCallee.func) {
     SmallVector<CalleeExpansionError> errors;
     for (const auto &value : newCalleesRef)
       errors.push_back(std::get<CalleeExpansionError>(value));
@@ -590,12 +593,12 @@ LogicalResult ParameterRewriter::processCallOp(
 
 void ParameterRewriter::completeCallOpProcessing(
     CallOp call, DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedKernel &newCallee) {
+    const ElaboratedGenerator &newCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
-  elaboratedKernel.addBinding(calleeAndInputParams, newCallee);
+  elaboratedGenerator.addBinding(calleeAndInputParams, newCallee);
 
-  KernelOp newCalleeKernel = newCallee.kernel;
+  FuncOp newCalleeFunc = newCallee.func;
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
@@ -606,7 +609,7 @@ void ParameterRewriter::completeCallOpProcessing(
   // the old one.
   OpBuilder b(call);
   auto newCall = b.create<CallOp>(
-      call.getLoc(), resultTypes, newCalleeKernel.getNameAttr(),
+      call.getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
       /*input params*/ ArrayRef<ParamBindAttr>(),
       /*output params*/ call.getParamDecls(), call.getOperands());
 
@@ -617,7 +620,7 @@ void ParameterRewriter::completeCallOpProcessing(
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
        llvm::zip(newCall.getParamDecls(),
-                 newCalleeKernel.getReturnOp().getParameters()))
+                 newCalleeFunc.getReturnOp().getParameters()))
     setParameterValue(decl.cast<ParamDeclAttr>(),
                       bindValue.cast<ParamBindAttr>().getValue());
 }
@@ -629,22 +632,22 @@ void ParameterRewriter::completeCallOpProcessing(
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewKernelClone(
     CallOp call, DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedKernel &callee,
+    const ElaboratedGenerator &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
 
-  // Start by cloning the current WIP kernel to a new copy of it.
+  // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
   DenseMap<Operation *, Operation *> operationMap;
-  auto newKernel = cast<KernelOp>(
-      cloneOperation(elaboratedKernel.kernel, blocksAndValues, operationMap));
+  auto newFunc = cast<FuncOp>(
+      cloneOperation(elaboratedGenerator.func, blocksAndValues, operationMap));
 
-  // Insert the kernel into the output file and auto-unique the symbol.
-  elaborator.insertKernelVariant(elaboratedKernel.kernel, newKernel);
+  // Insert the func into the output file and auto-unique the symbol.
+  elaborator.insertKernelVariant(elaboratedGenerator.func, newFunc);
 
   // Generate the new rewriter which will process this.
   auto &newRewriter = rewriters.emplace_back(*this, operationMap);
 
-  // Change the future of this kernel by resolving the call in the new kernel to
+  // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
   auto newCall = cast<CallOp>(operationMap[call]);
   newRewriter.completeCallOpProcessing(newCall, calleeAndInputParams, callee);
@@ -666,7 +669,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    // Preserve but ignore the 'paramDecls' attribute on KernelOp.
+    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
     if (namedAttr.getName() == "paramDecls") {
       newAttrs.push_back(namedAttr);
       continue;
@@ -744,18 +747,21 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   return b.getStringAttr(result);
 }
 
-/// Specialize a kernel body, generating one variant or each viable
-/// instantiation of that body.  Kernels do not have parameters, but they can
+/// Specialize a func body, generating one variant or each viable
+/// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
-SmallVector<ElaboratedKernelOrCalleeError>
-Elaborator::specializeKernel(KernelOp kernel, ModuleOp sourceModule) {
+///
+/// FIXME(Issue##2703): This should go away completely.
+///
+SmallVector<ElaboratedGeneratorOrCalleeError>
+Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
   /// Get a partial ordering of parameter definitions and uses that is listed
   /// "top down" in our evaluation order.
   SmallVector<Operation *> opsToRewrite;
   {
-    auto paramInfo = ParameterDeclsAndUses::calculate(kernel);
+    auto paramInfo = ParameterDeclsAndUses::calculate(func);
     if (failed(paramInfo)) {
-      kernel->emitError("verification error for kernel");
+      func->emitError("verification error for func");
       return {};
     }
     opsToRewrite = paramInfo->getUsingAndDeclaringOps();
@@ -765,36 +771,35 @@ Elaborator::specializeKernel(KernelOp kernel, ModuleOp sourceModule) {
   // pop_back.
   std::reverse(opsToRewrite.begin(), opsToRewrite.end());
 
-  // Start by rewriting this kernel.
+  // Start by rewriting this func.
   SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(*this, kernel, sourceModule,
+  rewriterWorklist.emplace_back(*this, func, sourceModule,
                                 std::move(opsToRewrite));
 
-  // Rewriting kernels may generate other kernel clones.  If so, rewrite them,
+  // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
-  SmallVector<ElaboratedKernelOrCalleeError> results;
+  SmallVector<ElaboratedGeneratorOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
     auto rewriter = rewriterWorklist.pop_back_val();
 
-    // If elaborating the kernel succeeded, then we have a viable candidate.
+    // If elaborating the func succeeded, then we have a viable candidate.
     if (succeeded(rewriter.rewriteOps(rewriterWorklist))) {
-      results.push_back(rewriter.takeElaboratedKernel());
+      results.push_back(rewriter.takeElaboratedGenerator());
     } else {
-      // If elaborating the kernel fails, then remember the diagnostic (in case
+      // If elaborating the func fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
-      // a kernel that didn't make it.
+      // a func that didn't make it.
       results.push_back(rewriter.takeDiagnosticAndEraseKernel());
     }
   }
   return results;
 }
 
-/// Specialize a kernel generator with the specified input parameters and
-/// return the symbol name to use for the result, along with an array of
-/// ParamBindAttrs for the result attributes.  `insertionPoint` is always a
-/// point in the primary module where a new kernel should be placed if
-/// necessary.
-SmallVector<ElaboratedKernelOrCalleeError>
+/// Specialize a generator with the specified input parameters and return the
+/// symbol name to use for the result, along with an array of ParamBindAttrs for
+/// the result attributes.  `insertionPoint` is always a point in the primary
+/// module where a new func should be placed if necessary.
+SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
@@ -817,41 +822,41 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(insertionPoint);
-  auto newKernel = b.create<KernelOp>(
+  auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
       generator.getFunctionType(), resultParamDecls);
 
-  // Insert the newKernel into the symbol table which will then know about it,
+  // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  getPrimaryModuleSymbolTable().insert(newKernel);
+  getPrimaryModuleSymbolTable().insert(newFunc);
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
-  generator.getBody().cloneInto(&newKernel.getBody(), mapper);
+  generator.getBody().cloneInto(&newFunc.getBody(), mapper);
 
   // Provide definitions of the input parameters in the body block as bound
   // constants.
-  b.setInsertionPoint(&newKernel.getBodyBlock()->front());
+  b.setInsertionPoint(&newFunc.getBodyBlock()->front());
   for (auto [inputDecl, inputValue] :
        llvm::zip(inputParamDecls, inputParamValues)) {
     b.create<ParamDeclareOp>(generator.getLoc(),
                              inputDecl.cast<ParamDeclAttr>(), inputValue);
   }
 
-  // Now that we have a new synthesized generic kernel, run the rewriter
+  // Now that we have a new synthesized generic func, run the rewriter
   // over it to specialize its body.
   auto sourceModule = generator->getParentOfType<ModuleOp>();
-  return specializeKernel(newKernel, sourceModule);
+  return specializeFunc(newFunc, sourceModule);
 }
 
-/// Specialize a kernel interface with the specified input parameters and
-/// return the generated kernel.  `insertionPoint` is always a point in the
-/// primary module where a new kernel should be placed if necessary.
-SmallVector<ElaboratedKernelOrCalleeError>
+/// Specialize a generator interface with the specified input parameters and
+/// return the generated func.  `insertionPoint` is always a point in the
+/// primary module where a new func should be placed if necessary.
+SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                 Operation *insertionPoint) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
-  SmallVector<ElaboratedKernelOrCalleeError> result;
+  SmallVector<ElaboratedGeneratorOrCalleeError> result;
 
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
@@ -870,18 +875,19 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
-    auto kernels =
+    auto funcs =
         getAllInstantiations({gen, declAndInputParams.second}, insertionPoint);
-    result.append(kernels.begin(), kernels.end());
+    result.append(funcs.begin(), funcs.end());
   }
   return result;
 }
 
-/// Return all instantiations of the specified declaration (a kernel,
-/// generator, or interface) with teh specified input parameter values.
+/// Return all instantiations of the specified declaration (a  generator or
+/// interface) with the specified input parameter values.
+///
 /// `insertionPoint` is always a point in the primary module where a new
-/// kernel should be placed if necessary.
-ArrayRef<ElaboratedKernelOrCalleeError>
+/// func should be placed if necessary.
+ArrayRef<ElaboratedGeneratorOrCalleeError>
 Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  Operation *insertionPoint) {
   // Check the global cache of instantiations so we only ever instantiate a
@@ -891,7 +897,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     return cacheIt->second;
 
   Operation *decl = declAndInputParams.first;
-  SmallVector<ElaboratedKernelOrCalleeError> newCallees;
+  SmallVector<ElaboratedGeneratorOrCalleeError> newCallees;
   auto localError = [&](Error err) {
     auto loc = decl->getLoc();
     newCallees.push_back(
@@ -904,25 +910,26 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
       ParameterEvaluator::evaluateConstraints(declAndInputParams);
   if (failed(constraintResult)) {
     localError(constraintResult.takeError());
-  } else if (auto kernel = dyn_cast<KernelOp>(decl)) {
+  } else if (auto func = dyn_cast<FuncOp>(decl)) {
     auto sourceModule = decl->getParentOfType<ModuleOp>();
 
-    // If the kernel being referenced is in an included module, then copy it
+    // If the func being referenced is in an included module, then copy it
     // into the primary module (the primary module must be self contained by the
     // time we are done).  We can/should consider more flexible approaches, e.g.
-    // allowing 'extern' references to kernels.
+    // allowing 'extern' references to funcs.
+    // FIXME(Issue #2703): Stop doing this.
     if (sourceModule != primaryModule) {
-      /// Clone the library kernel and insert it at the insertion point.
-      Operation *cloned = kernel->clone();
+      /// Clone the library func and insert it at the insertion point.
+      Operation *cloned = func->clone();
       assert(insertionPoint && "must be set in non-primary modules");
       getPrimaryModuleSymbolTable().insert(cloned,
                                            Block::iterator(insertionPoint));
-      kernel = cast<KernelOp>(cloned);
+      func = cast<FuncOp>(cloned);
     }
 
     // FIXME: There is no need to specialize it.  All this does in practice is
-    // pull in other recursively referenced kernels.
-    newCallees = specializeKernel(kernel, sourceModule);
+    // pull in other recursively referenced funcs.
+    newCallees = specializeFunc(func, sourceModule);
   } else if (isa<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(declAndInputParams, insertionPoint);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
@@ -944,7 +951,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
 /// verifying that any common interfaces are the same.
 ParseResult Elaborator::collectInterfaces() {
   // Collect all the generator interfaces in the library modules, which will
-  // allow cross-checking them below. Also, collect all the kernel generators
+  // allow cross-checking them below. Also, collect all the generators
   // that implement a given interface, starting with the libraries.  These will
   // already have been type checked within the library.
   DenseMap<StringAttr, GeneratorInterfaceOp> libraryInterfaces;
@@ -1043,7 +1050,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
     auto callee = elaborator.lookupCallee(call.getCalleeAttr(), module);
     assert(callee && "couldn't resolve callee?");
     callStackCalls.push_back(call);
-    if (isa<KernelOp, GeneratorOp>(callee)) {
+    if (isa<FuncOp, GeneratorOp>(callee)) {
       // For direct calls, we immediately check the callee.
       if (checkRecursively(callee, module))
         failed = true;
@@ -1083,12 +1090,12 @@ ParseResult RecursionChecker::run() {
   return success();
 }
 
-/// Check the kernel/generator call graph to reject any recursion.
+/// Check the generator call graph to reject any recursion.
 ParseResult Elaborator::checkRecursion() {
   return RecursionChecker(*this).run();
 }
 
-/// When a top-level kernel failed to elaborate, this is used to recursively
+/// When a top-level generator failed to elaborate, this is used to recursively
 /// emit a tree of notes indicating why the elaboration tree failed.
 static void emitElaborationError(InFlightDiagnostic &diag,
                                  MutableArrayRef<CalleeExpansionError> errors,
@@ -1203,7 +1210,7 @@ M::elaborateGenerators(ModuleOp primary,
   if (elaborator.collectInterfaces())
     return failure();
 
-  // Check the kernel/generator call graph to reject any recursion.
+  // Check the generator call graph to reject any recursion.
   if (elaborator.checkRecursion())
     return failure();
 
@@ -1215,34 +1222,35 @@ M::elaborateGenerators(ModuleOp primary,
   // TODO: When we have access control, we can limit this to just the publicly
   // exposed ones.
   bool didFail = false;
-  for (auto kernelRoot : primary.getOps<GeneratorOp>()) {
+  for (auto generatorRoot : primary.getOps<GeneratorOp>()) {
     // Ignore generators with input parameters, they can't be turned into
-    // concrete kernels anyway, but will get specialized if anything uses them.
-    if (!kernelRoot.getInputParamDecls().empty())
+    // concrete funcs anyway, but will get specialized if anything uses them.
+    if (!generatorRoot.getInputParamDecls().empty())
       continue;
 
-    // Elaborate the kernel into concrete versions.
-    ArrayRef<ElaboratedKernelOrCalleeError> results =
-        elaborator.getAllInstantiations({kernelRoot, emptyInputParamKey},
-                                        kernelRoot);
+    // Elaborate the generator into concrete versions.
+    ArrayRef<ElaboratedGeneratorOrCalleeError> results =
+        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey},
+                                        generatorRoot);
 
-    // If the kernel failed to expand into /anything/ then emit an error.  Note
-    // that the kernel will have been deleted.
+    // If the generator failed to expand into /anything/ then emit an error.
+    // Note that the func will have been deleted.
     if (llvm::all_of(
-            results, [](const ElaboratedKernelOrCalleeError &result) -> bool {
+            results,
+            [](const ElaboratedGeneratorOrCalleeError &result) -> bool {
               return std::holds_alternative<CalleeExpansionError>(result);
             })) {
       // Collect the errors together.
       SmallVector<CalleeExpansionError> errors;
       for (const auto &value : results)
         errors.push_back(std::get<CalleeExpansionError>(value));
-      auto diag = emitError(errors[0].first, "failed to generate any kernels");
+      auto diag = emitError(errors[0].first, "no viable implementations found");
       emitElaborationError(diag, errors, /*indentDepth=*/2);
       didFail = true;
     }
   }
 
-  // If we failed to expand any kernel, propagate that failure.
+  // If we failed to expand any funcs, propagate that failure.
   if (didFail)
     return failure();
 
@@ -1254,11 +1262,11 @@ M::elaborateGenerators(ModuleOp primary,
       continue;
     }
 
-    /// Non viable kernels will be left with an empty/invalid body.  Remove them
+    /// Non viable funcs will be left with an empty/invalid body.  Remove them
     /// at the end of elaboration.
-    if (auto kernel = dyn_cast<KernelOp>(op))
-      if (kernel.getBodyBlock()->empty())
-        kernel->erase();
+    if (auto func = dyn_cast<FuncOp>(op))
+      if (func.getBodyBlock()->empty())
+        func->erase();
   }
 
   return success();
@@ -1269,7 +1277,7 @@ M::elaborateGenerators(ModuleOp primary,
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Run the kernel elaborator as a pass. The elaborator requires imports to be
+/// Run the elaborator as a pass. The elaborator requires imports to be
 /// resolved, so first resolve imports and then elaborate.
 class ElaborateGeneratorsPass
     : public ElaborateGeneratorsBase<ElaborateGeneratorsPass> {

@@ -11,7 +11,7 @@
 
 namespace M::KGEN {
 /// Emit the header for a kernel.
-LogicalResult emitHeaderForKernel(KernelOp kernel, StringRef filename);
+LogicalResult emitHeaderForKernel(FuncOp kernel, StringRef filename);
 } // namespace M::KGEN
 
 #endif // EMIT_KERNEL_HEADER_H

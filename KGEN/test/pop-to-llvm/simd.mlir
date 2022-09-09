@@ -3,7 +3,7 @@
 // Test trivial vector conversions to LLVM.
 
 !simd = !meta.simd<4, f32>
-kgen.kernel @trivial_conversions(%a: !simd, %b: !simd, %c: !simd, %d: !meta.simd<4, bool>) {
+kgen.func @trivial_conversions(%a: !simd, %b: !simd, %c: !simd, %d: !meta.simd<4, bool>) {
   // CHECK: llvm.intr.fabs
   %0 = pop.abs %a : !simd
   // CHECK: llvm.fneg
@@ -26,7 +26,7 @@ kgen.kernel @trivial_conversions(%a: !simd, %b: !simd, %c: !simd, %d: !meta.simd
 // -----
 
 // CHECK-LABEL: int_abs_simd
-kgen.kernel @int_abs_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+kgen.func @int_abs_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false
   %0 = pop.abs %arg0 : !meta.simd<4, si32>
   // CHECK: "llvm.intr.abs"(%{{.*}}, %[[FALSE]])
@@ -36,7 +36,7 @@ kgen.kernel @int_abs_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
 // -----
 
 // CHECK-LABEL: @int_neg_simd
-kgen.kernel @int_neg_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+kgen.func @int_neg_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(dense<0> : vector<4xi32>)
   %0 = pop.neg %arg0 : !meta.simd<4, si32>
   // CHECK: llvm.sub %[[ZERO]], %{{.*}}
@@ -46,7 +46,7 @@ kgen.kernel @int_neg_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
 // -----
 
 // CHECK-LABEL: @constant_simd
-kgen.kernel @constant_simd() -> !meta.simd<2, si32> {
+kgen.func @constant_simd() -> !meta.simd<2, si32> {
   // CHECK: llvm.mlir.constant(dense<0>
   %0 = pop.constant(dense<0> : vector<2xi32>) : !meta.simd<2, si32>
   kgen.return %0 : !meta.simd<2, si32>
@@ -55,7 +55,7 @@ kgen.kernel @constant_simd() -> !meta.simd<2, si32> {
 // -----
 
 // CHECK-LABEL: @constant_simd
-kgen.kernel @constant_simd() -> !meta.simd<2, f32> {
+kgen.func @constant_simd() -> !meta.simd<2, f32> {
   // CHECK: llvm.mlir.constant(dense<[1.{{0*}}e+00, 2.{{0*}}e+00]>
   %0 = pop.constant(dense<[1., 2.]> : vector<2xf32>) : !meta.simd<2, f32>
   kgen.return %0 : !meta.simd<2, f32>
@@ -64,7 +64,7 @@ kgen.kernel @constant_simd() -> !meta.simd<2, f32> {
 // -----
 
 // CHECK-LABEL: @simd_splat
-kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
+kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
   // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<2xf32>
@@ -77,7 +77,7 @@ kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
 // -----
 
 // CHECK-LABEL: @simd_splat
-kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
+kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
   // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<1xf32>
@@ -89,7 +89,7 @@ kgen.kernel @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
 // -----
 
 // CHECK-LABEL: @simd_extractelement
-kgen.kernel @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: index) -> !meta.scalar<f32> {
+kgen.func @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: index) -> !meta.scalar<f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
@@ -101,7 +101,7 @@ kgen.kernel @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: index) -> !meta
 // -----
 
 // CHECK-LABEL: @simd_insertelement
-kgen.kernel @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32>, %idx: index) -> !meta.simd<4, f32> {
+kgen.func @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32>, %idx: index) -> !meta.simd<4, f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
@@ -113,7 +113,7 @@ kgen.kernel @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32
 
 // -----
 
-kgen.kernel @simd_shuffle(%a: !meta.simd<2, f32>, %b: !meta.simd<2, f32>) -> !meta.simd<4, f32> {
+kgen.func @simd_shuffle(%a: !meta.simd<2, f32>, %b: !meta.simd<2, f32>) -> !meta.simd<4, f32> {
   // CHECK: llvm.shufflevector %{{.*}}, %{{.*}} [2, 3, 1, 0]
   %0 = pop.simd.shuffle %a, %b [2, 3, 1, 0] : !meta.simd<2, f32> -> !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>

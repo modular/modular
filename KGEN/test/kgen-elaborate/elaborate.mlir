@@ -3,16 +3,16 @@
 kgen.include "library-test.mlir"
 
 // This is left untouched.
-// CHECK-LABEL: kgen.kernel @test0<() -> outParam>() -> index {
+// CHECK-LABEL: kgen.func @test0<() -> outParam>() -> index {
 // CHECK-NEXT: %0 = kgen.param.constant = <1>
 // CHECK-NEXT:  kgen.return <outParam = 123456> %0 : index
 // CHECK-NEXT: }
-kgen.kernel @test0<() -> outParam>() -> index {
+kgen.func @test0<() -> outParam>() -> index {
   %0 = kgen.param.constant = <1>
   kgen.return <outParam = 123456> %0 : index
 }
 
-// CHECK-LABEL: kgen.kernel @parameter_use_chain_kernel()
+// CHECK-LABEL: kgen.func @parameter_use_chain_kernel()
 kgen.generator @parameter_use_chain() {
   // Uses r2 and defines r1
   kgen.param.declare r1 = <add(r2, 1)>
@@ -43,7 +43,7 @@ kgen.generator @parameter_use_chain() {
 kgen.generator @trivial_generator(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
-// CHECK-LABEL: kgen.kernel @trivial_generator_kernel(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.func @trivial_generator_kernel(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %arg0 : si32
 // CHECK-NEXT: }
 
@@ -58,7 +58,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 
   kgen.return<out = mul(size, 2)> %arg0 : si32
 }
-// CHECK-LABEL: kgen.kernel @"genA,size=42,type=f32,val=2"<() -> out>(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2"<() -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   %0 = kgen.param.constant  = <46>
 // CHECK-NEXT:   %1 = kgen.param.constant : dtype = <f32>
 // CHECK-NEXT:   %2 = kgen.param.constant : f32 = <2.000000e+00>
@@ -66,7 +66,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   kgen.return <out = 84> %arg0 : si32
 // CHECK-NEXT: }
 
-// CHECK-LABEL: kgen.kernel @"genA,size=19,type=si8,val=1.5"<() -> out>(%arg0: si32) -> si32 {
+// CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.5"<() -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:    %0 = kgen.param.constant  = <23>
 // CHECK-NEXT:    %1 = kgen.param.constant : dtype = <si8>
 // CHECK-NEXT:    %2 = kgen.param.constant : f32 = <1.500000e+00>
@@ -74,7 +74,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return <out = 38> %arg0 : si32
 // CHECK-NEXT:  }
 
-// CHECK-LABEL: kgen.kernel @call_generator_test_kernel
+// CHECK-LABEL: kgen.func @call_generator_test_kernel
 kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
    -> (si32, si32, si32, index, index) {
   // Can invoke the generator directly.
@@ -118,7 +118,7 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 // CHECK-NOT: kgen.generator.interface @genItf
 kgen.generator.interface @genItf<x -> y>(si32) -> si32
 
-// CHECK-LABEL: kgen.kernel @"genItf_impl1,x=42"<() -> y>(
+// CHECK-LABEL: kgen.func @"genItf_impl1,x=42"<() -> y>(
 // CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return <y = 43> %arg0 : si32
 // CHECK-NEXT: }
@@ -128,7 +128,7 @@ kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
   kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
-// CHECK-LABEL: kgen.kernel @"genItf_impl2,x=42"<() -> y>(
+// CHECK-LABEL: kgen.func @"genItf_impl2,x=42"<() -> y>(
 // CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return <y = 84> %arg0 : si32
 // CHECK-NEXT: }
@@ -138,11 +138,11 @@ kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
   kgen.return<y = mul(x, 2)> %arg0 : si32
 }
 
-// CHECK-LABEL: kgen.kernel @use_interface_kernel(
+// CHECK-LABEL: kgen.func @use_interface_kernel(
 // CHECK-NEXT: %0 = kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0)
 // CHECK-NEXT: %1 = kgen.param.constant = <43>
 
-// CHECK-LABEL: kgen.kernel @use_interface_kernel_0(%arg0: si32) -> index {
+// CHECK-LABEL: kgen.func @use_interface_kernel_0(%arg0: si32) -> index {
 // CHECK-NEXT:    %0 = kgen.call @"genItf_impl2,x=42"<() -> out>(%arg0) : (si32) -> si32
 // CHECK-NEXT:     %1 = kgen.param.constant = <84>
 kgen.generator @use_interface(%arg0: si32) -> index {
@@ -151,11 +151,11 @@ kgen.generator @use_interface(%arg0: si32) -> index {
   kgen.return %1 : index
 }
 
-// CHECK-LABEL: kgen.kernel @use_kernel_using_interface_kernel(%arg0: si32) -> index {
+// CHECK-LABEL: kgen.func @use_kernel_using_interface_kernel(%arg0: si32) -> index {
 // CHECK-NEXT:   %0 = kgen.call @use_interface_kernel(%arg0) : (si32) -> index
 // CHECK-NEXT:   kgen.return  %0 : index
 
-// CHECK-LABEL: kgen.kernel @use_kernel_using_interface_kernel_1(%arg0: si32) -> index {
+// CHECK-LABEL: kgen.func @use_kernel_using_interface_kernel_1(%arg0: si32) -> index {
 // CHECK-NEXT:   %0 = kgen.call @use_interface_kernel_0(%arg0) : (si32) -> index
 // CHECK-NEXT:   kgen.return  %0 : index
 kgen.generator @use_kernel_using_interface(%arg0: si32) -> index {
@@ -168,29 +168,29 @@ kgen.generator @use_kernel_using_interface(%arg0: si32) -> index {
 // CHECK-NOT: @genItf2<x>()
 kgen.generator.interface @genItf2<x>()
 
-// CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
-// CHECK-LABEL: kgen.kernel @"genItf2_impl0,x=0"() {
+// CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
+// CHECK-LABEL: kgen.func @"genItf2_impl0,x=0"() {
 // CHECK-NEXT:   "impl0"() : () -> ()
 // CHECK-NEXT:   kgen.return
-// CHECK-NOT: kgen.kernel @"genItf2_impl0,x=1"() {
+// CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
 kgen.generator @genItf2_impl0<x>()
   constraints <[eq(x, 0), "x must be zero"]> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return
 }
 
-// CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
-// CHECK-LABEL: kgen.kernel @"genItf2_impl1,x=1"() {
+// CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
+// CHECK-LABEL: kgen.func @"genItf2_impl1,x=1"() {
 // CHECK-NEXT:   "impl1"() : () -> ()
 // CHECK-NEXT:   kgen.return
-// CHECK-NOT: kgen.kernel @"genItf2_impl1,x=0"()
+// CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
 kgen.generator @genItf2_impl1<x>()
   constraints <[eq(x, 1), "x must be 1"]> implements @genItf2 {
   "impl1"() : () -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @use_Itf2zero_kernel() {
+// CHECK-LABEL: kgen.func @use_Itf2zero_kernel() {
 // CHECK-NEXT:   kgen.call @"genItf2_impl0,x=0"() : () -> ()
 // CHECK-NEXT:   kgen.return
 kgen.generator @use_Itf2zero() {
@@ -198,7 +198,7 @@ kgen.generator @use_Itf2zero() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @use_Itf2one_kernel() {
+// CHECK-LABEL: kgen.func @use_Itf2one_kernel() {
 // CHECK-NEXT:   kgen.call @"genItf2_impl1,x=1"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
@@ -212,7 +212,7 @@ kgen.generator @use_Itf2one() {
 kgen.generator.interface @genItf3<ty: dtype>()
 
 // This implementation is fine.
-// CHECK-LABEL: kgen.kernel @"genItf3_impl0,ty=f32"() {
+// CHECK-LABEL: kgen.func @"genItf3_impl0,ty=f32"() {
 kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
   "impl0"() : () -> ()
   kgen.return
@@ -228,7 +228,7 @@ kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
 }
 
 // This has a single viable implementation.
-// CHECK-LABEL: kgen.kernel @use_Itf3_kernel() {
+// CHECK-LABEL: kgen.func @use_Itf3_kernel() {
 // CHECK-NEXT:    kgen.call @"genItf3_impl0,ty=f32"()
 kgen.generator @use_Itf3() {
   kgen.call @genItf3<ty: dtype = f32>() : () -> ()
@@ -241,19 +241,19 @@ kgen.generator @use_Itf3() {
 // any particular generator/parameter set pair to expand one direction, reducing
 // exponential explosion.
 
-// CHECK-LABEL: kgen.kernel @track_expansions_kernel(%arg0: si32)
+// CHECK-LABEL: kgen.func @track_expansions_kernel(%arg0: si32)
 // CHECK-NEXT: kgen.call @"genItf_impl1,x=42"<() -> out>(%arg0) : (si32) -> si32
 // CHECK-NEXT: kgen.call @"genItf_impl1,x=42"<() -> out1>(%arg0) : (si32) -> si32
 // CHECK-NEXT: kgen.call @use_interface_kernel(%arg0)
 
-// CHECK-NOT: kgen.kernel @track_expansions
+// CHECK-NOT: kgen.func @track_expansions
 
-// CHECK-LABEL: kgen.kernel @track_expansions_kernel_2(%arg0: si32)
+// CHECK-LABEL: kgen.func @track_expansions_kernel_2(%arg0: si32)
 // CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
 // CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
 // CHECK-NEXT: kgen.call @use_interface_kernel_0(%arg0)
 
-// CHECK-NOT: kgen.kernel @track_expansions
+// CHECK-NOT: kgen.func @track_expansions
 
 kgen.generator @track_expansions(%arg0: si32) {
   // Within any generated kernel genItf should expand the same way.
@@ -270,7 +270,7 @@ kgen.generator @track_expansions(%arg0: si32) {
 
 // Test that parameter and result argument types get rewritten and specialized.
 
-// CHECK-LABEL: kgen.kernel @"float_constant_f32,value=1.5,type=f32"() -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !meta.scalar<f32> {
 // ...
 // CHECK:    %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<f32>
 // CHECK:    kgen.return  %2 : !meta.scalar<f32>
@@ -283,7 +283,7 @@ kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<ty
   kgen.return %2 : !meta.scalar<type>
 }
 
-// CHECK-LABEL: kgen.kernel @test_f32_kernel() -> f32 {
+// CHECK-LABEL: kgen.func @test_f32_kernel() -> f32 {
 // CHECK:    %0 = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !meta.scalar<f32>
 // CHECK:    %1 = meta.cast_to_builtin %0 : !meta.scalar<f32> to f32
 kgen.generator @test_f32() -> f32 {
@@ -316,7 +316,7 @@ kgen.generator @getSIMDLengthF64<dt: dtype -> length>()
   kgen.return <length = 2>
 }
 
-// CHECK-LABEL: kgen.kernel @paramAssertExample_kernel()
+// CHECK-LABEL: kgen.func @paramAssertExample_kernel()
 // CHECK-NEXT:    kgen.call @"getSIMDLengthF32,dt=f32"<() -> flen>()
 // CHECK-NEXT:    kgen.return
 kgen.generator @paramAssertExample() {
@@ -327,7 +327,7 @@ kgen.generator @paramAssertExample() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @parametricTypes_kernel(
+// CHECK-LABEL: kgen.func @parametricTypes_kernel(
 kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
   kgen.param.declare ty1: type = <!meta.scalar<dt>>
@@ -344,11 +344,11 @@ kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, 
   kgen.return
 }
 
-// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0: !meta.scalar<ui64>, %arg1: !meta.scalar<ui64>) -> !meta.scalar<ui64> {
+// CHECK-LABEL: kgen.func @"parametricAdd,ty=!meta.scalar<ui64>"(%arg0: !meta.scalar<ui64>, %arg1: !meta.scalar<ui64>) -> !meta.scalar<ui64> {
 // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.scalar<ui64>
 // CHECK-NEXT: kgen.return %0 : !meta.scalar<ui64>
 
-// CHECK-LABEL: kgen.kernel @"parametricAdd,ty=!meta.simd<2, f32>"(%arg0: !meta.simd<2, f32>, %arg1: !meta.simd<2, f32>) -> !meta.simd<2, f32> {
+// CHECK-LABEL: kgen.func @"parametricAdd,ty=!meta.simd<2, f32>"(%arg0: !meta.simd<2, f32>, %arg1: !meta.simd<2, f32>) -> !meta.simd<2, f32> {
 // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.simd<2, f32>
 // CHECK-NEXT: kgen.return %0 : !meta.simd<2, f32>
 

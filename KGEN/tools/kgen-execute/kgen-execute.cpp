@@ -45,8 +45,8 @@ struct ProcessBuffer {
       return failure(clOptions.reportError("could not parse input file"));
 
     SymbolTable symtab(*module);
-    auto lookupKernel = [&](StringRef kernelName) -> ErrorOr<KGEN::KernelOp> {
-      auto kernel = symtab.lookup<KGEN::KernelOp>(kernelName);
+    auto lookupKernel = [&](StringRef kernelName) -> ErrorOr<KGEN::FuncOp> {
+      auto kernel = symtab.lookup<KGEN::FuncOp>(kernelName);
       if (!kernel)
         return Error("could not find kernel '" + kernelName + "'.");
       return kernel;
@@ -61,7 +61,7 @@ struct ProcessBuffer {
       if (kernelOr.isError())
         return failure(clOptions.reportError(kernelOr.getError()));
 
-      KGEN::KernelOp kernel = *kernelOr;
+      KGEN::FuncOp kernel = *kernelOr;
       auto compiledKernelOr = execEngine.lookup(kernel);
       if (failed(compiledKernelOr))
         return failure(clOptions.reportError(compiledKernelOr.getError()));

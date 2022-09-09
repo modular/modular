@@ -8,7 +8,7 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 // -----
 
 // This yields a verification error when elaborated.
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
@@ -38,7 +38,7 @@ kgen.generator @genItf2_impl1<x>() implements @genItf2 {
 }
 
 // This has no expansions, so it should generate an error message.
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @use_Itf2two() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf2<x = 2>() : () -> ()
@@ -71,14 +71,14 @@ kgen.generator @use_Itf3two() {
 // expected-note @+1 {{no implementations of interface 'itf' found}}
 kgen.generator.interface @itf<x>()
 
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @k1() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @itf<x = 2>() : () -> ()
   kgen.return
 }
 
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @k2() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @k1() : () -> ()
@@ -96,7 +96,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
   kgen.return <length = 4>
 }
 
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @brokenVLenAssert() {
   kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
 
@@ -112,7 +112,7 @@ kgen.include "does-not-exist.mlir"
 
 // -----
 
-// expected-error @+1 {{failed to generate any kernels}}
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
 
