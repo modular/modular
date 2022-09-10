@@ -23,7 +23,7 @@ class ZAPOp<string mnemonic, list<Trait> traits = []>
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def BufferLoadOp : ZAPOp<"buffer.load", [
+def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
      ScalarOfSameDType<"buffer", "result">]> {
   let summary = "buffer load operation";
   let description = [{
@@ -49,7 +49,7 @@ def BufferLoadOp : ZAPOp<"buffer.load", [
 // BufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def BufferStoreOp : ZAPOp<"buffer.store", [
+def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
      ScalarOfSameDType<"buffer", "value">]> {
   let summary = "buffer store operation";
   let description = [{

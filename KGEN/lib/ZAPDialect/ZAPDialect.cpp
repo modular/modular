@@ -12,7 +12,7 @@ using namespace M::KGEN;
 // ZAPDialect
 //===----------------------------------------------------------------------===//
 
-void ZAPDialect::initialize() { registerOperations(); }
+void ZAP::ZAPDialect::initialize() { registerOperations(); }
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

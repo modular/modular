@@ -27,7 +27,7 @@ def ZAPDialect : Dialect {
     `meta` dialects in terms of abstraction level and which lower to them.
   }];
 
-  let cppNamespace = "::M::KGEN";
+  let cppNamespace = "::M::KGEN::ZAP";
 
   let extraClassDeclaration = [{
     /// Register all dialect operations.

@@ -16,6 +16,7 @@
 using namespace M;
 using namespace KGEN;
 using namespace POP;
+using namespace ZAP;
 
 namespace {
 
