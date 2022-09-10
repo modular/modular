@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MSupportML
+add_modular_mlir_library(MSupportML
   DType.cpp
   TensorShape.cpp
   TensorSpec.cpp

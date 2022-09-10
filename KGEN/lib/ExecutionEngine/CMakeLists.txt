@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENExecutionEngine
+add_modular_mlir_library(KGENExecutionEngine
   ExecutionEngine.cpp
 
   LINK_COMPONENTS
