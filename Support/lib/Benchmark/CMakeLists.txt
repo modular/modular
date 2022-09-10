@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MSupportBenchmark
+add_modular_mlir_library(MSupportBenchmark
   QuerySampleLibrary.cpp
   SystemUnderTest.cpp
 

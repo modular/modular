@@ -7,17 +7,17 @@
 set(KGEN_SOURCE_DIR ${MODULAR_SOURCE_DIR}/KGEN)
 set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
-# add_kgen_translation_library is a wrapper around add_modular_library that
+# add_kgen_translation_library is a wrapper around add_modular_mlir_library that
 # automatically links the library into kgen-translate.
 function(add_kgen_translation_library name)
   set_property(GLOBAL APPEND PROPERTY KGEN_TRANSLATION_LIBS ${name})
-  add_modular_library(${ARGV} DEPENDS modular-headers)
+  add_modular_mlir_library(${ARGV} DEPENDS modular-headers)
 endfunction()
 
-# add_kgen_library is a wrapper around add_modular_library
+# add_kgen_library is a wrapper around add_modular_mlir_library
 function(add_kgen_library name)
   set_property(GLOBAL APPEND PROPERTY KGEN_LIBS ${name})
-  add_modular_library(${ARGV} DEPENDS modular-headers)
+  add_modular_mlir_library(${ARGV} DEPENDS modular-headers)
 endfunction()
 
 add_subdirectory(include/KGEN)
