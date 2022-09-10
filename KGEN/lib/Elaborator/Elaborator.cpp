@@ -185,7 +185,10 @@ namespace {
 class Elaborator {
 public:
   Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
-      : primaryModule(primary), libraryModules(libraryModules), symbolTable() {}
+      : primaryModule(primary), libraryModules(libraryModules) {
+    // Initialize the primary symbol table.
+    (void)getPrimaryModuleSymbolTable();
+  }
 
   ModuleOp getPrimaryModule() const { return primaryModule; }
 
@@ -198,7 +201,7 @@ public:
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(SymbolRefAttr symbolRef, ModuleOp sourceModule) {
-    return symbolTable.lookupNearestSymbolFrom(sourceModule, symbolRef);
+    return symbolTables.lookupNearestSymbolFrom(sourceModule, symbolRef);
   }
 
   /// Return all instantiations of the specified declaration (a func,
@@ -215,6 +218,11 @@ public:
   ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
     auto it = interfaceImpls.find(itf.getNameAttr());
     return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  }
+
+  const DenseMap<GeneratorOp, FuncOp> &
+  getFirstConcreteFuncForGenerator() const {
+    return firstConcreteFuncForGenerator;
   }
 
 private:
@@ -243,7 +251,7 @@ private:
                       Operation *insertionPoint);
 
   SymbolTable &getPrimaryModuleSymbolTable() {
-    return symbolTable.getSymbolTable(primaryModule);
+    return symbolTables.getSymbolTable(primaryModule);
   }
 
 private:
@@ -253,7 +261,7 @@ private:
   ArrayRef<OwningOpRef<ModuleOp>> libraryModules;
 
   /// This symbol table allows efficient lookups in the primary module.
-  SymbolTableCollection symbolTable;
+  SymbolTableCollection symbolTables;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -266,11 +274,10 @@ private:
            SmallVector<ElaboratedGeneratorOrCalleeError>>
       generatedFuncs;
 
-  /// This keeps track of funcs that were found to be non viable and need to
-  /// be removed.  Their body block is empty (no terminator) so they are known
-  /// to be invalid.  We keep them around to the end of elaboration to avoid
-  /// invalidating iterators.
-  std::vector<FuncOp> funcsToRemove;
+  /// This map keeps track of the first func that a generator with no parameters
+  /// expanded into.  We rename it to have the same symbol as the original
+  /// generator in a post-pass.
+  DenseMap<GeneratorOp, FuncOp> firstConcreteFuncForGenerator;
 };
 } // namespace
 
@@ -717,7 +724,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
                                         ArrayRef<Attribute> inputParamValues) {
   Builder b(generator.getContext());
   if (inputParamValues.empty())
-    return b.getStringAttr(generator.getName() + "_kernel");
+    return b.getStringAttr(generator.getName() + "_concrete");
 
   std::string result;
   llvm::raw_string_ostream os(result);
@@ -846,7 +853,28 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // Now that we have a new synthesized generic func, run the rewriter
   // over it to specialize its body.
   auto sourceModule = generator->getParentOfType<ModuleOp>();
-  return specializeFunc(newFunc, sourceModule);
+  auto result = specializeFunc(newFunc, sourceModule);
+
+  // If the generator had no parameters, then we want to reuse the same name as
+  // the original generator.  We can't do that when we are building the concrete
+  // version though because we may have other calls to the generator and those
+  // calls get linked to the generator by their symbol.  Additionally,
+  // elaboration of any candidate could fail.
+  //
+  // To handle this, we let the symbol table autorename it, but keep track of
+  // the first successful implementation in a map.  We rename it back after the
+  // module has finished elaboration.
+  if (inputParamValues.empty()) {
+    for (auto &candidate : result) {
+      if (std::holds_alternative<ElaboratedGenerator>(candidate)) {
+        firstConcreteFuncForGenerator.insert(
+            {generator, std::get<ElaboratedGenerator>(candidate).func});
+        break;
+      }
+    }
+  }
+
+  return result;
 }
 
 /// Specialize a generator interface with the specified input parameters and
@@ -1254,6 +1282,17 @@ M::elaborateGenerators(ModuleOp primary,
   if (didFail)
     return failure();
 
+  // After removing all the generators, we'll rename any direct implementations
+  // of them to use their name.
+  DenseMap<StringAttr, StringAttr> funcsToRename;
+  for (auto [generator, func] : elaborator.getFirstConcreteFuncForGenerator()) {
+    // Rename the (auto-renamed) func to match the generator's name.
+    funcsToRename[func.getNameAttr()] = generator.getNameAttr();
+    // Make sure this isn't about to be removed below.
+    assert(!func.getBodyBlock()->empty() &&
+           "should only include successful expansions");
+  }
+
   // On success, we remove generators and generator interfaces from the file to
   // clean it up.
   for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
@@ -1268,6 +1307,27 @@ M::elaborateGenerators(ModuleOp primary,
       if (func.getBodyBlock()->empty())
         func->erase();
   }
+
+  // Perform any renaming at the end.  We cannot use the
+  // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
+  // unregistered operations.  It also doesn't support batch renaming.
+  primary->walk([&](Operation *op) {
+    // If this is a func being renamed, rename it.
+    if (auto func = dyn_cast<FuncOp>(op)) {
+      auto it = funcsToRename.find(func.getNameAttr());
+      if (it != funcsToRename.end())
+        func.setSymNameAttr(it->second);
+      return;
+    }
+
+    // If this is a call to a function that got renamed, update its target.
+    if (auto call = dyn_cast<CallOp>(op)) {
+      auto it = funcsToRename.find(call.getCalleeAttr().getLeafReference());
+      if (it != funcsToRename.end())
+        call.setCalleeAttr(FlatSymbolRefAttr::get(it->second));
+      return;
+    }
+  });
 
   return success();
 }
