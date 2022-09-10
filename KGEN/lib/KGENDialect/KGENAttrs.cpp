@@ -759,6 +759,11 @@ LogicalResult ParamOperatorAttr::verify(
       }))
     return emitError() << "operand type mismatch";
 
+  // This is the list of types we can apply == and set comparison to.
+  auto isEqualityComparableType = [&](Type ty) -> bool {
+    return ty.isIndex() || ty.isa<DTypeType>() || ty.isa<MLIRTypeType>();
+  };
+
   // Check invariants on the expression.
   switch (opcode) {
   case POC::Add:
@@ -796,11 +801,10 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
-    if (!operands[0].getType().isIndex() &&
-        !operands[0].getType().isa<DTypeType>()) {
+    if (!isEqualityComparableType(operands[0].getType()))
       return emitError() << "unsupported comparison type "
                          << operands[0].getType();
-    }
+
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
 
@@ -812,11 +816,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::IN:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
-    if (!operands[0].getType().isIndex() &&
-        !operands[0].getType().isa<DTypeType>()) {
+    if (!isEqualityComparableType(operands[0].getType()))
       return emitError() << "unsupported set comparison type "
                          << operands[0].getType();
-    }
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
@@ -1151,17 +1153,35 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
 
 /// Folds constants given a comparison function that returns bool.  The client
 /// must handle signedness etc.
-static Attribute foldCompareOp(
-    ArrayRef<TypedAttr> operands,
+static IntegerAttr foldCompareOp(
+    TypedAttr lhs, TypedAttr rhs,
     llvm::function_ref<bool(const APInt &, const APInt &)> compareFn) {
-  assert(operands.size() == 2 && "compare operator always has two operands");
-  if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
-    if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+  if (auto lhsInt = lhs.dyn_cast<IntegerAttr>())
+    if (auto rhsInt = rhs.dyn_cast<IntegerAttr>()) {
       if (auto resultConstant = foldBinaryValues(
-              compareFn, lhs.getValue(), rhs.getValue(), lhs.getType(),
+              compareFn, lhsInt.getValue(), rhsInt.getValue(), lhsInt.getType(),
               IntegerType::get(rhs.getContext(), 1)))
         return resultConstant;
     }
+  return {};
+}
+
+/// Compute the result of == for the two specified attributes, handling the
+/// index truncation issue but otherwise relying on MLIR's canonicalization of
+/// attributes to do the job for us.  Both operands may be null, and this
+/// returns null if no folding is possible.
+static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
+
+  // foldCompareOp handles 32-bit truncation of input values correctly.
+  if (lhs.getType().isIndex())
+    return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
+
+  // Otherwise, we can use pointer equality for the attributes we support that
+  // are known to have agreeable widths.
+  if (isSimpleConstant(lhs) && isSimpleConstant(rhs))
+    return BoolAttr::get(rhs.getContext(), lhs == rhs);
+
+  // Otherwise can't fold something like "x == y".
   return {};
 }
 
@@ -1216,14 +1236,11 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
-  // Make sure parameters are ordered correctly.
+  // Make sure parameters are ordered correctly, which also matters if they
+  // don't fold.
   llvm::stable_sort(operands, paramExprOperandSortPredicate);
 
-  if (auto lhs = operands[0].dyn_cast<DTypeConstantAttr>())
-    if (auto rhs = operands[1].dyn_cast<DTypeConstantAttr>())
-      return BoolAttr::get(rhs.getContext(), lhs == rhs);
-
-  return foldCompareOp(operands, [](auto a, auto b) { return a == b; });
+  return foldEquality(operands[0], operands[1]);
 }
 
 // Simplify the < and <= operations.
@@ -1257,12 +1274,14 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
   }
 
   if (opcode == POC::LT)
-    return foldCompareOp(operands, [](auto a, auto b) { return a.slt(b); });
+    return foldCompareOp(operands[0], operands[1],
+                         [](auto a, auto b) { return a.slt(b); });
   assert(opcode == POC::LE);
-  return foldCompareOp(operands, [](auto a, auto b) { return a.sle(b); });
+  return foldCompareOp(operands[0], operands[1],
+                       [](auto a, auto b) { return a.sle(b); });
 }
 
-/// Simplifies an `in` (also `in:dtype`) operator.  We know the all the
+/// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
 /// operands have the same type.
 static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
@@ -1279,20 +1298,26 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   if (trailing.size() == 1)
     return ParamOperatorAttr::get(POC::EQ, operands);
 
-  auto isConst = [](Attribute attr) -> bool {
-    return attr.isa<IntegerAttr>() || attr.isa<DTypeConstantAttr>();
-  };
-
-  bool allConst = true;
+  bool allKnownFalse = true;
   for (TypedAttr operand : trailing) {
-    // Fold to true if a match was found.
-    if (lhs == operand)
+    // Fold to true if a match was found by value.
+    if (auto knownEq = foldEquality(lhs, operand)) {
+      if (knownEq.getValue().isOne())
+        return knownEq;
+    } else if (lhs == operand) {
+      // Fold to true if they match symbolically, like "x+1" and "x+1".
       return b.getBoolAttr(true);
-    allConst &= isConst(operand);
+    } else {
+      // If this is a symbolic comparison like "x == 5", then we cannot fold the
+      // non-containment case.
+      allKnownFalse = false;
+    }
   }
-  // If all operands are constants and a match was not found, then
-  // definitively fold to false.
-  if (allConst && isConst(lhs))
+
+  // Ok, we know that LHS isn't known to equal any member of the set, but it or
+  // they might be symbolic.  If we know for sure that LHS *isn't* equal to any
+  // of the elements in the set then we can fold to false.
+  if (allKnownFalse)
     return b.getBoolAttr(false);
 
   // Sort and unique the trailing operands.

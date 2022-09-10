@@ -149,6 +149,11 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant : i1 = <ne(:dtype type, f32)>
   %19 = kgen.param.constant: i1 = <not_in(:dtype type, [f32])>
 
+  // This can't be folded because it is target specific: true on 32-bit and
+  // false on 64-bit.
+  // CHECK: = kgen.param.constant : i1 = <in(0, [4294967296, 8589934592])>
+  %20 = kgen.param.constant: i1 = <in(0, [shl(1, 32), shl(2, 32)])>
+
   kgen.return
 }
 
@@ -197,8 +202,11 @@ kgen.generator @dtype_params<dt: !kgen.dtype, "f32", "ui32">() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @type_params<dt: dtype>()
-kgen.generator @type_params<dt: dtype>() {
+// CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
+kgen.generator @type_params<dt: dtype, typeParam: type>()
+// CHECK: constraints <[eq(:type typeParam, !meta.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
+   constraints <[eq(:type typeParam, !meta.scalar<f32>), "f32 scalarzzz"]>
+ {
   // CHECK: kgen.param.declare ty1: type = <!meta.scalar<f32>>
   kgen.param.declare ty1: type = <!meta.scalar<f32>>
 
