@@ -15,7 +15,7 @@ using namespace M::KGEN;
 // ZAPDialect
 //===----------------------------------------------------------------------===//
 
-void ZAPDialect::registerOperations() {
+void ZAP::ZAPDialect::registerOperations() {
   addOperations<
 #define GET_OP_LIST
 #include "KGEN/ZAPDialect/ZAP.cpp.inc"
