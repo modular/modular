@@ -141,7 +141,7 @@ kgen.generator @g2<>() { // expected-note {{callee declared here}}
 // -----
 
 // expected-error @+1 {{kgen.func only allows output parameters, not input parameters}}
-kgen.func @bad_kernel_param<x>() {
+kgen.func @bad_param<x>() {
   kgen.return
 }
 

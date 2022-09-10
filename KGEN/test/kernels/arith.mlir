@@ -65,7 +65,7 @@ kgen.generator @add_impl<type: dtype>(%in1:  !meta.buffer<?, type>, %in2: !meta.
 
 // Instantiate @add for f32
 
-// CHECK-LABEL: kgen.func @add_f32_kernel(%arg0: !meta.buffer<?, f32>, %arg1: !meta.buffer<?, f32>, %arg2: !meta.buffer<?, f32>)
+// CHECK-LABEL: kgen.func @add_f32(%arg0: !meta.buffer<?, f32>, %arg1: !meta.buffer<?, f32>, %arg2: !meta.buffer<?, f32>)
 // CHECK: kgen.call @"add_impl,type=f32"(%arg0, %arg1, %arg2) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
 kgen.generator @add_f32(%in1: !meta.buffer<?, f32>, %in2: !meta.buffer<?, f32>, %out: !meta.buffer<?, f32>) {
   kgen.call @add<type: dtype = f32>(%in1, %in2, %out) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()

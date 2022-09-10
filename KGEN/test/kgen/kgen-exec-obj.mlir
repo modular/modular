@@ -1,5 +1,5 @@
-// RUN: kgen %s -execute -func="run_exp_kernel:f32():%t_run_exp.o" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
-// RUN: kgen %s -emit -func="exp_f32_kernel:f32(f32):%t_expf32.o" -I %S/../kernels
+// RUN: kgen %s -execute -func="run_exp:f32():%t_run_exp.o" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
+// RUN: kgen %s -emit -func="exp_f32:f32(f32):%t_expf32.o" -I %S/../kernels
 // COM: Check the object file.
 // RUN: llvm-objdump %t_expf32.o -t | FileCheck %s -check-prefix=OBJ
 // COM: Check the header file.
@@ -23,18 +23,18 @@ kgen.generator @exp_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-// COM: run_exp_kernel computes exp(1.0)
+// COM: run_exp computes exp(1.0)
 kgen.generator @run_exp() -> f32 {
   %0 = llvm.mlir.constant(1.000000e+00 : f32) : f32
   %1 = kgen.call @exp_f32(%0) : (f32) -> f32
   kgen.return %1 : f32
 }
 
-// EXEC: --- 'run_exp_kernel' returned 2.7{{[0-9]+}}
+// EXEC: --- 'run_exp' returned 2.7{{[0-9]+}}
 
 // OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: F {{.*}}exp_f32_kernel
+// OBJ-DAG: F {{.*}}exp_f32
 // OBJ-DAG: F {{.*}}exp_intrinsic_f32,type=f32
 // OBJ-DAG: *UND* {{.*}}expf
 
-// HDR-LABEL: extern float exp_f32_kernel(float);
+// HDR-LABEL: extern float exp_f32(float);

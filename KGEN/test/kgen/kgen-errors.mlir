@@ -1,4 +1,4 @@
-// RUN: kgen %s -execute -func="exp_f32_kernel:f32():%t_exp_f32_bad.o" -func="exp_f32_kernel:f32(f32):%t_exp_f32_good.o" -func="badkernel:f32():%t_badkernel.o" -ignore-failure -I %S/../kernels -verify-diagnostics
+// RUN: kgen %s -execute -func="exp_f32:f32():%t_exp_f32_bad.o" -func="exp_f32:f32(f32):%t_exp_f32_good.o" -func="badkernel:f32():%t_badkernel.o" -ignore-failure -I %S/../kernels -verify-diagnostics
 
 // expected-error@-3 {{could not find func '@badkernel'}}
 
