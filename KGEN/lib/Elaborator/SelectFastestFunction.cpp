@@ -45,22 +45,6 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     return engineOr.takeError();
 
   ExecutionEngine engine = std::move(*engineOr);
-  // For these purposes we don't care about the values of the results, we just
-  // need to pass a pointer in so that it doesn't segfault.
-  // TODO: Need to add a list of tags for results as well, in the general case
-  //       you'd need a tag for the results per-config.
-  size_t resultSize = 0;
-  mlir::UnitAttr unit = mlir::UnitAttr::get(itf.getContext());
-  for (auto r : itf.getResultTypes()) {
-    auto sizeOr =
-        cast<OpaqueObjectInterface>(r).getSizeInBytes(itf->getLoc(), unit);
-    if (failed(sizeOr))
-      return Error("unable to allocate output space for kernel evaluation");
-
-    resultSize += *sizeOr;
-  }
-
-  std::unique_ptr<uint8_t> resultMem((uint8_t *)operator new(resultSize));
 
   // Walk each configuration and generate inputs for it, then benchmark a kernel
   // for it.
@@ -77,12 +61,28 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
   // TODO: We should be caching these so we don't always recompute everything.
   SmallVector<EvaluatedFunc> bestPerConfig;
   for (auto cfg : llvm::make_early_inc_range(*itf.getEvalConfigs())) {
+    // For these purposes we don't care about the values of the results, we just
+    // need to pass a pointer in so that it doesn't segfault.
+    size_t resultSize = 0;
+    for (auto [type, binding] :
+         llvm::zip(itf.getResultTypes(), cfg.getResultBindings())) {
+      auto sizeOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
+          itf->getLoc(), binding);
+      if (failed(sizeOr))
+        return Error("unable to allocate output space for kernel evaluation");
+
+      resultSize += *sizeOr;
+    }
+
+    // Use std::unique_ptr here to avoid leaking memory.
+    std::unique_ptr<uint8_t> resultMem((uint8_t *)operator new(resultSize));
+
     // Get all the various sizes. Keep these as a vector because we want to
     // index into the allocated memory later and we don't want to recompute all
     // the sizes.
     SmallVector<size_t> sizes;
     for (auto [type, binding] :
-         llvm::zip(itf.getArgumentTypes(), cfg.getBindings())) {
+         llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings())) {
       auto bytesOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
           itf.getLoc(), binding);
       if (failed(bytesOr))
@@ -100,7 +100,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // Actually fill in the memory.
     auto memptr = (uintptr_t)argMem.get();
     for (auto [type, binding, memptrIncrement] :
-         llvm::zip(itf.getArgumentTypes(), cfg.getBindings(), sizes)) {
+         llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings(), sizes)) {
       if (failed(cast<OpaqueObjectInterface>(type).populate(
               itf.getLoc(), cfg.getGenKind(), binding, (void *)memptr)))
         return Error(

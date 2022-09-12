@@ -1612,16 +1612,18 @@ struct FieldParser<InputGenKind> {
 void EvalConfigurationAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getBindings());
+  walkAttrsFn(getArgBindings());
+  walkAttrsFn(getResultBindings());
 }
 
 Attribute EvalConfigurationAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   assert(replTypes.empty() && "eval.configuration has no types");
-  assert(replAttrs.size() == 1 && replAttrs.front().isa<ArrayAttr>());
+  assert(replAttrs.size() == 2 && replAttrs[0].isa<ArrayAttr>() &&
+         replAttrs[1].isa<ArrayAttr>());
 
-  return get(getContext(), getGenKind(), replAttrs.front().cast<ArrayAttr>(),
-             getWeight());
+  return get(getContext(), getGenKind(), replAttrs[0].cast<ArrayAttr>(),
+             replAttrs[1].cast<ArrayAttr>(), getWeight());
 }
 
 //===----------------------------------------------------------------------===//

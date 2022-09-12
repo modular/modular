@@ -2,7 +2,7 @@
 
 kgen.generator.interface @addOne(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> attributes {
   evalConfigs = #kgen.eval.configurations<[
-    #kgen.eval.configuration<random, [unit], 256>
+    #kgen.eval.configuration<random, args=[unit], results=[unit], 256>
   ]>
 }
 
