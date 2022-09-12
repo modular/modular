@@ -20,25 +20,6 @@ namespace LLVM = mlir::LLVM;
 
 namespace {
 
-/// Materialize type conversions for the operands of `scf.yield` terminators.
-static LogicalResult materializeTerminatorOperands(
-    PatternRewriter &rewriter, TypeConverter &typeConverter,
-    Operation *terminator, SmallVectorImpl<Value> &values) {
-  for (Value operand : terminator->getOperands()) {
-    Type type = typeConverter.convertType(operand.getType());
-    if (!type)
-      return rewriter.notifyMatchFailure(
-          terminator->getLoc(), "could not convert terminator operand type");
-    Value materialized = typeConverter.materializeTargetConversion(
-        rewriter, terminator->getLoc(), type, operand);
-    if (!materialized)
-      return rewriter.notifyMatchFailure(
-          terminator->getLoc(), "could not materialize source conversion");
-    values.push_back(materialized);
-  }
-  return success();
-}
-
 // These patterns were copied from `ConvertSCFToControlFlow.cpp`. The main
 // difference is the use of LLVM operations and the region type conversions,
 // mainly to convert `index` and other `meta` dialect types to LLVM.
@@ -94,8 +75,8 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
 
   SmallVector<Value> loopCarried;
   loopCarried.push_back(stepped);
-  if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
-                                           terminator, loopCarried)))
+  if (failed(
+          rewriter.getRemappedValues(terminator->getOperands(), loopCarried)))
     return failure();
 
   rewriter.create<LLVM::BrOp>(loc, loopCarried, conditionBlock);
@@ -167,9 +148,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   Operation *thenTerminator = thenRegion.back().getTerminator();
   SmallVector<Value> thenTerminatorOperands;
   rewriter.setInsertionPointToEnd(&thenRegion.back());
-  if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
-                                           thenTerminator,
-                                           thenTerminatorOperands)))
+  if (failed(rewriter.getRemappedValues(thenTerminator->getOperands(),
+                                        thenTerminatorOperands)))
     return failure();
   rewriter.create<LLVM::BrOp>(loc, thenTerminatorOperands, continueBlock);
   rewriter.eraseOp(thenTerminator);
@@ -185,9 +165,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
     Operation *elseTerminator = elseRegion.back().getTerminator();
     SmallVector<Value> elseTerminatorOperands;
     rewriter.setInsertionPointToEnd(&elseRegion.back());
-    if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
-                                             elseTerminator,
-                                             elseTerminatorOperands)))
+    if (failed(rewriter.getRemappedValues(elseTerminator->getOperands(),
+                                          elseTerminatorOperands)))
       return failure();
     rewriter.create<LLVM::BrOp>(loc, elseTerminatorOperands, continueBlock);
     rewriter.eraseOp(elseTerminator);
