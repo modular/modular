@@ -75,7 +75,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     }
 
     // Use std::unique_ptr here to avoid leaking memory.
-    std::unique_ptr<uint8_t> resultMem(new uint8_t[resultSize]);
+    std::unique_ptr<uint8_t[]> resultMem(new uint8_t[resultSize]);
 
     // Get all the various sizes. Keep these as a vector because we want to
     // index into the allocated memory later and we don't want to recompute all
@@ -95,7 +95,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // Use unique_ptr to make sure we don't accidentally leak this memory.
     size_t totalMem =
         std::accumulate(sizes.begin(), sizes.end(), 1, std::multiplies<>());
-    std::unique_ptr<uint8_t> argMem((uint8_t *)operator new(totalMem));
+    std::unique_ptr<uint8_t[]> argMem(new uint8_t[totalMem]);
 
     // Actually fill in the memory.
     auto memptr = (uintptr_t)argMem.get();
