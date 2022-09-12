@@ -82,8 +82,6 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
   rewriter.setInsertionPointToEnd(initBlock);
   Value lowerBound = adaptor.getLowerBound();
   Value upperBound = adaptor.getUpperBound();
-  if (!lowerBound || !upperBound)
-    return failure();
 
   // The initial values of loop-carried values is obtained from the operands
   // of the loop operation.
@@ -199,8 +197,6 @@ public:
 } // namespace
 
 void ConvertSCFToLLVMPass::runOnOperation() {
-  Operation *func = getOperation();
-
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<mlir::scf::SCFDialect>();
@@ -216,7 +212,8 @@ void ConvertSCFToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populateSCFToLLVMPatterns(typeConverter, patterns);
 
-  if (failed(mlir::applyPartialConversion(func, target, std::move(patterns))))
+  if (failed(mlir::applyPartialConversion(getOperation(), target,
+                                          std::move(patterns))))
     return signalPassFailure();
 }
 

@@ -298,15 +298,18 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
 static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   mlir::PassManager pm(module.getContext());
 
+  // Run the canonicalizer before the lowering passes.
   pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
-  pm.addNestedPass<KGEN::FuncOp>(KGEN::createConvertPOPToLLVMPass());
 
+  // Run all LLVM lowering passes.
+  pm.addNestedPass<KGEN::FuncOp>(KGEN::createConvertPOPToLLVMPass());
+  pm.addNestedPass<KGEN::FuncOp>(KGEN::createConvertSCFToLLVMPass());
   pm.addNestedPass<KGEN::FuncOp>(index::createIndexToLLVM());
+
   // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
   //        code up better because there's 2 semi-separate compilation models
   //        here.
   pm.addPass(KGEN::createConvertKGENToLLVMPass(name, {}, true));
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
 
   // And finally canonicalize again before running through the JIT.
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
