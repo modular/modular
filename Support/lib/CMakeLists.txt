@@ -26,7 +26,6 @@ add_modular_mlir_library(MSupport
   CommonCLOptions.cpp
   Error.cpp
   HMAC.cpp
-  InputGeneration.cpp
 
   ADDITIONAL_HEADER_DIRS
 

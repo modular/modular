@@ -7,12 +7,12 @@
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
-#include "Support/InputGeneration.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <random>
 
 using namespace M;
 using namespace KGEN;
@@ -153,7 +153,8 @@ static FailureOr<DType> resolveDTypeWithTag(DTypeInterface itf, Location loc,
 
 /// Fill `obj` according to `kind`, `dtype`, and `numElements`. Despite `obj`
 /// being suggestively named, `obj` can be any pointer - it does not have to be
-/// the pointer passed to ::populate.
+/// the pointer passed to ::populate. It must have a space allocated for
+/// `numElements` objects of type `dtype`, however.
 static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
                             size_t numElements, void *obj) {
   switch (kind) {
@@ -161,20 +162,55 @@ static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
     memset(obj, 0, dtype.getSizeInBytes(numElements));
     return success();
   case InputGenKind::Ones: {
-    char one[16];
-    if (auto err = getScalarOne(one, dtype))
-      return emitError(loc) << err.getError();
+    if (dtype.isComplex()) {
+      unsigned widthInBytes = dtype.getWidthInBits() / 8;
+      // Set the imaginary component to zero.
+      memset((char *)obj + widthInBytes, 0, widthInBytes);
+      dtype = dtype.stripComplex();
+    }
 
-    if (auto err = fillHomogeneous(obj, numElements, dtype, one))
-      return emitError(loc) << err.getError();
-
-    return success();
+    // Dispatch the dtype, and just fill directly with ones.
+    return dtype.dispatch<LogicalResult>(obj)
+        .when([&](bool *ptr) {
+          std::generate(ptr, ptr + numElements, []() { return true; });
+          return success();
+        })
+        .whenCXXInt([&](auto *ptr) { // Standard C++ integers.
+          std::generate(ptr, ptr + numElements, []() { return 1; });
+          return success();
+        })
+        .whenCXXFP([&](auto *ptr) { // float and double.
+          std::generate(ptr, ptr + numElements, []() { return 1.0; });
+          return success();
+        })
+        .otherwise([&]() { return failure(); });
   }
-  case InputGenKind::Random:
-    if (auto err = fillRandom(obj, numElements, dtype))
-      return emitError(loc) << err.getError();
+  case InputGenKind::Random: {
+    // Fill the given buffer with random elements from the provided
+    // distribution.
+    auto fillWithDistribution = [&](auto *ptr, auto distribution) {
+      std::default_random_engine randEngine(/*seed=*/0);
+      std::generate(ptr, ptr + numElements,
+                    [&]() { return distribution(randEngine); });
+    };
 
-    return success();
+    return dtype.dispatch<LogicalResult>(obj)
+        .when([&](bool *destPtr) {
+          fillWithDistribution(destPtr, std::bernoulli_distribution());
+          return success();
+        })
+        .whenCXXInt([&](auto *destPtr) {
+          fillWithDistribution(destPtr, std::uniform_int_distribution<>(
+                                            dtype.isSInt() ? -10 : 0, 10));
+          return success();
+        })
+        .whenCXXFP([&](auto *destPtr) {
+          fillWithDistribution(destPtr,
+                               std::uniform_real_distribution<>(-1.0, 1.0));
+          return success();
+        })
+        .otherwise([&]() { return failure(); });
+  }
   }
 
   return emitError(loc) << "could not fill with gen kind: "
