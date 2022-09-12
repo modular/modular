@@ -14,6 +14,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -26,6 +27,8 @@ int main(int argc, char **argv) {
   registerAllKGENDialects(registry);
   registry.insert<index::IndexDialect, mlir::LLVM::LLVMDialect,
                   mlir::scf::SCFDialect>();
+  // The elaborator requires LLVM lowering to run the generated functions.
+  mlir::registerLLVMDialectTranslation(registry);
 
   // Register the standard passes we want.
   mlir::registerCSEPass();
