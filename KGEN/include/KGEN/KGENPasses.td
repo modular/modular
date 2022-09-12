@@ -127,7 +127,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
 // ConvertPOPToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "FuncOp"> {
+def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm"> {
   let summary = "Lower the `pop` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion of fully-elaborated and specified `pop`
@@ -148,7 +148,7 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm", "FuncOp"> {
 // ConvertSCFToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm", "mlir::LLVM::LLVMFuncOp"> {
+def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm"> {
   let summary = "Lower the `scf` dialect to the `llvm` dialect.";
   let description = [{
     This pass converts structured control-flow operations to LLVM operations and
