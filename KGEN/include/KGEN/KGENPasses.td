@@ -152,7 +152,8 @@ def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm"> {
   let summary = "Lower the `scf` dialect to the `llvm` dialect.";
   let description = [{
     This pass converts structured control-flow operations to LLVM operations and
-    control-flow graph regions.
+    control-flow graph regions. Because this pass generates CFG regions, it must
+    run after `convert-kgen-to-llvm`, which lowers `kgen.func` to `llvm.func`.
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];

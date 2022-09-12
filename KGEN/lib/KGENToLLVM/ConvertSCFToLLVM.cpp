@@ -6,9 +6,9 @@
 
 #include "KGEN/KGENPasses.h"
 
+#include "LLVMLoweringUtils.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
-#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -19,6 +19,25 @@ namespace scf = mlir::scf;
 namespace LLVM = mlir::LLVM;
 
 namespace {
+
+/// Materialize type conversions for the operands of `scf.yield` terminators.
+static LogicalResult materializeTerminatorOperands(
+    PatternRewriter &rewriter, TypeConverter &typeConverter,
+    Operation *terminator, SmallVectorImpl<Value> &values) {
+  for (Value operand : terminator->getOperands()) {
+    Type type = typeConverter.convertType(operand.getType());
+    if (!type)
+      return rewriter.notifyMatchFailure(
+          terminator->getLoc(), "could not convert terminator operand type");
+    Value materialized = typeConverter.materializeTargetConversion(
+        rewriter, terminator->getLoc(), type, operand);
+    if (!materialized)
+      return rewriter.notifyMatchFailure(
+          terminator->getLoc(), "could not materialize source conversion");
+    values.push_back(materialized);
+  }
+  return success();
+}
 
 // These patterns were copied from `ConvertSCFToControlFlow.cpp`. The main
 // difference is the use of LLVM operations and the region type conversions,
@@ -44,7 +63,8 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
   // Convert the induction variable and iteration variable types.
   if (failed(rewriter.convertRegionTypes(&op.getBodyRegion(),
                                          *getTypeConverter())))
-    return failure();
+    return rewriter.notifyMatchFailure(op.getLoc(),
+                                       "could not convert region types");
 
   // Start by splitting the block containing the 'scf.for' into two parts.
   // The part before will get the init code, the part after will be the end
@@ -74,7 +94,10 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
 
   SmallVector<Value> loopCarried;
   loopCarried.push_back(stepped);
-  llvm::append_range(loopCarried, terminator->getOperands());
+  if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
+                                           terminator, loopCarried)))
+    return failure();
+
   rewriter.create<LLVM::BrOp>(loc, loopCarried, conditionBlock);
   rewriter.eraseOp(terminator);
 
@@ -142,8 +165,12 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   Region &thenRegion = op.getThenRegion();
   Block *thenBlock = &thenRegion.front();
   Operation *thenTerminator = thenRegion.back().getTerminator();
-  ValueRange thenTerminatorOperands = thenTerminator->getOperands();
+  SmallVector<Value> thenTerminatorOperands;
   rewriter.setInsertionPointToEnd(&thenRegion.back());
+  if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
+                                           thenTerminator,
+                                           thenTerminatorOperands)))
+    return failure();
   rewriter.create<LLVM::BrOp>(loc, thenTerminatorOperands, continueBlock);
   rewriter.eraseOp(thenTerminator);
   rewriter.inlineRegionBefore(thenRegion, continueBlock);
@@ -156,8 +183,12 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   if (!elseRegion.empty()) {
     elseBlock = &elseRegion.front();
     Operation *elseTerminator = elseRegion.back().getTerminator();
-    ValueRange elseTerminatorOperands = elseTerminator->getOperands();
+    SmallVector<Value> elseTerminatorOperands;
     rewriter.setInsertionPointToEnd(&elseRegion.back());
+    if (failed(materializeTerminatorOperands(rewriter, *getTypeConverter(),
+                                             elseTerminator,
+                                             elseTerminatorOperands)))
+      return failure();
     rewriter.create<LLVM::BrOp>(loc, elseTerminatorOperands, continueBlock);
     rewriter.eraseOp(elseTerminator);
     rewriter.inlineRegionBefore(elseRegion, continueBlock);
@@ -201,12 +232,13 @@ void ConvertSCFToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<mlir::scf::SCFDialect>();
   target.addLegalDialect<mlir::LLVM::LLVMDialect>();
+  target.addLegalOp<mlir::UnrealizedConversionCastOp>();
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  mlir::LLVMTypeConverter typeConverter(&getContext());
+  MetaToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

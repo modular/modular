@@ -8,12 +8,15 @@
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/IndexDialect/IndexDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/ToolOutputFile.h"
+
 using namespace M;
 using namespace mlir;
 
@@ -33,7 +36,8 @@ struct ProcessBuffer {
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
     DialectRegistry registry;
     // Don't need HLKGEN here.
-    registry.insert<KGEN::KGENDialect, KGEN::MetaDialect, KGEN::POP::POPDialect>();
+    registry.insert<KGEN::KGENDialect, KGEN::MetaDialect, KGEN::POP::POPDialect,
+                    index::IndexDialect, mlir::scf::SCFDialect>();
     mlir::registerLLVMDialectTranslation(registry);
 
     ctx->appendDialectRegistry(registry);
