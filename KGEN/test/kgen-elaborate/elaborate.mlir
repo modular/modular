@@ -54,7 +54,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
   %2 = kgen.param.constant : f32 = <val>
 
   // Silly op so we know when something used this.
-  "genA op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !meta.scalar<type>
+  "genA op"() { value = #kgen.param.decl.ref<size> : index} : () -> !meta.scalar<type>
 
   kgen.return<out = mul(size, 2)> %arg0 : si32
 }
@@ -124,7 +124,7 @@ kgen.generator.interface @genItf<x -> y>(si32) -> si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
   implements @genItf {
-  "genItf_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf_impl1"() { value = #kgen.param.decl.ref<x> : index} : () -> ()
   kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
@@ -134,7 +134,7 @@ kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
   implements @genItf {
-  "genItf_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf_impl2"() { value = #kgen.param.decl.ref<*"x"> : index} : () -> ()
   kgen.return<y = mul(x, 2)> %arg0 : si32
 }
 

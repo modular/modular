@@ -95,7 +95,7 @@ kgen.generator @foo() {
 
 kgen.generator @scalar_params_verbose<n>(%x :
 // expected-error @+1 {{expected '!kgen.dtype', but got 'index'}}
-           !meta.scalar<#kgen.param.decl.ref<"n"> : index>) {
+           !meta.scalar<#kgen.param.decl.ref<n> : index>) {
   kgen.return
 }
 
