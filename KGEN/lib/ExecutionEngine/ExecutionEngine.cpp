@@ -301,15 +301,15 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   // Run the canonicalizer before the lowering passes.
   pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
 
-  // Run all LLVM lowering passes.
-  pm.addNestedPass<KGEN::FuncOp>(KGEN::createConvertPOPToLLVMPass());
-  pm.addNestedPass<KGEN::FuncOp>(KGEN::createConvertSCFToLLVMPass());
-  pm.addNestedPass<KGEN::FuncOp>(index::createIndexToLLVM());
-
   // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
   //        code up better because there's 2 semi-separate compilation models
   //        here.
   pm.addPass(KGEN::createConvertKGENToLLVMPass(name, {}, true));
+
+  // Run all LLVM lowering passes.
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertPOPToLLVMPass());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(index::createIndexToLLVM());
 
   // And finally canonicalize again before running through the JIT.
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());

@@ -10,13 +10,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Elaborator.h"
-
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "SelectFastestFunction.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
@@ -26,6 +26,7 @@
 #include "mlir/Parser/Parser.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
+#include <numeric>
 #include <variant>
 
 using namespace M;
@@ -253,6 +254,14 @@ private:
   SymbolTable &getPrimaryModuleSymbolTable() {
     return symbolTables.getSymbolTable(primaryModule);
   }
+
+  /// Report an error given an interface and an error string - just reduces
+  /// boilerplate around CalleeExpansionError creation.
+  ElaboratedGeneratorOrCalleeError
+  reportCalleeExpansionError(GeneratorInterfaceOp itf, Twine err) {
+    return CalleeExpansionError(
+        itf->getLoc(), ElaborationDiagnostic(itf->getLoc(), Error(err)));
+  };
 
 private:
   /// These are the two modules we start with.  The primary module is mutated by
@@ -892,11 +901,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   if (interfaceImpls.empty()) {
     // If we found no implementations, report that problem at the call site as
     // a single diagnostic.
-    result.push_back(CalleeExpansionError(
-        itf->getLoc(),
-        ElaborationDiagnostic(itf->getLoc(),
-                              Error(Twine("no implementations of interface '") +
-                                    itf.getName() + "' found"))));
+    result.push_back(reportCalleeExpansionError(
+        itf, "no implementations of interface '" + itf.getName() + "' found"));
     return result;
   }
 
@@ -907,7 +913,47 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
         getAllInstantiations({gen, declAndInputParams.second}, insertionPoint);
     result.append(funcs.begin(), funcs.end());
   }
-  return result;
+
+  // If all the results are expansion errors, return them to the caller which
+  // will cause elaboration to fail.
+  if (llvm::all_of(result, [](ElaboratedGeneratorOrCalleeError kOr) {
+        return std::holds_alternative<CalleeExpansionError>(kOr);
+      }))
+    return result;
+
+  auto evalCfgsOr = itf.getEvalConfigs();
+  // Nothing to be evaluated, return the full vector.
+  if (!evalCfgsOr.has_value() || evalCfgsOr->empty())
+    return result;
+
+  // Move the expansion errors to the end of the vector.
+  auto newEnd =
+      llvm::remove_if(result, [&](ElaboratedGeneratorOrCalleeError funcOr) {
+        return std::holds_alternative<CalleeExpansionError>(funcOr);
+      });
+
+  // Only one successful elaboration, we don't have to search, just return it.
+  if (newEnd == result.begin() + 1)
+    return {*result.begin()};
+
+  // Truncate the result vector to contain only the successful implementations.
+  result.erase(newEnd, result.end());
+
+  // Pull out the elaboration results that succeeded to provide to the search
+  // inputs.
+  SmallVector<FuncOp> searchInputs;
+  for (const auto &r : result)
+    searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
+
+  ErrorOr<size_t> bestSpecializationIdxOr =
+      selectFastestFunction(itf, primaryModule, searchInputs);
+
+  if (failed(bestSpecializationIdxOr))
+    return {
+        reportCalleeExpansionError(itf, bestSpecializationIdxOr.getError())};
+
+  // Find the fastest one and return just that one.
+  return {result[*bestSpecializationIdxOr]};
 }
 
 /// Return all instantiations of the specified declaration (a  generator or
