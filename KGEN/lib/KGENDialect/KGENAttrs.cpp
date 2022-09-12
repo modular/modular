@@ -203,10 +203,20 @@ static bool isLegalMLIRIdentifier(StringRef name) {
 }
 
 ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
-  std::string value;
-  if (p.parseKeywordOrString(&value))
-    return failure();
-  name = StringAttr::get(p.getContext(), value);
+  // If this is a '*'-prefixed double quoted string, then this is an escaped
+  // parameter name.
+  if (succeeded(p.parseOptionalStar())) {
+    std::string value;
+    if (failed(p.parseString(&value)))
+      return failure();
+    name = StringAttr::get(p.getContext(), value);
+  } else {
+    // Barewords / MLIR keywords are param names otherwise.
+    StringRef keyword;
+    if (failed(p.parseKeyword(&keyword)))
+      return failure();
+    name = StringAttr::get(p.getContext(), keyword);
+  }
   return success();
 }
 
@@ -217,11 +227,11 @@ ParseResult KGEN::parseParamName(AsmParser &p, FailureOr<StringAttr> &name) {
 
 void KGEN::printParamName(StringRef name, raw_ostream &os) {
   // If this will conflict with a DType keyword or isn't a legal MLIR name,
-  // then we need quotes.
+  // then we need a '*' prefix and double quotes.
   bool needsQuotes =
       succeeded(DType::getFromString(name)) || !isLegalMLIRIdentifier(name);
   if (needsQuotes)
-    os << '"';
+    os << "*\"";
   os << name;
   if (needsQuotes)
     os << '"';
@@ -231,22 +241,6 @@ void KGEN::printParamName(StringRef name, raw_ostream &os) {
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
 void KGEN::printParamName(AsmPrinter &p, StringRef name) {
   printParamName(name, p.getStream());
-}
-
-/// Parse a bareword (a keyword in MLIR terminology) or double quoted string
-/// into "result", returning "isBareword=true" in the former case and false in
-/// the later case.
-static ParseResult parseOptionalParamKeywordOrString(AsmParser &p,
-                                                     std::string *result,
-                                                     bool &isBareWord) {
-  StringRef keyword;
-  if (succeeded(p.parseOptionalKeyword(&keyword))) {
-    isBareWord = true;
-    *result = keyword.str();
-    return success();
-  }
-  isBareWord = false;
-  return p.parseOptionalString(result);
 }
 
 /// Parse operator expression operands with operator-specific syntax.
@@ -298,14 +292,22 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   assert(type && "always have a contextual type");
   llvm::SMLoc loc = p.getCurrentLocation();
 
-  // keyword are implicitly parameter declaration references or the start of
-  // a expression in function form.
-  std::string keyword;
-  bool isBareword;
-  if (succeeded(parseOptionalParamKeywordOrString(p, &keyword, isBareword))) {
-    // If this is a KGEN keyword (a bareword with a known identifier), process
-    // it.
-    if (isBareword && type.isa<DTypeType>()) {
+  // If this is a '*'-prefixed double quoted string, then this is a simple
+  // parameter reference.
+  if (succeeded(p.parseOptionalStar())) {
+    std::string name;
+    if (failed(p.parseString(&name)))
+      return failure();
+    value = ParamDeclRefAttr::get(name, type);
+    return success();
+  }
+
+  // Barewords / MLIR keywords are implicitly parameter declaration references
+  // or the start of a expression in function form.
+  StringRef keyword;
+  if (succeeded(p.parseOptionalKeyword(&keyword))) {
+    // Check to see if we're parsing a dtype name like 'f32'.
+    if (type.isa<DTypeType>()) {
       auto dtype = DType::getFromString(keyword);
       if (succeeded(dtype)) {
         value = DTypeConstantAttr::getChecked(
@@ -715,10 +717,9 @@ Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
     return {};
   }
 
-  std::string name;
-  if (p.parseLess() || p.parseKeywordOrString(&name) || p.parseGreater())
+  StringAttr name;
+  if (p.parseLess() || parseParamName(p, name) || p.parseGreater())
     return {};
-
   return ParamDeclRefAttr::get(name, type);
 }
 

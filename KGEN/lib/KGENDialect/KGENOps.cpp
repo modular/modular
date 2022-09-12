@@ -194,11 +194,11 @@ parseParamList(AsmParser &p, SmallVectorImpl<AttrT> &params,
 
   // Handle the parameter-decl/parameter-result productions.
   auto parseParamDecl = [&]() -> ParseResult {
-    std::string name;
+    StringAttr name;
     Type type;
 
     AttrT element;
-    if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type) ||
+    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
         parseElementFn(p, element, name, type))
       return failure();
     params.push_back(element);
