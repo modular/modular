@@ -57,11 +57,6 @@ KGEN::collectParameterReferences(TypedAttr expr,
 LogicalResult
 KGEN::collectParameterReferences(Type type,
                                  SmallVector<ParamDeclRefAttr> &results) {
-  // These are known leaf types that don't participate with
-  // SubElementTypeInterface and have no attributes or types within them.
-  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType>())
-    return success();
-
   auto itf = type.dyn_cast<mlir::SubElementTypeInterface>();
   if (!itf)
     return success();
@@ -135,15 +130,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 }
 
 /// Get the specified type with any nested parameter expressions rewritten.
-///
-/// NOTE: This must be kept in sync with KGEN::isParameterizedType.
 Type ParameterEvaluator::getReboundType(Type type) {
-  // These are known leaf types that don't participate with
-  // SubElementTypeInterface and have no attributes or types within them.
-  if (type.isa<IntegerType, FloatType, NoneType, IndexType, DTypeType,
-               MLIRTypeType>())
-    return type;
-
   // If we've already processed this type, just reuse the memoized result.
   auto iter = rewrittenTypes.find(type);
   if (iter != rewrittenTypes.end())

@@ -50,8 +50,10 @@ def MLIRTypeType : KGENType<"MLIRType"> {
   let summary = "Arbitrary MLIR type";
   let description = [{
     This kgen type represents an arbitrary MLIR type, used for parameterizing
-    type-generic operations.  It cannot be materialized into an SSA value,
-    because it has no runtime representation.
+    type-generic operations.
+    
+    It cannot be materialized into an SSA value, because it has no runtime
+    representation.
   }];
 
   let mnemonic = "mlirtype";
@@ -66,6 +68,20 @@ def DTypeType : KGENType<"DType"> {
   }];
 
   let mnemonic = "dtype";
+  let parameters = (ins);
+}
+
+def StringType : KGENType<"String"> {
+  let summary = "String type for parameters";
+  let description = [{
+    This kgen type represents an string value, used for parameterizing
+    generators and working with string-returning expressions.
+
+    It cannot be materialized into an SSA value, because it has no runtime
+    representation.
+  }];
+
+  let mnemonic = "string";
   let parameters = (ins);
 }
 

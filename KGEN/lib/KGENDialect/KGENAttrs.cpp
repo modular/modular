@@ -58,6 +58,13 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
     return OptionalParseResult(LogicalResult::success());
   }
 
+  // In addition to standard types, we support 'string' as a sugared form of
+  // !kgen.dtype.
+  if (succeeded(parser.parseOptionalKeyword("string"))) {
+    type = parser.getBuilder().getType<StringType>();
+    return OptionalParseResult(LogicalResult::success());
+  }
+
   return parser.parseType(type);
 }
 
@@ -420,7 +427,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   }
 
   // Otherwise, we support other typed attributes as well, including dialect
-  // define attributes, integers, etc.
+  // define attributes, integers, strings, etc.
   return p.parseAttribute(value, type);
 }
 
@@ -589,6 +596,12 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
     return;
   }
 
+  // FIXME: LLVM Issue #57689, we have no "printAttributeWithoutType" that works
+  // for printing to a raw_ostream.  Emulate this the hard way for strings.
+  if (auto string = value.dyn_cast<StringAttr>())
+    // Strip off the type.
+    value = StringAttr::get(string.getContext(), string.getValue());
+
   os << value;
 }
 
@@ -630,11 +643,14 @@ void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
     return;
   p << ": ";
 
-  // Handle other special cases for parameters here.
+  // Handle other special cases for parameters here.  These each are sugar for a
+  // kgen type.
   if (type.isa<MLIRTypeType>())
-    p << "type"; // `type` => `!kgen.type`.
+    p << "type";
   else if (type.isa<DTypeType>())
-    p << "dtype"; // `dtype` => `!kgen.dtype`.
+    p << "dtype";
+  else if (type.isa<StringType>())
+    p << "string";
   else
     p << type;
 }
@@ -648,9 +664,11 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
 
   // Handle other special cases for parameters here.
   if (type.isa<MLIRTypeType>())
-    os << "type"; // `type` => `!kgen.type`.
+    os << "type";
   else if (type.isa<DTypeType>())
-    os << "dtype"; // `dtype` => `!kgen.dtype`.
+    os << "dtype";
+  else if (type.isa<StringType>())
+    os << "string";
   else
     os << type;
   os << ' ';
@@ -762,7 +780,7 @@ LogicalResult ParamOperatorAttr::verify(
 
   // This is the list of types we can apply == and set comparison to.
   auto isEqualityComparableType = [&](Type ty) -> bool {
-    return ty.isIndex() || ty.isa<DTypeType>() || ty.isa<MLIRTypeType>();
+    return ty.isIndex() || ty.isa<DTypeType, MLIRTypeType, StringType>();
   };
 
   // Check invariants on the expression.
@@ -809,10 +827,10 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
 
-    // Relational operations don't work for dtypes.
-    if (opcode != POC::EQ && operands[0].getType().isa<DTypeType>())
-      return emitError() << "relational comparisons aren't allowed on dtype's";
-
+    // Relational operations only work on index types.
+    if (opcode != POC::EQ && !operands[0].getType().isa<IndexType>())
+      return emitError()
+             << "relational comparisons only allowed on index values";
     break;
   case POC::IN:
     if (operands.empty())
