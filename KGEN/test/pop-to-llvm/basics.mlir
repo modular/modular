@@ -200,33 +200,25 @@ kgen.func @offset(%p: !meta.pointer<f32>, %i: index) -> !meta.pointer<f32> {
 // -----
 
 // CHECK-LABEL: @shifts
-// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.shl %[[LHS]], %[[RHS]]
+kgen.func @shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>, %arg2: !meta.scalar<ui32>, %arg3: !meta.scalar<ui32>) {
+  // CHECK: llvm.shl
   %0 = pop.shl %arg0, %arg1 : !meta.scalar<si32>
-  // CHECK: llvm.ashr %[[LHS]], %[[RHS]]
-  %1 = pop.shrs %arg0, %arg1 : !meta.scalar<si32>
-  // CHECK: llvm.lshr %[[LHS]], %[[RHS]]
-  %2 = pop.shru %arg0, %arg1 : !meta.scalar<si32>
-  kgen.return %2 : !meta.scalar<si32>
+  // CHECK: llvm.ashr
+  %1 = pop.shr %arg0, %arg1 : !meta.scalar<si32>
+  // CHECKL llvm.lshr
+  %2 = pop.shr %arg2, %arg3 : !meta.scalar<ui32>
+  kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @simd_shift
-// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @simd_shift(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
-  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.shl %[[LHS]], %[[RHS]]
+kgen.func @simd_shift(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>, %arg2: !meta.simd<4, ui32>, %arg3: !meta.simd<4, ui32>) {
+  // CHECK: llvm.shl
   %0 = pop.shl %arg0, %arg1 : !meta.simd<4, si32>
-  // CHECK: llvm.ashr %[[LHS]], %[[RHS]]
-  %1 = pop.shrs %arg0, %arg1 : !meta.simd<4, si32>
-  // CHECK: llvm.lshr %[[LHS]], %[[RHS]]
-  %2 = pop.shru %arg0, %arg1 : !meta.simd<4, si32>
-  kgen.return %2 : !meta.simd<4, si32>
+  // CHECK: llvm.ashr
+  %1 = pop.shr %arg0, %arg1 : !meta.simd<4, si32>
+  // CHECKL llvm.lshr
+  %2 = pop.shr %arg2, %arg3 : !meta.simd<4, ui32>
+  kgen.return
 }
