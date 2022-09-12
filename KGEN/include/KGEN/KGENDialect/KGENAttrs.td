@@ -448,7 +448,7 @@ def EvalConfigurationAttr
     ) attributes {
       evalCfg = [
         #kgen.eval.configuration<
-          zeros, [3 : index, unit, #user.attribute<1234>], 256
+          zeros, args=[3 : index, unit, #user.attribute<1234>], results=[], 256
         >,
         ...
       ]
@@ -456,10 +456,14 @@ def EvalConfigurationAttr
     ```
   }];
 
-  let parameters = (ins "InputGenKind":$genKind, "ArrayAttr":$bindings,
-                        "uint64_t":$weight);
+  let parameters = (ins "InputGenKind":$genKind, "ArrayAttr":$argBindings,
+                        "ArrayAttr":$resultBindings, "uint64_t":$weight);
 
-  let assemblyFormat = "`<` $genKind `,` $bindings `,` $weight `>`";
+  let assemblyFormat = [{
+    `<`
+      $genKind `,``args``=` $argBindings `,``results``=` $resultBindings `,` $weight
+    `>`
+  }];
 }
 
 /// Eval configuration for a whole generator interface. The user should specify
