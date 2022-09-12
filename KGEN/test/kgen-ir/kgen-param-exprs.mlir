@@ -185,6 +185,7 @@ kgen.generator @param_canonicalize<p1, p2>()  {
   kgen.return
 }
 
+// DTYPES
 // CHECK-LABEL: kgen.generator @dtype_params<dt: dtype, *"f32", *"ui32">()
 kgen.generator @dtype_params<dt: !kgen.dtype, *"f32", *"ui32">() {
 
@@ -202,6 +203,7 @@ kgen.generator @dtype_params<dt: !kgen.dtype, *"f32", *"ui32">() {
   kgen.return
 }
 
+// MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>()
 // CHECK: constraints <[eq(:type typeParam, !meta.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
@@ -224,3 +226,19 @@ kgen.generator @type_params<dt: dtype, typeParam: type>()
   kgen.return
 }
 
+// STRING TYPES
+// CHECK-LABEL: kgen.generator @string_params<a: string, b: string>()
+kgen.generator @string_params<a: string, b: string>()
+// CHECK: constraints <
+// CHECK-NEXT: [eq(:string a, b), "samesies only", #loc{{.*}}],
+// CHECK-NEXT: [in(:string a, [b, "foo"]), "samesies or foo", #loc{{.*}}]> {
+   constraints <[eq(:string a, b), "samesies only"],
+                 [in(:string a, [b, "foo"]), "samesies or foo"]>
+ {
+  // CHECK: kgen.param.declare s1: string = <"exciting">
+  kgen.param.declare s1: string = <"exciting">
+
+  //kgen.param.declare s2: string = <concat("hello ", "world", "!!11oneone">
+
+  kgen.return
+}
