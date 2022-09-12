@@ -122,6 +122,29 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPShr
+//===----------------------------------------------------------------------===//
+
+/// Lower to `llvm.ashr` if the result dtype is signed and `llvm.lshr`
+/// otherwise.
+struct ConvertPOPShr : public mlir::ConvertOpToLLVMPattern<ShrOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ShrOp op, ShrOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isSInt())
+      rewriter.replaceOpWithNewOp<LLVM::AShrOp>(op, adaptor.getLhs(),
+                                                adaptor.getRhs());
+    else
+      rewriter.replaceOpWithNewOp<LLVM::LShrOp>(op, adaptor.getLhs(),
+                                                adaptor.getRhs());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPFMA
 //===----------------------------------------------------------------------===//
 
@@ -304,8 +327,6 @@ using ConvertPOPMul =
 using ConvertPOPBitCast =
     mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
-using ConvertPOPShRS = mlir::OneToOneConvertToLLVMPattern<ShRSOp, LLVM::AShrOp>;
-using ConvertPOPShRU = mlir::OneToOneConvertToLLVMPattern<ShRUOp, LLVM::LShrOp>;
 using ConvertPOPSelect =
     mlir::OneToOneConvertToLLVMPattern<SelectOp, LLVM::SelectOp>;
 using ConvertPOPSIMDExtractElement =
@@ -345,8 +366,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPOffset,
       ConvertPOPSelect,
       ConvertPOPShl,
-      ConvertPOPShRS,
-      ConvertPOPShRU,
+      ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
       ConvertPOPSIMDShuffle,

@@ -114,26 +114,22 @@ kgen.func @pop_div_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) 
   kgen.return %0 : !meta.simd<4, f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
-kgen.func @pop_shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  // CHECK: %0 = pop.shl %arg0, %arg1 : !meta.scalar<si32>
+// CHECK-LABEL: @pop_shifts
+kgen.func @pop_shifts(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) {
+  // CHECK: = pop.shl %{{.*}}, %{{.*}} : !meta.scalar<si32>
   %0 = pop.shl %arg0, %arg1 : !meta.scalar<si32>
-  // CHECK: %1 = pop.shrs %arg0, %arg1 : !meta.scalar<si32>
-  %1 = pop.shrs %arg0, %arg1 : !meta.scalar<si32>
-  // CHECK: %2 = pop.shru %arg0, %arg1 : !meta.scalar<si32>
-  %2 = pop.shru %arg0, %arg1 : !meta.scalar<si32>
-  kgen.return %2 : !meta.scalar<si32>
+  // CHECK: = pop.shr %{{.*}}, %{{.*}} : !meta.scalar<si32>
+  %1 = pop.shr %arg0, %arg1 : !meta.scalar<si32>
+  kgen.return
 }
 
-// CHECK-LABEL: kgen.func @pop_shifts_simd(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
-kgen.func @pop_shifts_simd(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
-  // CHECK: %0 = pop.shl %arg0, %arg1 : !meta.simd<4, si32>
+// CHECK-LABEL: @pop_shifts_simd
+kgen.func @pop_shifts_simd(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>) {
+  // CHECK: pop.shl %{{.*}}, %{{.*}} : !meta.simd<4, si32>
   %0 = pop.shl %arg0, %arg1 : !meta.simd<4, si32>
-  // CHECK: %1 = pop.shrs %arg0, %arg1 : !meta.simd<4, si32>
-  %1 = pop.shrs %arg0, %arg1 : !meta.simd<4, si32>
-  // CHECK: %2 = pop.shru %arg0, %arg1 : !meta.simd<4, si32>
-  %2 = pop.shru %arg0, %arg1 : !meta.simd<4, si32>
-  kgen.return %2 : !meta.simd<4, si32>
+  // CHECK: pop.shr %{{.*}}, %{{.*}} : !meta.simd<4, si32>
+  %1 = pop.shr %arg0, %arg1 : !meta.simd<4, si32>
+  kgen.return
 }
 
 // CHECK-LABEL: kgen.func @pop_copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
