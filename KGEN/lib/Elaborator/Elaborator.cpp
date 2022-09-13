@@ -965,7 +965,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
         reportCalleeExpansionError(itf, bestSpecializationIdxOr.getError())};
 
   // Find the fastest one and return just that one.
-  return {result[*bestSpecializationIdxOr]};
+  return {std::move(result[*bestSpecializationIdxOr])};
 }
 
 /// Return all instantiations of the specified declaration (a  generator or
