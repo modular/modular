@@ -30,7 +30,7 @@ kgen.func @produces_result<() -> result>() {
 
 kgen.func @convert_meta_types(
     %arg0: !meta.scalar<f32>,
-    %arg1: !meta.pointer<!meta.scalar<f32>>,
+    %arg1: !meta.pointer<f32>,
     %arg2: !meta.simd<4, f32>,
     %arg3: !meta.buffer<?, si64>,
     %arg4: !meta.buffer<?, f32>) {

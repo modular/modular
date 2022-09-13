@@ -22,21 +22,21 @@ kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<4
 
 // CHECK-LABEL: kgen.generator @pointer_types<dt: dtype>(
 kgen.generator @pointer_types<dt: dtype>(
-  // CHECK: %arg0: !meta.pointer<!meta.scalar<dt>>, %arg1: !meta.pointer<!meta.scalar<f32>>, %arg2: !meta.pointer<?>) {
-  %arg0: !meta.pointer<!meta.scalar<dt>>, %arg1: !meta.pointer<!meta.scalar<f32>>, %arg2: !meta.pointer<?>) {
+  // CHECK: %arg0: !meta.pointer<dt>, %arg1: !meta.pointer<f32>, %arg2: !meta.pointer<?>) {
+  %arg0: !meta.pointer<dt>, %arg1: !meta.pointer<f32>, %arg2: !meta.pointer<?>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @meta_buffer_address<dt: dtype, size>(
 kgen.generator @meta_buffer_address<dt: dtype, size>(
-   %arg0: !meta.buffer<size, dt>, %arg1: !meta.buffer<?, ?>, %arg2: !meta.buffer<3, f32>) -> (!meta.pointer<!meta.scalar<dt>>, !meta.pointer<?>, !meta.pointer<!meta.scalar<f32>>) {
+   %arg0: !meta.buffer<size, dt>, %arg1: !meta.buffer<?, ?>, %arg2: !meta.buffer<3, f32>) -> (!meta.pointer<dt>, !meta.pointer<?>, !meta.pointer<f32>) {
   // CHECK: %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
   %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
   // CHECK: %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
   %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
   // CHECK: %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
   %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
-  kgen.return %0, %1, %2 : !meta.pointer<!meta.scalar<dt>>, !meta.pointer<?>, !meta.pointer<!meta.scalar<f32>>
+  kgen.return %0, %1, %2 : !meta.pointer<dt>, !meta.pointer<?>, !meta.pointer<f32>
 }
 
 // CHECK-LABEL: kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
@@ -128,19 +128,19 @@ kgen.generator @meta_simd_rebind<size1, size2, type1: dtype, type2: dtype>(%arg0
 
 // CHECK-LABEL: @meta_pointer_rebind
 // CHECK-SAME: %[[ARG0:.*]]:
-kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.pointer<?>) -> !meta.pointer<!meta.scalar<f32>> {
-  // CHECK: %[[V0]] = meta.pointer.rebind %[[ARG0]] : !meta.pointer<?> to !meta.pointer<!meta.scalar<type1>>
-  %0 = meta.pointer.rebind %arg0 : !meta.pointer<?> to !meta.pointer<!meta.scalar<type1>>
-  // CHECK: %[[V1]] = meta.pointer.rebind %[[V0]] : !meta.pointer<!meta.scalar<type1>> to !meta.pointer<!meta.scalar<type2>>
-  %1 = meta.pointer.rebind %0 : !meta.pointer<!meta.scalar<type1>> to !meta.pointer<!meta.scalar<type2>>
-  // CHECK: %[[V2]] = meta.pointer.rebind %[[V1]] : !meta.pointer<!meta.scalar<type2>> to !meta.pointer<!meta.scalar<f32>>
-  %2 = meta.pointer.rebind %1 : !meta.pointer<!meta.scalar<type2>> to !meta.pointer<!meta.scalar<f32>>
-  // CHECK: return %[[V2]] : !meta.pointer<!meta.scalar<f32>>
-  kgen.return %2 : !meta.pointer<!meta.scalar<f32>>
+kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.pointer<?>) -> !meta.pointer<f32> {
+  // CHECK: %[[V0]] = meta.pointer.rebind %[[ARG0]] : !meta.pointer<?> to !meta.pointer<type1>
+  %0 = meta.pointer.rebind %arg0 : !meta.pointer<?> to !meta.pointer<type1>
+  // CHECK: %[[V1]] = meta.pointer.rebind %[[V0]] : !meta.pointer<type1> to !meta.pointer<type2>
+  %1 = meta.pointer.rebind %0 : !meta.pointer<type1> to !meta.pointer<type2>
+  // CHECK: %[[V2]] = meta.pointer.rebind %[[V1]] : !meta.pointer<type2> to !meta.pointer<f32>
+  %2 = meta.pointer.rebind %1 : !meta.pointer<type2> to !meta.pointer<f32>
+  // CHECK: return %[[V2]] : !meta.pointer<f32>
+  kgen.return %2 : !meta.pointer<f32>
 }
 
 // CHECK-LABEL: @meta_buffer_construct
-kgen.func @meta_buffer_construct(%ptr: !meta.pointer<!meta.scalar<f32>>, %opaque: !meta.pointer<?>,
+kgen.func @meta_buffer_construct(%ptr: !meta.pointer<f32>, %opaque: !meta.pointer<?>,
                               %size: index, %dtype: !kgen.dtype) {
   // CHECK: meta.buffer.construct %{{.*}} : !meta.buffer<4, f32>
   %0 = meta.buffer.construct %ptr : !meta.buffer<4, f32>

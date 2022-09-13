@@ -56,8 +56,9 @@ struct FormatFunc : public llvm::FormatAdapter<FuncOp> {
         return;
       }
       if (auto ptr = t.dyn_cast<PointerType>()) {
-        if (Type type = ptr.resolveElementType())
-          printTypeAsC(type);
+        auto dtype = ptr.resolveDType();
+        if (dtype.isValid())
+          printDTypeAsC(dtype);
         else
           os << "void";
         os << " *";

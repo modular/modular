@@ -113,50 +113,25 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
 // PointerType
 //===----------------------------------------------------------------------===//
 
-def PointerType : ParameterizedMetaType<"Pointer", "pointer", [
-    DeclareTypeInterfaceMethods<DTypeInterface>
-  ]> {
+def PointerType : ParameterizedMetaType<"Pointer", "pointer"> {
   let summary = "parameterized pointer type";
   let description = [{
-    This type is parameterized with a !kgen.mlirtype type. The type is also
+    This type is parameterized with a !kgen.dtype type. The dtype type is also
     optional, in which case this is a pointer to a buffer with unknown element
-    type. A pointer of a scalar or SIMD type can be constructed.
-
-    Example:
-
-    ```mlir
-    // A pointer to a scalar.
-    !meta.pointer<!meta.scalar<f32>>
-    // A pointer to a SIMD vector.
-    !meta.pointer<!meta.simd<4, f32>>
-
-    // An pointer with unknown element type.
-    !meta.pointer<?>
-
-    // A parameterized scalar pointer.
-    !meta.pointer<!meta.scalar<type>>
-
-    // A completely parameterized pointer.
-    !meta.pointer<elementType>
-    ```
+    type.
   }];
 
-  let parameters = (ins "TypedAttr":$elementType);
+  let parameters = (ins "TypedAttr":$dType);
   let assemblyFormat = [{
-    `<` custom<OptionalElementType>($elementType) `>`
+    `<` custom<OptionalParamDTypeValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$ty), [{
+    TypeBuilderWithInferredContext<(ins "Attribute":$ty), [{
       return $_get(ty.getContext(), ty);
     }]>,
   ];
-
-  let extraClassDeclaration = [{
-    /// Try to narrow the type expression of the pointer type to an MLIR type.
-    Type resolveElementType() const;
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -186,7 +161,7 @@ def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
 /// A pointer to a concrete dtype.
 def ConcretePointer : ConfinedType<PointerType,
-    [CPred<"$_self.cast<PointerType>().getElementType()">]>;
+    [CPred<"$_self.cast<PointerType>().getDType()">]>;
 /// A buffer type with a concrete dtype.
 def ConcreteBuffer : ConfinedType<BufferType,
     [CPred<"$_self.cast<BufferType>().getDType()">],

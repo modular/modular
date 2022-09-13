@@ -584,8 +584,8 @@ def POP_LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
     Example:
 
     ```mlir
-    %0 = pop.load %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    %1 = pop.load %ptr1 : !meta.pointer<!meta.scalar<type>>
+    %0 = pop.load %ptr0 : !meta.pointer<f32>
+    %1 = pop.load %ptr1 : !meta.pointer<type>
     ```
   }];
 
@@ -609,8 +609,8 @@ def POP_StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
     Example:
 
     ```mlir
-    pop.store %0, %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    pop.store %1, %ptr1 : !meta.pointer<!meta.scalar<type>>
+    pop.store %0, %ptr0 : !meta.pointer<f32>
+    pop.store %1, %ptr1 : !meta.pointer<type>
     ```
   }];
 
@@ -632,7 +632,7 @@ def POP_OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
     Example:
 
     ```mlir
-    %addr = pop.offset %base[%idx] : !meta.pointer<!meta.scalar<f32>>
+    %addr = pop.offset %base[%idx] : !meta.pointer<f32>
     ```
   }];
 

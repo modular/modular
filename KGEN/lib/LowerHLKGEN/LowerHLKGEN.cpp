@@ -211,8 +211,8 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   // If both types are PointerType's, try to unify them.
   if (auto itfPointerTy = itfArgTy.dyn_cast<PointerType>())
     if (auto genPointerTy = genArgTy.dyn_cast<PointerType>())
-      return tryUnifyingTypeParameters(itfPointerTy.getElementType(),
-                                       genPointerTy.getElementType());
+      return tryUnifyingTypeParameters(itfPointerTy.getDType(),
+                                       genPointerTy.getDType());
 
   // If both types are SIMDType's, try to unify them.
   if (auto itfSIMDTy = itfArgTy.dyn_cast<SIMDType>())

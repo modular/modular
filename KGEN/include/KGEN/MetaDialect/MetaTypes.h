@@ -19,7 +19,6 @@
 #include "KGEN/MetaDialect/MetaTypes.h.inc"
 
 namespace M::KGEN {
-
 /// Check whether it is valid to cast between a meta type and an MLIR standard
 /// type. This function checks whether the data types are compatible using the
 /// provided `checkDType` function.
@@ -36,12 +35,7 @@ checkMetaCastedTypes(function_ref<InFlightDiagnostic(StringRef)> emitError,
 
 /// Given a type that implements `DTypeInterface`, return a scalar type of the
 /// same dtype as the given type.
-ScalarType getScalarOfSameDType(Type type);
-
-/// Given a type that implements `DTypeInterface`, return a scalar pointer type
-/// of the same dtype of the given type.
-PointerType getPointerOfSameDType(Type type);
-
+Type getScalarOfSameDType(Type type);
 } // namespace M::KGEN
 
 #endif // KGEN_METADIALECT_METATYPES_H
