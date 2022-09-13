@@ -17,7 +17,6 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/SubElementInterfaces.h"
 
 // Pull in all enum type definitions and utility function declarations.
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
@@ -110,9 +109,7 @@ ParseResult parseOptionalIndexParamValue(AsmParser &p,
 /// Base class for MLIR type constant attributes. This attribute represents a
 /// constant MLIR type expression.
 class TypeConstantAttr
-    : public Attribute,
-      public TypedAttr::Trait<TypeConstantAttr>,
-      public mlir::SubElementAttrInterface::Trait<TypeConstantAttr> {
+    : public Attribute {
 public:
   using Attribute::Attribute;
 

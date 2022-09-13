@@ -280,8 +280,6 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 def ConcreteTypeConstantAttr
   : ExprAttr<"ConcreteTypeConstant", "concretetype.constant",
              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
-  let cppBaseClassName = "TypeConstantAttr";
-
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -291,6 +289,9 @@ def ConcreteTypeConstantAttr
 
     The bound type must not have type parameters.
   }];
+
+  // Inherit from a base class.
+  let cppBaseClassName = "TypeConstantAttr";
 
   let parameters = (ins
     "Type":$value,
@@ -316,10 +317,6 @@ def ConcreteTypeConstantAttr
 def ParameterizedTypeConstantAttr
   : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",
              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
-  let cppBaseClassName = "TypeConstantAttr";
-  let storageClass = ConcreteTypeConstantAttr.storageClass;
-  let genStorageClass = 0;
-
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -329,6 +326,11 @@ def ParameterizedTypeConstantAttr
 
     The bound type is known to have type parameters.
   }];
+
+  // Inherit from a base class and re-use ConcreteTypeConstantAttr's storage.
+  let cppBaseClassName = "TypeConstantAttr";
+  let storageClass = ConcreteTypeConstantAttr.storageClass;
+  let genStorageClass = 0;
 
   let parameters = (ins
     "Type":$value,
