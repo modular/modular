@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -15,7 +16,6 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/SubElementInterfaces.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -359,6 +359,10 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
         break;
+      case (uint32_t)POC::GET_DTYPE:
+        // The `dtype` operator always has an `mlirtype` operand.
+        operandType = MLIRTypeType::get(p.getContext());
+        break;
       default:
         // Other operators default to the same operand type as the result type.
         operandType = type;
@@ -525,11 +529,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   }
 
   // If this is a type constant, print it as a bare type.
-  if (auto typeConstant = value.dyn_cast<ConcreteTypeConstantAttr>()) {
-    os << typeConstant.getValue();
-    return;
-  }
-  if (auto typeConstant = value.dyn_cast<ParameterizedTypeConstantAttr>()) {
+  if (auto typeConstant = value.dyn_cast<TypeConstantAttr>()) {
     os << typeConstant.getValue();
     return;
   }
@@ -841,6 +841,18 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
+  case POC::GET_DTYPE:
+    if (operands.size() != 1)
+      return emitError() << "'get_dtype' operator requires one operand";
+    if (!operands[0].getType().isa<MLIRTypeType>())
+      return emitError() << "'get_dtype' operand should be a !kgen.mlirtype";
+    if (!type.isa<DTypeType>())
+      return emitError() << "'get_dtype' should return a !kgen.dtype";
+    if (auto typeCst = operands[0].dyn_cast<TypeConstantAttr>()) {
+      if (!typeCst.getValue().isa<DTypeInterface>())
+        return emitError() << "'get_dtype' constant type operand does not "
+                              "implement DTypeInterface";
+    }
   }
   return success();
 }
@@ -1353,6 +1365,14 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   return ParamOperatorAttr::get(POC::IN, newOperands);
 }
 
+/// Simplifies a `dtype` operator. Try to narrow the operand to a type constant.
+/// If it does, the type must implement `DTypeInterface`.
+static Attribute simplifyGET_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
+  if (auto typeCst = operands[0].dyn_cast<TypeConstantAttr>())
+    return typeCst.getValue().cast<DTypeInterface>().getDType();
+  return {};
+}
+
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
                                  ArrayRef<TypedAttr> operandsIn, Type type) {
   auto result = get(opcode, operandsIn);
@@ -1431,6 +1451,10 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyIN(operands);
     resultType = IntegerType::get(context, 1);
     break;
+  case POC::GET_DTYPE:
+    result = simplifyGET_DTYPE(operands);
+    resultType = DTypeType::get(context);
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -1459,6 +1483,18 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
       return {};
   }
   return ParamOperatorAttr::get(getOpcode(), castedAttrs);
+}
+
+//===----------------------------------------------------------------------===//
+// TypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr TypeConstantAttr::get(Type value) {
+  return ParameterizedTypeConstantAttr::get(value);
+}
+
+bool TypeConstantAttr::classof(Attribute attr) {
+  return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1697,3 +1733,17 @@ Attribute EvalConfigurationArrayAttr::replaceImmediateSubElements(
 
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// Attribute Implementation
+//===----------------------------------------------------------------------===//
+
+Type TypeConstantAttr::getValue() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+}
+
+Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
+
+Type ParameterizedTypeConstantAttr::getValue() const {
+  return getImpl()->value;
+}

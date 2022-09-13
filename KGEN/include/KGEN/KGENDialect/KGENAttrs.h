@@ -17,6 +17,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/SubElementInterfaces.h"
 
 // Pull in all enum type definitions and utility function declarations.
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
@@ -43,14 +44,14 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 /// We expect all parameter expressions to simplify down to concrete constants
 /// after elaboration.  We don't want anything left as a ParamOperatorAttr or
 /// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
-static inline bool isSimpleConstant(Attribute attr) {
+inline bool isSimpleConstant(Attribute attr) {
   return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
                   ConcreteTypeConstantAttr>();
 }
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
-//
+//===----------------------------------------------------------------------===//
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
@@ -101,6 +102,29 @@ void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
 /// results in a null attribute.
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
+
+//===----------------------------------------------------------------------===//
+// TypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+/// Base class for MLIR type constant attributes. This attribute represents a
+/// constant MLIR type expression.
+class TypeConstantAttr
+    : public Attribute,
+      public TypedAttr::Trait<TypeConstantAttr>,
+      public mlir::SubElementAttrInterface::Trait<TypeConstantAttr> {
+public:
+  using Attribute::Attribute;
+
+  /// Returns the constant type value.
+  Type getValue() const;
+
+  /// Get a type constant attribute.
+  static TypedAttr get(Type value);
+
+  /// Support type inquiry.
+  static bool classof(Attribute attr);
+};
 
 } // namespace M::KGEN
 
