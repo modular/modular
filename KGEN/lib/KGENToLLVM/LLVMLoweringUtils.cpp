@@ -191,12 +191,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   // Convert pointer types to bare pointers of the dtype. If the dtype is
   // unspecified, return an untyped pointer.
   addConversion([=](PointerType pointer) -> Optional<Type> {
-    Type type = pointer.resolveElementType();
-    if (!type)
-      return LLVM::LLVMPointerType::get(pointer.getContext());
-    if (Type elementType = convertType(type))
-      return LLVM::LLVMPointerType::get(elementType);
-    return {};
+    return getLLVMPointerTo(&getContext(), pointer.resolveDType());
   });
 
   // Convert SIMD types to vector types.

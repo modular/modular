@@ -106,20 +106,16 @@ def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
 
     ```mlir
     // Rebind dtype from one domain to another.
-    %0 = meta.pointer.rebind %a : !meta.pointer<!meta.scalar<type1>> to
-                                  !meta.pointer<!meta.scalar<type2>>
+    %0 = meta.pointer.rebind %a : !meta.pointer<type1> to !meta.pointer<type2>
 
-    // Bind a parameterized element type to a concrete element type.
-    %1 = meta.pointer.rebind %b : !meta.pointer<elementType> to
-                                  !meta.pointer<!meta.scalar<f32>>
+    // Bind a parameterized dtype to a concrete dtype.
+    %1 = meta.pointer.rebind %b : !meta.pointer<type> to !meta.pointer<f32>
 
     // Unbind a concrete dtype to an unknown dtype.
-    %2 = meta.pointer.rebind %c : !meta.pointer<!meta.scalar<si32>> to
-                                  !meta.pointer<!meta.scalar<?>>
+    %2 = meta.pointer.rebind %c : !meta.pointer<si32> to !meta.pointer<?>
 
-    // ERROR: Cannot rebind between different concrete types.
-    %3 = meta.simd.rebind %d : !meta.pointer<!meta.scalar<f32>> to
-                               !meta.pointer<!meta.simd<2, si32>>
+    // ERROR: Cannot rebind between different concrete dtypes.
+    %3 = meta.simd.rebind %d : !meta.pointer<f32> to !meta.pointer<si32>
     ```
   }];
 }

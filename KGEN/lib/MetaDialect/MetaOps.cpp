@@ -101,14 +101,20 @@ OpFoldResult PointerRebindOp::fold(ArrayRef<Attribute> operands) {
 }
 
 LogicalResult PointerRebindOp::verify() {
-  return sameIfConcrete<ConcreteTypeConstantAttr>(
-      *this, getInput().getType().cast<PointerType>().getElementType(),
-      getType().getElementType(), "pointer element type");
+  return sameIfConcrete<DTypeConstantAttr>(
+      *this, getInput().getType().cast<PointerType>().getDType(),
+      getType().getDType(), "pointer dtype");
 }
 
 //===----------------------------------------------------------------------===//
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
+
+/// Get a pointer type of the same (potentially unknown) dtype.
+static PointerType getPointerOfSameDType(Type type) {
+  return PointerType::get(type.getContext(),
+                          type.cast<DTypeInterface>().getDType());
+}
 
 LogicalResult BufferConstructOp::verify() {
   BufferType type = getType();
@@ -154,11 +160,10 @@ LogicalResult BufferAddressOp::inferReturnTypes(
     DictionaryAttr attributes, mlir::RegionRange regions,
     SmallVectorImpl<Type> &inferredReturnTypes) {
   BufferAddressOpAdaptor adaptor(operands, attributes);
-  TypedAttr elementType;
-  if (TypedAttr dtype =
-          adaptor.getValue().getType().cast<BufferType>().getDType())
-    elementType = ParameterizedTypeConstantAttr::get(ScalarType::get(dtype));
-  inferredReturnTypes.push_back(PointerType::get(context, elementType));
+  Type inferredPointerType = PointerType::get(
+      context, adaptor.getValue().getType().cast<BufferType>().getDType());
+  inferredReturnTypes.push_back(inferredPointerType);
+
   return success();
 }
 
