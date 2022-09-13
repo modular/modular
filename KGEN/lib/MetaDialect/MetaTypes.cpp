@@ -64,9 +64,16 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
 // Meta Type Constraints
 //===----------------------------------------------------------------------===//
 
-Type M::KGEN::getScalarOfSameDType(Type type) {
+ScalarType M::KGEN::getScalarOfSameDType(Type type) {
   return ScalarType::get(type.getContext(),
                          type.cast<DTypeInterface>().getDType());
+}
+
+PointerType M::KGEN::getPointerOfSameDType(Type type) {
+  if (TypedAttr dtype = type.cast<DTypeInterface>().getDType())
+    return PointerType::get(
+        ParameterizedTypeConstantAttr::get(ScalarType::get(dtype)));
+  return PointerType::get(type.getContext(), nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -105,6 +112,35 @@ static void printOptionalParamDTypeValue(AsmPrinter &p, Attribute value) {
     return;
   }
   printParamDTypeValue(p, value);
+}
+
+//===----------------------------------------------------------------------===//
+// custom<OptionalElementType>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseOptionalElementType(AsmParser &p,
+                                            FailureOr<TypedAttr> &result) {
+  if (succeeded(p.parseOptionalQuestion())) {
+    result = TypedAttr();
+    return success();
+  }
+
+  Type elementType;
+  if (p.parseType(elementType))
+    return failure();
+  result = ParameterizedTypeConstantAttr::get(elementType);
+  return success();
+}
+
+static void printOptionalElementType(AsmPrinter &p, TypedAttr value) {
+  if (!value) {
+    p << '?';
+    return;
+  }
+  if (auto type = value.dyn_cast<ConcreteTypeConstantAttr>())
+    p.printType(type.getValue());
+  else if (auto type = value.dyn_cast<ParameterizedTypeConstantAttr>())
+    p.printType(type.getValue());
 }
 
 //===----------------------------------------------------------------------===//
@@ -405,21 +441,34 @@ FailureOr<size_t> BufferType::getSizeInBytes(Location loc,
 LogicalResult
 PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                     TypedAttr dtype) {
-  if (dtype && !dtype.getType().isa<DTypeType>())
-    return emitError() << "type parameter for pointer must be a !kgen.dtype";
+  if (dtype && !dtype.getType().isa<MLIRTypeType>())
+    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
   return success();
 }
 
 void PointerType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getDType());
+  walkAttrsFn(getElementType());
 }
 
 Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                               ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 1 && replTypes.empty());
   return PointerType::get(replAttrs[0]);
+}
+
+Type PointerType::resolveElementType() const {
+  if (auto type = getElementType().dyn_cast_or_null<ConcreteTypeConstantAttr>())
+    return type.getValue();
+  if (auto type =
+          getElementType().dyn_cast_or_null<ParameterizedTypeConstantAttr>())
+    return type.getValue();
+  return nullptr;
+}
+
+TypedAttr PointerType::getDType() const {
+  return ParamOperatorAttr::get(POC::DTYPE, getElementType());
 }
 
 /// Implements `OpaqueObjectInterface::populate`. Because we don't know anything

@@ -199,10 +199,10 @@ kgen.func @bad_scalar_rebind_dtype(%arg0: !meta.scalar<f32>) -> !meta.scalar<f64
 
 // -----
 
-kgen.func @bad_pointer_rebind_dtype(%arg0: !meta.pointer<f32>) -> !meta.pointer<f64> {
-  // expected-error @below {{input pointer dtype 'f32' disagrees with result pointer dtype 'f64'}}
-  %0 = meta.pointer.rebind %arg0 : !meta.pointer<f32> to !meta.pointer<f64>
-  kgen.return %0 : !meta.pointer<f64>
+kgen.func @bad_pointer_rebind_dtype(%arg0: !meta.pointer<!meta.scalar<f32>>) -> !meta.pointer<!meta.scalar<f64>> {
+  // expected-error @below {{input pointer element type '!meta.scalar<f32>' disagrees with result pointer element type '!meta.scalar<f64>'}}
+  %0 = meta.pointer.rebind %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.scalar<f64>>
+  kgen.return %0 : !meta.pointer<!meta.scalar<f64>>
 }
 
 // -----
