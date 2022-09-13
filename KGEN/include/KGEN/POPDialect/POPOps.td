@@ -419,10 +419,10 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
     Example:
 
     ```mlir
-    %0 = meta.bitcast %a : !meta.scalar<si32> to !meta.scalar<f32>
-    %1 = meta.bitcast %b : !meta.scalar<ui64> to !meta.scalar<si64>
-    %2 = meta.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
-    %3 = meta.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
+    %0 = pop.bitcast %a : !meta.scalar<si32> to !meta.scalar<f32>
+    %1 = pop.bitcast %b : !meta.scalar<ui64> to !meta.scalar<si64>
+    %2 = pop.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
+    %3 = pop.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
     ```
   }];
 
@@ -444,9 +444,9 @@ def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
     Example:
 
     ```mlir
-    %0 = meta.cast %a : !meta.scalar<si32> to !meta.scalar<f32>
-    %1 = meta.cast %b : !meta.scalar<ui64> to !meta.scalar<si32>
-    %2 = meta.cast %c : !meta.simd<4, f64> to !meta.simd<4, ui32>
+    %0 = pop.cast %a : !meta.scalar<si32> to !meta.scalar<f32>
+    %1 = pop.cast %b : !meta.scalar<ui64> to !meta.scalar<si32>
+    %2 = pop.cast %c : !meta.simd<4, f64> to !meta.simd<4, ui32>
     ```
   }];
 
