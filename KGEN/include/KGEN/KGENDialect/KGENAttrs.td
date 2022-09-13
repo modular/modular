@@ -214,6 +214,9 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Complex variadic operations.
   I32EnumAttrCase<"IN", 12, "in">,
 
+  // Unary type expressions.
+  I32EnumAttrCase<"GET_DTYPE", 13, "get_dtype">,
+
   // TODO: Can add string concat, etc as needed.
 ]>;
 }
@@ -277,11 +280,13 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 def ConcreteTypeConstantAttr
   : ExprAttr<"ConcreteTypeConstant", "concretetype.constant",
              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  let cppBaseClassName = "TypeConstantAttr";
+
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
-    `TypeAttr` in that it is an attribute referrs to a type.  The difference is
-    that it is a `TypedAttr` so it can be a parameter expression, and has
+    `TypeAttr` in that it is an attribute that refers to a type.  The difference
+    is that it is a `TypedAttr` so it can be a parameter expression, and has
     'kgen.type' itself.
 
     The bound type must not have type parameters.
@@ -311,6 +316,10 @@ def ConcreteTypeConstantAttr
 def ParameterizedTypeConstantAttr
   : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",
              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  let cppBaseClassName = "TypeConstantAttr";
+  let storageClass = ConcreteTypeConstantAttr.storageClass;
+  let genStorageClass = 0;
+
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
