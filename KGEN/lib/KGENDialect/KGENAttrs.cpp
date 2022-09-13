@@ -1472,6 +1472,14 @@ ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
   return Base::get(ctx, type, MLIRTypeType::get(ctx));
 }
 
+LogicalResult
+ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 Type type, Type attrType) {
+  if (!attrType.isa<MLIRTypeType>())
+    return emitError() << "expected type to be !kgen.mlirtype";
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
@@ -1483,6 +1491,13 @@ TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
   if (isParameterizedType(type))
     return Base::get(ctx, type, typeType);
   return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);
+}
+
+LogicalResult ParameterizedTypeConstantAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, Type type, Type attrType) {
+  if (!attrType.isa<MLIRTypeType>())
+    return emitError() << "expected type to be !kgen.mlirtype";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

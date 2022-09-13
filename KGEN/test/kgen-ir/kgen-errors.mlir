@@ -418,9 +418,19 @@ kgen.generator @hasResultParam<() -> param>() {
 kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
   // ok
   kgen.call @hasResultParam<() -> result>() : () -> ()
-  
+
   // expected-error@+1 {{cannot call generator with input arguments from concrete kgen.func}}
   kgen.call @hasInputParam<param = 42>() : () -> ()
-  
+
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{expected type to be !kgen.mlirtype}}
+"someop" () {value = #kgen.concretetype.constant<i32> : i32} : () -> ()
+
+// -----
+
+// expected-error @below {{expected type to be !kgen.mlirtype}}
+"someop" () {value = #kgen.parameterizedtype.constant<i32> : i32} : () -> ()
