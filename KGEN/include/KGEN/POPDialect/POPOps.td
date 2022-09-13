@@ -8,8 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/KGENDialect/ElaboratorOpInterface.td"
 include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
@@ -23,10 +25,10 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-def POP_ConstantOp : POPOp<"constant", [
-      ConstantLike,
-      NoSideEffect,
-      DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
+def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+    DeclareOpInterfaceMethods<ElaboratorOpInterface, ["finalizeElaboration"]>
+  ]> {
   let summary = "integer or floating point constant";
   let description = [{
     The `constant` operation produces a meta.scalar type equal to the
@@ -39,18 +41,22 @@ def POP_ConstantOp : POPOp<"constant", [
     ```mlir
     // ok because the input type and the meta.scalar dtype are the same.
     %0 = pop.constant(42 : si32) : !meta.scalar<si32>
-    %1 = pop.constant(42.0 : f64) : !meta.scalar<f64>
-    // ok because 42:i64 can be represented as an f32
-    %1 = pop.constant(42) : !meta.scalar<f32>
-    // ok because 42:i64 can be represented as an f64
-    %1 = pop.constant(42) : !meta.scalar<f64>
-    // ok because 0.021:f64 can be represented as an f32
-    %1 = pop.constant(0.021) : !meta.scalar<f32>
-    // not ok, because 16777217:i32 cannot be represented as an f32
+
+    // `42 : i64` can be represented losslessly as an `f32`.
+    %1 = pop.constant(42) : !meta.scalar<type>
+    %1 = pop.constant(42.0 : f32) : !meta.scalar<f32>
+
+    // `0.021 : f64` can be coerced to `f32`.
+    %1 = pop.constant(0.021) : !meta.scalar<type>
+    %1 = pop.constant(0.021 : f32) : !meta.scalar<f32>
+
+    // `16777217 : i32` cannot be represented losslessly as an `f32`. This
+    // results in an elaboration error.
+    %1 = pop.constant(16777217) : !meta.scalar<type>
     %1 = pop.constant(16777217) : !meta.scalar<f32>
     ```
   }];
-  let arguments = (ins AnyAttr:$value);
+  let arguments = (ins TypedAttrInterface:$value);
   let results = (outs ScalarOrSIMD:$result);
 
   let extraClassDeclaration = [{

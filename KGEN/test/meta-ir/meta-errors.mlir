@@ -1,5 +1,21 @@
 // RUN: kgen-opt %s -verify-diagnostics -split-input-file -o /dev/null
 
+kgen.func @cast_from_builtin_type(%arg0: !meta.scalar<si32>) {
+  // expected-error @below {{incompatible scalar data type}}
+  %0 = meta.cast_to_builtin %arg0: !meta.scalar<si32> to ui32
+  kgen.return
+}
+
+// -----
+
+kgen.func @cast_from_builtin_type(%arg0: si32) {
+  // expected-error @below {{incompatible scalar data type}}
+  %0 = meta.cast_from_builtin %arg0 : si32 to !meta.scalar<ui32>
+  kgen.return
+}
+
+// -----
+
 kgen.func @cast_from_builtin_type(%arg0: !meta.scalar<f32>) {
   // expected-error @+1 {{'meta.cast_to_builtin' op does not support casting '!meta.scalar<f32>' to 'i8'}}
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to i8

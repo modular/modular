@@ -1,28 +1,24 @@
 // RUN: kgen-opt %s | FileCheck %s
 
-// CHECK-LABEL: kgen.func @pop_constant() -> !meta.scalar<f32> {
-kgen.func @pop_constant() -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_constant()
+kgen.func @pop_constant() {
   // CHECK-NEXT: pop.constant(32 : si64) : !meta.scalar<si64>
   %0 = pop.constant(32 : si64) : !meta.scalar<si64>
   // CHECK-NEXT: pop.constant(3.200000e+01 : f32) : !meta.scalar<f32>
   %1 = pop.constant(32.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !meta.scalar<f32>
-  %2 = pop.constant(32.0 : f64) : !meta.scalar<f32>
-  // CHECK-NEXT: pop.constant(32 : i64) : !meta.scalar<f32>
-  %3 = pop.constant(32) : !meta.scalar<f32>
-  // CHECK-NEXT: pop.constant(32 : si64) : !meta.scalar<si32>
-  %4 = pop.constant(32 : si64) : !meta.scalar<si32>
-  kgen.return %1 : !meta.scalar<f32>
+  // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !meta.scalar<f64>
+  %2 = pop.constant(32.0 : f64) : !meta.scalar<f64>
+  kgen.return
 }
 
 // CHECK-LABEL: @pop_constant_simd
 kgen.func @pop_constant_simd() {
   // CHECK: pop.constant(dense<[32, 64]>
-  %0 = pop.constant(dense<[32, 64]> : vector<2xsi64>) : !meta.simd<2, si32>
+  %0 = pop.constant(dense<[32, 64]> : vector<2xsi64>) : !meta.simd<2, si64>
+  // CHECK: pop.constant(dense<[3.2{{.*}}, 6.4{{.*}}]>
+  %1 = pop.constant(dense<[32., 64.]> : vector<2xf64>) : !meta.simd<2, f64>
   // CHECK: pop.constant(dense<[32, 64]>
-  %1 = pop.constant(dense<[32, 64]> : vector<2xi32>) : !meta.simd<2, f64>
-  // CHECK: pop.constant(dense<[32, 64]>
-  %2 = pop.constant(dense<[32, 64]> : vector<2xi32>) : !meta.simd<2, ui64>
+  %2 = pop.constant(dense<[32, 64]> : vector<2xui32>) : !meta.simd<2, ui32>
   kgen.return
 }
 

@@ -6,6 +6,7 @@
 
 #include "LLVMLoweringUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 using namespace M;
@@ -117,18 +118,9 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
     return IntegerType::get(ctx, dtype.getIntegerWidthInBits());
 
   if (dtype.isFloat()) {
-    switch (dtype.getValue()) {
-    default:
-      break;
-    case DType::f16:
-      return FloatType::getF16(ctx);
-    case DType::bf16:
-      return FloatType::getBF16(ctx);
-    case DType::f32:
-      return FloatType::getF32(ctx);
-    case DType::f64:
-      return FloatType::getF64(ctx);
-    }
+    if (FloatType fpType = getEquivalentFloatType(ctx, dtype))
+      return fpType;
+    return {};
   }
 
   return {};

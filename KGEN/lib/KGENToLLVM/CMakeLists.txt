@@ -17,6 +17,8 @@ add_modular_conversion_library(KGENToLLVM
   KGENDialect
   MetaDialect
   POPDialect
+  MCompilerSupport
+
   MLIRIR
   MLIRLLVMCommonConversion
   MLIRSCFDialect

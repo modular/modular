@@ -11,6 +11,7 @@
 #ifndef KGEN_POPDIALECT_POPOPS_H
 #define KGEN_POPDIALECT_POPOPS_H
 
+#include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Interfaces/CastInterfaces.h"
