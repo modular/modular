@@ -80,7 +80,7 @@ kgen.func @cast_from_meta_type(%arg0: f64) {
 
 // -----
 
-kgen.func @meta_buffer_construct(%ptr: !meta.pointer<f32>) {
+kgen.func @meta_buffer_construct(%ptr: !meta.pointer<!meta.scalar<f32>>) {
   // expected-error @below {{requires a size operand}}
   %0 = meta.buffer.construct %ptr : !meta.buffer<?, f32>
   kgen.return

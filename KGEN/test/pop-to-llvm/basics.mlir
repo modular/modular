@@ -173,28 +173,28 @@ kgen.func @select(%arg0: !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !m
 // -----
 
 // CHECK-LABEL: @load
-kgen.func @load(%p: !meta.pointer<f32>) -> !meta.scalar<f32> {
+kgen.func @load(%p: !meta.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
   // CHECK: llvm.load
-  %0 = pop.load %p : !meta.pointer<f32>
+  %0 = pop.load %p : !meta.pointer<!meta.scalar<f32>>
   kgen.return %0 : !meta.scalar<f32>
 }
 
 // -----
 
 // CHECK-LABEL: @store
-kgen.func @store(%p: !meta.pointer<si32>, %v: !meta.scalar<si32>) {
+kgen.func @store(%p: !meta.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
   // CHECK: llvm.store
-  pop.store %v, %p : !meta.pointer<si32>
+  pop.store %v, %p : !meta.pointer<!meta.scalar<si32>>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !meta.pointer<f32>, %i: index) -> !meta.pointer<f32> {
+kgen.func @offset(%p: !meta.pointer<!meta.scalar<f32>>, %i: index) -> !meta.pointer<!meta.scalar<f32>> {
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
-  %0 = pop.offset %p[%i] : !meta.pointer<f32>
-  kgen.return %0 : !meta.pointer<f32>
+  %0 = pop.offset %p[%i] : !meta.pointer<!meta.scalar<f32>>
+  kgen.return %0 : !meta.pointer<!meta.scalar<f32>>
 }
 
 // -----
