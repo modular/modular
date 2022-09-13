@@ -11,8 +11,8 @@ kgen.func @constant() -> !meta.scalar<f32> {
 
 // CHECK-LABEL: @constant
 kgen.func @constant() -> !meta.scalar<si64> {
-  // CHECK: llvm.mlir.constant(1 : i64) : i64
-  %cst0 = pop.constant(1 : i64) : !meta.scalar<si64>
+  // CHECK: llvm.mlir.constant(1 : si64) : i64
+  %cst0 = pop.constant(1 : si64) : !meta.scalar<si64>
   kgen.return %cst0 : !meta.scalar<si64>
 }
 
@@ -188,7 +188,7 @@ kgen.func @store(%p: !meta.pointer<si32>, %v: !meta.scalar<si32>) {
   kgen.return
 }
 
-// ----
+// -----
 
 // CHECK-LABEL: @offset
 kgen.func @offset(%p: !meta.pointer<f32>, %i: index) -> !meta.pointer<f32> {

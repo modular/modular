@@ -10,7 +10,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -1501,30 +1501,55 @@ DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// Checks if the DType constant is compatible with the MLIR type.
-bool DTypeConstantAttr::isCompatibleWith(Type type) {
-  if (!type.isa<IntegerType, FloatType>())
-    return false;
+bool DTypeConstantAttr::isConvertibleTo(Type type) {
+  DType dtype = getDType();
 
-  auto eltTy = getDType();
-  auto builtinWidth = type.getIntOrFloatBitWidth();
-  auto eltWidth = eltTy.getWidthInBits();
-  if (eltTy.isBool())
-    return type.isa<IntegerType>() && (builtinWidth == 1);
-  if (eltTy.isInt())
-    return type.isa<IntegerType>() && (builtinWidth == eltWidth);
+  // Bool can only be `i1`.
+  if (dtype.isBool())
+    return type.isSignlessInteger(1);
 
-  switch (eltTy.getValue()) {
-  default:
-    return type.isa<FloatType>() && builtinWidth == eltWidth;
-  // Special cases for bf16, fp16, and tf32.
-  case DType::bf16:
-    return type.isa<BFloat16Type>();
-  case DType::f16:
-    return type.isa<Float16Type>();
-  case DType::tf32:
+  // Integer dtypes can be converted to MLIR integers of the same width and
+  // un-opposing signedness; signed integer dtypes can be converted to signless
+  // and signed MLIR integer types but not unsigned.
+  if (dtype.isInt()) {
+    auto intType = type.dyn_cast<IntegerType>();
+    if (!intType || intType.getWidth() != dtype.getWidthInBits())
+      return false;
+    return intType.isSignless() || intType.isSigned() == dtype.isSInt();
+  }
+
+  // Floating point dtypes can be converted to equivalent MLIR float types.
+  if (dtype.isFloat()) {
+    if (auto fpType = type.dyn_cast<FloatType>())
+      return areEquivalentFloatTypes(dtype, fpType);
     return false;
   }
+
+  return false;
+}
+
+bool DTypeConstantAttr::isConvertibleFrom(Type type) {
+  DType dtype = getDType();
+
+  // Bool can only be `i1`.
+  if (dtype.isBool())
+    return type.isSignlessInteger(1);
+
+  // Signless integers cannot be converted.
+  if (type.isSignlessInteger())
+    return false;
+
+  // Integers can be converted to dtypes of the same width and signedness.
+  if (auto intType = type.dyn_cast<IntegerType>()) {
+    return dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
+           dtype.isSInt() == intType.isSigned();
+  }
+
+  // Floating point types can be converted to equivalent dtypes.
+  if (auto fpType = type.dyn_cast<FloatType>())
+    return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
+
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

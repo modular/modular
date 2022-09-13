@@ -20,4 +20,5 @@ add_modular_dialect_library(POPDialect
   LINK_LIBS PUBLIC
   KGENDialect
   MetaDialect
+  MCompilerSupport
 )

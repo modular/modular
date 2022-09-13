@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "mlir/IR/TypeRange.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -27,21 +28,112 @@ using namespace POP;
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-static const llvm::fltSemantics &getFloatSemantics(DType dtype) {
-  switch (dtype.getValue()) {
-  default:
-    return llvm::APFloat::Bogus();
-  case DType::bf16:
-    return llvm::APFloat::BFloat();
-  case DType::f16:
-    return llvm::APFloat::IEEEhalf();
-  case DType::f32:
-    return llvm::APFloat::IEEEsingle();
-  case DType::f64:
-    return llvm::APFloat::IEEEdouble();
+/// Convert a single integer or float attribute to an attribute that fits the
+/// given dtype.
+static ErrorOr<Attribute> convertOneAttribute(Attribute attr, DType dtype) {
+
+  if (auto value = attr.dyn_cast<IntegerAttr>()) {
+    auto type = value.getType().cast<IntegerType>();
+
+    if (!dtype.isInt() && !dtype.isFloat())
+      return Error("cannot coerce constant value to " + dtype.getAsString());
+
+    if (dtype.isInt()) {
+      // Integer to integer conversion. Check that this isn't converting between
+      // signed or unsigned integers.
+      if (!type.isSignlessInteger() &&
+          type.isSignedInteger() != dtype.isSInt()) {
+        std::string errorMessage;
+        llvm::raw_string_ostream os(errorMessage);
+        os << "cannot change signfulness when converting from " << type
+           << " to " << dtype.getAsString();
+        return Error(std::move(os.str()));
+      }
+
+      // Truncate or extend the value depending on the result width.
+      APSInt origInt(value.getValue(), dtype.isUInt());
+      APSInt intValue = origInt.extOrTrunc(dtype.getWidthInBits());
+      if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
+        return Error("integer constant does not fit into " +
+                     dtype.getAsString());
+
+      // Update the integer type and replace the value.
+      return IntegerAttr::get(attr.getContext(), intValue);
+    }
+
+    // Integer to float conversion. Check for a valid floating point type.
+    FloatType fpType = getEquivalentFloatType(attr.getContext(), dtype);
+    if (!fpType)
+      return Error("unsupported floating point type: " + dtype.getAsString());
+
+    // Roundtrip the integer value through float.
+    APFloat apFp(fpType.getFloatSemantics());
+    apFp.convertFromAPInt(value.getValue(), !type.isUnsigned(),
+                          APFloat::rmNearestTiesToEven);
+    APSInt apInt(type.getIntOrFloatBitWidth(), type.isUnsigned());
+    bool exact;
+    apFp.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
+
+    // Fail if the roundtrip was lossy.
+    if (!exact || !APInt::isSameValue(apInt, value.getValue()))
+      return Error("integer constant could not be exactly converted to " +
+                   dtype.getAsString());
+    return FloatAttr::get(fpType, apFp);
   }
 
-  llvm_unreachable("unhandled floating point semantics for dtype");
+  auto value = attr.cast<FloatAttr>();
+  if (dtype.isInt()) {
+    // Float to integer conversion. Only exact integers can be converted.
+    if (!value.getValue().isInteger())
+      return Error("only exact integer floats can be converted to integers");
+
+    // Convert the float to an integer.
+    APSInt apInt(dtype.getWidthInBits(), dtype.isUInt());
+    bool exact;
+    value.getValue().convertToInteger(apInt, APFloat::rmTowardZero, &exact);
+    assert(exact && "expected an exact integer");
+
+    return IntegerAttr::get(attr.getContext(), apInt);
+  }
+
+  // Float to float conversion. Check for a valid floating point type.
+  FloatType fpType = getEquivalentFloatType(attr.getContext(), dtype);
+  if (!fpType)
+    return Error("unsupported floating point type: " + dtype.getAsString());
+
+  // Coerce the floating point type, regardless of lossiness.
+  APFloat apFp = value.getValue();
+  bool lossy;
+  apFp.convert(fpType.getFloatSemantics(), APFloat::rmTowardZero, &lossy);
+  return FloatAttr::get(fpType, apFp);
+}
+
+ErrorOrSuccess ConstantOp::finalizeElaboration() {
+  auto dtype = getType().cast<DTypeInterface>().resolveDType();
+  if (getValue().isa<IntegerAttr, FloatAttr>()) {
+    ErrorOr<Attribute> result = convertOneAttribute(getValue(), dtype);
+    if (result.isError())
+      return result.takeError();
+    setValueAttr(result.takeValue());
+    return success();
+  }
+
+  auto value = getValue().cast<DenseElementsAttr>();
+  SmallVector<Attribute> values;
+  values.reserve(value.size());
+  for (Attribute attr : value.getValues<Attribute>()) {
+    ErrorOr<Attribute> result = convertOneAttribute(attr, dtype);
+    if (result.isError())
+      return result.takeError();
+    values.push_back(result.takeValue());
+  }
+
+  setValueAttr(DenseElementsAttr::get(
+      VectorType::get(value.getType().cast<VectorType>().getShape(),
+                      // SIMD vectors cannot be empty.
+                      values.front().cast<TypedAttr>().getType()),
+      values));
+  return success();
 }
 
 void ConstantOp::getAsmResultNames(
@@ -49,109 +141,33 @@ void ConstantOp::getAsmResultNames(
   setNameFn(getResult(), "cst");
 }
 
-/// Checks if the DType constant can be cast from the MLIR type.
-static bool isCastableFrom(Attribute value, DTypeConstantAttr dtypeAttr) {
-  auto inputTy = value.cast<TypedAttr>().getType();
-  if (!inputTy.isa<IndexType, IntegerType, FloatType>())
-    return false;
-
-  // The types are compatible, so we have nothing else to do.
-  if (dtypeAttr.isCompatibleWith(inputTy))
-    return true;
-
-  // We now check if we can cast the value to the dtype without loss of
-  // accuracy.
-
-  auto dtype = dtypeAttr.getDType();
-
-  // Just reject if the dtype in an integer type, but the input is floating
-  // point.
-  if (dtype.isInt() && inputTy.isa<FloatType>())
-    return false;
-
-  // We now check if we can cast the input (which can be either floating
-  // point or integer) to the floating point dtype.
-
-  // If the input is a floating point value, then we just assume the input can
-  // be coerced to the dtype.
-  if (auto val = value.dyn_cast<FloatAttr>())
-    return true;
-
-  // Otherwise, the input is an integer value. We check if we can convert it to
-  // the target type.
-  assert(value.isa<IntegerAttr>() && "expected integer attribute");
-  auto intVal = value.cast<IntegerAttr>().getValue();
-
-  // If the target type is an integer, check if the integer value can be
-  // truncated without loss.
-  if (dtype.isInt()) {
-    if (dtype.getWidthInBits() > inputTy.getIntOrFloatBitWidth())
-      return true;
-    return APInt::isSameValue(intVal, intVal.trunc(dtype.getWidthInBits()));
-  }
-
-  // We now check if we can roundtrip the conversion to floating point and back.
-
-  // First, convert the input to floating point for the given dtype floating
-  // point semantics.
-  auto floatVal = llvm::APFloat(getFloatSemantics(dtype));
-  floatVal.convertFromAPInt(intVal, false, llvm::APFloat::rmNearestTiesToEven);
-
-  // Then, convert the floating point value to an integer value.
-  llvm::APSInt convertedVal(intVal);
-  bool isExact = false;
-  floatVal.convertToInteger(convertedVal, llvm::APFloat::rmTowardZero,
-                            &isExact);
-
-  // We then check if the converted value is the same value as the one we
-  // started with.
-  return isExact && APInt::isSameValue(convertedVal, intVal);
-}
-
-/// Check whether an attribute can be materialized by a constant of the given
-/// result type.
-static LogicalResult
-canMaterializeConstant(TypedAttr attr, Type type,
-                       function_ref<InFlightDiagnostic(StringRef)> emitError) {
-  if (type.isa<ScalarType>()) {
-    auto checkDType = [&](DTypeConstantAttr dtype) -> LogicalResult {
-      if (isCastableFrom(attr, dtype))
-        return mlir::success();
-      return emitError("expected the type of the constant input value (")
-             << attr.getType()
-             << ") to be compatible with the dtype of the return value ('"
-             << dtype.getDType().getAsString() << "').";
-    };
-    return checkMetaCastedTypes(emitError, type, attr.getType(), checkDType);
-  }
-
-  auto elements = attr.dyn_cast<DenseElementsAttr>();
-  if (!elements)
-    return emitError(
-        "expected vector constant to be a dense elements attribute");
-  auto checkDType = [&](DTypeConstantAttr dtype) -> LogicalResult {
-    for (Attribute element : elements.getValues<Attribute>()) {
-      if (!isCastableFrom(element, dtype))
-        return emitError("cannot cast from vector element to ")
-               << dtype.getDType().getAsString() << ": " << element;
-    }
-    return mlir::success();
-  };
-  return checkMetaCastedTypes(emitError, type, attr.getType(), checkDType);
-}
-
 LogicalResult ConstantOp::verify() {
-  return canMaterializeConstant(getValue(), getType(), [this](StringRef msg) {
-    return emitOpError(msg);
-  });
+  if (succeeded(checkMetaCastedTypes(
+          [this](StringRef msg) { return emitOpError(msg); }, getType(),
+          getValue().getType(),
+          [](Type type, DTypeConstantAttr dtype) {
+            return success(dtype.isConvertibleFrom(type));
+          })))
+    return success();
+  return emitOpError("result type (")
+         << getType() << ") is incompatible with value type ("
+         << getValue().getType() << ")";
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
-  return succeeded(canMaterializeConstant(value, type, [](StringRef msg) {
-    InFlightDiagnostic diag;
-    diag.abandon();
-    return diag;
-  }));
+  auto attr = value.dyn_cast<TypedAttr>();
+  if (!attr)
+    return false;
+  return succeeded(checkMetaCastedTypes(
+      [](StringRef msg) {
+        InFlightDiagnostic diag;
+        diag.abandon();
+        return diag;
+      },
+      type, attr.getType(),
+      [](Type type, DTypeConstantAttr dtype) {
+        return success(dtype.isConvertibleFrom(type));
+      }));
 }
 
 OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {

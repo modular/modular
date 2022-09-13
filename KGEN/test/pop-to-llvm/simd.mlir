@@ -48,7 +48,7 @@ kgen.func @int_neg_simd(%arg0: !meta.simd<4, si32>) -> !meta.simd<4, si32> {
 // CHECK-LABEL: @constant_simd
 kgen.func @constant_simd() -> !meta.simd<2, si32> {
   // CHECK: llvm.mlir.constant(dense<0>
-  %0 = pop.constant(dense<0> : vector<2xi32>) : !meta.simd<2, si32>
+  %0 = pop.constant(dense<0> : vector<2xsi32>) : !meta.simd<2, si32>
   kgen.return %0 : !meta.simd<2, si32>
 }
 

@@ -71,24 +71,24 @@ kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?
   kgen.return %0 : !meta.buffer<42, f32>
 }
 
-// CHECK-LABEL: kgen.func @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
-kgen.func @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) -> ui32 {
-  // CHECK: %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
+// CHECK-LABEL: @cast_to_builtin
+// CHECK-SAME: %[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<si32>
+kgen.func @cast_to_builtin(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<si32>) {
+  // CHECK: meta.cast_to_builtin %[[ARG0]] : !meta.scalar<f32> to f32
   %0 = meta.cast_to_builtin %arg0: !meta.scalar<f32> to f32
-  // CHECK: %1 = meta.cast_to_builtin %arg1 : !meta.scalar<si32> to ui32
-  %1 = meta.cast_to_builtin %arg1: !meta.scalar<si32> to ui32
-  // CHECK: kgen.return %1 : ui32
-  kgen.return %1 : ui32
+  // CHECK: meta.cast_to_builtin %[[ARG1]] : !meta.scalar<si32> to i32
+  %1 = meta.cast_to_builtin %arg1: !meta.scalar<si32> to i32
+  kgen.return
 }
 
-// CHECK-LABEL: kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
-kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) -> !meta.scalar<si32> {
-  // CHECK: %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
+// CHECK-LABEL: @cast_from_builtin
+// CHECK-SAME: %[[ARG0:.*]]: f32, %[[ARG1:.*]]: ui32
+kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) {
+  // CHECK: meta.cast_from_builtin %[[ARG0]] : f32 to !meta.scalar<f32>
   %0 = meta.cast_from_builtin %arg0: f32 to !meta.scalar<f32>
-  // CHECK: %1 = meta.cast_from_builtin %arg1 : ui32 to !meta.scalar<si32>
-  %1 = meta.cast_from_builtin %arg1: ui32 to !meta.scalar<si32>
-  // CHECK: kgen.return %1 : !meta.scalar<si32>
-  kgen.return %1 : !meta.scalar<si32>
+  // CHECK: meta.cast_from_builtin %[[ARG1]] : ui32 to !meta.scalar<ui32>
+  %1 = meta.cast_from_builtin %arg1: ui32 to !meta.scalar<ui32>
+  kgen.return
 }
 
 // CHECK-LABEL: @cast_from_builtin_vector

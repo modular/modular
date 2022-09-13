@@ -24,11 +24,11 @@ using namespace KGEN;
 LogicalResult M::KGEN::checkMetaCastedTypes(
     function_ref<InFlightDiagnostic(StringRef)> emitError, Type metaTy,
     Type standardTy,
-    function_ref<LogicalResult(DTypeConstantAttr)> checkDType) {
+    function_ref<LogicalResult(Type, DTypeConstantAttr)> checkDType) {
   if (auto scalarTy = metaTy.dyn_cast<ScalarType>()) {
     // Check that the data types match.
     if (auto dtype = scalarTy.getDType().dyn_cast<DTypeConstantAttr>();
-        dtype && failed(checkDType(dtype)))
+        dtype && failed(checkDType(standardTy, dtype)))
       return emitError("incompatible scalar data type");
     return success();
   }
@@ -46,7 +46,7 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
       size && size.getInt() != vectorTy.getShape().front())
     return emitError("dimensions do not match");
   if (auto dtype = simdTy.getDType().dyn_cast<DTypeConstantAttr>();
-      dtype && failed(checkDType(dtype)))
+      dtype && failed(checkDType(vectorTy.getElementType(), dtype)))
     return emitError("element types do not match");
   return success();
 }
@@ -54,15 +54,10 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
 LogicalResult M::KGEN::checkMetaCastedTypes(
     function_ref<InFlightDiagnostic(StringRef)> emitError, Type metaTy,
     Type standardTy) {
-  return checkMetaCastedTypes(
-      emitError, metaTy, standardTy, [standardTy](DTypeConstantAttr dtype) {
-        // If the standard type is a vector, check that the element types match.
-        if (auto vecType = standardTy.dyn_cast<VectorType>())
-          return success(dtype.isCompatibleWith(vecType.getElementType()));
-        // Otherwise, the type is a scalar and we check that the data types
-        // match.
-        return success(dtype.isCompatibleWith(standardTy));
-      });
+  return checkMetaCastedTypes(emitError, metaTy, standardTy,
+                              [](Type type, DTypeConstantAttr dtype) {
+                                return success(dtype.isConvertibleTo(type));
+                              });
 }
 
 //===----------------------------------------------------------------------===//

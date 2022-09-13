@@ -392,7 +392,7 @@ private:
   /// This is the generator -> func we're working on.
   ElaboratedGenerator elaboratedGenerator;
 
-  /// This is a diagnostic explaining the expansion failure if something goes
+  /// This is the diagnostic explaining the expansion failure if something goes
   /// wrong.
   Optional<ElaborationDiagnostic> diagnostic;
 
@@ -453,19 +453,31 @@ LogicalResult ParameterRewriter::rewriteOps(
   // Check that the thing we just built is correct IR!  We want to catch any
   // errors produced by the verify pass, we don't want them to actually get
   // emitted.
-  bool hadError = false;
+  std::string verificationErrorStr;
+  llvm::raw_string_ostream verificationError(verificationErrorStr);
+  Optional<Location> verificationLoc;
   mlir::ScopedDiagnosticHandler diagHandler(
       elaboratedGenerator.func.getContext(),
       [&](Diagnostic &diag) -> LogicalResult {
-        (void)error(diag.getLocation(),
-                    Twine("verification error: ") + diag.str());
-        hadError = true;
+        // Combine multiple verification errors.
+        if (verificationLoc) {
+          verificationError << "; " << diag.str();
+          verificationLoc =
+              FusedLoc::get(verificationLoc->getContext(),
+                            {*verificationLoc, diag.getLocation()});
+        } else {
+          verificationError << diag.str();
+          verificationLoc = diag.getLocation();
+        }
         return success();
       });
 
-  LogicalResult verifyResult = verify(elaboratedGenerator.func);
-  assert(hadError == failed(verifyResult) && "Result of verify is unexpected");
-  return verifyResult;
+  if (failed(verify(elaboratedGenerator.func))) {
+    return error(*verificationLoc,
+                 Twine("verification error: ") + verificationError.str());
+  }
+
+  return success();
 }
 
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {

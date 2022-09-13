@@ -1,17 +1,53 @@
 // RUN: kgen-opt %s -verify-diagnostics -split-input-file -o /dev/null
 
 kgen.func @pop_constant() -> !meta.scalar<si64> {
-  // expected-error @+2 {{incompatible scalar data type}}
-  // expected-error @+1 {{'pop.constant' op expected the type of the constant input value ('f32') to be compatible with the dtype of the return value ('si64').}}
+  // expected-error @below {{incompatible scalar data type}}
+  // expected-error @below {{is incompatible with value type}}
   %0 = pop.constant(32.0 : f32) : !meta.scalar<si64>
   kgen.return %0 : !meta.scalar<si64>
 }
 
 // -----
 
+kgen.func @pop_constant() -> !meta.scalar<f32> {
+  // expected-error @below {{incompatible scalar data type}}
+  // expected-error @below {{is incompatible with value type}}
+  %0 = pop.constant(16777217 : i32) : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{incompatible scalar data type}}
+  // expected-error @below {{is incompatible with value type}}
+  %0 = pop.constant(dense<0> : vector<1xi32>) : !meta.scalar<si32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{expected a vector type}}
+  // expected-error @below {{is incompatible with value type}}
+  %0 = pop.constant(0 : i32) : !meta.simd<2, si32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{element types do not match}}
+  // expected-error @below {{result type ('!meta.simd<2, f32>') is incompatible with value type ('vector<2xi32>')}}
+  %0 = pop.constant(dense<16777217> : vector<2xi32>) : !meta.simd<2, f32>
+  kgen.return
+}
+
+// -----
+
 // COM: copysign is not defined on non-floating point types
 
-kgen.func @pop_constant(%arg0 : !meta.scalar<si32>, %arg1 : !meta.scalar<si32>) -> !meta.scalar<si32> {
+kgen.func @pop_copysign(%arg0 : !meta.scalar<si32>, %arg1 : !meta.scalar<si32>) -> !meta.scalar<si32> {
   // expected-error @below {{whose value is either unbound or a floating-point dtype}}
   %0 = pop.copysign %arg0, %arg1 : !meta.scalar<si32>
   kgen.return %0 : !meta.scalar<si32>
@@ -21,48 +57,10 @@ kgen.func @pop_constant(%arg0 : !meta.scalar<si32>, %arg1 : !meta.scalar<si32>) 
 
 // COM: copysign is not defined on non-floating point types
 
-kgen.func @pop_constant(%arg0 : !meta.simd<4, si32>, %arg1 : !meta.simd<4, si32>) -> !meta.simd<4, si32> {
+kgen.func @pop_copysign(%arg0 : !meta.simd<4, si32>, %arg1 : !meta.simd<4, si32>) -> !meta.simd<4, si32> {
   // expected-error @below {{whose element type is either unbound or a floating-point dtype}}
   %0 = pop.copysign %arg0, %arg1 : !meta.simd<4, si32>
   kgen.return %0 : !meta.simd<4, si32>
-}
-
-// -----
-
-// COM: The value 16777217 is constructed so that it cannot be represented as a
-// single-precision floating point value.
-
-kgen.func @pop_constant() -> !meta.scalar<f32> {
-  // expected-error @+2 {{incompatible scalar data type}}
-  // expected-error @+1 {{'pop.constant' op expected the type of the constant input value ('i32') to be compatible with the dtype of the return value ('f32').}}
-  %0 = pop.constant(16777217 : i32) : !meta.scalar<f32>
-  kgen.return %0 : !meta.scalar<f32>
-}
-
-// -----
-
-kgen.func @pop_constant() {
-  // expected-error @+2 {{incompatible scalar data type}}
-  // expected-error @+1 {{expected the type of the constant input value ('vector<1xi32>') to be compatible}}
-  %0 = pop.constant(dense<0> : vector<1xi32>) : !meta.scalar<si32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @pop_constant() {
-  // expected-error @below {{expected vector constant to be a dense elements attribute}}
-  %0 = pop.constant(0 : i32) : !meta.simd<2, si32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @pop_constant() {
-  // expected-error @+2 {{element types do not match}}
-  // expected-error @+1 {{cannot cast from vector element to f32}}
-  %0 = pop.constant(dense<16777217> : vector<2xi32>) : !meta.simd<2, f32>
-  kgen.return
 }
 
 // -----

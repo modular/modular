@@ -352,10 +352,10 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Checks if the DType is compatible with the MLIR type.
-    /// Types are compatible if the DType and the MLIR types are the same. I.e.
-    /// The kind (integral or floating) is the same as well as the bitwidth.
-    bool isCompatibleWith(Type type);
+    /// Check if the DType is convertible to the MLIR type.
+    bool isConvertibleTo(Type type);
+    /// Check if the MLIR type can be converted from the DType.
+    bool isConvertibleFrom(Type type);
   }];
 }
 
