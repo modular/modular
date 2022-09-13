@@ -287,16 +287,18 @@ def ConcreteTypeConstantAttr
     The bound type must not have type parameters.
   }];
 
-  let parameters = (ins "Type":$value, AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "`<` $value `>`";
-  let skipDefaultBuilders = 1;
+  let parameters = (ins
+    "Type":$value,
+    AttributeSelfTypeParameter<"", "mlir::Type",
+                               "MLIRTypeType::get($_ctxt)">:$type
+  );
+
   let builders = [
     AttrBuilderWithInferredContext<(ins "mlir::Type":$value)>,
-    // This builder is required by ODS.
-    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$attrType), [{
-      assert(attrType.isa<KGEN::MLIRTypeType>()); return get(value);
-    }]>,
   ];
+
+  let assemblyFormat = "`<` $value `>`";
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -319,16 +321,18 @@ def ParameterizedTypeConstantAttr
     The bound type is known to have type parameters.
   }];
 
-  let parameters = (ins "Type":$value, AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "`<` $value `>`";
-  let skipDefaultBuilders = 1;
+  let parameters = (ins
+    "Type":$value,
+    AttributeSelfTypeParameter<"", "mlir::Type",
+                               "MLIRTypeType::get($_ctxt)">:$type
+  );
+
   let builders = [
     AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
-    // This builder is required by ODS.
-    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$attrType), [{
-      assert(attrType.isa<KGEN::MLIRTypeType>()); return get(value);
-    }], "TypedAttr">,
   ];
+
+  let assemblyFormat = "`<` $value `>`";
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
