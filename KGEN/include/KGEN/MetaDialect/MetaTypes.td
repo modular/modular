@@ -193,6 +193,9 @@ def ConcreteBuffer : ConfinedType<BufferType,
 def ScalarOrSIMD : AnyTypeOf<
     [ScalarType, SIMDType, ParamRefType]>;
 
+def ScalarOrSIMDOrPointer : AnyTypeOf<
+    [ScalarOrSIMD, PointerType]>;
+
 def BoolScalarOrSIMD : AnyTypeOf<
     [BoolScalar, BoolSIMD, ParamRefType]>;
 

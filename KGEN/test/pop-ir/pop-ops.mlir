@@ -241,6 +241,19 @@ kgen.generator @simd_bitcast(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f64
   kgen.return %3 : !meta.simd<4, f32>
 }
 
+// CHECK-LABEL: @pointer_bitcast
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.generator @pointer_bitcast(%arg0: !meta.pointer<!meta.scalar<f32>>, %arg1: !meta.pointer<!meta.simd<4, f64>>) ->
+   (!meta.pointer<!meta.simd<4, si32>>, !meta.pointer<!meta.scalar<f64>>) {
+  // CHECK: %[[V0:.*]] = pop.bitcast %[[ARG0]] : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.simd<4, si32>>
+  %0 = pop.bitcast %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.simd<4, si32>>
+  // CHECK: %[[V1:.*]] = pop.bitcast %[[ARG1]] : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
+  %1 = pop.bitcast %arg1 : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
+  // CHECK: return %[[V0]], %[[V1]]
+  kgen.return %0, %1 : !meta.pointer<!meta.simd<4, si32>>, !meta.pointer<!meta.scalar<f64>>
+}
+
 // CHECK-LABEL: @scalar_cast
 // CHECK-SAME: %[[A:.*]]:
 kgen.generator @scalar_cast<type: dtype>(%a: !meta.scalar<f32>) -> !meta.scalar<si32> {
