@@ -25,14 +25,13 @@ class ParameterizedMetaType<string name, string typeMnemonic,
                             list<Trait> traits = []>
     : MetaType<name, typeMnemonic, [
         DeclareTypeInterfaceMethods<SubElementTypeInterface>,
-        DTypeInterface
       ] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ScalarType
 //===----------------------------------------------------------------------===//
 
-def ScalarType : ParameterizedMetaType<"Scalar", "scalar"> {
+def ScalarType : ParameterizedMetaType<"Scalar", "scalar", [DTypeInterface]> {
   let summary = "parameterized scalar type";
   let description = [{
     This type is parameterized with a value of !kgen.dtype type.
@@ -53,7 +52,7 @@ def ScalarType : ParameterizedMetaType<"Scalar", "scalar"> {
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def SIMDType : ParameterizedMetaType<"SIMD", "simd"> {
+def SIMDType : ParameterizedMetaType<"SIMD", "simd", [DTypeInterface]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -81,7 +80,7 @@ def SIMDType : ParameterizedMetaType<"SIMD", "simd"> {
 // BufferType
 //===----------------------------------------------------------------------===//
 
-def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
+def BufferType : ParameterizedMetaType<"Buffer", "buffer", [DTypeInterface]> {
   let summary = "parameterized buffer type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.  The size
@@ -113,9 +112,7 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer"> {
 // PointerType
 //===----------------------------------------------------------------------===//
 
-def PointerType : ParameterizedMetaType<"Pointer", "pointer", [
-    DeclareTypeInterfaceMethods<DTypeInterface>
-  ]> {
+def PointerType : ParameterizedMetaType<"Pointer", "pointer"> {
   let summary = "parameterized pointer type";
   let description = [{
     This type is parameterized with a !kgen.mlirtype type. The type is also
