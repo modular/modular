@@ -164,6 +164,26 @@ def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
+// MaxOp
+//===----------------------------------------------------------------------===//
+
+def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
+  let summary = "max";
+  let description = [{
+    The `max` operation takes two meta.scalar or meta.simd types
+    and returns their elementwise max. The operand and result types must be
+    the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.max %a, %b : !meta.scalar<type>
+    %c = pop.max %a, %b : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SubOp
 //===----------------------------------------------------------------------===//
 

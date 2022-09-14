@@ -88,6 +88,21 @@ kgen.func @pop_sub_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) 
   kgen.return %0 : !meta.simd<4, f32>
 }
 
+// CHECK-LABEL: @pop_max
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<type>, %[[ARG1:.*]]: !meta.scalar<type>) -> !meta.scalar<type> 
+kgen.generator @pop_max<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> !meta.scalar<type> {
+  // CHECK-NEXT: %0 = pop.max %[[ARG0]], %[[ARG1]] : !meta.scalar<type>
+  %c = pop.max %a, %b : !meta.scalar<type>
+  kgen.return %c : !meta.scalar<type>
+}
+
+// CHECK-LABEL: kgen.func @pop_max_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+kgen.func @pop_max_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+  // CHECK-NEXT: %0 = pop.max %arg0, %arg1 : !meta.simd<4, f32>
+  %0 = pop.max %arg0, %arg1 : !meta.simd<4, f32>
+  kgen.return %0 : !meta.simd<4, f32>
+}
+
 // CHECK-LABEL: kgen.func @pop_mul
 // CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_mul(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {

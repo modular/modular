@@ -112,6 +112,32 @@ kgen.func @mul(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 // -----
 
+// CHECK-LABEL: @max
+kgen.func @max(%arg0: !meta.scalar<si32>, %arg1: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  // CHECK: llvm.intr.smax
+  %0 = pop.max %arg0, %arg1 : !meta.scalar<si32>
+  kgen.return %0 : !meta.scalar<si32>
+}
+
+// -----
+
+// CHECK-LABEL: @max
+kgen.func @max(%arg0: !meta.scalar<ui32>, %arg1: !meta.scalar<ui32>) -> !meta.scalar<ui32> {
+  // CHECK: llvm.intr.umax
+  %0 = pop.max %arg0, %arg1 : !meta.scalar<ui32>
+  kgen.return %0 : !meta.scalar<ui32>
+}
+
+// -----
+
+// CHECK-LABEL: @max
+kgen.func @max(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: llvm.intr.maximum
+  %0 = pop.max %arg0, %arg1 : !meta.scalar<f32>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
 // CHECK-LABEL: @div
 kgen.func @div(%arg0: !meta.scalar<si32>,
                  %arg1: !meta.scalar<ui32>,
