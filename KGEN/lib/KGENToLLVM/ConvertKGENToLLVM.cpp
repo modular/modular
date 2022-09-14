@@ -41,13 +41,16 @@ public:
       return emitError(func.getLoc(), "failed to convert func signature");
 
     // Create the LLVM function.
-    auto funcOp = rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
-        func, func.getNameAttr(), funcType);
+    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        func.getLoc(), func.getNameAttr(), funcType);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(0), funcOp.getBody(),
                                 funcOp.end());
     (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
+
+    // Remove the function.
+    rewriter.eraseOp(func);
     return success();
   }
 };
