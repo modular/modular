@@ -29,16 +29,18 @@ kgen.generator @pop_constant2<type: dtype>() -> !meta.scalar<type> {
   kgen.return %0 : !meta.scalar<type>
 }
 
-// CHECK-LABEL: kgen.func @pop_abs(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_abs
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_abs(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %0 = pop.abs %arg0 : !meta.scalar<f32>
+  // CHECK: %[[V0:.*]] = pop.abs %[[ARG0]] : !meta.scalar<f32>
   %0 = pop.abs %arg0 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_neg(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_neg
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_neg(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %0 = pop.neg %arg0 : !meta.scalar<f32>
+  // CHECK: %[[V0:.*]] = pop.neg %[[ARG0]] : !meta.scalar<f32>
   %0 = pop.neg %arg0 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
@@ -49,63 +51,71 @@ kgen.func @pop_add() -> !meta.scalar<f32> {
   %a = pop.constant(4.0 : f32) : !meta.scalar<f32>
   // CHECK-NEXT: %[[CST0:.*]] = pop.constant(6.000000e+00 : f32) : !meta.scalar<f32>
   %b = pop.constant(6.0 : f32) : !meta.scalar<f32>
-  // CHECK-NEXT: %0 = pop.add %[[CST]], %[[CST0]] : !meta.scalar<f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.add %[[CST]], %[[CST0]] : !meta.scalar<f32>
   %c = pop.add %a, %b : !meta.scalar<f32>
   kgen.return %c : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.generator @pop_add2<type: dtype>(%arg0: !meta.scalar<type>, %arg1: !meta.scalar<type>) -> !meta.scalar<type> {
+// CHECK-LABEL: kgen.generator @pop_add2<type: dtype>
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<type>, %[[ARG1:.*]]: !meta.scalar<type>) -> !meta.scalar<type> {
 kgen.generator @pop_add2<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> !meta.scalar<type> {
-  // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.scalar<type>
+  // CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !meta.scalar<type>
   %c = pop.add %a, %b : !meta.scalar<type>
   kgen.return %c : !meta.scalar<type>
 }
 
-// CHECK-LABEL: kgen.func @pop_add_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_add_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_add_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.add %arg0, %arg1 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !meta.simd<4, f32>
   %0 = pop.add %arg0, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_sub(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_sub
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_sub(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK-NEXT: %0 = pop.sub %arg0, %arg1 : !meta.scalar<f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.sub %[[ARG0]], %[[ARG1]] : !meta.scalar<f32>
   %0 = pop.sub %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_sub_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_sub_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_sub_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.sub %arg0, %arg1 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.sub %[[ARG0]], %[[ARG1]] : !meta.simd<4, f32>
   %0 = pop.sub %arg0, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_mul(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_mul
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_mul(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK-NEXT: %0 = pop.mul %arg0, %arg1 : !meta.scalar<f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.mul %[[ARG0]], %[[ARG1]] : !meta.scalar<f32>
   %0 = pop.mul %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_mul_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_mul_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_mul_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.mul %arg0, %arg1 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.mul %[[ARG0]], %[[ARG1]] : !meta.simd<4, f32>
   %0 = pop.mul %arg0, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_div(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_div
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_div(%arg0 : !meta.scalar<f32>, %arg1 : !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK-NEXT: %0 = pop.div %arg0, %arg1 : !meta.scalar<f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.div %[[ARG0]], %[[ARG1]] : !meta.scalar<f32>
   %0 = pop.div %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_div_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_div_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_div_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.div %arg0, %arg1 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.div %[[ARG0]], %[[ARG1]] : !meta.simd<4, f32>
   %0 = pop.div %arg0, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
@@ -128,30 +138,34 @@ kgen.func @pop_shifts_simd(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @pop_copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_copysign
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_copysign(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %0 = pop.copysign %arg0, %arg1 : !meta.scalar<f32>
+  // CHECK: %[[V0:.*]] = pop.copysign %[[ARG0]], %[[ARG1]] : !meta.scalar<f32>
   %0 = pop.copysign %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_copysign_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_copysign_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_copysign_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.copysign %arg0, %arg1 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.copysign %[[ARG0]], %[[ARG1]] : !meta.simd<4, f32>
   %0 = pop.copysign %arg0, %arg1 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_fma(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @pop_fma
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>, %[[ARG1:.*]]: !meta.scalar<f32>, %[[ARG2:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @pop_fma(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>, %arg2: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: %0 = pop.fma %arg0, %arg1, %arg2 : !meta.scalar<f32>
+  // CHECK: %[[V0:.*]] = pop.fma %[[ARG0]], %[[ARG1]], %[[ARG2]] : !meta.scalar<f32>
   %0 = pop.fma %arg0, %arg1, %arg2: !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_fma_simd(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f32>, %arg2: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
+// CHECK-LABEL: kgen.func @pop_fma_simd
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<4, f32>, %[[ARG1:.*]]: !meta.simd<4, f32>, %[[ARG2:.*]]: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
 kgen.func @pop_fma_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>, %arg2 : !meta.simd<4, f32>) -> !meta.simd<4, f32> {
-  // CHECK-NEXT: %0 = pop.fma %arg0, %arg1, %arg2 : !meta.simd<4, f32>
+  // CHECK-NEXT: %[[V0:.*]] = pop.fma %[[ARG0]], %[[ARG1]], %[[ARG2]] : !meta.simd<4, f32>
   %0 = pop.fma %arg0, %arg1, %arg2 : !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
 }
@@ -392,11 +406,12 @@ kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
 }
 
 // CHECK-LABEL: kgen.generator @parametricAdd
+// CHECK-SAME: %[[ARG0:.*]]: !kgen.paramref<ty>, %[[ARG1:.*]]: !kgen.paramref<ty>
 kgen.generator @parametricAdd<ty: type>
   (%arg0: !kgen.paramref<ty>, %arg1: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
 
   // Fully parametric operations are ok!
-  // CHECK: %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
+  // CHECK: %{{.*}} = pop.add %[[ARG0]], %[[ARG1]] : !kgen.paramref<ty>
   %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
   kgen.return %0 : !kgen.paramref<ty>
 }

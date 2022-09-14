@@ -34,9 +34,9 @@ kgen.generator @badAddOne(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> impleme
 
 // CHECK-LABEL: kgen.func @returnTwo
 kgen.generator @returnTwo() -> !meta.scalar<f32> {
-  // CHECK: %cst = pop.constant
+  // CHECK: %[[CST:.*]] = pop.constant
   %0 = pop.constant (1.0 : f32) : !meta.scalar<f32>
-  // CHECK: kgen.call @goodAddOne(%cst)
+  // CHECK: kgen.call @goodAddOne(%[[CST]])
   %1 = kgen.call @addOne(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
   kgen.return %1 : !meta.scalar<f32>
 }

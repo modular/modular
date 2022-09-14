@@ -1,8 +1,9 @@
 // RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
 // RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
 
-// CHECK-LABEL: llvm.func @trivial(%arg0: i32)
-// CHECK-NEXT: llvm.return %arg0 : i32
+// CHECK-LABEL: llvm.func @trivial
+// CHECK-SAME: (%[[ARG0:.*]]: i32)
+// CHECK-NEXT: llvm.return %[[ARG0]] : i32
 kgen.func @trivial(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
@@ -52,8 +53,9 @@ kgen.func @"float_constant_f32,value=1.1283791670955126,type=f32"() -> !meta.sca
 
 // -----
 
-// CHECK-LABEL: llvm.func @"mul_f32,type=f32"(%arg0: f32, %arg1: f32) -> f32
-// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %arg0, %arg1
+// CHECK-LABEL: llvm.func @"mul_f32,type=f32"
+// CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32) -> f32
+// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: llvm.return [[OUT]] : f32
 kgen.func @"mul_f32,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
   %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
@@ -63,8 +65,9 @@ kgen.func @"mul_f32,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>
   kgen.return %3 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: llvm.func @"void,type=f32"(%arg0: f32, %arg1: f32)
-// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %arg0, %arg1
+// CHECK-LABEL: llvm.func @"void,type=f32"
+// CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32)
+// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: llvm.return
 kgen.func @"void,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) {
   %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
@@ -76,8 +79,9 @@ kgen.func @"void,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) {
 
 // -----
 
-// CHECK-LABEL: llvm.func @"struct,type=f32"(%arg0: f32, %arg1: f32) -> !llvm.struct<(f32, f32)>
-// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %arg0, %arg1
+// CHECK-LABEL: llvm.func @"struct,type=f32"
+// CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32) -> !llvm.struct<(f32, f32)>
+// CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: [[UNDEF:%[0-9]+]] = llvm.mlir.undef : !llvm.struct<(f32, f32)>
 // CHECK: [[ONE:%[0-9]+]] = llvm.insertvalue [[OUT]], [[UNDEF]][0] : !llvm.struct<(f32, f32)>
 // CHECK: [[TWO:%[0-9]+]] = llvm.insertvalue [[OUT]], [[ONE]][1] : !llvm.struct<(f32, f32)>
