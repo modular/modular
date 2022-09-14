@@ -456,10 +456,6 @@ Type PointerType::resolveElementType() const {
   return nullptr;
 }
 
-TypedAttr PointerType::getDType() const {
-  return ParamOperatorAttr::get(POC::GET_DTYPE, getElementType());
-}
-
 /// Implements `OpaqueObjectInterface::populate`. Because we don't know anything
 /// about the pointer's size, for now, we will leave this as impossible to
 /// populate. This could be changed in the future by passing the size of the

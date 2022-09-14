@@ -295,7 +295,8 @@ LogicalResult SIMDShuffleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
-  build(b, state, getScalarOfSameDType(ptr.getType()), ptr);
+  auto type = ptr.getType().cast<PointerType>().getElementType();
+  build(b, state, ParamRefType::get(type), ptr);
 }
 
 //===----------------------------------------------------------------------===//
