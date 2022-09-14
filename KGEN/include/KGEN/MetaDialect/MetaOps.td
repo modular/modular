@@ -109,13 +109,13 @@ def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
     %0 = meta.pointer.rebind %a : !meta.pointer<!meta.scalar<type1>> to
                                   !meta.pointer<!meta.scalar<type2>>
 
-    // Bind a parameterized element type to a concrete element type.
+    // Bind a parameterized element type to a parameterized element type.
     %1 = meta.pointer.rebind %b : !meta.pointer<elementType> to
-                                  !meta.pointer<!meta.scalar<f32>>
+                                  !meta.pointer<!meta.scalar<type>>
 
-    // Unbind a concrete dtype to an unknown dtype.
+    // Unbind a concrete element type to an unknown element type.
     %2 = meta.pointer.rebind %c : !meta.pointer<!meta.scalar<si32>> to
-                                  !meta.pointer<!meta.scalar<?>>
+                                  !meta.pointer<?>
 
     // ERROR: Cannot rebind between different concrete types.
     %3 = meta.simd.rebind %d : !meta.pointer<!meta.scalar<f32>> to
@@ -130,8 +130,7 @@ def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
 
 def BufferConstructOp : MetaOp<"buffer.construct", [
     NoSideEffect, AttrSizedOperandSegments,
-    TypesMatchWith<"pointer of same dtype", "result", "ptr",
-                   "getPointerOfSameDType($_self)">]> {
+    PointerOfSameDType<"result", "ptr">]> {
   let summary = "construct a buffer with a pointer";
   let description = [{
     Construct a buffer around a base pointer. Requires size and/or dtype

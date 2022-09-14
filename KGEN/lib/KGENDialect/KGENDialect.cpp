@@ -30,9 +30,7 @@ using namespace KGEN;
 Type ParamRefType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
-  if (auto constant = param.dyn_cast<ConcreteTypeConstantAttr>())
-    return constant.getValue();
-  if (auto constant = param.dyn_cast<ParameterizedTypeConstantAttr>())
+  if (auto constant = param.dyn_cast<TypeConstantAttr>())
     return constant.getValue();
 
   // Otherwise, form the ParamRefType like normal.

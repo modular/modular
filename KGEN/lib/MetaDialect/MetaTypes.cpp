@@ -115,32 +115,24 @@ static void printOptionalParamDTypeValue(AsmPrinter &p, Attribute value) {
 }
 
 //===----------------------------------------------------------------------===//
-// custom<OptionalElementType>
+// custom<OptionalTypeParamValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseOptionalElementType(AsmParser &p,
-                                            FailureOr<TypedAttr> &result) {
+static ParseResult parseOptionalTypeParamValue(AsmParser &p,
+                                               FailureOr<TypedAttr> &result) {
   if (succeeded(p.parseOptionalQuestion())) {
     result = TypedAttr();
     return success();
   }
-
-  Type elementType;
-  if (p.parseType(elementType))
-    return failure();
-  result = ParameterizedTypeConstantAttr::get(elementType);
-  return success();
+  return parseTypeParamValue(p, result);
 }
 
-static void printOptionalElementType(AsmPrinter &p, TypedAttr value) {
+static void printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value) {
   if (!value) {
     p << '?';
     return;
   }
-  if (auto type = value.dyn_cast<ConcreteTypeConstantAttr>())
-    p.printType(type.getValue());
-  else if (auto type = value.dyn_cast<ParameterizedTypeConstantAttr>())
-    p.printType(type.getValue());
+  return printTypeParamValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -459,11 +451,8 @@ Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 Type PointerType::resolveElementType() const {
-  if (auto type = getElementType().dyn_cast_or_null<ConcreteTypeConstantAttr>())
-    return type.getValue();
-  if (auto type =
-          getElementType().dyn_cast_or_null<ParameterizedTypeConstantAttr>())
-    return type.getValue();
+  if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
+    return typeCst.getValue();
   return nullptr;
 }
 

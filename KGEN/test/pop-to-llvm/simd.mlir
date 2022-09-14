@@ -113,8 +113,22 @@ kgen.func @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32>,
 
 // -----
 
+// CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle(%a: !meta.simd<2, f32>, %b: !meta.simd<2, f32>) -> !meta.simd<4, f32> {
   // CHECK: llvm.shufflevector %{{.*}}, %{{.*}} [2, 3, 1, 0]
   %0 = pop.simd.shuffle %a, %b [2, 3, 1, 0] : !meta.simd<2, f32> -> !meta.simd<4, f32>
   kgen.return %0 : !meta.simd<4, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @simd_load_store
+kgen.func @simd_load_store(%i: index, %p0: !meta.pointer<!meta.simd<4, f32>>) {
+  // CHECK: llvm.getelementptr %{{.*}} : (!llvm.ptr<vector<4xf32>>, {{.*}}) -> !llvm.ptr<vector<4xf32>>
+  %0 = pop.offset %p0[%i] : !meta.pointer<!meta.simd<4, f32>>
+  // CHECK: llvm.load
+  %1 = pop.load %0 : !meta.pointer<!meta.simd<4, f32>>
+  // CHECK: llvm.store
+  pop.store %1, %p0 : !meta.pointer<!meta.simd<4, f32>>
+  kgen.return
 }

@@ -156,7 +156,7 @@ kgen.generator @buffer_stack_allocation() {
 // -----
 
 kgen.generator @buffer_stack_allocation<size>() {
-  // expected-error @below {{'pop.buffer.stack_allocation' op result #0 must be buffer with concrete dtype, but got '!meta.buffer<size, ?>'}}
+  // expected-error @below {{'pop.buffer.stack_allocation' op result #0 must be buffer with known dtype, but got '!meta.buffer<size, ?>'}}
   %0 = pop.buffer.stack_allocation : !meta.buffer<size, ?>
   kgen.return
 }
