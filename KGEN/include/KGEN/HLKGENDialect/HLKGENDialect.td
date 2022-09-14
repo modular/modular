@@ -24,9 +24,6 @@ def HLKGENDialect : Dialect {
 
   let cppNamespace = "::M::KGEN";
   let dependentDialects = ["::M::KGEN::KGENDialect"];
-
-  // Use LLVM-style accessor prefixes.
-  let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
 }
