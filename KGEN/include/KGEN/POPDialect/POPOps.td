@@ -414,7 +414,9 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
                                   DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = [{
     Bitcast an integer or floating point value to an integer or floating point
-    value of equal bit width.
+    value of equal bit width. The bitcast operation is also used to cast between
+    pointer types. When casting between pointer types, both the source and the
+    target types must be pointer types.
 
     Example:
 
@@ -423,11 +425,12 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
     %1 = pop.bitcast %b : !meta.scalar<ui64> to !meta.scalar<si64>
     %2 = pop.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
     %3 = pop.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
+    %4 = pop.bitcast %d : !meta.pointer<f64> to !meta.pointer<!meta.simd<4, f32>>
     ```
   }];
 
-  let arguments = (ins ScalarOrSIMD:$input);
-  let results = (outs ScalarOrSIMD:$output);
+  let arguments = (ins ScalarOrSIMDOrPointer:$input);
+  let results = (outs ScalarOrSIMDOrPointer:$output);
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
 }
 
