@@ -97,6 +97,28 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPMax
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMax : public mlir::ConvertOpToLLVMPattern<MaxOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(MaxOp op, MaxOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isSInt())
+      rewriter.replaceOpWithNewOp<LLVM::SMaxOp>(op, adaptor.getOperands());
+    else if (dtype.isUInt())
+      rewriter.replaceOpWithNewOp<LLVM::UMaxOp>(op, adaptor.getOperands());
+    else
+      rewriter.replaceOpWithNewOp<LLVM::MaximumOp>(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPAbs
 //===----------------------------------------------------------------------===//
 
@@ -361,6 +383,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDiv,
       ConvertPOPFMA,
       ConvertPOPLoad,
+      ConvertPOPMax,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
