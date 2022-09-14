@@ -23,9 +23,6 @@ def KGENDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN";
-
-  // Use LLVM-style accessor prefixes.
-  let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
 

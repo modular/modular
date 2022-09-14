@@ -33,8 +33,6 @@ def ZAPDialect : Dialect {
     /// Register all dialect operations.
     void registerOperations();
   }];
-
-  let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
 }
 
 #endif // ZAPDIALECT_TD
