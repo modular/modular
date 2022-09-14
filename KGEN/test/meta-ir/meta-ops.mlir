@@ -1,74 +1,77 @@
-// RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s | kgen-opt | FileCheck %s
 
-// CHECK-LABEL: kgen.func @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
-kgen.func @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) -> index {
-  // CHECK: %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
+// CHECK-LABEL: @meta_buffer_size
+// CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<{{.*}}>, %[[ARG1:.*]]:
+kgen.func @meta_buffer_size(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<?, f32>) {
+  // CHECK: meta.buffer.size %[[ARG0]]
   %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
-  // CHECK: %1 = meta.buffer.size %arg1 : !meta.buffer<?, f32>
+  // CHECK: meta.buffer.size %[[ARG1]]
   %1 = meta.buffer.size %arg1 : !meta.buffer<?, f32>
-  // CHECK: kgen.return %1 : index
-  kgen.return %1 : index
+  kgen.return
 }
 
-// CHECK-LABEL: kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
-kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) -> !kgen.dtype {
-  // CHECK: %0 = meta.buffer.dtype %arg0 : !meta.buffer<42, f32>
+// CHECK-LABEL: @meta_buffer_dtype
+// CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<{{.*}}>, %[[ARG1:.*]]:
+kgen.func @meta_buffer_dtype(%arg0: !meta.buffer<42, f32>, %arg1: !meta.buffer<42, ?>) {
+  // CHECK: meta.buffer.dtype %[[ARG0]]
   %0 = meta.buffer.dtype %arg0 : !meta.buffer<42, f32>
-  // CHECK: %1 = meta.buffer.dtype %arg1 : !meta.buffer<42, ?>
+  // CHECK: meta.buffer.dtype %[[ARG1]]
   %1 = meta.buffer.dtype %arg1 : !meta.buffer<42, ?>
-  // CHECK: kgen.return %1 : !kgen.dtype
-  kgen.return %1 : !kgen.dtype
+  kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @pointer_types<dt: dtype>(
+// CHECK-LABEL: @pointer_types
 kgen.generator @pointer_types<dt: dtype>(
-  // CHECK: %arg0: !meta.pointer<!meta.scalar<dt>>, %arg1: !meta.pointer<!meta.scalar<f32>>, %arg2: !meta.pointer<?>) {
+  // CHECK-SAME: %{{.*}}: !meta.pointer<!meta.scalar<dt>>, %{{.*}}: !meta.pointer<!meta.scalar<f32>>, %{{.*}}: !meta.pointer<?>
   %arg0: !meta.pointer<!meta.scalar<dt>>, %arg1: !meta.pointer<!meta.scalar<f32>>, %arg2: !meta.pointer<?>) {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @meta_buffer_address<dt: dtype, size>(
+// CHECK-LABEL: @meta_buffer_address
 kgen.generator @meta_buffer_address<dt: dtype, size>(
-   %arg0: !meta.buffer<size, dt>, %arg1: !meta.buffer<?, ?>, %arg2: !meta.buffer<3, f32>) -> (!meta.pointer<!meta.scalar<dt>>, !meta.pointer<?>, !meta.pointer<!meta.scalar<f32>>) {
-  // CHECK: %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
+  // CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<size
+  // CHECK-SAME: %[[ARG1:.*]]: !meta.buffer<?
+  // CHECK-SAME: %[[ARG2:.*]]: !meta.buffer<3
+   %arg0: !meta.buffer<size, dt>, %arg1: !meta.buffer<?, ?>, %arg2: !meta.buffer<3, f32>) {
+  // CHECK: meta.buffer.address %[[ARG0]]
   %0 = meta.buffer.address %arg0 : !meta.buffer<size, dt>
-  // CHECK: %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
+  // CHECK: meta.buffer.address %[[ARG1]]
   %1 = meta.buffer.address %arg1 : !meta.buffer<?, ?>
-  // CHECK: %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
+  // CHECK: meta.buffer.address %[[ARG2]]
   %2 = meta.buffer.address %arg2 : !meta.buffer<3, f32>
-  kgen.return %0, %1, %2 : !meta.pointer<!meta.scalar<dt>>, !meta.pointer<?>, !meta.pointer<!meta.scalar<f32>>
+  kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
-kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) -> !meta.buffer<42, f32> {
-  // CHECK: %0 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
+// CHECK-LABEL: @meta_buffer_rebind
+// CHECK-SAME: %[[ARG0:.*]]:
+kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) {
+  // CHECK: %[[V0:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, f32>
   %0 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
-  // CHECK: = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
+  // CHECK: %[[V1:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<?, ?>
   %1 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
-  // CHECK: = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  // CHECK: %[[V2:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<?, f32>
   %2 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  // CHECK: = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
+  // CHECK: %[[V3:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, ?>
   %3 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
-  // CHECK: = meta.buffer.rebind %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
+  // CHECK: %[[V4:.*]] = meta.buffer.rebind %[[V2]] : !meta.buffer<?, f32> to !meta.buffer<42, f32>
   %4 = meta.buffer.rebind %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
-  // CHECK: = meta.buffer.rebind %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
+  // CHECK: %[[V5:.*]] = meta.buffer.rebind %[[V3]] : !meta.buffer<42, ?> to !meta.buffer<42, f32>
   %5 = meta.buffer.rebind %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
-  // CHECK: = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
+  // CHECK: %[[V6:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<42, f32>
   %6 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
 
 
   // Casts between different unknown parameters are ok.
-  // CHECK: = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
+  // CHECK: %[[V7:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, f32>
   %7 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
 
-  // CHECK: = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
+  // CHECK: %[[V8:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, dt>
   %8 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
 
-  // CHECK:  = meta.buffer.rebind %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
+  // CHECK: %[[V9:.*]] = meta.buffer.rebind %[[V8]] : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
   %9 = meta.buffer.rebind %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
 
-  // CHECK: kgen.return %0 : !meta.buffer<42, f32>
-  kgen.return %0 : !meta.buffer<42, f32>
+  kgen.return
 }
 
 // CHECK-LABEL: @cast_to_builtin
