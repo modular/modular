@@ -575,22 +575,22 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-def POP_LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
+def POP_LoadOp : POPOp<"load", [TypeMatchesElementType<"ptr", "result">]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
-    pointer cannot have a `?` dtype.
+    pointer cannot have a `?` element type.
 
     Example:
 
     ```mlir
     %0 = pop.load %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    %1 = pop.load %ptr1 : !meta.pointer<!meta.scalar<type>>
+    %1 = pop.load %ptr1 : !meta.pointer<!meta.simd<4, type>>
     ```
   }];
 
   let arguments = (ins Arg<ConcretePointer, "", [MemRead]>:$ptr);
-  let results = (outs ScalarType:$result);
+  let results = (outs AnyType:$result);
   let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
 
   let builders = [OpBuilder<(ins "Value":$ptr)>];
@@ -600,22 +600,21 @@ def POP_LoadOp : POPOp<"load", [ScalarOfSameDType<"ptr", "result">]> {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-def POP_StoreOp : POPOp<"store", [ScalarOfSameDType<"ptr", "arg">]> {
+def POP_StoreOp : POPOp<"store", [TypeMatchesElementType<"ptr", "arg">]> {
   let summary = "pointer store operation";
   let description = [{
     Store the given scalar data to the given pointer of the same dtype. The
-    pointer cannot have a `?` dtype.
+    pointer cannot have a `?` element type.
 
     Example:
 
     ```mlir
     pop.store %0, %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    pop.store %1, %ptr1 : !meta.pointer<!meta.scalar<type>>
+    pop.store %1, %ptr1 : !meta.pointer<!meta.simd<4, type>>
     ```
   }];
 
-  let arguments = (ins ScalarType:$arg,
-                       Arg<ConcretePointer, "", [MemWrite]>:$ptr);
+  let arguments = (ins AnyType:$arg, Arg<ConcretePointer, "", [MemWrite]>:$ptr);
   let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
 }
 
@@ -627,17 +626,18 @@ def POP_OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
   let summary = "pointer offset operation";
   let description = [{
     The `offset` operation takes a pointer and increments or decrements its
-    position by a certain amount.
+    position by a certain amount. The pointer cannot have a `?` element type.
 
     Example:
 
     ```mlir
-    %addr = pop.offset %base[%idx] : !meta.pointer<!meta.scalar<f32>>
+    %addr0 = pop.offset %ptr0[%idx] : !meta.pointer<!meta.scalar<f32>>
+    %addr1 = pop.offset %ptr1[%idx] : !meta.pointer<!meta.simd<4, type>>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, Index:$index);
-  let results = (outs PointerType:$result);
+  let arguments = (ins ConcretePointer:$ptr, Index:$index);
+  let results = (outs ConcretePointer:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];

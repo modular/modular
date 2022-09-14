@@ -340,6 +340,46 @@ kgen.generator @pop_offset<type: dtype>(%p: !meta.pointer<!meta.scalar<f32>>, %i
   kgen.return
 }
 
+// CHECK-LABEL: @pop_generic_load_store
+kgen.generator @pop_generic_load_store<type: type, dtype: dtype, size>(
+    %p0: !meta.pointer<type>,
+    %p1: !meta.pointer<!meta.scalar<dtype>>,
+    %p2: !meta.pointer<!meta.simd<size, dtype>>)
+  -> (
+    !kgen.paramref<type>,
+    !meta.scalar<dtype>,
+    !meta.simd<size, dtype>
+  ) {
+  // CHECK: pop.load %{{.*}} : !meta.pointer<type>
+  // CHECK: pop.store %{{.*}} : !meta.pointer<type>
+  %0 = pop.load %p0 : !meta.pointer<type>
+  pop.store %0, %p0 : !meta.pointer<type>
+
+  // CHECK: pop.load %{{.*}} : !meta.pointer<!meta.scalar<dtype>>
+  // CHECK: pop.store %{{.*}} : !meta.pointer<!meta.scalar<dtype>>
+  %1 = pop.load %p1 : !meta.pointer<!meta.scalar<dtype>>
+  pop.store %1, %p1 : !meta.pointer<!meta.scalar<dtype>>
+
+  // CHECK: pop.load %{{.*}} : !meta.pointer<!meta.simd<size, dtype>>
+  // CHECK: pop.store %{{.*}} : !meta.pointer<!meta.simd<size, dtype>>
+  %2 = pop.load %p2 : !meta.pointer<!meta.simd<size, dtype>>
+  pop.store %2, %p2 : !meta.pointer<!meta.simd<size, dtype>>
+
+  kgen.return %0, %1, %2 : !kgen.paramref<type>, !meta.scalar<dtype>, !meta.simd<size, dtype>
+}
+
+// CHECK-LABEL: @pop_generic_offset
+kgen.generator @pop_generic_offset<type: type>(
+    %p0: !meta.pointer<type>,
+    %p1: !meta.pointer<!meta.simd<4, f32>>,
+    %i: index) {
+  // CHECK: pop.offset %{{.*}} : !meta.pointer<type>
+  %0 = pop.offset %p0[%i] : !meta.pointer<type>
+  // CHECK: pop.offset %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
+  %1 = pop.offset %p1[%i] : !meta.pointer<!meta.simd<4, f32>>
+  kgen.return
+}
+
 // CHECK-LABEL: @pop_buffer_stack_allocation
 kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
   // CHECK: pop.buffer.stack_allocation : !meta.buffer<4, f32>
