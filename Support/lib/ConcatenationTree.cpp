@@ -16,8 +16,9 @@ namespace M {
 class ConcatTreeBaseNode {
 public:
   const enum NodeKind {
-    kVector, // a node holding an std::vector of data.
-    kBranch, // a node with two or more subnodes.
+    kVector,       // a node holding an std::vector of data.
+    kImmortalData, // a node holding an immortal ArrayRef of data.
+    kBranch,       // a node with two or more subnodes.
   } nodeKind;
 
   void destroy();
@@ -43,6 +44,25 @@ public:
       : ConcatTreeBaseNode(kVector), data(std::move(data)) {}
 
   std::vector<uint8_t> data;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// ConcatTreeImmortalDataNode
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This is a leaf node that holds an immortal ArrayRef of data.
+class ConcatTreeImmortalDataNode : public ConcatTreeBaseNode {
+public:
+  static bool classof(const ConcatTreeBaseNode *base) {
+    return base->nodeKind == kImmortalData;
+  }
+
+  ConcatTreeImmortalDataNode(ArrayRef<uint8_t> data)
+      : ConcatTreeBaseNode(kImmortalData), data(data) {}
+
+  ArrayRef<uint8_t> data;
 };
 } // namespace
 
@@ -99,6 +119,8 @@ ConcatenationTree::~ConcatenationTree() {
 void ConcatTreeBaseNode::destroy() {
   if (auto *vec = dyn_cast<ConcatTreeVectorNode>(this))
     delete vec;
+  else if (auto *immData = dyn_cast<ConcatTreeImmortalDataNode>(this))
+    delete immData;
   else
     delete cast<ConcatTreeBranchNode>(this);
 }
@@ -109,6 +131,15 @@ ConcatenationTree ConcatenationTree::takeVector(std::vector<uint8_t> data) {
     return getEmpty();
 
   return new ConcatTreeVectorNode(std::move(data));
+}
+
+/// Get a ContatenationTree with the specified array data, which must be
+/// guaranteed to live beyond the lifetime of this ContatenationTree.
+ConcatenationTree ConcatenationTree::getImmortalData(ArrayRef<uint8_t> data) {
+  if (data.empty())
+    return getEmpty();
+
+  return new ConcatTreeImmortalDataNode(data);
 }
 
 /// Concatenate and return two trees of data.
@@ -170,6 +201,8 @@ size_t ConcatenationTree::getSize() const {
 
   if (auto *vec = dyn_cast<ConcatTreeVectorNode>(node))
     return vec->data.size();
+  if (auto *immData = dyn_cast<ConcatTreeImmortalDataNode>(node))
+    return immData->data.size();
 
   return cast<ConcatTreeBranchNode>(node)->totalSize;
 }
@@ -180,9 +213,11 @@ void ConcatenationTree::traverse(std::function<void(ArrayRef<uint8_t>)> fn) {
   if (node == nullptr)
     return;
 
-  // Vector nodes are leaves.
+  // Vector and immortal nodes are leaves.
   if (auto *vec = dyn_cast<ConcatTreeVectorNode>(node))
     return fn(vec->data);
+  if (auto *immData = dyn_cast<ConcatTreeImmortalDataNode>(node))
+    return fn(immData->data);
 
   // Otherwise walk through a branch.
   auto *branch = cast<ConcatTreeBranchNode>(node);
