@@ -29,6 +29,7 @@ add_subdirectory(lib/CLOptions)
 add_subdirectory(tools/kgen)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
+add_subdirectory(tools/kgen-translate)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}.
