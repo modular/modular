@@ -61,9 +61,9 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
   // TODO: We should be caching these so we don't always recompute everything.
   SmallVector<EvaluatedFunc> bestPerConfig;
   for (auto cfg : llvm::make_early_inc_range(*itf.getEvalConfigs())) {
-    // For these purposes we don't care about the values of the results, we just
-    // need to pass a pointer in so that it doesn't segfault.
-    size_t resultSize = 0;
+    // Create pointers for each result. We'll use this for comparing the outputs
+    // against each other.
+    SmallVector<size_t> resultSizes;
     for (auto [type, binding] :
          llvm::zip(itf.getResultTypes(), cfg.getResultBindings())) {
       auto sizeOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
@@ -71,10 +71,12 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
       if (failed(sizeOr))
         return Error("unable to allocate output space for kernel evaluation");
 
-      resultSize += *sizeOr;
+      resultSizes.push_back(*sizeOr);
     }
 
     // Use std::unique_ptr here to avoid leaking memory.
+    size_t resultSize = std::accumulate(resultSizes.begin(), resultSizes.end(),
+                                        1, std::multiplies<>());
     std::unique_ptr<uint8_t[]> resultMem(new uint8_t[resultSize]);
 
     // Get all the various sizes. Keep these as a vector because we want to
@@ -112,19 +114,59 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // Evaluate each func.
     uint64_t minTiming = UINT64_MAX;
     size_t currentBest;
-    for (const auto &f : llvm::enumerate(specializations)) {
-      auto wrapperOr = engine.lookupOpaqueWrapper(f.value());
+    std::unique_ptr<uint8_t[]> prevResultMem(new uint8_t[resultSize]);
+    bool ranAtLeastOnce = false;
+    auto evaluateFunction = [&](FuncOp func, size_t idx) -> ErrorOrSuccess {
+      auto wrapperOr = engine.lookupOpaqueWrapper(func);
       if (failed(wrapperOr))
         return wrapperOr.takeError();
 
+      // Run the function once.
+      wrapperOr->invoke<void, void *, void *>(argMem.get(), resultMem.get());
+
+      // If we have previous tags (i.e. not the first run) then compare the
+      // results of this run with the previous run. The outputs must be equal to
+      // whatever tolerance the user specifies in their implementation of the
+      // TypeInterface.
+      if (ranAtLeastOnce) {
+        auto lhsMemPtr = (uintptr_t)prevResultMem.get();
+        auto rhsMemPtr = (uintptr_t)resultMem.get();
+        for (auto [type, binding, memptrIncrement] : llvm::zip(
+                 func.getResultTypes(), cfg.getResultBindings(), resultSizes)) {
+          auto equalsOr = cast<OpaqueObjectInterface>(type).equals(
+              func.getLoc(), binding, (void *)lhsMemPtr, (void *)rhsMemPtr);
+          if (failed(equalsOr))
+            return Error("could not compare outputs of the function with a "
+                         "previous run");
+
+          if (!*equalsOr)
+            return Error("function did not sufficiently match a previous run");
+
+          lhsMemPtr += memptrIncrement;
+          rhsMemPtr += memptrIncrement;
+          return success();
+        }
+      }
+
+      // Update the result memory to prepare for the next run.
+      ranAtLeastOnce = true;
+      memcpy(prevResultMem.get(), resultMem.get(), resultSize);
+
+      // Now run the function.
       uint64_t thisFuncTiming =
           benchmarkSingleFunc(*wrapperOr, argMem.get(), resultMem.get());
       // If this one is better than the previous best, use it.
       if (thisFuncTiming < minTiming) {
         minTiming = thisFuncTiming;
-        currentBest = f.index();
+        currentBest = idx;
       }
-    }
+
+      return success();
+    };
+
+    for (const auto &f : llvm::enumerate(specializations))
+      if (auto err = evaluateFunction(f.value(), f.index()))
+        return err.takeError();
 
     // And append the best kernel to the list.
     bestPerConfig.push_back({currentBest, minTiming, cfg.getWeight()});

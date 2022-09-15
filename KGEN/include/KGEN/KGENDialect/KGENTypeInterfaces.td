@@ -92,6 +92,14 @@ def OpaqueObjectInterface : TypeInterface<"OpaqueObjectInterface"> {
     "::mlir::FailureOr<size_t>", "getSizeInBytes",
       (ins "::mlir::Location":$loc, "::mlir::Attribute":$tag)
     >,
+    InterfaceMethod<[{
+      Given two pointers to objects of this type, return true if they are
+      equal, false if not, and return failure if they cannot be compared.
+    }],
+    "::mlir::FailureOr<bool>", "equals",
+      (ins "::mlir::Location":$loc, "::mlir::Attribute":$tag, "void *":$lhsData,
+           "void *":$rhsData)
+    >,
   ];
 }
 

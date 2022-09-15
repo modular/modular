@@ -240,6 +240,33 @@ static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
                         << stringifyInputGenKind(kind);
 }
 
+/// Compares raw buffers `lhs` and `rhs` of type `dtype` with `numElements`
+/// elements. Returns true if they are equal, false if they are not, and failure
+/// if they cannot be compared.
+static FailureOr<bool> dataEquals(Location loc, DType dtype, size_t numElements,
+                                  void *lhs, void *rhs) {
+  return dtype.dispatch<FailureOr<bool>>(lhs, rhs)
+      .whenCXXInt([&](auto *lhs, auto *rhs) {
+        for (size_t i = 0; i < numElements; ++i)
+          if (lhs[i] != rhs[i])
+            return false;
+        return true;
+      })
+      .whenCXXFP([&](auto *lhs, auto *rhs) {
+        // This comparison could be improved if we wanted to, currently it more
+        // or less just compares with relative tolerance.
+        double epsilon = 1.0e-8;
+        for (size_t i = 0; i < numElements; ++i)
+          if (std::abs(lhs[i] - rhs[i]) >
+              (std::min(std::abs(lhs[i]), std::abs(rhs[i])) * epsilon))
+            return false;
+        return true;
+      })
+      .otherwise([&]() {
+        return mlir::emitError(loc) << "unknown dtype: " << dtype.getAsString();
+      });
+}
+
 /// This implements `OpaqueObjectInterface::populate`. It generates a single
 /// scalar according to the method prescribed by `kind`. If the dtype is
 /// unknown, then this expects the tag attribute to be a type attr. Otherwise,
@@ -267,6 +294,20 @@ FailureOr<size_t> ScalarType::getSizeInBytes(Location loc,
     return failure();
 
   return dtypeOr->getSizeInBytes(1);
+}
+
+FailureOr<bool> ScalarType::equals(Location loc, Attribute tag, void *lhsData,
+                                   void *rhsData) const {
+  // Check that the dtypes are equal. This only does something if the two dtypes
+  // are actually different (i.e. unknown statically, dynamically carried by the
+  // evaluation configuration). If the dtype is statically known by the
+  // ScalarType then lhsDtype and rhsDtype will be equal.
+  FailureOr<DType> dtypeOr = resolveDTypeWithTag(*this, loc, tag);
+  if (failed(dtypeOr))
+    return failure();
+
+  // Compare the outputs if we can.
+  return dataEquals(loc, *dtypeOr, 1, lhsData, rhsData);
 }
 
 //===----------------------------------------------------------------------===//
@@ -338,9 +379,22 @@ FailureOr<size_t> SIMDType::getSizeInBytes(Location loc, Attribute tag) const {
   // Same with the size, if it's unknown (which it should not be) then
   // we can't do anything.
   auto sizeOr = resolveSize();
-  assert(sizeOr.has_value() && "SIMDType must have known size");
+  assert(sizeOr.has_value() && "SIMDType must have a statically-known size");
 
   return dtype.getSizeInBytes(*sizeOr);
+}
+
+FailureOr<bool> SIMDType::equals(Location loc, Attribute tag, void *lhsData,
+                                 void *rhsData) const {
+  // Everything in a SIMDType must be static, so we can just directly compare
+  // the data.
+  DType dtype = resolveDType();
+  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+
+  Optional<int64_t> sizeOr = resolveSize();
+  assert(sizeOr.has_value() && "SIMDType must have a statically-known size");
+
+  return dataEquals(loc, dtype, *sizeOr, lhsData, rhsData);
 }
 
 //===----------------------------------------------------------------------===//
@@ -426,6 +480,23 @@ FailureOr<size_t> BufferType::getSizeInBytes(Location loc,
   return size;
 }
 
+FailureOr<bool> BufferType::equals(Location loc, Attribute tag, void *lhsData,
+                                   void *rhsData) const {
+  // Two buffers are more or less always comparable, we just have to make sure
+  // we have the same size/dtype.
+  // TODO: Much like above, this doesn't handle the dynamic-size or
+  //       dynamic-dtype buffers.
+  DType dtype = resolveDType();
+  if (dtype == DType::invalid)
+    return emitError(loc) << "TODO: " << *this;
+
+  Optional<int64_t> sizeOr = resolveSize();
+  if (!sizeOr.has_value())
+    return emitError(loc) << "TODO: " << *this;
+
+  return dataEquals(loc, dtype, *sizeOr, lhsData, rhsData);
+}
+
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
@@ -477,6 +548,11 @@ FailureOr<size_t> PointerType::getSizeInBytes(Location loc,
   // FIXME: This is incorrect once we start talking about cross-compilation.
   //        c.f. #2717
   return sizeof(void *);
+}
+
+FailureOr<bool> PointerType::equals(Location loc, Attribute tag, void *lhsData,
+                                    void *rhsData) const {
+  return mlir::emitError(loc) << "could not compare pointers of: " << *this;
 }
 
 //===----------------------------------------------------------------------===//
