@@ -14,12 +14,6 @@ function(add_kgen_translation_library name)
   add_modular_mlir_library(${ARGV} DEPENDS modular-headers)
 endfunction()
 
-# add_kgen_library is a wrapper around add_modular_mlir_library
-function(add_kgen_library name)
-  set_property(GLOBAL APPEND PROPERTY KGEN_LIBS ${name})
-  add_modular_mlir_library(${ARGV} DEPENDS modular-headers)
-endfunction()
-
 add_subdirectory(include/KGEN)
 add_subdirectory(lib/KGENDialect)
 add_subdirectory(lib/HLKGENDialect)
