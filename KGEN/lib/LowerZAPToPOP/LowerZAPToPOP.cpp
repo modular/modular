@@ -52,6 +52,44 @@ struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertZAPSIMDLoad
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPSIMDLoad : mlir::OpRewritePattern<SIMDLoadOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SIMDLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
+    Value bitcastPtr = rewriter.create<BitcastOp>(
+        op.getLoc(), PointerType::get(TypeConstantAttr::get(op.getType())),
+        ptr);
+    rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPSIMDStore
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SIMDStoreOp op,
+                                PatternRewriter &rewriter) const override {
+    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
+    Value bitcastPtr = rewriter.create<BitcastOp>(
+        op.getLoc(),
+        PointerType::get(TypeConstantAttr::get(op.getValue().getType())), ptr);
+    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), bitcastPtr);
+    return failure();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -59,7 +97,8 @@ struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
 //===----------------------------------------------------------------------===//
 
 static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
-  patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferStore>(
+  patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferStore,
+                  ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
       patterns.getContext());
 }
 
