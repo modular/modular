@@ -89,7 +89,7 @@ kgen.func @pop_sub_simd(%arg0 : !meta.simd<4, f32>, %arg1 : !meta.simd<4, f32>) 
 }
 
 // CHECK-LABEL: @pop_max
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<type>, %[[ARG1:.*]]: !meta.scalar<type>) -> !meta.scalar<type> 
+// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<type>, %[[ARG1:.*]]: !meta.scalar<type>) -> !meta.scalar<type>
 kgen.generator @pop_max<type: dtype>(%a: !meta.scalar<type>, %b: !meta.scalar<type>) -> !meta.scalar<type> {
   // CHECK-NEXT: %0 = pop.max %[[ARG0]], %[[ARG1]] : !meta.scalar<type>
   %c = pop.max %a, %b : !meta.scalar<type>
@@ -254,6 +254,20 @@ kgen.generator @simd_bitcast(%arg0: !meta.simd<4, f32>, %arg1: !meta.simd<4, f64
   %4 = pop.bitcast %2 : !meta.simd<4, ui32> to !meta.simd<2, f64>
   // CHECK: return %[[V3]]
   kgen.return %3 : !meta.simd<4, f32>
+}
+
+// CHECK-LABEL: @bitcast_parametric
+kgen.generator @bitcast_parametric<size1, size2, type1: dtype, type2: dtype>(
+  %arg0: !meta.simd<size1, type1>, %arg1: !meta.simd<size2, f32>,
+  %arg2: !meta.scalar<type2>
+) {
+  // CHECK: pop.bitcast %{{.*}} : !meta.simd<size1, type1> to !meta.simd<size2, f32>
+  %0 = pop.bitcast %arg0 : !meta.simd<size1, type1> to !meta.simd<size2, f32>
+  // CHECK: pop.bitcast %{{.*}} : !meta.simd<size2, f32> to !meta.simd<4, f64>
+  %1 = pop.bitcast %arg1 : !meta.simd<size2, f32> to !meta.simd<4, f64>
+  // CHECK: pop.bitcast %{{.*}} : !meta.scalar<type2> to !meta.scalar<f32>
+  %2 = pop.bitcast %arg2 : !meta.scalar<type2> to !meta.scalar<f32>
+  kgen.return
 }
 
 // CHECK-LABEL: @pointer_bitcast
