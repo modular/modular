@@ -21,13 +21,14 @@ namespace LLVM = mlir::LLVM;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// OneToOneIntOrFloatConversion
+// OneToOneFloatOrIntConversion
 //===----------------------------------------------------------------------===//
 
 /// This patterns converts a scalar POP dialect operation to either an integer
 /// or floating point LLVM operation one-to-one.
-template <typename Op, typename IntOp, typename FloatOp>
-struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
+template <typename Op, typename FloatOp, typename SIntOp,
+          typename UIntOp = SIntOp>
+struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
   using mlir::ConvertOpToLLVMPattern<Op>::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -35,33 +36,17 @@ struct OneToOneIntOrFloatConversion : public mlir::ConvertOpToLLVMPattern<Op> {
                   ConversionPatternRewriter &rewriter) const override {
     DType dtype = op.getType().template cast<DTypeInterface>().resolveDType();
     Type type = this->getTypeConverter()->convertType(op.getType());
-    if (dtype.isInt())
-      rewriter.replaceOpWithNewOp<IntOp>(op, type, adaptor.getOperands(),
-                                         op->getAttrs());
-    else
+
+    if (dtype.isInt()) {
+      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt())
+        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getOperands(),
+                                            op->getAttrs());
+      else
+        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getOperands(),
+                                            op->getAttrs());
+    } else {
       rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getOperands(),
                                            op->getAttrs());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPDiv
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPDiv : public mlir::ConvertOpToLLVMPattern<DivOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(DivOp op, DivOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
-    if (dtype.isSInt()) {
-      rewriter.replaceOpWithNewOp<LLVM::SDivOp>(op, adaptor.getOperands());
-    } else if (dtype.isUInt()) {
-      rewriter.replaceOpWithNewOp<LLVM::UDivOp>(op, adaptor.getOperands());
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::FDivOp>(op, adaptor.getOperands());
     }
     return success();
   }
@@ -92,28 +77,6 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
     } else {
       rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand());
     }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPMax
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPMax : public mlir::ConvertOpToLLVMPattern<MaxOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MaxOp op, MaxOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
-    if (dtype.isSInt())
-      rewriter.replaceOpWithNewOp<LLVM::SMaxOp>(op, adaptor.getOperands());
-    else if (dtype.isUInt())
-      rewriter.replaceOpWithNewOp<LLVM::UMaxOp>(op, adaptor.getOperands());
-    else
-      rewriter.replaceOpWithNewOp<LLVM::MaximumOp>(op, adaptor.getOperands());
-
     return success();
   }
 };
@@ -341,11 +304,17 @@ using ConvertPOPConstant =
 using ConvertPOPCopySign =
     mlir::OneToOneConvertToLLVMPattern<CopySignOp, LLVM::CopySignOp>;
 using ConvertPOPAdd =
-    OneToOneIntOrFloatConversion<AddOp, LLVM::AddOp, LLVM::FAddOp>;
+    OneToOneFloatOrIntConversion<AddOp, LLVM::FAddOp, LLVM::AddOp>;
 using ConvertPOPSub =
-    OneToOneIntOrFloatConversion<SubOp, LLVM::SubOp, LLVM::FSubOp>;
+    OneToOneFloatOrIntConversion<SubOp, LLVM::FSubOp, LLVM::SubOp>;
 using ConvertPOPMul =
-    OneToOneIntOrFloatConversion<MulOp, LLVM::MulOp, LLVM::FMulOp>;
+    OneToOneFloatOrIntConversion<MulOp, LLVM::FMulOp, LLVM::MulOp>;
+using ConvertPOPDiv = OneToOneFloatOrIntConversion<DivOp, LLVM::FDivOp,
+                                                   LLVM::SDivOp, LLVM::UDivOp>;
+using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaximumOp,
+                                                   LLVM::SMaxOp, LLVM::UMaxOp>;
+using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinimumOp,
+                                                   LLVM::SMinOp, LLVM::UMinOp>;
 using ConvertPOPBitCast =
     mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
@@ -384,6 +353,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPFMA,
       ConvertPOPLoad,
       ConvertPOPMax,
+      ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
