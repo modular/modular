@@ -276,3 +276,70 @@ kgen.func @simd_shift(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>, %a
   %2 = pop.shr %arg2, %arg3 : !meta.simd<4, ui32>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @cmp_uint
+kgen.func @cmp_uint(%lhs: !meta.scalar<ui32>, %rhs: !meta.scalar<ui32>) {
+  // CHECK: llvm.icmp "eq"
+  %0 = pop.cmp eq(%lhs, %rhs) : !meta.scalar<ui32>
+  // CHECK: llvm.icmp "ne"
+  %1 = pop.cmp ne(%lhs, %rhs) : !meta.scalar<ui32>
+  // CHECK: llvm.icmp "ult"
+  %2 = pop.cmp lt(%lhs, %rhs) : !meta.scalar<ui32>
+  // CHECK: llvm.icmp "ugt"
+  %3 = pop.cmp gt(%lhs, %rhs) : !meta.scalar<ui32>
+  // CHECK: llvm.icmp "ule"
+  %4 = pop.cmp le(%lhs, %rhs) : !meta.scalar<ui32>
+  // CHECK: llvm.icmp "uge"
+  %5 = pop.cmp ge(%lhs, %rhs) : !meta.scalar<ui32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @cmp_sint
+kgen.func @cmp_sint(%lhs: !meta.scalar<si32>, %rhs: !meta.scalar<si32>) {
+  // CHECK: llvm.icmp "eq"
+  %0 = pop.cmp eq(%lhs, %rhs) : !meta.scalar<si32>
+  // CHECK: llvm.icmp "ne"
+  %1 = pop.cmp ne(%lhs, %rhs) : !meta.scalar<si32>
+  // CHECK: llvm.icmp "slt"
+  %2 = pop.cmp lt(%lhs, %rhs) : !meta.scalar<si32>
+  // CHECK: llvm.icmp "sgt"
+  %3 = pop.cmp gt(%lhs, %rhs) : !meta.scalar<si32>
+  // CHECK: llvm.icmp "sle"
+  %4 = pop.cmp le(%lhs, %rhs) : !meta.scalar<si32>
+  // CHECK: llvm.icmp "sge"
+  %5 = pop.cmp ge(%lhs, %rhs) : !meta.scalar<si32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @cmp_fp
+kgen.func @cmp_fp(%lhs: !meta.scalar<f32>, %rhs: !meta.scalar<f32>) {
+  // CHECK: llvm.fcmp "oeq"
+  %0 = pop.cmp eq(%lhs, %rhs) : !meta.scalar<f32>
+  // CHECK: llvm.fcmp "one"
+  %1 = pop.cmp ne(%lhs, %rhs) : !meta.scalar<f32>
+  // CHECK: llvm.fcmp "olt"
+  %2 = pop.cmp lt(%lhs, %rhs) : !meta.scalar<f32>
+  // CHECK: llvm.fcmp "ogt"
+  %3 = pop.cmp gt(%lhs, %rhs) : !meta.scalar<f32>
+  // CHECK: llvm.fcmp "ole"
+  %4 = pop.cmp le(%lhs, %rhs) : !meta.scalar<f32>
+  // CHECK: llvm.fcmp "oge"
+  %5 = pop.cmp ge(%lhs, %rhs) : !meta.scalar<f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @cmp_simd
+kgen.func @cmp_simd(%lhs: !meta.simd<4, f32>, %rhs: !meta.simd<4, f32>) -> !meta.simd<4, bool> {
+  // CHECK: llvm.fcmp {{.*}} : vector<4xf32>
+  %0 = pop.cmp lt(%lhs, %rhs) : !meta.simd<4, f32>
+  // CHECK: vector<4xi1>
+  kgen.return %0 : !meta.simd<4, bool>
+}
