@@ -132,7 +132,7 @@ kgen.func @max(%arg0: !meta.scalar<ui32>, %arg1: !meta.scalar<ui32>) -> !meta.sc
 
 // CHECK-LABEL: @max
 kgen.func @max(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: llvm.intr.maximum
+  // CHECK: llvm.intr.maxnum
   %0 = pop.max %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
@@ -160,7 +160,7 @@ kgen.func @min(%arg0: !meta.scalar<ui32>, %arg1: !meta.scalar<ui32>) -> !meta.sc
 
 // CHECK-LABEL: @min
 kgen.func @min(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  // CHECK: llvm.intr.minimum
+  // CHECK: llvm.intr.minnum
   %0 = pop.min %arg0, %arg1 : !meta.scalar<f32>
   kgen.return %0 : !meta.scalar<f32>
 }
