@@ -360,6 +360,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     ImplicitLocOpBuilder b(gen.getLoc(), gen);
     auto thunk = b.create<GeneratorOp>(
         b.getStringAttr(gen.getSymName() + "_thunk"),
+        gen.getSymVisibilityAttr(),
         // Take the signature from the interface.
         itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
         itf.getResultParamDeclsAttr(),
@@ -441,9 +442,10 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
 
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
-      gen.getParamDeclsAttr(), gen.getResultParamDeclsAttr(),
-      gen.getConstraintsAttr(), gen.getImplementsAttr());
+      gen.getLoc(), gen.getSymNameAttr(), gen.getSymVisibilityAttr(),
+      gen.getFunctionTypeAttr(), gen.getParamDeclsAttr(),
+      gen.getResultParamDeclsAttr(), gen.getConstraintsAttr(),
+      gen.getImplementsAttr());
 
   // Move over the body unmodified.
   auto *bodyBlock = gen.getBodyBlock();

@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-to-llvm %s | FileCheck %s
 
-// CHECK-LABEL: llvm.func @e2e_lower
+// CHECK-LABEL: llvm.func private @e2e_lower
 kgen.func @e2e_lower(%a: !meta.scalar<f32>, %b: !meta.scalar<f32>, %cond: i1) -> !meta.scalar<f32> {
   // CHECK: llvm.cond_br
   %r = scf.if %cond -> (!meta.scalar<f32>) {

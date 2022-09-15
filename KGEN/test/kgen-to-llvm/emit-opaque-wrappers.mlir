@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {opaque_wrapper = @kernel_opaque_wrapper}
-kgen.func @kernel(%a: !meta.buffer<?, ?>, %i: i32) -> !meta.buffer<?, ?> {
+kgen.func public @kernel(%a: !meta.buffer<?, ?>, %i: i32) -> !meta.buffer<?, ?> {
   kgen.return %a : !meta.buffer<?, ?>
 }
 
@@ -51,7 +51,7 @@ llvm.func @kernel() -> i32 {
 !nestedStruct = !llvm.struct<(i8, struct<(i16, struct<(i32)>)>)>
 
 // CHECK-LABEL: llvm.func @kernel(
-kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
+kgen.func public @kernel(%a: !nestedStruct) -> !nestedStruct {
   kgen.return %a : !nestedStruct
 }
 
@@ -67,7 +67,7 @@ kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
 !nestedStruct = !llvm.struct<(i8, struct<(i16, struct<(i32)>)>)>
 
 // CHECK-LABEL: llvm.func @kernel(
-kgen.func @kernel(%a: !nestedStruct, %b: !nestedStruct) -> (!nestedStruct, !nestedStruct) {
+kgen.func public @kernel(%a: !nestedStruct, %b: !nestedStruct) -> (!nestedStruct, !nestedStruct) {
   kgen.return %a, %b : !nestedStruct, !nestedStruct
 }
 

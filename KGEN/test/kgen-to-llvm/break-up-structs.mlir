@@ -15,7 +15,7 @@
 // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
 // CHECK: llvm.return
 
-kgen.func @kernel(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, ?> {
+kgen.func public @kernel(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, ?> {
   kgen.return %a : !meta.buffer<?, ?>
 }
 
@@ -44,7 +44,7 @@ llvm.func @kernel(%a: !nestedStruct) -> !nestedStruct {
 // CHECK-SAME: %[[I:.*]]: f32
 // CHECK: llvm.return
 
-kgen.func @kernel(%i: f32, %a: !meta.buffer<?, f32>) {
+kgen.func public @kernel(%i: f32, %a: !meta.buffer<?, f32>) {
   kgen.return
 }
 
@@ -55,7 +55,7 @@ kgen.func @kernel(%i: f32, %a: !meta.buffer<?, f32>) {
 // CHECK: %[[RESULT:.*]] = llvm.mlir.constant
 // CHECK: llvm.return %[[RESULT]]
 
-kgen.func @kernel(%a: !meta.buffer<?, f32>) -> i64 {
+kgen.func public @kernel(%a: !meta.buffer<?, f32>) -> i64 {
   %0 = llvm.mlir.constant(1 : i64) : i64
   kgen.return %0 : i64
 }
@@ -65,7 +65,7 @@ kgen.func @kernel(%a: !meta.buffer<?, f32>) -> i64 {
 // CHECK-LABEL: @kernel
 // CHECK-SAME: (%{{.*}}: f32) -> f32
 // CHECK-NEXT: return %{{.*}}: f32
-kgen.func @kernel(%a: f32) -> f32 {
+kgen.func public @kernel(%a: f32) -> f32 {
   kgen.return %a : f32
 }
 

@@ -409,8 +409,11 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   SmallVector<Type> resultTypes;
   auto &builder = parser.getBuilder();
 
-  // Parse visibility.
-  (void)mlir::impl::parseOptionalVisibilityKeyword(parser, result.attributes);
+  // Parse visibility. If none is provided, use private by default.
+  if (failed(mlir::impl::parseOptionalVisibilityKeyword(parser,
+                                                        result.attributes)))
+    result.addAttribute(SymbolTable::getVisibilityAttrName(),
+                        parser.getBuilder().getStringAttr("private"));
 
   // Parse the name as a symbol.
   StringAttr nameAttr;
@@ -543,7 +546,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
 
   StringRef visibilityAttrName = SymbolTable::getVisibilityAttrName();
   if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
-    p << visibility.getValue() << ' ';
+    if (visibility.getValue() != "private")
+      p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
   printParameterList(opDecl, p);
 
@@ -735,10 +739,11 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 /// Create a func with no body block.  The caller must create it and fill
 /// it in.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature,
+                   StringAttr visibility, FunctionType signature,
                    ArrayRef<ParamDeclAttr> outputParams) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
+  result.addAttribute(SymbolTable::getVisibilityAttrName(), visibility);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
   result.addAttribute("resultParamDecls",
                       builder.getAttr<ParamDeclArrayAttr>(outputParams));
@@ -748,9 +753,10 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 /// Create a func with an empty body, `argLocs` specifies the locations for
 /// all the block arguments.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, ArrayRef<ParamDeclAttr> outputParams,
+                   StringAttr visibility, FunctionType signature,
+                   ArrayRef<ParamDeclAttr> outputParams,
                    ArrayRef<Location> argLocs) {
-  build(builder, result, name, signature, outputParams);
+  build(builder, result, name, visibility, signature, outputParams);
 
   // Create a block for the body.
   auto *bodyRegion = result.regions[0].get();

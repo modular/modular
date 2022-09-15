@@ -57,7 +57,7 @@ kgen.generator.interface @exp<type: dtype>(%x: !meta.scalar<type>) -> !meta.scal
 
 
 // Compute exp using the llvm intrinsics.
-kgen.generator @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
   constraints <[eq(:dtype type, f32), "incorrect element type"]> implements @exp {
   %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f32
   %1 = "llvm.intr.exp"(%0) : (f32) -> f32
