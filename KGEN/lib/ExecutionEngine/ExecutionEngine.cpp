@@ -293,27 +293,14 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
   return success();
 }
 
-/// Set up a pass manager with the *ToLLVM passes and run it. This has the
-/// effect of taking `module` and converting it fully to LLVM.
+/// Set up a pass manager with the lower to LLVM pipeline and run it. This has
+/// the effect of taking `module` and converting it fully to LLVM.
 static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   mlir::PassManager pm(module.getContext());
-
-  // Run the canonicalizer before the lowering passes.
-  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
-
-  // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
-  //        code up better because there's 2 semi-separate compilation models
-  //        here.
-  pm.addPass(KGEN::createConvertKGENToLLVMPass(name, {}, true));
-
-  // Run all LLVM lowering passes.
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertPOPToLLVMPass());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(KGEN::createConvertSCFToLLVMPass());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(index::createIndexToLLVM());
-
-  // And finally canonicalize again before running through the JIT.
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
-
+  LowerToLLVMOptions options;
+  options.topLevelKernel = name;
+  options.emitOpaqueWrappers = true;
+  buildLowerToLLVMPipeline(pm, options);
   return pm.run(module);
 }
 

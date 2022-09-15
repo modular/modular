@@ -9,6 +9,7 @@ add_modular_tool(kgen-opt
   LINK_LIBS PRIVATE
   HLKGENDialect
   IndexDialect
+  IndexToLLVM
   KGENDialect
   ZAPDialect
   MetaDialect
