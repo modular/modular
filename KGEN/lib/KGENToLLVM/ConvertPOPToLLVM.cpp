@@ -379,9 +379,9 @@ using ConvertPOPMul =
     OneToOneFloatOrIntConversion<MulOp, LLVM::FMulOp, LLVM::MulOp>;
 using ConvertPOPDiv = OneToOneFloatOrIntConversion<DivOp, LLVM::FDivOp,
                                                    LLVM::SDivOp, LLVM::UDivOp>;
-using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaximumOp,
+using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaxNumOp,
                                                    LLVM::SMaxOp, LLVM::UMaxOp>;
-using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinimumOp,
+using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinNumOp,
                                                    LLVM::SMinOp, LLVM::UMinOp>;
 using ConvertPOPBitCast =
     mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
