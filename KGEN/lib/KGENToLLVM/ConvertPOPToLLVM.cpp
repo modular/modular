@@ -7,6 +7,7 @@
 #include "KGEN/KGENPasses.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
@@ -154,11 +155,78 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPCmp
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPCmp : public mlir::ConvertOpToLLVMPattern<CmpOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getLhs().getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
+          op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
+          adaptor.getRhs());
+    } else {
+      Type i1Type = rewriter.getI1Type();
+      if (auto simd = op.getLhs().getType().dyn_cast<SIMDType>())
+        i1Type = VectorType::get(*simd.resolveSize(), i1Type);
+      rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
+          op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
+          adaptor.getRhs());
+    }
+    return success();
+  }
+
+private:
+  /// Convert the integer comparison predicate to the LLVM predicate based on
+  /// the signedness.
+  static LLVM::ICmpPredicate getICmpPredicate(CmpPredicate pred,
+                                              bool isSigned) {
+    switch (pred) {
+    case CmpPredicate::EQ:
+      return LLVM::ICmpPredicate::eq;
+    case CmpPredicate::NE:
+      return LLVM::ICmpPredicate::ne;
+    case CmpPredicate::LT:
+      return isSigned ? LLVM::ICmpPredicate::slt : LLVM::ICmpPredicate::ult;
+    case CmpPredicate::GT:
+      return isSigned ? LLVM::ICmpPredicate::sgt : LLVM::ICmpPredicate::ugt;
+    case CmpPredicate::LE:
+      return isSigned ? LLVM::ICmpPredicate::sle : LLVM::ICmpPredicate::ule;
+    case CmpPredicate::GE:
+      return isSigned ? LLVM::ICmpPredicate::sge : LLVM::ICmpPredicate::uge;
+    }
+  }
+
+  /// Convert the float comparison predicate to the LLVM predicate based on the
+  /// signedness.
+  static LLVM::FCmpPredicate getFCmpPredicate(CmpPredicate pred) {
+    switch (pred) {
+    case CmpPredicate::EQ:
+      return LLVM::FCmpPredicate::oeq;
+    case CmpPredicate::NE:
+      return LLVM::FCmpPredicate::one;
+    case CmpPredicate::LT:
+      return LLVM::FCmpPredicate::olt;
+    case CmpPredicate::GT:
+      return LLVM::FCmpPredicate::ogt;
+    case CmpPredicate::LE:
+      return LLVM::FCmpPredicate::ole;
+    case CmpPredicate::GE:
+      return LLVM::FCmpPredicate::oge;
+    }
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPCast
 //===----------------------------------------------------------------------===//
 
-class ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
-public:
+struct ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -347,6 +415,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPBitCast,
       ConvertPOPBufferStackAllocationOp,
       ConvertPOPCast,
+      ConvertPOPCmp,
       ConvertPOPConstant,
       ConvertPOPCopySign,
       ConvertPOPDiv,
