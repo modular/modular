@@ -12,7 +12,7 @@ kgen.func @scalar_bitcast(
       !meta.scalar<si32>,
       !meta.scalar<ui64>
     ) {
-  // CHECK: lvm.bitcast %[[UI32]]
+  // CHECK: llvm.bitcast %[[UI32]]
   %0 = pop.bitcast %ui32 : !meta.scalar<ui32> to !meta.scalar<f32>
   // CHECK: llvm.bitcast %[[F32]]
   %1 = pop.bitcast %f32 : !meta.scalar<f32> to !meta.scalar<si32>
