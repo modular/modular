@@ -135,8 +135,14 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   if (op.getNumResults() == 0) {
     continueBlock = remainingOpsBlock;
   } else {
+    SmallVector<Type> resultTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), resultTypes)))
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "could not convert result types");
+
     continueBlock =
-        rewriter.createBlock(remainingOpsBlock, op.getResultTypes(),
+        rewriter.createBlock(remainingOpsBlock, resultTypes,
                              SmallVector<Location>(op.getNumResults(), loc));
     rewriter.create<LLVM::BrOp>(loc, ValueRange(), remainingOpsBlock);
   }

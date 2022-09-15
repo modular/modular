@@ -9,6 +9,7 @@ add_modular_conversion_library(KGENToLLVM
   ConvertPOPToLLVM.cpp
   ConvertSCFToLLVM.cpp
   LLVMLoweringUtils.cpp
+  LowerKGENToLLVM.cpp
 
   DEPENDS
   MLIRKGENPasses
@@ -17,6 +18,7 @@ add_modular_conversion_library(KGENToLLVM
   KGENDialect
   MetaDialect
   POPDialect
+  IndexToLLVM
   MCompilerSupport
 
   MLIRIR

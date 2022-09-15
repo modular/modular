@@ -10,6 +10,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassOptions.h"
 #include "mlir/Pass/PassRegistry.h"
 
 //===----------------------------------------------------------------------===//
@@ -18,6 +19,7 @@
 
 namespace mlir {
 class ModuleOp;
+class OpPassManager;
 namespace LLVM {
 class LLVMDialect;
 class LLVMFuncOp;
@@ -45,6 +47,33 @@ std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
 std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
 std::unique_ptr<mlir::Pass> createLowerZAPToPOPPass();
+
+//===----------------------------------------------------------------------===//
+// Pass Pipelines
+//===----------------------------------------------------------------------===//
+
+/// Options for the KGEN to LLVM pipeline.
+struct LowerToLLVMOptions
+    : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
+  Option<StringRef> topLevelKernel{
+      *this, "top-level-kernel",
+      llvm::cl::desc("The name of the top-level kernel. If specified, the "
+                     "signature of the kernel is altered to be C-compatible")};
+  Option<bool> emitOpaqueWrappers{
+      *this, "emit-opaque-wrappers",
+      llvm::cl::desc("Whether to emit opaque function wrappers. If "
+                     "specified, all contained functions will receive a "
+                     "wrapper with arguments and results tightly packed.")};
+};
+
+/// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.
+/// The pipeline runs the canonicalizer, the KGEN to LLVM conversion, a series
+/// of LLVM lowerings, and the canonicalizer again.
+void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
+                              const LowerToLLVMOptions &options);
+
+/// Register the lower to LLVM pipeline.
+void registerLowerToLLVMPipeline();
 
 //===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration
