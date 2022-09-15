@@ -236,9 +236,9 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   auto inputDType = inputType.resolveDType();
   auto outputDType = outputType.resolveDType();
 
-  // If we cannot resolve the dtype, then we cannot cast.
+  // If neither dtype could be resolved, allow the cast.
   if (inputDType.isInvalid() || outputDType.isInvalid())
-    return false;
+    return true;
 
   auto inputDTypeWidth = inputDType.getWidthInBits();
   auto outputDTypeWidth = outputDType.getWidthInBits();
@@ -248,9 +248,9 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
     auto outputSimd = outputType.cast<SIMDType>();
     auto inputSimdSize = inputSimd.resolveSize();
     auto outputSimdSize = outputSimd.resolveSize();
-    // If we cannot resolve the sizes, then we cannot verify the cast.
+    // If neither size could be resolved, allow the cast.
     if (!inputSimdSize || !outputSimdSize)
-      return false;
+      return true;
     // If the sizes do not match, then we cannot cast.
     return inputSimdSize.value() * inputDTypeWidth ==
            outputSimdSize.value() * outputDTypeWidth;
