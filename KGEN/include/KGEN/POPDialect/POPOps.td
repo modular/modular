@@ -184,6 +184,26 @@ def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
+// MinOp
+//===----------------------------------------------------------------------===//
+
+def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
+  let summary = "min";
+  let description = [{
+    The `min` operation takes two meta.scalar or meta.simd types
+    and returns their elementwise min. The operand and result types must be
+    the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.min %a, %b : !meta.scalar<type>
+    %c = pop.min %a, %b : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SubOp
 //===----------------------------------------------------------------------===//
 
