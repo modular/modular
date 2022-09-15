@@ -1,7 +1,7 @@
 
 // RUN: kgen-opt -split-input-file -convert-kgen-to-llvm %s | FileCheck %s
 
-// CHECK-LABEL: llvm.func @scalar_rebind
+// CHECK-LABEL: llvm.func private @scalar_rebind
 // CHECK-SAME: %[[ARG0:.*]]: f32
 kgen.func @scalar_rebind(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
   // CHECK: return %[[ARG0]] : f32
@@ -9,7 +9,7 @@ kgen.func @scalar_rebind(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
   kgen.return %0 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: llvm.func @simd_rebind
+// CHECK-LABEL: llvm.func private @simd_rebind
 // CHECK-SAME: %[[ARG0:.*]]: vector<2xi64>
 kgen.func @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
   %0 = meta.simd.rebind %arg0 : !meta.simd<2, si64> to !meta.simd<2, si64>
@@ -17,7 +17,7 @@ kgen.func @simd_rebind(%arg0: !meta.simd<2, si64>) -> !meta.simd<2, si64> {
   kgen.return %0 : !meta.simd<2, si64>
 }
 
-// CHECK-LABEL: llvm.func @pointer_rebind
+// CHECK-LABEL: llvm.func private @pointer_rebind
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr<f32>, %[[ARG1:.*]]: !llvm.ptr, %[[ARG2:.*]]: !llvm.ptr<i64>
 kgen.func @pointer_rebind(
   %arg0: !meta.pointer<!meta.scalar<f32>>,

@@ -19,13 +19,13 @@ llvm.func @"float_constant_indirect"() -> f32 {
   llvm.return %0 : f32
 }
 
-kgen.func @exec_exp() -> f32 {
+kgen.func public @exec_exp() -> f32 {
   %0 = llvm.call @"float_constant_indirect"() : () -> f32
   %1 = llvm.call @"exp_intrinsic_f32,type=f32"(%0) : (f32) -> f32
   kgen.return %1 : f32
 }
 
-kgen.func @void() {
+kgen.func public @void() {
   %0 = llvm.call @"float_constant_indirect"() : () -> f32
   kgen.return
 }

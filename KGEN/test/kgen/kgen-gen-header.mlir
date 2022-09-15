@@ -7,12 +7,12 @@
 // RUN: kgen %s -emit -func="someMetaScalarKernel:%t.o"
 // RUN: cat %t.h | FileCheck %s --check-prefixes=SCALARMETA
 
-kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
+kgen.func public @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
 // SCALAR: extern float someKernel(float, intptr_t);
 
-kgen.func @someBufferKernel(%a: !meta.buffer<?, ?>) -> index {
+kgen.func public @someBufferKernel(%a: !meta.buffer<?, ?>) -> index {
   %size = meta.buffer.size %a : !meta.buffer<?, ?>
   kgen.return %size : index
 }
@@ -21,7 +21,7 @@ kgen.func @someBufferKernel(%a: !meta.buffer<?, ?>) -> index {
 
 
 // https://github.com/modularml/modular/issues/2636
-kgen.func @someMetaScalarKernel(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+kgen.func public @someMetaScalarKernel(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
   kgen.return %arg0 : !meta.scalar<f32>
 }
 

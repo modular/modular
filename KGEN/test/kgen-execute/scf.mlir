@@ -1,6 +1,6 @@
 // RUN: kgen-execute %s -execute -func="foo:f32():%t.o" | FileCheck %s
 
-kgen.func @foo() -> f32 {
+kgen.func public @foo() -> f32 {
   %av = pop.constant(1.0 : f32) : !meta.scalar<f32>
   %c10 = pop.constant(10.0 : f32) : !meta.scalar<f32>
   %lb = index.constant 0

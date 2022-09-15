@@ -42,7 +42,10 @@ public:
 
     // Create the LLVM function.
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType);
+        func.getLoc(), func.getNameAttr(), funcType,
+        func.getVisibility() == mlir::SymbolTable::Visibility::Public
+            ? LLVM::Linkage::External
+            : LLVM::Linkage::Private);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(0), funcOp.getBody(),
@@ -631,7 +634,7 @@ static LLVM::LLVMFuncOp emitOpaqueWrapper(LLVM::LLVMFuncOp func,
                                   llvm::to_vector(entry->getArgumentTypes()));
   b.clearInsertionPoint();
   auto newFunc = b.create<LLVM::LLVMFuncOp>(
-      (func.getName() + "_opaque_wrapper").str(), newFuncTy);
+      (func.getName() + "_opaque_wrapper").str(), newFuncTy, func.getLinkage());
   newFunc.getBody().push_back(entry);
   return newFunc;
 }
@@ -665,8 +668,8 @@ static LLVM::LLVMFuncOp emitCWrapper(LLVM::LLVMFuncOp func) {
   auto funcTy = LLVM::LLVMFunctionType::get(
       resultTy, llvm::to_vector(entry->getArgumentTypes()));
   b.clearInsertionPoint();
-  auto newFunc =
-      b.create<LLVM::LLVMFuncOp>((func.getName() + "_c_wrapper").str(), funcTy);
+  auto newFunc = b.create<LLVM::LLVMFuncOp>(
+      (func.getName() + "_c_wrapper").str(), funcTy, func.getLinkage());
   newFunc.getBody().push_back(entry);
   return newFunc;
 }
@@ -692,6 +695,13 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
+    // If the function's linkage is private, don't bother creating a wrapper.
+    if (func.getLinkage() == LLVM::Linkage::Private) {
+      func.emitWarning(
+          "will not emit wrappers for this function marked private");
+      continue;
+    }
+
     if (auto it = callsites.find(funcName); it != callsites.end()) {
       return func.emitError("func is not top-level")
                  .attachNote(it->second.getLoc())
@@ -715,6 +725,12 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
+    // If the function's linkage is private, don't bother creating a wrapper.
+    if (func.getLinkage() == LLVM::Linkage::Private) {
+      func.emitWarning(
+          "will not emit wrappers for this function marked private");
+      continue;
+    }
 
     // Emit the wrapper, insert it and rename it if necessary, then store a
     // reference to the wrapper on the original function.

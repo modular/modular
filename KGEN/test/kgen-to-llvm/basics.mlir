@@ -1,7 +1,7 @@
 // RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
 // RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
 
-// CHECK-LABEL: llvm.func @trivial
+// CHECK-LABEL: llvm.func private @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
 // CHECK-NEXT: llvm.return %[[ARG0]] : i32
 kgen.func @trivial(%arg0: si32) -> si32 {
@@ -10,7 +10,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 // -----
 
-// CHECK-LABEL: llvm.func @produces_result
+// CHECK-LABEL: llvm.func private @produces_result
 kgen.func @produces_result<() -> result>() {
   // CHECK: llvm.return
   kgen.return<result = 42>
@@ -18,14 +18,14 @@ kgen.func @produces_result<() -> result>() {
 
 // -----
 
-// CHECK-LABEL: llvm.func @convert_meta_types
+// CHECK-LABEL: llvm.func private @convert_meta_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
 // CHECK-SAME: %{{.*}}: vector<4xf32>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<i64>)>
 // CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<f32>)>
 
-// INDEX32-LABEL: llvm.func @convert_meta_types
+// INDEX32-LABEL: llvm.func private @convert_meta_types
 // INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<i64>)>
 // INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<f32>)>
 
@@ -40,7 +40,7 @@ kgen.func @convert_meta_types(
 
 // -----
 
-// CHECK-LABEL: llvm.func @"float_constant_f32,value=1.1283791670955126,type=f32"() -> f32
+// CHECK-LABEL: llvm.func private @"float_constant_f32,value=1.1283791670955126,type=f32"() -> f32
 // CHECK: [[CST:%[0-9]+]] = llvm.mlir.constant(1.1283791670955126 : f64) : f64
 // CHECK: [[TRUNC:%[0-9]+]] = llvm.fptrunc [[CST]] : f64 to f32
 // CHECK: llvm.return [[TRUNC]] : f32
@@ -53,7 +53,7 @@ kgen.func @"float_constant_f32,value=1.1283791670955126,type=f32"() -> !meta.sca
 
 // -----
 
-// CHECK-LABEL: llvm.func @"mul_f32,type=f32"
+// CHECK-LABEL: llvm.func private @"mul_f32,type=f32"
 // CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32) -> f32
 // CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: llvm.return [[OUT]] : f32
@@ -65,7 +65,7 @@ kgen.func @"mul_f32,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>
   kgen.return %3 : !meta.scalar<f32>
 }
 
-// CHECK-LABEL: llvm.func @"void,type=f32"
+// CHECK-LABEL: llvm.func private @"void,type=f32"
 // CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32)
 // CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: llvm.return
@@ -79,7 +79,7 @@ kgen.func @"void,type=f32"(%arg0: !meta.scalar<f32>, %arg1: !meta.scalar<f32>) {
 
 // -----
 
-// CHECK-LABEL: llvm.func @"struct,type=f32"
+// CHECK-LABEL: llvm.func private @"struct,type=f32"
 // CHECK-SAME: (%[[ARG0:.*]]: f32, %[[ARG1:.*]]: f32) -> !llvm.struct<(f32, f32)>
 // CHECK: [[OUT:%[0-9]+]] = llvm.fmul %[[ARG0]], %[[ARG1]]
 // CHECK: [[UNDEF:%[0-9]+]] = llvm.mlir.undef : !llvm.struct<(f32, f32)>
@@ -108,7 +108,7 @@ kgen.func @two_results(%arg0: !meta.scalar<f32>) -> (!meta.scalar<f32>, !meta.sc
   kgen.return %arg0, %arg0 : !meta.scalar<f32>, !meta.scalar<f32>
 }
 
-// CHECK-LABEL: llvm.func @convert_call
+// CHECK-LABEL: llvm.func private @convert_call
 // CHECK-SAME: %[[ARG0:.*]]: f32
 kgen.func @convert_call(%arg0: !meta.scalar<f32>) {
   // CHECK: llvm.call @trivial(%[[ARG0]]) : (f32) -> f32
