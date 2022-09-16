@@ -31,15 +31,53 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
   ]> {
   let summary = "integer or floating point constant";
   let description = [{
-    The `pop.constant` operation produces a meta.scalar type equal to the
-    input integer or floating-point constant specified. The
-    input value need not match the dtype of the output meta.scalar but
-    must be coerscible to it.
+    The `pop.constant` operation produces a `!meta.scalar` or `!meta.simd` equal
+    to the specified integer, floating point, or vector constant. If the
+    constant attribute is an integer or floating point, the result type must be
+    a scalar. If the constant is a 1D vector elements attribute, the result type
+    must be a SIMD vector of the same size.
 
-    Example:
+    If the result dtype is specified, the type of the constant values must be
+    convertible from the dtype.
 
     ```mlir
-    // ok because the input type and the meta.scalar dtype are the same.
+    // Signless integers can form signed or unsigned integers of the same
+    // bitwidth.
+    %0 = pop.constant(42 : i64) : !meta.scalar<si64>
+
+    // Explicitly signed or unsigned integers can form only integers of the
+    // same bitwidth and signedness.
+
+    %1 = pop.constant(dense<[42, 24]> : vector<2xui64>) : !meta.simd<2, ui64>
+    // Floats can only form equivalent floating point.
+    %2 = pop.constant(12.3 : f80) : !meta.scalar<f80>
+    ```
+
+    If the result dtype is unspecified, the constant values can use integers of
+    any size or floats of any precision and semantics:
+
+    ```mlir
+    %0 = pop.constant(42) : !meta.scalar<type>
+    %1 = pop.constant(12.3 : f32) : !meta.scalar<type>
+    %2 = pop.constant(dense<[1, 2]> : vector<2xi64>) : !meta.simd<2, type>
+    %3 = pop.constant(dense<[0.1]> : vector<4xbf16>) : !meta.simd<4, type>
+    ```
+
+    When the operation is elaborated, the constant is reified according to the
+    concretized dtype as follows:
+
+    - If the concretized dtype is floating point, float values are coerced to
+      the floating point type if they fit within its range. Integers are
+      converted only if they losslessly roundtrip.
+    - If the concretized dtype is an integer, integers are converted only if
+      truncating or extending (according to the dtype signedness) the value
+      leaves it unchanged. Floats are converted only if they are exact integers.
+
+    Examples:
+
+    ```mlir
+    // No change in type required.
+    %0 = pop.constant(42 : si32) : !meta.scalar<type>
     %0 = pop.constant(42 : si32) : !meta.scalar<si32>
 
     // `42 : i64` can be represented losslessly as an `f32`.
