@@ -469,56 +469,6 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
   }
 }
 
-/// Print a floating point value in a way that the parser will be able to
-/// round-trip losslessly.
-static void printFloatValue(const APFloat &apValue, raw_ostream &os) {
-  // We would like to output the FP constant value in exponential notation,
-  // but we cannot do this if doing so will lose precision.  Check here to
-  // make sure that we only output it in exponential format if we can parse
-  // the value back and get the same value.
-  bool isInf = apValue.isInfinity();
-  bool isNaN = apValue.isNaN();
-  if (!isInf && !isNaN) {
-    SmallString<128> strValue;
-    apValue.toString(strValue, /*FormatPrecision=*/6, /*FormatMaxPadding=*/0,
-                     /*TruncateZero=*/false);
-
-    // Check to make sure that the stringized number is not some string like
-    // "Inf" or NaN, that atof will accept, but the lexer will not.  Check
-    // that the string matches the "[-+]?[0-9]" regex.
-    assert(((strValue[0] >= '0' && strValue[0] <= '9') ||
-            ((strValue[0] == '-' || strValue[0] == '+') &&
-             (strValue[1] >= '0' && strValue[1] <= '9'))) &&
-           "[-+]?[0-9] regex does not match!");
-
-    // Parse back the stringized version and check that the value is equal
-    // (i.e., there is no precision loss).
-    if (APFloat(apValue.getSemantics(), strValue).bitwiseIsEqual(apValue)) {
-      os << strValue;
-      return;
-    }
-
-    // If it is not, use the default format of APFloat instead of the
-    // exponential notation.
-    strValue.clear();
-    apValue.toString(strValue);
-
-    // Make sure that we can parse the default form as a float.
-    if (strValue.str().contains('.')) {
-      os << strValue;
-      return;
-    }
-  }
-
-  // Print special values in hexadecimal format. The sign bit should be included
-  // in the literal.
-  SmallVector<char, 16> str;
-  APInt apInt = apValue.bitcastToAPInt();
-  apInt.toString(str, /*Radix=*/16, /*Signed=*/false,
-                 /*formatAsCLiteral=*/true);
-  os << str;
-}
-
 /// Convert a parameter value to a string when in a context that knows it is
 /// dealing with a parameter specifically.  This utilize syntactic shortcuts to
 /// make the printed syntax easier to grok.
@@ -583,26 +533,13 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // If this is an i1 integer attr, print it as zero or one; not true/false
   // keywords.  This simplifies the keyword processing logic.
-  if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
-    // Make sure 'index' values are printed as signed.
-    bool isUnsigned = intAttr.getType().isUnsignedInteger() ||
-                      intAttr.getType().isSignlessInteger(1);
-    intAttr.getValue().print(os, !isUnsigned);
-    return;
-  }
+  if (auto intAttr = value.dyn_cast<IntegerAttr>())
+    if (intAttr.getType().isSignlessInteger(1)) {
+      os << (intAttr.getValue().isZero() ? 0 : 1);
+      return;
+    }
 
-  if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
-    printFloatValue(floatAttr.getValue(), os);
-    return;
-  }
-
-  // FIXME: LLVM Issue #57689, we have no "printAttributeWithoutType" that works
-  // for printing to a raw_ostream.  Emulate this the hard way for strings.
-  if (auto string = value.dyn_cast<StringAttr>())
-    // Strip off the type.
-    value = StringAttr::get(string.getContext(), string.getValue());
-
-  os << value;
+  value.print(os, /*elideType=*/true);
 }
 
 /// Return the string form for an attribute value that is printed in a <>
