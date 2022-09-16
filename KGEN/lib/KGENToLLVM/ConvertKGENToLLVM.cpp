@@ -697,7 +697,8 @@ static LogicalResult emitWrappers(ModuleOp theModule,
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
     if (func.getLinkage() == LLVM::Linkage::Private) {
-      func.emitWarning(
+      mlir::emitWarning(
+          func.getLoc(),
           "will not emit wrappers for this function marked private");
       continue;
     }
@@ -727,7 +728,8 @@ static LogicalResult emitWrappers(ModuleOp theModule,
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
     if (func.getLinkage() == LLVM::Linkage::Private) {
-      func.emitWarning(
+      mlir::emitWarning(
+          func.getLoc(),
           "will not emit wrappers for this function marked private");
       continue;
     }

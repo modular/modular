@@ -65,7 +65,7 @@ kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !meta.scalar<type>) ->
   kgen.return %2 : !meta.scalar<type>
 }
 
-kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
+kgen.generator public @exp_intrinsic_f64<type: dtype>(%x: !meta.scalar<type>) -> !meta.scalar<type>
   constraints <[eq(:dtype type, f64), "incorrect element type"]> implements @exp {
   %0 = meta.cast_to_builtin %x: !meta.scalar<type> to f64
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64
