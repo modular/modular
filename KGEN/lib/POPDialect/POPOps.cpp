@@ -316,6 +316,24 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
 }
 
 //===----------------------------------------------------------------------===//
+// StackAllocationOp
+//===----------------------------------------------------------------------===//
+
+/// Parse the element type of the allocated pointer type.
+static ParseResult parsePointerOf(AsmParser &p, Type &result) {
+  FailureOr<TypedAttr> elementType;
+  if (parseTypeParamValue(p, elementType))
+    return failure();
+  result = PointerType::get(*elementType);
+  return success();
+}
+
+/// Print the element type of the allocated pointer type.
+static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
+  printTypeParamValue(p, result.cast<PointerType>().getElementType());
+}
+
+//===----------------------------------------------------------------------===//
 // BufferStackAllocationOp
 //===----------------------------------------------------------------------===//
 

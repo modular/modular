@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -convert-pop-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='kgen.func(convert-pop-to-llvm)' %s | FileCheck %s
 
 // Test trivial vector conversions to LLVM.
 

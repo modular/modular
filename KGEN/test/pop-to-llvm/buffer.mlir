@@ -1,4 +1,4 @@
-// RUN: kgen-opt -convert-pop-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -pass-pipeline='kgen.func(convert-pop-to-llvm)' %s | FileCheck %s
 
 // CHECK-LABEL: @pop_buffer_stack_allocation
 kgen.func @pop_buffer_stack_allocation() -> !meta.buffer<4, f32> {

@@ -89,8 +89,10 @@ void printTypeParamValue(AsmPrinter &p, Attribute value);
 ParseResult parseTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 
 /// Print a parameter value that is known to have `index` type.
+void printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value);
 void printIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `index` type.
+ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
 ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 
 /// Print a parameter value that either has an index type or is null (which

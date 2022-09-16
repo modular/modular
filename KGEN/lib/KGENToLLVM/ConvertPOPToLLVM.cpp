@@ -13,6 +13,8 @@
 #include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Matchers.h"
 
 using namespace M;
 using namespace KGEN;
@@ -364,6 +366,51 @@ struct ConvertPOPBufferStackAllocationOp
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPStackAllocation
+//===----------------------------------------------------------------------===//
+
+/// A `pop.stack_allocation` is lowered by converting it to an `llvm.alloca`
+/// with lifetime markers and hoisting it to the top of the enclosing function.
+class ConvertPOPStackAllocation
+    : public mlir::ConvertOpToLLVMPattern<StackAllocationOp> {
+public:
+  explicit ConvertPOPStackAllocation(mlir::LLVMTypeConverter &typeConverter,
+                                     Block *body)
+      : ConvertOpToLLVMPattern(typeConverter), body(body) {}
+
+  LogicalResult
+  matchAndRewrite(StackAllocationOp op, StackAllocationOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+
+private:
+  /// The enclosing function body.
+  Block *body;
+};
+
+LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
+    StackAllocationOp op, StackAllocationOpAdaptor adaptor,
+    ConversionPatternRewriter &rewriter) const {
+  IntegerAttr size =
+      rewriter.getI64IntegerAttr(op.getSize().cast<IntegerAttr>().getInt());
+  Type ptrType = getTypeConverter()->convertType(op.getType());
+  if (!ptrType)
+    return op.emitOpError("could not lower pointer element type");
+
+  // Hoist the alloca to the top of the enclosing function body.
+  rewriter.setInsertionPointToStart(body);
+  Value sizeVal = rewriter.create<LLVM::ConstantOp>(op.getLoc(), size);
+  Value ptr = rewriter.create<LLVM::AllocaOp>(op.getLoc(), ptrType, sizeVal);
+
+  // Insert lifetime markers starting from the op to the end of its block.
+  rewriter.setInsertionPoint(op);
+  rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), size, ptr);
+  rewriter.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
+  rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), size, ptr);
+  rewriter.replaceOp(op, ptr);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -447,11 +494,41 @@ namespace {
 struct ConvertPOPToLLVMPass
     : public ConvertPOPToLLVMBase<ConvertPOPToLLVMPass> {
   void runOnOperation() override;
+
+  /// Verify that the operation is a function and has no nested CFGs.
+  FailureOr<mlir::FunctionOpInterface> validateOperation();
 };
 } // namespace
 
+FailureOr<mlir::FunctionOpInterface> ConvertPOPToLLVMPass::validateOperation() {
+  auto func = dyn_cast<mlir::FunctionOpInterface>(getOperation());
+  if (!func)
+    return getOperation()->emitError(
+        "convert-pop-to-llvm must be nested on a FunctionOpInterface");
+
+  // Stack allocations cannot be lowered in the presence of CFGs.
+  Operation *cfgOp = nullptr;
+  func->walk([&cfgOp](Operation *op) {
+    if (llvm::none_of(op->getRegions(), [](Region &region) {
+          return region.getBlocks().size() > 1;
+        }))
+      return WalkResult::advance();
+    cfgOp = op;
+    return WalkResult::interrupt();
+  });
+  if (!cfgOp)
+    return func;
+
+  InFlightDiagnostic diag = cfgOp->emitError(
+      "convert-pop-to-llvm cannot run on operations with CFG regions");
+  diag.attachNote() << "try running it before convert-scf-to-llvm";
+  return diag;
+}
+
 void ConvertPOPToLLVMPass::runOnOperation() {
-  Operation *func = getOperation();
+  FailureOr<mlir::FunctionOpInterface> func = validateOperation();
+  if (failed(func))
+    return signalPassFailure();
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
@@ -467,8 +544,10 @@ void ConvertPOPToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
+  patterns.insert<ConvertPOPStackAllocation>(typeConverter,
+                                             &func->getBody().front());
 
-  if (failed(mlir::applyPartialConversion(func, target, std::move(patterns))))
+  if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();
 }
 
