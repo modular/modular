@@ -45,6 +45,7 @@ createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
                             bool emitOpaqueWrappers = false);
 std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
 std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
+std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM();
 std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
 std::unique_ptr<mlir::Pass> createLowerZAPToPOPPass();
 

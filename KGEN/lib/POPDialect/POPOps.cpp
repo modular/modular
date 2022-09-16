@@ -28,10 +28,9 @@ using namespace POP;
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-/// Convert a single integer or float attribute to an attribute that fits the
+/// Reify a single integer or float attribute to an attribute that fits the
 /// given dtype.
-static ErrorOr<Attribute> convertOneAttribute(Attribute attr, DType dtype) {
-
+static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
   if (auto value = attr.dyn_cast<IntegerAttr>()) {
     auto type = value.getType().cast<IntegerType>();
 
@@ -108,31 +107,35 @@ static ErrorOr<Attribute> convertOneAttribute(Attribute attr, DType dtype) {
   return FloatAttr::get(fpType, apFp);
 }
 
-ErrorOrSuccess ConstantOp::finalizeElaboration() {
-  auto dtype = getType().cast<DTypeInterface>().resolveDType();
-  if (getValue().isa<IntegerAttr, FloatAttr>()) {
-    ErrorOr<Attribute> result = convertOneAttribute(getValue(), dtype);
-    if (result.isError())
-      return result.takeError();
-    setValueAttr(result.takeValue());
-    return success();
-  }
+/// Reify a primitive constant attribute (integer, float, or vector thereof)
+/// to an attribute that fits the given type.
+static ErrorOr<TypedAttr> reifyPrimitiveConstant(TypedAttr attr, Type type) {
+  auto dtype = type.cast<DTypeInterface>().resolveDType();
+  if (attr.isa<IntegerAttr, FloatAttr>())
+    return reifyOneAttribute(attr, dtype);
 
-  auto value = getValue().cast<DenseElementsAttr>();
+  auto value = attr.cast<DenseElementsAttr>();
   SmallVector<Attribute> values;
   values.reserve(value.size());
   for (Attribute attr : value.getValues<Attribute>()) {
-    ErrorOr<Attribute> result = convertOneAttribute(attr, dtype);
+    ErrorOr<TypedAttr> result = reifyOneAttribute(attr, dtype);
     if (result.isError())
       return result.takeError();
     values.push_back(result.takeValue());
   }
 
-  setValueAttr(DenseElementsAttr::get(
+  return DenseElementsAttr::get(
       VectorType::get(value.getType().cast<VectorType>().getShape(),
                       // SIMD vectors cannot be empty.
                       values.front().cast<TypedAttr>().getType()),
-      values));
+      values);
+}
+
+ErrorOrSuccess ConstantOp::finalizeElaboration() {
+  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), getType());
+  if (value.isError())
+    return value.takeError();
+  setValueAttr(value.takeValue());
   return success();
 }
 
@@ -331,6 +334,35 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result) {
 /// Print the element type of the allocated pointer type.
 static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
   printTypeParamValue(p, result.cast<PointerType>().getElementType());
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalConstantOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
+  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), getType());
+  if (value.isError())
+    return value.takeError();
+  setValueAttr(value.takeValue());
+  return success();
+}
+
+LogicalResult GlobalConstantOp::verify() {
+  Type type = getType().resolveElementType();
+  if (!type)
+    return success();
+
+  if (succeeded(checkMetaCastedTypes(
+          [this](StringRef msg) { return emitOpError(msg); }, type,
+          getValue().getType(),
+          [](Type type, DTypeConstantAttr dtype) {
+            return success(dtype.isConvertibleFrom(type));
+          })))
+    return success();
+  return emitOpError("result type (")
+         << getType() << ") is incompatible with value type ("
+         << getValue().getType() << ")";
 }
 
 //===----------------------------------------------------------------------===//

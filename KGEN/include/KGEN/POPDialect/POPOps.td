@@ -796,6 +796,86 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   let results = (outs Res<ConcretePointer, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
-    custom<IndexParamValue>($size) attr-dict `:` custom<PointerOf>(type($result))
+    custom<IndexParamValue>($size) attr-dict `:`
+    custom<PointerOf>(type($result))
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// ExternalCallOp
+//===----------------------------------------------------------------------===//
+
+def POP_ExternalCallOp : POPOp<"external_call"> {
+  let summary = "call an external function";
+  let description = [{
+    The `pop.external_call` operation invokes an externally-defined function,
+    e.g. from libc, using the provided arguments. The function signature is
+    inferred from the operand and result types.
+
+    Example:
+
+    ```mlir
+    %0 = pop.external_call @sqrt(%arg)
+      : (!meta.scalar<f64>) -> !meta.scalar<f32>
+    ```
+
+    ```mlir
+    %0 = pop.external_call @abs(%arg)
+      {type = (!meta.scalar<si32>) -> !meta.scalar<si32>}
+      : (!meta.scalar<ui32>) -> !meta.scalar<ui32>
+    ```
+
+    Variadic functions are those with trailing function arguments. A variadic
+    external function is indicated by specifying an explicit signature of the
+    non-variadic arguments.
+
+    ```mlir
+    pop.external_call @printf(%fmt, %v0, %v1) (!meta.pointer<si8>) -> ()
+      : (!meta.buffer<16, si8>, !meta.scalar<f32>, !meta.scalar<ui32>) -> ()
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$func, Variadic<AnyType>:$operands,
+                       OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType);
+  let results = (outs Variadic<AnyType>:$results);
+
+  let assemblyFormat = [{
+    $func `(` operands `)` ($variadicType^)? attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalConstant
+//===----------------------------------------------------------------------===//
+
+def POP_GlobalConstantOp : POPOp<"global_constant",
+    [NoSideEffect, DeclareOpInterfaceMethods<ElaboratorOpInterface,
+                                             ["finalizeElaboration"]>]> {
+  let summary = "create a global constant";
+  let description = [{
+    The `pop.global_constant` operation creates and returns a pointer to a
+    global constant value. The returned pointer is read-only. Writing the to
+    pointer is undefined behaviour.
+
+    This operation has the same pre and post elaboration constant semantics as
+    `pop.constant`.
+
+    Example:
+
+    ```mlir
+    %0 = pop.global_constant(5 : i32) : !meta.scalar<ui32>
+    %1 = pop.global_constant(12.0) : type
+    %2 = pop.global_constant(dense<[4, 2]>) : !meta.simd<2, dtype>
+    ```
+  }];
+
+  let arguments = (ins TypedAttrInterface:$value);
+  let results = (outs ConcretePointer:$result);
+
+  let assemblyFormat = [{
+    `(` $value `)` attr-dict `:` custom<PointerOf>(type($result))
+  }];
+
+  let hasVerifier = 1;
 }
