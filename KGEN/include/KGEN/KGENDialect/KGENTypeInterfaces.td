@@ -95,6 +95,10 @@ def OpaqueObjectInterface : TypeInterface<"OpaqueObjectInterface"> {
     InterfaceMethod<[{
       Given two pointers to objects of this type, return true if they are
       equal, false if not, and return failure if they cannot be compared.
+      The data passed in is effectively the data returned by `populate` and
+      should be compared accordingly; for an array this means the
+      implementation should likely compare the elements of the array, for
+      example.
     }],
     "::mlir::FailureOr<bool>", "equals",
       (ins "::mlir::Location":$loc, "::mlir::Attribute":$tag, "void *":$lhsData,
