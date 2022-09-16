@@ -42,7 +42,9 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
                        Index:$position);
   let results = (outs ScalarType:$result);
 
-  let assemblyFormat = "$buffer `[` $position `]` attr-dict `:` type($buffer)";
+  let assemblyFormat = [{
+    $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -68,7 +70,7 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
                        ScalarType:$value, Index:$position);
 
   let assemblyFormat = [{
-    $value `,` $buffer `[` $position `]` attr-dict `:` type($buffer)
+    $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
   }];
 }
 
@@ -97,7 +99,7 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
 
   let assemblyFormat =  [{
     $buffer `[` $position `]` attr-dict `:`
-        type($buffer) `,` qualified(type($result))
+        qualified(type($buffer)) `,` qualified(type($result))
   }];
   let hasVerifier = 1;
 }
@@ -125,7 +127,7 @@ def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
 
   let assemblyFormat = [{
     $value `,` $buffer `[` $position `]` attr-dict `:`
-            qualified(type($value)) `,` type($buffer)
+            qualified(type($value)) `,` qualified(type($buffer))
   }];
   let hasVerifier = 1;
 }

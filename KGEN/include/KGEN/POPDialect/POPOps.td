@@ -634,7 +634,7 @@ def POP_LoadOp : POPOp<"load", [TypeMatchesElementType<"ptr", "result">]> {
 
   let arguments = (ins Arg<ConcretePointer, "", [MemRead]>:$ptr);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
+  let assemblyFormat = "$ptr attr-dict `:` qualified(type($ptr))";
 
   let builders = [OpBuilder<(ins "Value":$ptr)>];
 }
@@ -658,7 +658,7 @@ def POP_StoreOp : POPOp<"store", [TypeMatchesElementType<"ptr", "arg">]> {
   }];
 
   let arguments = (ins AnyType:$arg, Arg<ConcretePointer, "", [MemWrite]>:$ptr);
-  let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
+  let assemblyFormat = "$arg `,` $ptr attr-dict `:` qualified(type($ptr))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -717,7 +717,7 @@ def POP_BufferStackAllocationOp : POPOp<"buffer.stack_allocation"> {
     Res<ConcreteBuffer, "",
         [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
 
-  let assemblyFormat = "attr-dict `:` type($result)";
+  let assemblyFormat = "attr-dict `:` qualified(type($result))";
 
   let hasVerifier = 1;
 }
