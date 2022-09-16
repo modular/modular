@@ -474,3 +474,12 @@ kgen.generator @parametricAdd<ty: type>
   %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
   kgen.return %0 : !kgen.paramref<ty>
 }
+
+// CHECK-LABEL: @stack_allocation
+kgen.generator @stack_allocation<size, type: type>() {
+  // CHECK: pop.stack_allocation size : type
+  %0 = pop.stack_allocation size : type
+  // CHECK: pop.stack_allocation 16 : !meta.simd<4, f32>
+  %1 = pop.stack_allocation 16 : !meta.simd<4, f32>
+  kgen.return
+}

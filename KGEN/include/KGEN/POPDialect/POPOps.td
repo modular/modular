@@ -687,6 +687,84 @@ def POP_OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
 }
 
 //===----------------------------------------------------------------------===//
+// StackAllocationOp
+//===----------------------------------------------------------------------===//
+
+def POP_StackAllocationOp : POPOp<"stack_allocation"> {
+  let summary = "scoped stack allocation operation";
+  let description = [{
+    The `pop.stack_allocation` operation allocates statically-sized scoped
+    memory on the stack. The operation returns a pointer to the allocated memory
+    of the specified size aligned to the dtype of the element type.
+
+    Example:
+
+    ```mlir
+    %0 = pop.stack_allocation size : !meta.simd<4, f32>
+    %1 = pop.stack_allocation size : !meta.scalar<ui64>
+    ```
+
+    The allocated memory is automatically released when control tranfers back
+    from the region of its closest surrounding operation.
+
+    Example:
+
+    ```mlir
+    kgen.generator @stack_memory<size, type: type>() {
+      // This memory is allocated at the start of the function call and released
+      // at the end.
+      %0 = pop.stack_allocation size : type
+
+      scf.if %cond {
+        // This memory is allocated when control flow branches into the 'then'
+        // region and released when control flow transfer back.
+        %1 = pop.stack_allocation size : type
+      }
+
+      scf.for %iv = %lb to %ub step %step {
+        // This memory is allocated each time the loop iterates and released
+        // at the end of each iteration.
+        %2 = pop.stack_allocation size : type
+      }
+    }
+    ```
+
+    If stack memory escapes the scope of its enclosing region, interacting with
+    the memory outside its lifetime is undefined behaviour.
+
+    Example:
+
+    ```mlir
+    // Scoped to the enclosing region.
+    %0 = pop.stack_allocation size : type
+
+    %mem = scf.if %cond -> !meta.pointer<type> {
+      // OK: The memory is scoped to the enclosing region.
+      scf.yield %0 : !meta.pointer<type>
+    } else {
+      // Scoped to the 'else' region.
+      %1 = pop.stack_allocation size : type
+
+      // The memory is escaping its enclosed region.
+      scf.yield %1 : !meta.pointer<type>
+    }
+
+    // NOT OK: Loading pointer to invalid memory.
+    %v = pop.load %mem : !meta.pointer<type>
+    ```
+  }];
+
+  let arguments = (ins TypedAttrInterface:$size);
+  let results = (outs
+    Res<ConcretePointer, "",
+        [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
+
+  let assemblyFormat = [{
+    custom<IndexParamValue>($size) attr-dict `:` custom<PointerOf>(type($result))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BufferStackAllocationOp
 //===----------------------------------------------------------------------===//
 

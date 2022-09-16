@@ -627,15 +627,25 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p,
 }
 
 /// Print an attribute value that is known to have index type.
+void KGEN::printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value) {
+  printParamValue(p, value);
+}
+
 void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
   printParamValue(p, value);
 }
 
 /// Parse a parameter value that is known to be an index type.
+ParseResult KGEN::parseIndexParamValue(AsmParser &p, TypedAttr &value) {
+  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
+    return failure();
+  return success();
+}
+
 ParseResult KGEN::parseIndexParamValue(AsmParser &p,
                                        FailureOr<TypedAttr> &value) {
   TypedAttr result;
-  if (parseParamValue(p, result, p.getBuilder().getIndexType()))
+  if (parseIndexParamValue(p, result))
     return failure();
   value = result;
   return success();
