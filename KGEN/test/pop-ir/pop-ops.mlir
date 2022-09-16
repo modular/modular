@@ -472,3 +472,19 @@ kgen.generator @stack_allocation<size, type: type>() {
   %1 = pop.stack_allocation 16 : !meta.simd<4, f32>
   kgen.return
 }
+
+// CHECK-LABEL: @external_call
+kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>, %b: !meta.scalar<dtype>) {
+  // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
+  %0 = pop.external_call @foo(%a, %b) : (!kgen.paramref<type>, !meta.scalar<dtype>) -> !meta.simd<4, f32>
+  // CHECK: pop.external_call @bar(%{{.*}}, %{{.*}}) (!kgen.paramref<type>) -> ()
+  pop.external_call @bar(%a, %b) (!kgen.paramref<type>) -> () : (!kgen.paramref<type>, !meta.scalar<dtype>) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: @global_constant
+kgen.generator @global_constant<type: type>() -> !meta.pointer<type> {
+  // CHECK: pop.global_constant(5 : i32) : type
+  %0 = pop.global_constant(5 : i32) : type
+  kgen.return %0 : !meta.pointer<type>
+}

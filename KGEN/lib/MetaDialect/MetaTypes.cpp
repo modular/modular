@@ -25,6 +25,9 @@ LogicalResult M::KGEN::checkMetaCastedTypes(
     function_ref<InFlightDiagnostic(StringRef)> emitError, Type metaTy,
     Type standardTy,
     function_ref<LogicalResult(Type, DTypeConstantAttr)> checkDType) {
+  if (metaTy.isa<ParamRefType>())
+    return success();
+
   if (auto scalarTy = metaTy.dyn_cast<ScalarType>()) {
     // Check that the data types match.
     if (auto dtype = scalarTy.getDType().dyn_cast<DTypeConstantAttr>();

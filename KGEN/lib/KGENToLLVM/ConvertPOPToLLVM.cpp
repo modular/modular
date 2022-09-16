@@ -13,7 +13,6 @@
 #include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 
 using namespace M;
@@ -461,7 +460,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 }
 
 //===----------------------------------------------------------------------===//
-// Pass Definition
+// ConvertPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -508,6 +507,7 @@ void ConvertPOPToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<POPDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
+  target.addLegalOp<ExternalCallOp>();
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
@@ -527,4 +527,144 @@ void ConvertPOPToLLVMPass::runOnOperation() {
 
 std::unique_ptr<mlir::Pass> M::KGEN::createConvertPOPToLLVMPass() {
   return std::make_unique<ConvertPOPToLLVMPass>();
+}
+
+namespace {
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPExternalCall
+//===----------------------------------------------------------------------===//
+
+/// Lower an external call. Add the callee to the symbol table.
+class ConvertPOPExternalCall
+    : public mlir::ConvertOpToLLVMPattern<ExternalCallOp> {
+public:
+  ConvertPOPExternalCall(SymbolTable &symtab,
+                         mlir::LLVMTypeConverter &typeConverter)
+      : ConvertOpToLLVMPattern(typeConverter), symtab(symtab) {}
+
+  LogicalResult
+  matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Optional<FunctionType> funcType = op.getVariadicType();
+    if (!funcType)
+      funcType =
+          rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
+    TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
+    Type signature = getTypeConverter()->convertFunctionSignature(
+        *funcType, op.getVariadicType().has_value(), conversion);
+
+    // Lookup an existing function.
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getFuncAttr().getAttr());
+    if (func && func.getFunctionType() != signature)
+      return op.emitError("existing function with conflicting signature")
+                 .attachNote(func.getLoc())
+             << "see function declaration here";
+
+    // Create the function declaration if necessary.
+    if (!func) {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.clearInsertionPoint();
+      func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getFunc(),
+                                               signature);
+      symtab.insert(func);
+    }
+
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, adaptor.getOperands());
+    return success();
+  }
+
+private:
+  /// The symbol table.
+  SymbolTable &symtab;
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPGlobalConstant
+//===----------------------------------------------------------------------===//
+
+/// Lower a global constant. Unique the constant value.
+class ConvertPOPGlobalConstant
+    : public mlir::ConvertOpToLLVMPattern<GlobalConstantOp> {
+public:
+  ConvertPOPGlobalConstant(SymbolTable &symtab,
+                           DenseMap<TypedAttr, LLVM::GlobalOp> &constants,
+                           mlir::LLVMTypeConverter &typeConverter)
+      : ConvertOpToLLVMPattern(typeConverter), symtab(symtab),
+        constants(constants) {}
+
+  LogicalResult
+  matchAndRewrite(GlobalConstantOp op, GlobalConstantOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Unique the constant.
+    auto [it, inserted] = constants.try_emplace(op.getValue(), nullptr);
+    if (inserted) {
+      // If the constant doesn't exist, create it and insert it in the module.
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.clearInsertionPoint();
+      Type type = getTypeConverter()->convertType(op.getType());
+      if (!type)
+        return rewriter.notifyMatchFailure(
+            op.getLoc(), "failed to convert constant result type");
+      it->second = rewriter.create<LLVM::GlobalOp>(
+          op.getLoc(), type, true, LLVM::Linkage::Internal, "global_constant",
+          op.getValue());
+      symtab.insert(it->second);
+    }
+
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, it->second);
+    return success();
+  }
+
+private:
+  /// The symbol table.
+  SymbolTable &symtab;
+  /// Uniqued constants.
+  DenseMap<TypedAttr, LLVM::GlobalOp> &constants;
+};
+
+//===----------------------------------------------------------------------===//
+// LowerGlobalPOPToLLVMPass
+//===----------------------------------------------------------------------===//
+
+class LowerGlobalPOPToLLVMPass
+    : public LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
+public:
+  void runOnOperation() override;
+};
+
+} // namespace
+
+void LowerGlobalPOPToLLVMPass::runOnOperation() {
+  ModuleOp theModule = getOperation();
+  SymbolTable symtab(theModule);
+
+  // Configure dialect conversion.
+  mlir::ConversionTarget target(getContext());
+  target.addIllegalOp<ExternalCallOp>();
+  target.addLegalDialect<LLVM::LLVMDialect>();
+
+  // Set LLVM lowering options.
+  mlir::LowerToLLVMOptions options(&getContext());
+  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
+    options.overrideIndexBitwidth(indexBitwidth);
+  MetaToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+
+  // Populate patterns and run the conversion.
+  mlir::RewritePatternSet patterns(&getContext());
+
+  // Convert external calls.
+  patterns.insert<ConvertPOPExternalCall>(symtab, typeConverter);
+
+  // Convert global constants.
+  DenseMap<TypedAttr, LLVM::GlobalOp> constants;
+  patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
+
+  if (failed(
+          mlir::applyPartialConversion(theModule, target, std::move(patterns))))
+    return signalPassFailure();
+}
+
+std::unique_ptr<mlir::Pass> M::KGEN::createLowerGlobalPOPToLLVM() {
+  return std::make_unique<LowerGlobalPOPToLLVMPass>();
 }

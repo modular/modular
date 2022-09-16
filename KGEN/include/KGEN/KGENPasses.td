@@ -145,6 +145,28 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerGlobalPOPToLLVM
+//===----------------------------------------------------------------------===//
+
+def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
+  let summary = "Lower global `pop` dialect operations to the `llvm` dialect.";
+  let description = [{
+    This module pass lowers `pop` operations that have global implications,
+    and thus their lowering pass needs to run on the whole module. These are
+    external calls and glboal constant operations.
+  }];
+
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+  let constructor = "::M::KGEN::createLowerGlobalPOPToLLVM()";
+
+  let options = [
+    Option<"indexBitwidth", "index-bitwidth", "unsigned",
+           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
+           "Bitwidth of the index type, 0 to use size of machine word">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ConvertSCFToLLVM
 //===----------------------------------------------------------------------===//
 
