@@ -341,31 +341,6 @@ struct ConvertPOPOffset : public mlir::ConvertOpToLLVMPattern<OffsetOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPBufferStackAllocationOp
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPBufferStackAllocationOp
-    : public mlir::ConvertOpToLLVMPattern<BufferStackAllocationOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(BufferStackAllocationOp op,
-                  BufferStackAllocationOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    MLIRContext *ctx = op->getContext();
-    BufferDescriptorBuilder buffer(op.getResult(), op.getLoc(), rewriter,
-                                   *getTypeConverter());
-    DType dtype = buffer.getDType();
-    Type elemType = *getMLIRTypeForDType(ctx, dtype);
-    Type ptrType = LLVM::LLVMPointerType::get(elemType);
-
-    Value size = buffer.emitGetSize(op.getResult());
-    rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(op, ptrType, elemType, size);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPStackAllocation
 //===----------------------------------------------------------------------===//
 
@@ -460,7 +435,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPBitCast,
-      ConvertPOPBufferStackAllocationOp,
       ConvertPOPCast,
       ConvertPOPCmp,
       ConvertPOPConstant,

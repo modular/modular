@@ -453,17 +453,6 @@ kgen.generator @pop_generic_offset<type: type>(
   kgen.return
 }
 
-// CHECK-LABEL: @pop_buffer_stack_allocation
-kgen.generator @pop_buffer_stack_allocation<type:dtype, size>() {
-  // CHECK: pop.buffer.stack_allocation : !meta.buffer<4, f32>
-  %0 = pop.buffer.stack_allocation : !meta.buffer<4, f32>
-  // CHECK: pop.buffer.stack_allocation : !meta.buffer<size, f32>
-  %1 = pop.buffer.stack_allocation : !meta.buffer<size, f32>
-  // CHECK: pop.buffer.stack_allocation : !meta.buffer<size, type>
-  %2 = pop.buffer.stack_allocation : !meta.buffer<size, type>
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.generator @parametricAdd
 // CHECK-SAME: %[[ARG0:.*]]: !kgen.paramref<ty>, %[[ARG1:.*]]: !kgen.paramref<ty>
 kgen.generator @parametricAdd<ty: type>

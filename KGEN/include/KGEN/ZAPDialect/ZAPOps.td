@@ -20,6 +20,41 @@ class ZAPOp<string mnemonic, list<Trait> traits = []>
     : Op<ZAPDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
+// BufferStackAllocation
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferStackAllocationOp : ZAPOp<"buffer.stack_allocation"> {
+  let summary = "buffer scoped stack memory allocation operation";
+  let description = [{
+    The `zap.buffer.stack_allocation` operation allocates memory on the stack.
+    The allocated memory is automatically released when control transfers back
+    from the region of its closest surrounding operation. The amount of memory
+    allocated is specified by the buffer type.
+
+    The resulting buffer type must be concrete in both the size and dtype.
+    That is, The buffer type cannot have `?` as either the size or dtype.
+
+    Example:
+
+    ```mlir
+    %0 = zap.buffer.stack_allocation : !meta.buffer<4, f32>
+    %1 = zap.buffer.stack_allocation : !meta.buffer<size, f32>
+    %2 = zap.buffer.stack_allocation : !meta.buffer<size, type>
+    // The following is not allowed
+    %3 = pop.buffer.stack_allocation : !meta.buffer<?, f32>
+    ```
+  }];
+
+  let results = (outs
+    Res<ConcreteBuffer, "",
+        [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
+
+  let assemblyFormat = "attr-dict `:` qualified(type($result))";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 

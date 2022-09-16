@@ -71,8 +71,7 @@ ScalarType M::KGEN::getScalarOfSameDType(Type type) {
 
 PointerType M::KGEN::getPointerOfSameDType(Type type) {
   if (TypedAttr dtype = type.cast<DTypeInterface>().getDType())
-    return PointerType::get(
-        ParameterizedTypeConstantAttr::get(ScalarType::get(dtype)));
+    return PointerType::get(ScalarType::get(dtype));
   return PointerType::get(type.getContext(), nullptr);
 }
 
@@ -504,6 +503,14 @@ FailureOr<bool> BufferType::equals(Location loc, Attribute tag, void *lhsData,
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
+
+PointerType PointerType::get(TypedAttr elementType) {
+  return PointerType::get(elementType.getContext(), elementType);
+}
+
+PointerType PointerType::get(Type elementType) {
+  return PointerType::get(TypeConstantAttr::get(elementType));
+}
 
 LogicalResult
 PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
