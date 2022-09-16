@@ -21,6 +21,25 @@ using namespace ZAP;
 namespace {
 
 //===----------------------------------------------------------------------===//
+// ConvertZAPBufferStackAllocation
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPBufferStackAllocation
+    : mlir::OpRewritePattern<BufferStackAllocationOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(BufferStackAllocationOp op,
+                                PatternRewriter &rewriter) const override {
+    auto type = op.getType().cast<BufferType>();
+    Value ptr = rewriter.create<StackAllocationOp>(
+        op.getLoc(), getPointerOfSameDType(type), type.getSize());
+    rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr, Value(),
+                                                   Value());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertZAPBufferLoad
 //===----------------------------------------------------------------------===//
 
@@ -97,9 +116,10 @@ struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
 //===----------------------------------------------------------------------===//
 
 static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
-  patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferStore,
-                  ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
-      patterns.getContext());
+  patterns
+      .insert<ConvertZAPBufferLoad, ConvertZAPBufferStackAllocation,
+              ConvertZAPBufferStore, ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
+          patterns.getContext());
 }
 
 //===----------------------------------------------------------------------===//

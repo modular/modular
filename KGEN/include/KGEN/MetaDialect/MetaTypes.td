@@ -145,9 +145,8 @@ def PointerType : ParameterizedMetaType<"Pointer", "pointer"> {
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$ty), [{
-      return $_get(ty.getContext(), ty);
-    }]>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
   ];
 
   let extraClassDeclaration = [{

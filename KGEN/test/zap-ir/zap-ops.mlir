@@ -1,5 +1,16 @@
 // RUN: kgen-opt %s | FileCheck %s
 
+// CHECK-LABEL: @zap_buffer_stack_allocation
+kgen.generator @zap_buffer_stack_allocation<type:dtype, size>() {
+  // CHECK: zap.buffer.stack_allocation : !meta.buffer<4, f32>
+  %0 = zap.buffer.stack_allocation : !meta.buffer<4, f32>
+  // CHECK: zap.buffer.stack_allocation : !meta.buffer<size, f32>
+  %1 = zap.buffer.stack_allocation : !meta.buffer<size, f32>
+  // CHECK: zap.buffer.stack_allocation : !meta.buffer<size, type>
+  %2 = zap.buffer.stack_allocation : !meta.buffer<size, type>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_buffer_load
 // CHECK-SAME: %[[A:[a-z0-9]+]]:
 // CHECK-SAME: %[[B:[a-z0-9]+]]:

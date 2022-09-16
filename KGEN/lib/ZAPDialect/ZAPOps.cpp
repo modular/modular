@@ -6,12 +6,13 @@
 
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
+#include "Support/ForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
 
 using namespace M;
-using namespace M::KGEN;
+using namespace KGEN;
 
 static bool hasSameUnderlyingDType(Value a, Value b) {
   auto aDType = a.getType().cast<DTypeInterface>().getDType();
@@ -54,6 +55,16 @@ void ZAP::ZAPDialect::registerOperations() {
 #define GET_OP_LIST
 #include "KGEN/ZAPDialect/ZAP.cpp.inc"
       >();
+}
+
+//===----------------------------------------------------------------------===//
+// BufferStackAllocationOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ZAP::BufferStackAllocationOp::verify() {
+  if (!getType().cast<BufferType>().getSize())
+    return emitOpError("cannot stack allocate a buffer of unknown size");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

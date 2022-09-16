@@ -13,3 +13,19 @@ kgen.func @simd_store(%val : !meta.simd<4, f32>, %buff: !meta.buffer<4, si32>) {
   // expected-error @below {{'zap.simd.store' op the buffer type ('!meta.buffer<4, si32>') must have the same element type as the value simd type ('!meta.simd<4, f32>')}}
   zap.simd.store %val, %buff[%idx]: !meta.simd<4, f32>, !meta.buffer<4, si32>
 }
+
+// -----
+
+kgen.generator @buffer_stack_allocation() {
+  // expected-error @below {{'zap.buffer.stack_allocation' op cannot stack allocate a buffer of unknown size}}
+  %0 = zap.buffer.stack_allocation : !meta.buffer<?, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @buffer_stack_allocation<size>() {
+  // expected-error @below {{'zap.buffer.stack_allocation' op result #0 must be buffer with known dtype, but got '!meta.buffer<size, ?>'}}
+  %0 = zap.buffer.stack_allocation : !meta.buffer<size, ?>
+  kgen.return
+}

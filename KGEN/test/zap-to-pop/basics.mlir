@@ -1,4 +1,17 @@
-// RUN: kgen-opt -lower-zap-to-pop %s | FileCheck %s
+// RUN: kgen-opt -lower-zap-to-pop -allow-unregistered-dialect %s | FileCheck %s
+
+// CHECK-LABEL: @buffer_stack_allocation
+kgen.generator @buffer_stack_allocation<size, type: dtype>() {
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 : !meta.scalar<f32>
+  // CHECK: %[[BUF0:.*]] = meta.buffer.construct %[[PTR0]] : !meta.buffer<4, f32>
+  %0 = zap.buffer.stack_allocation : !meta.buffer<4, f32>
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation size : !meta.scalar<type>
+  // CHECK: %[[BUF1:.*]] = meta.buffer.construct %[[PTR1]] : !meta.buffer<size, type>
+  %1 = zap.buffer.stack_allocation : !meta.buffer<size, type>
+  // CHECK: "use"(%[[BUF0]], %[[BUF1]])
+  "use"(%0, %1) : (!meta.buffer<4, f32>, !meta.buffer<size, type>) -> ()
+  kgen.return
+}
 
 // CHECK-LABEL: @buffer_load
 // CHECK-SAME: %[[BUF:.*]]: !meta.buffer

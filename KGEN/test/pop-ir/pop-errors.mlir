@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-diagnostics -split-input-file -o /dev/null
+// RUN: kgen-opt %s -verify-diagnostics -split-input-file
 
 kgen.func @pop_constant() -> !meta.scalar<si64> {
   // expected-error @below {{incompatible scalar data type}}
@@ -160,22 +160,6 @@ kgen.generator @cast_simd_size<type: dtype>(%a: !meta.simd<2, type>) {
 kgen.generator @cast_simd_size<size, type: dtype>(%a: !meta.simd<size, type>) {
   // expected-error @below {{cannot cast between SIMD types of different sizes}}
   %0 = pop.cast %a : !meta.simd<size, type> to !meta.simd<add(size, 1), type>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @buffer_stack_allocation() {
-  // expected-error @below {{'pop.buffer.stack_allocation' op cannot stack allocate a buffer of unknown size}}
-  %0 = pop.buffer.stack_allocation : !meta.buffer<?, f32>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @buffer_stack_allocation<size>() {
-  // expected-error @below {{'pop.buffer.stack_allocation' op result #0 must be buffer with known dtype, but got '!meta.buffer<size, ?>'}}
-  %0 = pop.buffer.stack_allocation : !meta.buffer<size, ?>
   kgen.return
 }
 
