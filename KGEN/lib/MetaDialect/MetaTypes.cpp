@@ -442,11 +442,13 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   // Resolve the dtype.
   DType dtype = resolveDType();
   if (dtype == DType::invalid)
-    return emitError(loc) << "TODO: " << *this;
+    return emitError(loc)
+           << "Buffers with unbound dtype are not yet supported: " << *this;
 
   auto sizeOr = resolveSize();
   if (!sizeOr.has_value())
-    return emitError(loc) << "TODO: " << *this;
+    return emitError(loc) << "Buffers with unbound size are not yet supported: "
+                          << *this;
 
   int64_t numElements = *sizeOr;
   auto *ptr = (std::byte *)malloc(dtype.getSizeInBytes(numElements));
@@ -480,19 +482,21 @@ FailureOr<size_t> BufferType::getSizeInBytes(Location loc,
   return size;
 }
 
+/// This method compares two instances of data held in a buffer of a given type.
+/// This is a deep comparison.
 FailureOr<bool> BufferType::equals(Location loc, Attribute tag, void *lhsData,
                                    void *rhsData) const {
-  // Two buffers are more or less always comparable, we just have to make sure
-  // we have the same size/dtype.
   // TODO: Much like above, this doesn't handle the dynamic-size or
   //       dynamic-dtype buffers.
   DType dtype = resolveDType();
   if (dtype == DType::invalid)
-    return emitError(loc) << "TODO: " << *this;
+    return emitError(loc)
+           << "Buffers with unbound dtype are not yet supported: " << *this;
 
   Optional<int64_t> sizeOr = resolveSize();
   if (!sizeOr.has_value())
-    return emitError(loc) << "TODO: " << *this;
+    return emitError(loc) << "Buffers with unbound size are not yet supported: "
+                          << *this;
 
   return dataEquals(loc, dtype, *sizeOr, lhsData, rhsData);
 }
