@@ -93,11 +93,10 @@ public:
   /// Map a FuncOp to an llvm::Module.
   void mapFuncToModule(FuncOp func, const llvm::Module *module) {
     auto didEmplace = funcToModule.try_emplace(func, module);
-    assert(didEmplace.second ||
-           (didEmplace.first->getFirst() == func &&
-            didEmplace.first->getSecond() == module) &&
-               "tried to overwrite a func/module pair with a new func/module "
-               "pair");
+    assert((didEmplace.second || (didEmplace.first->getFirst() == func &&
+                                  didEmplace.first->getSecond() == module)) &&
+           "tried to overwrite a func/module pair with a new func/module "
+           "pair");
   }
 
 private:
