@@ -45,9 +45,7 @@ def ZAP_BufferStackAllocationOp : ZAPOp<"buffer.stack_allocation"> {
     ```
   }];
 
-  let results = (outs
-    Res<ConcreteBuffer, "",
-        [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
+  let results = (outs Res<ConcreteBuffer, "", [MemAlloc]>:$result);
 
   let assemblyFormat = "attr-dict `:` qualified(type($result))";
 
@@ -117,7 +115,7 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
 def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
   let summary = "simd load operation";
   let description = [{
-    The `simd.load` operation takes a buffer and an index position and
+    The `zap.simd.load` operation takes a buffer and an index position and
     extracts the `!meta.simd` value from the specified position. The
     position must be of type index.
 
@@ -146,7 +144,7 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
 def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
   let summary = "buffer store operation";
   let description = [{
-    The `simd.store.` operation takes a source value, a buffer, and an index
+    The `zap.simd.store` operation takes a source value, a buffer, and an index
     position and copies the eleemnt of simd value into the buffer starting at
     the specified position. The position must be of type index.
 

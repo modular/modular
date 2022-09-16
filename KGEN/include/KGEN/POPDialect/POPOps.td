@@ -31,7 +31,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
   ]> {
   let summary = "integer or floating point constant";
   let description = [{
-    The `constant` operation produces a meta.scalar type equal to the
+    The `pop.constant` operation produces a meta.scalar type equal to the
     input integer or floating-point constant specified. The
     input value need not match the dtype of the output meta.scalar but
     must be coerscible to it.
@@ -94,7 +94,7 @@ class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
-    The `abs` operation takes a meta.scalar or meta.simd type and
+    The `pop.abs` operation takes a meta.scalar or meta.simd type and
     returns its absolute value. The operand and result types must
     be the same.
 
@@ -114,7 +114,7 @@ def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
-    The `neg` operation takes a meta.scalar or meta.simd type and
+    The `pop.neg` operation takes a meta.scalar or meta.simd type and
     returns its negative. The operand and result types must be the same.
 
     Example:
@@ -150,7 +150,7 @@ class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
-    The `add` operation takes two meta.scalar or meta.simd types
+    The `pop.add` operation takes two meta.scalar or meta.simd types
     and returns their sum. The operand and result types must be
     the same.
 
@@ -164,53 +164,13 @@ def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
-// MaxOp
-//===----------------------------------------------------------------------===//
-
-def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
-  let summary = "max";
-  let description = [{
-    The `max` operation takes two meta.scalar or meta.simd types
-    and returns their elementwise max. The operand and result types must be
-    the same.
-
-    Example:
-
-    ```mlir
-    %c = pop.max %a, %b : !meta.scalar<type>
-    %c = pop.max %a, %b : !meta.simd<size, type>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// MinOp
-//===----------------------------------------------------------------------===//
-
-def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
-  let summary = "min";
-  let description = [{
-    The `min` operation takes two meta.scalar or meta.simd types
-    and returns their elementwise min. The operand and result types must be
-    the same.
-
-    Example:
-
-    ```mlir
-    %c = pop.min %a, %b : !meta.scalar<type>
-    %c = pop.min %a, %b : !meta.simd<size, type>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // SubOp
 //===----------------------------------------------------------------------===//
 
 def POP_SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `sub` operation takes two meta.scalar or meta.simd types
+    The `pop.sub` operation takes two meta.scalar or meta.simd types
     and subtracts them. The operand and result types must be the same.
 
     Example:
@@ -261,13 +221,53 @@ def POP_DivOp : POP_MetaArithmeticBinaryOp<"div"> {
 }
 
 //===----------------------------------------------------------------------===//
+// MaxOp
+//===----------------------------------------------------------------------===//
+
+def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
+  let summary = "max";
+  let description = [{
+    The `pop.max` operation takes two meta.scalar or meta.simd types
+    and returns their elementwise max. The operand and result types must be
+    the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.max %a, %b : !meta.scalar<type>
+    %c = pop.max %a, %b : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// MinOp
+//===----------------------------------------------------------------------===//
+
+def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
+  let summary = "min";
+  let description = [{
+    The `pop.min` operation takes two meta.scalar or meta.simd types
+    and returns their elementwise min. The operand and result types must be
+    the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.min %a, %b : !meta.scalar<type>
+    %c = pop.min %a, %b : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ShlOp
 //===----------------------------------------------------------------------===//
 
 def POP_ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
   let summary = "shift left";
   let description = [{
-    The pop.shl instruction returns the first operand shifted to the left a
+    The `pop.shl` instruction returns the first operand shifted to the left a
     specified number of bits. Both arguments to the shl instruction must be
     the same integer or vector of integer type. rhs is treated as an unsigned
     value.
@@ -327,11 +327,10 @@ def POP_ShrOp : POP_MetaArithmeticBinaryOp<"shr"> {
 def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
-    The `copysign` operation takes two meta.scalar or meta.simd types
-    (a magnitude `a` and a sign `b`) of floating-point dtype. The
-    `copysign` operation copies the sign from `b` to the `a`. The
-    operand and result types must be the same and must have a
-    floating-point dtype.
+    The `pop.copysign` operation takes two meta.scalar or meta.simd types (a
+    magnitude `a` and a sign `b`) of floating-point dtype. The `pop.copysign`
+    operation copies the sign from `b` to the `a`. The operand and result types
+    must be the same and must have a floating-point dtype.
 
     Example:
 
@@ -368,9 +367,9 @@ class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `fma` operation takes three meta.scalar or meta.simd types
-    (`a`, `b`, and `c`) and computes the fma operation `a * b + c`.
-    The operand and result types must be the same.
+    The `pop.fma` operation takes three meta.scalar or meta.simd types (`a`,
+    `b`, and `c`) and computes the fma operation `a * b + c`. The operand and
+    result types must be the same.
 
     Example:
 
@@ -389,7 +388,7 @@ def POP_CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
                           DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "comparison";
   let description = [{
-    The `cmp` operation takes a comparison predicate and two meta.scalar or
+    The `pop.cmp` operation takes a comparison predicate and two meta.scalar or
     meta.simd types (`lhs` and `rhs`) and computes the resulting comparison
     elementwise.
 
@@ -423,8 +422,8 @@ def POP_SelectOp : POPOp<"select",
         ]> {
   let summary = "select";
   let description = [{
-    The `select` operation takes a condition predicate and two meta.scalar or
-    meta.simd types (`then` and `else`) and chooses one value based on a
+    The `pop.select` operation takes a condition predicate and two meta.scalar
+    or meta.simd types (`then` and `else`) and chooses one value based on a
     condition, without IR-level branching.
 
     When the condition is a SIMD vector, then the result is a SIMD vector
@@ -562,8 +561,8 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
     AllTypesMatch<["lhs", "rhs"]>]> {
   let summary = "shufflevector operation";
   let description = [{
-    The `simd.shuffle` operation constructs a permutation of two vectors of the
-    same length and returns a vector of the same element type with the same
+    The `pop.simd.shuffle` operation constructs a permutation of two vectors of
+    the same length and returns a vector of the same element type with the same
     length as the provided mask, and thus must be a non-parametric constant.
 
     Example:
@@ -592,7 +591,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
     ScalarOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
-    The `simd.splat` operation takes a scalar value and replicates it across
+    The `pop.simd.splat` operation takes a scalar value and replicates it across
     a SIMD vector and returns that value. For example, splatting `%a` into a
     `vector<4xi32>` will produce a vector valued as `[%a, %a, %a, %a]`.
 
@@ -665,10 +664,11 @@ def POP_StoreOp : POPOp<"store", [TypeMatchesElementType<"ptr", "arg">]> {
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-def POP_OffsetOp : POPOp<"offset", [AllTypesMatch<["result", "ptr"]>]> {
+def POP_OffsetOp : POPOp<"offset",
+    [NoSideEffect, AllTypesMatch<["result", "ptr"]>]> {
   let summary = "pointer offset operation";
   let description = [{
-    The `offset` operation takes a pointer and increments or decrements its
+    The `pop.offset` operation takes a pointer and increments or decrements its
     position by a certain amount. The pointer cannot have a `?` element type.
 
     Example:
@@ -755,9 +755,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   }];
 
   let arguments = (ins TypedAttrInterface:$size);
-  let results = (outs
-    Res<ConcretePointer, "",
-        [MemAlloc<AutomaticAllocationScopeResource>]>:$result);
+  let results = (outs Res<ConcretePointer, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($size) attr-dict `:` custom<PointerOf>(type($result))
