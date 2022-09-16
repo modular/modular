@@ -170,7 +170,7 @@ public:
 
   /// Loads the vector from the given memory range.
   void assign(const element_type *begin, const element_type *end) {
-    assert(std::distance(begin, end) == size() &&
+    assert((size_t)std::distance(begin, end) == size() &&
            "Wrong number of elements when assigning the vector");
     memcpy(data(), begin, getSizeInBytes());
   }
@@ -509,15 +509,28 @@ inline raw_ostream &operator<<(raw_ostream &os,
   return os;
 }
 
+#define PP_TO_STRING_HELPER(X) #X
+#define PP_TO_STRING(X) PP_TO_STRING_HELPER(X)
+
+// Defined the unroll macro to make both clang and GCC happy.
+#if defined(__clang__)
+#define PRAGMA_UNROLL(UNROLL_FACTOR) _Pragma(PP_TO_STRING(unroll UNROLL_FACTOR))
+#elif defined(__GNUC__)
+#define PRAGMA_UNROLL(UNROLL_FACTOR)                                           \
+  _Pragma(PP_TO_STRING(GCC unroll UNROLL_FACTOR))
+#else
+#define PRAGMA_UNROLL(UNROLL_FACTOR)
+#endif
+
 //===----------------------------------------------------------------------===//
 // simd_transform
 //===----------------------------------------------------------------------===//
 //
-// This is a helper function that is used to transform a range of values in SIMD
-// fashion. It takes 2 functions, one that is used to transform the values on
-// SIMD vectors and another that is used to transform values on scalar values.
-// The function then applies those two functions on the ranges provided. It is
-// functionally similar to std::transform.
+// This is a helper function that is used to transform a range of values in
+// SIMD fashion. It takes 2 functions, one that is used to transform the
+// values on SIMD vectors and another that is used to transform values on
+// scalar values. The function then applies those two functions on the
+// ranges provided. It is functionally similar to std::transform.
 //
 //===----------------------------------------------------------------------===//
 template <typename InputElemTy, typename OutputElemTy,
@@ -537,7 +550,7 @@ OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
   constexpr size_t unrollFactor = 4;
   for (; first <= last - unrollFactor * simdSize;
        first += unrollFactor * simdSize, result += unrollFactor * simdSize) {
-#pragma unroll
+    PRAGMA_UNROLL(unrollFactor)
     for (size_t k = 0; k < unrollFactor; ++k) {
       InputSIMDType input(InputSIMDType::loadFrom(first + k * simdSize));
       OutputSIMDType output(simdFunc(input));
@@ -576,7 +589,7 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
   for (; first1 <= last1 - unrollFactor * simdSize;
        first1 += unrollFactor * simdSize, first2 += unrollFactor * simdSize,
        result += unrollFactor * simdSize) {
-#pragma unroll
+    PRAGMA_UNROLL(unrollFactor)
     for (size_t k = 0; k < unrollFactor; ++k) {
       InputSIMDType input1(InputSIMDType::loadFrom(first1 + k * simdSize));
       InputSIMDType input2(InputSIMDType::loadFrom(first2 + k * simdSize));
@@ -626,7 +639,7 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
   constexpr size_t unrollFactor = 4;
   for (; first <= last - unrollFactor * simdSize;
        first += unrollFactor * simdSize) {
-#pragma unroll
+    PRAGMA_UNROLL(unrollFactor)
     for (size_t k = 0; k < unrollFactor; ++k) {
       InputSIMDType input(InputSIMDType::loadFrom(first + k * simdSize));
       result = simdFunc(result, input);
@@ -642,6 +655,10 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
 #endif // LLCL_SIMD_EMULATED
   return std::reduce(first, last, result, scalarFunc);
 }
+
+#undef PRAGMA_UNROLL
+#undef PP_TO_STRING_HELPER
+#undef PP_TO_STRING
 
 } // namespace M
 
