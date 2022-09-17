@@ -49,6 +49,20 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return ParamRefType::get(replAttrs[0]);
 }
 
+void RegionType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getValues());
+  walkTypesFn(getParams());
+}
+
+Type RegionType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                             ArrayRef<Type> replTypes) const {
+  assert(replAttrs.empty() && replTypes.size() == 2);
+  return RegionType::get(replTypes[0].cast<FunctionType>(),
+                         replTypes[1].cast<FunctionType>());
+}
+
 //===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//
