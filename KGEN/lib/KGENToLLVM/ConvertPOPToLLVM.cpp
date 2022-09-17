@@ -503,6 +503,10 @@ void ConvertPOPToLLVMPass::runOnOperation() {
   if (failed(func))
     return signalPassFailure();
 
+  // If the function body is empty, return.
+  if (func->getBody().empty())
+    return;
+
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<POPDialect>();

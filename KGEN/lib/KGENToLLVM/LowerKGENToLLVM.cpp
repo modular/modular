@@ -30,6 +30,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                          options.emitOpaqueWrappers));
 
   // Run all LLVM lowering passes.
+  pm.addPass(createLowerGlobalPOPToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createConvertPOPToLLVMPass());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createConvertSCFToLLVMPass());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(index::createIndexToLLVM());
