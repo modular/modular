@@ -703,18 +703,17 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 // Print the GeneratorOp using the shared printing logic.
 void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult GeneratorOp::verifyRegions() {
+LogicalResult
+GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
 
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  return ParameterDeclsAndUses::calculate(*this);
-}
+  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this)))
+    return failure();
 
-LogicalResult
-GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
   FlatSymbolRefAttr interfaceSym = getImplementsAttr();
@@ -800,7 +799,7 @@ LogicalResult FuncOp::verifyRegions() {
   // See if the parameter definitions and uses within the func are
   // structured correctly.
   FailureOr<ParameterDeclsAndUses> paramInfo =
-      ParameterDeclsAndUses::calculate(*this);
+      ParameterDeclsAndUses::calculateAndVerify(*this);
   if (failed(paramInfo))
     return failure();
 
@@ -860,7 +859,7 @@ LogicalResult GeneratorInterfaceOp::verify() {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  return ParameterDeclsAndUses::calculate(*this);
+  return ParameterDeclsAndUses::calculateAndVerify(*this);
 }
 
 //===----------------------------------------------------------------------===//

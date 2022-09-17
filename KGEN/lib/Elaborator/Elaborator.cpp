@@ -788,11 +788,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
   SmallVector<Operation *> opsToRewrite;
   {
     auto paramInfo = ParameterDeclsAndUses::calculate(func);
-    if (failed(paramInfo)) {
-      func->emitError("verification error for func");
-      return {};
-    }
-    opsToRewrite = paramInfo->getUsingAndDeclaringOps();
+    opsToRewrite = paramInfo.getUsingAndDeclaringOps();
   }
 
   // We are going to use opsToRewrite as a worklist, so reverse it for efficient

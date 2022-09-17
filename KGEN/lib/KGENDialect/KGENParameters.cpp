@@ -55,9 +55,10 @@ struct ParameterVerifier final {
   /// uses are correct.
   LogicalResult checkParameterUses(Operation *topLevelOp);
 
-  /// Verify that the parameter use-def graph has a partial ordering, diagnosing
-  /// any cycles that are present.
-  LogicalResult checkParameterUseDefGraph(Operation *topLevelOp);
+  /// Reorder the declsAndUses list to be in correct top-down order.  This also
+  /// verifies that the parameter use-def graph has a partial ordering,
+  /// diagnosing any cycles that are present.
+  LogicalResult checkAndReorderParameterUseDefGraph(Operation *topLevelOp);
 
   /// Return the set of parameter uses for the specified operation.
   SmallVector<ParamDeclRefAttr> &getUsesForOperation(Operation *op) const {
@@ -278,11 +279,11 @@ LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
   return success();
 }
 
-/// Collect information about the parameter definitions and uses in the
-/// specified operation.  This emits an error and returns `None` on an IR
-/// verification error.
+/// Check deep invariants for a func/generator decl body, used by the
+/// verifiers for these operations.  If a problem is detected, this emits an
+/// error and returns failure.
 FailureOr<ParameterDeclsAndUses>
-ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
+ParameterDeclsAndUses::calculateAndVerify(Operation *topLevelOp) {
   ParameterDeclsAndUses result;
   ParameterVerifier verifier(result);
 
@@ -293,7 +294,7 @@ ParameterDeclsAndUses::calculate(Operation *topLevelOp) {
       // that the uses match up.
       failed(verifier.checkParameterUses(topLevelOp)) ||
       // Verify that there are no cycles in the graph.
-      failed(verifier.checkParameterUseDefGraph(topLevelOp)))
+      failed(verifier.checkAndReorderParameterUseDefGraph(topLevelOp)))
     return failure();
 
   return std::move(result);
@@ -523,10 +524,11 @@ static LogicalResult diagnoseCycle(ArrayRef<ParameterUseDefGraphNode> nodes,
   return failure();
 }
 
-/// Verify that the parameter use-def graph has a partial ordering, diagnosing
-/// any cycles that are present.
+/// Reorder the declsAndUses list to be in correct top-down order.  This also
+/// verifies that the parameter use-def graph has a partial ordering,
+/// diagnosing any cycles that are present.
 LogicalResult
-ParameterVerifier::checkParameterUseDefGraph(Operation *topLevelOp) {
+ParameterVerifier::checkAndReorderParameterUseDefGraph(Operation *topLevelOp) {
   // Now that we've verified simple properties, check that there is a
   // defininable partial order between operations that define an use parameters.
   // We do this by using LLVM's SCC iterator to walk the graph imposed by these

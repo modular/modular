@@ -45,7 +45,7 @@ LogicalResult HLGeneratorOp::verifyRegions() {
 
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  return ParameterDeclsAndUses::calculate(*this);
+  return ParameterDeclsAndUses::calculateAndVerify(*this);
 }
 
 LogicalResult

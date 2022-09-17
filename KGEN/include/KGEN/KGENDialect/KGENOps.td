@@ -110,7 +110,6 @@ def GeneratorOp
   }];
 
   let hasCustomAssemblyFormat = 1;
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
