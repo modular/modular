@@ -14,7 +14,6 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
-#include "llvm/Support/Debug.h"
 
 using namespace M;
 using namespace KGEN;
@@ -202,6 +201,7 @@ private:
     case CmpPredicate::GE:
       return isSigned ? LLVM::ICmpPredicate::sge : LLVM::ICmpPredicate::uge;
     }
+    llvm_unreachable("unknown predicate");
   }
 
   /// Convert the float comparison predicate to the LLVM predicate based on the
@@ -221,6 +221,7 @@ private:
     case CmpPredicate::GE:
       return LLVM::FCmpPredicate::oge;
     }
+    llvm_unreachable("unknown predicate");
   }
 };
 
