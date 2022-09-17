@@ -115,32 +115,27 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // For normal attributes, we scan the attribute tree looking or parameter
-      // uses and reject unexpected parameter definitions.
-      if (namedAttr.getName().strref() != "paramDecls") {
-        // Ignore the resultParamDecls on the top level operation, they are not
-        // in scope here.
-        if (bodyOp == topLevelOp &&
-            namedAttr.getName().strref() == "resultParamDecls")
-          continue;
+      // Scan the attribute tree looking or parameter uses.
 
-        collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
-                                     bodyOp->getLoc());
+      // Ignore the resultParamDecls on the top level operation, they are not
+      // in scope here.
+      if (bodyOp == topLevelOp &&
+          namedAttr.getName().strref() == "resultParamDecls")
         continue;
-      }
+      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
+                                   bodyOp->getLoc());
 
-      // We handle the `paramDecls` attribute specially, remember it for below.
-      paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
-      if (!paramDeclsAttr) {
-        bodyOp->emitError("paramDecls attribute should be an array ")
-            << namedAttr.getValue();
-        hadError = true;
-        return;
+      // We handle the `paramDecls` attribute specially, remember it for
+      // below.
+      if (namedAttr.getName().strref() == "paramDecls") {
+        paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
+        if (!paramDeclsAttr) {
+          bodyOp->emitError("paramDecls attribute should be an array ")
+              << namedAttr.getValue();
+          hadError = true;
+          return;
+        }
       }
-      // The types of parameters may themselves use parameters, e.g. in regions.
-      for (ParamDeclAttr paramDecl : paramDeclsAttr)
-        collectParameterUsesFromType(paramDecl.getType(), paramUses,
-                                     bodyOp->getLoc());
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -198,19 +193,10 @@ void ParameterVerifier::collectParameterUsesFromAttr(
     return;
   }
 
-  // If this attribute has no sub-attributes or we have already scanned it an
-  // know that it has no parameters in it, return early.
-  if (attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-               DenseElementsAttr, mlir::DenseArrayAttr>() ||
-      parameterLessAttrs.contains(attr))
+  // If we have already scanned it and know that it has no parameters in it,
+  // return early.
+  if (parameterLessAttrs.contains(attr))
     return;
-
-  // Reject errant parameter decls.
-  if (auto paramDecl = attr.dyn_cast<ParamDeclAttr>()) {
-    emitError(loc, "invalid ParamDeclAttr outside of paramDecls attribute ")
-        << paramDecl;
-    return;
-  }
 
   size_t oldSize = uses.size();
 

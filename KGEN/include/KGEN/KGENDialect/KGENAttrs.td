@@ -45,7 +45,8 @@ class ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 /// Declaration of a named parameter.
-def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
+def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
+            [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Parameter declaration";
   let description = [{
     This is a declaration of a parameter in the meta-programming domain for
