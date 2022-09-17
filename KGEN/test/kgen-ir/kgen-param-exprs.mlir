@@ -276,3 +276,17 @@ kgen.generator @takeUnary
   // use unaryFn
   kgen.return
 }
+
+kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !meta.scalar<si32>
+  kgen.return %0 : !meta.scalar<si32>
+}
+
+kgen.generator @test_region() {
+  // CHECK: kgen.call @takeUnary<dt: dtype = si32,
+  // CHECK-SAME: unaryFn: (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>()
+  kgen.call @takeUnary<dt: dtype = si32,
+     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
+
+  kgen.return 
+}

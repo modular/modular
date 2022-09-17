@@ -375,6 +375,30 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// SymbolConstantAttr
+//===----------------------------------------------------------------------===//
+
+def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
+  let summary = "kgen.func or kgen.generator reference";
+  let description = [{
+    This is a value of !kgen.region type, which refers to a func or generator.
+    We cannot directly use FlatSymbolRefAttr because it isn't a TypedAttr.
+  }];
+
+  let parameters = (ins "FlatSymbolRefAttr":$symbol,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let builders =
+    [AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
+                                         "RegionType":$type), [{
+      return get(symbol.getContext(), symbol, type);
+    }]>];
+
+  let assemblyFormat = "`<` $symbol `>`";
+}
+
 //===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//

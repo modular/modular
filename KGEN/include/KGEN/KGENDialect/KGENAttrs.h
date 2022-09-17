@@ -26,6 +26,8 @@ class ConstraintAttr;
 class ConcreteTypeConstantAttr;
 class ParameterizedTypeConstantAttr;
 class DTypeConstantAttr;
+class SymbolConstantAttr;
+class RegionType;
 class ParamDeclAttr;
 
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
@@ -45,7 +47,7 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 /// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
 inline bool isSimpleConstant(Attribute attr) {
   return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
-                  ConcreteTypeConstantAttr>();
+                  ConcreteTypeConstantAttr, SymbolConstantAttr>();
 }
 
 //===----------------------------------------------------------------------===//

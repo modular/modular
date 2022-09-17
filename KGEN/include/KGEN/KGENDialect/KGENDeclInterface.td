@@ -17,6 +17,10 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
   let cppNamespace = "::M::KGEN";
 
   let methods = [
+    // Normal arguments and results.
+    InterfaceMethod<[{
+      Return the FunctionType for input/result SSA values.
+    }], "mlir::FunctionType", "getFunctionType">,
     /// Parameters.
     InterfaceMethod<[{
       Return the list of input and output parameters.

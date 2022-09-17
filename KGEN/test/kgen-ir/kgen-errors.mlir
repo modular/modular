@@ -451,3 +451,71 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
   kgen.return
 }
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.generator @takeUnary
+  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  kgen.return
+}
+
+kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !meta.scalar<si32>
+  kgen.return %0 : !meta.scalar<si32>
+}
+
+kgen.generator @test_region() {
+  // expected-error @+1 {{caller input parameter #1 has type '!kgen.region<(!meta.scalar<si32>) -> !meta.scalar<si32>, () -> ()>' but callee expected type '!kgen.region<(!meta.scalar<f32>) -> !meta.scalar<f32>, () -> ()>'}}
+  kgen.call @takeUnary<dt: dtype = f32,
+     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @takeFn<fn: () -> ()>() {
+  kgen.return
+}
+kgen.generator @test() {
+  // expected-error @+1 {{parameter "fn" value '@missing' does not reference a KGEN declaration}}
+  kgen.call @takeFn<fn: ()->() = @missing>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @takeUnary
+  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  kgen.return
+}
+
+kgen.func @unary(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  kgen.return %arg0 : !meta.scalar<f32>
+}
+
+kgen.generator @test1() {
+  // expected-error @+1 {{symbol '@unary' used with type '(!meta.scalar<si32>) -> !meta.scalar<si32>' but declared as '(!meta.scalar<f32>) -> !meta.scalar<f32>'}}
+  kgen.call @takeUnary<dt: dtype = si32,
+     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @takeUnary
+  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  kgen.return
+}
+
+// expected-note @+1 {{symbol declared here}}
+kgen.generator @unary2<dt: dtype>(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  kgen.return %arg0 : !meta.scalar<si32>
+}
+
+kgen.generator @test2() {
+  // expected-error @+1 {{region parameter unaryFn has 0 input parameters but symbol expects 1}}
+  kgen.call @takeUnary<dt: dtype = si32,
+     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
+  kgen.return
+}
