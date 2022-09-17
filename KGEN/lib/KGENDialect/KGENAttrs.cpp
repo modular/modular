@@ -162,6 +162,20 @@ Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
   return get(replTypes[0]);
 }
 
+void ParamDeclAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getName());
+  walkTypesFn(getType());
+}
+
+Attribute
+ParamDeclAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                           ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.size() == 1);
+  return ParamDeclAttr::get(replAttrs[0].cast<StringAttr>(), replTypes[0]);
+}
+
 void ParamDeclArrayAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {

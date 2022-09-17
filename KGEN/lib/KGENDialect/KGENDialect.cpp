@@ -27,6 +27,9 @@ using namespace KGEN;
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
 
+//===----------------------------------------------------------------------===//
+// ParamRefType
+
 Type ParamRefType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
@@ -48,6 +51,9 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   assert(replAttrs.size() == 1 && replTypes.empty());
   return ParamRefType::get(replAttrs[0]);
 }
+
+//===----------------------------------------------------------------------===//
+// RegionType
 
 void RegionType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
