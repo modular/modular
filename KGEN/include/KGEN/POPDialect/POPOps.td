@@ -652,6 +652,67 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDReduceOps
+//===----------------------------------------------------------------------===//
+
+// Base class for meta.simd reduction operations.
+class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
+    POPOp<mnemonic, traits # [ NoSideEffect,
+                               ScalarOfSameDType<"operand", "result">]>,
+    Arguments<(ins SIMDType:$operand)>,
+    Results<(outs ScalarType:$result)> {
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($operand))";
+}
+
+def POP_SIMDReduceAddOp : POP_MetaSIMDReduceOp<"simd.reduce.add"> {
+  let summary = "SIMD reduce add";
+  let description = [{
+    The `pop.reduce.add` operation takes a simd vector and sums its elements
+    into a scalar.
+
+    ```mlir
+    %a = pop.reduce.add %arg0 : !meta.simd<size, type>
+    ```
+  }];
+}
+
+def POP_SIMDReduceMulOp : POP_MetaSIMDReduceOp<"simd.reduce.mul"> {
+  let summary = "SIMD reduce mul";
+  let description = [{
+    The `pop.reduce.mul` operation takes a simd vector and multiplies its
+    elements into a scalar
+
+    ```mlir
+    %a = pop.reduce.mul %arg0 : !meta.simd<size, type>
+    ```
+  }];
+}
+
+def POP_SIMDReduceMaxOp : POP_MetaSIMDReduceOp<"simd.reduce.max"> {
+  let summary = "SIMD reduce max";
+  let description = [{
+    The `pop.reduce.max` operation takes a simd vector and computes the maximum
+    element in the vector.
+
+    ```mlir
+    %a = pop.reduce.max %arg0 : !meta.simd<size, type>
+    ```
+  }];
+}
+
+def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
+  let summary = "SIMD reduce min";
+  let description = [{
+    The `pop.reduce.min` operation takes a simd vector and computes the minimum
+    element in the vector.
+
+    ```mlir
+    %a = pop.reduce.min %arg0 : !meta.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp
 //===----------------------------------------------------------------------===//
 

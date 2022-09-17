@@ -393,6 +393,55 @@ kgen.generator @pop_simd_splat<size, type: dtype>(%a: !meta.scalar<f32>, %b: !me
   kgen.return %u, %v : !meta.simd<4, f32>, !meta.simd<size, type>
 }
 
+// CHECK-LABEL: @pop_simd_reduce_add
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+kgen.generator @pop_simd_reduce_add<size, type: dtype>(%a: !meta.simd<4, f32>, %b: !meta.simd<size, type>) -> (!meta.scalar<f32>, !meta.scalar<type>) {
+  // CHECK: %[[U:.*]] = pop.simd.reduce.add %[[A]] : !meta.simd<4, f32>
+  %u = pop.simd.reduce.add %a : !meta.simd<4, f32>
+  // CHECK: %[[V:.*]] = pop.simd.reduce.add %[[B]] : !meta.simd<size, type>
+  %v = pop.simd.reduce.add %b : !meta.simd<size, type>
+  // CHECK: return %[[U]], %[[V]]
+  kgen.return %u, %v : !meta.scalar<f32>, !meta.scalar<type>
+}
+
+// CHECK-LABEL: @pop_simd_reduce_mul
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+kgen.generator @pop_simd_reduce_mul<size, type: dtype>(%a: !meta.simd<4, f32>, %b: !meta.simd<size, type>) -> (!meta.scalar<f32>, !meta.scalar<type>) {
+  // CHECK: %[[U:.*]] = pop.simd.reduce.mul %[[A]] : !meta.simd<4, f32>
+  %u = pop.simd.reduce.mul %a : !meta.simd<4, f32>
+  // CHECK: %[[V:.*]] = pop.simd.reduce.mul %[[B]] : !meta.simd<size, type>
+  %v = pop.simd.reduce.mul %b : !meta.simd<size, type>
+  // CHECK: return %[[U]], %[[V]]
+  kgen.return %u, %v : !meta.scalar<f32>, !meta.scalar<type>
+}
+
+// CHECK-LABEL: @pop_simd_reduce_min
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+kgen.generator @pop_simd_reduce_min<size, type: dtype>(%a: !meta.simd<4, f32>, %b: !meta.simd<size, type>) -> (!meta.scalar<f32>, !meta.scalar<type>) {
+  // CHECK: %[[U:.*]] = pop.simd.reduce.min %[[A]] : !meta.simd<4, f32>
+  %u = pop.simd.reduce.min %a : !meta.simd<4, f32>
+  // CHECK: %[[V:.*]] = pop.simd.reduce.min %[[B]] : !meta.simd<size, type>
+  %v = pop.simd.reduce.min %b : !meta.simd<size, type>
+  // CHECK: return %[[U]], %[[V]]
+  kgen.return %u, %v : !meta.scalar<f32>, !meta.scalar<type>
+}
+
+// CHECK-LABEL: @pop_simd_reduce_max
+// CHECK-SAME: %[[A:[a-z0-9]+]]:
+// CHECK-SAME: %[[B:[a-z0-9]+]]:
+kgen.generator @pop_simd_reduce_max<size, type: dtype>(%a: !meta.simd<4, f32>, %b: !meta.simd<size, type>) -> (!meta.scalar<f32>, !meta.scalar<type>) {
+  // CHECK: %[[U:.*]] = pop.simd.reduce.max %[[A]] : !meta.simd<4, f32>
+  %u = pop.simd.reduce.max %a : !meta.simd<4, f32>
+  // CHECK: %[[V:.*]] = pop.simd.reduce.max %[[B]] : !meta.simd<size, type>
+  %v = pop.simd.reduce.max %b : !meta.simd<size, type>
+  // CHECK: return %[[U]], %[[V]]
+  kgen.return %u, %v : !meta.scalar<f32>, !meta.scalar<type>
+}
+
+
 // CHECK-LABEL: @pop_load_store
 kgen.generator @pop_load_store<type: dtype>(%p0: !meta.pointer<!meta.scalar<f32>>, %p1: !meta.pointer<!meta.scalar<type>>) {
   // CHECK: %[[V0:.*]] = pop.load %{{.*}} : !meta.pointer<!meta.scalar<f32>>
