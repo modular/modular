@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -902,7 +903,9 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
         decls, [](ParamDeclAttr value) -> Type { return value.getType(); });
   };
 
-  /// Check the input parameter names.
+  /// Check the input parameter names.  We don't check the result parameter
+  /// names because (in general) they are intentionally renamed at the call
+  /// site.
   if (verifyMatchingCallLists(
           llvm::map_range(callerInputParams,
                           [](Attribute value) -> Attribute {
@@ -912,16 +915,38 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                           [](Attribute value) -> Attribute {
                             return value.cast<ParamDeclAttr>().getName();
                           }),
-          *this, callee, "input parameter", "name") ||
+          *this, callee, "input parameter", "name"))
+    return failure();
 
-      // Check input parameter types.
-      verifyMatchingCallLists(
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
+  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
+  // ... call @callee1<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
+  //
+  // This can also occur in parameter types, e.g. for region types (dt vs f32):
+  //     kgen.generator @g<dt: dtype, region: () -> !meta.scalar<dt>>(...
+  //     call @g<dt: f32, region: () -> !meta.scalar<f32>(...
+
+  // We do this with with ParameterEvaluator which can do the remapping for us.
+  ParameterEvaluator evaluator;
+  for (auto [value, decl] :
+       llvm::zip(callerInputParams, calleeInputParamDecls)) {
+    evaluator.setParameterValue(decl, value.getValue());
+  }
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  // Check input parameter types match.
+  if (verifyMatchingCallLists(
           llvm::map_range(callerInputParams,
                           [](Attribute value) -> Type {
                             return value.cast<ParamBindAttr>().getType();
                           }),
-          getParamDeclType(calleeInputParamDecls), *this, callee,
-          "input parameter", "type") ||
+          llvm::map_range(getParamDeclType(calleeInputParamDecls), remapType),
+          *this, callee, "input parameter", "type") ||
 
       /// Check result parameter types.
       verifyMatchingCallLists(getParamDeclType(callerOutputParamDecls),
@@ -932,29 +957,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Ok, now that we know the parameters match up, verify that the operand
   // and result types match the callee.
-  auto fnType = callee->getAttrOfType<TypeAttr>("function_type")
-                    .getValue()
-                    .cast<FunctionType>();
-
-  // We need to substitute and simplify expressions that occur in the argument
-  // list, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
-  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
-  // ... call @callee1<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
-  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
-  //
-  // We do this with with ParameterEvaluator which can do the remapping for us.
-  ParameterEvaluator evaluator;
-  for (auto [value, decl] :
-       llvm::zip(callerInputParams, calleeInputParamDecls)) {
-    evaluator.setParameterValue(decl.cast<ParamDeclAttr>(),
-                                value.cast<ParamBindAttr>().getValue());
-  }
-
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
+  auto fnType = callee.getFunctionType();
   auto calleeInputTypes = llvm::map_range(fnType.getInputs(), remapType);
   auto calleeResultTypes = llvm::map_range(fnType.getResults(), remapType);
 
@@ -966,7 +969,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                               callee, "result", "type"))
     return failure();
 
-  // Ok, the call looks good.  Last check, make sure that calls within a
+  // Ok, the call looks good.  Next, make sure that calls within a
   // kgen.func do not pass input arguments.  Input arguments are invalid to a
   // func, so it must be a generator or generator interface, and these will
   // not be elaborated unless they have zero input arguments.
@@ -977,6 +980,52 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       diag.attachNote(funcParent->getLoc())
           << "within kgen.func '" << funcParent.getName() << "'";
       return failure();
+    }
+  }
+
+  // Check that any symbol references have the right signature.
+  for (ParamBindAttr inputParam : callerInputParams) {
+    // SymbolConstantAttr must match the signature of the referenced decl.
+    if (auto symbolCst = inputParam.getValue().dyn_cast<SymbolConstantAttr>()) {
+      auto symbol = symbolCst.getSymbol();
+      auto decl = dyn_cast_or_null<KGENDeclInterface>(
+          symbolTable.lookupNearestSymbolFrom(*this, symbol));
+
+      if (!decl)
+        return emitError() << "parameter " << inputParam.getName() << " value '"
+                           << symbol
+                           << "' does not reference a KGEN declaration";
+
+      auto regionType = symbolCst.getType().cast<RegionType>();
+
+      // Verify the value signature matches.
+      if (decl.getFunctionType() != regionType.getValues())
+        return emitError() << "symbol '" << symbol << "' used with type "
+                           << regionType.getValues() << " but declared as "
+                           << decl.getFunctionType();
+
+      // Parameter types match exactly.  We could support higher order rebinding
+      // if there is a need.
+      auto cstInputParamTypes = regionType.getParams().getInputs();
+      auto cstResultParamTypes = regionType.getParams().getResults();
+      auto [declInputParamDecls, declOutputParamDecls] =
+          decl.getParameterInfo();
+
+      SmallString<32> paramName("region parameter ");
+      paramName.append(inputParam.getName().str());
+
+      if (verifyMatchingLists(cstInputParamTypes,
+                              getParamDeclType(declInputParamDecls),
+                              paramName.c_str(), *this, "symbol", decl,
+                              "input parameter", "declared type") ||
+
+          /// Check result parameter types.
+          verifyMatchingLists(cstResultParamTypes,
+                              getParamDeclType(declOutputParamDecls),
+                              paramName.c_str(), *this, "symbol", decl,
+                              "output parameter", "declared type")) {
+        return failure();
+      }
     }
   }
 

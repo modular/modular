@@ -463,6 +463,16 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
+  // If this is a region type, we expect a symbol name.  We need special parsing
+  // logic here because FlatSymbolRefAttr isn't a TypedAttr.
+  if (auto regionType = type.dyn_cast<RegionType>()) {
+    FlatSymbolRefAttr symbol;
+    if (p.parseAttribute(symbol, Type()))
+      return failure();
+    value = SymbolConstantAttr::get(symbol, regionType);
+    return success();
+  }
+
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, strings, etc.
   return p.parseAttribute(value, type);
@@ -528,6 +538,12 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
       os << stringRep;
       return;
     }
+  }
+
+  // Symbol constants print as just the symbol.
+  if (auto symbolConstant = value.dyn_cast<SymbolConstantAttr>()) {
+    os << symbolConstant.getSymbol();
+    return;
   }
 
   // Handle expressions.

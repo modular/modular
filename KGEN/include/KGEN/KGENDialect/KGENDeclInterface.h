@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENDIALECT_KGENDECLINTERFACE_H
 #define KGEN_KGENDIALECT_KGENDECLINTERFACE_H
 
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 
 // Include the TableGen'd definitions in the M:: namespace.
