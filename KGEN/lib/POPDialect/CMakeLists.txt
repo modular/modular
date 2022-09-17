@@ -8,6 +8,7 @@ add_modular_dialect_library(POPDialect
   POPAttrs.cpp
   POPDialect.cpp
   POPOps.cpp
+  POPTypes.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${MODULAR_MAIN_INCLUDE_DIR}/KGEN/PSLDialect

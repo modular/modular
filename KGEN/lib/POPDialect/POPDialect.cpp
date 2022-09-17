@@ -41,6 +41,7 @@ struct POPInlinerInterface : public mlir::DialectInlinerInterface {
 // Register operations.
 void POPDialect::initialize() {
   registerAttributes();
+  registerTypes();
 
   addOperations<
 #define GET_OP_LIST
