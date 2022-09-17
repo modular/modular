@@ -132,3 +132,64 @@ kgen.func @simd_load_store(%i: index, %p0: !meta.pointer<!meta.simd<4, f32>>) {
   pop.store %1, %p0 : !meta.pointer<!meta.simd<4, f32>>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @simd_reduce_add
+kgen.func @simd_reduce_add(%a: !meta.simd<2, f32>,
+                           %b: !meta.simd<2, si32>,
+                           %c: !meta.simd<2, ui32>) {
+  // CHECK: llvm.intr.vector.reduce.fadd
+  %0 = pop.simd.reduce.add %a : !meta.simd<2, f32>
+  // CHECK: llvm.intr.vector.reduce.add
+  %1 = pop.simd.reduce.add %b : !meta.simd<2, si32>
+  // CHECK: llvm.intr.vector.reduce.add
+  %2 = pop.simd.reduce.add %c : !meta.simd<2, ui32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @simd_reduce_mul
+kgen.func @simd_reduce_mul(%a: !meta.simd<2, f32>,
+                           %b: !meta.simd<2, si32>,
+                           %c: !meta.simd<2, ui32>) {
+  // CHECK: llvm.intr.vector.reduce.fmul
+  %0 = pop.simd.reduce.mul %a : !meta.simd<2, f32>
+  // CHECK: llvm.intr.vector.reduce.mul
+  %1 = pop.simd.reduce.mul %b : !meta.simd<2, si32>
+  // CHECK: llvm.intr.vector.reduce.mul
+  %2 = pop.simd.reduce.mul %c : !meta.simd<2, ui32>
+  kgen.return
+}
+
+
+// -----
+
+// CHECK-LABEL: @simd_reduce_max
+kgen.func @simd_reduce_max(%a: !meta.simd<2, f32>,
+                           %b: !meta.simd<2, si32>,
+                           %c: !meta.simd<2, ui32>) {
+  // CHECK: llvm.intr.vector.reduce.fmax
+  %0 = pop.simd.reduce.max %a : !meta.simd<2, f32>
+  // CHECK: llvm.intr.vector.reduce.smax
+  %1 = pop.simd.reduce.max %b : !meta.simd<2, si32>
+  // CHECK: llvm.intr.vector.reduce.umax
+  %2 = pop.simd.reduce.max %c : !meta.simd<2, ui32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @simd_reduce_min
+kgen.func @simd_reduce_min(%a: !meta.simd<2, f32>,
+                           %b: !meta.simd<2, si32>,
+                           %c: !meta.simd<2, ui32>) {
+  // CHECK: llvm.intr.vector.reduce.fmin
+  %0 = pop.simd.reduce.min %a : !meta.simd<2, f32>
+  // CHECK: llvm.intr.vector.reduce.smin
+  %1 = pop.simd.reduce.min %b : !meta.simd<2, si32>
+  // CHECK: llvm.intr.vector.reduce.umin
+  %2 = pop.simd.reduce.min %c : !meta.simd<2, ui32>
+  kgen.return
+}

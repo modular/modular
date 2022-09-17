@@ -14,6 +14,7 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
+#include "llvm/Support/Debug.h"
 
 using namespace M;
 using namespace KGEN;
@@ -385,6 +386,66 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPSIMDReduceAdd
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDReduceAdd
+    : public mlir::ConvertOpToLLVMPattern<SIMDReduceAddOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDReduceAddOp op, SIMDReduceAddOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_add>(
+          op, adaptor.getOperand().getType(), adaptor.getOperand());
+      return success();
+    }
+    // Handle the floating point case.
+    Type eltType =
+        adaptor.getOperand().getType().cast<VectorType>().getElementType();
+    // To ignore the start value, we pass in negative zero (-0.0) as it is
+    // the neutral value of floating point addition.
+    Value negZero = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), eltType, rewriter.getFloatAttr(eltType, -0.0));
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fadd>(
+        op, adaptor.getOperand().getType(), negZero, adaptor.getOperand());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDReduceMul
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDReduceMul
+    : public mlir::ConvertOpToLLVMPattern<SIMDReduceMulOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDReduceMulOp op, SIMDReduceMulOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    if (dtype.isInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_mul>(
+          op, adaptor.getOperand().getType(), adaptor.getOperand());
+      return success();
+    }
+    // Handle the floating point case.
+    Type eltType =
+        adaptor.getOperand().getType().cast<VectorType>().getElementType();
+    // To ignore the start value, one (1.0) is used, as it is the neutral
+    // value of floating point multiplication.
+    Value one = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), eltType, rewriter.getFloatAttr(eltType, 1.0));
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmul>(
+        op, adaptor.getOperand().getType(), one, adaptor.getOperand());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -417,6 +478,14 @@ using ConvertPOPSIMDInsertElement =
                                        LLVM::InsertElementOp>;
 using ConvertPOPSIMDShuffle =
     mlir::OneToOneConvertToLLVMPattern<SIMDShuffleOp, LLVM::ShuffleVectorOp>;
+using ConvertPOPSIMDReduceMax =
+    OneToOneFloatOrIntConversion<SIMDReduceMaxOp, LLVM::vector_reduce_fmax,
+                                 LLVM::vector_reduce_smax,
+                                 LLVM::vector_reduce_umax>;
+using ConvertPOPSIMDReduceMin =
+    OneToOneFloatOrIntConversion<SIMDReduceMinOp, LLVM::vector_reduce_fmin,
+                                 LLVM::vector_reduce_smin,
+                                 LLVM::vector_reduce_umin>;
 using ConvertPOPLoad = mlir::OneToOneConvertToLLVMPattern<LoadOp, LLVM::LoadOp>;
 using ConvertPOPStore =
     mlir::OneToOneConvertToLLVMPattern<StoreOp, LLVM::StoreOp>;
@@ -451,6 +520,10 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
+      ConvertPOPSIMDReduceAdd,
+      ConvertPOPSIMDReduceMax,
+      ConvertPOPSIMDReduceMin,
+      ConvertPOPSIMDReduceMul,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
