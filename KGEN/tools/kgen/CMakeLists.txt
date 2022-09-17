@@ -13,6 +13,7 @@ add_modular_tool(kgen
   KGENCLOptions
   HLKGENDialect
   IndexDialect
+  KGENCompilerRT
   KGENElaborator
   KGENDialect
   ZAPDialect
