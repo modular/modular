@@ -25,9 +25,17 @@ public:
   ParameterDeclsAndUses(ParameterDeclsAndUses &&other) = default;
 
   /// Collect information about the parameter definitions and uses in the
-  /// specified operation.  This emits an error and returns failure on an IR
-  /// verification error.
-  static FailureOr<ParameterDeclsAndUses> calculate(Operation *op);
+  /// specified operation.  This assumes the IR is in a valid state.
+  static ParameterDeclsAndUses calculate(Operation *op) {
+    auto result = calculateAndVerify(op);
+    assert(succeeded(result) && "IR should be legal here!");
+    return std::move(result.value());
+  }
+
+  /// Check deep invariants for a func/generator decl body, used by the
+  /// verifiers for these operations.  If a problem is detected, this emits an
+  /// error and returns failure.
+  static FailureOr<ParameterDeclsAndUses> calculateAndVerify(Operation *op);
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
   /// a parameter of a specified name.
