@@ -251,3 +251,28 @@ kgen.generator @string_params<a: string, b: string>()
 
   kgen.return
 }
+
+
+// REGION TYPES
+// CHECK-LABEL: kgen.generator @region_params<
+kgen.generator @region_params
+  // CHECK-SAME: r1: (si32) -> si32,
+  <r1: region<(si32) -> si32, () -> ()>,
+   // This has an input and output parameter.
+   // CHECK-SAME: r2: region<() -> (), () -> i1>,
+   r2: region<() -> (), () -> i1>,
+   // CHECK-SAME: dt: dtype,
+   dt: dtype,
+   // This uses a different parameter.
+   // CHECK-SAME: r3: () -> !meta.buffer<4, dt>
+   r3: () -> !meta.buffer<4, dt>
+   >() {
+  // use unaryFn
+  kgen.return
+}
+
+kgen.generator @takeUnary
+  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  // use unaryFn
+  kgen.return
+}

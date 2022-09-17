@@ -85,4 +85,27 @@ def StringType : KGENType<"String"> {
   let parameters = (ins);
 }
 
+def RegionType
+  : KGENType<"Region",
+             [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "The signature for a region/symbol parameter";
+  let description = [{
+    This is the type for a region parameter, describing the input and results
+    values for the region or func, as well as parameter input and outputs.
+  }];
+
+  let mnemonic = "region";
+  let parameters = (ins "mlir::FunctionType":$values,
+                        "mlir::FunctionType":$params);
+  let assemblyFormat = "`<` $values `,` $params `>`";
+
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "mlir::FunctionType":$values,
+                                        "mlir::FunctionType":$params), [{
+      return get(values.getContext(), values, params);
+    }]>,
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

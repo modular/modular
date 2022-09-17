@@ -44,28 +44,47 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
   if (failed(parser.parseOptionalColon()))
     return None;
 
-  // In addition to standard types, we support 'type' as a sugared form of
-  // !kgen.type.
+  // Check for sugared types before parsing standard ones.
   if (succeeded(parser.parseOptionalKeyword("type"))) {
     type = parser.getBuilder().getType<MLIRTypeType>();
     return OptionalParseResult(LogicalResult::success());
   }
 
-  // In addition to standard types, we support 'dtype' as a sugared form of
-  // !kgen.dtype.
   if (succeeded(parser.parseOptionalKeyword("dtype"))) {
     type = parser.getBuilder().getType<DTypeType>();
     return OptionalParseResult(LogicalResult::success());
   }
 
-  // In addition to standard types, we support 'string' as a sugared form of
-  // !kgen.dtype.
   if (succeeded(parser.parseOptionalKeyword("string"))) {
     type = parser.getBuilder().getType<StringType>();
     return OptionalParseResult(LogicalResult::success());
   }
 
-  return parser.parseType(type);
+  if (succeeded(parser.parseOptionalKeyword("region"))) {
+    // signature for values and parameters.
+    FunctionType values, params;
+    if (parser.parseLess() || parser.parseType(values) || parser.parseComma() ||
+        parser.parseType(params) || parser.parseGreater())
+      return failure();
+    type = parser.getBuilder().getType<RegionType>(values, params);
+    return OptionalParseResult(LogicalResult::success());
+  }
+
+  if (failed(parser.parseType(type)))
+    return OptionalParseResult(LogicalResult::failure());
+
+  // We accept function type syntax as sugar for a region type without
+  // parameters.
+  if (auto valuesType = type.dyn_cast<FunctionType>()) {
+    // Params defaults to `() -> ()`.
+    ArrayRef<Type> noTypes;
+    auto paramsType =
+        parser.getBuilder().getType<FunctionType>(noTypes, noTypes);
+    type = parser.getBuilder().getType<RegionType>(valuesType, paramsType);
+    return OptionalParseResult(LogicalResult::success());
+  }
+
+  return OptionalParseResult(LogicalResult::success());
 }
 
 static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type);
@@ -573,23 +592,35 @@ ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
   return result.value();
 }
 
+static void printParameterType(raw_ostream &os, Type type) {
+  // Handle other special cases for parameters here.  These each are sugar for a
+  // kgen type.
+  if (type.isa<MLIRTypeType>())
+    os << "type";
+  else if (type.isa<DTypeType>())
+    os << "dtype";
+  else if (type.isa<StringType>())
+    os << "string";
+  else if (auto region = type.dyn_cast<RegionType>()) {
+    // If there are no parameters, print a region type as a function type to
+    // keep things concise.
+    if (region.getParams().getNumInputs() == 0 &&
+        region.getParams().getNumResults() == 0)
+      os << region.getValues();
+    else // Otherwise print it as "region<t1, t2>"
+      os << "region<" << region.getValues() << ", " << region.getParams()
+         << ">";
+  } else
+    os << type;
+}
+
 /// print `: <type>` or elide it entirely if type is an `index` type.
 void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
   // Index type is the default so it doesn't print.
   if (type.isIndex())
     return;
   p << ": ";
-
-  // Handle other special cases for parameters here.  These each are sugar for a
-  // kgen type.
-  if (type.isa<MLIRTypeType>())
-    p << "type";
-  else if (type.isa<DTypeType>())
-    p << "dtype";
-  else if (type.isa<StringType>())
-    p << "string";
-  else
-    p << type;
+  printParameterType(p.getStream(), type);
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.
@@ -599,15 +630,7 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
     return;
   os << ':';
 
-  // Handle other special cases for parameters here.
-  if (type.isa<MLIRTypeType>())
-    os << "type";
-  else if (type.isa<DTypeType>())
-    os << "dtype";
-  else if (type.isa<StringType>())
-    os << "string";
-  else
-    os << type;
+  printParameterType(os, type);
   os << ' ';
 }
 

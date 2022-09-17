@@ -137,6 +137,10 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
         hadError = true;
         return;
       }
+      // The types of parameters may themselves use parameters, e.g. in regions.
+      for (ParamDeclAttr paramDecl : paramDeclsAttr)
+        collectParameterUsesFromType(paramDecl.getType(), paramUses,
+                                     bodyOp->getLoc());
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -164,15 +168,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     if (!paramDeclsAttr)
       return;
 
-    for (Attribute attr : paramDeclsAttr) {
-      // All the members of this array must be ParamDeclAttr's.
-      auto param = attr.dyn_cast<ParamDeclAttr>();
-      if (!param) {
-        bodyOp->emitError("unknown attribute kind in paramDecls list ") << attr;
-        hadError = true;
-        return;
-      }
-
+    for (ParamDeclAttr param : paramDeclsAttr) {
       // We cannot have any redefinitions.
       auto &opAndDeclAttr = parameters.decls[param.getName()];
       if (opAndDeclAttr.first) {
@@ -183,6 +179,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
         hadError = true;
         return;
       }
+
       opAndDeclAttr = {bodyOp, param};
     }
   });
@@ -219,7 +216,6 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 
   // Otherwise we haven't processed this, check the attribute's type if it has
   // one.
-  // TODO: Capture types using SubElementAttrInterface.
   if (auto typedAttr = attr.dyn_cast<TypedAttr>())
     collectParameterUsesFromType(typedAttr.getType(), uses, loc);
 

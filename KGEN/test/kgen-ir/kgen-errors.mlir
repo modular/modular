@@ -454,3 +454,10 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
 // expected-error @below {{expected type to be !kgen.mlirtype}}
 "someop" () {value = #kgen.parameterizedtype.constant<i32> : i32} : () -> ()
+
+// -----
+
+// expected-error @below {{invalid use of parameter with no declaration "dt"}}
+kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
+  kgen.return
+}
