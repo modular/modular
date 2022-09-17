@@ -13,5 +13,6 @@
 
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPOps.td"
+include "KGEN/POPDialect/POPTypes.td"
 
 #endif // POP_TD
