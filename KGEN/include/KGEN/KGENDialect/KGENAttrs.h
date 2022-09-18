@@ -29,6 +29,7 @@ class DTypeConstantAttr;
 class SymbolConstantAttr;
 class RegionType;
 class ParamDeclAttr;
+class ParamDeclArrayAttr;
 
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
@@ -69,7 +70,7 @@ void printKGENType(raw_ostream &os, Type type);
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
 /// Print `: <type>` or elide it entirely if type is an `index` type.
-void printColonTypeOrIndex(AsmPrinter &p, Type type);
+void printColonTypeOrIndex(raw_ostream &os, Type type);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
@@ -111,6 +112,11 @@ void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
 /// results in a null attribute.
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
+
+/// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
+/// information.
+void printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls);
+ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr

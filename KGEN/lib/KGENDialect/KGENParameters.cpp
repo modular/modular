@@ -335,8 +335,8 @@ void ParameterVerifier::verifySymbolConstantAttr(
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  auto cstInputParamTypes = regionType.getParams().getInputs();
-  auto cstResultParamTypes = regionType.getParams().getResults();
+  auto cstInputParamDecls = regionType.getInputParams().getValue();
+  auto cstResultParamDecls = regionType.getResultParams().getValue();
   auto [declInputParamDecls, declOutputParamDecls] = decl.getParameterInfo();
 
   SmallString<32> paramName("@");
@@ -348,13 +348,13 @@ void ParameterVerifier::verifySymbolConstantAttr(
     });
   };
 
-  if (verifyMatchingLists(cstInputParamTypes,
+  if (verifyMatchingLists(getParamDeclType(cstInputParamDecls),
                           getParamDeclType(declInputParamDecls), "symbol use",
                           curOperationCollecting, paramName.c_str(), decl,
                           "input parameter", "declared type") ||
 
       /// Check result parameter types.
-      verifyMatchingLists(cstResultParamTypes,
+      verifyMatchingLists(getParamDeclType(cstResultParamDecls),
                           getParamDeclType(declOutputParamDecls), "symbol use",
                           curOperationCollecting, paramName.c_str(), decl,
                           "output parameter", "declared type")) {

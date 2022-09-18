@@ -95,15 +95,17 @@ def RegionType
   }];
 
   let mnemonic = "region";
-  let parameters = (ins "mlir::FunctionType":$values,
-                        "mlir::FunctionType":$params);
-  let assemblyFormat = "`<` $values `,` $params `>`";
+  let parameters = (ins "ParamDeclArrayAttr":$inputParams,
+                        "ParamDeclArrayAttr":$resultParams,
+                        "mlir::FunctionType":$values);
+  let assemblyFormat = "`<` $inputParams `,` $resultParams `,` $values `>`";
 
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "mlir::FunctionType":$values,
-                                        "mlir::FunctionType":$params), [{
-      return get(values.getContext(), values, params);
+    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams,
+                                        "ParamDeclArrayAttr":$resultParams,
+                                        "mlir::FunctionType":$values), [{
+      return get(values.getContext(), inputParams, resultParams, values);
     }]>,
   ];
 }

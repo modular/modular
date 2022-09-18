@@ -37,7 +37,7 @@ static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
 
 static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
                                       Attribute value, Type type) {
-  printColonTypeOrIndex(p, type);
+  printColonTypeOrIndex(p.getStream(), type);
   p << " = <";
   printParamValue(p, value);
   p << ">";
@@ -101,7 +101,7 @@ static void printParameterBindings(OpAsmPrinter &p, Operation *op,
   p << '<';
   llvm::interleaveComma(value, p, [&](ParamBindAttr bind) {
     printParamName(p, bind.getName());
-    printColonTypeOrIndex(p, bind.getType());
+    printColonTypeOrIndex(p.getStream(), bind.getType());
     p << " = ";
     printParamValue(p, bind.getValue());
   });
@@ -273,7 +273,7 @@ parseParamList(AsmParser &p, SmallVectorImpl<AttrT> &params,
 ///
 ///   parameter-decl   ::= identifier (`:` type)?
 ///   parameter-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-static ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
+ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
   auto parseElement = [](AsmParser &p, ParamDeclAttr &attr, StringRef name,
                          Type type) -> ParseResult {
     attr = ParamDeclAttr::get(name, type);
@@ -290,11 +290,15 @@ static ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
 }
 
 /// Print a comma separated parameter declaration list.
-static void printParamDecls(OpAsmPrinter &p, ParamDeclArrayAttr decls) {
-  llvm::interleaveComma(decls, p.getStream(), [&](ParamDeclAttr ref) {
-    printParamName(p, ref.getName().getValue());
-    printColonTypeOrIndex(p, ref.getType());
-  });
+void KGEN::printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls) {
+  if (decls.empty()) {
+    os << "()";
+  } else {
+    llvm::interleaveComma(decls, os, [&](ParamDeclAttr ref) {
+      printParamName(ref.getName().getValue(), os);
+      printColonTypeOrIndex(os, ref.getType());
+    });
+  }
 }
 
 /// Parse a parameter binding list if present.
@@ -362,18 +366,20 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
   if (paramValues.empty() && paramDecls.empty())
     return;
   p << "<";
-  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
-    printParamName(p, bind.getName().getValue());
-    printColonTypeOrIndex(p, bind.getType());
-    p << " = ";
-    printParamValue(p, bind.getValue());
-  });
   if (paramValues.empty())
     p << "()";
+  else {
+    llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
+      printParamName(p, bind.getName().getValue());
+      printColonTypeOrIndex(p.getStream(), bind.getType());
+      p << " = ";
+      printParamValue(p, bind.getValue());
+    });
+  }
 
   if (!paramDecls.empty()) {
     p << " -> ";
-    printParamDecls(p, paramDecls);
+    printParamDecls(p.getStream(), paramDecls);
   }
   p << ">";
 }
@@ -548,14 +554,11 @@ static void printParameterList(KGENDeclInterface decl, OpAsmPrinter &p) {
     return;
 
   p << '<';
-  if (inputParams.empty())
-    p << "()";
-  else
-    printParamDecls(p, inputParams);
+  printParamDecls(p.getStream(), inputParams);
 
   if (!resultParams.empty()) {
     p << " -> ";
-    printParamDecls(p, resultParams);
+    printParamDecls(p.getStream(), resultParams);
   }
   p << '>';
 }
