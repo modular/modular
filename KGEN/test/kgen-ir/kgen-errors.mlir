@@ -527,3 +527,15 @@ kgen.generator @call_param() {
   %0 = kgen.call_param[si32: 4]() 
   kgen.return
 }
+
+// -----
+
+kgen.func @trivial(%arg0: si32) -> si32 {
+  kgen.return %arg0 : si32
+}
+
+kgen.func @call_param_in_func(%arg0: si32) -> si32 {
+  // expected-error @+1 {{kgen.call_param is only allowed in generators pre-elaboration}}
+  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0) 
+  kgen.return %0: si32
+}
