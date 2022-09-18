@@ -478,7 +478,7 @@ kgen.generator @takeFn<fn: () -> ()>() {
   kgen.return
 }
 kgen.generator @test() {
-  // expected-error @+1 {{parameter "fn" value '@missing' does not reference a KGEN declaration}}
+  // expected-error @+1 {{'@missing' does not reference a KGEN declaration}}
   kgen.call @takeFn<fn: ()->() = @missing>() : () -> ()
   kgen.return
 }
@@ -508,13 +508,13 @@ kgen.generator @takeUnary
   kgen.return
 }
 
-// expected-note @+1 {{symbol declared here}}
+// expected-note @+1 {{@unary2 declared here}}
 kgen.generator @unary2<dt: dtype>(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
   kgen.return %arg0 : !meta.scalar<si32>
 }
 
 kgen.generator @test2() {
-  // expected-error @+1 {{region parameter unaryFn has 0 input parameters but symbol expects 1}}
+  // expected-error @+1 {{'kgen.call' op symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<dt: dtype = si32,
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
   kgen.return

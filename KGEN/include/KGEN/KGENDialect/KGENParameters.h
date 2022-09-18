@@ -27,7 +27,7 @@ public:
   /// Collect information about the parameter definitions and uses in the
   /// specified operation.  This assumes the IR is in a valid state.
   static ParameterDeclsAndUses calculate(Operation *op) {
-    auto result = calculateAndVerify(op);
+    auto result = calculateAndPotentiallyVerify(op, nullptr);
     assert(succeeded(result) && "IR should be legal here!");
     return std::move(result.value());
   }
@@ -35,7 +35,10 @@ public:
   /// Check deep invariants for a func/generator decl body, used by the
   /// verifiers for these operations.  If a problem is detected, this emits an
   /// error and returns failure.
-  static FailureOr<ParameterDeclsAndUses> calculateAndVerify(Operation *op);
+  static FailureOr<ParameterDeclsAndUses>
+  calculateAndVerify(Operation *op, SymbolTableCollection &symbolTables) {
+    return calculateAndPotentiallyVerify(op, &symbolTables);
+  }
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
   /// a parameter of a specified name.
@@ -70,6 +73,10 @@ public:
   }
 
 private:
+  static FailureOr<ParameterDeclsAndUses>
+  calculateAndPotentiallyVerify(Operation *op,
+                                SymbolTableCollection *symbolTables);
+
   ParameterDeclsAndUses() = default;
   ParameterDeclsAndUses(const ParameterDeclsAndUses &) = delete;
   void operator=(const ParameterDeclsAndUses &) = delete;

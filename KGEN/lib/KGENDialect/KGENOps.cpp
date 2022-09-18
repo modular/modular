@@ -668,7 +668,7 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this)))
+  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they
@@ -748,7 +748,7 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 /// a superset of what a func is.
 void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult FuncOp::verifyRegions() {
+LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
@@ -756,7 +756,7 @@ LogicalResult FuncOp::verifyRegions() {
   // See if the parameter definitions and uses within the func are
   // structured correctly.
   FailureOr<ParameterDeclsAndUses> paramInfo =
-      ParameterDeclsAndUses::calculateAndVerify(*this);
+      ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
   if (failed(paramInfo))
     return failure();
 
@@ -812,11 +812,12 @@ void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
 }
 
-LogicalResult GeneratorInterfaceOp::verify() {
+LogicalResult
+GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  return ParameterDeclsAndUses::calculateAndVerify(*this);
+  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
 }
 
 //===----------------------------------------------------------------------===//
@@ -936,52 +937,6 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       diag.attachNote(funcParent->getLoc())
           << "within kgen.func '" << funcParent.getName() << "'";
       return failure();
-    }
-  }
-
-  // Check that any symbol references have the right signature.
-  for (ParamBindAttr inputParam : callerInputParams) {
-    // SymbolConstantAttr must match the signature of the referenced decl.
-    if (auto symbolCst = inputParam.getValue().dyn_cast<SymbolConstantAttr>()) {
-      auto symbol = symbolCst.getSymbol();
-      auto decl = dyn_cast_or_null<KGENDeclInterface>(
-          symbolTable.lookupNearestSymbolFrom(*this, symbol));
-
-      if (!decl)
-        return emitError() << "parameter " << inputParam.getName() << " value '"
-                           << symbol
-                           << "' does not reference a KGEN declaration";
-
-      auto regionType = symbolCst.getType().cast<RegionType>();
-
-      // Verify the value signature matches.
-      if (decl.getFunctionType() != regionType.getValues())
-        return emitError() << "symbol '" << symbol << "' used with type "
-                           << regionType.getValues() << " but declared as "
-                           << decl.getFunctionType();
-
-      // Parameter types match exactly.  We could support higher order rebinding
-      // if there is a need.
-      auto cstInputParamTypes = regionType.getParams().getInputs();
-      auto cstResultParamTypes = regionType.getParams().getResults();
-      auto [declInputParamDecls, declOutputParamDecls] =
-          decl.getParameterInfo();
-
-      SmallString<32> paramName("region parameter ");
-      paramName.append(inputParam.getName().str());
-
-      if (verifyMatchingLists(cstInputParamTypes,
-                              getParamDeclType(declInputParamDecls),
-                              paramName.c_str(), *this, "symbol", decl,
-                              "input parameter", "declared type") ||
-
-          /// Check result parameter types.
-          verifyMatchingLists(cstResultParamTypes,
-                              getParamDeclType(declOutputParamDecls),
-                              paramName.c_str(), *this, "symbol", decl,
-                              "output parameter", "declared type")) {
-        return failure();
-      }
     }
   }
 

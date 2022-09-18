@@ -27,6 +27,7 @@ def FuncOp
   : KGENOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                     Symbol, IsolatedFromAbove,
                     SingleBlockImplicitTerminator<"ReturnOp">,
+                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                     DeclareOpInterfaceMethods<KGENDeclInterface, ["getConstraints"]>]> {
   let summary = "concrete function definition";
 
@@ -53,7 +54,6 @@ def FuncOp
   }];
 
   let hasCustomAssemblyFormat = 1;
-  let hasRegionVerifier = 1;
 
   let builders = [
     // Create a func with a region but no body block.  The caller must create
@@ -119,7 +119,8 @@ def GeneratorOp
 def GeneratorInterfaceOp
   : KGENOp<"generator.interface",
            [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
-            IsolatedFromAbove, DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+            IsolatedFromAbove, DeclareOpInterfaceMethods<KGENDeclInterface>,
+            DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
@@ -146,7 +147,6 @@ def GeneratorInterfaceOp
   }];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

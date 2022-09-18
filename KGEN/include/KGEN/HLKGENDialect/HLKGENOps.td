@@ -57,5 +57,4 @@ def HLGeneratorOp
   }];
 
   let hasCustomAssemblyFormat = 1;
-  let hasRegionVerifier = 1;
 }
