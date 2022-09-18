@@ -89,7 +89,7 @@ void printParamValue(TypedAttr value, raw_ostream &os);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
-ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &value,
+ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
                             Type type);
 
 /// Print a parameter value that is known to have `type` type.
