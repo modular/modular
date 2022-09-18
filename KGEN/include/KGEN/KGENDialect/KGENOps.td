@@ -34,6 +34,7 @@ def FuncOp
   let arguments = (ins SymbolNameAttr:$sym_name,
                        StrAttr:$sym_visibility,
                        TypeAttrOf<FunctionType>:$function_type,
+                       ParamDeclArrayAttr:$paramDecls,
                        ParamDeclArrayAttr:$resultParamDecls);
   let regions = (region SizedRegion<1>:$body);
 

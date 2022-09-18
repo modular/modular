@@ -21,7 +21,14 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.
     }], "mlir::FunctionType", "getFunctionType">,
+    
     /// Parameters.
+    InterfaceMethod<[{
+      Return the input parameter declarations live in the decl body.
+    }], "ParamDeclArrayAttr", "getParamDeclsAttr">,
+    InterfaceMethod<[{
+      Return the result parameter declarations returned from the decl body.
+    }], "ParamDeclArrayAttr", "getResultParamDeclsAttr">,
     InterfaceMethod<[{
       Return the list of input and output parameters.
     }], "std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>",
