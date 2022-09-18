@@ -601,11 +601,15 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
 
   if (succeeded(parser.parseOptionalKeyword("region"))) {
     // signature for values and parameters.
-    FunctionType values, params;
-    if (parser.parseLess() || parser.parseType(values) || parser.parseComma() ||
-        parser.parseType(params) || parser.parseGreater())
+    ParamDeclArrayAttr inputParams, resultParams;
+    FunctionType values;
+    if (parser.parseLess() || parseParamDecls(parser, inputParams) ||
+        parser.parseArrow() || parseParamDecls(parser, resultParams) ||
+        parser.parseVerticalBar() || parser.parseType(values) ||
+        parser.parseGreater())
       return failure();
-    type = parser.getBuilder().getType<RegionType>(values, params);
+    type = parser.getBuilder().getType<RegionType>(inputParams, resultParams,
+                                                   values);
     return LogicalResult::success();
   }
 
@@ -616,10 +620,9 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // parameters.
   if (auto valuesType = type.dyn_cast<FunctionType>()) {
     // Params defaults to `() -> ()`.
-    ArrayRef<Type> noTypes;
-    auto paramsType =
-        parser.getBuilder().getType<FunctionType>(noTypes, noTypes);
-    type = parser.getBuilder().getType<RegionType>(valuesType, paramsType);
+    auto emptyDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
+    type = parser.getBuilder().getType<RegionType>(emptyDecls, emptyDecls,
+                                                   valuesType);
   }
 
   return LogicalResult::success();
@@ -637,23 +640,26 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
   else if (auto region = type.dyn_cast<RegionType>()) {
     // If there are no parameters, print a region type as a function type to
     // keep things concise.
-    if (region.getParams().getNumInputs() == 0 &&
-        region.getParams().getNumResults() == 0)
+    if (region.getInputParams().empty() && region.getResultParams().empty())
       os << region.getValues();
-    else // Otherwise print it as "region<t1, t2>"
-      os << "region<" << region.getValues() << ", " << region.getParams()
-         << ">";
+    else { // Otherwise print it as "region<p1, p2 -> r3, () -> ())>"
+      os << "region<";
+      printParamDecls(os, region.getInputParams());
+      os << " -> ";
+      printParamDecls(os, region.getResultParams());
+      os << " | " << region.getValues() << ">";
+    }
   } else
     os << type;
 }
 
 /// print `: <type>` or elide it entirely if type is an `index` type.
-void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+void KGEN::printColonTypeOrIndex(raw_ostream &os, Type type) {
   // Index type is the default so it doesn't print.
   if (type.isIndex())
     return;
-  p << ": ";
-  printKGENType(p.getStream(), type);
+  os << ": ";
+  printKGENType(os, type);
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.

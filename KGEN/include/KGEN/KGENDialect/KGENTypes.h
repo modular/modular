@@ -13,7 +13,9 @@
 
 #include "KGEN/KGENDialect/KGENDialect.h"
 
-namespace M::KGEN {} // namespace M::KGEN
+namespace M::KGEN {
+class ParamDeclArrayAttr;
+} // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.h.inc"

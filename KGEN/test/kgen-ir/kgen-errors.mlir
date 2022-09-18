@@ -466,7 +466,7 @@ kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
 }
 
 kgen.generator @test_region() {
-  // expected-error @+1 {{caller input parameter #1 has type '!kgen.region<(!meta.scalar<si32>) -> !meta.scalar<si32>, () -> ()>' but callee expected type '!kgen.region<(!meta.scalar<f32>) -> !meta.scalar<f32>, () -> ()>'}}
+  // expected-error @+1 {{caller input parameter #1 has type '!kgen.region<[], [], (!meta.scalar<si32>) -> !meta.scalar<si32>>' but callee expected type '!kgen.region<[], [], (!meta.scalar<f32>) -> !meta.scalar<f32>>'}}
   kgen.call @takeUnary<dt: dtype = f32,
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
   kgen.return
