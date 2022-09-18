@@ -10,13 +10,17 @@
 
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
+#include "KGENVerifyHelper.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallString.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -43,22 +47,25 @@ struct PointerLikeTypeTraits<ParamDeclRefAttr>
 
 namespace {
 struct ParameterVerifier final {
-  ParameterVerifier(ParameterDeclsAndUses &parameters)
-      : parameters(parameters) {}
+  ParameterVerifier(Operation *topLevelDeclOp,
+                    ParameterDeclsAndUses &parameters,
+                    SymbolTableCollection *symbolTables)
+      : topLevelDeclOp(topLevelDeclOp), parameters(parameters),
+        symbolTables(symbolTables) {}
 
   /// Walk the operation and all the operations in its body to find the
   /// definitions and uses of parameters.  This diagnoses and rejects parameter
   /// definitions in invalid positions as well.
-  LogicalResult collectParameterDefsAndUses(Operation *topLevelOp);
+  LogicalResult collectParameterDefsAndUses();
 
   /// Once all the defs and uses of parameters are collected, verify that the
   /// uses are correct.
-  LogicalResult checkParameterUses(Operation *topLevelOp);
+  LogicalResult checkParameterUses();
 
   /// Reorder the declsAndUses list to be in correct top-down order.  This also
   /// verifies that the parameter use-def graph has a partial ordering,
   /// diagnosing any cycles that are present.
-  LogicalResult checkAndReorderParameterUseDefGraph(Operation *topLevelOp);
+  LogicalResult checkAndReorderParameterUseDefGraph();
 
   /// Return the set of parameter uses for the specified operation.
   SmallVector<ParamDeclRefAttr> &getUsesForOperation(Operation *op) const {
@@ -67,23 +74,36 @@ struct ParameterVerifier final {
     return parameters.usersAndDeclarers[it->second].second;
   }
 
+  // This is the top level declaration that we're analyzing.
+  // TODO: Make this a KGENDeclInterface.
+  Operation *const topLevelDeclOp;
+
   /// This is the parameter information that we're building.
   ParameterDeclsAndUses &parameters;
 
+  /// If non-null, this contains a set of symbol tables that we can use to
+  /// verify the validity of SymbolConstantAttr's.
+  SymbolTableCollection *symbolTables;
+
+  /// This is the current operation being scanned during the attribute/type
+  /// collection phase.
+  Operation *curOperationCollecting = nullptr;
+
 private:
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.  This
-  /// emits errors at the specified location.
+  /// parameter declarations and collecting parameter uses into `uses`.
   void collectParameterUsesFromAttr(Attribute attr,
-                                    SmallVector<ParamDeclRefAttr> &uses,
-                                    Location loc);
+                                    SmallVector<ParamDeclRefAttr> &uses);
 
   /// Scan the specified type and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.  This
-  /// emits errors at the specified location.
+  /// parameter declarations and collecting parameter uses into `uses`.
   void collectParameterUsesFromType(Type type,
-                                    SmallVector<ParamDeclRefAttr> &uses,
-                                    Location loc);
+                                    SmallVector<ParamDeclRefAttr> &uses);
+
+  /// The first time we encounter a SymbolConstantAttr, check to see if the
+  /// declaration it refers to agrees with the value and parameter
+  /// specification.
+  void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant);
 
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
@@ -105,13 +125,14 @@ private:
 /// Walk the operation and all the operations in its body to find the
 /// definitions and uses of parameters.  This diagnoses and rejects parameter
 /// definitions in invalid positions as well.
-LogicalResult
-ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
+LogicalResult ParameterVerifier::collectParameterDefsAndUses() {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
-  topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+  topLevelDeclOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
+
+    curOperationCollecting = bodyOp;
 
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
@@ -120,11 +141,10 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
 
       // Ignore the resultParamDecls on the top level operation, they are not
       // in scope here.
-      if (bodyOp == topLevelOp &&
+      if (bodyOp == topLevelDeclOp &&
           namedAttr.getName().strref() == "resultParamDecls")
         continue;
-      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses,
-                                   bodyOp->getLoc());
+      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses);
 
       // We handle the `paramDecls` attribute specially, remember it for
       // below.
@@ -143,7 +163,10 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
     // types.  We don't have to check operands because they are always checked
     // when being defined.
     for (Type type : bodyOp->getResultTypes())
-      collectParameterUsesFromType(type, paramUses, bodyOp->getLoc());
+      collectParameterUsesFromType(type, paramUses);
+
+    // We're done collecting from this operation.
+    curOperationCollecting = nullptr;
 
     // Scan the region list if present.  The walker will automatically recurse
     // for us, but we have to check the block arguments.
@@ -151,8 +174,7 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       for (auto &region : bodyOp->getRegions()) {
         for (auto &block : region)
           for (Value arg : block.getArguments())
-            collectParameterUsesFromType(arg.getType(), paramUses,
-                                         bodyOp->getLoc());
+            collectParameterUsesFromType(arg.getType(), paramUses);
       }
     }
 
@@ -179,14 +201,17 @@ ParameterVerifier::collectParameterDefsAndUses(Operation *topLevelOp) {
       opAndDeclAttr = {bodyOp, param};
     }
   });
-
   return failure(hadError);
 }
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterVerifier::collectParameterUsesFromAttr(
-    Attribute attr, SmallVector<ParamDeclRefAttr> &uses, Location loc) {
+    Attribute attr, SmallVector<ParamDeclRefAttr> &uses) {
+  // If we have already scanned it and know that it has no parameters in it,
+  // return early.
+  if (parameterLessAttrs.contains(attr))
+    return;
 
   // Collect parameter references.
   if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
@@ -194,24 +219,23 @@ void ParameterVerifier::collectParameterUsesFromAttr(
     return;
   }
 
-  // If we have already scanned it and know that it has no parameters in it,
-  // return early.
-  if (parameterLessAttrs.contains(attr))
-    return;
+  if (symbolTables)
+    if (auto symbolConstant = attr.dyn_cast<SymbolConstantAttr>())
+      verifySymbolConstantAttr(symbolConstant);
 
   size_t oldSize = uses.size();
 
   // Otherwise we haven't processed this, check the attribute's type if it has
   // one.
   if (auto typedAttr = attr.dyn_cast<TypedAttr>())
-    collectParameterUsesFromType(typedAttr.getType(), uses, loc);
+    collectParameterUsesFromType(typedAttr.getType(), uses);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
     itf.walkSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
-        [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
+        [&](Type type) { collectParameterUsesFromType(type, uses); });
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -223,7 +247,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 /// Scan the specified type and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterVerifier::collectParameterUsesFromType(
-    Type type, SmallVector<ParamDeclRefAttr> &uses, Location loc) {
+    Type type, SmallVector<ParamDeclRefAttr> &uses) {
   // Ignore types we have already scanned.
   if (parameterLessTypes.count(type))
     return;
@@ -234,8 +258,8 @@ void ParameterVerifier::collectParameterUsesFromType(
   // function type.  This also handles types like !meta.scalar etc.
   if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
     itf.walkSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses, loc); },
-        [&](Type type) { collectParameterUsesFromType(type, uses, loc); });
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
+        [&](Type type) { collectParameterUsesFromType(type, uses); });
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -246,7 +270,7 @@ void ParameterVerifier::collectParameterUsesFromType(
 
 /// Once all the defs and uses of parameters are collected, verify that the
 /// uses are correct.
-LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
+LogicalResult ParameterVerifier::checkParameterUses() {
   // Take a look at all the parameter uses to verify they are referencing
   // defined parameters and that they are used with the correct type.
   size_t usersAndDeclarersIndex = 0;
@@ -279,25 +303,63 @@ LogicalResult ParameterVerifier::checkParameterUses(Operation *topLevelOp) {
   return success();
 }
 
-/// Check deep invariants for a func/generator decl body, used by the
-/// verifiers for these operations.  If a problem is detected, this emits an
-/// error and returns failure.
-FailureOr<ParameterDeclsAndUses>
-ParameterDeclsAndUses::calculateAndVerify(Operation *topLevelOp) {
-  ParameterDeclsAndUses result;
-  ParameterVerifier verifier(result);
+/// The first time we encounter a SymbolConstantAttr, check to see if the
+/// declaration it refers to agrees with the value and parameter
+/// specification.
+void ParameterVerifier::verifySymbolConstantAttr(
+    SymbolConstantAttr symbolConstant) {
+  assert(symbolTables &&
+         "Should only verify when we have a set of symbol tables");
 
-  // Start by doing a pass over the operation and all the operations in its
-  // body to find the definitions and uses of parameters.
-  if (failed(verifier.collectParameterDefsAndUses(topLevelOp)) ||
-      // Next, now that we know the set of parameters we have to process, verify
-      // that the uses match up.
-      failed(verifier.checkParameterUses(topLevelOp)) ||
-      // Verify that there are no cycles in the graph.
-      failed(verifier.checkAndReorderParameterUseDefGraph(topLevelOp)))
-    return failure();
+  auto symbol = symbolConstant.getSymbol();
+  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+      symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, symbol));
 
-  return std::move(result);
+  if (!decl) {
+    hadError = true;
+    curOperationCollecting->emitError("'")
+        << symbol << "' does not reference a KGEN declaration";
+    return;
+  }
+
+  auto regionType = symbolConstant.getType().cast<RegionType>();
+
+  // Verify the value signature matches.
+  if (decl.getFunctionType() != regionType.getValues()) {
+    hadError = true;
+    curOperationCollecting->emitError("symbol '")
+        << symbol << "' used with type " << regionType.getValues()
+        << " but declared as " << decl.getFunctionType();
+    return;
+  }
+
+  // Parameter types match exactly.  We could support higher order rebinding
+  // if there is a need.
+  auto cstInputParamTypes = regionType.getParams().getInputs();
+  auto cstResultParamTypes = regionType.getParams().getResults();
+  auto [declInputParamDecls, declOutputParamDecls] = decl.getParameterInfo();
+
+  SmallString<32> paramName("@");
+  paramName.append(symbol.getLeafReference());
+
+  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
+    return llvm::map_range(decls, [](Attribute value) -> Type {
+      return value.cast<ParamDeclAttr>().getType();
+    });
+  };
+
+  if (verifyMatchingLists(cstInputParamTypes,
+                          getParamDeclType(declInputParamDecls), "symbol use",
+                          curOperationCollecting, paramName.c_str(), decl,
+                          "input parameter", "declared type") ||
+
+      /// Check result parameter types.
+      verifyMatchingLists(cstResultParamTypes,
+                          getParamDeclType(declOutputParamDecls), "symbol use",
+                          curOperationCollecting, paramName.c_str(), decl,
+                          "output parameter", "declared type")) {
+    hadError = true;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -527,8 +589,7 @@ static LogicalResult diagnoseCycle(ArrayRef<ParameterUseDefGraphNode> nodes,
 /// Reorder the declsAndUses list to be in correct top-down order.  This also
 /// verifies that the parameter use-def graph has a partial ordering,
 /// diagnosing any cycles that are present.
-LogicalResult
-ParameterVerifier::checkAndReorderParameterUseDefGraph(Operation *topLevelOp) {
+LogicalResult ParameterVerifier::checkAndReorderParameterUseDefGraph() {
   // Now that we've verified simple properties, check that there is a
   // defininable partial order between operations that define an use parameters.
   // We do this by using LLVM's SCC iterator to walk the graph imposed by these
@@ -539,7 +600,7 @@ ParameterVerifier::checkAndReorderParameterUseDefGraph(Operation *topLevelOp) {
     // If this node has a cycle detected in it, then we have an unrecoverable
     // error.  Emit the error on the containiner with notes on every problematic
     // operation.
-    if (sccIt.hasCycle() && failed(diagnoseCycle(*sccIt, topLevelOp)))
+    if (sccIt.hasCycle() && failed(diagnoseCycle(*sccIt, topLevelDeclOp)))
       return failure();
 
     assert(sccIt->size() == 1 &&
@@ -559,4 +620,33 @@ ParameterVerifier::checkAndReorderParameterUseDefGraph(Operation *topLevelOp) {
   }
   parameters.usersAndDeclarers = std::move(usersAndDeclarers);
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Main Entrypoint
+//===----------------------------------------------------------------------===//
+
+/// Collect information about the parameter definitions and uses in the
+/// specified operation.
+///
+/// If the SymbolTableCollection is non-null, check deep invariants for a
+/// func/generator decl body, used by the verifiers for these operations.  If a
+/// problem is detected, this emits an error and returns failure.
+FailureOr<ParameterDeclsAndUses>
+ParameterDeclsAndUses::calculateAndPotentiallyVerify(
+    Operation *topLevelOp, SymbolTableCollection *symbolTables) {
+  ParameterDeclsAndUses result;
+  ParameterVerifier verifier(topLevelOp, result, symbolTables);
+
+  // Start by doing a pass over the operation and all the operations in its
+  // body to find the definitions and uses of parameters.
+  if (failed(verifier.collectParameterDefsAndUses()) ||
+      // Next, now that we know the set of parameters we have to process, verify
+      // that the uses match up.
+      failed(verifier.checkParameterUses()) ||
+      // Verify that there are no cycles in the graph.
+      failed(verifier.checkAndReorderParameterUseDefGraph()))
+    return failure();
+
+  return std::move(result);
 }

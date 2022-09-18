@@ -38,18 +38,16 @@ ParseResult HLGeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 // Print the HLGeneratorOp using the shared printing logic.
 void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult HLGeneratorOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
-                                              getResultTypes())))
-    return failure();
-
-  // See if the parameter definitions and uses within the generator are
-  // structured correctly.
-  return ParameterDeclsAndUses::calculateAndVerify(*this);
-}
-
 LogicalResult
 HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Check result types match the ReturnOp.
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+                                              getResultTypes())) ||
+      // See if the parameter definitions and uses within the generator are
+      // structured correctly.
+      failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
+    return failure();
+
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
   FlatSymbolRefAttr interfaceSym = getImplementsAttr();
