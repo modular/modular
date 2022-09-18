@@ -372,6 +372,8 @@ private:
   LogicalResult processParamAssertOp(ParamAssertOp op);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
+  LogicalResult processCallParamOp(CallParamOp call);
+
   void completeCallOpProcessing(CallOp call,
                                 DeclAndInputParamsPair calleeAndInputParams,
                                 const ElaboratedGenerator &newCallee);
@@ -441,6 +443,8 @@ LogicalResult ParameterRewriter::rewriteOps(
       result = processParamAssertOp(assertOp);
     else if (auto call = dyn_cast<CallOp>(op))
       result = processCallOp(call, rewriterWorklist);
+    else if (auto call = dyn_cast<CallParamOp>(op))
+      result = processCallParamOp(call);
     else
       result = processGenericOp(op);
 
@@ -681,6 +685,31 @@ void ParameterRewriter::spawnNewFuncClone(
   newRewriter.completeCallOpProcessing(newCall, calleeAndInputParams, callee);
 }
 
+LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
+  // Simplify the callee expression.
+  auto errorOrValue = concretizeParameterExpr(call.getCallee());
+  if (errorOrValue.isError())
+    return error(call->getLoc(), errorOrValue.takeError());
+
+  auto symbolCst = errorOrValue.get().dyn_cast<SymbolConstantAttr>();
+  assert(symbolCst && "only concrete region type value is a symbol");
+
+  // Replace the kgen.call_param with a kgen.call to the target.
+  OpBuilder b(call);
+  auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
+                                  symbolCst.getSymbol().getLeafReference(),
+                                  call.getParamValues(), call.getParamDecls(),
+                                  call.getOperands());
+
+  // The SSA results of the old call go directly to the new call and remove it.
+  call->getResults().replaceAllUsesWith(newCall);
+  call->erase();
+
+  // The new call may itself cause recursive elaboration.
+  opsToRewrite.push_back(newCall);
+  return success();
+}
+
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
 LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
@@ -767,6 +796,8 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
       // something if these get too verbose.
       os << typeConstant.getValue();
+    } else if (auto symbolConstant = value.dyn_cast<SymbolConstantAttr>()) {
+      os << symbolConstant.getSymbol();
     } else {
       assert(!isSimpleConstant(value) && "not handling all simple constants");
       os << "??";
