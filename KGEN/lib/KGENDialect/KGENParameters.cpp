@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENOps.h" // FIXME: move verifyDeclSignaturesMatch
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGENVerifyHelper.h"
@@ -335,31 +336,15 @@ void ParameterVerifier::verifySymbolConstantAttr(
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  auto cstInputParamDecls = regionType.getInputParams().getValue();
-  auto cstResultParamDecls = regionType.getResultParams().getValue();
-  auto [declInputParamDecls, declOutputParamDecls] = decl.getParameterInfo();
-
   SmallString<32> paramName("@");
   paramName.append(symbol.getLeafReference());
-
-  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
-    return llvm::map_range(decls, [](Attribute value) -> Type {
-      return value.cast<ParamDeclAttr>().getType();
-    });
-  };
-
-  if (verifyMatchingLists(getParamDeclType(cstInputParamDecls),
-                          getParamDeclType(declInputParamDecls), "symbol use",
-                          curOperationCollecting, paramName.c_str(), decl,
-                          "input parameter", "declared type") ||
-
-      /// Check result parameter types.
-      verifyMatchingLists(getParamDeclType(cstResultParamDecls),
-                          getParamDeclType(declOutputParamDecls), "symbol use",
-                          curOperationCollecting, paramName.c_str(), decl,
-                          "output parameter", "declared type")) {
+  if (failed(verifyDeclSignaturesMatch(
+          "symbol use", regionType.getInputParams(),
+          regionType.getResultParams(), regionType.getValues(),
+          curOperationCollecting->getLoc(), paramName.c_str(),
+          decl.getParamDeclsAttr(), decl.getResultParamDeclsAttr(),
+          decl.getFunctionType(), decl->getLoc())))
     hadError = true;
-  }
 }
 
 //===----------------------------------------------------------------------===//

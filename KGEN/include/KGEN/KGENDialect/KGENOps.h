@@ -44,19 +44,27 @@ void printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op);
 /// matches those of an interface.  This produces an error diagnostic and
 /// returns failure when a problem is detected, or returns true if everything is
 /// ok.
-ParseResult verifyParameterList(ArrayRef<ParamDeclAttr> originatorParamDecls,
-                                ArrayRef<ParamDeclAttr> interfaceParamDecls,
+ParseResult verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
+                                ParamDeclArrayAttr targetParamDecls,
                                 const char *originatorName,
-                                mlir::FunctionOpInterface originatorDecl,
-                                const char *interfaceName,
-                                GeneratorInterfaceOp interfaceDecl,
-                                const char *parameterKind);
+                                Location originatorLoc, const char *targetName,
+                                Location targetLoc, const char *parameterKind);
 
 /// Check that the specified generator/interfaces matches signature
 /// information with the other interface.
-LogicalResult verifyDeclMatchesInterface(
-    const char *originatorName, mlir::FunctionOpInterface originatorDecl,
-    const char *interfaceName, GeneratorInterfaceOp interfaceDecl);
+LogicalResult verifyDeclMatchesInterface(const char *originatorName,
+                                         KGENDeclInterface originatorDecl,
+                                         const char *interfaceName,
+                                         GeneratorInterfaceOp interfaceDecl);
+
+/// Check that the specified declaration signatures match, checking the
+/// parameter and value type information.
+LogicalResult verifyDeclSignaturesMatch(
+    const char *originatorName, ParamDeclArrayAttr originatorInputParams,
+    ParamDeclArrayAttr originatorResultParams, FunctionType originatorType,
+    Location originatorLoc, const char *interfaceName,
+    ParamDeclArrayAttr targetInputParams, ParamDeclArrayAttr targetResultParams,
+    FunctionType targetType, Location targetLoc);
 
 } // namespace M::KGEN
 
