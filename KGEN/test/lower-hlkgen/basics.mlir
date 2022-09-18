@@ -72,7 +72,7 @@ hlkgen.generator @arg_inf<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>
 // CHECK-NEXT:  implements @bufitf {
 // CHECK-NEXT:    %[[V0:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<size, ty> to !meta.buffer<size, f32>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> xyz>(%[[V0]]) : (!meta.buffer<size, f32>) -> index
-// CHECK-NEXT:    kgen.return <xyz = xyz> %[[V1]] : index
+// CHECK-NEXT:    kgen.return<xyz = xyz> %[[V1]] : index
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @arg_inf<size, ty: dtype -> xyz>
