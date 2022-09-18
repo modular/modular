@@ -257,10 +257,10 @@ kgen.generator @string_params<a: string, b: string>()
 // CHECK-LABEL: kgen.generator @region_params<
 kgen.generator @region_params
   // CHECK-SAME: r1: (si32) -> si32,
-  <r1: region<() -> () | (si32) -> si32>,
+  <r1: region<<() -> ()>(si32) -> si32>,
    // This has an input and output parameter.
-   // CHECK-SAME: r2: region<() -> result: i1 | () -> ()>,
-   r2: region<() -> result: i1 | () -> ()>,
+   // CHECK-SAME: r2: region<<() -> result: i1>() -> ()>,
+   r2: region<<() -> result: i1>() -> ()>,
    // CHECK-SAME: dt: dtype,
    dt: dtype,
    // This uses a different parameter.

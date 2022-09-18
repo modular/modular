@@ -118,6 +118,14 @@ ParseResult parseOptionalIndexParamValue(AsmParser &p,
 void printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
+/// Parse and print a parameter specification on a generator or region type.
+ParseResult parseOptionalParameterSpec(AsmParser &parser,
+                                       ParamDeclArrayAttr &inputParamDecls,
+                                       ParamDeclArrayAttr &resultParamDecls);
+void printOptionalParameterSpec(raw_ostream &os,
+                                ParamDeclArrayAttr inputParamDecls,
+                                ParamDeclArrayAttr resultParamDecls);
+
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
