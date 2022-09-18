@@ -373,3 +373,58 @@ kgen.generator @parametricAdd<ty: type>
   %res = pop.add %a, %b : !kgen.paramref<ty>
   kgen.return %res : !kgen.paramref<ty>
 }
+
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=@doubleExample"()
+// CHECK: %0 = kgen.call @doubleExample(%cst) : (!meta.scalar<si32>) -> !meta.scalar<si32>
+// CHECK:  %1 = kgen.call @doubleExample(%0) : (!meta.scalar<si32>) -> !meta.scalar<si32>
+
+// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=@nopExample"() {
+// CHECK:    %0 = kgen.call @nopExample(%cst) : (!meta.scalar<f32>) -> !meta.scalar<f32>
+// CHECK:    %1 = kgen.call @nopExample(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
+
+kgen.generator @takeUnary
+  <dt: dtype, fn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+
+  %0 = pop.constant(1) : !meta.scalar<dt>
+  %1 = kgen.call_param[(!meta.scalar<dt>) -> !meta.scalar<dt>: fn](%0) 
+  %2 = kgen.call_param[(!meta.scalar<dt>) -> !meta.scalar<dt>: fn](%1) 
+  kgen.return
+}
+
+kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !meta.scalar<si32>
+  kgen.return %0 : !meta.scalar<si32>
+}
+
+kgen.func @nopExample(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  kgen.return %arg0 : !meta.scalar<f32>
+}
+
+kgen.generator @takeParametricBinary
+  <dt: dtype,
+   fn: region<(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>, (!kgen.mlirtype)->()>>() {
+
+  %0 = pop.constant(1) : !meta.scalar<dt>
+  %1 = kgen.call_param[region<(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>, (!kgen.mlirtype)->()>: fn]<ty: type = !meta.scalar<dt>>(%0, %0) 
+  kgen.return
+}
+
+// CHECK-LABEL:  kgen.func @test_region() {
+kgen.generator @test_region() {
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=@doubleExample"()
+  kgen.call @takeUnary<dt: dtype = si32,
+     fn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
+
+  // CHECK: kgen.call @"takeUnary,dt=f32,fn=@nopExample"()
+  kgen.call @takeUnary<dt: dtype = f32,
+     fn : (!meta.scalar<f32>) -> !meta.scalar<f32> = @nopExample>() : () -> ()
+
+  // HECK: TODO
+  // kgen.call @takeParametricBinary<dt: dtype = f32,
+  //    fn : region<(!kgen.paramref<f32>, !kgen.paramref<f32>) -> !kgen.paramref<f32>, (!kgen.mlirtype)->()>
+  //    = @parametricAdd>() : () -> ()
+
+  kgen.return 
+}
+
+
