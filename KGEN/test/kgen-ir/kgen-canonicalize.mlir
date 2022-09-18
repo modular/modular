@@ -93,3 +93,14 @@ kgen.generator @param_assert_simplify<p1 : i1, p2>() {
   kgen.param.assert <eq(result, 12)>, "this stays"
   kgen.return
 }
+
+kgen.func @trivial(%arg0: si32) -> si32 {
+  kgen.return %arg0 : si32
+}
+
+// CHECK-LABEL: kgen.generator @call_param_canonicalize
+kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
+  // CHECK: %0 = kgen.call @trivial(%arg0) : (si32) -> si32
+  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0) 
+  kgen.return %0: si32
+}

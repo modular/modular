@@ -58,6 +58,12 @@ inline bool isSimpleConstant(Attribute attr) {
 /// context in the .mlir file.
 std::string getParamAsString(Attribute value);
 
+/// Parse a type in a KGEN context, handling sugar like "dtype" for "!kgen.dtype" etc.
+ParseResult parseKGENType(AsmParser &parser, Type &type);
+
+/// Print `type` using KGEN specific type sugars.
+void printKGENType(raw_ostream &os, Type type);
+
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
