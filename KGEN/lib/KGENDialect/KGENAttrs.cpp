@@ -603,10 +603,9 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     // signature for values and parameters.
     ParamDeclArrayAttr inputParams, resultParams;
     FunctionType values;
-    if (parser.parseLess() || parseParamDecls(parser, inputParams) ||
-        parser.parseArrow() || parseParamDecls(parser, resultParams) ||
-        parser.parseVerticalBar() || parser.parseType(values) ||
-        parser.parseGreater())
+    if (parser.parseLess() ||
+        parseOptionalParameterSpec(parser, inputParams, resultParams) ||
+        parser.parseType(values) || parser.parseGreater())
       return failure();
     type = parser.getBuilder().getType<RegionType>(inputParams, resultParams,
                                                    values);
@@ -644,10 +643,9 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
       os << region.getValues();
     else { // Otherwise print it as "region<p1, p2 -> r3, () -> ())>"
       os << "region<";
-      printParamDecls(os, region.getInputParams());
-      os << " -> ";
-      printParamDecls(os, region.getResultParams());
-      os << " | " << region.getValues() << ">";
+      printOptionalParameterSpec(os, region.getInputParams(),
+                                 region.getResultParams());
+      os << region.getValues() << ">";
     }
   } else
     os << type;

@@ -392,23 +392,20 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
-static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
-                                              OperationState &result) {
+ParseResult
+KGEN::parseOptionalParameterSpec(AsmParser &parser,
+                                 ParamDeclArrayAttr &inputParamDecls,
+                                 ParamDeclArrayAttr &resultParamDecls) {
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
-    // All kinds have result parameters.
-    result.addAttribute("resultParamDecls",
-                        ParamDeclArrayAttr::get(parser.getContext(), {}));
-    result.addAttribute("paramDecls",
-                        ParamDeclArrayAttr::get(parser.getContext(), {}));
+    inputParamDecls = resultParamDecls =
+        ParamDeclArrayAttr::get(parser.getContext(), {});
     return success();
   }
 
-  ParamDeclArrayAttr paramDecls, resultParamDecls;
-
   // Parse the input list.
-  if (parseParamDecls(parser, paramDecls))
+  if (parseParamDecls(parser, inputParamDecls))
     return failure();
 
   // Check to see if we have results and parse them if so.
@@ -418,11 +415,24 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
   } else {
     resultParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
   }
-
-  result.addAttribute("resultParamDecls", resultParamDecls);
-  result.addAttribute("paramDecls", paramDecls);
-
   return parser.parseGreater();
+}
+
+/// Print a parameter list for a generator, func or interface.
+void KGEN::printOptionalParameterSpec(raw_ostream &os,
+                                      ParamDeclArrayAttr inputParamDecls,
+                                      ParamDeclArrayAttr resultParamDecls) {
+  if (inputParamDecls.empty() && resultParamDecls.empty())
+    return;
+
+  os << '<';
+  printParamDecls(os, inputParamDecls);
+
+  if (!resultParamDecls.empty()) {
+    os << " -> ";
+    printParamDecls(os, resultParamDecls);
+  }
+  os << '>';
 }
 
 /// Parse a constraint specification if present.
@@ -481,11 +491,15 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Parse the function signature.
   bool isVariadic = false;
-  if (parseOptionalParameterSpec(parser, result) ||
+  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
+  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs) ||
       parseOptionalConstraints(parser, result, opKind))
     return failure();
+
+  result.addAttribute("paramDecls", inputParamDecls);
+  result.addAttribute("resultParamDecls", resultParamDecls);
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -546,23 +560,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   return success();
 }
 
-/// Print a parameter list for a generator, func or interface.
-static void printParameterList(KGENDeclInterface decl, OpAsmPrinter &p) {
-  auto inputParams = decl.getParamDeclsAttr();
-  auto resultParams = decl.getResultParamDeclsAttr();
-  if (inputParams.empty() && resultParams.empty())
-    return;
-
-  p << '<';
-  printParamDecls(p.getStream(), inputParams);
-
-  if (!resultParams.empty()) {
-    p << " -> ";
-    printParamDecls(p.getStream(), resultParams);
-  }
-  p << '>';
-}
-
 /// Print a constraint list for a generator or interface.
 static void printConstraints(KGENDeclInterface decl, OpAsmPrinter &p) {
   ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
@@ -598,7 +595,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
     if (visibility.getValue() != "private")
       p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
-  printParameterList(opDecl, p);
+  printOptionalParameterSpec(p.getStream(), opDecl.getParamDeclsAttr(),
+                             opDecl.getResultParamDeclsAttr());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
