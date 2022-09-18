@@ -392,7 +392,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
 
   let builders =
     [AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
-                                         "RegionType":$type), [{
+                                         "SignatureType":$type), [{
       return get(symbol.getContext(), symbol, type);
     }]>];
 

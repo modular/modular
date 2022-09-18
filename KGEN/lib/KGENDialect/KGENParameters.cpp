@@ -323,7 +323,7 @@ void ParameterVerifier::verifySymbolConstantAttr(
     return;
   }
 
-  auto regionType = symbolConstant.getType().cast<RegionType>();
+  auto regionType = symbolConstant.getType().cast<SignatureType>();
 
   // Verify the value signature matches.
   if (decl.getFunctionType() != regionType.getValues()) {
