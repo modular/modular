@@ -7,6 +7,7 @@
 #ifndef KGEN_VERIFY_HELPER_H
 #define KGEN_VERIFY_HELPER_H
 
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 
 namespace M::KGEN {

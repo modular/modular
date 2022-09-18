@@ -11,8 +11,8 @@
 #include "KGEN/MetaDialect/MetaOps.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"

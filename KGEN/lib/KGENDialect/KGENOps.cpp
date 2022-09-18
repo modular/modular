@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGENVerifyHelper.h"
 #include "mlir/IR/Builders.h"
@@ -240,82 +241,36 @@ LogicalResult CallParamOp::verify() {
 // Logic shared between FuncOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
 
-/// Parse a parameter list if present.
-template <typename AttrT>
-static ParseResult
-parseParamList(AsmParser &p, SmallVectorImpl<AttrT> &params,
-               function_ref<ParseResult(AsmParser &, AttrT &, StringRef, Type)>
-                   parseElementFn) {
-
-  // Handle the parameter-decl/parameter-result productions.
-  auto parseParamDecl = [&]() -> ParseResult {
-    StringAttr name;
-    Type type;
-
-    AttrT element;
-    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
-        parseElementFn(p, element, name, type))
-      return failure();
-    params.push_back(element);
-    return success();
-  };
-
-  // Check to see if we have the () syntax instead of arguments.
-  if (succeeded(p.parseOptionalLParen()))
-    return p.parseRParen();
-
-  // Otherwise, parse the parameters, we know there is at least one.
-  return p.parseCommaSeparatedList(OpAsmParser::Delimiter::None,
-                                   parseParamDecl);
-}
-
-/// Parse a parameter declaration list if present.
-///
-///   parameter-decl   ::= identifier (`:` type)?
-///   parameter-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
-  auto parseElement = [](AsmParser &p, ParamDeclAttr &attr, StringRef name,
-                         Type type) -> ParseResult {
-    attr = ParamDeclAttr::get(name, type);
-    return success();
-  };
-
-  // Parse each of the decls.
-  SmallVector<ParamDeclAttr> decls;
-  if (parseParamList<ParamDeclAttr>(p, decls, parseElement))
-    return failure();
-
-  result = ParamDeclArrayAttr::get(p.getContext(), decls);
-  return success();
-}
-
-/// Print a comma separated parameter declaration list.
-void KGEN::printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls) {
-  if (decls.empty()) {
-    os << "()";
-  } else {
-    llvm::interleaveComma(decls, os, [&](ParamDeclAttr ref) {
-      printParamName(ref.getName().getValue(), os);
-      printColonTypeOrIndex(os, ref.getType());
-    });
-  }
-}
-
 /// Parse a parameter binding list if present.
 ///
 ///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
 ///   parameter-bind-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
 static ParseResult parseParamBinds(AsmParser &p,
                                    SmallVectorImpl<ParamBindAttr> &paramBinds) {
-  auto parseElement = [](AsmParser &p, ParamBindAttr &attr, StringRef name,
-                         Type type) -> ParseResult {
-    TypedAttr value;
-    if (p.parseEqual() || parseParamValue(p, value, type))
+  // Check to see if we have the () syntax instead of arguments.
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseRParen())
       return failure();
-    attr = ParamBindAttr::get(name, value);
+    return success();
+  }
+
+  // Handle the parameter-decl/parameter-result productions.
+  auto parseParamBind = [&]() -> ParseResult {
+    StringAttr name;
+    Type type;
+    TypedAttr value;
+
+    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
+        p.parseEqual() || parseParamValue(p, value, type))
+      return failure();
+    paramBinds.push_back(ParamBindAttr::get(name, value));
     return success();
   };
-  return parseParamList<ParamBindAttr>(p, paramBinds, parseElement);
+
+  if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, parseParamBind))
+    return failure();
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -382,318 +337,6 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
     printParamDecls(p.getStream(), paramDecls);
   }
   p << ">";
-}
-
-//===----------------------------------------------------------------------===//
-// Logic shared between funcs, generators, and generator interfaces
-//===----------------------------------------------------------------------===//
-
-/// Parse an parameter list if present.
-/// parameter-decl   ::= identifier (`:` type)?
-/// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-/// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
-ParseResult
-KGEN::parseOptionalParameterSpec(AsmParser &parser,
-                                 ParamDeclArrayAttr &inputParamDecls,
-                                 ParamDeclArrayAttr &resultParamDecls) {
-  // If there is no parameter list, or if it is empty, we're done.
-  if (failed(parser.parseOptionalLess()) ||
-      succeeded(parser.parseOptionalGreater())) {
-    inputParamDecls = resultParamDecls =
-        ParamDeclArrayAttr::get(parser.getContext(), {});
-    return success();
-  }
-
-  // Parse the input list.
-  if (parseParamDecls(parser, inputParamDecls))
-    return failure();
-
-  // Check to see if we have results and parse them if so.
-  if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamDecls(parser, resultParamDecls))
-      return failure();
-  } else {
-    resultParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
-  }
-  return parser.parseGreater();
-}
-
-/// Print a parameter list for a generator, func or interface.
-void KGEN::printOptionalParameterSpec(raw_ostream &os,
-                                      ParamDeclArrayAttr inputParamDecls,
-                                      ParamDeclArrayAttr resultParamDecls) {
-  if (inputParamDecls.empty() && resultParamDecls.empty())
-    return;
-
-  os << '<';
-  printParamDecls(os, inputParamDecls);
-
-  if (!resultParamDecls.empty()) {
-    os << " -> ";
-    printParamDecls(os, resultParamDecls);
-  }
-  os << '>';
-}
-
-/// Parse a constraint specification if present.
-/// constraints-spec ::=
-///    `constraints` `<` attribute-value (`,` attribute-value)? `>`
-static ParseResult parseOptionalConstraints(OpAsmParser &parser,
-                                            OperationState &result,
-                                            GeneratorOrFuncKind opKind) {
-  // Funcs cannot have constraint specifications.
-  if (opKind == GeneratorOrFuncKind::func)
-    return success();
-
-  SmallVector<ConstraintAttr> constraints;
-
-  if (succeeded(parser.parseOptionalKeyword("constraints"))) {
-    auto parseConstraint = [&]() -> ParseResult {
-      ConstraintAttr constraint;
-      if (parser.parseCustomAttributeWithFallback(constraint))
-        return failure();
-      constraints.push_back(constraint);
-      return success();
-    };
-
-    if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::LessGreater,
-                                       parseConstraint))
-      return failure();
-  }
-  result.addAttribute("constraints", ConstraintArrayAttr::get(
-                                         parser.getContext(), constraints));
-  return success();
-}
-
-/// Parse either a kgen.generator or kgen.func declaration, depending on what
-/// `isGenerator` is set to.
-ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
-                                       OperationState &result,
-                                       GeneratorOrFuncKind opKind) {
-  using namespace mlir::function_interface_impl;
-
-  SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<DictionaryAttr> resultAttrs;
-  SmallVector<Type> resultTypes;
-  auto &builder = parser.getBuilder();
-
-  // Parse visibility. If none is provided, use private by default.
-  if (failed(mlir::impl::parseOptionalVisibilityKeyword(parser,
-                                                        result.attributes)))
-    result.addAttribute(SymbolTable::getVisibilityAttrName(),
-                        parser.getBuilder().getStringAttr("private"));
-
-  // Parse the name as a symbol.
-  StringAttr nameAttr;
-  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
-                             result.attributes))
-    return failure();
-
-  // Parse the function signature.
-  bool isVariadic = false;
-  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
-  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
-      parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
-                             isVariadic, resultTypes, resultAttrs) ||
-      parseOptionalConstraints(parser, result, opKind))
-    return failure();
-
-  result.addAttribute("paramDecls", inputParamDecls);
-  result.addAttribute("resultParamDecls", resultParamDecls);
-
-  SmallVector<Type> argTypes;
-  argTypes.reserve(entryArgs.size());
-  for (auto &arg : entryArgs)
-    argTypes.push_back(arg.type);
-  Type type = builder.getFunctionType(argTypes, resultTypes);
-  result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
-
-  // If function attributes are present, parse them.
-  NamedAttrList parsedAttributes;
-  llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
-  if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
-    return failure();
-
-  // If this is a generator, see if it is an implementation of a generator
-  // interface.
-  if ((opKind == GeneratorOrFuncKind::generator ||
-       opKind == GeneratorOrFuncKind::hlgenerator) &&
-      succeeded(parser.parseOptionalKeyword("implements"))) {
-    ::mlir::FlatSymbolRefAttr implementsAttr;
-    if (parser.parseAttribute(implementsAttr,
-                              parser.getBuilder().getType<::mlir::NoneType>(),
-                              "implements", result.attributes))
-      return failure();
-  }
-
-  // Disallow attributes that are inferred from elsewhere in the attribute
-  // dictionary.
-  for (StringRef disallowed : GeneratorOp::getAttributeNames()) {
-    if (parsedAttributes.get(disallowed))
-      return parser.emitError(attributeDictLocation, "'")
-             << disallowed
-             << "' is an inferred attribute and should not be specified in the "
-                "explicit attribute dictionary";
-  }
-  result.attributes.append(parsedAttributes);
-
-  // Add the attributes to the function arguments.
-  assert(resultAttrs.size() == resultTypes.size());
-  addArgAndResultAttrs(builder, result, entryArgs, resultAttrs);
-
-  // Parse the required function body.
-  auto *body = result.addRegion();
-
-  // If this is a generator interface, no body block is allowed.
-  if (opKind == GeneratorOrFuncKind::interface)
-    return success();
-
-  llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseRegion(*body, entryArgs,
-                         /*enableNameShadowing=*/false))
-    return failure();
-
-  // Function body was parsed, make sure its not empty.
-  if (body->empty())
-    return parser.emitError(loc, "expected non-empty function body");
-
-  return success();
-}
-
-/// Print a constraint list for a generator or interface.
-static void printConstraints(KGENDeclInterface decl, OpAsmPrinter &p) {
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return;
-
-  p.printNewline();
-  p << "  constraints <";
-  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    if (constraints.size() > 1) {
-      p.printNewline();
-      p << "    ";
-    }
-    constraint.print(p);
-  });
-  p << ">";
-}
-
-void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
-  using namespace mlir::function_interface_impl;
-
-  // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
-  auto opDecl = cast<KGENDeclInterface>((Operation *)op);
-
-  // Print the operation and the function name.
-  auto funcName =
-      op->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName())
-          .getValue();
-  p << ' ';
-
-  StringRef visibilityAttrName = SymbolTable::getVisibilityAttrName();
-  if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
-    if (visibility.getValue() != "private")
-      p << visibility.getValue() << ' ';
-  p.printSymbolName(funcName);
-  printOptionalParameterSpec(p.getStream(), opDecl.getParamDeclsAttr(),
-                             opDecl.getResultParamDeclsAttr());
-
-  ArrayRef<Type> argTypes = op.getArgumentTypes();
-  ArrayRef<Type> resultTypes = op.getResultTypes();
-  printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
-  printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
-                          GeneratorOp::getAttributeNames());
-  printConstraints(opDecl, p);
-
-  // If this is a generator implementing a generator.interface, include the
-  // symbol for the generator interface.
-  if (auto implementsAttr =
-          op->getAttrOfType<FlatSymbolRefAttr>("implements")) {
-    p.printNewline();
-    p << "  implements " << implementsAttr;
-  }
-
-  p << ' ';
-  if (!op.getBody().empty()) {
-    p.printRegion(op.getBody(), /*printEntryBlockArgs=*/false,
-                  /*printBlockTerminators=*/true);
-  }
-}
-
-/// Verify that a list of parameter declarations from a generator or func
-/// matches those of an interface.  This produces an error diagnostic and
-/// returns failure when a problem is detected, or returns true if everything is
-/// ok.
-ParseResult KGEN::verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
-                                      ParamDeclArrayAttr targetParamDecls,
-                                      const char *originatorName,
-                                      Location originatorLoc,
-                                      const char *targetName,
-                                      Location targetLoc,
-                                      const char *parameterKind) {
-
-  auto getParamDeclName = [](ParamDeclArrayAttr decls) {
-    return llvm::map_range(decls.getValue(), [](Attribute value) -> StringAttr {
-      return value.cast<ParamDeclAttr>().getName();
-    });
-  };
-  auto getParamDeclType = [](ParamDeclArrayAttr decls) {
-    return llvm::map_range(decls.getValue(), [](Attribute value) -> Type {
-      return value.cast<ParamDeclAttr>().getType();
-    });
-  };
-
-  if (verifyMatchingLists(getParamDeclName(originatorParamDecls),
-                          getParamDeclName(targetParamDecls), originatorName,
-                          originatorLoc, targetName, targetLoc, parameterKind,
-                          "name") ||
-      verifyMatchingLists(getParamDeclType(originatorParamDecls),
-                          getParamDeclType(targetParamDecls), originatorName,
-                          originatorLoc, targetName, targetLoc, parameterKind,
-                          "type"))
-    return failure();
-
-  return success();
-}
-
-/// Check that the specified declaration signatures match, checking the
-/// parameter and value type information.
-LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
-                                              SignatureType originatorSignature,
-                                              Location originatorLoc,
-                                              const char *targetName,
-                                              SignatureType targetSignature,
-                                              Location targetLoc) {
-
-  FunctionType originatorType = originatorSignature.getValues();
-  FunctionType targetType = targetSignature.getValues();
-  if (verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          "argument", "type") ||
-      verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          "result", "type") ||
-      verifyParameterList(originatorSignature.getInputParams(),
-                          targetSignature.getInputParams(), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "input parameter") ||
-      verifyParameterList(originatorSignature.getResultParams(),
-                          targetSignature.getResultParams(), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "result parameter"))
-    return failure();
-  return success();
-}
-
-/// Check that the specified generator/interfaces matches signature information
-/// with the other interface.
-LogicalResult KGEN::verifyDeclMatchesInterface(
-    const char *originatorName, KGENDeclInterface originatorDecl,
-    const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
-
-  return verifyDeclSignaturesMatch(
-      originatorName, originatorDecl.getSignature(), originatorDecl.getLoc(),
-      interfaceName, interfaceDecl.getSignature(), interfaceDecl.getLoc());
 }
 
 //===----------------------------------------------------------------------===//

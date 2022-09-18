@@ -1,0 +1,152 @@
+//===- KGEN/KGENDialect/KGENUtils.h ---------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file declares utility functions primarily for parsing, printing and
+// verifying KGEN related operations and types.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_KGENDIALECT_KGENUTILS_H
+#define KGEN_KGENDIALECT_KGENUTILS_H
+
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Types.h"
+
+namespace mlir {
+class FunctionOpInterface;
+}
+
+namespace M::KGEN {
+class ParamDeclAttr;
+class GeneratorInterfaceOp;
+class ParamDeclArrayAttr;
+class KGENDeclInterface;
+class SignatureType;
+
+/// Return the string form for an attribute value that is printed in a <>
+/// context in the .mlir file.
+std::string getParamAsString(Attribute value);
+
+/// Parse a type in a KGEN context, handling sugar like "dtype" for
+/// "!kgen.dtype" etc.
+ParseResult parseKGENType(AsmParser &parser, Type &type);
+
+/// Print `type` using KGEN specific type sugars.
+void printKGENType(raw_ostream &os, Type type);
+
+/// Parse a "colon type" production if present or default to `index` type if
+/// not.  This is commonly used in our parameter representation.
+ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
+
+/// Print `: <type>` or elide it entirely if type is an `index` type.
+void printColonTypeOrIndex(raw_ostream &os, Type type);
+
+//===----------------------------------------------------------------------===//
+// Parameter Printing and Parsing
+//===----------------------------------------------------------------------===//
+
+/// Print a parameter name correctly, using a double quoted syntax if it
+/// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
+void printParamName(StringRef name, raw_ostream &os);
+void printParamName(AsmPrinter &p, StringRef name);
+
+/// Parse a parameter name as either a keyword or double quoted string.
+ParseResult parseParamName(AsmParser &p, StringAttr &name);
+ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &name);
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the printed syntax easier to grok.
+void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+void printParamValue(TypedAttr value, raw_ostream &os);
+
+/// When in a context that knows it is dealing with a parameter specifically,
+/// utilize syntactic shortcuts to make the parsed syntax easier to grok.
+ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
+ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
+                            Type type);
+
+/// Print a parameter value that is known to have `type` type.
+void printTypeParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to have `type` type.
+ParseResult parseTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+
+/// Print a parameter value that is known to have `index` type.
+void printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value);
+void printIndexParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to have `index` type.
+ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
+ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+
+/// Print a parameter value that either has an index type or is null (which
+/// prints as a `?`).
+void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
+
+/// Parse a parameter value that is known to be an index type or a `?` which
+/// results in a null attribute.
+ParseResult parseOptionalIndexParamValue(AsmParser &p,
+                                         FailureOr<TypedAttr> &result);
+
+/// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
+/// information.
+void printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls);
+ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
+
+/// Parse and print a parameter specification on a generator or region type.
+ParseResult parseOptionalParameterSpec(AsmParser &parser,
+                                       ParamDeclArrayAttr &inputParamDecls,
+                                       ParamDeclArrayAttr &resultParamDecls);
+void printOptionalParameterSpec(raw_ostream &os,
+                                ParamDeclArrayAttr inputParamDecls,
+                                ParamDeclArrayAttr resultParamDecls);
+
+//===----------------------------------------------------------------------===//
+// Logic shared between funcs, generators, and generator interfaces
+//===----------------------------------------------------------------------===//
+
+enum class GeneratorOrFuncKind {
+  func,
+  generator,
+  interface,
+
+  // HLKGEN dialect
+  hlgenerator,
+};
+
+/// Parse the MLIR syntax for a kgen.generator, kgen.func and related
+/// operators.
+ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
+                                 GeneratorOrFuncKind opKind);
+void printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op);
+
+/// Verify that a list of parameter declarations from a generator or func
+/// matches those of an interface.  This produces an error diagnostic and
+/// returns failure when a problem is detected, or returns true if everything is
+/// ok.
+ParseResult verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
+                                ParamDeclArrayAttr targetParamDecls,
+                                const char *originatorName,
+                                Location originatorLoc, const char *targetName,
+                                Location targetLoc, const char *parameterKind);
+
+/// Check that the specified generator/interfaces matches signature
+/// information with the other interface.
+LogicalResult verifyDeclMatchesInterface(const char *originatorName,
+                                         KGENDeclInterface originatorDecl,
+                                         const char *interfaceName,
+                                         GeneratorInterfaceOp interfaceDecl);
+
+/// Check that the specified declaration signatures match, checking the
+/// parameter and value type information.
+LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
+                                        SignatureType originatorSignature,
+                                        Location originatorLoc,
+                                        const char *interfaceName,
+                                        SignatureType targetSignature,
+                                        Location targetLoc);
+
+} // namespace M::KGEN
+
+#endif // KGEN_KGENDIALECT_KGENUTILS_H
