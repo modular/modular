@@ -194,3 +194,36 @@ kgen.generator @simd_shuffle<size>(%a: !meta.simd<2, f32>) {
   %0 = pop.simd.shuffle %a, %a [4] : !meta.simd<2, f32> -> !meta.simd<1, f32>
   kgen.return
 }
+
+// -----
+
+kgen.generator @array_global_constant<type: type>() {
+  // expected-error @below {{expected ranked tensor type constant value}}
+  %0 = pop.global_constant(dense<0> : vector<1xi32>) : !pop.array<4, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @array_global_constant<type: type>() {
+  // expected-error @below {{expected a rank 1 tensor}}
+  %0 = pop.global_constant(dense<0> : tensor<1x1xi32>) : !pop.array<4, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @array_global_constant<type: type>() {
+  // expected-error @below {{expected attribute to have 4 elements}}
+  %0 = pop.global_constant(dense<0> : tensor<1xi32>) : !pop.array<4, type>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @array_global_constant() {
+  // expected-error @below {{incompatible scalar data type}}
+  // expected-error @below {{is incompatible with value type ('tensor<4xi32>')}}
+  %0 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<f32>>
+  kgen.return
+}

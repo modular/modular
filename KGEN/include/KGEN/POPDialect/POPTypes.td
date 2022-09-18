@@ -43,6 +43,13 @@ def ArrayType : POPType<"Array", "array"> {
         custom<TypeParamValue>($elementType) `>`
   }];
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the size expression of the SIMD type to an integer.
+    Optional<int64_t> resolveSize() const;
+    /// Try to narrow the type expression of the pointer type to an MLIR type.
+    Type resolveElementType() const;
+  }];
 }
 
 #endif // POPTYPES_TD

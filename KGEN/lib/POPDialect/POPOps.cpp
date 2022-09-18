@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "mlir/IR/TypeRange.h"
 #include "llvm/ADT/APFloat.h"
@@ -352,10 +353,27 @@ LogicalResult GlobalConstantOp::verify() {
   Type type = getType().resolveElementType();
   if (!type)
     return success();
+  Type valueType = getValue().getType();
+
+  if (auto array = type.dyn_cast<ArrayType>()) {
+    auto tensorType = valueType.dyn_cast<RankedTensorType>();
+    if (!tensorType)
+      return emitOpError("expected ranked tensor type constant value");
+    if (tensorType.getRank() != 1)
+      return emitOpError("expected a rank 1 tensor");
+    if (auto size = array.getSize().dyn_cast<IntegerAttr>())
+      if (size.getInt() != tensorType.getShape().front())
+        return emitOpError("expected attribute to have ")
+               << size.getInt() << " elements";
+    auto typeCst = array.getElementType().dyn_cast<TypeConstantAttr>();
+    if (!typeCst)
+      return success();
+    type = typeCst.getValue();
+    valueType = tensorType.getElementType();
+  }
 
   if (succeeded(checkMetaCastedTypes(
-          [this](StringRef msg) { return emitOpError(msg); }, type,
-          getValue().getType(),
+          [this](StringRef msg) { return emitOpError(msg); }, type, valueType,
           [](Type type, DTypeConstantAttr dtype) {
             return success(dtype.isConvertibleFrom(type));
           })))
