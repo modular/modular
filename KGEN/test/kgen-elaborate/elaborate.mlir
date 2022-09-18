@@ -402,11 +402,11 @@ kgen.func @nopExample(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 kgen.generator @takeParametricBinary
   <dt: dtype,
-   fn: region<<ty: type>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>>
+   fn: signature<<ty: type>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>>
   >() {
 
   %0 = pop.constant(1) : !meta.scalar<dt>
-  %1 = kgen.call_param[region<<ty: type>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>>: fn]<ty: type = !meta.scalar<dt>>(%0, %0) 
+  %1 = kgen.call_param[signature<<ty: type>(!meta.scalar<dt>, !meta.scalar<dt>) -> !meta.scalar<dt>>: fn]<ty: type = !meta.scalar<dt>>(%0, %0) 
   kgen.return
 }
 
@@ -422,7 +422,7 @@ kgen.generator @test_region() {
 
   // HECK: TODO
   // kgen.call @takeParametricBinary<dt: dtype = f32,
-  //    fn : region<(!kgen.paramref<f32>, !kgen.paramref<f32>) -> !kgen.paramref<f32>, (!kgen.mlirtype)->()>
+  //    fn : signature<(!kgen.paramref<f32>, !kgen.paramref<f32>) -> !kgen.paramref<f32>, (!kgen.mlirtype)->()>
   //    = @parametricAdd>() : () -> ()
 
   kgen.return 

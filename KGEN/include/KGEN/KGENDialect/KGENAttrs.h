@@ -27,7 +27,7 @@ class ConcreteTypeConstantAttr;
 class ParameterizedTypeConstantAttr;
 class DTypeConstantAttr;
 class SymbolConstantAttr;
-class RegionType;
+class SignatureType;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 

@@ -466,7 +466,7 @@ kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
 }
 
 kgen.generator @test_region() {
-  // expected-error @+1 {{caller input parameter #1 has type '!kgen.region<[], [], (!meta.scalar<si32>) -> !meta.scalar<si32>>' but callee expected type '!kgen.region<[], [], (!meta.scalar<f32>) -> !meta.scalar<f32>>'}}
+  // expected-error @+1 {{caller input parameter #1 has type '!kgen.signature<[], [], (!meta.scalar<si32>) -> !meta.scalar<si32>>' but callee expected type '!kgen.signature<[], [], (!meta.scalar<f32>) -> !meta.scalar<f32>>'}}
   kgen.call @takeUnary<dt: dtype = f32,
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
   kgen.return
@@ -542,7 +542,7 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
 
 // -----
 
-kgen.generator @takeFn<unaryFn: region<<abc>()->()>>() {
+kgen.generator @takeFn<unaryFn: signature<<abc>()->()>>() {
   kgen.return
 }
 
@@ -553,6 +553,6 @@ kgen.generator @thing<dt>() {
 
 kgen.generator @test2() {
   // expected-error @+1 {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
-  kgen.call @takeFn<unaryFn : region<<abc>()->()> = @thing>() : () -> ()
+  kgen.call @takeFn<unaryFn : signature<<abc>()->()> = @thing>() : () -> ()
   kgen.return
 }

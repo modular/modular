@@ -196,7 +196,7 @@ static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
       parseParamValue(p, value, type))
     return failure();
 
-  auto regionType = value.getType().dyn_cast<RegionType>();
+  auto regionType = value.getType().dyn_cast<SignatureType>();
   if (!regionType)
     return p.emitError(loc, "callee parameter type must be a region type");
 

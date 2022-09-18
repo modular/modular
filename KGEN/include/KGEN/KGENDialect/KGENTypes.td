@@ -85,16 +85,17 @@ def StringType : KGENType<"String"> {
   let parameters = (ins);
 }
 
-def RegionType
-  : KGENType<"Region",
+def SignatureType
+  : KGENType<"Signature",
              [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
-  let summary = "The signature for a region/symbol parameter";
+  let summary = "The signature for a parameterized declaration";
   let description = [{
-    This is the type for a region parameter, describing the input and results
-    values for the region or func, as well as parameter input and outputs.
+    This type describes the signature for a parameterized declaration, which
+    can have input/output parameters as well as input/output value arguments
+    and results.  This is used for region parameters, among other things.
   }];
 
-  let mnemonic = "region";
+  let mnemonic = "signature";
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "ParamDeclArrayAttr":$resultParams,
                         "mlir::FunctionType":$values);

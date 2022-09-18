@@ -422,13 +422,13 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
-  // If this is a region type, we expect a symbol name.  We need special parsing
-  // logic here because FlatSymbolRefAttr isn't a TypedAttr.
-  if (auto regionType = type.dyn_cast<RegionType>()) {
+  // If this is a SignatureType, we expect a symbol name.  We need special
+  // parsing logic here because FlatSymbolRefAttr isn't a TypedAttr.
+  if (auto signatureType = type.dyn_cast<SignatureType>()) {
     FlatSymbolRefAttr symbol;
     if (p.parseAttribute(symbol, Type()))
       return failure();
-    value = SymbolConstantAttr::get(symbol, regionType);
+    value = SymbolConstantAttr::get(symbol, signatureType);
     return success();
   }
 
@@ -599,7 +599,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return LogicalResult::success();
   }
 
-  if (succeeded(parser.parseOptionalKeyword("region"))) {
+  if (succeeded(parser.parseOptionalKeyword("signature"))) {
     // signature for values and parameters.
     ParamDeclArrayAttr inputParams, resultParams;
     FunctionType values;
@@ -607,21 +607,21 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
         parseOptionalParameterSpec(parser, inputParams, resultParams) ||
         parser.parseType(values) || parser.parseGreater())
       return failure();
-    type = parser.getBuilder().getType<RegionType>(inputParams, resultParams,
-                                                   values);
+    type = parser.getBuilder().getType<SignatureType>(inputParams, resultParams,
+                                                      values);
     return LogicalResult::success();
   }
 
   if (failed(parser.parseType(type)))
     return LogicalResult::failure();
 
-  // We accept function type syntax as sugar for a region type without
+  // We accept function type syntax as sugar for a SignatureType without
   // parameters.
   if (auto valuesType = type.dyn_cast<FunctionType>()) {
-    // Params defaults to `() -> ()`.
+    // Default to empty input/result parameters.
     auto emptyDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
-    type = parser.getBuilder().getType<RegionType>(emptyDecls, emptyDecls,
-                                                   valuesType);
+    type = parser.getBuilder().getType<SignatureType>(emptyDecls, emptyDecls,
+                                                      valuesType);
   }
 
   return LogicalResult::success();
@@ -636,16 +636,17 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     os << "dtype";
   else if (type.isa<StringType>())
     os << "string";
-  else if (auto region = type.dyn_cast<RegionType>()) {
-    // If there are no parameters, print a region type as a function type to
+  else if (auto signature = type.dyn_cast<SignatureType>()) {
+    // If there are no parameters, print a SignatureType as a function type to
     // keep things concise.
-    if (region.getInputParams().empty() && region.getResultParams().empty())
-      os << region.getValues();
-    else { // Otherwise print it as "region<p1, p2 -> r3, () -> ())>"
-      os << "region<";
-      printOptionalParameterSpec(os, region.getInputParams(),
-                                 region.getResultParams());
-      os << region.getValues() << ">";
+    if (signature.getInputParams().empty() &&
+        signature.getResultParams().empty())
+      os << signature.getValues();
+    else { // Otherwise print it as "signature<p1, p2 -> r3, () -> ())>"
+      os << "signature<";
+      printOptionalParameterSpec(os, signature.getInputParams(),
+                                 signature.getResultParams());
+      os << signature.getValues() << ">";
     }
   } else
     os << type;

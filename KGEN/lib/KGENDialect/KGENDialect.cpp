@@ -53,9 +53,9 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
-// RegionType
+// SignatureType
 
-void RegionType::walkImmediateSubElements(
+void SignatureType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   walkAttrsFn(getInputParams());
@@ -63,12 +63,12 @@ void RegionType::walkImmediateSubElements(
   walkTypesFn(getValues());
 }
 
-Type RegionType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                             ArrayRef<Type> replTypes) const {
+Type SignatureType::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.size() == 1);
-  return RegionType::get(replAttrs[0].cast<ParamDeclArrayAttr>(),
-                         replAttrs[1].cast<ParamDeclArrayAttr>(),
-                         replTypes[0].cast<FunctionType>());
+  return SignatureType::get(replAttrs[0].cast<ParamDeclArrayAttr>(),
+                            replAttrs[1].cast<ParamDeclArrayAttr>(),
+                            replTypes[0].cast<FunctionType>());
 }
 
 //===----------------------------------------------------------------------===//
