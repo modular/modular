@@ -17,6 +17,16 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
   let cppNamespace = "::M::KGEN";
 
   let methods = [
+    InterfaceMethod<[{
+      Return the parameter + SSA value signature.
+    }], "SignatureType", "getSignature", (ins), [{
+      return SignatureType::get($_op.getParamDeclsAttr(),
+                                $_op.getResultParamDeclsAttr(),
+                                $_op.getFunctionType());}], [{
+      return SignatureType::get($_op.getParamDeclsAttr(),
+                                $_op.getResultParamDeclsAttr(),
+                                $_op.getFunctionType());}]>,
+
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.
@@ -29,10 +39,6 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     InterfaceMethod<[{
       Return the result parameter declarations returned from the decl body.
     }], "ParamDeclArrayAttr", "getResultParamDeclsAttr">,
-    InterfaceMethod<[{
-      Return the list of input and output parameters.
-    }], "std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>",
-        "getParameterInfo">,
     InterfaceMethod<[{
       Return the list of input parameters.
     }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins), 

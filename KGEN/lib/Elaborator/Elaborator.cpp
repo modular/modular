@@ -780,9 +780,9 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   llvm::raw_string_ostream os(result);
   os << generator.getName();
 
-  auto inputParamDecls = generator.getParameterInfo().first;
+  auto inputParamDecls = generator.getParamDeclsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
-    os << ',' << inputDecl.cast<ParamDeclAttr>().getName().str() << '=';
+    os << ',' << inputDecl.getName().str() << '=';
 
     if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
       os << intAttr.getValue();
@@ -870,7 +870,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   }
 
   ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
-  auto [inputParamDecls, resultParamDecls] = generator.getParameterInfo();
+  auto inputParamDecls = generator.getInputParamDecls();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
 
@@ -880,7 +880,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
       generator.getSymVisibilityAttr(), generator.getFunctionType(),
-      resultParamDecls);
+      generator.getResultParamDecls());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -895,8 +895,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   b.setInsertionPoint(&newFunc.getBodyBlock()->front());
   for (auto [inputDecl, inputValue] :
        llvm::zip(inputParamDecls, inputParamValues)) {
-    b.create<ParamDeclareOp>(generator.getLoc(),
-                             inputDecl.cast<ParamDeclAttr>(), inputValue);
+    b.create<ParamDeclareOp>(generator.getLoc(), inputDecl, inputValue);
   }
 
   // Now that we have a new synthesized generic func, run the rewriter
