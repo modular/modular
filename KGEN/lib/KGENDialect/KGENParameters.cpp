@@ -210,7 +210,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
     Attribute attr, SmallVector<ParamDeclRefAttr> &uses) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
-  if (parameterLessAttrs.contains(attr))
+  if (!attr || parameterLessAttrs.contains(attr))
     return;
 
   // Collect parameter references.
@@ -233,7 +233,7 @@ void ParameterVerifier::collectParameterUsesFromAttr(
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
-    itf.walkSubElements(
+    itf.walkImmediateSubElements(
         [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
         [&](Type type) { collectParameterUsesFromType(type, uses); });
   }
@@ -249,23 +249,33 @@ void ParameterVerifier::collectParameterUsesFromAttr(
 void ParameterVerifier::collectParameterUsesFromType(
     Type type, SmallVector<ParamDeclRefAttr> &uses) {
   // Ignore types we have already scanned.
-  if (parameterLessTypes.count(type))
+  if (!type || parameterLessTypes.count(type))
     return;
 
-  size_t oldSize = uses.size();
+  // Signature types are effectively "isolated from above" in that they may have
+  // their own local parameter declarations that are used in their type
+  // signature, but they cannot "capture" parameters from the enclosing context.
+  // As such, they are always considered "parameterless".
+  bool skipScan = type.isa<SignatureType>();
 
-  // Recursively check for any nested types, e.g. the input/outputs of a
-  // function type.  This also handles types like !meta.scalar etc.
-  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
-    itf.walkSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
-        [&](Type type) { collectParameterUsesFromType(type, uses); });
+  if (!skipScan) {
+    // Recursively check for any nested types, e.g. the input/outputs of a
+    // function type, types like !meta.scalar<ty> etc.
+    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+      size_t oldSize = uses.size();
+      itf.walkImmediateSubElements(
+          [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
+          [&](Type type) { collectParameterUsesFromType(type, uses); });
+
+      // If the attribute had uses of a parameter, don't consider it
+      // "parameterless".  We want other operations using the same type to
+      // record the uses as well.
+      if (oldSize != uses.size())
+        return;
+    }
   }
 
-  // If the attribute had no uses, remember that so we don't have to re-scan it
-  // in the future.
-  if (oldSize == uses.size())
-    parameterLessTypes.insert(type);
+  parameterLessTypes.insert(type);
 }
 
 /// Once all the defs and uses of parameters are collected, verify that the

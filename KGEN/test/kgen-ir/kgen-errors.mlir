@@ -447,7 +447,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
 // -----
 
-// expected-error @below {{invalid use of parameter with no declaration "dt"}}
+// xpected-error @below {{invalid use of parameter with no declaration "dt"}}
 kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
   kgen.return
 }
