@@ -61,17 +61,29 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return LogicalResult::success();
   }
 
+  // Helper for building (and checking) a Signature type.
+  llvm::SMLoc typeLoc = parser.getCurrentLocation();
+  auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
+                                 ParamDeclArrayAttr resultParams,
+                                 FunctionType valuesType) -> LogicalResult {
+    // Signature types can fail to parse when they reference parameters that
+    // are not defined in their input list.  Handle this by reporting the error
+    // correctly through the parser and returning a failure.
+    type = SignatureType::getChecked(
+        [&]() -> InFlightDiagnostic { return parser.emitError(typeLoc); },
+        inputParams.getContext(), inputParams, resultParams, valuesType);
+    return LogicalResult::success(type != Type());
+  };
+
   if (succeeded(parser.parseOptionalKeyword("signature"))) {
     // signature for values and parameters.
     ParamDeclArrayAttr inputParams, resultParams;
-    FunctionType values;
+    FunctionType valuesType;
     if (parser.parseLess() ||
         parseOptionalParameterSpec(parser, inputParams, resultParams) ||
-        parser.parseType(values) || parser.parseGreater())
+        parser.parseType(valuesType) || parser.parseGreater())
       return failure();
-    type = parser.getBuilder().getType<SignatureType>(inputParams, resultParams,
-                                                      values);
-    return LogicalResult::success();
+    return returnSignatureType(inputParams, resultParams, valuesType);
   }
 
   if (failed(parser.parseType(type)))
@@ -82,8 +94,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   if (auto valuesType = type.dyn_cast<FunctionType>()) {
     // Default to empty input/result parameters.
     auto emptyDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
-    type = parser.getBuilder().getType<SignatureType>(emptyDecls, emptyDecls,
-                                                      valuesType);
+    return returnSignatureType(emptyDecls, emptyDecls, valuesType);
   }
 
   return LogicalResult::success();

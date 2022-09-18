@@ -101,14 +101,9 @@ def SignatureType
                         "mlir::FunctionType":$values);
   let assemblyFormat = "`<` $inputParams `,` $resultParams `,` $values `>`";
 
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams,
-                                        "ParamDeclArrayAttr":$resultParams,
-                                        "mlir::FunctionType":$values), [{
-      return get(values.getContext(), inputParams, resultParams, values);
-    }]>,
-  ];
+  // Not all signatures are valid, their may only refer to parameters defined
+  // within its input parameter list and they must have the right types.
+  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
