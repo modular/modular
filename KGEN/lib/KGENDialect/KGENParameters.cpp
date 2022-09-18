@@ -47,7 +47,7 @@ struct PointerLikeTypeTraits<ParamDeclRefAttr>
 
 namespace {
 struct ParameterVerifier final {
-  ParameterVerifier(Operation *topLevelDeclOp,
+  ParameterVerifier(KGENDeclInterface topLevelDeclOp,
                     ParameterDeclsAndUses &parameters,
                     SymbolTableCollection *symbolTables)
       : topLevelDeclOp(topLevelDeclOp), parameters(parameters),
@@ -76,7 +76,7 @@ struct ParameterVerifier final {
 
   // This is the top level declaration that we're analyzing.
   // TODO: Make this a KGENDeclInterface.
-  Operation *const topLevelDeclOp;
+  KGENDeclInterface const topLevelDeclOp;
 
   /// This is the parameter information that we're building.
   ParameterDeclsAndUses &parameters;
@@ -627,6 +627,23 @@ LogicalResult ParameterVerifier::checkAndReorderParameterUseDefGraph() {
 //===----------------------------------------------------------------------===//
 
 /// Collect information about the parameter definitions and uses in the
+/// specified operation.  This assumes the IR is in a valid state.
+ParameterDeclsAndUses ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
+  auto result = calculateAndPotentiallyVerify(op, nullptr);
+  assert(succeeded(result) && "IR should be legal here!");
+  return std::move(result.value());
+}
+
+/// Check deep invariants for a func/generator decl body, used by the
+/// verifiers for these operations.  If a problem is detected, this emits an
+/// error and returns failure.
+FailureOr<ParameterDeclsAndUses>
+ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
+                                          SymbolTableCollection &symbolTables) {
+  return calculateAndPotentiallyVerify(op, &symbolTables);
+}
+
+/// Collect information about the parameter definitions and uses in the
 /// specified operation.
 ///
 /// If the SymbolTableCollection is non-null, check deep invariants for a
@@ -634,15 +651,15 @@ LogicalResult ParameterVerifier::checkAndReorderParameterUseDefGraph() {
 /// problem is detected, this emits an error and returns failure.
 FailureOr<ParameterDeclsAndUses>
 ParameterDeclsAndUses::calculateAndPotentiallyVerify(
-    Operation *topLevelOp, SymbolTableCollection *symbolTables) {
+    KGENDeclInterface topLevelOp, SymbolTableCollection *symbolTables) {
   ParameterDeclsAndUses result;
   ParameterVerifier verifier(topLevelOp, result, symbolTables);
 
   // Start by doing a pass over the operation and all the operations in its
   // body to find the definitions and uses of parameters.
   if (failed(verifier.collectParameterDefsAndUses()) ||
-      // Next, now that we know the set of parameters we have to process, verify
-      // that the uses match up.
+      // Next, now that we know the set of parameters we have to process,
+      // verify that the uses match up.
       failed(verifier.checkParameterUses()) ||
       // Verify that there are no cycles in the graph.
       failed(verifier.checkAndReorderParameterUseDefGraph()))

@@ -17,6 +17,7 @@
 namespace M::KGEN {
 class ParamDeclAttr;
 class ParamDeclRefAttr;
+class KGENDeclInterface;
 
 /// This class holds descriptions about parameter definitions and uses in a
 /// func or generator context.
@@ -26,19 +27,13 @@ public:
 
   /// Collect information about the parameter definitions and uses in the
   /// specified operation.  This assumes the IR is in a valid state.
-  static ParameterDeclsAndUses calculate(Operation *op) {
-    auto result = calculateAndPotentiallyVerify(op, nullptr);
-    assert(succeeded(result) && "IR should be legal here!");
-    return std::move(result.value());
-  }
+  static ParameterDeclsAndUses calculate(KGENDeclInterface op);
 
   /// Check deep invariants for a func/generator decl body, used by the
   /// verifiers for these operations.  If a problem is detected, this emits an
   /// error and returns failure.
   static FailureOr<ParameterDeclsAndUses>
-  calculateAndVerify(Operation *op, SymbolTableCollection &symbolTables) {
-    return calculateAndPotentiallyVerify(op, &symbolTables);
-  }
+  calculateAndVerify(KGENDeclInterface op, SymbolTableCollection &symbolTables);
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
   /// a parameter of a specified name.
@@ -74,7 +69,7 @@ public:
 
 private:
   static FailureOr<ParameterDeclsAndUses>
-  calculateAndPotentiallyVerify(Operation *op,
+  calculateAndPotentiallyVerify(KGENDeclInterface op,
                                 SymbolTableCollection *symbolTables);
 
   ParameterDeclsAndUses() = default;
