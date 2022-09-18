@@ -234,6 +234,7 @@ def CallParamOp : KGENOp<"call_param", []> {
   ];
 
   let hasCanonicalizeMethod = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

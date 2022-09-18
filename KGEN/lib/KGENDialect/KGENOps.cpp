@@ -226,6 +226,16 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   return failure();
 }
 
+LogicalResult CallParamOp::verify() {
+  KGENDeclInterface parent =
+      getOperation()->getParentOfType<KGENDeclInterface>();
+  if (!parent || isa<FuncOp>(parent))
+    return emitError(
+        "kgen.call_param is only allowed in generators pre-elaboration");
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // Logic shared between FuncOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
