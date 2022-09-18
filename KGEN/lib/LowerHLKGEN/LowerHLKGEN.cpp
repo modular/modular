@@ -9,6 +9,7 @@
 #include "ConstraintSet.h"
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/MetaDialect/MetaTypes.h"

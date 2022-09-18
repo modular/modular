@@ -6,6 +6,7 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"

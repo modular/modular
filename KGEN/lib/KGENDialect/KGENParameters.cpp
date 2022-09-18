@@ -11,7 +11,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
-#include "KGEN/KGENDialect/KGENOps.h" // FIXME: move verifyDeclSignaturesMatch
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGENVerifyHelper.h"
 #include "Support/LLVMCompilerForwardDecls.h"
