@@ -5,7 +5,7 @@ kgen.include "library-test.mlir"
 // This is left untouched.
 // CHECK-LABEL: kgen.func @test0<() -> outParam>() -> index {
 // CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
-// CHECK-NEXT:  kgen.return <outParam = 123456> %[[V0]] : index
+// CHECK-NEXT:  kgen.return<outParam = 123456> %[[V0]] : index
 // CHECK-NEXT: }
 kgen.func @test0<() -> outParam>() -> index {
   %0 = kgen.param.constant = <1>
@@ -65,7 +65,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant : dtype = <f32>
 // CHECK-NEXT:   %[[V2:.*]] = kgen.param.constant : f32 = <2.000000e+00>
 // CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !meta.scalar<f32>
-// CHECK-NEXT:   kgen.return <out = 84> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<out = 84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.5"<() -> out>
@@ -74,7 +74,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant : dtype = <si8>
 // CHECK-NEXT:    %[[V2:.*]] = kgen.param.constant : f32 = <1.500000e+00>
 // CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !meta.scalar<si8>
-// CHECK-NEXT:    kgen.return <out = 38> %[[ARG0]] : si32
+// CHECK-NEXT:    kgen.return<out = 38> %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.func @call_generator_test
@@ -125,7 +125,7 @@ kgen.generator.interface @genItf<x -> y>(si32) -> si32
 // CHECK-LABEL: kgen.func @"genItf_impl1,x=42"<() -> y>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return <y = 43> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<y = 43> %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
   implements @genItf {
@@ -136,7 +136,7 @@ kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
 // CHECK-LABEL: kgen.func @"genItf_impl2,x=42"<() -> y>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return <y = 84> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<y = 84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
   implements @genItf {

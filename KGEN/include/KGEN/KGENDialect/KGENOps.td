@@ -308,7 +308,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let arguments = (ins ParamBindArrayAttr:$parameters,
                        Variadic<AnyType>:$operands);
   let assemblyFormat = [{
-    custom<ParameterBindings>($parameters) attr-dict
+    `` custom<ParameterBindings>($parameters) attr-dict
     ($operands^ `:` type($operands))?
   }];
 
