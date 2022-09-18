@@ -514,7 +514,7 @@ kgen.generator @unary2<dt: dtype>(%arg0: !meta.scalar<si32>) -> !meta.scalar<si3
 }
 
 kgen.generator @test2() {
-  // expected-error @+1 {{'kgen.call' op symbol use has 0 input parameters but @unary2 expects 1}}
+  // expected-error @+1 {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<dt: dtype = si32,
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
   kgen.return
@@ -538,4 +538,21 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
   // expected-error @+1 {{kgen.call_param is only allowed in generators pre-elaboration}}
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0) 
   kgen.return %0: si32
+}
+
+// -----
+
+kgen.generator @takeFn<unaryFn: region<<abc>()->()>>() {
+  kgen.return
+}
+
+// expected-note @+1 {{@thing declared here}}
+kgen.generator @thing<dt>() {
+  kgen.return
+}
+
+kgen.generator @test2() {
+  // expected-error @+1 {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
+  kgen.call @takeFn<unaryFn : region<<abc>()->()> = @thing>() : () -> ()
+  kgen.return
 }

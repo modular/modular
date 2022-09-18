@@ -624,64 +624,76 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
 /// matches those of an interface.  This produces an error diagnostic and
 /// returns failure when a problem is detected, or returns true if everything is
 /// ok.
-ParseResult KGEN::verifyParameterList(
-    ArrayRef<ParamDeclAttr> originatorParamDecls,
-    ArrayRef<ParamDeclAttr> interfaceParamDecls, const char *originatorName,
-    mlir::FunctionOpInterface originatorDecl, const char *interfaceName,
-    GeneratorInterfaceOp interfaceDecl, const char *parameterKind) {
+ParseResult KGEN::verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
+                                      ParamDeclArrayAttr targetParamDecls,
+                                      const char *originatorName,
+                                      Location originatorLoc,
+                                      const char *targetName,
+                                      Location targetLoc,
+                                      const char *parameterKind) {
 
-  auto getParamDeclName = [](ArrayRef<ParamDeclAttr> decls) {
-    return llvm::map_range(decls, [](Attribute value) -> StringAttr {
+  auto getParamDeclName = [](ParamDeclArrayAttr decls) {
+    return llvm::map_range(decls.getValue(), [](Attribute value) -> StringAttr {
       return value.cast<ParamDeclAttr>().getName();
     });
   };
-  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
-    return llvm::map_range(decls, [](Attribute value) -> Type {
+  auto getParamDeclType = [](ParamDeclArrayAttr decls) {
+    return llvm::map_range(decls.getValue(), [](Attribute value) -> Type {
       return value.cast<ParamDeclAttr>().getType();
     });
   };
 
   if (verifyMatchingLists(getParamDeclName(originatorParamDecls),
-                          getParamDeclName(interfaceParamDecls), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          parameterKind, "name") ||
+                          getParamDeclName(targetParamDecls), originatorName,
+                          originatorLoc, targetName, targetLoc, parameterKind,
+                          "name") ||
       verifyMatchingLists(getParamDeclType(originatorParamDecls),
-                          getParamDeclType(interfaceParamDecls), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          parameterKind, "type"))
+                          getParamDeclType(targetParamDecls), originatorName,
+                          originatorLoc, targetName, targetLoc, parameterKind,
+                          "type"))
     return failure();
 
+  return success();
+}
+
+/// Check that the specified declaration signatures match, checking the
+/// parameter and value type information.
+LogicalResult KGEN::verifyDeclSignaturesMatch(
+    const char *originatorName, ParamDeclArrayAttr originatorInputParams,
+    ParamDeclArrayAttr originatorResultParams, FunctionType originatorType,
+    Location originatorLoc, const char *targetName,
+    ParamDeclArrayAttr targetInputParams, ParamDeclArrayAttr targetResultParams,
+    FunctionType targetType, Location targetLoc) {
+
+  if (verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          "argument", "type") ||
+      verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          "result", "type") ||
+      verifyParameterList(originatorInputParams, targetInputParams,
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          "input parameter") ||
+      verifyParameterList(originatorResultParams, targetResultParams,
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          "result parameter"))
+    return failure();
   return success();
 }
 
 /// Check that the specified generator/interfaces matches signature information
 /// with the other interface.
 LogicalResult KGEN::verifyDeclMatchesInterface(
-    const char *originatorName, mlir::FunctionOpInterface originatorDecl,
+    const char *originatorName, KGENDeclInterface originatorDecl,
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
 
-  auto [originatorInputParamDecls, originatorResultParamDecls] =
-      // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
-      cast<KGENDeclInterface>((Operation *)originatorDecl).getParameterInfo();
-  auto [interfaceInputParamDecls, interfaceResultParamDecls] =
-      interfaceDecl.getParameterInfo();
-
-  if (verifyMatchingLists(originatorDecl.getArgumentTypes(),
-                          interfaceDecl.getArgumentTypes(), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          "argument", "type") ||
-      verifyMatchingLists(originatorDecl.getResultTypes(),
-                          interfaceDecl.getResultTypes(), originatorName,
-                          originatorDecl, interfaceName, interfaceDecl,
-                          "result", "type") ||
-      verifyParameterList(originatorInputParamDecls, interfaceInputParamDecls,
-                          originatorName, originatorDecl, interfaceName,
-                          interfaceDecl, "input parameter") ||
-      verifyParameterList(originatorResultParamDecls, interfaceResultParamDecls,
-                          originatorName, originatorDecl, interfaceName,
-                          interfaceDecl, "result parameter"))
-    return failure();
-  return success();
+  return verifyDeclSignaturesMatch(
+      originatorName, originatorDecl.getParamDeclsAttr(),
+      originatorDecl.getResultParamDeclsAttr(),
+      originatorDecl.getFunctionType(), originatorDecl.getLoc(), interfaceName,
+      interfaceDecl.getParamDeclsAttr(),
+      interfaceDecl.getResultParamDeclsAttr(), interfaceDecl.getFunctionType(),
+      interfaceDecl.getLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -882,8 +894,9 @@ static ParseResult verifyMatchingCallLists(const CallerRange &callerRange,
                                            Operation *caller, Operation *callee,
                                            const char *itemName,
                                            const char *propertyName) {
-  return verifyMatchingLists(callerRange, calleeRange, "caller", caller,
-                             "callee", callee, itemName, propertyName);
+  return verifyMatchingLists(callerRange, calleeRange, "caller",
+                             caller->getLoc(), "callee", callee->getLoc(),
+                             itemName, propertyName);
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {

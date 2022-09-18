@@ -62,10 +62,9 @@ HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                        << "' does not reference a generator interface";
 
   // Result parameters need to match, but input parameters may be inferred.
-  auto resultParamDecls = getResultParamDecls();
-  auto interfaceResultParamDecls = interface.getResultParamDecls();
-  return verifyParameterList(resultParamDecls, interfaceResultParamDecls,
-                             "generator", *this, "interface", interface,
+  return verifyParameterList(getResultParamDeclsAttr(),
+                             interface.getResultParamDeclsAttr(), "generator",
+                             getLoc(), "interface", interface.getLoc(),
                              "result parameter");
 }
 
