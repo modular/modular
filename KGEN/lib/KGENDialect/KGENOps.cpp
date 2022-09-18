@@ -273,14 +273,28 @@ parseParamList(AsmParser &p, SmallVectorImpl<AttrT> &params,
 ///
 ///   parameter-decl   ::= identifier (`:` type)?
 ///   parameter-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-static ParseResult parseParamDecls(AsmParser &p,
-                                   SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+static ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
   auto parseElement = [](AsmParser &p, ParamDeclAttr &attr, StringRef name,
                          Type type) -> ParseResult {
     attr = ParamDeclAttr::get(name, type);
     return success();
   };
-  return parseParamList<ParamDeclAttr>(p, paramDecls, parseElement);
+
+  // Parse each of the decls.
+  SmallVector<ParamDeclAttr> decls;
+  if (parseParamList<ParamDeclAttr>(p, decls, parseElement))
+    return failure();
+
+  result = ParamDeclArrayAttr::get(p.getContext(), decls);
+  return success();
+}
+
+/// Print a comma separated parameter declaration list.
+static void printParamDecls(OpAsmPrinter &p, ParamDeclArrayAttr decls) {
+  llvm::interleaveComma(decls, p.getStream(), [&](ParamDeclAttr ref) {
+    printParamName(p, ref.getName().getValue());
+    printColonTypeOrIndex(p, ref.getType());
+  });
 }
 
 /// Parse a parameter binding list if present.
@@ -328,17 +342,16 @@ static ParseResult parseCallOpParams(OpAsmParser &p,
   // Parse the input list
   if (parseParamBinds(p, vals))
     return failure();
+  paramValues = ParamBindArrayAttr::get(p.getContext(), vals);
 
   // Check to see if we have results and parse them if so.
-  // paramDecls will be empty if there is no arrow.
-  SmallVector<ParamDeclAttr> decls;
   if (succeeded(p.parseOptionalArrow())) {
-    if (parseParamDecls(p, decls))
+    if (parseParamDecls(p, paramDecls))
       return failure();
+  } else {
+    // paramDecls is empty if there is no arrow.
+    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
   }
-
-  paramValues = ParamBindArrayAttr::get(p.getContext(), vals);
-  paramDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
 
   return p.parseGreater();
 }
@@ -360,10 +373,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 
   if (!paramDecls.empty()) {
     p << " -> ";
-    llvm::interleaveComma(paramDecls, p, [&](ParamDeclAttr ref) {
-      printParamName(p, ref.getName().getValue());
-      printColonTypeOrIndex(p, ref.getType());
-    });
+    printParamDecls(p, paramDecls);
   }
   p << ">";
 }
@@ -377,25 +387,21 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
-                                              OperationState &result,
-                                              GeneratorOrFuncKind opKind) {
+                                              OperationState &result) {
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
     // All kinds have result parameters.
     result.addAttribute("resultParamDecls",
                         ParamDeclArrayAttr::get(parser.getContext(), {}));
-    // Generators and interfaces are allowed to have input parameters.
-    if (opKind != GeneratorOrFuncKind::func)
-      result.addAttribute("paramDecls",
-                          ParamDeclArrayAttr::get(parser.getContext(), {}));
+    result.addAttribute("paramDecls",
+                        ParamDeclArrayAttr::get(parser.getContext(), {}));
     return success();
   }
 
-  SmallVector<ParamDeclAttr> paramDecls, resultParamDecls;
+  ParamDeclArrayAttr paramDecls, resultParamDecls;
 
   // Parse the input list.
-  auto loc = parser.getCurrentLocation();
   if (parseParamDecls(parser, paramDecls))
     return failure();
 
@@ -403,21 +409,12 @@ static ParseResult parseOptionalParameterSpec(OpAsmParser &parser,
   if (succeeded(parser.parseOptionalArrow())) {
     if (parseParamDecls(parser, resultParamDecls))
       return failure();
+  } else {
+    resultParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
   }
 
-  result.addAttribute(
-      "resultParamDecls",
-      ParamDeclArrayAttr::get(parser.getContext(), resultParamDecls));
-
-  // Generators and interfaces are allowed to have input parameters.
-  if (opKind != GeneratorOrFuncKind::func) {
-    result.addAttribute(
-        "paramDecls", ParamDeclArrayAttr::get(parser.getContext(), paramDecls));
-  } else if (!paramDecls.empty()) {
-    // kgen.func's are not allowed to have input parameter lists.
-    return parser.emitError(
-        loc, "kgen.func only allows output parameters, not input parameters");
-  }
+  result.addAttribute("resultParamDecls", resultParamDecls);
+  result.addAttribute("paramDecls", paramDecls);
 
   return parser.parseGreater();
 }
@@ -478,7 +475,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Parse the function signature.
   bool isVariadic = false;
-  if (parseOptionalParameterSpec(parser, result, opKind) ||
+  if (parseOptionalParameterSpec(parser, result) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs) ||
       parseOptionalConstraints(parser, result, opKind))
@@ -545,26 +542,20 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
 /// Print a parameter list for a generator, func or interface.
 static void printParameterList(KGENDeclInterface decl, OpAsmPrinter &p) {
-  auto [inputParams, outputParams] = decl.getParameterInfo();
-
-  if (inputParams.empty() && outputParams.empty())
+  auto inputParams = decl.getParamDeclsAttr();
+  auto resultParams = decl.getResultParamDeclsAttr();
+  if (inputParams.empty() && resultParams.empty())
     return;
-
-  auto printParamDecl = [&](Attribute param) {
-    auto paramAttr = param.cast<ParamDeclAttr>();
-    printParamName(p, paramAttr.getName().getValue());
-    printColonTypeOrIndex(p, paramAttr.getType());
-  };
 
   p << '<';
   if (inputParams.empty())
     p << "()";
   else
-    llvm::interleaveComma(inputParams, p, printParamDecl);
+    printParamDecls(p, inputParams);
 
-  if (!outputParams.empty()) {
+  if (!resultParams.empty()) {
     p << " -> ";
-    llvm::interleaveComma(outputParams, p, printParamDecl);
+    printParamDecls(p, resultParams);
   }
   p << '>';
 }
@@ -755,6 +746,8 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(SymbolTable::getVisibilityAttrName(), visibility);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
+  result.addAttribute("paramDecls", builder.getAttr<ParamDeclArrayAttr>(
+                                        ArrayRef<ParamDeclAttr>()));
   result.addAttribute("resultParamDecls",
                       builder.getAttr<ParamDeclArrayAttr>(outputParams));
   result.addRegion();
@@ -805,6 +798,11 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
                                               getResultTypes())))
     return failure();
+
+  // kgen.func's are not allowed to have input parameter lists.
+  if (!getParamDecls().empty())
+    return emitError(
+        "kgen.func only allows output parameters, not input parameters");
 
   // See if the parameter definitions and uses within the func are
   // structured correctly.
