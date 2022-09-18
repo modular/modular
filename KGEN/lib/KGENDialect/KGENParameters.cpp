@@ -12,7 +12,6 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h" // FIXME: move verifyDeclSignaturesMatch
-#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGENVerifyHelper.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -323,27 +322,15 @@ void ParameterVerifier::verifySymbolConstantAttr(
     return;
   }
 
-  auto regionType = symbolConstant.getType().cast<SignatureType>();
-
-  // Verify the value signature matches.
-  if (decl.getFunctionType() != regionType.getValues()) {
-    hadError = true;
-    curOperationCollecting->emitError("symbol '")
-        << symbol << "' used with type " << regionType.getValues()
-        << " but declared as " << decl.getFunctionType();
-    return;
-  }
+  auto signatureType = symbolConstant.getType().cast<SignatureType>();
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
   SmallString<32> paramName("@");
   paramName.append(symbol.getLeafReference());
   if (failed(verifyDeclSignaturesMatch(
-          "symbol use", regionType.getInputParams(),
-          regionType.getResultParams(), regionType.getValues(),
-          curOperationCollecting->getLoc(), paramName.c_str(),
-          decl.getParamDeclsAttr(), decl.getResultParamDeclsAttr(),
-          decl.getFunctionType(), decl->getLoc())))
+          "symbol use", signatureType, curOperationCollecting->getLoc(),
+          paramName.c_str(), decl.getSignature(), decl->getLoc())))
     hadError = true;
 }
 

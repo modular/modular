@@ -6,7 +6,6 @@
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"

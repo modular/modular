@@ -59,12 +59,12 @@ LogicalResult verifyDeclMatchesInterface(const char *originatorName,
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult verifyDeclSignaturesMatch(
-    const char *originatorName, ParamDeclArrayAttr originatorInputParams,
-    ParamDeclArrayAttr originatorResultParams, FunctionType originatorType,
-    Location originatorLoc, const char *interfaceName,
-    ParamDeclArrayAttr targetInputParams, ParamDeclArrayAttr targetResultParams,
-    FunctionType targetType, Location targetLoc);
+LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
+                                        SignatureType originatorSignature,
+                                        Location originatorLoc,
+                                        const char *interfaceName,
+                                        SignatureType targetSignature,
+                                        Location targetLoc);
 
 } // namespace M::KGEN
 

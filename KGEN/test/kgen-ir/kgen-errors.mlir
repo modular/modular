@@ -490,12 +490,13 @@ kgen.generator @takeUnary
   kgen.return
 }
 
+// expected-note @+1 {{@unary declared here}}
 kgen.func @unary(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
   kgen.return %arg0 : !meta.scalar<f32>
 }
 
 kgen.generator @test1() {
-  // expected-error @+1 {{symbol '@unary' used with type '(!meta.scalar<si32>) -> !meta.scalar<si32>' but declared as '(!meta.scalar<f32>) -> !meta.scalar<f32>'}}
+  // expected-error @+1 {{symbol use argument #0 has type '!meta.scalar<si32>' but @unary expected type '!meta.scalar<f32>'}}
   kgen.call @takeUnary<dt: dtype = si32,
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary>() : () -> ()
   kgen.return

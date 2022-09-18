@@ -658,24 +658,28 @@ ParseResult KGEN::verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult KGEN::verifyDeclSignaturesMatch(
-    const char *originatorName, ParamDeclArrayAttr originatorInputParams,
-    ParamDeclArrayAttr originatorResultParams, FunctionType originatorType,
-    Location originatorLoc, const char *targetName,
-    ParamDeclArrayAttr targetInputParams, ParamDeclArrayAttr targetResultParams,
-    FunctionType targetType, Location targetLoc) {
+LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
+                                              SignatureType originatorSignature,
+                                              Location originatorLoc,
+                                              const char *targetName,
+                                              SignatureType targetSignature,
+                                              Location targetLoc) {
 
+  FunctionType originatorType = originatorSignature.getValues();
+  FunctionType targetType = targetSignature.getValues();
   if (verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
                           originatorName, originatorLoc, targetName, targetLoc,
                           "argument", "type") ||
       verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
                           originatorName, originatorLoc, targetName, targetLoc,
                           "result", "type") ||
-      verifyParameterList(originatorInputParams, targetInputParams,
-                          originatorName, originatorLoc, targetName, targetLoc,
+      verifyParameterList(originatorSignature.getInputParams(),
+                          targetSignature.getInputParams(), originatorName,
+                          originatorLoc, targetName, targetLoc,
                           "input parameter") ||
-      verifyParameterList(originatorResultParams, targetResultParams,
-                          originatorName, originatorLoc, targetName, targetLoc,
+      verifyParameterList(originatorSignature.getResultParams(),
+                          targetSignature.getResultParams(), originatorName,
+                          originatorLoc, targetName, targetLoc,
                           "result parameter"))
     return failure();
   return success();
@@ -688,22 +692,13 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
 
   return verifyDeclSignaturesMatch(
-      originatorName, originatorDecl.getParamDeclsAttr(),
-      originatorDecl.getResultParamDeclsAttr(),
-      originatorDecl.getFunctionType(), originatorDecl.getLoc(), interfaceName,
-      interfaceDecl.getParamDeclsAttr(),
-      interfaceDecl.getResultParamDeclsAttr(), interfaceDecl.getFunctionType(),
-      interfaceDecl.getLoc());
+      originatorName, originatorDecl.getSignature(), originatorDecl.getLoc(),
+      interfaceName, interfaceDecl.getSignature(), interfaceDecl.getLoc());
 }
 
 //===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
-
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-GeneratorOp::getParameterInfo() {
-  return {getParamDecls(), getResultParamDecls()};
-}
 
 ReturnOp GeneratorOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
@@ -785,11 +780,6 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
   body->addArguments(signature.getInputs(), argLocs);
 }
 
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-FuncOp::getParameterInfo() {
-  return {{}, getResultParamDecls()};
-}
-
 ReturnOp FuncOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
@@ -860,11 +850,6 @@ void FuncOp::setConstraintsAttr(ConstraintArrayAttr attr) {
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
 
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-GeneratorInterfaceOp::getParameterInfo() {
-  return {getParamDecls(), getResultParamDecls()};
-}
-
 /// Parses a KGEN generator interface.
 ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
                                         OperationState &result) {
@@ -913,8 +898,8 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Verify that the callee/caller parameters match.  The parameter names on the
   // results don't need to match, but the parameter names on the argument
   // bindings do.  The types always need to match.
-  auto [calleeInputParamDecls, calleeOutputParamDecls] =
-      callee.getParameterInfo();
+  auto calleeInputParamDecls = callee.getInputParamDecls();
+  auto calleeOutputParamDecls = callee.getResultParamDecls();
 
   // Check the parameter values specified to the input parameters.
   ArrayRef<ParamBindAttr> callerInputParams = getParamValues();

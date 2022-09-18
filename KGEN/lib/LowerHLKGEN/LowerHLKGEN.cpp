@@ -392,8 +392,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
 
     // The call will need to passes on all the input parameters unmodified.
     SmallVector<ParamBindAttr> callInputParams;
-    auto [genInputParams, genResultParams] = gen.getParameterInfo();
-    for (ParamDeclAttr inParam : genInputParams) {
+    for (ParamDeclAttr inParam : gen.getInputParamDecls()) {
       auto value = ParamDeclRefAttr::get(inParam.getName(), inParam.getType());
       callInputParams.push_back(ParamBindAttr::get(inParam.getName(), value));
     }
@@ -402,7 +401,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // kgen.output for the thunk.
     SmallVector<ParamDeclAttr> callResultParams; // <StringAttr name, Type type>
     SmallVector<ParamBindAttr> returnParams;
-    for (ParamDeclAttr resultParam : genResultParams) {
+    for (ParamDeclAttr resultParam : gen.getResultParamDecls()) {
       // The call returns the same thing as the generator.
       callResultParams.push_back(resultParam);
       // The output binds each result from the call into the return value of the

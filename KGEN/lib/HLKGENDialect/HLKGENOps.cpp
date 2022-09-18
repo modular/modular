@@ -21,11 +21,6 @@ using namespace KGEN;
 // HLGeneratorOp
 //===----------------------------------------------------------------------===//
 
-std::pair<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>>
-HLGeneratorOp::getParameterInfo() {
-  return {getParamDecls(), getResultParamDecls()};
-}
-
 ReturnOp HLGeneratorOp::getReturnOp() {
   return cast<ReturnOp>(getBodyBlock()->getTerminator());
 }
