@@ -6,6 +6,7 @@
 
 #include "LLVMLoweringUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
@@ -188,8 +189,8 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
     return dtype;
   });
 
-  // Convert pointer types to bare pointers of the dtype. If the dtype is
-  // unspecified, return an untyped pointer.
+  // Convert pointer types to LLVM pointer types. If the element type is
+  // unspecified, return an opaque pointer.
   addConversion([=](PointerType pointer) -> Optional<Type> {
     Type type = pointer.resolveElementType();
     if (!type)
@@ -197,6 +198,18 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
     if (Type elementType = convertType(type))
       return LLVM::LLVMPointerType::get(elementType);
     return {};
+  });
+
+  // Convert array types to LLVM array types.
+  addConversion([=](POP::ArrayType array) -> Optional<Type> {
+    Optional<int64_t> size = array.resolveSize();
+    Type elementType = array.resolveElementType();
+    if (!size || !elementType)
+      return {};
+    elementType = convertType(elementType);
+    if (!elementType)
+      return {};
+    return LLVM::LLVMArrayType::get(elementType, *size);
   });
 
   // Convert SIMD types to vector types.

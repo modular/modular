@@ -685,8 +685,8 @@ public:
         return rewriter.notifyMatchFailure(
             op.getLoc(), "failed to convert constant result type");
       it->second = rewriter.create<LLVM::GlobalOp>(
-          op.getLoc(), type, true, LLVM::Linkage::Internal, "global_constant",
-          op.getValue());
+          op.getLoc(), type.cast<LLVM::LLVMPointerType>().getElementType(),
+          true, LLVM::Linkage::Internal, "global_constant", op.getValue());
       symtab.insert(it->second);
     }
 

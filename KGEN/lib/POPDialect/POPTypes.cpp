@@ -54,6 +54,18 @@ Type POP::ArrayType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
              attrs[1].cast<TypedAttr>());
 }
 
+Optional<int64_t> POP::ArrayType::resolveSize() const {
+  if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
+    return intAttr.getInt();
+  return {};
+}
+
+Type POP::ArrayType::resolveElementType() const {
+  if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
+    return typeCst.getValue();
+  return nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

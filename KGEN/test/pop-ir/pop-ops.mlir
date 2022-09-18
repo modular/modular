@@ -532,8 +532,12 @@ kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>
 }
 
 // CHECK-LABEL: @global_constant
-kgen.generator @global_constant<type: type>() -> !meta.pointer<type> {
+kgen.generator @global_constant<type: type, dtype: dtype>() -> !meta.pointer<type> {
   // CHECK: pop.global_constant(5 : i32) : type
   %0 = pop.global_constant(5 : i32) : type
+  // CHECK: pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !meta.scalar<ui32>>
+  %1 = pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !meta.scalar<ui32>>
+  // CHECK: pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<dtype>>
+  %2 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<dtype>>
   kgen.return %0 : !meta.pointer<type>
 }
