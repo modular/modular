@@ -195,6 +195,48 @@ def CallOp
 }
 
 //===----------------------------------------------------------------------===//
+// CallParamOp
+//===----------------------------------------------------------------------===//
+
+// NOTE: This cannot be a CallOpInterface, because the callee is not a
+// SymbolRefAttr, it is a different kind of attribute.
+def CallParamOp : KGENOp<"call_param", []> {
+  let summary = "Call declaration specified by a parameter experession";
+
+  let arguments =
+   (ins ParameterExprAttr:$callee, ParamBindArrayAttr:$paramValues,
+        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>:$results);
+
+  let extraClassDeclaration = [{
+    FunctionType getCalleeType();
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+  }];
+
+  let assemblyFormat = [{
+    `[` custom<CallParamCallee>($callee, type($operands), type($results)) `]`
+      `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
+    attr-dict
+  }];
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$resultTypes, "TypedAttr":$callee,
+                   "ArrayRef<ParamBindAttr>":$inputParams,
+                   "ArrayRef<ParamDeclAttr>":$resultParams,
+                   "OperandRange":$operands)>,
+  ];
+
+  let hasCanonicalizeMethod = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 

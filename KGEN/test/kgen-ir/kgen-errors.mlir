@@ -519,3 +519,11 @@ kgen.generator @test2() {
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @call_param() {
+  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a region type}} 
+  %0 = kgen.call_param[si32: 4]() 
+  kgen.return
+}

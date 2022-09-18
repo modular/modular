@@ -184,6 +184,49 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 }
 
 //===----------------------------------------------------------------------===//
+// CallParamOp / custom<CallParamCallee>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
+                                        SmallVectorImpl<Type> &operandTypes,
+                                        SmallVectorImpl<Type> &resultTypes) {
+  Type type;
+  auto loc = p.getCurrentLocation();
+  if (parseKGENType(p, type) || p.parseColon() ||
+      parseParamValue(p, value, type))
+    return failure();
+
+  auto regionType = value.getType().dyn_cast<RegionType>();
+  if (!regionType)
+    return p.emitError(loc, "callee parameter type must be a region type");
+
+  llvm::append_range(operandTypes, regionType.getValues().getInputs());
+  llvm::append_range(resultTypes, regionType.getValues().getResults());
+  return success();
+}
+
+static void printCallParamCallee(OpAsmPrinter &p, Operation *, TypedAttr value,
+                                 OperandRange::type_range operandTypes,
+                                 mlir::ResultRange::type_range resultTypes) {
+  printKGENType(p.getStream(), value.getType());
+  p << ": ";
+  printParamValue(p, value);
+}
+
+LogicalResult CallParamOp::canonicalize(CallParamOp op,
+                                        PatternRewriter &rewriter) {
+  // If the condition is a known symbol, then replace this with a kgen.call.
+  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
+    rewriter.replaceOpWithNewOp<CallOp>(
+        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+        op.getParamValues(), op.getParamDecls(), op.getOperands());
+    return success();
+  }
+
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // Logic shared between FuncOp, GeneratorOp, and CallOp
 //===----------------------------------------------------------------------===//
 
