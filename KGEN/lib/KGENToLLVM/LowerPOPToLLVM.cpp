@@ -1,4 +1,4 @@
-//===- ConvertPOPToLLVM.cpp -----------------------------------------------===//
+//===- LowerPOPToLLVM.cpp -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -534,12 +534,11 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPToLLVMPass
+// LowerPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct ConvertPOPToLLVMPass
-    : public ConvertPOPToLLVMBase<ConvertPOPToLLVMPass> {
+struct LowerPOPToLLVMPass : public LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
   void runOnOperation() override;
 
   /// Verify that the operation is a function and has no nested CFGs.
@@ -547,11 +546,11 @@ struct ConvertPOPToLLVMPass
 };
 } // namespace
 
-FailureOr<mlir::FunctionOpInterface> ConvertPOPToLLVMPass::validateOperation() {
+FailureOr<mlir::FunctionOpInterface> LowerPOPToLLVMPass::validateOperation() {
   auto func = dyn_cast<mlir::FunctionOpInterface>(getOperation());
   if (!func)
     return getOperation()->emitError(
-        "convert-pop-to-llvm must be nested on a FunctionOpInterface");
+        "lower-pop-to-llvm must be nested on a FunctionOpInterface");
 
   // Stack allocations cannot be lowered in the presence of CFGs.
   Operation *cfgOp = nullptr;
@@ -567,12 +566,12 @@ FailureOr<mlir::FunctionOpInterface> ConvertPOPToLLVMPass::validateOperation() {
     return func;
 
   InFlightDiagnostic diag = cfgOp->emitError(
-      "convert-pop-to-llvm cannot run on operations with CFG regions");
-  diag.attachNote() << "try running it before convert-scf-to-llvm";
+      "lower-pop-to-llvm cannot run on operations with CFG regions");
+  diag.attachNote() << "try running it before lower-scf-to-llvm";
   return diag;
 }
 
-void ConvertPOPToLLVMPass::runOnOperation() {
+void LowerPOPToLLVMPass::runOnOperation() {
   FailureOr<mlir::FunctionOpInterface> func = validateOperation();
   if (failed(func))
     return signalPassFailure();
@@ -603,8 +602,8 @@ void ConvertPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
 }
 
-std::unique_ptr<mlir::Pass> M::KGEN::createConvertPOPToLLVMPass() {
-  return std::make_unique<ConvertPOPToLLVMPass>();
+std::unique_ptr<mlir::Pass> M::KGEN::createLowerPOPToLLVMPass() {
+  return std::make_unique<LowerPOPToLLVMPass>();
 }
 
 namespace {

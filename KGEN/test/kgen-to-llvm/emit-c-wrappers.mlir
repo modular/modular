@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=emit-c-wrappers="kernel" | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm=emit-c-wrappers="kernel" | FileCheck %s
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}

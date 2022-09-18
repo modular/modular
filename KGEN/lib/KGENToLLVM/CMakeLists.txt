@@ -5,11 +5,11 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(KGENToLLVM
-  ConvertKGENToLLVM.cpp
-  ConvertPOPToLLVM.cpp
-  ConvertSCFToLLVM.cpp
-  LLVMLoweringUtils.cpp
+  KGENToLLVMPipeline.cpp
   LowerKGENToLLVM.cpp
+  LowerPOPToLLVM.cpp
+  LowerSCFToLLVM.cpp
+  LLVMLoweringUtils.cpp
 
   DEPENDS
   MLIRKGENPasses

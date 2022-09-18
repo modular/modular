@@ -1,5 +1,5 @@
 
-// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm %s | FileCheck %s
 
 // CHECK-LABEL: llvm.func private @scalar_rebind
 // CHECK-SAME: %[[ARG0:.*]]: f32

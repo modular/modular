@@ -40,11 +40,11 @@ class POPDialect;
 
 std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
 std::unique_ptr<mlir::Pass>
-createConvertKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
-                            ArrayRef<StringRef> emitCWrappers = {},
-                            bool emitOpaqueWrappers = false);
-std::unique_ptr<mlir::Pass> createConvertPOPToLLVMPass();
-std::unique_ptr<mlir::Pass> createConvertSCFToLLVMPass();
+createLowerKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
+                          ArrayRef<StringRef> emitCWrappers = {},
+                          bool emitOpaqueWrappers = false);
+std::unique_ptr<mlir::Pass> createLowerPOPToLLVMPass();
+std::unique_ptr<mlir::Pass> createLowerSCFToLLVMPass();
 std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM();
 std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
 std::unique_ptr<mlir::Pass> createLowerZAPToPOPPass();
