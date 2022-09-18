@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -elaborate-generators="search-path=%S" -allow-unregistered-dialect | FileCheck %s
 
-kgen.include "elaborate.mlir"
+kgen.include "include-test-included.mlir"
 
 kgen.generator.interface @genItf2<x>()
 kgen.generator.interface @unary_add<size>(si32) -> si32
