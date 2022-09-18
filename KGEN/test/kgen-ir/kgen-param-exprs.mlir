@@ -261,18 +261,15 @@ kgen.generator @region_params
    // This has an input and output parameter.
    // CHECK-SAME: r2: signature<<() -> result: i1>() -> ()>,
    r2: signature<<() -> result: i1>() -> ()>,
-   // CHECK-SAME: dt: dtype,
-   dt: dtype,
    // This uses a different parameter.
-   // CHECK-SAME: r3: () -> !meta.buffer<4, dt>
-   r3: () -> !meta.buffer<4, dt>
+   // CHECK-SAME: r3: signature<<dt: dtype>() -> !meta.buffer<4, dt>>
+   r3: signature<<dt: dtype>() -> !meta.buffer<4, dt>>
    >() {
   // use unaryFn
   kgen.return
 }
 
-kgen.generator @takeUnary
-  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+kgen.generator @takeUnary<unaryFn: (!meta.scalar<si32>) -> !meta.scalar<si32>>() {
   // use unaryFn
   kgen.return
 }
@@ -283,9 +280,9 @@ kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
 }
 
 kgen.generator @test_region() {
-  // CHECK: kgen.call @takeUnary<dt: dtype = si32,
+  // CHECK: kgen.call @takeUnary<
   // CHECK-SAME: unaryFn: (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>()
-  kgen.call @takeUnary<dt: dtype = si32,
+  kgen.call @takeUnary<
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
 
   kgen.return 

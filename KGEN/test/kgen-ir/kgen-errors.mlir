@@ -447,7 +447,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
 // -----
 
-// xpected-error @below {{invalid use of parameter with no declaration "dt"}}
+// expected-error @below {{"dt" parameter not defined in signature}}
 kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
   kgen.return
 }
@@ -456,7 +456,7 @@ kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @takeUnary
-  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: signature<<dt: dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
   kgen.return
 }
 
@@ -466,8 +466,8 @@ kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
 }
 
 kgen.generator @test_region() {
-  // expected-error @+1 {{caller input parameter #1 has type '!kgen.signature<[], [], (!meta.scalar<si32>) -> !meta.scalar<si32>>' but callee expected type '!kgen.signature<[], [], (!meta.scalar<f32>) -> !meta.scalar<f32>>'}}
-  kgen.call @takeUnary<dt: dtype = f32,
+  // expected-error @+1 {{caller input parameter #0 has type}}
+  kgen.call @takeUnary<
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
   kgen.return
 }
@@ -486,7 +486,7 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
   kgen.return
 }
 
@@ -497,7 +497,7 @@ kgen.func @unary(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
 kgen.generator @test1() {
   // expected-error @+1 {{symbol use argument #0 has type '!meta.scalar<si32>' but @unary expected type '!meta.scalar<f32>'}}
-  kgen.call @takeUnary<dt: dtype = si32,
+  kgen.call @takeUnary<
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary>() : () -> ()
   kgen.return
 }
@@ -505,7 +505,7 @@ kgen.generator @test1() {
 // -----
 
 kgen.generator @takeUnary
-  <dt: dtype, unaryFn: (!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
   kgen.return
 }
 
@@ -516,7 +516,7 @@ kgen.generator @unary2<dt: dtype>(%arg0: !meta.scalar<si32>) -> !meta.scalar<si3
 
 kgen.generator @test2() {
   // expected-error @+1 {{symbol use has 0 input parameters but @unary2 expects 1}}
-  kgen.call @takeUnary<dt: dtype = si32,
+  kgen.call @takeUnary<
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
   kgen.return
 }
@@ -557,3 +557,19 @@ kgen.generator @test2() {
   kgen.call @takeFn<unaryFn : signature<<abc>()->()> = @thing>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{"ty" parameter not defined in signature}}
+kgen.generator @test<ty: type, p : signature<<x>(!kgen.paramref<ty>)->()>>() {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{signature parameter "x" redefined}}
+kgen.generator @test<ty: type, p : signature<<x,x>()->()>>
+() {
+  kgen.return
+}
+

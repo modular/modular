@@ -25,31 +25,177 @@
 using namespace M;
 using namespace M::KGEN;
 
-namespace llvm {
-
-/// Make `ParamDeclRefAttr` behave like a `Attribute` in terms of
-/// pointer-likeness.
-template <>
-struct PointerLikeTypeTraits<ParamDeclRefAttr>
-    : PointerLikeTypeTraits<mlir::Attribute> {
-  static inline void *getAsVoidPointer(ParamDeclRefAttr v) {
-    return const_cast<void *>(v.getAsOpaquePointer());
-  }
-  static inline ParamDeclRefAttr getFromVoidPointer(void *p) {
-    return ParamDeclRefAttr::getFromOpaquePointer(p);
-  }
-};
-} // namespace llvm
-
 //===----------------------------------------------------------------------===//
-// Parameter Verification
+// ParameterCollector
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct ParameterVerifier final {
-  ParameterVerifier(KGENDeclInterface topLevelDeclOp,
-                    ParameterDeclsAndUses &parameters,
-                    SymbolTableCollection *symbolTables)
+class ParameterCollector {
+public:
+  virtual ~ParameterCollector() {}
+
+  /// Scan the specified attribute and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses into `uses`.
+  void collectParameterUsesFromAttr(Attribute attr,
+                                    SmallVector<ParamDeclRefAttr> &uses);
+
+  /// Scan the specified type and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses into `uses`.
+  void collectParameterUsesFromType(Type type,
+                                    SmallVector<ParamDeclRefAttr> &uses);
+
+private:
+  /// The first time we encounter a SymbolConstantAttr, check to see if the
+  /// declaration it refers to agrees with the value and parameter
+  /// specification.
+  virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) = 0;
+
+  /// Attributes and types are memoized and exist in tree structures with reuse:
+  /// naively scanning them can lead to exponential compile time behavior.  As
+  /// such, we memoize the attributes and types we've already checked that we
+  /// know have no parameters in them.
+  llvm::SmallDenseSet<Attribute> parameterLessAttrs;
+  llvm::SmallDenseSet<Type> parameterLessTypes;
+};
+} // end anonymous namespace
+
+/// Scan the specified attribute and its recursive uses, diagnosing incorrect
+/// parameter declarations and collecting parameter uses.
+void ParameterCollector::collectParameterUsesFromAttr(
+    Attribute attr, SmallVector<ParamDeclRefAttr> &uses) {
+  // If we have already scanned it and know that it has no parameters in it,
+  // return early.
+  if (!attr || parameterLessAttrs.contains(attr))
+    return;
+
+  // Collect parameter references.
+  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+    uses.push_back(paramRef);
+    return;
+  }
+
+  // Check any SymbolConstantAttr's we encounter.
+  if (auto symbolConstant = attr.dyn_cast<SymbolConstantAttr>())
+    verifySymbolConstantAttr(symbolConstant);
+
+  size_t oldSize = uses.size();
+
+  // Otherwise we haven't processed this, check the attribute's type if it has
+  // one.
+  if (auto typedAttr = attr.dyn_cast<TypedAttr>())
+    collectParameterUsesFromType(typedAttr.getType(), uses);
+
+  // Recursively check for any nested types/attributes, e.g. the elements of an
+  // array attribute.
+  if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
+    itf.walkImmediateSubElements(
+        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
+        [&](Type type) { collectParameterUsesFromType(type, uses); });
+  }
+
+  // If the attribute had no uses, remember that so we don't have to re-scan it
+  // in the future.
+  if (oldSize == uses.size())
+    parameterLessAttrs.insert(attr);
+}
+
+/// Scan the specified type and its recursive uses, diagnosing incorrect
+/// parameter declarations and collecting parameter uses.
+void ParameterCollector::collectParameterUsesFromType(
+    Type type, SmallVector<ParamDeclRefAttr> &uses) {
+  // Ignore types we have already scanned.
+  if (!type || parameterLessTypes.count(type))
+    return;
+
+  // Signature types are effectively "isolated from above" in that they may have
+  // their own local parameter declarations that are used in their type
+  // signature, but they cannot "capture" parameters from the enclosing context.
+  // As such, they are always considered "parameterless".
+  bool skipScan = type.isa<SignatureType>();
+
+  if (!skipScan) {
+    // Recursively check for any nested types, e.g. the input/outputs of a
+    // function type, types like !meta.scalar<ty> etc.
+    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+      size_t oldSize = uses.size();
+      itf.walkImmediateSubElements(
+          [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
+          [&](Type type) { collectParameterUsesFromType(type, uses); });
+
+      // If the attribute had uses of a parameter, don't consider it
+      // "parameterless".  We want other operations using the same type to
+      // record the uses as well.
+      if (oldSize != uses.size())
+        return;
+    }
+  }
+
+  parameterLessTypes.insert(type);
+}
+
+//===----------------------------------------------------------------------===//
+// SignatureType Verification
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+SignatureType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                      ParamDeclArrayAttr inputParams,
+                      ParamDeclArrayAttr resultParams, FunctionType values) {
+  bool hadSymbolConstantReferences = false;
+  struct SignatureTypeCollector : public ParameterCollector {
+    SignatureTypeCollector(bool &hadSymbolConstantReferences)
+        : hadSymbolConstantReferences(hadSymbolConstantReferences) {}
+    void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override {
+      hadSymbolConstantReferences = true;
+    }
+    bool &hadSymbolConstantReferences;
+  } parameterCollector(hadSymbolConstantReferences);
+
+  // Collect all the parameter references from the function type in the
+  // signature.
+  SmallVector<ParamDeclRefAttr> uses;
+  parameterCollector.collectParameterUsesFromType(values, uses);
+
+  // Reject any SymbolConstantAttr's, they cannot exist in a signature.  This
+  // structurally cannot exist, but this is defensive code in case something
+  // changes in the future.
+  if (hadSymbolConstantReferences)
+    return emitError() << "signature type cannot use an @symbol reference";
+
+  // Check the input parameters for conflicts.
+  SmallDenseMap<StringAttr, Type> paramsMap;
+  for (auto inputParam : inputParams) {
+    auto &entry = paramsMap[inputParam.getName()];
+    if (entry)
+      return emitError() << "signature parameter " << inputParam.getName()
+                         << " redefined";
+    entry = inputParam.getType();
+  }
+
+  // Check that each of the uses is to a defined input parameter.
+  for (ParamDeclRefAttr use : uses) {
+    auto &entry = paramsMap[use.getName()];
+    if (!entry)
+      return emitError() << use.getName()
+                         << " parameter not defined in signature";
+    if (entry != use.getType())
+      return emitError() << "use of " << use.getName()
+                         << " with incorrect type in signature";
+  }
+
+  // Otherwise we succeed.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DeclParameterVerifier
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct DeclParameterVerifier final : public ParameterCollector {
+  DeclParameterVerifier(KGENDeclInterface topLevelDeclOp,
+                        ParameterDeclsAndUses &parameters,
+                        SymbolTableCollection *symbolTables)
       : topLevelDeclOp(topLevelDeclOp), parameters(parameters),
         symbolTables(symbolTables) {}
 
@@ -74,6 +220,9 @@ struct ParameterVerifier final {
     return parameters.usersAndDeclarers[it->second].second;
   }
 
+  virtual void
+  verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
+
   // This is the top level declaration that we're analyzing.
   // TODO: Make this a KGENDeclInterface.
   KGENDeclInterface const topLevelDeclOp;
@@ -87,24 +236,9 @@ struct ParameterVerifier final {
 
   /// This is the current operation being scanned during the attribute/type
   /// collection phase.
-  Operation *curOperationCollecting = nullptr;
+  Optional<Location> curLocationCollecting;
 
 private:
-  /// Scan the specified attribute and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.
-  void collectParameterUsesFromAttr(Attribute attr,
-                                    SmallVector<ParamDeclRefAttr> &uses);
-
-  /// Scan the specified type and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.
-  void collectParameterUsesFromType(Type type,
-                                    SmallVector<ParamDeclRefAttr> &uses);
-
-  /// The first time we encounter a SymbolConstantAttr, check to see if the
-  /// declaration it refers to agrees with the value and parameter
-  /// specification.
-  void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant);
-
   /// This is set to true if we find a problem during the collect phase.
   bool hadError = false;
 
@@ -112,27 +246,20 @@ private:
   /// directly or through types on attributes and SSA operands/results.  This
   /// keeps track of all of the uses that happen anywhere within an operation.
   DenseMap<Operation *, size_t> opIndexInUses;
-
-  /// Attributes and types are memoized and exist in tree structures with reuse:
-  /// naively scanning them can lead to exponential compile time behavior.  As
-  /// such, we memoize the attributes and types we've already checked that we
-  /// know have no parameters in them.
-  llvm::SmallDenseSet<Attribute> parameterLessAttrs;
-  llvm::SmallDenseSet<Type> parameterLessTypes;
 };
 } // namespace
 
 /// Walk the operation and all the operations in its body to find the
 /// definitions and uses of parameters.  This diagnoses and rejects parameter
 /// definitions in invalid positions as well.
-LogicalResult ParameterVerifier::collectParameterDefsAndUses() {
+LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
   // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
   // walk may need to be adjusted if we have any.
   topLevelDeclOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
-    curOperationCollecting = bodyOp;
+    curLocationCollecting = bodyOp->getLoc();
 
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
@@ -166,7 +293,7 @@ LogicalResult ParameterVerifier::collectParameterDefsAndUses() {
       collectParameterUsesFromType(type, paramUses);
 
     // We're done collecting from this operation.
-    curOperationCollecting = nullptr;
+    curLocationCollecting = None;
 
     // Scan the region list if present.  The walker will automatically recurse
     // for us, but we have to check the block arguments.
@@ -204,83 +331,9 @@ LogicalResult ParameterVerifier::collectParameterDefsAndUses() {
   return failure(hadError);
 }
 
-/// Scan the specified attribute and its recursive uses, diagnosing incorrect
-/// parameter declarations and collecting parameter uses.
-void ParameterVerifier::collectParameterUsesFromAttr(
-    Attribute attr, SmallVector<ParamDeclRefAttr> &uses) {
-  // If we have already scanned it and know that it has no parameters in it,
-  // return early.
-  if (!attr || parameterLessAttrs.contains(attr))
-    return;
-
-  // Collect parameter references.
-  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
-    uses.push_back(paramRef);
-    return;
-  }
-
-  if (symbolTables)
-    if (auto symbolConstant = attr.dyn_cast<SymbolConstantAttr>())
-      verifySymbolConstantAttr(symbolConstant);
-
-  size_t oldSize = uses.size();
-
-  // Otherwise we haven't processed this, check the attribute's type if it has
-  // one.
-  if (auto typedAttr = attr.dyn_cast<TypedAttr>())
-    collectParameterUsesFromType(typedAttr.getType(), uses);
-
-  // Recursively check for any nested types/attributes, e.g. the elements of an
-  // array attribute.
-  if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
-    itf.walkImmediateSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
-        [&](Type type) { collectParameterUsesFromType(type, uses); });
-  }
-
-  // If the attribute had no uses, remember that so we don't have to re-scan it
-  // in the future.
-  if (oldSize == uses.size())
-    parameterLessAttrs.insert(attr);
-}
-
-/// Scan the specified type and its recursive uses, diagnosing incorrect
-/// parameter declarations and collecting parameter uses.
-void ParameterVerifier::collectParameterUsesFromType(
-    Type type, SmallVector<ParamDeclRefAttr> &uses) {
-  // Ignore types we have already scanned.
-  if (!type || parameterLessTypes.count(type))
-    return;
-
-  // Signature types are effectively "isolated from above" in that they may have
-  // their own local parameter declarations that are used in their type
-  // signature, but they cannot "capture" parameters from the enclosing context.
-  // As such, they are always considered "parameterless".
-  bool skipScan = type.isa<SignatureType>();
-
-  if (!skipScan) {
-    // Recursively check for any nested types, e.g. the input/outputs of a
-    // function type, types like !meta.scalar<ty> etc.
-    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
-      size_t oldSize = uses.size();
-      itf.walkImmediateSubElements(
-          [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
-          [&](Type type) { collectParameterUsesFromType(type, uses); });
-
-      // If the attribute had uses of a parameter, don't consider it
-      // "parameterless".  We want other operations using the same type to
-      // record the uses as well.
-      if (oldSize != uses.size())
-        return;
-    }
-  }
-
-  parameterLessTypes.insert(type);
-}
-
 /// Once all the defs and uses of parameters are collected, verify that the
 /// uses are correct.
-LogicalResult ParameterVerifier::checkParameterUses() {
+LogicalResult DeclParameterVerifier::checkParameterUses() {
   // Take a look at all the parameter uses to verify they are referencing
   // defined parameters and that they are used with the correct type.
   size_t usersAndDeclarersIndex = 0;
@@ -316,10 +369,11 @@ LogicalResult ParameterVerifier::checkParameterUses() {
 /// The first time we encounter a SymbolConstantAttr, check to see if the
 /// declaration it refers to agrees with the value and parameter
 /// specification.
-void ParameterVerifier::verifySymbolConstantAttr(
+void DeclParameterVerifier::verifySymbolConstantAttr(
     SymbolConstantAttr symbolConstant) {
-  assert(symbolTables &&
-         "Should only verify when we have a set of symbol tables");
+  // We only check this during the op verification phase.
+  if (!symbolTables)
+    return;
 
   auto symbol = symbolConstant.getSymbol();
   auto decl = dyn_cast_or_null<KGENDeclInterface>(
@@ -327,7 +381,7 @@ void ParameterVerifier::verifySymbolConstantAttr(
 
   if (!decl) {
     hadError = true;
-    curOperationCollecting->emitError("'")
+    emitError(curLocationCollecting.value(), "'")
         << symbol << "' does not reference a KGEN declaration";
     return;
   }
@@ -339,7 +393,7 @@ void ParameterVerifier::verifySymbolConstantAttr(
   SmallString<32> paramName("@");
   paramName.append(symbol.getLeafReference());
   if (failed(verifyDeclSignaturesMatch(
-          "symbol use", signatureType, curOperationCollecting->getLoc(),
+          "symbol use", signatureType, curLocationCollecting.value(),
           paramName.c_str(), decl.getSignature(), decl->getLoc())))
     hadError = true;
 }
@@ -359,7 +413,7 @@ class ParameterUseDefGraphNodeIterator;
 /// node acts like it points to all the using operations.
 class ParameterUseDefGraphNode {
 public:
-  ParameterUseDefGraphNode(const ParameterVerifier *verifier, Operation *op)
+  ParameterUseDefGraphNode(const DeclParameterVerifier *verifier, Operation *op)
       : verifier(verifier), op(op) {}
 
   bool operator==(const ParameterUseDefGraphNode &rhs) const {
@@ -372,7 +426,7 @@ public:
 
   /// return the operation this node corresponds to.
   Operation *getOperation() const { return op; }
-  const ParameterVerifier *getVerifier() const { return verifier; }
+  const DeclParameterVerifier *getVerifier() const { return verifier; }
 
   /// Given a normal node (not the entry node) return the parameter uses.
   ArrayRef<ParamDeclRefAttr> getUsesForOperation() const {
@@ -386,7 +440,7 @@ public:
 private:
   friend class ParameterUseDefGraphNodeIterator;
   friend struct llvm::DenseMapInfo<ParameterUseDefGraphNode>;
-  const ParameterVerifier *verifier;
+  const DeclParameterVerifier *verifier;
   Operation *op;
 };
 } // namespace
@@ -483,17 +537,17 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
   return ParameterUseDefGraphNodeIterator(*this, endIndex);
 }
 
-/// The ParameterVerifier graph is defined with `ParameterUseDefGraphNode` nodes
-/// and `ParameterUseDefGraphNodeIterator` iterators.
+/// The DeclParameterVerifier graph is defined with `ParameterUseDefGraphNode`
+/// nodes and `ParameterUseDefGraphNodeIterator` iterators.
 namespace llvm {
 template <>
-struct GraphTraits<ParameterVerifier *> {
+struct GraphTraits<DeclParameterVerifier *> {
   using NodeRef = ParameterUseDefGraphNode;
   using ChildIteratorType = ParameterUseDefGraphNodeIterator;
 
   /// The "entry node" is a virtual node with a null Operation* that acts like
   /// it points to all the using operations.
-  static NodeRef getEntryNode(const ParameterVerifier *verifier) {
+  static NodeRef getEntryNode(const DeclParameterVerifier *verifier) {
     return ParameterUseDefGraphNode(verifier, nullptr);
   }
 
@@ -571,7 +625,7 @@ static LogicalResult diagnoseCycle(ArrayRef<ParameterUseDefGraphNode> nodes,
 /// Reorder the declsAndUses list to be in correct top-down order.  This also
 /// verifies that the parameter use-def graph has a partial ordering,
 /// diagnosing any cycles that are present.
-LogicalResult ParameterVerifier::checkAndReorderParameterUseDefGraph() {
+LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
   // Now that we've verified simple properties, check that there is a
   // defininable partial order between operations that define an use parameters.
   // We do this by using LLVM's SCC iterator to walk the graph imposed by these
@@ -635,7 +689,7 @@ FailureOr<ParameterDeclsAndUses>
 ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     KGENDeclInterface topLevelOp, SymbolTableCollection *symbolTables) {
   ParameterDeclsAndUses result;
-  ParameterVerifier verifier(topLevelOp, result, symbolTables);
+  DeclParameterVerifier verifier(topLevelOp, result, symbolTables);
 
   // Start by doing a pass over the operation and all the operations in its
   // body to find the definitions and uses of parameters.

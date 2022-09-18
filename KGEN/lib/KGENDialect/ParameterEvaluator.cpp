@@ -139,14 +139,20 @@ Type ParameterEvaluator::getReboundType(Type type) {
   Type result = type;
 
   // Rebind types in aggregates that implement SubElementTypeInterface.
-  if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
-    SmallVector<Attribute> newAttrs;
-    SmallVector<Type> newTypes;
+  // Signature types are special because they are "isolated from above" with
+  // respect to their contexts, so we don't rebind within them.
+  if (!type.isa<SignatureType>()) {
+    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+      SmallVector<Attribute> newAttrs;
+      SmallVector<Type> newTypes;
 
-    itf.walkImmediateSubElements(
-        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
-        [&](Type type) { newTypes.push_back(getReboundType(type)); });
-    result = itf.replaceImmediateSubElements(newAttrs, newTypes);
+      itf.walkImmediateSubElements(
+          [&](Attribute attr) {
+            newAttrs.push_back(getReboundAttribute(attr));
+          },
+          [&](Type type) { newTypes.push_back(getReboundType(type)); });
+      result = itf.replaceImmediateSubElements(newAttrs, newTypes);
+    }
   }
 
   return rewrittenTypes[type] = result;
