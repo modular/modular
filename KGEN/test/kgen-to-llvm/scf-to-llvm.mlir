@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -convert-kgen-to-llvm=index-bitwidth=64 -convert-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
 
 llvm.func @get(i32) -> i32
 

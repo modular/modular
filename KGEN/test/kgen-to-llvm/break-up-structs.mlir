@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=break-up-structs="kernel" | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm=break-up-structs="kernel" | FileCheck %s
 
 // CHECK-LABEL: @kernel
 // CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8

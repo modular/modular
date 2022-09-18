@@ -1,4 +1,4 @@
-//===- ConvertSCFToLLVM.cpp -----------------------------------------------===//
+//===- LowerSCFToLLVM.cpp -------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -205,14 +205,13 @@ static void populateSCFToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct ConvertSCFToLLVMPass
-    : public ConvertSCFToLLVMBase<ConvertSCFToLLVMPass> {
+struct LowerSCFToLLVMPass : public LowerSCFToLLVMBase<LowerSCFToLLVMPass> {
 public:
   void runOnOperation() override;
 };
 } // namespace
 
-void ConvertSCFToLLVMPass::runOnOperation() {
+void LowerSCFToLLVMPass::runOnOperation() {
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<mlir::scf::SCFDialect>();
@@ -234,6 +233,6 @@ void ConvertSCFToLLVMPass::runOnOperation() {
     return signalPassFailure();
 }
 
-std::unique_ptr<mlir::Pass> M::KGEN::createConvertSCFToLLVMPass() {
-  return std::make_unique<ConvertSCFToLLVMPass>();
+std::unique_ptr<mlir::Pass> M::KGEN::createLowerSCFToLLVMPass() {
+  return std::make_unique<LowerSCFToLLVMPass>();
 }

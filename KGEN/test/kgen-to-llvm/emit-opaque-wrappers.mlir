@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm='break-up-structs=kernel emit-opaque-wrappers' | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm='break-up-structs=kernel emit-opaque-wrappers' | FileCheck %s
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {opaque_wrapper = @kernel_opaque_wrapper}

@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -convert-kgen-to-llvm=break-up-structs="kernel" -verify-diagnostics
+// RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm=break-up-structs="kernel" -verify-diagnostics
 
 // expected-error @below {{cannot find func}}
 module {}

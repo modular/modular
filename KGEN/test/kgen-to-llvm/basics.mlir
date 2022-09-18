@@ -1,5 +1,5 @@
-// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
-// RUN: kgen-opt -split-input-file -convert-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
+// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
 
 // CHECK-LABEL: llvm.func private @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)

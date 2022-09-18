@@ -23,7 +23,7 @@ def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPToPOP
+// LowerZAPToPOP
 //===----------------------------------------------------------------------===//
 
 def LowerZAPToPOP : Pass<"lower-zap-to-pop"> {
@@ -39,10 +39,10 @@ def LowerZAPToPOP : Pass<"lower-zap-to-pop"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENToLLVM
+// LowerKGENToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
+def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower the `kgen` and `meta` dialects to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion from the fully-elaborated and specified
@@ -108,7 +108,7 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
 
   // We generate the LLVM dialect.
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createConvertKGENToLLVMPass()";
+  let constructor = "::M::KGEN::createLowerKGENToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -124,10 +124,10 @@ def ConvertKGENToLLVM : Pass<"convert-kgen-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPToLLVM
+// LowerPOPToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm"> {
+def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
   let summary = "Lower the `pop` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion of fully-elaborated and specified `pop`
@@ -135,7 +135,7 @@ def ConvertPOPToLLVM : Pass<"convert-pop-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createConvertPOPToLLVMPass()";
+  let constructor = "::M::KGEN::createLowerPOPToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -167,19 +167,19 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertSCFToLLVM
+// LowerSCFToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertSCFToLLVM : Pass<"convert-scf-to-llvm"> {
+def LowerSCFToLLVM : Pass<"lower-scf-to-llvm"> {
   let summary = "Lower the `scf` dialect to the `llvm` dialect.";
   let description = [{
     This pass converts structured control-flow operations to LLVM operations and
     control-flow graph regions. Because this pass generates CFG regions, it must
-    run after `convert-kgen-to-llvm`, which lowers `kgen.func` to `llvm.func`.
+    run after `lower-kgen-to-llvm`, which lowers `kgen.func` to `llvm.func`.
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createConvertSCFToLLVMPass()";
+  let constructor = "::M::KGEN::createLowerSCFToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",

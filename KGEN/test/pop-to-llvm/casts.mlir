@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='kgen.func(convert-pop-to-llvm)' -convert-kgen-to-llvm -canonicalize %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='kgen.func(lower-pop-to-llvm)' -lower-kgen-to-llvm -canonicalize %s | FileCheck %s
 
 // CHECK-LABEL: @scalar_bitcast
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
