@@ -1,4 +1,4 @@
-//===- LowerKGENToLLVM.cpp ------------------------------------------------===//
+//===- KGENToLLVMPipeline.cpp ---------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
