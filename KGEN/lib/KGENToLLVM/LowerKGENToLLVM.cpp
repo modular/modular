@@ -292,19 +292,19 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertMetaBufferRebind
+// ConvertMetaBufferConvert
 //===----------------------------------------------------------------------===//
 
-/// A buffer rebind can cast between a buffer with an unspecified size or
-/// element type to one with specified size or element type. When that happens,
-/// generate the necessary struct unpacking and repacking and bitcasts.
-class ConvertMetaBufferRebind
-    : public mlir::ConvertOpToLLVMPattern<BufferRebindOp> {
+/// This operation can convert a buffer with an unspecified size or element type
+/// to one with specified size or element type. Generate the necessary struct
+/// unpacking, repacking, bitcasts.
+class ConvertMetaBufferConvert
+    : public mlir::ConvertOpToLLVMPattern<BufferConvertOp> {
 public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(BufferRebindOp op, BufferRebindOpAdaptor adaptor,
+  matchAndRewrite(BufferConvertOp op, BufferConvertOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     BufferDescriptorBuilder in(op.getInput(), op.getLoc(), rewriter,
                                *getTypeConverter());
@@ -369,7 +369,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertMetaBufferConstruct,
       ConvertMetaBufferDType,
       ConvertMetaBufferSize,
-      ConvertMetaBufferRebind,
+      ConvertMetaBufferConvert,
       ConvertMetaCastFromBuiltin,
       ConvertMetaCastToBuiltin
       // clang-format on

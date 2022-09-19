@@ -42,34 +42,34 @@ kgen.generator @meta_buffer_address<dt: dtype, size>(
   kgen.return
 }
 
-// CHECK-LABEL: @meta_buffer_rebind
+// CHECK-LABEL: @meta_buffer_convert
 // CHECK-SAME: %[[ARG0:.*]]:
-kgen.generator @meta_buffer_rebind<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) {
-  // CHECK: %[[V0:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, f32>
-  %0 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
-  // CHECK: %[[V1:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<?, ?>
-  %1 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
-  // CHECK: %[[V2:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  %2 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  // CHECK: %[[V3:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, ?>
-  %3 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
-  // CHECK: %[[V4:.*]] = meta.buffer.rebind %[[V2]] : !meta.buffer<?, f32> to !meta.buffer<42, f32>
-  %4 = meta.buffer.rebind %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
-  // CHECK: %[[V5:.*]] = meta.buffer.rebind %[[V3]] : !meta.buffer<42, ?> to !meta.buffer<42, f32>
-  %5 = meta.buffer.rebind %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
-  // CHECK: %[[V6:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<42, f32>
-  %6 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
+kgen.generator @meta_buffer_convert<size, size2, dt: dtype>(%arg0: !meta.buffer<?, ?>) {
+  // CHECK: %[[V0:.*]] = meta.buffer.convert %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, f32>
+  %0 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, f32>
+  // CHECK: %[[V1:.*]] = meta.buffer.convert %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<?, ?>
+  %1 = meta.buffer.convert %0 : !meta.buffer<42, f32> to !meta.buffer<?, ?>
+  // CHECK: %[[V2:.*]] = meta.buffer.convert %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  %2 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  // CHECK: %[[V3:.*]] = meta.buffer.convert %[[ARG0]] : !meta.buffer<?, ?> to !meta.buffer<42, ?>
+  %3 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<42, ?>
+  // CHECK: %[[V4:.*]] = meta.buffer.convert %[[V2]] : !meta.buffer<?, f32> to !meta.buffer<42, f32>
+  %4 = meta.buffer.convert %2 : !meta.buffer<?, f32> to !meta.buffer<42, f32>
+  // CHECK: %[[V5:.*]] = meta.buffer.convert %[[V3]] : !meta.buffer<42, ?> to !meta.buffer<42, f32>
+  %5 = meta.buffer.convert %3 : !meta.buffer<42, ?> to !meta.buffer<42, f32>
+  // CHECK: %[[V6:.*]] = meta.buffer.convert %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<42, f32>
+  %6 = meta.buffer.convert %0 : !meta.buffer<42, f32> to !meta.buffer<42, f32>
 
 
-  // Casts between different unknown parameters are ok.
-  // CHECK: %[[V7:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, f32>
-  %7 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
+  // Conversions between different unknown parameters are ok.
+  // CHECK: %[[V7:.*]] = meta.buffer.convert %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, f32>
+  %7 = meta.buffer.convert %0 : !meta.buffer<42, f32> to !meta.buffer<size, f32>
 
-  // CHECK: %[[V8:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, dt>
-  %8 = meta.buffer.rebind %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
+  // CHECK: %[[V8:.*]] = meta.buffer.convert %[[V0]] : !meta.buffer<42, f32> to !meta.buffer<size, dt>
+  %8 = meta.buffer.convert %0 : !meta.buffer<42, f32> to !meta.buffer<size, dt>
 
-  // CHECK: %[[V9:.*]] = meta.buffer.rebind %[[V8]] : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
-  %9 = meta.buffer.rebind %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
+  // CHECK: %[[V9:.*]] = meta.buffer.convert %[[V8]] : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
+  %9 = meta.buffer.convert %8 : !meta.buffer<size, dt> to !meta.buffer<size2, dt>
 
   kgen.return
 }

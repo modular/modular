@@ -17,20 +17,6 @@ class MetaOp<string mnemonic, list<Trait> traits = []> :
     Op<MetaDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// RebindOp
-//===----------------------------------------------------------------------===//
-
-class RebindOp<string mnemonic, Type type> : MetaOp<mnemonic, [NoSideEffect]> {
-  let arguments = (ins type:$input);
-  let results = (outs type:$output);
-  let assemblyFormat = [{
-    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
-  }];
-  let hasVerifier = true;
-  let hasFolder = true;
-}
-
-//===----------------------------------------------------------------------===//
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 
@@ -149,42 +135,52 @@ def BufferAddressOp : MetaOp<"buffer.address", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
-// BufferRebindOp
+// BufferConvertOp
 //===----------------------------------------------------------------------===//
 
-def BufferRebindOp : RebindOp<"buffer.rebind", BufferType> {
-  let summary = "rebind a buffer type";
+def BufferConvertOp : MetaOp<"buffer.convert", [NoSideEffect]> {
+  let summary = "convert a buffer type";
   let description = [{
-    Rebind a parameterized buffer type to another buffer type. This operation
-    is used to convert between buffer types that are potentially dynamically
-    equal by specifying or de-specifying the size or dtype of the buffer.
+    The `meta.buffer.convert` operation converts a buffer type to another buffer
+    type. This operation converts between buffer types. It can convert between
+    buffers with static sizes and dynamic sizes and between those of static
+    dtypes and dynamic dtypes.
 
     Example:
 
     ```mlir
-    // Rebind an unknown dtype to a concrete dtype.
-    %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+    // Convert a dynamic buffer to a dynamic size buffer.
+    %0 = meta.buffer.convert %a : !meta.buffer<?, ?> to !meta.buffer<?, f32>
 
-    // Rebind a concrete size to an unknown size.
-    %1 = meta.buffer.rebind %b : !meta.buffer<1024, f32> to !meta.buffer<?, f32>
+    // Convert a static buffer to a dynamic size buffer.
+    %1 = meta.buffer.convert %b : !meta.buffer<1024, f32> to
+                                  !meta.buffer<?, f32>
 
-    // Rebind parameterized a size and dtype to a concrete size and dtype.
-    %2 = meta.buffer.rebind %c : !meta.buffer<size, type> to !meta.buffer<1024, ui32>
-
-    // Rebind a parameterized size to an unknown size.
-    %3 = meta.buffer.rebind %d : !meta.buffer<size, f32> to !meta.buffer<?, f32>
+    // Convert a dynamic dtype buffer to a dynamic size buffer.
+    %2 = meta.buffer.convert %c : !meta.buffer<32, ?> to !meta.buffer<?, f32>
     ```
 
-    Rebinding between different concrete sizes or dtypes is not invalid:
+    The operation cannot, however, convert between buffer types of the same
+    arity with different sizes or dtypes.
 
-    ```
-    // ERROR: Cannot rebind different concrete sizes.
-    %0 = meta.buffer.rebind %a : !meta.buffer<32, ?> to !meta.buffer<64, ?>
+    ```mlir
+    // ERROR: Cannot convert between different sizes.
+    %0 = meta.buffer.convert %a : !meta.buffer<32, ?> to !meta.buffer<64, ?>
 
-    // ERROR: Cannot rebind different concrete dtypes.
-    %0 = meta.buffer.rebind %b : !meta.buffer<?, ui32> to !meta.buffer<?, si32>
+    // ERROR: Cannot convert between different dtypes.
+    %0 = meta.buffer.convert %b : !meta.buffer<?, ui32> to
+                                  !meta.buffer<?, si32>
     ```
   }];
+
+  let arguments = (ins BufferType:$input);
+  let results = (outs BufferType:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
+
+  let hasVerifier = true;
+  let hasFolder = true;
 }
 
 //===----------------------------------------------------------------------===//

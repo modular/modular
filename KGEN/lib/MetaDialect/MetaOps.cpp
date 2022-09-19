@@ -22,44 +22,6 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// RebindOp
-//===----------------------------------------------------------------------===//
-
-/// Fold a rebind op if the input and output types are the same or through a
-/// transitory rebind.
-template <typename RebindOp>
-static OpFoldResult foldRebindOp(RebindOp op, ArrayRef<Attribute> operands) {
-  assert(operands.size() == 1 && "rebind op expected 1 operand");
-  // Fold cast x to same type.
-  if (op.getOperand().getType() == op.getType())
-    return op.getOperand();
-  // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = op.getOperand().template getDefiningOp<RebindOp>()) {
-    // A->B->A doesn't need a cast at all.
-    if (castOperand.getOperand().getType() == op.getType())
-      return castOperand.getOperand();
-    op.setOperand(castOperand.getOperand());
-    return op.getResult();
-  }
-
-  return {};
-}
-
-/// Check that two parameterized fields are the same if they are concrete.
-template <typename ConcreteType>
-static LogicalResult sameIfConcrete(Operation *op, TypedAttr lhs, TypedAttr rhs,
-                                    StringRef fieldStr) {
-  if (lhs == rhs || !lhs.isa_and_nonnull<ConcreteType>() ||
-      !rhs.isa_and_nonnull<ConcreteType>())
-    return success();
-
-  // TODO: Print these attributes prettier.
-  return op->emitError() << "input " << fieldStr << " '"
-                         << getParamAsString(lhs) << "' disagrees with result "
-                         << fieldStr << " '" << getParamAsString(rhs) << "'";
-}
-
-//===----------------------------------------------------------------------===//
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 
@@ -121,12 +83,26 @@ LogicalResult BufferAddressOp::inferReturnTypes(
 }
 
 //===----------------------------------------------------------------------===//
-// BufferRebindOp
+// BufferConvertOp
 //===----------------------------------------------------------------------===//
 
-/// Verifies that rebinding the input buffer to the result buffer is okay.
-/// Rebinding is allowed so long as there isn't a statically known problem.
-LogicalResult BufferRebindOp::verify() {
+/// Check that two parameterized fields are the same if they are concrete.
+template <typename ConcreteType>
+static LogicalResult sameIfConcrete(Operation *op, TypedAttr lhs, TypedAttr rhs,
+                                    StringRef fieldStr) {
+  if (lhs == rhs || !lhs.isa_and_nonnull<ConcreteType>() ||
+      !rhs.isa_and_nonnull<ConcreteType>())
+    return success();
+
+  // TODO: Print these attributes prettier.
+  return op->emitError() << "input " << fieldStr << " '"
+                         << getParamAsString(lhs) << "' disagrees with result "
+                         << fieldStr << " '" << getParamAsString(rhs) << "'";
+}
+
+/// Verifies that converting the input buffer to the result buffer is okay.
+/// Conversions are allowed so long as there isn't a statically known problem.
+LogicalResult BufferConvertOp::verify() {
   BufferType inputBufTy = getInput().getType().cast<BufferType>();
   BufferType resultBufTy = getType();
 
@@ -143,8 +119,21 @@ LogicalResult BufferRebindOp::verify() {
   return success();
 }
 
-OpFoldResult BufferRebindOp::fold(ArrayRef<Attribute> constants) {
-  return foldRebindOp(*this, constants);
+OpFoldResult BufferConvertOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "buffer convert expected 1 operand");
+  // Fold cast x to same type.
+  if (getOperand().getType() == getType())
+    return getOperand();
+  // Fold A->B->C casts into a cast of the original cast's operand.
+  if (auto castOperand = getOperand().getDefiningOp<BufferConvertOp>()) {
+    // A->B->A doesn't need a cast at all.
+    if (castOperand.getOperand().getType() == getType())
+      return castOperand.getOperand();
+    setOperand(castOperand.getOperand());
+    return getResult();
+  }
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
