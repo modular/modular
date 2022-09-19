@@ -353,6 +353,10 @@ OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
   return getValueAttr();
 }
 
+void ConstantOp::build(OpBuilder &b, OperationState &state, int64_t value) {
+  build(b, state, b.getIndexType(), b.getIndexAttr(value));
+}
+
 //===----------------------------------------------------------------------===//
 // BoolConstantOp
 //===----------------------------------------------------------------------===//

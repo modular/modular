@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_stack_allocation
-kgen.generator @zap_buffer_stack_allocation<type:dtype, size>() {
+kgen.generator @zap_buffer_stack_allocation<type: dtype, size>() {
   // CHECK: zap.buffer.stack_allocation : !meta.buffer<4, f32>
   %0 = zap.buffer.stack_allocation : !meta.buffer<4, f32>
   // CHECK: zap.buffer.stack_allocation : !meta.buffer<size, f32>
@@ -57,6 +57,14 @@ kgen.generator @zap_buffer_store<size, type: dtype>(
   kgen.return
 }
 
+// CHECK-LABEL: @zap_buffer_constant
+kgen.generator @zap_buffer_constant<size, type: dtype>() {
+  // CHECK: zap.buffer.constant(dense<[1.{{0+}}e+01, 1.2{{0+}}e+01, -2.{{0+}}e+00]> : tensor<3xf32>) : f32
+  %0 = zap.buffer.constant(dense<[10.0, 12.0, -2.0]> : tensor<3xf32>) : f32
+  // CHECK: zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+  %1 = zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+  kgen.return
+}
 
 // CHECK-LABEL: @zap_simd_load
 // CHECK-SAME: %[[A:[a-z0-9]+]]:

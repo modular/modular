@@ -395,6 +395,8 @@ def Index_ConstantOp : IndexOp<"constant", [ConstantLike]> {
   let results = (outs Index:$result);
   let assemblyFormat = "attr-dict $value";
   let hasFolder = 1;
+
+  let builders = [OpBuilder<(ins "int64_t":$value)>];
 }
 
 //===----------------------------------------------------------------------===//

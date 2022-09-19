@@ -53,6 +53,45 @@ def ZAP_BufferStackAllocationOp : ZAPOp<"buffer.stack_allocation"> {
 }
 
 //===----------------------------------------------------------------------===//
+// BufferConstant
+//===----------------------------------------------------------------------===//
+
+def IntOrFPElementsAttr
+  : ElementsAttrBase<CPred<"$_self.isa<mlir::DenseIntOrFPElementsAttr>()">,
+                     "and int or float elements attribute"> {
+  let storageType = "mlir::DenseIntOrFPElementsAttr";
+  let returnType = "mlir::DenseIntOrFPElementsAttr";
+  let convertFromStorage = "$_self";
+}
+
+def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
+  let summary = "fill a buffer with constant values";
+  let description = [{
+    The `zap.buffer.constant` operation returns a global constant buffer with
+    the specified constant values. The result buffer always has a statically
+    known size. The memory semantics of the operation are similar to
+    `static const`. Writing to the buffer is undefined behaviour.
+
+    Example:
+
+    ```mlir
+    %0 = zap.buffer.constant(dense<[10.0, 12.0, -2.0]> : tensor<3xf32>) : f32
+    %1 = zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+    ```
+  }];
+
+  let arguments = (ins IntOrFPElementsAttr:$values);
+  let results = (outs Res<ConcreteBuffer, "", [MemAlloc, MemWrite]>:$result);
+
+  let assemblyFormat = [{
+    `(` $values `)` attr-dict `:`
+    custom<ConstantBufferDType>(ref($values), type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 
@@ -71,7 +110,7 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
     ```
   }];
 
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemRead]>:$buffer,
+  let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
                        Index:$position);
   let results = (outs ScalarType:$result);
 
@@ -99,7 +138,7 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
     ```
   }];
 
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemWrite]>:$buffer,
+  let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
                        ScalarType:$value, Index:$position);
 
   let assemblyFormat = [{
@@ -126,7 +165,7 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
     ```
   }];
 
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemRead]>:$buffer,
+  let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
                        Index:$position);
   let results = (outs SIMDType:$result);
 
@@ -155,7 +194,7 @@ def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
     ```
   }];
 
-  let arguments = (ins Arg<ConcreteBuffer, "", [MemWrite]>:$buffer,
+  let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
                        SIMDType:$value, Index:$position);
 
   let assemblyFormat = [{

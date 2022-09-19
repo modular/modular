@@ -126,11 +126,21 @@ static ErrorOr<TypedAttr> reifyPrimitiveConstant(TypedAttr attr, Type type) {
     values.push_back(result.takeValue());
   }
 
-  return DenseElementsAttr::get(
-      VectorType::get(value.getType().cast<VectorType>().getShape(),
-                      // SIMD vectors cannot be empty.
-                      values.front().cast<TypedAttr>().getType()),
-      values);
+  // Convert the dtype to an element type.
+  Type elType;
+  if (dtype.isInt()) {
+    elType = IntegerType::get(attr.getContext(), dtype.getWidthInBits(),
+                              dtype.isSInt()
+                                  ? IntegerType::SignednessSemantics::Signed
+                                  : IntegerType::SignednessSemantics::Unsigned);
+  } else {
+    elType = getEquivalentFloatType(attr.getContext(), dtype);
+  }
+  return DenseElementsAttr::get(value.getType()
+                                    .cast<mlir::SubElementTypeInterface>()
+                                    .replaceImmediateSubElements({}, {elType})
+                                    .cast<ShapedType>(),
+                                values);
 }
 
 ErrorOrSuccess ConstantOp::finalizeElaboration() {
@@ -343,7 +353,11 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
-  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), getType());
+  Type elType = getType().resolveElementType();
+  if (auto array = elType.dyn_cast<ArrayType>())
+    elType = array.resolveElementType();
+
+  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), elType);
   if (value.isError())
     return value.takeError();
   setValueAttr(value.takeValue());
