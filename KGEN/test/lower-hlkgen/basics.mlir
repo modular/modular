@@ -47,8 +47,8 @@ hlkgen.generator @add_64<ty: dtype>(%arg0 : !meta.scalar<f64>, %arg1 : !meta.sca
 // CHECK-SAME: %[[ARG0:.*]]: !meta.scalar<{{.*}}>, %[[ARG1:.*]]: !meta.scalar<{{.*}}>
 // CHECK-NEXT:    constraints <[eq(:dtype ty, f64), "argument #0 specifies 'ty' = f64", #
 // CHECK-NEXT:    implements @add {
-// CHECK-NEXT:    %[[V0:.*]] = meta.scalar.rebind %[[ARG0]]
-// CHECK-NEXT:    %[[V1:.*]] = meta.scalar.rebind %[[ARG1]]
+// CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]]
+// CHECK-NEXT:    %[[V1:.*]] = kgen.rebind %[[ARG1]]
 // CHECK-NEXT:    %[[V2:.*]] = kgen.call @add_64<ty: dtype = ty>(%[[V0]], %[[V1]])
 
 //===----------------------------------------------------------------------===//
@@ -70,7 +70,7 @@ hlkgen.generator @arg_inf<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f3
 // CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<size, ty>) -> index
 // CHECK-NEXT:  constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
 // CHECK-NEXT:  implements @bufitf {
-// CHECK-NEXT:    %[[V0:.*]] = meta.buffer.rebind %[[ARG0]] : !meta.buffer<size, ty> to !meta.buffer<size, f32>
+// CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]] : !meta.buffer<size, ty> to !meta.buffer<size, f32>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> xyz>(%[[V0]]) : (!meta.buffer<size, f32>) -> index
 // CHECK-NEXT:    kgen.return<xyz = xyz> %[[V1]] : index
 // CHECK-NEXT:  }
@@ -101,7 +101,7 @@ hlkgen.generator @returnbufItf_impl(%a : !meta.buffer<123, f32>) -> !meta.buffer
 // CHECK-NEXT:     [eq(size, 123), "result #0 specifies 'size' = 123", #
 // CHECK-NEXT:   implements @returnbufItf {
 // CHECK-NEXT:   %[[V0:.*]] = kgen.call @returnbufItf_impl<size = size, ty: dtype = ty>(%[[ARG0]]
-// CHECK-NEXT:   %[[V1:.*]] = meta.buffer.rebind %[[V0]] : !meta.buffer<123, f32> to !meta.buffer<size, ty>
+// CHECK-NEXT:   %[[V1:.*]] = kgen.rebind %[[V0]] : !meta.buffer<123, f32> to !meta.buffer<size, ty>
 // CHECK-NEXT:   kgen.return %[[V1]]
 // CHECK-NEXT: }
 
