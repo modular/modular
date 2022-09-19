@@ -32,7 +32,7 @@ using namespace M::KGEN;
 namespace {
 class ParameterCollector {
 public:
-  virtual ~ParameterCollector() {}
+  virtual ~ParameterCollector() = default;
 
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
@@ -220,8 +220,7 @@ struct DeclParameterVerifier final : public ParameterCollector {
     return parameters.usersAndDeclarers[it->second].second;
   }
 
-  virtual void
-  verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
+  void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
 
   // This is the top level declaration that we're analyzing.
   // TODO: Make this a KGENDeclInterface.
