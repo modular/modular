@@ -97,9 +97,9 @@ def SignatureType
 
   let mnemonic = "signature";
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
-                        "ParamDeclArrayAttr":$resultParams,
+                        "TypeArrayAttr":$resultParamTypes,
                         "mlir::FunctionType":$values);
-  let assemblyFormat = "`<` $inputParams `,` $resultParams `,` $values `>`";
+  let assemblyFormat = "`<` $inputParams `,` $resultParamTypes `,` $values `>`";
 
   // Not all signatures are valid, their may only refer to parameters defined
   // within its input parameter list and they must have the right types.

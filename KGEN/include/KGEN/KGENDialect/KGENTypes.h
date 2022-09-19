@@ -15,6 +15,7 @@
 
 namespace M::KGEN {
 class ParamDeclArrayAttr;
+class TypeArrayAttr;
 } // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES

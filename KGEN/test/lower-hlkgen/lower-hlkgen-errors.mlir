@@ -31,13 +31,13 @@ hlkgen.generator @impl(%arg0 : !meta.buffer<4, f32>) implements @itf {
 
 // -----
 
-kgen.generator.interface @bufitf<size, ty: dtype -> xyz>(!meta.buffer<size, ty>) -> index
+kgen.generator.interface @bufitf<size, ty: dtype -> index>(!meta.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
 
 // expected-error @+2 {{constraint contradiction detected: "argument #0 specifies 'ty' = f32"}}
 // expected-note @+1 {{generator declared here}}
-hlkgen.generator @impl<size, ty: dtype -> xyz>(%arg0: !meta.buffer<size, f32>) -> index
+hlkgen.generator @impl<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f32>) -> index
   // This has an explicit constraint saying it must be f64.
   // expected-note @below {{previously constrained "someone told us 'ty' should be f64 dontcha know"}}
   constraints <[eq(:dtype ty, f64), "someone told us 'ty' should be f64 dontcha know"]>

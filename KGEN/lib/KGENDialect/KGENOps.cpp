@@ -357,7 +357,7 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
                                               getResultTypes())))
     return failure();
 
@@ -392,15 +392,15 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 /// it in.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
                    StringAttr visibility, FunctionType signature,
-                   ArrayRef<ParamDeclAttr> outputParams) {
+                   ArrayRef<Type> outputParamTypes) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(SymbolTable::getVisibilityAttrName(), visibility);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
   result.addAttribute("paramDecls", builder.getAttr<ParamDeclArrayAttr>(
                                         ArrayRef<ParamDeclAttr>()));
-  result.addAttribute("resultParamDecls",
-                      builder.getAttr<ParamDeclArrayAttr>(outputParams));
+  result.addAttribute("resultParamTypes",
+                      builder.getAttr<TypeArrayAttr>(outputParamTypes));
   result.addRegion();
 }
 
@@ -408,9 +408,9 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 /// all the block arguments.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
                    StringAttr visibility, FunctionType signature,
-                   ArrayRef<ParamDeclAttr> outputParams,
+                   ArrayRef<Type> outputParamTypes,
                    ArrayRef<Location> argLocs) {
-  build(builder, result, name, visibility, signature, outputParams);
+  build(builder, result, name, visibility, signature, outputParamTypes);
 
   // Create a block for the body.
   auto *bodyRegion = result.regions[0].get();
@@ -441,7 +441,7 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
                                               getResultTypes())))
     return failure();
 
@@ -542,7 +542,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // results don't need to match, but the parameter names on the argument
   // bindings do.  The types always need to match.
   auto calleeInputParamDecls = callee.getInputParamDecls();
-  auto calleeOutputParamDecls = callee.getResultParamDecls();
+  auto calleeOutputParamTypes = callee.getResultParamTypes();
 
   // Check the parameter values specified to the input parameters.
   ArrayRef<ParamBindAttr> callerInputParams = getParamValues();
@@ -600,8 +600,8 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
       /// Check result parameter types.
       verifyMatchingCallLists(getParamDeclType(callerOutputParamDecls),
-                              getParamDeclType(calleeOutputParamDecls), *this,
-                              callee, "output parameter", "type")) {
+                              calleeOutputParamTypes, *this, callee,
+                              "output parameter", "type")) {
     return failure();
   }
 
@@ -661,24 +661,21 @@ OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
 
 /// Containers verify that the operands of this ReturnOp match the specified set
 /// of types.
-LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<ParamDeclAttr> paramDecls,
+LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
                                            TypeRange types) {
   // Check the parameters match up.
   auto returnedParams = getParameters();
-  if (returnedParams.size() != paramDecls.size())
+  if (returnedParams.size() != paramResultTypes.size())
     return emitOpError("expected ")
-           << paramDecls.size() << " parameters for enclosing op";
+           << paramResultTypes.size() << " parameters for enclosing op";
 
-  for (size_t i = 0, e = returnedParams.size(); i != e; ++i) {
-    auto returned = returnedParams[i].cast<ParamBindAttr>();
-    auto decl = paramDecls[i];
-    if (returned.getName() != decl.getName())
+  for (size_t i = 0, e = paramResultTypes.size(); i != e; ++i) {
+    auto returnedDecl = returnedParams[i];
+    auto expectedTy = paramResultTypes[i];
+    if (returnedDecl.getType() != expectedTy)
       return emitOpError("parameter #")
-             << i << " is named " << returned.getName() << " but should be "
-             << decl.getName();
-    if (returned.getType() != decl.getType())
-      return emitOpError("parameter #") << i << " has type " << returned
-                                        << " but should be " << decl.getType();
+             << i << " has type " << returnedDecl.getType() << " but should be "
+             << expectedTy;
   }
 
   // Verify our result types match up with the enclosing result type.

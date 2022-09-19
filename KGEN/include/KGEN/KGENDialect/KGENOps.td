@@ -35,7 +35,7 @@ def FuncOp
                        StrAttr:$sym_visibility,
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       ParamDeclArrayAttr:$resultParamDecls);
+                       KTypeArrayAttr:$resultParamTypes);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{
@@ -61,12 +61,12 @@ def FuncOp
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$visibility,
                    "FunctionType":$signature,
-                   "ArrayRef<ParamDeclAttr>":$outputParams)>,
+                   "ArrayRef<Type>":$outputParamTypes)>,
     // Create a func with an empty body, `argLocs` specifies the locations for
     // all the block arguments.
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$visibility,
                    "FunctionType":$signature,
-                   "ArrayRef<ParamDeclAttr>":$outputParams,
+                   "ArrayRef<Type>":$outputParamTypes,
                    "ArrayRef<Location>":$argLocs)>,
   ];
 }
@@ -89,7 +89,7 @@ def GeneratorOp
                        StrAttr:$sym_visibility,
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       ParamDeclArrayAttr:$resultParamDecls,
+                       KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);
@@ -131,7 +131,7 @@ def GeneratorInterfaceOp
                        StrAttr:$sym_visibility,
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       ParamDeclArrayAttr:$resultParamDecls,
+                       KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<EvalConfigurationArrayAttr>:$evalConfigs);
 
@@ -315,7 +315,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let extraClassDeclaration = [{
     /// Verify that the operands of this ReturnOp match the specified set of
     /// types.
-    LogicalResult checkArgumentTypes(ArrayRef<ParamDeclAttr> paramDecls,
+    LogicalResult checkArgumentTypes(ArrayRef<Type> resultParamTypes,
                                      TypeRange types);
   }];
 }

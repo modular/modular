@@ -35,7 +35,7 @@ def HLGeneratorOp
                        StrAttr:$sym_visibility,
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
-                       ParamDeclArrayAttr:$resultParamDecls,
+                       KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$body);

@@ -3,11 +3,11 @@
 kgen.include "library-test.mlir"
 
 // This is left untouched.
-// CHECK-LABEL: kgen.func @test0<() -> outParam>() -> index {
+// CHECK-LABEL: kgen.func @test0<() -> index>() -> index {
 // CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
 // CHECK-NEXT:  kgen.return<outParam = 123456> %[[V0]] : index
 // CHECK-NEXT: }
-kgen.func @test0<() -> outParam>() -> index {
+kgen.func @test0<() -> index>() -> index {
   %0 = kgen.param.constant = <1>
   kgen.return <outParam = 123456> %0 : index
 }
@@ -48,7 +48,7 @@ kgen.generator @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 
-kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
+kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 {
 
   %0 = kgen.param.constant = <add(size, 4)>
   %1 = kgen.param.constant : dtype = <type>
@@ -59,7 +59,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 
   kgen.return<out = mul(size, 2)> %arg0 : si32
 }
-// CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2"<() -> out>
+// CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2"<() -> index>
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
 // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant  = <46>
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant : dtype = <f32>
@@ -68,7 +68,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> out>(%arg0: si32) -> si32 {
 // CHECK-NEXT:   kgen.return<out = 84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 
-// CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.5"<() -> out>
+// CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.5"<() -> index>
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
 // CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant  = <23>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant : dtype = <si8>
@@ -120,25 +120,25 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 //===----------------------------------------------------------------------===//
 
 // CHECK-NOT: kgen.generator.interface @genItf
-kgen.generator.interface @genItf<x -> y>(si32) -> si32
+kgen.generator.interface @genItf<x -> index>(si32) -> si32
 
-// CHECK-LABEL: kgen.func @"genItf_impl1,x=42"<() -> y>(
+// CHECK-LABEL: kgen.func @"genItf_impl1,x=42"<() -> index>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return<y = 43> %[[ARG0]] : si32
 // CHECK-NEXT: }
-kgen.generator @genItf_impl1<x -> y>(%arg0: si32) -> si32
+kgen.generator @genItf_impl1<x -> index>(%arg0: si32) -> si32
   implements @genItf {
   "genItf_impl1"() { value = #kgen.param.decl.ref<x> : index} : () -> ()
   kgen.return<y = add(x, 1)> %arg0 : si32
 }
 
-// CHECK-LABEL: kgen.func @"genItf_impl2,x=42"<() -> y>(
+// CHECK-LABEL: kgen.func @"genItf_impl2,x=42"<() -> index>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return<y = 84> %[[ARG0]] : si32
 // CHECK-NEXT: }
-kgen.generator @genItf_impl2<x -> y>(%arg0: si32) -> si32
+kgen.generator @genItf_impl2<x -> index>(%arg0: si32) -> si32
   implements @genItf {
   "genItf_impl2"() { value = #kgen.param.decl.ref<*"x"> : index} : () -> ()
   kgen.return<y = mul(x, 2)> %arg0 : si32
@@ -311,9 +311,9 @@ kgen.generator @test_f32() -> f32 {
 // Test that we can do static assertions on computed parameter expressions (e.g.
 // those that are the result of a sub-generator invocation.
 
-kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
+kgen.generator.interface @getSIMDLength<dt: dtype -> index>()
 
-kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
+kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
@@ -321,7 +321,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
   kgen.return <length = 4>
 }
 
-kgen.generator @getSIMDLengthF64<dt: dtype -> length>()
+kgen.generator @getSIMDLengthF64<dt: dtype -> index>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f64)>, "this only works for f32"

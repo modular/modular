@@ -67,7 +67,7 @@ kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
   kgen.return %2 : f32
 }
 
-kgen.func @producesResultParam<() -> result>() {
+kgen.func @producesResultParam<() -> index>() {
   kgen.return<result = 42>
 }
 

@@ -20,13 +20,6 @@ kgen.generator @test<p1>() {
 
 // -----
 
-kgen.generator @parameter_results<p1 -> r1: i4>() {
-  // expected-error @+1 {{parameter #0 is named "r7" but should be "r1"}}
-  kgen.return<r7: i4 = 7>
-}
-
-// -----
-
 "someop" () {
   use1 = #kgen.param.expr<add,
   // expected-error @+2 {{failed to parse ParamOperatorAttr parameter}}
@@ -169,7 +162,7 @@ kgen.generator @g2<()>() {
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @only_returns<p1 -> p2>() {
+kgen.generator @only_returns<p1 -> index>() {
   kgen.return <p2 = p1>
 }
 
@@ -245,7 +238,7 @@ kgen.func @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @only_returns<() -> p2: i4>() {
+kgen.generator @only_returns<() -> i4>() {
   kgen.return <p2: i4 = 2>
 }
 
@@ -309,7 +302,7 @@ kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
 kgen.generator.interface @itf<size>(si32) -> si32
 
 // expected-error @+1 {{generator has 0 input parameters but interface expects 1}}
-kgen.generator @bad<() -> size>(%arg0: si32) -> si32 implements @itf {
+kgen.generator @bad<() -> index>(%arg0: si32) -> si32 implements @itf {
   kgen.return<size = 42> %arg0 : si32
 }
 
@@ -325,22 +318,12 @@ kgen.generator @bad<barf>() implements @itf {
 
 // -----
 
-// expected-note @+1 {{interface declared here}}
-kgen.generator.interface @itf<() -> result>(si32)
-
-// expected-error @+1 {{generator result parameter #0 has name "size" but interface expected name "result"}}
-kgen.generator @bad<() -> size: i8>(%arg0: si32) implements @itf {
-  kgen.return<size:i8 = 42>
-}
-
-// -----
-
 // expected-error @below {{expected attribute value}}
 %0 = kgen.param.constant : i32 = <[:i32]>
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> r1>()
+kgen.generator.interface @take_and_return<p1 -> index>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
 kgen.func @self_cyclic() {
@@ -352,7 +335,7 @@ kgen.func @self_cyclic() {
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> r1>()
+kgen.generator.interface @take_and_return<p1 -> index>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
 kgen.func @mutually_recursive() {
@@ -421,7 +404,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 kgen.generator @hasInputParam<param>() {
   kgen.return
 }
-kgen.generator @hasResultParam<() -> param>() {
+kgen.generator @hasResultParam<() -> index>() {
   kgen.return<param = 42>
 }
 

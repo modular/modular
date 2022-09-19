@@ -11,7 +11,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 // -----
 
 // CHECK-LABEL: llvm.func private @produces_result
-kgen.func @produces_result<() -> result>() {
+kgen.func @produces_result<() -> index>() {
   // CHECK: llvm.return
   kgen.return<result = 42>
 }

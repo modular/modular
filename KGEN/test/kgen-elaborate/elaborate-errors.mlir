@@ -87,9 +87,9 @@ kgen.generator @k2() {
 
 // -----
 
-kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
+kgen.generator.interface @getSIMDLength<dt: dtype -> index>()
 
-kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
+kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"

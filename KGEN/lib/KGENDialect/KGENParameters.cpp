@@ -140,7 +140,7 @@ void ParameterCollector::collectParameterUsesFromType(
 LogicalResult
 SignatureType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr inputParams,
-                      ParamDeclArrayAttr resultParams, FunctionType values) {
+                      TypeArrayAttr resultParamTypes, FunctionType values) {
   bool hadSymbolConstantReferences = false;
   struct SignatureTypeCollector : public ParameterCollector {
     SignatureTypeCollector(bool &hadSymbolConstantReferences)
@@ -265,12 +265,6 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
       // Scan the attribute tree looking or parameter uses.
-
-      // Ignore the resultParamDecls on the top level operation, they are not
-      // in scope here.
-      if (bodyOp == topLevelDeclOp &&
-          namedAttr.getName().strref() == "resultParamDecls")
-        continue;
       collectParameterUsesFromAttr(namedAttr.getValue(), paramUses);
 
       // We handle the `paramDecls` attribute specially, remember it for

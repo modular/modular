@@ -22,32 +22,31 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     }], "SignatureType", "getSignature", (ins), [{
       return SignatureType::get($_op.getContext(),
                                 $_op.getParamDeclsAttr(),
-                                $_op.getResultParamDeclsAttr(),
+                                $_op.getResultParamTypesAttr(),
                                 $_op.getFunctionType());}], [{
       return SignatureType::get($_op.getContext(),
                                 $_op.getParamDeclsAttr(),
-                                $_op.getResultParamDeclsAttr(),
+                                $_op.getResultParamTypesAttr(),
                                 $_op.getFunctionType());}]>,
 
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.
     }], "mlir::FunctionType", "getFunctionType">,
-    
-    /// Parameters.
+        /// Parameters.
     InterfaceMethod<[{
       Return the input parameter declarations live in the decl body.
     }], "ParamDeclArrayAttr", "getParamDeclsAttr">,
     InterfaceMethod<[{
       Return the result parameter declarations returned from the decl body.
-    }], "ParamDeclArrayAttr", "getResultParamDeclsAttr">,
+    }], "TypeArrayAttr", "getResultParamTypesAttr">,
     InterfaceMethod<[{
       Return the list of input parameters.
     }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins), 
         "return getParamDecls($_op);", "return getParamDecls($_op);">,
     InterfaceMethod<[{
-      Return the list of output parameters.
-    }], "ArrayRef<ParamDeclAttr>", "getResultParamDecls">,
+      Return the list of output parameter types.
+    }], "ArrayRef<Type>", "getResultParamTypes">,
     /// Constraints.
     InterfaceMethod<[{
       Return the list of constraints.

@@ -64,26 +64,27 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // Helper for building (and checking) a Signature type.
   llvm::SMLoc typeLoc = parser.getCurrentLocation();
   auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
+                                 TypeArrayAttr resultParamTypes,
                                  FunctionType valuesType) -> LogicalResult {
     // Signature types can fail to parse when they reference parameters that
     // are not defined in their input list.  Handle this by reporting the error
     // correctly through the parser and returning a failure.
     type = SignatureType::getChecked(
         [&]() -> InFlightDiagnostic { return parser.emitError(typeLoc); },
-        inputParams.getContext(), inputParams, resultParams, valuesType);
+        inputParams.getContext(), inputParams, resultParamTypes, valuesType);
     return LogicalResult::success(type != Type());
   };
 
   if (succeeded(parser.parseOptionalKeyword("signature"))) {
     // signature for values and parameters.
-    ParamDeclArrayAttr inputParams, resultParams;
+    ParamDeclArrayAttr inputParams;
+    TypeArrayAttr resultParamTypes;
     FunctionType valuesType;
     if (parser.parseLess() ||
-        parseOptionalParameterSpec(parser, inputParams, resultParams) ||
+        parseOptionalParameterSpec(parser, inputParams, resultParamTypes) ||
         parser.parseType(valuesType) || parser.parseGreater())
       return failure();
-    return returnSignatureType(inputParams, resultParams, valuesType);
+    return returnSignatureType(inputParams, resultParamTypes, valuesType);
   }
 
   if (failed(parser.parseType(type)))
@@ -93,8 +94,9 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // parameters.
   if (auto valuesType = type.dyn_cast<FunctionType>()) {
     // Default to empty input/result parameters.
-    auto emptyDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
-    return returnSignatureType(emptyDecls, emptyDecls, valuesType);
+    auto noInputParams = ParamDeclArrayAttr::get(parser.getContext(), {});
+    auto noResultParams = TypeArrayAttr::get(parser.getContext(), {});
+    return returnSignatureType(noInputParams, noResultParams, valuesType);
   }
 
   return LogicalResult::success();
@@ -113,12 +115,12 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     // If there are no parameters, print a SignatureType as a function type to
     // keep things concise.
     if (signature.getInputParams().empty() &&
-        signature.getResultParams().empty())
+        signature.getResultParamTypes().empty())
       os << signature.getValues();
     else { // Otherwise print it as "signature<p1, p2 -> r3, () -> ())>"
       os << "signature<";
       printOptionalParameterSpec(os, signature.getInputParams(),
-                                 signature.getResultParams());
+                                 signature.getResultParamTypes());
       os << signature.getValues() << ">";
     }
   } else
@@ -151,7 +153,6 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
   if (type.isIndex())
     return;
   os << ':';
-
   printKGENType(os, type);
   os << ' ';
 }
@@ -261,16 +262,16 @@ void KGEN::printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls) {
 /// Parse an parameter list if present.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-/// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
+/// parameter-spec   ::= `<` parameter-list (`->` type-list)? `>`
 ParseResult
 KGEN::parseOptionalParameterSpec(AsmParser &parser,
                                  ParamDeclArrayAttr &inputParamDecls,
-                                 ParamDeclArrayAttr &resultParamDecls) {
+                                 TypeArrayAttr &resultParamTypesAttr) {
   // If there is no parameter list, or if it is empty, we're done.
   if (failed(parser.parseOptionalLess()) ||
       succeeded(parser.parseOptionalGreater())) {
-    inputParamDecls = resultParamDecls =
-        ParamDeclArrayAttr::get(parser.getContext(), {});
+    inputParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
+    resultParamTypesAttr = TypeArrayAttr::get(parser.getContext(), {});
     return success();
   }
 
@@ -279,28 +280,33 @@ KGEN::parseOptionalParameterSpec(AsmParser &parser,
     return failure();
 
   // Check to see if we have results and parse them if so.
+  SmallVector<Type> resultParamTypes;
   if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamDecls(parser, resultParamDecls))
+    if (parser.parseCommaSeparatedList([&]() -> ParseResult {
+          return parseKGENType(parser, resultParamTypes.emplace_back(Type()));
+        }))
       return failure();
-  } else {
-    resultParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
   }
+  resultParamTypesAttr =
+      TypeArrayAttr::get(parser.getContext(), resultParamTypes);
+
   return parser.parseGreater();
 }
 
 /// Print a parameter list for a generator, func or interface.
 void KGEN::printOptionalParameterSpec(raw_ostream &os,
                                       ParamDeclArrayAttr inputParamDecls,
-                                      ParamDeclArrayAttr resultParamDecls) {
-  if (inputParamDecls.empty() && resultParamDecls.empty())
+                                      TypeArrayAttr resultParamTypes) {
+  if (inputParamDecls.empty() && resultParamTypes.empty())
     return;
 
   os << '<';
   printParamDecls(os, inputParamDecls);
 
-  if (!resultParamDecls.empty()) {
+  if (!resultParamTypes.empty()) {
     os << " -> ";
-    printParamDecls(os, resultParamDecls);
+    llvm::interleaveComma(resultParamTypes.getValue(), os,
+                          [&](Type type) { printKGENType(os, type); });
   }
   os << '>';
 }
@@ -756,15 +762,16 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Parse the function signature.
   bool isVariadic = false;
-  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
-  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
+  ParamDeclArrayAttr inputParamDecls;
+  TypeArrayAttr resultParamTypes;
+  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs) ||
       parseOptionalConstraints(parser, result, opKind))
     return failure();
 
   result.addAttribute("paramDecls", inputParamDecls);
-  result.addAttribute("resultParamDecls", resultParamDecls);
+  result.addAttribute("resultParamTypes", resultParamTypes);
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -861,7 +868,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
       p << visibility.getValue() << ' ';
   p.printSymbolName(funcName);
   printOptionalParameterSpec(p.getStream(), opDecl.getParamDeclsAttr(),
-                             opDecl.getResultParamDeclsAttr());
+                             opDecl.getResultParamTypesAttr());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
@@ -889,13 +896,13 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
 /// matches those of an interface.  This produces an error diagnostic and
 /// returns failure when a problem is detected, or returns true if everything is
 /// ok.
-ParseResult KGEN::verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
-                                      ParamDeclArrayAttr targetParamDecls,
-                                      const char *originatorName,
-                                      Location originatorLoc,
-                                      const char *targetName,
-                                      Location targetLoc,
-                                      const char *parameterKind) {
+static ParseResult verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
+                                       ParamDeclArrayAttr targetParamDecls,
+                                       const char *originatorName,
+                                       Location originatorLoc,
+                                       const char *targetName,
+                                       Location targetLoc,
+                                       const char *parameterKind) {
 
   auto getParamDeclName = [](ParamDeclArrayAttr decls) {
     return llvm::map_range(decls.getValue(), [](Attribute value) -> StringAttr {
@@ -942,10 +949,10 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                           targetSignature.getInputParams(), originatorName,
                           originatorLoc, targetName, targetLoc,
                           "input parameter") ||
-      verifyParameterList(originatorSignature.getResultParams(),
-                          targetSignature.getResultParams(), originatorName,
+      verifyMatchingLists(originatorSignature.getResultParamTypes(),
+                          targetSignature.getResultParamTypes(), originatorName,
                           originatorLoc, targetName, targetLoc,
-                          "result parameter"))
+                          "result parameter", "type"))
     return failure();
   return success();
 }
