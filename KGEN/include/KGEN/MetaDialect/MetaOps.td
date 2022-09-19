@@ -31,40 +31,6 @@ class RebindOp<string mnemonic, Type type> : MetaOp<mnemonic, [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// PointerRebindOp
-//===----------------------------------------------------------------------===//
-
-def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
-  let description = "rebind a pointer type";
-  let description = [{
-    This operation rebinds the dtype of a parameterized pointer type. The dtype
-    can be rebound between parameter domains, concrete values, and unknown
-    values, but rebinding a concrete dtype to a different concrete dtype is
-    invalid.
-
-    Example:
-
-    ```mlir
-    // Rebind dtype from one domain to another.
-    %0 = meta.pointer.rebind %a : !meta.pointer<!meta.scalar<type1>> to
-                                  !meta.pointer<!meta.scalar<type2>>
-
-    // Bind a parameterized element type to a parameterized element type.
-    %1 = meta.pointer.rebind %b : !meta.pointer<elementType> to
-                                  !meta.pointer<!meta.scalar<type>>
-
-    // Unbind a concrete element type to an unknown element type.
-    %2 = meta.pointer.rebind %c : !meta.pointer<!meta.scalar<si32>> to
-                                  !meta.pointer<?>
-
-    // ERROR: Cannot rebind between different concrete types.
-    %3 = meta.pointer.rebind %d : !meta.pointer<!meta.scalar<f32>> to
-                                  !meta.pointer<!meta.simd<2, si32>>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 

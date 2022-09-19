@@ -58,7 +58,8 @@ kgen.func @pointer_bitcast(
     %simd_f64:!meta.pointer<!meta.simd<2, f64>>) -> (
      !meta.pointer<!meta.simd<4, f32>>,
      !meta.pointer<!meta.scalar<si32>>,
-     !meta.pointer<!meta.scalar<ui32>>
+     !meta.pointer<!meta.scalar<ui32>>,
+     !meta.pointer<?>
     ) {
   // CHECK: lvm.bitcast %[[UI32]]
   %0 = pop.bitcast %ui32 : !meta.pointer<!meta.scalar<ui32>> to !meta.pointer<!meta.simd<4, f32>>
@@ -66,10 +67,13 @@ kgen.func @pointer_bitcast(
   %1 = pop.bitcast %simd_f32 : !meta.pointer<!meta.simd<4, f32>> to !meta.pointer<!meta.scalar<si32>>
   // CHECK: llvm.bitcast %[[F64]]
   %2 = pop.bitcast %simd_f64 : !meta.pointer<!meta.simd<2, f64>> to !meta.pointer<!meta.scalar<ui32>>
-  kgen.return %0, %1, %2 :
+  // CHECK: llvm.bitcast %[[UI32]]
+  %3 = pop.bitcast %ui32 : !meta.pointer<!meta.scalar<ui32>> to !meta.pointer<?>
+  kgen.return %0, %1, %2, %3 :
      !meta.pointer<!meta.simd<4, f32>>,
      !meta.pointer<!meta.scalar<si32>>,
-     !meta.pointer<!meta.scalar<ui32>>
+     !meta.pointer<!meta.scalar<ui32>>,
+     !meta.pointer<?>
 }
 
 // CHECK-LABEL: @scalar_cast

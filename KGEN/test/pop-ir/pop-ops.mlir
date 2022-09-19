@@ -296,6 +296,8 @@ kgen.generator @pointer_bitcast(%arg0: !meta.pointer<!meta.scalar<f32>>, %arg1: 
   %0 = pop.bitcast %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.simd<4, si32>>
   // CHECK: %[[V1:.*]] = pop.bitcast %[[ARG1]] : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
   %1 = pop.bitcast %arg1 : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
+  // CHECK: %{{.*}} = pop.bitcast %[[ARG0]] : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<?>
+  %2 = pop.bitcast %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<?>
   // CHECK: return %[[V0]], %[[V1]]
   kgen.return %0, %1 : !meta.pointer<!meta.simd<4, si32>>, !meta.pointer<!meta.scalar<f64>>
 }

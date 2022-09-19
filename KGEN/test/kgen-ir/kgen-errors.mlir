@@ -174,14 +174,6 @@ kgen.func @test_only_returns() {
 
 // -----
 
-kgen.func @bad_pointer_rebind_dtype(%arg0: !meta.pointer<!meta.scalar<f32>>) -> !meta.pointer<!meta.scalar<f64>> {
-  // expected-error @below {{input pointer element type '!meta.scalar<f32>' disagrees with result pointer element type '!meta.scalar<f64>'}}
-  %0 = meta.pointer.rebind %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.scalar<f64>>
-  kgen.return %0 : !meta.pointer<!meta.scalar<f64>>
-}
-
-// -----
-
 kgen.func @meta_buffer_size(%arg0: i32) -> index {
   // expected-error @+1 {{'meta.buffer.size' op operand #0 must be parameterized buffer type, but got 'i32'}}
   %0 = meta.buffer.size %arg0 : i32
