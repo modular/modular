@@ -103,19 +103,6 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !meta.simd<1, f32> 
   kgen.return %0 : !meta.simd<1, f32>
 }
 
-// CHECK-LABEL: @meta_pointer_rebind
-// CHECK-SAME: %[[ARG0:.*]]:
-kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.pointer<?>) -> !meta.pointer<!meta.scalar<f32>> {
-  // CHECK: %[[V0]] = meta.pointer.rebind %[[ARG0]] : !meta.pointer<?> to !meta.pointer<!meta.scalar<type1>>
-  %0 = meta.pointer.rebind %arg0 : !meta.pointer<?> to !meta.pointer<!meta.scalar<type1>>
-  // CHECK: %[[V1]] = meta.pointer.rebind %[[V0]] : !meta.pointer<!meta.scalar<type1>> to !meta.pointer<!meta.scalar<type2>>
-  %1 = meta.pointer.rebind %0 : !meta.pointer<!meta.scalar<type1>> to !meta.pointer<!meta.scalar<type2>>
-  // CHECK: %[[V2]] = meta.pointer.rebind %[[V1]] : !meta.pointer<!meta.scalar<type2>> to !meta.pointer<!meta.scalar<f32>>
-  %2 = meta.pointer.rebind %1 : !meta.pointer<!meta.scalar<type2>> to !meta.pointer<!meta.scalar<f32>>
-  // CHECK: return %[[V2]] : !meta.pointer<!meta.scalar<f32>>
-  kgen.return %2 : !meta.pointer<!meta.scalar<f32>>
-}
-
 // CHECK-LABEL: @meta_buffer_construct
 kgen.func @meta_buffer_construct(%ptr: !meta.pointer<!meta.scalar<f32>>, %opaque: !meta.pointer<?>,
                               %size: index, %dtype: !kgen.dtype) {

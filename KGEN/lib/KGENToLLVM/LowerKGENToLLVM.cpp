@@ -196,31 +196,6 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertMetaPointerRebind
-//===----------------------------------------------------------------------===//
-
-/// A fully-specific pointer rebind between an unknown dtype and a known dtype
-/// is converted to a bitcast.
-class ConvertMetaPointerRebind
-    : public mlir::ConvertOpToLLVMPattern<PointerRebindOp> {
-public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PointerRebindOp op, PointerRebindOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    if (op.getInput().getType() == op.getType()) {
-      rewriter.replaceOp(op, adaptor.getInput());
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
-          op, getTypeConverter()->convertType(op.getType()),
-          adaptor.getInput());
-    }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertMetaBufferConstruct
 //===----------------------------------------------------------------------===//
 
@@ -396,8 +371,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertMetaBufferSize,
       ConvertMetaBufferRebind,
       ConvertMetaCastFromBuiltin,
-      ConvertMetaCastToBuiltin,
-      ConvertMetaPointerRebind
+      ConvertMetaCastToBuiltin
       // clang-format on
       >(typeConverter);
 }

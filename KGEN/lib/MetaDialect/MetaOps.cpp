@@ -60,20 +60,6 @@ static LogicalResult sameIfConcrete(Operation *op, TypedAttr lhs, TypedAttr rhs,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerRebindOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult PointerRebindOp::fold(ArrayRef<Attribute> operands) {
-  return foldRebindOp(*this, operands);
-}
-
-LogicalResult PointerRebindOp::verify() {
-  return sameIfConcrete<ConcreteTypeConstantAttr>(
-      *this, getInput().getType().cast<PointerType>().getElementType(),
-      getType().getElementType(), "pointer element type");
-}
-
-//===----------------------------------------------------------------------===//
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 
