@@ -357,3 +357,41 @@ def IncludeOp : KGENOp<"include", []> {
   let arguments = (ins StrAttr:$fileName);
   let assemblyFormat = "$fileName attr-dict-with-keyword";
 }
+
+//===----------------------------------------------------------------------===//
+// RebindOp
+//===----------------------------------------------------------------------===//
+
+def RebindOp : KGENOp<"rebind"> {
+  let summary = "rebind parametric types";
+  let description = [{
+    The `kgen.rebind` operation rebinds values with parametric types into other
+    parameter domains. The operation can be used to convert between parameter
+    domains or between concrete types. During elaboration, rebind operations
+    must resolve to the same input and output types. Otherwise, elaboration will
+    fail.
+
+    Example:
+
+    ```mlir
+    // Rebind a parameterized type to a concrete type.
+    %0 = kgen.rebind %arg0 : !kgen.paramref<type> to !meta.scalar<f32>
+
+    // Rebind between parameter domains.
+    %1 = kgen.rebind %arg1 : !kgen.paramref<type> to !meta.simd<size, dtype>
+
+    // Unbind a concrete type to one with a parameter.
+    %2 = kgen.rebind %arg2 : !meta.scalar<f32> to !meta.scalar<dtype>
+
+    // ERROR: Cannot rebind between different concrete types.
+    %3 = kgen.rebind %arg2 : !meta.scalar<f32> to !meta.scalar<si32>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$input);
+  let results = (outs AnyType:$output);
+  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
