@@ -303,7 +303,7 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   return pm.run(module);
 }
 
-/// Add the given module to the execution engine. This slices all the funcs
+/// Add the given module to the execution engine. This slices all public funcs
 /// out of the module with their dependencies to generate self-contained object
 /// files.
 // TODO: The slicing -> convert to LLVM -> createJITDylib + compile has natural
@@ -316,6 +316,10 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     // If we've added a filter and this func isn't one we want, don't deal
     // with it.
     if (!only.empty() && !llvm::is_contained(only, func))
+      continue;
+
+    // Don't compile private functions.
+    if (!func.isPublic())
       continue;
 
     // Create a new module for this single func. This will go away at the end
