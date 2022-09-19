@@ -507,8 +507,8 @@ kgen.generator @test2() {
 // -----
 
 kgen.generator @call_param() {
-  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a region type}} 
-  %0 = kgen.call_param[si32: 4]() 
+  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a region type}}
+  %0 = kgen.call_param[si32: 4]()
   kgen.return
 }
 
@@ -520,7 +520,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 kgen.func @call_param_in_func(%arg0: si32) -> si32 {
   // expected-error @+1 {{kgen.call_param is only allowed in generators pre-elaboration}}
-  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0) 
+  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   kgen.return %0: si32
 }
 
@@ -556,3 +556,18 @@ kgen.generator @test<ty: type, p : signature<<x,x>()->()>>
   kgen.return
 }
 
+// -----
+
+kgen.func @rebind(%a: !meta.scalar<f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!meta.scalar<f32>' to different concrete output type '!meta.scalar<si32>'}}
+  %0 = kgen.rebind %a : !meta.scalar<f32> to !meta.scalar<si32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @rebind(%a: !meta.scalar<f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!meta.scalar<f32>' to different concrete output type 'i32'}}
+  %0 = kgen.rebind %a : !meta.scalar<f32> to i32
+  kgen.return
+}

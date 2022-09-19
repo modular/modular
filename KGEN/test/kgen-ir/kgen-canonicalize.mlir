@@ -21,6 +21,20 @@ kgen.func @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
   kgen.return %0, %1, %2, %3 : index, index, !kgen.dtype, !kgen.dtype
 }
 
+// CHECK-LABEL: @rebind_folds
+kgen.generator @rebind_folds<dtype: dtype, type: type>(
+  %a: i32, %b: !meta.scalar<f32>, %c: !meta.scalar<dtype>, %d: !kgen.paramref<type>
+) -> (
+  i32, !meta.scalar<f32>, !meta.scalar<dtype>, !kgen.paramref<type>
+) {
+  // CHECK-NOT: kgen.rebind
+  %0 = kgen.rebind %a : i32 to i32
+  %1 = kgen.rebind %b : !meta.scalar<f32> to !meta.scalar<f32>
+  %2 = kgen.rebind %c : !meta.scalar<dtype> to !meta.scalar<dtype>
+  %3 = kgen.rebind %d : !kgen.paramref<type> to !kgen.paramref<type>
+  kgen.return %0, %1, %2, %3 : i32, !meta.scalar<f32>, !meta.scalar<dtype>, !kgen.paramref<type>
+}
+
 // CHECK-LABEL: kgen.func @buffer_rebind_folds
 // CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<{{.*}}>, %[[ARG1:.*]]: !meta.buffer<{{.*}}
 kgen.func @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
@@ -101,6 +115,6 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 // CHECK-LABEL: kgen.generator @call_param_canonicalize
 kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
   // CHECK: %0 = kgen.call @trivial(%arg0) : (si32) -> si32
-  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0) 
+  %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   kgen.return %0: si32
 }

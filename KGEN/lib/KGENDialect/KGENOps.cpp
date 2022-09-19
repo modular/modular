@@ -693,6 +693,39 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
 }
 
 //===----------------------------------------------------------------------===//
+// RebindOp
+//===----------------------------------------------------------------------===//
+
+/// If either the input or output type are parameterized, return success.
+/// Otherwise, require that the concrete input and output types are the same.
+LogicalResult RebindOp::verify() {
+  SmallVector<ParamDeclRefAttr> inputRefs, outputRefs;
+  if (failed(collectParameterReferences(getInput().getType(), inputRefs)))
+    return failure();
+  if (!inputRefs.empty())
+    return success();
+  if (failed(collectParameterReferences(getType(), outputRefs)))
+    return failure();
+  if (!outputRefs.empty())
+    return success();
+
+  if (getInput().getType() == getType())
+    return success();
+
+  return emitError("cannot rebind concrete input type ")
+         << getInput().getType() << " to different concrete output type "
+         << getType();
+}
+
+/// Fold away the rebind if the input and output types are the same.
+OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1);
+  if (getInput().getType() == getType())
+    return getInput();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
