@@ -264,18 +264,7 @@ ParseResult SignatureUnifier::checkResultType(size_t argNo, Type itfResultTy,
 static Value insertRebindOp(Value arg, Type type, ImplicitLocOpBuilder &b) {
   if (arg.getType() == type)
     return arg;
-
-  // This only needs to handle the types we're capable of unifying.
-  if (type.isa<ScalarType>())
-    return b.create<ScalarRebindOp>(type, arg);
-  if (type.isa<PointerType>())
-    return b.create<PointerRebindOp>(type, arg);
-  if (type.isa<SIMDType>())
-    return b.create<SIMDRebindOp>(type, arg);
-  if (type.isa<BufferType>())
-    return b.create<BufferRebindOp>(type, arg);
-
-  llvm_unreachable("unknown type to unify");
+  return b.create<RebindOp>(type, arg);
 }
 
 /// If this generator is implementing an interface, check its conformance,

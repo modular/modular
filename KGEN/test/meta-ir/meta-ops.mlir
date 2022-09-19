@@ -103,32 +103,6 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !meta.simd<1, f32> 
   kgen.return %0 : !meta.simd<1, f32>
 }
 
-// CHECK-LABEL: @meta_scalar_rebind
-// CHECK-SAME: %[[ARG0:.*]]:
-kgen.generator @meta_scalar_rebind<type1: dtype, type2: dtype>(%arg0: !meta.scalar<f32>) -> !meta.scalar<si32> {
-  // CHECK: %[[V0:.*]] = meta.scalar.rebind %[[ARG0]] : !meta.scalar<f32> to !meta.scalar<type1>
-  %0 = meta.scalar.rebind %arg0 : !meta.scalar<f32> to !meta.scalar<type1>
-  // CHECK: %[[V1:.*]] = meta.scalar.rebind %[[V0]] : !meta.scalar<type1> to !meta.scalar<type2>
-  %1 = meta.scalar.rebind %0 : !meta.scalar<type1> to !meta.scalar<type2>
-  // CHECK: %[[V2:.*]] = meta.scalar.rebind %[[V1]] : !meta.scalar<type2> to !meta.scalar<si32>
-  %2 = meta.scalar.rebind %1 : !meta.scalar<type2> to !meta.scalar<si32>
-  // CHECK: return %[[V2]] : !meta.scalar<si32>
-  kgen.return %2 : !meta.scalar<si32>
-}
-
-// CHECK-LABEL: @meta_simd_rebind
-// CHECK-SAME: %[[ARG0:.*]]:
-kgen.generator @meta_simd_rebind<size1, size2, type1: dtype, type2: dtype>(%arg0: !meta.simd<2, f32>) -> !meta.simd<4, ui64> {
-  // CHECK: %[[V0:.*]] = meta.simd.rebind %[[ARG0]] : !meta.simd<2, f32> to !meta.simd<size1, type1>
-  %0 = meta.simd.rebind %arg0 : !meta.simd<2, f32> to !meta.simd<size1, type1>
-  // CHECK: %[[V1:.*]] = meta.simd.rebind %[[V0]] : !meta.simd<size1, type1> to !meta.simd<size2, type2>
-  %1 = meta.simd.rebind %0 : !meta.simd<size1, type1> to !meta.simd<size2, type2>
-  // CHECK: %[[V2:.*]] = meta.simd.rebind %[[V1]] : !meta.simd<size2, type2> to !meta.simd<4, ui64>
-  %2 = meta.simd.rebind %1 : !meta.simd<size2, type2> to !meta.simd<4, ui64>
-  // CHECK: return %[[V2]] : !meta.simd<4, ui64>
-  kgen.return %2 : !meta.simd<4, ui64>
-}
-
 // CHECK-LABEL: @meta_pointer_rebind
 // CHECK-SAME: %[[ARG0:.*]]:
 kgen.generator @meta_pointer_rebind<type1: dtype, type2: dtype>(%arg0: !meta.pointer<?>) -> !meta.pointer<!meta.scalar<f32>> {

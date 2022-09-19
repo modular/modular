@@ -31,66 +31,6 @@ class RebindOp<string mnemonic, Type type> : MetaOp<mnemonic, [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// ScalarRebindOp
-//===----------------------------------------------------------------------===//
-
-def ScalarRebindOp : RebindOp<"scalar.rebind", ScalarType> {
-  let summary = "rebind a scalar type";
-  let description = [{
-    This operation rebinds the dtype of a parameterized scalar type. The dtypes
-    of scalar types can be rebound between parameter domains and concrete
-    values, but rebinding a concrete dtype to a different concrete type is
-    invalid.
-
-    Example:
-
-    ```mlir
-    // Rebind dtype from one domain to another.
-    %0 = meta.scalar.rebind %a : !meta.scalar<type1> to !meta.scalar<type2>
-
-    // Rebind dtype from a concrete dtype to a parameterized dtype.
-    %1 = meta.scalsr.rebind %b : !meta.scalar<f32> to !meta.scalar<type>
-
-    // ERROR: Cannot rebind between different concrete dtypes.
-    %2 = meta.scalar.rebind %c : !meta.scalar<ui32> to !meta.scalar<si32>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDRebindOp
-//===----------------------------------------------------------------------===//
-
-def SIMDRebindOp : RebindOp<"simd.rebind", SIMDType> {
-  let description = "rebind a SIMD type";
-  let description = [{
-    This operation rebinds the size and dtype of a parameterized SIMD type. The
-    sizes and dtypes of SIMD types can be rebound between parameter domains and
-    concrete values, but rebinding a concrete size or dtype to a different
-    concrete size or dtype is invalid.
-
-    Example:
-
-    ```mlir
-    // Rebind size from one domain to another.
-    %0 = meta.simd.rebind %a : !meta.simd<x, f32> to !meta.simd<add(y, 2), f32>
-
-    // Bind a parameterized size to a concrete size.
-    %1 = meta.simd.rebind %b : !meta.simd<size, type> to !meta.simd<4, type>
-
-    // Unbind dtype from a concrete dtype to a parameterized dtype.
-    %2 = meta.simd.rebind %c : !meta.simd<size, f32> to !meta.simd<size, type>
-
-    // ERROR: Cannot rebind between different concrete sizes.
-    %3 = meta.simd.rebind %d : !meta.simd<4, type> to !meta.simd<8, type>
-
-    // ERROR: Cannot rebind between different concrete dtypes.
-    %4 = meta.simd.rebind %e : !meta.simd<size, ui32> to !meta.simd<size, si32>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // PointerRebindOp
 //===----------------------------------------------------------------------===//
 
@@ -118,8 +58,8 @@ def PointerRebindOp : RebindOp<"pointer.rebind", PointerType> {
                                   !meta.pointer<?>
 
     // ERROR: Cannot rebind between different concrete types.
-    %3 = meta.simd.rebind %d : !meta.pointer<!meta.scalar<f32>> to
-                               !meta.pointer<!meta.simd<2, si32>>
+    %3 = meta.pointer.rebind %d : !meta.pointer<!meta.scalar<f32>> to
+                                  !meta.pointer<!meta.simd<2, si32>>
     ```
   }];
 }

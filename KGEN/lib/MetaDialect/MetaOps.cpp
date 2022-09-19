@@ -60,39 +60,6 @@ static LogicalResult sameIfConcrete(Operation *op, TypedAttr lhs, TypedAttr rhs,
 }
 
 //===----------------------------------------------------------------------===//
-// ScalarRebindOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult ScalarRebindOp::fold(ArrayRef<Attribute> operands) {
-  return foldRebindOp(*this, operands);
-}
-
-LogicalResult ScalarRebindOp::verify() {
-  return sameIfConcrete<DTypeConstantAttr>(
-      *this, getInput().getType().cast<ScalarType>().getDType(),
-      getType().getDType(), "scalar dtype");
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDRebindOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult SIMDRebindOp::fold(ArrayRef<Attribute> operands) {
-  return foldRebindOp(*this, operands);
-}
-
-LogicalResult SIMDRebindOp::verify() {
-  auto inputTy = getInput().getType().cast<SIMDType>();
-  auto outputTy = getOutput().getType().cast<SIMDType>();
-  if (failed(sameIfConcrete<DTypeConstantAttr>(
-          *this, inputTy.getDType(), outputTy.getDType(), "SIMD dtype")) ||
-      failed(sameIfConcrete<IntegerAttr>(*this, inputTy.getSize(),
-                                         outputTy.getSize(), "SIMD size")))
-    return failure();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // PointerRebindOp
 //===----------------------------------------------------------------------===//
 
