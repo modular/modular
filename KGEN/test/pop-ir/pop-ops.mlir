@@ -541,3 +541,32 @@ kgen.generator @global_constant<type: type, dtype: dtype>() -> !meta.pointer<typ
   %2 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<dtype>>
   kgen.return %0 : !meta.pointer<type>
 }
+
+// CHECK-LABEL: @pointer_to_index
+kgen.generator @pointer_to_index<type: type>(%a: !meta.pointer<type>,
+                                             %b: !meta.pointer<!meta.scalar<f32>>,
+                                             %c: !meta.pointer<!meta.simd<4, f32>>,
+                                             %d: !meta.pointer<?>) {
+  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<type>
+  %0 = pop.pointer_to_index %a : !meta.pointer<type>
+  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<!meta.scalar<f32>>
+  %1 = pop.pointer_to_index %b : !meta.pointer<!meta.scalar<f32>>
+  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
+  %2 = pop.pointer_to_index %c : !meta.pointer<!meta.simd<4, f32>>
+  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<?>
+  %3 = pop.pointer_to_index %d : !meta.pointer<?>
+  kgen.return
+}
+
+// CHECK-LABEL: @index_to_pointer
+kgen.generator @index_to_pointer<type: type>(%idx: index) {
+  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<type>
+  %0 = pop.index_to_pointer %idx : !meta.pointer<type>
+  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<!meta.scalar<f32>>
+  %1 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
+  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
+  %2 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, f32>>
+  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<?>
+  %3 = pop.index_to_pointer %idx : !meta.pointer<?>
+  kgen.return
+}

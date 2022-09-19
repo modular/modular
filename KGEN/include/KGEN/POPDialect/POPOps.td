@@ -940,3 +940,49 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// IndexToPointerOp
+//===----------------------------------------------------------------------===//
+
+def POP_IndexToPointerOp : POPOp<"index_to_pointer", [NoSideEffect]> {
+  let summary = "converts an index value to a pointer type.";
+  let description = [{
+    The `pop.index_to_pointer` instruction takes an index value to cast, and a
+    type to cast it to, which must be a pointer type.
+
+    Example:
+
+    ```mlir
+    %addr0 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
+    %addr1 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, type>>
+    ```
+  }];
+
+  let arguments = (ins Index:$value);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($result))";
+}
+
+//===----------------------------------------------------------------------===//
+// PointerToIndexOp
+//===----------------------------------------------------------------------===//
+
+def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
+  let summary = "gets the address of the pointer as an index type.";
+  let description = [{
+    The `pop.pointer_to_index` instruction takes a pointer to cast and gets
+    its address as an index type.
+
+    Example:
+
+    ```mlir
+    %addr0 = pop.pointer_to_index %ptr : !meta.pointer<!meta.scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : !meta.pointer<!meta.simd<4, type>>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$value);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
+}
