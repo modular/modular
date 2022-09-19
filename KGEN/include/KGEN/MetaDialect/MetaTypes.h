@@ -38,10 +38,6 @@ checkMetaCastedTypes(function_ref<InFlightDiagnostic(StringRef)> emitError,
 /// same dtype as the given type.
 ScalarType getScalarOfSameDType(Type type);
 
-/// Given a type that implements `DTypeInterface`, return a scalar pointer type
-/// of the same dtype of the given type.
-PointerType getPointerOfSameDType(Type type);
-
 } // namespace M::KGEN
 
 #endif // KGEN_METADIALECT_METATYPES_H

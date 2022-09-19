@@ -22,7 +22,8 @@ class MetaOp<string mnemonic, list<Trait> traits = []> :
 
 def BufferConstructOp : MetaOp<"buffer.construct", [
     NoSideEffect, AttrSizedOperandSegments,
-    PointerOfSameDType<"result", "ptr">]> {
+    TypesMatchWith<"pointer to scalar of the same dtype", "result", "ptr",
+                   "getBufferPointerType($_self)">]> {
   let summary = "construct a buffer with a pointer";
   let description = [{
     Construct a buffer around a base pointer. Requires size and/or dtype

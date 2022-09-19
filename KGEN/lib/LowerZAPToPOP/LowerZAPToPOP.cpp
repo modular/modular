@@ -34,7 +34,8 @@ struct ConvertZAPBufferStackAllocation
                                 PatternRewriter &rewriter) const override {
     auto type = op.getType().cast<BufferType>();
     Value ptr = rewriter.create<StackAllocationOp>(
-        op.getLoc(), getPointerOfSameDType(type), type.getSize());
+        op.getLoc(), PointerType::get(ScalarType::get(type.getDType())),
+        type.getSize());
     rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr);
     return success();
   }
