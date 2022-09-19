@@ -37,7 +37,7 @@ void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 LogicalResult
 HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check result types match the ReturnOp.
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamDecls(),
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
                                               getResultTypes())) ||
       // See if the parameter definitions and uses within the generator are
       // structured correctly.
@@ -58,10 +58,11 @@ HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                        << "' does not reference a generator interface";
 
   // Result parameters need to match, but input parameters may be inferred.
-  return verifyParameterList(getResultParamDeclsAttr(),
-                             interface.getResultParamDeclsAttr(), "generator",
-                             getLoc(), "interface", interface.getLoc(),
-                             "result parameter");
+  if (getResultParamTypesAttr() != interface.getResultParamTypesAttr())
+    return emitError() << "hlkgen.generator result parameter types must match "
+                          "interface types";
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

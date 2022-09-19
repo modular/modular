@@ -123,8 +123,22 @@ void ParamDeclArrayAttr::walkImmediateSubElements(
 Attribute ParamDeclArrayAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   return get(getContext(),
-             {reinterpret_cast<const ParamDeclAttr *>(replAttrs.begin()),
+             {reinterpret_cast<const ParamDeclAttr *>(replAttrs.data()),
               replAttrs.size()});
+}
+
+void TypeArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (Type type : getValue())
+    walkTypesFn(type);
+}
+
+Attribute
+TypeArrayAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                           ArrayRef<Type> replTypes) const {
+  return get(getContext(), {reinterpret_cast<const Type *>(replTypes.data()),
+                            replTypes.size()});
 }
 
 void ParamBindArrayAttr::walkImmediateSubElements(

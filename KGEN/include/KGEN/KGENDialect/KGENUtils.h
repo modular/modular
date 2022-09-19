@@ -24,6 +24,7 @@ class ParamDeclAttr;
 class GeneratorInterfaceOp;
 class ParamDeclArrayAttr;
 class KGENDeclInterface;
+class TypeArrayAttr;
 class SignatureType;
 
 /// Return the string form for an attribute value that is printed in a <>
@@ -97,10 +98,10 @@ ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 /// Parse and print a parameter specification on a generator or region type.
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
-                                       ParamDeclArrayAttr &resultParamDecls);
+                                       TypeArrayAttr &resultParamTypes);
 void printOptionalParameterSpec(raw_ostream &os,
                                 ParamDeclArrayAttr inputParamDecls,
-                                ParamDeclArrayAttr resultParamDecls);
+                                TypeArrayAttr resultParamTypes);
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
@@ -120,16 +121,6 @@ enum class GeneratorOrFuncKind {
 ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
                                  GeneratorOrFuncKind opKind);
 void printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op);
-
-/// Verify that a list of parameter declarations from a generator or func
-/// matches those of an interface.  This produces an error diagnostic and
-/// returns failure when a problem is detected, or returns true if everything is
-/// ok.
-ParseResult verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
-                                ParamDeclArrayAttr targetParamDecls,
-                                const char *originatorName,
-                                Location originatorLoc, const char *targetName,
-                                Location targetLoc, const char *parameterKind);
 
 /// Check that the specified generator/interfaces matches signature
 /// information with the other interface.

@@ -364,7 +364,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
         gen.getSymVisibilityAttr(),
         // Take the signature from the interface.
         itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
-        itf.getResultParamDeclsAttr(),
+        itf.getResultParamTypesAttr(),
         // Take the constraints from the generator.
         gen.getConstraintsAttr(), gen.getImplementsAttr());
     // The thunk implements the interface, not the original generator.
@@ -402,12 +402,16 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // kgen.output for the thunk.
     SmallVector<ParamDeclAttr> callResultParams; // <StringAttr name, Type type>
     SmallVector<ParamBindAttr> returnParams;
-    for (ParamDeclAttr resultParam : gen.getResultParamDecls()) {
+
+    // FIXME: This should iterate gen.getResultParamTypes once ReturnOp is
+    // simplified.
+    for (ParamBindAttr resultParam : gen.getReturnOp().getParameters()) {
       // The call returns the same thing as the generator.
-      callResultParams.push_back(resultParam);
+      callResultParams.push_back(ParamDeclAttr::get(
+          resultParam.getName(), resultParam.getValue().getType()));
+
       // The output binds each result from the call into the return value of the
       // generator thunk.
-
       auto value =
           ParamDeclRefAttr::get(resultParam.getName(), resultParam.getType());
       returnParams.push_back(ParamBindAttr::get(resultParam.getName(), value));
@@ -444,7 +448,7 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getSymVisibilityAttr(),
       gen.getFunctionTypeAttr(), gen.getParamDeclsAttr(),
-      gen.getResultParamDeclsAttr(), gen.getConstraintsAttr(),
+      gen.getResultParamTypesAttr(), gen.getConstraintsAttr(),
       gen.getImplementsAttr());
 
   // Move over the body unmodified.

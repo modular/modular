@@ -112,6 +112,17 @@ def ParamDeclSize1ArrayAttr
     >]>;
 
 //===----------------------------------------------------------------------===//
+// KTypeArrayAttr
+//===----------------------------------------------------------------------===//
+
+// This is an array of type objects, stored in a dense representation that can
+/// be turned into an ArrayRef.
+/// NOTE: We have to define this as KTypeArrayAttr because ODS squats on the
+/// `TypeArrayAttr` name with something different.
+def KTypeArrayAttr
+    : ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
+
+//===----------------------------------------------------------------------===//
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
