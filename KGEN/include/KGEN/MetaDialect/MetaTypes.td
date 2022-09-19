@@ -215,12 +215,6 @@ class ScalarOfSameDType<string operand, string value> :
   TypesMatchWith<value # " type matches dtype of the " # operand # " operand",
                  operand, value, "getScalarOfSameDType($_self)">;
 
-/// Checks if the given value's type is a pointer type which matches the element
-/// dtype of the operand.
-class PointerOfSameDType<string operand, string value> :
-  TypesMatchWith<value # " type matches dtype of the " # operand # " operand",
-                 operand, value, "getPointerOfSameDType($_self)">;
-
 /// Checks if the given value's type is the same as the pointer's element type.
 class TypeMatchesElementType<string operand, string value> : TypesMatchWith<
     value # " type matches element type of " # operand, operand, value,

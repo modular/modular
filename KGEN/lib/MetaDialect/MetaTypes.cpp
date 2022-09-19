@@ -73,12 +73,6 @@ ScalarType M::KGEN::getScalarOfSameDType(Type type) {
                          type.cast<DTypeInterface>().getDType());
 }
 
-PointerType M::KGEN::getPointerOfSameDType(Type type) {
-  if (TypedAttr dtype = type.cast<DTypeInterface>().getDType())
-    return PointerType::get(ScalarType::get(dtype));
-  return PointerType::get(type.getContext(), nullptr);
-}
-
 //===----------------------------------------------------------------------===//
 // custom<ParamDTypeValue>
 //===----------------------------------------------------------------------===//

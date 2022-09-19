@@ -25,6 +25,12 @@ using namespace KGEN;
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 
+static PointerType getBufferPointerType(Type type) {
+  if (TypedAttr dtype = type.cast<BufferType>().getDType())
+    return PointerType::get(ScalarType::get(dtype));
+  return PointerType::get(type.getContext(), nullptr);
+}
+
 LogicalResult BufferConstructOp::verify() {
   BufferType type = getType();
   if (!type.getSize() && !getSize())
