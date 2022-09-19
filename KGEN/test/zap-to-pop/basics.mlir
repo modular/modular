@@ -76,3 +76,13 @@ kgen.func @simd_store(%val : !meta.simd<4, f32>, %buf: !meta.buffer<4, f32>, %id
   zap.simd.store %val, %buf[%idx] : !meta.simd<4, f32>, !meta.buffer<4, f32>
   kgen.return
 }
+
+// CHECK-LABEL: @zap_print
+kgen.func @zap_print(%a: !meta.scalar<f32>) {
+  // CHECK: %[[FMT:.*]] = pop.global_constant(dense<[102, 111, 111{{.*}}]> : tensor<7xsi8>)
+  // CHECK: %[[C_STR:.*]] = pop.bitcast %[[FMT]] : !meta.pointer<!pop.array{{.*}}> to !meta.pointer<!meta.scalar<si8>>
+  // CHECK: %[[BUF:.*]] = meta.buffer.construct %[[C_STR]]
+  // CHECK: pop.external_call @printf(%[[BUF]], %{{.*}}) (!meta.buffer<7, si8>) -> ()
+  zap.print "foo %f"(%a) : !meta.scalar<f32>
+  kgen.return
+}

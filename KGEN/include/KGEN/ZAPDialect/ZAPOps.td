@@ -204,5 +204,32 @@ def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// PrintOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_PrintOp : ZAPOp<"print"> {
+  let summary = "print format operation";
+  let description = [{
+    Print a series of values formatted according to the provided string.
+    This function is meant for debugging. The format string is the same as
+    `printf` and may not be supported on all targets.
+
+    Example:
+
+    ```mlir
+    zap.print "foo %d / %f bar"(%a, %b) : !meta.scalar<type>,
+                                          !kgen.paramref<type>
+    ```
+
+    TODO: This op is target-specific and should be modelled as such.
+  }];
+
+  let arguments = (ins StrAttr:$fmt, Variadic<AnyType>:$operands);
+
+  let assemblyFormat = [{
+    $fmt `(` $operands `)` attr-dict (`:` type($operands)^)?
+  }];
+}
 
 #endif // ZAPOPS_TD

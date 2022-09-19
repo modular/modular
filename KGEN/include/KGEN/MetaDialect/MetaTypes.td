@@ -97,9 +97,8 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer", [DTypeInterface]> {
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
-      return $_get(size.getContext(), size, ty);
-    }]>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
+    TypeBuilder<(ins "int64_t":$size, "DType":$dtype)>
   ];
 
   let extraClassDeclaration = [{

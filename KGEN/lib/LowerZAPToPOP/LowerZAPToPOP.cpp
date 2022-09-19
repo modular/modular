@@ -44,20 +44,25 @@ struct ConvertZAPBufferStackAllocation
 // ConvertZAPBufferConstant
 //===----------------------------------------------------------------------===//
 
+/// Create a buffer constant with the given values.
+static Value createBufferConstant(PatternRewriter &rewriter, Location loc,
+                                  BufferType type, DenseElementsAttr values) {
+  auto elType = ScalarType::get(type.getDType());
+  Value global = rewriter.create<GlobalConstantOp>(
+      loc, PointerType::get(ArrayType::get(type.getSize(), elType)), values);
+  Value ptr = rewriter.create<BitcastOp>(loc, PointerType::get(elType), global);
+  return rewriter.create<BufferConstructOp>(loc, type, ptr);
+}
+
 struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(BufferConstantOp op,
                                 PatternRewriter &rewriter) const override {
-    auto type = op.getType().cast<BufferType>();
-    auto elType = ScalarType::get(type.getDType());
-    Value global = rewriter.create<GlobalConstantOp>(
-        op.getLoc(), PointerType::get(ArrayType::get(type.getSize(), elType)),
-        op.getValues());
-    Value ptr = rewriter.create<BitcastOp>(op.getLoc(),
-                                           PointerType::get(elType), global);
-    rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr);
-    return failure();
+    Value buf = createBufferConstant(rewriter, op.getLoc(), op.getType(),
+                                     op.getValues());
+    rewriter.replaceOp(op, buf);
+    return success();
   }
 };
 
@@ -89,7 +94,7 @@ struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
     Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
     rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), ptr);
-    return failure();
+    return success();
   }
 };
 
@@ -127,7 +132,38 @@ struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
         op.getLoc(),
         PointerType::get(TypeConstantAttr::get(op.getValue().getType())), ptr);
     rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), bitcastPtr);
-    return failure();
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPPrint
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(PrintOp op,
+                                PatternRewriter &rewriter) const override {
+    // Lower the string into the a buffer constant. Null-terminate the string.
+    SmallVector<char> fmtStr;
+    fmtStr.reserve(op.getFmt().size() + 1);
+    llvm::append_range(fmtStr, op.getFmt());
+    fmtStr.push_back('\0');
+    auto values = DenseIntElementsAttr::get(
+        RankedTensorType::get(fmtStr.size(), rewriter.getIntegerType(8, true)),
+        ArrayRef<char>(fmtStr.data(), fmtStr.size()));
+    auto fmtType = rewriter.getType<BufferType>(fmtStr.size(), DType::si8);
+    Value fmt = createBufferConstant(rewriter, op.getLoc(), fmtType, values);
+    // Create the invocation to `printf`.
+    SmallVector<Value> operands;
+    operands.reserve(op.getNumOperands() + 1);
+    operands.push_back(fmt);
+    llvm::append_range(operands, op.getOperands());
+    rewriter.replaceOpWithNewOp<ExternalCallOp>(
+        op, TypeRange(), "printf", operands,
+        TypeAttr::get(rewriter.getFunctionType(fmtType, {})));
+    return success();
   }
 };
 
@@ -140,7 +176,7 @@ struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
 static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
   patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferConstant,
                   ConvertZAPBufferStackAllocation, ConvertZAPBufferStore,
-                  ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
+                  ConvertZAPPrint, ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
       patterns.getContext());
 }
 
