@@ -16,7 +16,7 @@ kgen.generator @impl<lb, ub, step>(%buf: !meta.buffer<?, si64>) {
 
 kgen.generator public @test_print() {
   %0 = zap.buffer.constant(dense<[0, 11, 22, 33]> : tensor<4xsi64>) : si64
-  %1 = meta.buffer.rebind %0 : !meta.buffer<4, si64> to !meta.buffer<?, si64>
+  %1 = meta.buffer.convert %0 : !meta.buffer<4, si64> to !meta.buffer<?, si64>
   kgen.call @impl<lb = 0, ub = 4, step = 2>(%1) : (!meta.buffer<?, si64>) -> ()
   kgen.call @impl<lb = 1, ub = 4, step = 1>(%1) : (!meta.buffer<?, si64>) -> ()
   kgen.return

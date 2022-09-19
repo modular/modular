@@ -40,16 +40,16 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
 kgen.func @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
  -> (!meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>) {
   // Noop casts get folded away.
-  %0 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, ?>
+  %0 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, ?>
 
   // A-B-A cast.
-  %1 = meta.buffer.rebind %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  %2 = meta.buffer.rebind %1 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
+  %1 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  %2 = meta.buffer.convert %1 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
 
   // A-B-C cast.
-  // CHECK:  %[[V0:.*]] = meta.buffer.rebind %[[ARG1]] : !meta.buffer<10, f32> to !meta.buffer<?, ?>
-  %3 = meta.buffer.rebind %arg1 : !meta.buffer<10, f32> to !meta.buffer<?, f32>
-  %4 = meta.buffer.rebind %3 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
+  // CHECK:  %[[V0:.*]] = meta.buffer.convert %[[ARG1]] : !meta.buffer<10, f32> to !meta.buffer<?, ?>
+  %3 = meta.buffer.convert %arg1 : !meta.buffer<10, f32> to !meta.buffer<?, f32>
+  %4 = meta.buffer.convert %3 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
 
   // CHECK: kgen.return %[[ARG0]], %[[ARG0]], %[[V0]]
   kgen.return %0, %2, %4 : !meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>

@@ -160,44 +160,44 @@ kgen.func @buffer_address(%a: !meta.buffer<?, ?>) -> !meta.pointer<?> {
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<4, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, ?> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, ?>) -> !meta.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, ?> to !meta.buffer<4, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, ?> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, f32> {
   // CHECK: %[[PTR:.*]] = llvm.extractvalue %[[A]][1]
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, f32> to !meta.buffer<4, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, f32> to !meta.buffer<4, f32>
   // CHECK: return %[[PTR]]
   kgen.return %0 : !meta.buffer<4, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -205,15 +205,15 @@ kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[PTR]], %[[S1]][1]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<?, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, ?> to !meta.buffer<?, f32>
   kgen.return %0 : !meta.buffer<?, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr to !llvm.ptr<f32>
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -221,44 +221,44 @@ kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[PTR]], %[[S1]][1]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, ?> to !meta.buffer<?, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, ?> to !meta.buffer<?, f32>
   kgen.return %0 : !meta.buffer<?, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, f32> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, f32> {
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[SIZE]], %[[S0]][0]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[A]], %[[S1]][1]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, f32> to !meta.buffer<?, f32>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, f32> to !meta.buffer<?, f32>
   kgen.return %0 : !meta.buffer<?, f32>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, ?>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.extractvalue %[[A]][2]
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[DTYPE]], %[[S0]][1]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[PTR]], %[[S1]][0]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, ?> to !meta.buffer<4, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, ?> to !meta.buffer<4, ?>
   kgen.return %0 : !meta.buffer<4, ?>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -266,30 +266,30 @@ kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[DTYPE]], %[[S0]][1]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[PTR]], %[[S1]][0]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, f32> to !meta.buffer<4, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, f32> to !meta.buffer<4, ?>
   kgen.return %0 : !meta.buffer<4, ?>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, f32>) -> !meta.buffer<4, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[DTYPE:.*]] = llvm.mlir.constant
   // CHECK-DAG: %[[S1:.*]] = llvm.insertvalue %[[DTYPE]], %[[S0]][1]
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[PTR]], %[[S1]][0]
   // CHECK: return %[[S2]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, f32> to !meta.buffer<4, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, f32> to !meta.buffer<4, ?>
   kgen.return %0 : !meta.buffer<4, ?>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant
@@ -298,15 +298,15 @@ kgen.func @buffer_cast(%a: !meta.buffer<4, ?>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[DTYPE]], %[[S1]][2]
   // CHECK-DAG: %[[S3:.*]] = llvm.insertvalue %[[PTR]], %[[S2]][1]
   // CHECK: return %[[S3]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, ?> to !meta.buffer<?, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, ?> to !meta.buffer<?, ?>
   kgen.return %0 : !meta.buffer<?, ?>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[RAW:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[RAW]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
@@ -316,15 +316,15 @@ kgen.func @buffer_cast(%a: !meta.buffer<?, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[DTYPE]], %[[S1]][2]
   // CHECK-DAG: %[[S3:.*]] = llvm.insertvalue %[[PTR]], %[[S2]][1]
   // CHECK: return %[[S3]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<?, f32> to !meta.buffer<?, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<?, f32> to !meta.buffer<?, ?>
   kgen.return %0 : !meta.buffer<?, ?>
 }
 
 // -----
 
-// CHECK-LABEL: @buffer_cast
+// CHECK-LABEL: @buffer_convert
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
+kgen.func @buffer_convert(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[PTR:.*]] = llvm.bitcast %[[A]] : !llvm.ptr<f32> to !llvm.ptr
   // CHECK-DAG: %[[S0:.*]] = llvm.mlir.undef
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(4 : index)
@@ -333,7 +333,7 @@ kgen.func @buffer_cast(%a: !meta.buffer<4, f32>) -> !meta.buffer<?, ?> {
   // CHECK-DAG: %[[S2:.*]] = llvm.insertvalue %[[DTYPE]], %[[S1]][2]
   // CHECK-DAG: %[[S3:.*]] = llvm.insertvalue %[[PTR]], %[[S2]][1]
   // CHECK: return %[[S3]]
-  %0 = meta.buffer.rebind %a : !meta.buffer<4, f32> to !meta.buffer<?, ?>
+  %0 = meta.buffer.convert %a : !meta.buffer<4, f32> to !meta.buffer<?, ?>
   kgen.return %0 : !meta.buffer<?, ?>
 }
 

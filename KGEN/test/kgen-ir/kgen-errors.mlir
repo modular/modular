@@ -183,7 +183,7 @@ kgen.func @meta_buffer_size(%arg0: i32) -> index {
 
 kgen.func @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
   // expected-error @+1 {{input buffer size '42' disagrees with result buffer size '1'}}
-  %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
+  %0 = meta.buffer.convert %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
   kgen.return %0 : !meta.buffer<1, f32>
 }
 
@@ -191,7 +191,7 @@ kgen.func @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer
 
 kgen.func @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
   // expected-error @+1 {{input buffer dtype 'f32' disagrees with result buffer dtype 'f64'}}
-  %0 = meta.buffer.rebind %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
+  %0 = meta.buffer.convert %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
   kgen.return %0 : !meta.buffer<42, f64>
 }
 
