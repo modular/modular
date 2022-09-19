@@ -343,3 +343,28 @@ kgen.func @cmp_simd(%lhs: !meta.simd<4, f32>, %rhs: !meta.simd<4, f32>) -> !meta
   // CHECK: vector<4xi1>
   kgen.return %0 : !meta.simd<4, bool>
 }
+
+// -----
+
+// CHECK-LABEL: @pointer_to_index
+kgen.func @pointer_to_index(%a: !meta.pointer<!meta.scalar<f32>>,
+                            %b: !meta.pointer<!meta.simd<4, si32>>) -> (index, index) {
+  // CHECK: llvm.ptrtoint
+  %0 = pop.pointer_to_index %a : !meta.pointer<!meta.scalar<f32>>
+  // CHECK: llvm.ptrtoint
+  %1 = pop.pointer_to_index %b : !meta.pointer<!meta.simd<4, si32>>
+  kgen.return %0, %1 : index, index
+}
+
+// -----
+
+// CHECK-LABEL: @index_to_pointer
+kgen.func @index_to_pointer(%idx: index) -> (
+      !meta.pointer<!meta.scalar<f32>>,
+      !meta.pointer<!meta.simd<4, si32>>) {
+  // CHECK: llvm.inttoptr
+  %0 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
+  // CHECK: llvm.inttoptr
+  %1 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, si32>>
+  kgen.return %0, %1 :!meta.pointer<!meta.scalar<f32>>, !meta.pointer<!meta.simd<4, si32>>
+}

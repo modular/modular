@@ -490,6 +490,10 @@ using ConvertPOPSIMDReduceMin =
 using ConvertPOPLoad = mlir::OneToOneConvertToLLVMPattern<LoadOp, LLVM::LoadOp>;
 using ConvertPOPStore =
     mlir::OneToOneConvertToLLVMPattern<StoreOp, LLVM::StoreOp>;
+using ConvertPOPIndexToPointer =
+    mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
+using ConvertPOPPointerToIndex =
+    mlir::OneToOneConvertToLLVMPattern<PointerToIndexOp, LLVM::PtrToIntOp>;
 
 } // namespace
 
@@ -510,12 +514,14 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,
+      ConvertPOPIndexToPointer,
       ConvertPOPLoad,
       ConvertPOPMax,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
+      ConvertPOPPointerToIndex,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
