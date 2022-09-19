@@ -111,3 +111,10 @@ kgen.generator @zap_simd_store<size, type: dtype>(
   zap.simd.store %v2, %c[%idx] : !meta.simd<2, si32>, !meta.buffer<4, si32>
   kgen.return
 }
+
+// CHECK-LABEL: @zap_print
+kgen.generator @zap_print(%a: !meta.scalar<f32>) {
+  // CHECK: zap.print "foo %f"(%{{.*}}) : !meta.scalar<f32>
+  zap.print "foo %f"(%a) : !meta.scalar<f32>
+  kgen.return
+}

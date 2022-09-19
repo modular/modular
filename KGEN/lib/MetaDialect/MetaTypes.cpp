@@ -433,6 +433,15 @@ Optional<int64_t> BufferType::resolveSize() const {
   return {};
 }
 
+BufferType BufferType::get(TypedAttr size, TypedAttr dtype) {
+  return get(size.getContext(), size, dtype);
+}
+
+BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
+  return get(OpBuilder(ctx).getIndexAttr(size),
+             DTypeConstantAttr::get(ctx, dtype));
+}
+
 /// This implements `OpaqueObjectInterface::populate`. It generates a buffer
 /// object, and furthermore allocates memory for the buffer's backing storage
 /// and places that in the pointer field of the buffer structure itself.
