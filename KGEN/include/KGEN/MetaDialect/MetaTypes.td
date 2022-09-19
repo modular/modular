@@ -185,9 +185,15 @@ def ConcretePointer : ConfinedType<PointerType,
     [CPred<"$_self.cast<PointerType>().getElementType()">],
     "pointer with known element type">;
 /// A buffer type with a concrete dtype.
-def ConcreteBuffer : ConfinedType<BufferType,
+def BufferKnownDType : ConfinedType<BufferType,
     [CPred<"$_self.cast<BufferType>().getDType()">],
-    "buffer with known dtype">;
+    "buffer with concrete dtype">;
+/// A buffer type with a concrete size and dtype.
+def ConcreteBuffer : ConfinedType<BufferType,
+    [CPred<"$_self.cast<BufferType>().getDType() && " #
+           "$_self.cast<BufferType>().getSize()">],
+    "buffer with concrete size and dtype">;
+
 
 def ScalarOrSIMD : AnyTypeOf<
     [ScalarType, SIMDType, ParamRefType]>;

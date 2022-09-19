@@ -13,6 +13,21 @@ kgen.generator @buffer_stack_allocation<size, type: dtype>() {
   kgen.return
 }
 
+// CHECK-LABEL: @zap_buffer_constant
+kgen.generator @zap_buffer_constant<type: dtype>() {
+  // CHECK: %[[ARR0:.*]] = pop.global_constant(dense<[1.{{0+}}e+01, 1.2{{0+}}e+01, -2.{{0+}}e+00]>
+  // CHECK: %[[PTR0:.*]] = pop.bitcast %[[ARR0]] : !meta.pointer<!pop.array<3, !meta.scalar<f32>>> to !meta.pointer<!meta.scalar<f32>>
+  // CHECK: %[[BUF0:.*]] = meta.buffer.construct %[[PTR0]] : !meta.buffer<3, f32>
+  // CHECK: %[[ARR1:.*]] = pop.global_constant(dense<[2, 3]>
+  // CHECK: %[[PTR1:.*]] = pop.bitcast %[[ARR1]] : !meta.pointer<!pop.array<2, !meta.scalar<type>>> to !meta.pointer<!meta.scalar<type>>
+  // CHECK: %[[BUF1:.*]] = meta.buffer.construct %[[PTR1]] : !meta.buffer<2, type>
+  %0 = zap.buffer.constant(dense<[10.0, 12.0, -2.0]> : tensor<3xf32>) : f32
+  %1 = zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+  // CHECK: "use"(%[[BUF0]], %[[BUF1]])
+  "use"(%0, %1) : (!meta.buffer<3, f32>, !meta.buffer<2, type>) -> ()
+  kgen.return
+}
+
 // CHECK-LABEL: @buffer_load
 // CHECK-SAME: %[[BUF:.*]]: !meta.buffer
 // CHECK-SAME: %[[IDX:.*]]: index

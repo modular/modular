@@ -168,6 +168,8 @@ def BufferConstructOp : MetaOp<"buffer.construct", [
     qualified(type($result))
   }];
   let hasVerifier = 1;
+
+  let builders = [OpBuilder<(ins "Type":$type, "Value":$ptr)>];
 }
 
 //===----------------------------------------------------------------------===//

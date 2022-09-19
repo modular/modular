@@ -9,7 +9,9 @@
 #include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPOps.h"
+#include "Support/IndexDialect/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -33,9 +35,29 @@ struct ConvertZAPBufferStackAllocation
     auto type = op.getType().cast<BufferType>();
     Value ptr = rewriter.create<StackAllocationOp>(
         op.getLoc(), getPointerOfSameDType(type), type.getSize());
-    rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr, Value(),
-                                                   Value());
+    rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr);
     return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPBufferConstant
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(BufferConstantOp op,
+                                PatternRewriter &rewriter) const override {
+    auto type = op.getType().cast<BufferType>();
+    auto elType = ScalarType::get(type.getDType());
+    Value global = rewriter.create<GlobalConstantOp>(
+        op.getLoc(), PointerType::get(ArrayType::get(type.getSize(), elType)),
+        op.getValues());
+    Value ptr = rewriter.create<BitcastOp>(op.getLoc(),
+                                           PointerType::get(elType), global);
+    rewriter.replaceOpWithNewOp<BufferConstructOp>(op, type, ptr);
+    return failure();
   }
 };
 
@@ -116,10 +138,10 @@ struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
 //===----------------------------------------------------------------------===//
 
 static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
-  patterns
-      .insert<ConvertZAPBufferLoad, ConvertZAPBufferStackAllocation,
-              ConvertZAPBufferStore, ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
-          patterns.getContext());
+  patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferConstant,
+                  ConvertZAPBufferStackAllocation, ConvertZAPBufferStore,
+                  ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
+      patterns.getContext());
 }
 
 //===----------------------------------------------------------------------===//

@@ -67,6 +67,14 @@ Type POP::ArrayType::resolveElementType() const {
   return nullptr;
 }
 
+POP::ArrayType POP::ArrayType::get(TypedAttr size, TypedAttr elementType) {
+  return get(size.getContext(), size, elementType);
+}
+
+POP::ArrayType POP::ArrayType::get(TypedAttr size, Type elementType) {
+  return get(size.getContext(), size, TypeConstantAttr::get(elementType));
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

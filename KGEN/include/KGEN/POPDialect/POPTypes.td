@@ -44,6 +44,12 @@ def ArrayType : POPType<"Array", "array"> {
   }];
   let genVerifyDecl = 1;
 
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
+                                        "TypedAttr":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "Type":$elementType)>
+  ];
+
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
     Optional<int64_t> resolveSize() const;

@@ -121,6 +121,11 @@ LogicalResult BufferConstructOp::verify() {
   return success();
 }
 
+void BufferConstructOp::build(OpBuilder &b, OperationState &state, Type type,
+                              Value ptr) {
+  build(b, state, type, ptr, /*size=*/Value(), /*dtype=*/Value());
+}
+
 //===----------------------------------------------------------------------===//
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
