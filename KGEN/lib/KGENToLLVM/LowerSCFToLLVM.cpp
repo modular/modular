@@ -25,6 +25,78 @@ namespace {
 // mainly to convert `index` and other `meta` dialect types to LLVM.
 
 //===----------------------------------------------------------------------===//
+// ConvertSCFWhileOp
+//===----------------------------------------------------------------------===//
+
+struct ConvertSCFWhileOp : public mlir::ConvertOpToLLVMPattern<scf::WhileOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, scf::WhileOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+};
+
+LogicalResult
+ConvertSCFWhileOp::matchAndRewrite(scf::WhileOp op, scf::WhileOpAdaptor adaptor,
+                                   ConversionPatternRewriter &rewriter) const {
+  Location loc = op.getLoc();
+
+  // Convert the loop body types.
+  if (failed(
+          rewriter.convertRegionTypes(&op.getBefore(), *getTypeConverter())) ||
+      failed(rewriter.convertRegionTypes(&op.getAfter(), *getTypeConverter())))
+    return rewriter.notifyMatchFailure(
+        op.getLoc(), "failed to convert region argument types");
+
+  // Split the current block before the WhileOp to create the inlining point.
+  Block *currentBlock = rewriter.getInsertionBlock();
+  Block *continuation =
+      rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+
+  // Inline both regions.
+  Block *after = &op.getAfter().front();
+  Block *afterLast = &op.getAfter().back();
+  Block *before = &op.getBefore().front();
+  Block *beforeLast = &op.getBefore().back();
+  rewriter.inlineRegionBefore(op.getAfter(), continuation);
+  rewriter.inlineRegionBefore(op.getBefore(), after);
+
+  // Branch to the "before" region.
+  rewriter.setInsertionPointToEnd(currentBlock);
+  rewriter.create<LLVM::BrOp>(loc, adaptor.getInits(), before);
+
+  // Replace terminators with branches. Assuming bodies are SESE, which holds
+  // given only the patterns from this file, we only need to look at the last
+  // block. This should be reconsidered if we allow break/continue in SCF.
+  rewriter.setInsertionPointToEnd(beforeLast);
+  auto condOp = cast<scf::ConditionOp>(beforeLast->getTerminator());
+  Value condition = rewriter.getRemappedValue(condOp.getCondition());
+  if (!condition)
+    return rewriter.notifyMatchFailure(condOp.getLoc(),
+                                       "failed to convert condition");
+  SmallVector<Value> args;
+  if (failed(rewriter.getRemappedValues(condOp.getArgs(), args)))
+    return rewriter.notifyMatchFailure(condOp.getLoc(),
+                                       "failed to convert condition arguments");
+  rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(condOp, condition, after, args,
+                                              continuation, ValueRange());
+
+  rewriter.setInsertionPointToEnd(afterLast);
+  auto yieldOp = cast<scf::YieldOp>(afterLast->getTerminator());
+  SmallVector<Value> results;
+  if (failed(rewriter.getRemappedValues(yieldOp.getResults(), results)))
+    return rewriter.notifyMatchFailure(yieldOp.getLoc(),
+                                       "failed to convert yield results");
+  rewriter.replaceOpWithNewOp<LLVM::BrOp>(yieldOp, results, before);
+
+  // Replace the op with values "yielded" from the "before" region, which are
+  // visible by dominance.
+  rewriter.replaceOp(op, args);
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ConvertSCFForOp
 //===----------------------------------------------------------------------===//
 
@@ -197,7 +269,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
 
 static void populateSCFToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertSCFForOp, ConvertSCFIfOp>(typeConverter);
+  patterns.insert<ConvertSCFForOp, ConvertSCFIfOp, ConvertSCFWhileOp>(
+      typeConverter);
 }
 
 //===----------------------------------------------------------------------===//

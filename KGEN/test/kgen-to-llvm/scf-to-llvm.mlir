@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
 
 llvm.func @get(i32) -> i32
 
@@ -42,4 +42,25 @@ kgen.func @cond(%cond: i1, %a: i32, %b: i32) -> i32 {
     scf.yield %b : i32
   }
   kgen.return %result : i32
+}
+
+// CHECK-LABEL: @while
+// CHECK-SAME: %[[INIT:.*]]:
+kgen.func @while(%init: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: llvm.br ^bb1(%[[INIT]]
+  %result = scf.while (%v = %init) : (!meta.scalar<f32>) -> !meta.scalar<f32> {
+    // CHECK: ^bb1(%[[V:.*]]: f32
+    // CHECK: llvm.cond_br %{{.*}}, ^bb2(%[[V]] : f32), ^bb3
+    %condition = "cond"(%v) : (!meta.scalar<f32>) -> i1
+    scf.condition(%condition) %v : !meta.scalar<f32>
+  } do {
+  // CHECK: ^bb2(%[[U:.*]]: f32
+  ^bb0(%u: !meta.scalar<f32>):
+    // CHECK: llvm.br ^bb1(
+    %next = "next"(%u) : (!meta.scalar<f32>) -> !meta.scalar<f32>
+    scf.yield %next : !meta.scalar<f32>
+  }
+  // CHECK: ^bb3:
+  // CHECK: return %[[V]]
+  kgen.return %result : !meta.scalar<f32>
 }
