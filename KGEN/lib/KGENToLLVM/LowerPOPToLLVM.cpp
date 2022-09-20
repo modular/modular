@@ -10,6 +10,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -447,6 +448,64 @@ struct ConvertPOPSIMDReduceMul
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPStructConstruct
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStructConstruct
+    : mlir::ConvertOpToLLVMPattern<StructConstructOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructConstructOp op, StructConstructOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type structType = getTypeConverter()->convertType(op.getType());
+    if (!structType)
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "failed to convert struct type");
+    Value container = rewriter.create<LLVM::UndefOp>(op.getLoc(), structType);
+    for (auto &element : llvm::enumerate(adaptor.getOperands()))
+      container = rewriter.create<LLVM::InsertValueOp>(
+          op.getLoc(), container, element.value(), element.index());
+    rewriter.replaceOp(op, container);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPReplaceElement
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPReplaceElement
+    : mlir::ConvertOpToLLVMPattern<ReplaceElementOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ReplaceElementOp op, ReplaceElementOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+        op, adaptor.getContainer(), adaptor.getValue(),
+        op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPGetElement
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPGetElement : mlir::ConvertOpToLLVMPattern<GetElementOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(GetElementOp op, GetElementOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getContainer(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -534,6 +593,9 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
+      ConvertPOPStructConstruct,
+      ConvertPOPGetElement,
+      ConvertPOPReplaceElement,
       ConvertPOPSub
       // clang-format on
       >(typeConverter);

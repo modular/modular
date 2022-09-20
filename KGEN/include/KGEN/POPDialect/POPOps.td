@@ -11,6 +11,7 @@
 include "KGEN/KGENDialect/ElaboratorOpInterface.td"
 include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
+include "KGEN/POPDialect/POPTypes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
@@ -783,6 +784,106 @@ def POP_OffsetOp : POPOp<"offset",
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructConstructOp
+//===----------------------------------------------------------------------===//
+
+def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect]> {
+  let summary = "construct a struct";
+  let description = [{
+    The `pop.struct.construct` operation creates a struct of the given type
+    from values corresponding to its element types.
+
+    Example:
+
+    ```mlir
+    %0 = pop.struct.construct(%f32, %f64)
+      : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
+
+    %1 = pop.struct.construct(%arr, %ptr, %v)
+      : !pop.struct<!pop.array<size, type>, !meta.pointer<type>, type>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$elements);
+  let results = (outs POP_StructType:$result);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` qualified(type($result)) ``
+    custom<ConstructTypes>(type($elements), ref(type($result)))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// GetElementOp
+//===----------------------------------------------------------------------===//
+
+def POP_GetElementOp : POPOp<"get_element", [NoSideEffect,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "struct extract value";
+  let description = [{
+    The `pop.get_element` operation gets the struct element at the given
+    index from the provided struct.
+
+    Example:
+
+    ```mlir
+    // Extract the !meta.scalar<f32> at index 0.
+    %0 = pop.get_element %struct[0]
+      : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
+
+    // Extract the !meta.scalar<f64> at index 1.
+    %1 = pop.get_element %struct[1]
+      : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins POP_StructType:$container, IndexAttr:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $container `[` $index `]` attr-dict `:` qualified(type($container))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ReplaceElementOp
+//===----------------------------------------------------------------------===//
+
+def POP_ReplaceElementOp : POPOp<"replace_element", [NoSideEffect,
+    AllTypesMatch<["container", "result"]>]> {
+  let summary = "struct insert value";
+  let description = [{
+    The `pop.replace_element` operation inserts the given value into the struct
+    at the given index. It returns a new struct with the inserted value.
+
+    Example:
+
+    ```mlir
+    // Insert the !meta.scalar<f32> at index 0.
+    %0 = pop.replace_element %f32, %struct[0]
+      : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
+
+    // Insert the !meta.scalar<f64> at index 1.
+    %1 = pop.replace_element %f64, %struct[1]
+      : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value, POP_StructType:$container,
+                       IndexAttr:$index);
+  let results = (outs POP_StructType:$result);
+  let assemblyFormat = [{
+    $value `,` $container `[` $index `]` attr-dict `:`
+    qualified(type($container)) ``
+    custom<StructValueType>(type($value), ref(type($container)), ref($index))
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

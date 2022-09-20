@@ -58,4 +58,47 @@ def POP_ArrayType : POPType<"Array", "array"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// StructType
+//===----------------------------------------------------------------------===//
+
+def POP_StructType : POPType<"Struct", "struct"> {
+  let summary = "parameterized struct type";
+  let description = [{
+    This type represents a struct. A struct contains element types arranged in
+    their order of declaration.
+
+    Example:
+
+    ```mlir
+    // A struct with primitive element types.
+    !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>
+
+    // A struct with nested types.
+    !pop.struct<
+      !meta.pointer<!meta.simd<4, si8>>,
+      !pop.array<24, !meta.scalar<si64>>,
+      !pop.struct<
+        !meta.scalar<f32>,
+        !meta.scalar<f64>
+      >
+    >
+
+    // A struct with parameterized element types.
+    !pop.struct<type, !pop.array<size, !meta.scalar<dtype>>>
+    ```
+  }];
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$elementTypes);
+  // FIXME: Empty structs won't work until https://reviews.llvm.org/D133819.
+  let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($elementTypes) `>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Try to narrow all the element type expressions to MLIR types.
+    LogicalResult
+    resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const;
+  }];
+}
+
 #endif // POPTYPES_TD

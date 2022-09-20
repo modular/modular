@@ -410,6 +410,114 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
 }
 
 //===----------------------------------------------------------------------===//
+// StructConstructOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseConstructTypes(AsmParser &p,
+                                       SmallVectorImpl<Type> &elementTypes,
+                                       Type structType) {
+  // Infer the element types from the struct type.
+  for (TypedAttr elementType : structType.cast<StructType>().getElementTypes())
+    elementTypes.push_back(ParamRefType::get(elementType));
+  return success();
+}
+
+static void printConstructTypes(AsmPrinter &p, Operation *op,
+                                TypeRange elementTypes, StructType structType) {
+}
+
+LogicalResult StructConstructOp::verify() {
+  for (auto [idx, operandType, elementType] :
+       llvm::zip(llvm::seq<unsigned>(0, getNumOperands()), getOperandTypes(),
+                 getType().getElementTypes())) {
+    if (operandType != ParamRefType::get(elementType))
+      return emitOpError("operand #")
+             << idx << " type " << operandType
+             << " does not match struct element type " << elementType;
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GetElementOp
+//===----------------------------------------------------------------------===//
+
+/// Verify the value type matches the struct element type at the given index.
+static LogicalResult
+verifyStructValueType(Operation *op, mlir::TypedValue<StructType> container,
+                      IntegerAttr indexAttr, Type valueType,
+                      StringRef valueKind) {
+  ArrayRef<TypedAttr> elementTypes = container.getType().getElementTypes();
+  size_t index = indexAttr.getInt();
+  if (index >= elementTypes.size())
+    return op->emitOpError("element index ")
+           << index << " out of bounds (>=" << elementTypes.size() << ")";
+  if (ParamRefType::get(elementTypes[index]) != valueType)
+    return op->emitOpError(valueKind)
+           << " type " << valueType
+           << " does not match struct element type at index " << index << ": "
+           << elementTypes[index];
+  return success();
+}
+
+LogicalResult GetElementOp::verify() {
+  return verifyStructValueType(*this, getContainer(), getIndexAttr(), getType(),
+                               "result");
+}
+
+LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
+                                             Optional<Location> loc,
+                                             ValueRange operands,
+                                             DictionaryAttr attrs,
+                                             mlir::RegionRange regions,
+                                             SmallVectorImpl<Type> &types) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    if (loc)
+      return mlir::emitError(*loc, msg);
+    return failure();
+  };
+  if (operands.size() != 1)
+    return emitError("expected 1 operand");
+  auto structType = operands.front().getType().dyn_cast<StructType>();
+  if (!structType)
+    return emitError("expected struct operand");
+  mlir::OperationName name(getOperationName(), context);
+  auto indexAttr =
+      attrs.get(getIndexAttrName(name)).dyn_cast_or_null<IntegerAttr>();
+  if (!indexAttr)
+    return emitError("expected an integer index attribute");
+  size_t index = indexAttr.getInt();
+  if (index >= structType.getElementTypes().size())
+    return emitError("struct element index out of bounds");
+  types.push_back(ParamRefType::get(structType.getElementTypes()[index]));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ReplaceElementOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
+                                        Type structType, IntegerAttr index) {
+  ArrayRef<TypedAttr> elementTypes =
+      structType.cast<StructType>().getElementTypes();
+  if (index.getInt() > static_cast<int64_t>(elementTypes.size()))
+    return p.emitError(p.getCurrentLocation(), "element index out of bounds (")
+           << index.getInt() << " >= " << elementTypes.size() << ")";
+  // Infer the value type from the struct type and index.
+  valueType = ParamRefType::get(elementTypes[index.getInt()]);
+  return success();
+}
+
+static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
+                                 Type structType, IntegerAttr index) {}
+
+LogicalResult ReplaceElementOp::verify() {
+  return verifyStructValueType(*this, getContainer(), getIndexAttr(),
+                               getValue().getType(), "operand");
+}
+
+//===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 

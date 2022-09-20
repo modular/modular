@@ -9,3 +9,22 @@ kgen.generator @array<size, type: type>(
 ) {
   kgen.return
 }
+
+// CHECK-LABEL: @struct
+kgen.generator @struct<size, dtype: dtype, type: type>(
+  // CHECK-SAME: !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>
+  %arg0: !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>,
+  // CHECK-SAME: !pop.struct<!meta.pointer<!meta.simd<4, si8>>, !pop.array<24, !meta.scalar<si64>>, !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>>
+  %arg1: !pop.struct<
+    !meta.pointer<!meta.simd<4, si8>>,
+    !pop.array<24, !meta.scalar<si64>>,
+    !pop.struct<
+      !meta.scalar<f32>,
+      !meta.scalar<f64>
+    >
+  >,
+  // CHECK: !pop.struct<type, !pop.array<size, !meta.scalar<dtype>>>
+  %arg2: !pop.struct<type, !pop.array<size, !meta.scalar<dtype>>>
+) {
+  kgen.return
+}
