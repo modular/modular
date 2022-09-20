@@ -16,7 +16,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
-#include "mlir/IR/TypeRange.h"
+#include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -111,12 +111,28 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
 
 /// Reify a primitive constant attribute (integer, float, or vector thereof)
 /// to an attribute that fits the given type.
-static ErrorOr<TypedAttr> reifyPrimitiveConstant(TypedAttr attr, Type type) {
-  auto dtype = type.cast<DTypeInterface>().resolveDType();
-  if (attr.isa<IntegerAttr, FloatAttr>())
-    return reifyOneAttribute(attr, dtype);
+static ErrorOr<TypedAttr> reifyContant(TypedAttr attr, DType dtype, Type type) {
+  // If the value is an integer or float attribute, reify it to according to the
+  // result dtype.
+  if (attr.isa<IntegerAttr, FloatAttr>()) {
+    ErrorOr<TypedAttr> result = reifyOneAttribute(attr, dtype);
+    if (result.isError())
+      return result.takeError();
+    // If the result is an array or vector, splat the constant.
+    ShapedType shapedType;
+    if (auto simd = type.dyn_cast<SIMDType>())
+      shapedType = VectorType::get(*simd.resolveSize(), result->getType());
+    else if (auto array = type.dyn_cast<ArrayType>())
+      shapedType =
+          RankedTensorType::get(*array.resolveSize(), result->getType());
+    if (shapedType)
+      result = DenseElementsAttr::get(shapedType, result.takeValue());
+    return result;
+  }
 
-  auto value = attr.cast<DenseElementsAttr>();
+  // If the value is an elements attribute, reify each element according to the
+  // result dtype.
+  auto value = attr.cast<mlir::DenseIntOrFPElementsAttr>();
   SmallVector<Attribute> values;
   values.reserve(value.size());
   for (Attribute attr : value.getValues<Attribute>()) {
@@ -143,8 +159,80 @@ static ErrorOr<TypedAttr> reifyPrimitiveConstant(TypedAttr attr, Type type) {
                                 values);
 }
 
+/// Verify a scalar or SIMD constant value.
+static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
+  // If the type is unresolved, allow only scalar constants.
+  if (type.isa<ParamRefType>()) {
+    if (!value.isa<IntegerAttr, FloatAttr>())
+      return op->emitOpError(
+          "expected integer or float attribute for unspecified result type");
+    return success();
+  }
+
+  auto checkDType = [&](DTypeInterface type) -> LogicalResult {
+    Type valueType = mlir::getElementTypeOrSelf(value);
+    if (auto dtype = type.getDType().dyn_cast<DTypeConstantAttr>())
+      if (!dtype.isConvertibleFrom(valueType))
+        return op->emitOpError("cannot convert from attribute type ")
+               << valueType << " to dtype " << dtype.getDType().getAsString();
+    return success();
+  };
+
+  // If the type is a scalar, allow only scalar constant attributes.
+  if (auto scalar = type.dyn_cast<ScalarType>()) {
+    if (!value.isa<IntegerAttr, FloatAttr>())
+      return op->emitOpError("scalar constant expected integer or float "
+                             "attribute for constant value");
+    // If the dtype is specified, ensure it matches the attribute type.
+    return checkDType(scalar.cast<DTypeInterface>());
+  }
+
+  // Verify array constant.
+  if (auto array = type.dyn_cast<ArrayType>()) {
+    // If the size is known, require an elements attribute of the same shape.
+    if (Optional<int64_t> size = array.resolveSize()) {
+      auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
+      if (!elements)
+        return op->emitOpError("expected dense elements attribute for array "
+                               "constant with known size");
+      auto type = elements.getType().dyn_cast<RankedTensorType>();
+      if (!type || type.getRank() != 1 || type.getShape().front() != *size)
+        return op->emitOpError("expected attribute type to be tensor<")
+               << *size << "xT>";
+    } else if (!value.isa<IntegerAttr, FloatAttr>()) {
+      return op->emitOpError("expected integer or float attribute for array "
+                             "constant of unspecified size");
+    }
+    // Only scalar arrays can be created.
+    auto scalar = array.resolveElementType().dyn_cast_or_null<ScalarType>();
+    if (!scalar)
+      return op->emitOpError("array constant must have scalar elements");
+    return checkDType(scalar.cast<DTypeInterface>());
+  }
+
+  // Verify vector constant.
+  auto simd = type.cast<SIMDType>();
+  // If the size is specified, require an attribute of the same shape.
+  if (Optional<int64_t> size = simd.resolveSize()) {
+    auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
+    if (!elements)
+      return op->emitOpError("expected dense elements attribute for vector "
+                             "constant with known size");
+    auto type = elements.getType().dyn_cast<VectorType>();
+    if (!type || type.getRank() != 1 || type.getShape().front() != *size)
+      return op->emitOpError("expected attribute type to be vector<")
+             << *size << "xT>";
+  } else if (!value.isa<IntegerAttr, FloatAttr>()) {
+    return op->emitOpError("expected integer or float attribute for vector "
+                           "constant of unspecified size");
+  }
+  // If the dtype is specified, ensure it matches the attribute type.
+  return checkDType(simd.cast<DTypeInterface>());
+}
+
 ErrorOrSuccess ConstantOp::finalizeElaboration() {
-  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), getType());
+  ErrorOr<TypedAttr> value = reifyContant(
+      getValue(), getType().cast<DTypeInterface>().resolveDType(), getType());
   if (value.isError())
     return value.takeError();
   setValueAttr(value.takeValue());
@@ -157,16 +245,7 @@ void ConstantOp::getAsmResultNames(
 }
 
 LogicalResult ConstantOp::verify() {
-  if (succeeded(checkMetaCastedTypes(
-          [this](StringRef msg) { return emitOpError(msg); }, getType(),
-          getValue().getType(),
-          [](Type type, DTypeConstantAttr dtype) {
-            return success(dtype.isConvertibleFrom(type));
-          })))
-    return success();
-  return emitOpError("result type (")
-         << getType() << ") is incompatible with value type ("
-         << getValue().getType() << ")";
+  return verifyConstant(*this, getValue(), getType());
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
@@ -353,11 +432,14 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
-  Type elType = getType().resolveElementType();
-  if (auto array = elType.dyn_cast<ArrayType>())
-    elType = array.resolveElementType();
+  Type type = getType().resolveElementType();
+  DType dtype;
+  if (auto array = type.dyn_cast<ArrayType>())
+    dtype = array.resolveElementType().cast<ScalarType>().resolveDType();
+  else
+    dtype = type.cast<DTypeInterface>().resolveDType();
 
-  ErrorOr<TypedAttr> value = reifyPrimitiveConstant(getValue(), elType);
+  ErrorOr<TypedAttr> value = reifyContant(getValue(), dtype, type);
   if (value.isError())
     return value.takeError();
   setValueAttr(value.takeValue());
@@ -365,37 +447,8 @@ ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
 }
 
 LogicalResult GlobalConstantOp::verify() {
-  Type type = getType().resolveElementType();
-  if (!type)
-    return success();
-  Type valueType = getValue().getType();
-
-  if (auto array = type.dyn_cast<ArrayType>()) {
-    auto tensorType = valueType.dyn_cast<RankedTensorType>();
-    if (!tensorType)
-      return emitOpError("expected ranked tensor type constant value");
-    if (tensorType.getRank() != 1)
-      return emitOpError("expected a rank 1 tensor");
-    if (auto size = array.getSize().dyn_cast<IntegerAttr>())
-      if (size.getInt() != tensorType.getShape().front())
-        return emitOpError("expected attribute to have ")
-               << size.getInt() << " elements";
-    auto typeCst = array.getElementType().dyn_cast<TypeConstantAttr>();
-    if (!typeCst)
-      return success();
-    type = typeCst.getValue();
-    valueType = tensorType.getElementType();
-  }
-
-  if (succeeded(checkMetaCastedTypes(
-          [this](StringRef msg) { return emitOpError(msg); }, type, valueType,
-          [](Type type, DTypeConstantAttr dtype) {
-            return success(dtype.isConvertibleFrom(type));
-          })))
-    return success();
-  return emitOpError("result type (")
-         << getType() << ") is incompatible with value type ("
-         << getValue().getType() << ")";
+  return verifyConstant(*this, getValue(),
+                        ParamRefType::get(getType().getElementType()));
 }
 
 //===----------------------------------------------------------------------===//

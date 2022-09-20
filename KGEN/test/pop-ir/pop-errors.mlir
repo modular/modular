@@ -1,26 +1,23 @@
 // RUN: kgen-opt %s -verify-diagnostics -split-input-file
 
-kgen.func @pop_constant() -> !meta.scalar<si64> {
-  // expected-error @below {{incompatible scalar data type}}
-  // expected-error @below {{is incompatible with value type}}
-  %0 = pop.constant(32.0 : f32) : !meta.scalar<si64>
-  kgen.return %0 : !meta.scalar<si64>
-}
-
-// -----
-
-kgen.func @pop_constant() -> !meta.scalar<f32> {
-  // expected-error @below {{incompatible scalar data type}}
-  // expected-error @below {{is incompatible with value type}}
-  %0 = pop.constant(16777217 : i32) : !meta.scalar<f32>
-  kgen.return %0 : !meta.scalar<f32>
+kgen.generator @pop_constant<type: type>() {
+  // expected-error @below {{expected integer or float attribute for unspecified result type}}
+  %0 = pop.constant(dense<0> : vector<1xi32>) : !kgen.paramref<type>
+  kgen.return
 }
 
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{incompatible scalar data type}}
-  // expected-error @below {{is incompatible with value type}}
+  // expected-error @below {{cannot convert from attribute type 'f32' to dtype si64}}
+  %0 = pop.constant(32.0 : f32) : !meta.scalar<si64>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{scalar constant expected integer or float attribute for constant value}}
   %0 = pop.constant(dense<0> : vector<1xi32>) : !meta.scalar<si32>
   kgen.return
 }
@@ -28,8 +25,7 @@ kgen.func @pop_constant() {
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{expected a vector type}}
-  // expected-error @below {{is incompatible with value type}}
+  // expected-error @below {{expected dense elements attribute for vector constant with known size}}
   %0 = pop.constant(0 : i32) : !meta.simd<2, si32>
   kgen.return
 }
@@ -37,9 +33,40 @@ kgen.func @pop_constant() {
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{element types do not match}}
-  // expected-error @below {{result type ('!meta.simd<2, f32>') is incompatible with value type ('vector<2xi32>')}}
-  %0 = pop.constant(dense<16777217> : vector<2xi32>) : !meta.simd<2, f32>
+  // expected-error @below {{expected attribute type to be vector<2xT>}}
+  %0 = pop.constant(dense<0.0> : tensor<2xf32>) : !meta.simd<2, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{expected attribute type to be vector<2xT>}}
+  %0 = pop.constant(dense<0> : vector<2x2xsi32>) : !meta.simd<2, si32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{expected attribute type to be vector<2xT>}}
+  %0 = pop.constant(dense<0> : vector<1xsi32>) : !meta.simd<2, si32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @pop_constant() {
+  // expected-error @below {{cannot convert from attribute type 'i32' to dtype si32}}
+  %0 = pop.constant(dense<0> : vector<2xi32>) : !meta.simd<2, si32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @pop_constant<size>() {
+  // expected-error @below {{expected integer or float attribute for vector constant of unspecified size}}
+  %0 = pop.constant(dense<0> : vector<2xsi32>) : !meta.simd<size, si32>
   kgen.return
 }
 
@@ -197,33 +224,64 @@ kgen.generator @simd_shuffle<size>(%a: !meta.simd<2, f32>) {
 
 // -----
 
-kgen.generator @array_global_constant<type: type>() {
-  // expected-error @below {{expected ranked tensor type constant value}}
-  %0 = pop.global_constant(dense<0> : vector<1xi32>) : !pop.array<4, type>
+kgen.func @global_constant() {
+  // expected-error @below {{cannot convert from attribute type 'f32' to dtype f64}}
+  %0 = pop.global_constant(0.0 : f32) : !meta.scalar<f64>
   kgen.return
 }
 
 // -----
 
-kgen.generator @array_global_constant<type: type>() {
-  // expected-error @below {{expected a rank 1 tensor}}
-  %0 = pop.global_constant(dense<0> : tensor<1x1xi32>) : !pop.array<4, type>
+kgen.func @global_constant() {
+  // expected-error @below {{expected dense elements attribute for array constant with known size}}
+  %0 = pop.global_constant(0.0 : f32) : !pop.array<4, !meta.scalar<f32>>
   kgen.return
 }
 
 // -----
 
-kgen.generator @array_global_constant<type: type>() {
-  // expected-error @below {{expected attribute to have 4 elements}}
-  %0 = pop.global_constant(dense<0> : tensor<1xi32>) : !pop.array<4, type>
+kgen.func @global_constant() {
+  // expected-error @below {{expected attribute type to be tensor<2xT>}}
+  %0 = pop.global_constant(dense<0.0> : vector<2xf32>) : !pop.array<2, !meta.scalar<f32>>
   kgen.return
 }
 
 // -----
 
-kgen.generator @array_global_constant() {
-  // expected-error @below {{incompatible scalar data type}}
-  // expected-error @below {{is incompatible with value type ('tensor<4xi32>')}}
-  %0 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<f32>>
+kgen.func @global_constant() {
+  // expected-error @below {{expected attribute type to be tensor<2xT>}}
+  %0 = pop.global_constant(dense<0.0> : tensor<2x2xf32>) : !pop.array<2, !meta.scalar<f32>>
+  kgen.return
+}
+
+// -----
+
+kgen.func @global_constant() {
+  // expected-error @below {{expected attribute type to be tensor<2xT>}}
+  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<2, !meta.scalar<f32>>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @global_constant<size>() {
+  // expected-error @below {{expected integer or float attribute for array constant of unspecified size}}
+  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<size, !meta.scalar<f32>>
+  kgen.return
+}
+
+// -----
+
+kgen.func @global_constant() {
+  // expected-error @below {{array constant must have scalar elements}}
+  %0 = pop.global_constant(dense<0.0> : tensor<2xf32>) : !pop.array<2, !meta.simd<1, f32>>
+  kgen.return
+}
+
+// -----
+
+kgen.func @global_constant() {
+  // expected-error @below {{convert from attribute type 'f64' to dtype f32}}
+  %0 = pop.global_constant(dense<0.0> : tensor<2xf64>) : !pop.array<2, !meta.scalar<f32>>
   kgen.return
 }
