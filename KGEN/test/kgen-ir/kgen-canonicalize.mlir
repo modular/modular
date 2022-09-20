@@ -82,7 +82,7 @@ kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
 }
 
 kgen.func @producesResultParam<() -> index>() {
-  kgen.return<result = 42>
+  kgen.return<42>
 }
 
 

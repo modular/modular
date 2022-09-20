@@ -13,7 +13,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 // CHECK-LABEL: llvm.func private @produces_result
 kgen.func @produces_result<() -> index>() {
   // CHECK: llvm.return
-  kgen.return<result = 42>
+  kgen.return<42>
 }
 
 // -----
@@ -48,7 +48,7 @@ kgen.func @"float_constant_f32,value=1.1283791670955126,type=f32"() -> !meta.sca
   %0 = kgen.param.constant : f64 = <1.1283791670955126>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<f32>
-  kgen.return  %2 : !meta.scalar<f32>
+  kgen.return %2 : !meta.scalar<f32>
 }
 
 // -----

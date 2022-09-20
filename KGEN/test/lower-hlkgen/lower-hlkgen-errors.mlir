@@ -43,7 +43,7 @@ hlkgen.generator @impl<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f32>)
   constraints <[eq(:dtype ty, f64), "someone told us 'ty' should be f64 dontcha know"]>
   implements @bufitf {
   %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
-  kgen.return<xyz = add(size, 2)> %0 : index
+  kgen.return<add(size, 2)> %0 : index
 }
 
 

@@ -71,40 +71,38 @@ static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
-// custom<ParameterBindings>
+// custom<ParameterValues>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParameterBindings(OpAsmParser &p,
-                                          ParamBindArrayAttr &value) {
-  SmallVector<ParamBindAttr> elts;
+static ParseResult parseParameterValues(OpAsmParser &p, ArrayAttr &value) {
+  SmallVector<Attribute> elts;
   if (p.parseCommaSeparatedList(
           OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
-            std::string name;
-            Type type;
             TypedAttr value;
-            if (p.parseKeywordOrString(&name) ||
-                parseColonTypeOrIndex(p, type) || p.parseEqual() ||
-                parseParamValue(p, value, type))
+            if (parseParamValueDefaultingToIndex(p, value))
               return failure();
-            elts.push_back(ParamBindAttr::get(name, value));
+            elts.push_back(value);
             return success();
           }))
     return failure();
 
-  value = ParamBindArrayAttr::get(p.getContext(), elts);
+  value = ArrayAttr::get(p.getContext(), elts);
   return success();
 }
 
-static void printParameterBindings(OpAsmPrinter &p, Operation *op,
-                                   ParamBindArrayAttr value) {
+static void printParameterValues(OpAsmPrinter &p, Operation *op,
+                                 ArrayAttr value) {
   if (value.empty())
     return;
   p << '<';
-  llvm::interleaveComma(value, p, [&](ParamBindAttr bind) {
-    printParamName(p, bind.getName());
-    printColonTypeOrIndex(p.getStream(), bind.getType());
-    p << " = ";
-    printParamValue(p, bind.getValue());
+  llvm::interleaveComma(value, p, [&](Attribute value) {
+    auto valType = value.cast<TypedAttr>().getType();
+    if (!valType.isIndex()) {
+      p << ":";
+      printKGENType(p.getStream(), valType);
+      p << " ";
+    }
+    printParamValue(p, value);
   });
   p << '>';
 }
@@ -670,12 +668,11 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
            << paramResultTypes.size() << " parameters for enclosing op";
 
   for (size_t i = 0, e = paramResultTypes.size(); i != e; ++i) {
-    auto returnedDecl = returnedParams[i];
     auto expectedTy = paramResultTypes[i];
-    if (returnedDecl.getType() != expectedTy)
-      return emitOpError("parameter #")
-             << i << " has type " << returnedDecl.getType() << " but should be "
-             << expectedTy;
+    auto actualTy = returnedParams[i].cast<TypedAttr>().getType();
+    if (actualTy != expectedTy)
+      return emitOpError("parameter #") << i << " has type " << actualTy
+                                        << " but should be " << expectedTy;
   }
 
   // Verify our result types match up with the enclosing result type.

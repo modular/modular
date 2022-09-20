@@ -29,6 +29,11 @@ def I1ParameterExprAttr
             "i1 parameter expression"
     >]>;
 
+
+def ParameterExprArrayAttr
+  : TypedArrayAttrBase<ParameterExprAttr,
+                       "array of kgen parameters expressions">;
+
 /// An attribute in the KGEN dialect.
 class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<KGENDialect, attrName, traits> {

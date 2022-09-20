@@ -69,6 +69,9 @@ ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
 ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
                             Type type);
 
+/// Parse ":type 42" or "42" and default to index type.
+ParseResult parseParamValueDefaultingToIndex(AsmParser &p, TypedAttr &value);
+
 /// Print a parameter value that is known to have `dtype` type.
 void printDTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `dtype` type.

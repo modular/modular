@@ -287,10 +287,10 @@ def ParamDeclareOp : KGENOp<"param.declare", [NoSideEffect]> {
 //===----------------------------------------------------------------------===//
 
 def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
-  let summary = "return operation for kgen generators";
+  let summary = "return operation for kgen declarations";
   let description = [{
-    The `kgen.return` operation specifies the returned values for a generated
-    func and output parameters from the metaprogram.
+    The `kgen.return` operation specifies the returned values and output
+    parameters for a `kgen.func` or generator.
 
     The operation takes variable number of operands and produces no results.
     The operand number and types must match the signature of the
@@ -305,10 +305,10 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
     ```
   }];
 
-  let arguments = (ins ParamBindArrayAttr:$parameters,
+  let arguments = (ins ParameterExprArrayAttr:$parameters,
                        Variadic<AnyType>:$operands);
   let assemblyFormat = [{
-    `` custom<ParameterBindings>($parameters) attr-dict
+    `` custom<ParameterValues>($parameters) attr-dict
     ($operands^ `:` type($operands))?
   }];
 

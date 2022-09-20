@@ -390,20 +390,19 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // It also captures the result parameters and returns them from the
     // kgen.output for the thunk.
     SmallVector<ParamDeclAttr> callResultParams; // <StringAttr name, Type type>
-    SmallVector<ParamBindAttr> returnParams;
+    SmallVector<Attribute> returnParams;
 
-    // FIXME: This should iterate gen.getResultParamTypes once ReturnOp is
-    // simplified.
-    for (ParamBindAttr resultParam : gen.getReturnOp().getParameters()) {
+    unsigned paramNo = 0;
+    for (Type resultParamType : gen.getResultParamTypes()) {
+      auto paramName = b.getStringAttr("resultParam" + Twine(paramNo++));
+
       // The call returns the same thing as the generator.
-      callResultParams.push_back(ParamDeclAttr::get(
-          resultParam.getName(), resultParam.getValue().getType()));
+      callResultParams.push_back(
+          ParamDeclAttr::get(paramName, resultParamType));
 
       // The output binds each result from the call into the return value of the
       // generator thunk.
-      auto value =
-          ParamDeclRefAttr::get(resultParam.getName(), resultParam.getType());
-      returnParams.push_back(ParamBindAttr::get(resultParam.getName(), value));
+      returnParams.push_back(ParamDeclRefAttr::get(paramName, resultParamType));
     }
 
     // Create the call.
@@ -417,7 +416,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     for (auto [result, resultTy] : llvm::zip(callOp.getResults(), itfResTys))
       results.push_back(insertRebindOp(result, resultTy, b));
 
-    b.create<ReturnOp>(b.getAttr<ParamBindArrayAttr>(returnParams), results);
+    b.create<ReturnOp>(b.getAttr<ArrayAttr>(returnParams), results);
 
     // The thunk is required because there could be direct callers of the
     // original generator, which expect the original signature.  If there
