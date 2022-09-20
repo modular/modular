@@ -20,7 +20,7 @@ class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
 // ArrayType
 //===----------------------------------------------------------------------===//
 
-def ArrayType : POPType<"Array", "array"> {
+def POP_ArrayType : POPType<"Array", "array"> {
   let summary = "parameterized array type";
   let description = [{
     This type represents a statically-sized array of elements. The size and

@@ -157,6 +157,21 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
   os << ' ';
 }
 
+/// Print a parameter value that is known to have `dtype` type.
+void KGEN::printDTypeParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, value);
+}
+
+/// Parse a parameter value that is known to have `dtype` type.
+ParseResult KGEN::parseDTypeParamValue(AsmParser &p,
+                                       FailureOr<TypedAttr> &value) {
+  TypedAttr result;
+  if (parseParamValue(p, result, DTypeType::get(p.getContext())))
+    return failure();
+  value = result;
+  return success();
+}
+
 /// Print a parameter value that is known to have `type` type.
 void KGEN::printTypeParamValue(AsmPrinter &p, Attribute value) {
   printParamValue(p, value);
@@ -200,11 +215,10 @@ ParseResult KGEN::parseIndexParamValue(AsmParser &p,
 /// Print a parameter value that either has an index type or is null (which
 /// prints as a `?`).
 void KGEN::printOptionalIndexParamValue(AsmPrinter &p, Attribute value) {
-  if (!value) {
+  if (!value)
     p << '?';
-    return;
-  }
-  printIndexParamValue(p, value);
+  else
+    printIndexParamValue(p, value);
 }
 
 /// Parse a parameter value that is known to be an index type or a `?` which
@@ -216,6 +230,46 @@ ParseResult KGEN::parseOptionalIndexParamValue(AsmParser &p,
     return success();
   }
   return parseIndexParamValue(p, result);
+}
+
+/// Print a parameter value that either has `dtype` type or is null (which
+/// prints as a `?`).
+void KGEN::printOptionalDTypeParamValue(AsmPrinter &p, Attribute value) {
+  if (!value)
+    p << '?';
+  else
+    printDTypeParamValue(p, value);
+}
+
+/// Parse a parameter value that is known to be an index type or a `?` which
+/// results in a null attribute.
+ParseResult KGEN::parseOptionalDTypeParamValue(AsmParser &p,
+                                               FailureOr<TypedAttr> &result) {
+  if (succeeded(p.parseOptionalQuestion())) {
+    result = TypedAttr();
+    return success();
+  }
+  return parseDTypeParamValue(p, result);
+}
+
+/// Print a parameter value that either has `type` type or is null (which
+/// prints as a `?`).
+void KGEN::printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  if (!value)
+    p << '?';
+  else
+    printTypeParamValue(p, value);
+}
+
+/// Parse a parameter value that is known to be a `type` type or a `?` which
+/// results in a null attribute.
+ParseResult KGEN::parseOptionalTypeParamValue(AsmParser &p,
+                                              FailureOr<TypedAttr> &result) {
+  if (succeeded(p.parseOptionalQuestion())) {
+    result = TypedAttr();
+    return success();
+  }
+  return parseTypeParamValue(p, result);
 }
 
 /// Parse a parameter declaration list if present.

@@ -69,6 +69,11 @@ ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
 ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
                             Type type);
 
+/// Print a parameter value that is known to have `dtype` type.
+void printDTypeParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to have `dtype` type.
+ParseResult parseDTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+
 /// Print a parameter value that is known to have `type` type.
 void printTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `type` type.
@@ -84,11 +89,26 @@ ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 /// Print a parameter value that either has an index type or is null (which
 /// prints as a `?`).
 void printOptionalIndexParamValue(AsmPrinter &p, Attribute value);
-
 /// Parse a parameter value that is known to be an index type or a `?` which
 /// results in a null attribute.
 ParseResult parseOptionalIndexParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
+
+/// Print a parameter value that either has `dtype` type or is null (which
+/// prints as a `?`).
+void printOptionalDTypeParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to be a `dtype` type or a `?` which
+/// results in a null attribute.
+ParseResult parseOptionalDTypeParamValue(AsmParser &p,
+                                         FailureOr<TypedAttr> &result);
+
+/// Print a parameter value that either has `type` type or is null (which
+/// prints as a `?`).
+ParseResult parseOptionalTypeParamValue(AsmParser &p,
+                                        FailureOr<TypedAttr> &result);
+/// Parse a parameter value that is known to be a `type` type or a `?` which
+/// results in a null attribute.
+void printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value);
 
 /// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
 /// information.

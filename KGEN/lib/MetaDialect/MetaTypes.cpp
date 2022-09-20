@@ -74,65 +74,6 @@ ScalarType M::KGEN::getScalarOfSameDType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// custom<ParamDTypeValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamDTypeValue(AsmParser &p,
-                                        FailureOr<TypedAttr> &result) {
-  TypedAttr retValue;
-  if (failed(parseParamValue(p, retValue, p.getBuilder().getType<DTypeType>())))
-    return failure();
-  result = retValue;
-  return success();
-}
-
-static void printParamDTypeValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value);
-}
-
-//===----------------------------------------------------------------------===//
-// custom<OptionalParamDTypeValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseOptionalParamDTypeValue(AsmParser &p,
-                                                FailureOr<TypedAttr> &result) {
-  if (succeeded(p.parseOptionalQuestion())) {
-    result = TypedAttr();
-    return success();
-  }
-  return parseParamDTypeValue(p, result);
-}
-
-static void printOptionalParamDTypeValue(AsmPrinter &p, Attribute value) {
-  if (!value) {
-    p << '?';
-    return;
-  }
-  printParamDTypeValue(p, value);
-}
-
-//===----------------------------------------------------------------------===//
-// custom<OptionalTypeParamValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseOptionalTypeParamValue(AsmParser &p,
-                                               FailureOr<TypedAttr> &result) {
-  if (succeeded(p.parseOptionalQuestion())) {
-    result = TypedAttr();
-    return success();
-  }
-  return parseTypeParamValue(p, result);
-}
-
-static void printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value) {
-  if (!value) {
-    p << '?';
-    return;
-  }
-  return printTypeParamValue(p, value);
-}
-
-//===----------------------------------------------------------------------===//
 // ScalarType
 //===----------------------------------------------------------------------===//
 
