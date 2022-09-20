@@ -327,6 +327,7 @@ bool compareIndices(const APInt &lhs, const APInt &rhs,
   case IndexCmpPredicate::ULT:
     return lhs.ult(rhs);
   }
+  llvm_unreachable("unhandled IndexCmpPredicate predicate");
 }
 
 OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {

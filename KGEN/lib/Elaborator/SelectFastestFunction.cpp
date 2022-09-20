@@ -126,7 +126,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
 
     // Evaluate each func.
     uint64_t minTiming = UINT64_MAX;
-    size_t currentBest;
+    size_t currentBest = 0;
     std::unique_ptr<uint8_t[]> prevResultMem(new uint8_t[resultSize]);
     bool ranAtLeastOnce = false;
     auto evaluateFunction = [&](FuncOp func, size_t idx) -> ErrorOrSuccess {
