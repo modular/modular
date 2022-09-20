@@ -11,5 +11,5 @@ kgen.generator.interface @numeric_limits.digits<type: dtype -> index>()
 hlkgen.generator @numeric_limits.digits.i32<type: dtype -> index>()
     implements @numeric_limits.digits {
   kgen.param.assert <eq(:dtype type, si32)>, "this only works for si32"
-  kgen.return <digits = 31>
+  kgen.return<31>
 }

@@ -61,7 +61,7 @@ kgen.generator.interface @bufitf<size, ty: dtype -> index>(!meta.buffer<size, ty
 hlkgen.generator @arg_inf<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f32>) -> index
   implements @bufitf {
   %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
-  kgen.return<xyz = add(size, 2)> %0 : index
+  kgen.return<add(size, 2)> %0 : index
 }
 
 // This causes synthesization of a thunk for impl1 that adapts the calling convention.
@@ -71,8 +71,8 @@ hlkgen.generator @arg_inf<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f3
 // CHECK-NEXT:  constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
 // CHECK-NEXT:  implements @bufitf {
 // CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]] : !meta.buffer<size, ty> to !meta.buffer<size, f32>
-// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> xyz>(%[[V0]]) : (!meta.buffer<size, f32>) -> index
-// CHECK-NEXT:    kgen.return<xyz = xyz> %[[V1]] : index
+// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> resultParam0>(%[[V0]]) : (!meta.buffer<size, f32>) -> index
+// CHECK-NEXT:    kgen.return<resultParam0> %[[V1]] : index
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @arg_inf<size, ty: dtype -> index>

@@ -93,7 +93,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
-  kgen.return <length = 4>
+  kgen.return <4>
 }
 
 // expected-error @+1 {{no viable implementations found}}

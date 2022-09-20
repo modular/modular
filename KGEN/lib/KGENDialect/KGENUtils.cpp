@@ -21,13 +21,6 @@ using namespace M;
 using namespace KGEN;
 using mlir::OptionalParseResult;
 
-static OptionalParseResult parseOptionalColonType(AsmParser &parser,
-                                                  Type &type) {
-  if (failed(parser.parseOptionalColon()))
-    return None;
-  return OptionalParseResult(parseKGENType(parser, type));
-}
-
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
 std::string KGEN::getParamAsString(Attribute value) {
@@ -127,6 +120,13 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     os << type;
 }
 
+static OptionalParseResult parseOptionalColonType(AsmParser &parser,
+                                                  Type &type) {
+  if (failed(parser.parseOptionalColon()))
+    return None;
+  return OptionalParseResult(parseKGENType(parser, type));
+}
+
 /// Parse a "colon type" production if present or default to index if not.  This
 /// is commonly used in our parameter representation.
 ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
@@ -155,6 +155,16 @@ static void printColonTypeOrIndexPrefix(raw_ostream &os, Type type) {
   os << ':';
   printKGENType(os, type);
   os << ' ';
+}
+
+/// Parse ":type 42" or "42" and default to index type.
+ParseResult KGEN::parseParamValueDefaultingToIndex(AsmParser &p,
+                                                   TypedAttr &value) {
+  Type type = p.getBuilder().getIndexType();
+  mlir::OptionalParseResult typePresent = parseOptionalColonType(p, type);
+  if (typePresent.has_value() && failed(typePresent.value()))
+    return failure();
+  return parseParamValue(p, value, type);
 }
 
 /// Print a parameter value that is known to have `dtype` type.

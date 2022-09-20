@@ -163,7 +163,7 @@ kgen.generator @g2<()>() {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @only_returns<p1 -> index>() {
-  kgen.return <p2 = p1>
+  kgen.return<p1>
 }
 
 kgen.func @test_only_returns() {
@@ -207,7 +207,7 @@ kgen.func @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @only_returns<() -> i4>() {
-  kgen.return <p2: i4 = 2>
+  kgen.return <:i4 2>
 }
 
 kgen.func @test_only_returns() {
@@ -271,7 +271,7 @@ kgen.generator.interface @itf<size>(si32) -> si32
 
 // expected-error @+1 {{generator has 0 input parameters but interface expects 1}}
 kgen.generator @bad<() -> index>(%arg0: si32) -> si32 implements @itf {
-  kgen.return<size = 42> %arg0 : si32
+  kgen.return<42> %arg0 : si32
 }
 
 // -----
@@ -373,7 +373,7 @@ kgen.generator @hasInputParam<param>() {
   kgen.return
 }
 kgen.generator @hasResultParam<() -> index>() {
-  kgen.return<param = 42>
+  kgen.return<42>
 }
 
 kgen.func @test() {  // expected-note {{within kgen.func 'test'}}

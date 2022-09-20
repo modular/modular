@@ -654,8 +654,7 @@ void ParameterRewriter::completeCallOpProcessing(
   for (auto [decl, bindValue] :
        llvm::zip(newCall.getParamDecls(),
                  newCalleeFunc.getReturnOp().getParameters()))
-    setParameterValue(decl.cast<ParamDeclAttr>(),
-                      bindValue.cast<ParamBindAttr>().getValue());
+    setParameterValue(decl.cast<ParamDeclAttr>(), bindValue);
 }
 
 /// Sometimes when we expand a call, we find that there are multiple viable

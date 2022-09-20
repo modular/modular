@@ -5,11 +5,11 @@ kgen.include "library-test.mlir"
 // This is left untouched.
 // CHECK-LABEL: kgen.func @test0<() -> index>() -> index {
 // CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
-// CHECK-NEXT:  kgen.return<outParam = 123456> %[[V0]] : index
+// CHECK-NEXT:  kgen.return<123456> %[[V0]] : index
 // CHECK-NEXT: }
 kgen.func @test0<() -> index>() -> index {
   %0 = kgen.param.constant = <1>
-  kgen.return <outParam = 123456> %0 : index
+  kgen.return <123456> %0 : index
 }
 
 // CHECK-LABEL: kgen.func @parameter_use_chain()
@@ -57,7 +57,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
   // Silly op so we know when something used this.
   "genA op"() { value = #kgen.param.decl.ref<size> : index} : () -> !meta.scalar<type>
 
-  kgen.return<out = mul(size, 2)> %arg0 : si32
+  kgen.return<mul(size, 2)> %arg0 : si32
 }
 // CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2"<() -> index>
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
@@ -65,7 +65,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant : dtype = <f32>
 // CHECK-NEXT:   %[[V2:.*]] = kgen.param.constant : f32 = <2.000000e+00>
 // CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !meta.scalar<f32>
-// CHECK-NEXT:   kgen.return<out = 84> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.5"<() -> index>
@@ -74,7 +74,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant : dtype = <si8>
 // CHECK-NEXT:    %[[V2:.*]] = kgen.param.constant : f32 = <1.500000e+00>
 // CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !meta.scalar<si8>
-// CHECK-NEXT:    kgen.return<out = 38> %[[ARG0]] : si32
+// CHECK-NEXT:    kgen.return<38> %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.func @call_generator_test
@@ -125,23 +125,23 @@ kgen.generator.interface @genItf<x -> index>(si32) -> si32
 // CHECK-LABEL: kgen.func @"genItf_impl1,x=42"<() -> index>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return<y = 43> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<43> %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> index>(%arg0: si32) -> si32
   implements @genItf {
   "genItf_impl1"() { value = #kgen.param.decl.ref<x> : index} : () -> ()
-  kgen.return<y = add(x, 1)> %arg0 : si32
+  kgen.return<add(x, 1)> %arg0 : si32
 }
 
 // CHECK-LABEL: kgen.func @"genItf_impl2,x=42"<() -> index>(
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return<y = 84> %[[ARG0]] : si32
+// CHECK-NEXT:   kgen.return<84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl2<x -> index>(%arg0: si32) -> si32
   implements @genItf {
   "genItf_impl2"() { value = #kgen.param.decl.ref<*"x"> : index} : () -> ()
-  kgen.return<y = mul(x, 2)> %arg0 : si32
+  kgen.return<mul(x, 2)> %arg0 : si32
 }
 
 // CHECK-LABEL: kgen.func @use_interface(
@@ -318,7 +318,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
   // vector length for floats is 4 on our target.
-  kgen.return <length = 4>
+  kgen.return <4>
 }
 
 kgen.generator @getSIMDLengthF64<dt: dtype -> index>()
@@ -326,7 +326,7 @@ kgen.generator @getSIMDLengthF64<dt: dtype -> index>()
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f64)>, "this only works for f32"
   // vector length for doubles is 2 on our target.
-  kgen.return <length = 2>
+  kgen.return <2>
 }
 
 // CHECK-LABEL: kgen.func @paramAssertExample()
