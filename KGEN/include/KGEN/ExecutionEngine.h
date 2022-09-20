@@ -92,7 +92,6 @@ private:
 
   llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<detail::ObjectCache> cache;
-  std::unique_ptr<llvm::TargetMachine> targetMachine;
   std::unique_ptr<llvm::orc::LLJIT> jit;
   std::vector<llvm::orc::ThreadSafeModule> compiledModules;
 };

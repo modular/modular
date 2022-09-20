@@ -171,7 +171,9 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
       features.AddFeature(f.first(), f.second);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      targetTriple, cpu, features.getString(), {}, {}));
+      targetTriple, cpu, features.getString(), /*Options=*/{},
+      /*RM=*/llvm::Reloc::Model::PIC_,
+      /*CM=*/None, /*OL=*/llvm::CodeGenOpt::Aggressive, /*JIT=*/true));
   if (!machine)
     return Error("unable to create target machine");
 
@@ -205,27 +207,16 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   auto machineOr = createHostTargetMachine();
   if (machineOr.isError())
     return machineOr.takeError();
-  ee.targetMachine = std::move(*machineOr);
-
-  auto createCompileFn = [&](llvm::orc::JITTargetMachineBuilder jtmb)
-      -> llvm::Expected<
-          std::unique_ptr<llvm::orc::IRCompileLayer::IRCompiler>> {
-    jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
-    // On x86-64 Linux, the default relocation model is PIC.
-    if (ee.targetMachine->getTargetTriple().isOSLinux() &&
-        ee.targetMachine->getTargetTriple().getArch() == llvm::Triple::x86_64)
-      jtmb.setRelocationModel(llvm::Reloc::Model::PIC_);
-    auto tm = jtmb.createTargetMachine();
-    if (!tm)
-      return tm.takeError();
-    return std::make_unique<llvm::orc::TMOwningSimpleCompiler>(std::move(*tm),
-                                                               ee.cache.get());
-  };
 
   // Create the JIT.
-  auto jitOr = llvm::orc::LLJITBuilder()
-                   .setCompileFunctionCreator(createCompileFn)
-                   .create();
+  auto jitOr =
+      llvm::orc::LLJITBuilder()
+          .setCompileFunctionCreator(
+              [&](const llvm::orc::JITTargetMachineBuilder &jtmb) {
+                return std::make_unique<llvm::orc::TMOwningSimpleCompiler>(
+                    std::move(*machineOr), ee.cache.get());
+              })
+          .create();
   if (!jitOr)
     return M::Error(llvm::toString(jitOr.takeError()));
 
@@ -371,8 +362,8 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
       continue;
     }
 
-    llvmModule->setDataLayout(targetMachine->createDataLayout());
-    llvmModule->setTargetTriple(targetMachine->getTargetTriple().normalize());
+    llvmModule->setDataLayout(jit->getDataLayout());
+    llvmModule->setTargetTriple(jit->getTargetTriple().normalize());
 
     // Resolve symbols that are statically linked in the current process.
     dylibOr->addGenerator(
