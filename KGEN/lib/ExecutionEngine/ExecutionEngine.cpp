@@ -211,6 +211,10 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
       -> llvm::Expected<
           std::unique_ptr<llvm::orc::IRCompileLayer::IRCompiler>> {
     jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
+    // On x86-64 Linux, the default relocation model is PIC.
+    if (ee.targetMachine->getTargetTriple().isOSLinux() &&
+        ee.targetMachine->getTargetTriple().getArch() == llvm::Triple::x86_64)
+      jtmb.setRelocationModel(llvm::Reloc::Model::PIC_);
     auto tm = jtmb.createTargetMachine();
     if (!tm)
       return tm.takeError();
