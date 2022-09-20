@@ -398,20 +398,20 @@ struct ConvertPOPSIMDReduceAdd
   matchAndRewrite(SIMDReduceAddOp op, SIMDReduceAddOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    Type eltType =
+        adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt()) {
       rewriter.replaceOpWithNewOp<LLVM::vector_reduce_add>(
-          op, adaptor.getOperand().getType(), adaptor.getOperand());
+          op, eltType, adaptor.getOperand());
       return success();
     }
     // Handle the floating point case.
-    Type eltType =
-        adaptor.getOperand().getType().cast<VectorType>().getElementType();
     // To ignore the start value, we pass in negative zero (-0.0) as it is
     // the neutral value of floating point addition.
     Value negZero = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), eltType, rewriter.getFloatAttr(eltType, -0.0));
-    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fadd>(
-        op, adaptor.getOperand().getType(), negZero, adaptor.getOperand());
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fadd>(op, eltType, negZero,
+                                                          adaptor.getOperand());
     return success();
   }
 };
@@ -428,20 +428,20 @@ struct ConvertPOPSIMDReduceMul
   matchAndRewrite(SIMDReduceMulOp op, SIMDReduceMulOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    Type eltType =
+        adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt()) {
       rewriter.replaceOpWithNewOp<LLVM::vector_reduce_mul>(
-          op, adaptor.getOperand().getType(), adaptor.getOperand());
+          op, eltType, adaptor.getOperand());
       return success();
     }
     // Handle the floating point case.
-    Type eltType =
-        adaptor.getOperand().getType().cast<VectorType>().getElementType();
     // To ignore the start value, one (1.0) is used, as it is the neutral
     // value of floating point multiplication.
     Value one = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), eltType, rewriter.getFloatAttr(eltType, 1.0));
-    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmul>(
-        op, adaptor.getOperand().getType(), one, adaptor.getOperand());
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmul>(op, eltType, one,
+                                                          adaptor.getOperand());
     return success();
   }
 };
