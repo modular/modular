@@ -137,3 +137,68 @@ kgen.generator @impl() {
   %0 = kgen.call @flt_vec<type: dtype = bf16>() : () -> !meta.simd<4, bf16>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @"splat_constant
+kgen.generator @splat_constant<size>() -> !meta.simd<size, f32> {
+  // CHECK: pop.constant(dense<0.{{0+}}e+00> : vector<8xf32>)
+  %0 = pop.constant(0.0 : f32) : !meta.simd<size, f32>
+  kgen.return %0 : !meta.simd<size, f32>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @splat_constant<size = 8>() : () -> !meta.simd<8, f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @"splat_constant,type=!meta.scalar<si32>"
+// CHECK: pop.constant(1 : si32) : !meta.scalar<si32>
+
+// CHECK-LABEL: @"splat_constant,type=!meta.scalar<f32>"
+// CHECK: pop.constant(1.{{0+}}e+00 : f32) : !meta.scalar<f32>
+
+// CHECK-LABEL: @"splat_constant,type=!meta.simd<4, si32>"
+// CHECK: pop.constant(dense<1> : vector<4xsi32>) : !meta.simd<4, si32>
+
+kgen.generator @splat_constant<type: type>() -> !kgen.paramref<type> {
+  %0 = pop.constant(1) : !kgen.paramref<type>
+  kgen.return %0 : !kgen.paramref<type>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @splat_constant<type: type = !meta.scalar<si32>>() : () -> !meta.scalar<si32>
+  %1 = kgen.call @splat_constant<type: type = !meta.scalar<f32>>() : () -> !meta.scalar<f32>
+  %2 = kgen.call @splat_constant<type: type = !meta.simd<4, si32>>() : () -> !meta.simd<4, si32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @"array_constant
+kgen.generator @array_constant<dtype: dtype>() {
+  // CHECK: pop.global_constant(dense<[1.{{0+}}e+00, 2.{{0+}}e+00]> : tensor<2xf32>) : !pop.array<2, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<[1, 2]> : tensor<2xi32>) : !pop.array<2, !meta.scalar<dtype>>
+  kgen.return
+}
+
+kgen.generator @impl() {
+  kgen.call @array_constant<dtype: dtype = f32>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @"array_constant
+kgen.generator @array_constant<size>() {
+  // CHECK: pop.global_constant(dense<1> : tensor<2xui64>) : !pop.array<2, !meta.scalar<ui64>>
+  %0 = pop.global_constant(1 : ui64) : !pop.array<size, !meta.scalar<ui64>>
+  kgen.return
+}
+
+kgen.generator @impl() {
+  kgen.call @array_constant<size = 2>() : () -> ()
+  kgen.return
+}
