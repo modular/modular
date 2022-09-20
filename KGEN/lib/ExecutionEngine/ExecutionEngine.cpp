@@ -245,7 +245,7 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 /// use LLVMFuncOps as well as KGEN::FuncOp and friends. This also uses
 /// CallOpInterface to capture all callees.
 static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
-                                 OpBuilder &builder,
+                                 mlir::SymbolTable sliceSymtab,
                                  const mlir::SymbolTable &symtab) {
   Optional<Error> error;
   auto extractDependencies = [&](mlir::CallOpInterface call) {
@@ -274,12 +274,16 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
       return WalkResult::interrupt();
     }
 
-    if (auto err = funcSlicer(callee, builder, symtab)) {
+    // Don't copy the function if it already was.
+    if (sliceSymtab.lookup(calleeRef))
+      return WalkResult::advance();
+
+    if (auto err = funcSlicer(callee, sliceSymtab, symtab)) {
       error = err.takeError();
       return WalkResult::interrupt();
     }
 
-    builder.clone(*callee);
+    sliceSymtab.insert(callee.clone());
     return WalkResult::advance();
   };
   if (func->walk(extractDependencies).wasInterrupted())
@@ -321,19 +325,18 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     // of this function.
     mlir::OwningOpRef<mlir::ModuleOp> singleModule =
         mlir::ModuleOp::create(func->getLoc());
-    mlir::Block *body = singleModule->getBody(0);
-    mlir::OpBuilder builder(body, body->end());
 
     // Clone any symbols used by this func into the module as well.
     mlir::SymbolTable symtab(func->getParentOp());
+    mlir::SymbolTable sliceSymtab(*singleModule);
 
     // Traverse the call graph and clone all the callees into this module.
-    if (auto err = funcSlicer(func, builder, symtab))
+    if (auto err = funcSlicer(func, sliceSymtab, symtab))
       return err.takeError();
 
     // Clone the func into this new module. We don't want to remove it from
     // the current module.
-    builder.clone(*func);
+    sliceSymtab.insert(func.clone());
 
     if (failed(convertToLLVM(*singleModule, func.getName())))
       return Error("could not convert func '@" + func.getName() + "' to LLVM");
