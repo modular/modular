@@ -287,3 +287,10 @@ kgen.generator @test_region() {
 
   kgen.return 
 }
+
+// CHECK-LABEL: @testTargetInfo
+kgen.generator @testTargetInfo() {
+  // CHECK: kgen.param.constant = <"darwin-arm64-21.0">
+  %0 = kgen.param.constant = <"darwin-arm64-21.0">
+  kgen.return
+}

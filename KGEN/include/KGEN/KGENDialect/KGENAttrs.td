@@ -540,4 +540,23 @@ def EvalConfigurationArrayAttr
   let assemblyFormat = "`<` `[` $value  `]` `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
+  let parameters = (ins StringRefParameter<"">:$triple,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let assemblyFormat = "`<` $triple `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$triple), [{
+      return $_get(triple.getContext(), triple,
+                   StringType::get(triple.getContext()));
+    }]>
+  ];
+}
+
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
