@@ -38,7 +38,7 @@ def ScalarType : ParameterizedMetaType<"Scalar", "scalar", [DTypeInterface]> {
   }];
 
   let parameters = (ins "TypedAttr":$dType);
-  let assemblyFormat = "`<` custom<ParamDTypeValue>($dType) `>`";
+  let assemblyFormat = "`<` custom<DTypeParamValue>($dType) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
@@ -60,7 +60,8 @@ def SIMDType : ParameterizedMetaType<"SIMD", "simd", [DTypeInterface]> {
 
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
-    `<` custom<IndexParamValue>($size) `,` ` ` custom<ParamDTypeValue>($dType) `>`
+    `<` custom<IndexParamValue>($size) `,` ` `
+        custom<DTypeParamValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -92,7 +93,7 @@ def BufferType : ParameterizedMetaType<"Buffer", "buffer", [DTypeInterface]> {
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
   let assemblyFormat = [{
     `<` custom<OptionalIndexParamValue>($size) `,` ` `
-        custom<OptionalParamDTypeValue>($dType) `>`
+        custom<OptionalDTypeParamValue>($dType) `>`
   }];
   let genVerifyDecl = 1;
 
