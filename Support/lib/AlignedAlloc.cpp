@@ -15,12 +15,20 @@ void *M::alignedAlloc(size_t alignment, size_t size) {
 #ifdef _WIN32
   // MSVC runtime doesn't support aligned_alloc(). See
   // https://developercommunity.visualstudio.com/t/c17-stdaligned-alloc%E7%BC%BA%E5%A4%B1/468021#T-N473365
-  size = (size + alignment - 1) / alignment * alignment;
+  if (size == 0)
+    return nullptr;
+  size = llvm::alignToPowerOf2(size, alignment);
   return _aligned_malloc(size, alignment);
 #else  // _WIN32
   if (alignment <= 8)
     return std::malloc(size);
   assert(alignment >= sizeof(void *) && "caller already checked");
+
+  // Returns the next integer (mod 2**64) that is greater than or equal to
+  // size and is a multiple of alignment. We know that the alignment is a
+  // multiple of 2.
+  size = llvm::alignToPowerOf2(size, alignment);
+
   return std::aligned_alloc(alignment, size);
 #endif // _WIN32
 }
