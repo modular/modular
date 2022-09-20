@@ -212,6 +212,22 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
     return LLVM::LLVMArrayType::get(elementType, *size);
   });
 
+  // Convert struct types to LLVM literal structs.
+  addConversion([=](POP::StructType structType) -> Optional<Type> {
+    SmallVector<Type> elementTypes;
+    elementTypes.reserve(structType.getElementTypes().size());
+    for (TypedAttr elementType : structType.getElementTypes()) {
+      auto typeCst = elementType.dyn_cast<ConcreteTypeConstantAttr>();
+      if (!typeCst)
+        return {};
+      Type converted = convertType(typeCst.getValue());
+      if (!converted)
+        return {};
+      elementTypes.push_back(converted);
+    }
+    return LLVM::LLVMStructType::getLiteral(&getContext(), elementTypes);
+  });
+
   // Convert SIMD types to vector types.
   addConversion([=](SIMDType simd) -> Optional<Type> {
     Optional<Type> dtype = convertDType(simd);

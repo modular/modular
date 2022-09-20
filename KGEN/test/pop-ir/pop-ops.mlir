@@ -572,3 +572,24 @@ kgen.generator @index_to_pointer<type: type>(%idx: index) {
   %3 = pop.index_to_pointer %idx : !meta.pointer<?>
   kgen.return
 }
+
+// CHECK-LABEL: @struct
+kgen.generator @struct<type: type, dtype: dtype>(
+  // CHECK-SAME: %[[A:.*]]: !kgen.paramref
+  %a: !kgen.paramref<type>,
+  // CHECK-SAME: %[[B:.*]]: !meta.scalar
+  %b: !meta.scalar<dtype>
+) -> (!kgen.paramref<type>, !meta.scalar<dtype>) {
+  // CHECK: %[[S0:.*]] = pop.struct.construct(%[[A]], %[[B]]) : !pop.struct<type, !meta.scalar<dtype>>
+  %0 = pop.struct.construct(%a, %b) : !pop.struct<type, !meta.scalar<dtype>>
+  // CHECK: %[[V0:.*]] = pop.get_element %[[S0]][0] : !pop.struct<type, !meta.scalar<dtype>>
+  %1 = pop.get_element %0[0] : !pop.struct<type, !meta.scalar<dtype>>
+  // CHECK: %[[V1:.*]] = pop.get_element %[[S0]][1] : !pop.struct<type, !meta.scalar<dtype>>
+  %2 = pop.get_element %0[1] : !pop.struct<type, !meta.scalar<dtype>>
+  // CHECK: pop.replace_element %{{.*}}, %[[S0]][0] : !pop.struct<type, !meta.scalar<dtype>>
+  %3 = pop.replace_element %1, %0[0] : !pop.struct<type, !meta.scalar<dtype>>
+  // CHECK: pop.replace_element %{{.*}}, %{{.*}}[1] : !pop.struct<type, !meta.scalar<dtype>>
+  %4 = pop.replace_element %2, %3[1] : !pop.struct<type, !meta.scalar<dtype>>
+  // CHECK: return %[[V0]], %[[V1]] : !kgen.paramref<type>, !meta.scalar<dtype>
+  kgen.return %1, %2 : !kgen.paramref<type>, !meta.scalar<dtype>
+}

@@ -21,6 +21,7 @@
 namespace M::KGEN::POP {
 enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
+class StructType;
 } // namespace M::KGEN::POP
 
 #define GET_OP_CLASSES
