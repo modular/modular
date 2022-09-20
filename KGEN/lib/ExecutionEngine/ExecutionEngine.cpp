@@ -245,7 +245,7 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 /// use LLVMFuncOps as well as KGEN::FuncOp and friends. This also uses
 /// CallOpInterface to capture all callees.
 static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
-                                 mlir::SymbolTable sliceSymtab,
+                                 mlir::SymbolTable &sliceSymtab,
                                  const mlir::SymbolTable &symtab) {
   Optional<Error> error;
   auto extractDependencies = [&](mlir::CallOpInterface call) {
@@ -283,7 +283,11 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
       return WalkResult::interrupt();
     }
 
-    sliceSymtab.insert(callee.clone());
+    // Mark copied dependencies as private.
+    Operation *dependency = callee.clone();
+    SymbolTable::setSymbolVisibility(dependency,
+                                     SymbolTable::Visibility::Private);
+    sliceSymtab.insert(dependency);
     return WalkResult::advance();
   };
   if (func->walk(extractDependencies).wasInterrupted())
