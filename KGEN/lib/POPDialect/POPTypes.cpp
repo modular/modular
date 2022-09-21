@@ -100,9 +100,11 @@ Type StructType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
                                              ArrayRef<Type> types) const {
   assert(types.empty() && attrs.size() == getElementTypes().size() &&
          "expected same number of sub-attributes as element types");
-  return get(
-      getContext(),
-      {reinterpret_cast<const TypedAttr *const>(attrs.data()), attrs.size()});
+  SmallVector<TypedAttr> elementTypes;
+  elementTypes.reserve(attrs.size());
+  for (Attribute attr : attrs)
+    elementTypes.push_back(attr.cast<TypedAttr>());
+  return get(getContext(), elementTypes);
 }
 
 LogicalResult

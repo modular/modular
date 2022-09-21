@@ -187,6 +187,11 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   // TODO: Could handle node-wise merging of expressions to find constraints
   // like "x+1" and "y+1" --> "x == y".
 
+  // If both parameters are type expressions, try to unify the contained types.
+  if (auto itfType = itfParam.dyn_cast<TypeConstantAttr>())
+    if (auto genType = genParam.dyn_cast<TypeConstantAttr>())
+      return tryUnifyingTypes(itfType.getValue(), genType.getValue());
+
   // TODO: It is possible to add inferred dynamic constraints when we have an
   // error handling model.
   auto diag = emitError(inferenceLoc, inferenceContext)
@@ -209,42 +214,36 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
     return tryUnifyingTypeParameters(itfParamRef.getParam(),
                                      TypeConstantAttr::get(genArgTy));
 
-  // If both types are scalar types, try to unify them.
-  if (auto itfScalarTy = itfArgTy.dyn_cast<ScalarType>())
-    if (auto genScalarTy = genArgTy.dyn_cast<ScalarType>())
-      return tryUnifyingTypeParameters(itfScalarTy.getDType(),
-                                       genScalarTy.getDType());
-
-  // If both types are PointerType's, try to unify them.
-  if (auto itfPointerTy = itfArgTy.dyn_cast<PointerType>())
-    if (auto genPointerTy = genArgTy.dyn_cast<PointerType>())
-      return tryUnifyingTypeParameters(itfPointerTy.getElementType(),
-                                       genPointerTy.getElementType());
-
-  // If both types are SIMDType's, try to unify them.
-  if (auto itfSIMDTy = itfArgTy.dyn_cast<SIMDType>())
-    if (auto genSIMDTy = genArgTy.dyn_cast<SIMDType>()) {
-      return failure(
-          tryUnifyingTypeParameters(itfSIMDTy.getDType(),
-                                    genSIMDTy.getDType()) ||
-          tryUnifyingTypeParameters(itfSIMDTy.getSize(), genSIMDTy.getSize()));
-    }
-
-  // If both types are BufferType's, try to unify them.
-  if (auto itfBufferTy = itfArgTy.dyn_cast<BufferType>())
-    if (auto genBufferTy = genArgTy.dyn_cast<BufferType>()) {
-      return failure(tryUnifyingTypeParameters(itfBufferTy.getDType(),
-                                               genBufferTy.getDType()) ||
-                     tryUnifyingTypeParameters(itfBufferTy.getSize(),
-                                               genBufferTy.getSize()));
-    }
-
   // If they don't match, then reject them.
-  auto diag = emitError(inferenceLoc, inferenceContext)
-              << " has type " << genArgTy << " but interface expected type "
-              << itfArgTy;
-  diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
-  return failure();
+  if (itfArgTy.getTypeID() != genArgTy.getTypeID()) {
+    auto diag = emitError(inferenceLoc, inferenceContext)
+                << " has type " << genArgTy << " but interface expected type "
+                << itfArgTy;
+    diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
+    return failure();
+  }
+
+  // Try to unify their nested parameter expressions.
+  auto itfElems = itfArgTy.dyn_cast<mlir::SubElementTypeInterface>();
+  if (!itfElems) {
+    return emitError(inferenceLoc, inferenceContext)
+           << " has type " << genArgTy << " not equal to interface type "
+           << itfArgTy << " but does not implement SubElementTypeInterface";
+  }
+  auto genElems = genArgTy.cast<mlir::SubElementTypeInterface>();
+
+  SmallVector<Attribute> itfParams, genParams;
+  itfElems.walkImmediateSubElements(
+      [&](Attribute attr) { itfParams.push_back(attr); }, [](Type) {});
+  genElems.walkImmediateSubElements(
+      [&](Attribute attr) { genParams.push_back(attr); }, [](Type) {});
+  assert(itfParams.size() == genParams.size());
+
+  // Unify each expression.
+  for (auto [itfParam, genParam] : llvm::zip(itfParams, genParams))
+    if (failed(tryUnifyingTypeParameters(itfParam, genParam)))
+      return failure();
+  return success();
 }
 
 ParseResult SignatureUnifier::checkArgumentType(size_t argNo, Type itfArgTy,

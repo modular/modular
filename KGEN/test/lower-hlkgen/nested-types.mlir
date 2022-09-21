@@ -26,3 +26,20 @@ hlkgen.generator @rettype_inf<eltype: type>
   %0 = "a"() : () -> index
   kgen.return %0 : index
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator.interface @struct_itf
+kgen.generator.interface @struct_itf<eltype: type, dtype: dtype>
+    (!pop.struct<eltype, !meta.scalar<dtype>>) -> ()
+
+// CHECK: kgen.generator @struct_inf_thunk
+// CHECK-NEXT: constraints <
+// CHECK-NEXT: eq(:type eltype, index)
+// CHECK-NEXT: eq(:dtype dtype, f32)
+
+hlkgen.generator @struct_inf
+    (%arg0: !pop.struct<index, !meta.scalar<f32>>) -> ()
+    implements @struct_itf {
+  kgen.return
+}
