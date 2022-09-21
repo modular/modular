@@ -22,3 +22,11 @@ kgen.generator @unary_add_library_impl1<size>(%arg0: si32) -> si32
   // TODO: Do something with <size>
   kgen.return %arg0 : si32
 }
+
+kgen.generator.interface @param_call<fn: signature<() -> ()>>()
+
+kgen.generator @simple_param_call<fn: signature<() -> ()>>()
+    implements @param_call {
+  kgen.call_param[signature<() -> ()>: fn]()
+  kgen.return
+}

@@ -186,11 +186,8 @@ using ElaboratedGeneratorOrCalleeError =
 namespace {
 class Elaborator {
 public:
-  Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
-      : primaryModule(primary), libraryModules(libraryModules) {
-    // Initialize the primary symbol table.
-    (void)getPrimaryModuleSymbolTable();
-  }
+  /// Initialize the elaborator and its symbol table.
+  Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules);
 
   ModuleOp getPrimaryModule() const { return primaryModule; }
 
@@ -202,8 +199,8 @@ public:
   ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(SymbolRefAttr symbolRef, ModuleOp sourceModule) {
-    return symbolTables.lookupNearestSymbolFrom(sourceModule, symbolRef);
+  Operation *lookupCallee(SymbolRefAttr symbolRef) {
+    return symbolTable.lookup(symbolRef.getLeafReference());
   }
 
   /// Return all instantiations of the specified declaration (a func,
@@ -252,8 +249,9 @@ private:
   specializeInterface(DeclAndInputParamsPair declAndInputParams,
                       Operation *insertionPoint);
 
-  SymbolTable &getPrimaryModuleSymbolTable() {
-    return symbolTables.getSymbolTable(primaryModule);
+  void insertIntoPrimaryModule(FuncOp func, Block::iterator insertPt = {}) {
+    StringAttr name = primaryModuleSymbolTable.insert(func, insertPt);
+    symbolTable.try_emplace(name, func);
   }
 
   /// Report an error given an interface and an error string - just reduces
@@ -270,8 +268,9 @@ private:
   ModuleOp primaryModule;
   ArrayRef<OwningOpRef<ModuleOp>> libraryModules;
 
-  /// This symbol table allows efficient lookups in the primary module.
-  SymbolTableCollection symbolTables;
+  /// This symbol table allows efficient lookups across all modules.
+  DenseMap<StringAttr, Operation *> symbolTable;
+  SymbolTable primaryModuleSymbolTable;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -291,11 +290,29 @@ private:
 };
 } // namespace
 
+Elaborator::Elaborator(ModuleOp primary,
+                       ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
+    : primaryModule(primary), libraryModules(libraryModules),
+      primaryModuleSymbolTable(primary) {
+  // Initialize the symbol table.
+  auto nameId =
+      StringAttr::get(primary.getContext(), SymbolTable::getSymbolAttrName());
+  auto collectSymbols = [&](ModuleOp module) {
+    for (Operation &op : *module.getBody()) {
+      if (auto name = op.getAttrOfType<StringAttr>(nameId))
+        symbolTable.try_emplace(name, &op);
+    }
+  };
+  collectSymbols(primary);
+  for (auto &libraryModule : libraryModules)
+    collectSymbols(libraryModule.get());
+}
+
 /// Insert a variant of an existing func into the primary file.
 void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
-  getPrimaryModuleSymbolTable().insert(newFunc,
-                                       /*insertionPoint*/ ++insertPt);
+  insertIntoPrimaryModule(newFunc,
+                          /*insertionPoint*/ ++insertPt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -558,7 +575,7 @@ LogicalResult ParameterRewriter::processCallOp(
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
   auto callee = dyn_cast_or_null<KGENDeclInterface>(
-      elaborator.lookupCallee(call.getCalleeAttr(), sourceModule));
+      elaborator.lookupCallee(call.getCalleeAttr()));
   if (!callee)
     return error(call->getLoc(),
                  Twine("could not find callee '@") +
@@ -884,7 +901,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  getPrimaryModuleSymbolTable().insert(newFunc);
+  insertIntoPrimaryModule(newFunc);
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
@@ -1033,11 +1050,9 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     // FIXME(Issue #2703): Stop doing this.
     if (sourceModule != primaryModule) {
       /// Clone the library func and insert it at the insertion point.
-      Operation *cloned = func->clone();
+      func = func.clone();
       assert(insertionPoint && "must be set in non-primary modules");
-      getPrimaryModuleSymbolTable().insert(cloned,
-                                           Block::iterator(insertionPoint));
-      func = cast<FuncOp>(cloned);
+      insertIntoPrimaryModule(func, Block::iterator(insertionPoint));
     }
 
     // FIXME: There is no need to specialize it.  All this does in practice is
@@ -1160,7 +1175,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
   // declaration to see what they call.
   bool failed = false;
   op->walk([&](CallOp call) {
-    auto callee = elaborator.lookupCallee(call.getCalleeAttr(), module);
+    auto callee = elaborator.lookupCallee(call.getCalleeAttr());
     assert(callee && "couldn't resolve callee?");
     callStackCalls.push_back(call);
     if (isa<FuncOp, GeneratorOp>(callee)) {
