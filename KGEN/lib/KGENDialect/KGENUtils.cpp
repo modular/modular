@@ -956,42 +956,6 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   }
 }
 
-/// Verify that a list of parameter declarations from a generator or func
-/// matches those of an interface.  This produces an error diagnostic and
-/// returns failure when a problem is detected, or returns true if everything is
-/// ok.
-static ParseResult verifyParameterList(ParamDeclArrayAttr originatorParamDecls,
-                                       ParamDeclArrayAttr targetParamDecls,
-                                       const char *originatorName,
-                                       Location originatorLoc,
-                                       const char *targetName,
-                                       Location targetLoc,
-                                       const char *parameterKind) {
-
-  auto getParamDeclName = [](ParamDeclArrayAttr decls) {
-    return llvm::map_range(decls.getValue(), [](Attribute value) -> StringAttr {
-      return value.cast<ParamDeclAttr>().getName();
-    });
-  };
-  auto getParamDeclType = [](ParamDeclArrayAttr decls) {
-    return llvm::map_range(decls.getValue(), [](Attribute value) -> Type {
-      return value.cast<ParamDeclAttr>().getType();
-    });
-  };
-
-  if (verifyMatchingLists(getParamDeclName(originatorParamDecls),
-                          getParamDeclName(targetParamDecls), originatorName,
-                          originatorLoc, targetName, targetLoc, parameterKind,
-                          "name") ||
-      verifyMatchingLists(getParamDeclType(originatorParamDecls),
-                          getParamDeclType(targetParamDecls), originatorName,
-                          originatorLoc, targetName, targetLoc, parameterKind,
-                          "type"))
-    return failure();
-
-  return success();
-}
-
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
 LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
@@ -1000,23 +964,38 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                                               const char *targetName,
                                               SignatureType targetSignature,
                                               Location targetLoc) {
+  using llvm::map_range;
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
 
   FunctionType originatorType = originatorSignature.getValues();
   FunctionType targetType = targetSignature.getValues();
-  if (verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
+  ParamDeclArrayAttr originatorParamDecls =
+      originatorSignature.getInputParams();
+  ParamDeclArrayAttr targetParamDecls = targetSignature.getInputParams();
+
+  /// Verify that a list of parameter declarations from a generator or func
+  /// matches those of an interface.  This produces an error diagnostic and
+  /// returns failure when a problem is detected, or returns true if everything
+  /// is ok.
+  if (verifyMatchingLists(map_range(originatorParamDecls, getName),
+                          map_range(targetParamDecls, getName), originatorName,
+                          originatorLoc, targetName, targetLoc,
+                          "input parameter", "name") ||
+      verifyMatchingLists(map_range(originatorParamDecls, getType),
+                          map_range(targetParamDecls, getType), originatorName,
+                          originatorLoc, targetName, targetLoc,
+                          "input parameter", "type") ||
+      verifyMatchingLists(originatorSignature.getResultParamTypes(),
+                          targetSignature.getResultParamTypes(), originatorName,
+                          originatorLoc, targetName, targetLoc,
+                          "result parameter", "type") ||
+      verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
                           originatorName, originatorLoc, targetName, targetLoc,
                           "argument", "type") ||
       verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
                           originatorName, originatorLoc, targetName, targetLoc,
-                          "result", "type") ||
-      verifyParameterList(originatorSignature.getInputParams(),
-                          targetSignature.getInputParams(), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "input parameter") ||
-      verifyMatchingLists(originatorSignature.getResultParamTypes(),
-                          targetSignature.getResultParamTypes(), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "result parameter", "type"))
+                          "result", "type"))
     return failure();
   return success();
 }
