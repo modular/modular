@@ -133,7 +133,7 @@ kgen.call @undefined() : () -> ()
 // -----
 
 kgen.generator @g1(%x : i32) {
-  // expected-error @+1 {{caller has 1 input but callee expects 0}}
+  // expected-error @+1 {{caller has 1 argument but callee expects 0}}
   kgen.call @g2(%x) : (i32) -> ()
   kgen.return
 }
@@ -161,7 +161,6 @@ kgen.generator @g2<()>() {
 
 // -----
 
-// expected-note @+1 {{callee declared here}}
 kgen.generator @only_returns<p1 -> index>() {
   kgen.return<p1>
 }
@@ -211,14 +210,13 @@ kgen.generator @only_returns<() -> i4>() {
 }
 
 kgen.func @test_only_returns() {
-  // expected-error @+1 {{caller output parameter #0 has type 'index' but callee expected type 'i4'}}
+  // expected-error @+1 {{caller result parameter #0 has type 'index' but callee expected type 'i4'}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
 }
 
 // -----
 
-// expected-note @+1 {{callee declared here}}
 kgen.generator @fn<p2>() {
   kgen.return
 }
@@ -345,7 +343,7 @@ kgen.generator @callee<type: dtype>(%x: !meta.scalar<type>) {
 }
 
 kgen.generator @caller<type : dtype>(%arg0: !meta.scalar<type>) {
-  // expected-error @+1 {{caller input #0 has type '!meta.scalar<type>' but callee expected type '!meta.scalar<f64>'}}
+  // expected-error @+1 {{caller argument #0 has type '!meta.scalar<type>' but callee expected type '!meta.scalar<f64>'}}
   kgen.call @callee<type: dtype = f64>(%arg0) : (!meta.scalar<type>) -> ()
   kgen.return
 }
