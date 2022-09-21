@@ -19,9 +19,13 @@
 #include "llvm/Analysis/IRSimilarityIdentifier.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
+#include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/Scalar.h"
 #include <filesystem>
 
 using namespace M;
@@ -63,6 +67,31 @@ struct ModulePtrKeyInfo {
     return std::to_string(size_t(moduleHash));
   }
 };
+class LLVMOptimizer {
+public:
+  LLVMOptimizer() : PM(std::make_unique<llvm::legacy::PassManager>()) {
+    using namespace llvm;
+    PM->add(createFunctionInliningPass());
+    PM->add(createSCCPPass());
+    PM->add(createLICMPass());
+    PM->add(createLoopStrengthReducePass());
+    PM->add(createCFGSimplificationPass());
+    PM->add(createAggressiveInstCombinerPass());
+    PM->add(createStripDeadDebugInfoPass());  // Remove dead debug info
+    PM->add(createStripDeadPrototypesPass()); // Remove dead func decls
+  }
+
+  llvm::Expected<llvm::orc::ThreadSafeModule>
+  operator()(llvm::orc::ThreadSafeModule TSM,
+             llvm::orc::MaterializationResponsibility &R) {
+    TSM.withModuleDo([this](llvm::Module &M) { PM->run(M); });
+    return std::move(TSM);
+  }
+
+private:
+  std::unique_ptr<llvm::legacy::PassManager> PM;
+};
+
 } // namespace
 
 namespace M::KGEN::detail {
@@ -221,6 +250,7 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
     return M::Error(llvm::toString(jitOr.takeError()));
 
   ee.jit = std::move(*jitOr);
+  ee.jit->getIRTransformLayer().setTransform(LLVMOptimizer());
   return ee;
 }
 
