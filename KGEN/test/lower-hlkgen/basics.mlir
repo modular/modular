@@ -97,8 +97,8 @@ hlkgen.generator @returnbufItf_impl(%a : !meta.buffer<123, f32>) -> !meta.buffer
 // CHECK-LABEL: kgen.generator @returnbufItf_impl_thunk<size, ty: dtype>
 // CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<123, f32>) -> !meta.buffer<size, ty>
 // CHECK-NEXT:   constraints <
-// CHECK-NEXT:     [eq(:dtype ty, f32), "result #0 specifies 'ty' = f32", #
 // CHECK-NEXT:     [eq(size, 123), "result #0 specifies 'size' = 123", #
+// CHECK-NEXT:     [eq(:dtype ty, f32), "result #0 specifies 'ty' = f32", #
 // CHECK-NEXT:   implements @returnbufItf {
 // CHECK-NEXT:   %[[V0:.*]] = kgen.call @returnbufItf_impl<size = size, ty: dtype = ty>(%[[ARG0]]
 // CHECK-NEXT:   %[[V1:.*]] = kgen.rebind %[[V0]] : !meta.buffer<123, f32> to !meta.buffer<size, ty>

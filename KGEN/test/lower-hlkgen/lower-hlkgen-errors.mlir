@@ -13,7 +13,16 @@ hlkgen.generator @impl(%arg0 : f64, %arg1 : f64) implements @itf {
 // expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf(%arg0: i32)
 
-// expected-error @+1 {{argument #0 has type 'i12' but interface expected type 'i32'}}
+// expected-error @+1 {{argument #0 has type 'f32' but interface expected type 'i32'}}
+hlkgen.generator @impl(%arg0 : f32) implements @itf {
+  kgen.return
+}
+
+// -----
+
+kgen.generator.interface @itf(%arg0: i32)
+
+// expected-error @+1 {{argument #0 has type 'i12' not equal to interface type 'i32' but does not implement SubElementTypeInterface}}
 hlkgen.generator @impl(%arg0 : i12) implements @itf {
   kgen.return
 }
@@ -125,7 +134,7 @@ hlkgen.generator @impl<ty: dtype>(%arg0: !meta.scalar<f64>) -> !meta.scalar<f64>
   // expected-note @below {{previously constrained "'ty' looks lovely as si32"}}
   constraints <[eq(:dtype ty, si32), "'ty' looks lovely as si32"]>
   implements @itf {
-  
+
 // expected-error @+1 {{constraint contradiction detected: "result #0 specifies 'ty' = f64"}}
   kgen.return %arg0: !meta.scalar<f64>
 }
@@ -133,7 +142,7 @@ hlkgen.generator @impl<ty: dtype>(%arg0: !meta.scalar<f64>) -> !meta.scalar<f64>
 // -----
 
 // expected-note @+1 {{interface defined here}}
-kgen.generator.interface @itf<ty: dtype>() 
+kgen.generator.interface @itf<ty: dtype>()
 
 // This implementation infers that the ty argument must be f32.
 
