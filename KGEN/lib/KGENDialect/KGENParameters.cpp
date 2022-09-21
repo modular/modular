@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGENVerifyHelper.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
@@ -137,10 +138,7 @@ void ParameterCollector::collectParameterUsesFromType(
 // SignatureType Verification
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-SignatureType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                      ParamDeclArrayAttr inputParams,
-                      TypeArrayAttr resultParamTypes, FunctionType values) {
+ErrorOrSuccess SignatureType::checkSelfContained() {
   bool hadSymbolConstantReferences = false;
   struct SignatureTypeCollector : public ParameterCollector {
     SignatureTypeCollector(bool &hadSymbolConstantReferences)
@@ -154,21 +152,21 @@ SignatureType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
   // Collect all the parameter references from the function type in the
   // signature.
   SmallVector<ParamDeclRefAttr> uses;
-  parameterCollector.collectParameterUsesFromType(values, uses);
+  parameterCollector.collectParameterUsesFromType(getValues(), uses);
 
   // Reject any SymbolConstantAttr's, they cannot exist in a signature.  This
   // structurally cannot exist, but this is defensive code in case something
   // changes in the future.
   if (hadSymbolConstantReferences)
-    return emitError() << "signature type cannot use an @symbol reference";
+    return Error("signature type cannot use an @symbol reference");
 
   // Check the input parameters for conflicts.
   SmallDenseMap<StringAttr, Type> paramsMap;
-  for (auto inputParam : inputParams) {
+  for (auto inputParam : getInputParams()) {
     auto &entry = paramsMap[inputParam.getName()];
     if (entry)
-      return emitError() << "signature parameter " << inputParam.getName()
-                         << " redefined";
+      return Error("signature parameter \"" + inputParam.getName().strref() +
+                   "\" redefined");
     entry = inputParam.getType();
   }
 
@@ -176,11 +174,11 @@ SignatureType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
   for (ParamDeclRefAttr use : uses) {
     auto &entry = paramsMap[use.getName()];
     if (!entry)
-      return emitError() << use.getName()
-                         << " parameter not defined in signature";
+      return Error("\"" + use.getName().strref() +
+                   "\" parameter not defined in signature");
     if (entry != use.getType())
-      return emitError() << "use of " << use.getName()
-                         << " with incorrect type in signature";
+      return Error("use of \"" + use.getName().strref() +
+                   "\" with incorrect type in signature");
   }
 
   // Otherwise we succeed.

@@ -67,9 +67,9 @@ void SignatureType::walkImmediateSubElements(
 Type SignatureType::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.size() == 1);
-  return SignatureType::get(
-      getContext(), replAttrs[0].cast<ParamDeclArrayAttr>(),
-      replAttrs[1].cast<TypeArrayAttr>(), replTypes[0].cast<FunctionType>());
+  return SignatureType::get(replAttrs[0].cast<ParamDeclArrayAttr>(),
+                            replAttrs[1].cast<TypeArrayAttr>(),
+                            replTypes[0].cast<FunctionType>());
 }
 
 //===----------------------------------------------------------------------===//

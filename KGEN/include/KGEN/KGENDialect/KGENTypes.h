@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_KGENTYPES_H
 
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
 class ParamDeclArrayAttr;

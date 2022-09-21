@@ -59,13 +59,16 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
                                  TypeArrayAttr resultParamTypes,
                                  FunctionType valuesType) -> LogicalResult {
+    auto sigTy = SignatureType::get(inputParams, resultParamTypes, valuesType);
+
     // Signature types can fail to parse when they reference parameters that
     // are not defined in their input list.  Handle this by reporting the error
     // correctly through the parser and returning a failure.
-    type = SignatureType::getChecked(
-        [&]() -> InFlightDiagnostic { return parser.emitError(typeLoc); },
-        inputParams.getContext(), inputParams, resultParamTypes, valuesType);
-    return LogicalResult::success(type != Type());
+    auto isSelfContained = sigTy.checkSelfContained();
+    if (isSelfContained.isError())
+      return parser.emitError(typeLoc, isSelfContained.takeError().get());
+    type = sigTy;
+    return LogicalResult::success();
   };
 
   if (succeeded(parser.parseOptionalKeyword("signature"))) {
