@@ -436,7 +436,7 @@ public:
   /// Reduces the values within the vector using the addition operator.
   element_type reduceAdd() const {
     if constexpr (isEmulated || !__has_builtin(__builtin_reduce_add) ||
-                  (isClang150 && std::is_floating_point_v<element_type>))
+                  std::is_floating_point_v<element_type>)
       return std::reduce(data(), data() + size(), element_type(0),
                          std::plus<>());
     else
@@ -446,7 +446,7 @@ public:
   /// Reduces the values within the vector using the multiplication operator.
   element_type reduceMul() const {
     if constexpr (isEmulated || !__has_builtin(__builtin_reduce_mul) ||
-                  (isClang150 && std::is_floating_point_v<element_type>))
+                  std::is_floating_point_v<element_type>)
       return std::reduce(data(), data() + size(), element_type(1),
                          std::multiplies<>());
     else
@@ -502,13 +502,6 @@ public:
 private:
   /// The underlying simd vector data.
   vector_type vectorData;
-
-#ifdef __clang__
-  static constexpr bool isClang150 =
-      __clang_major__ == 15 && __clang_minor__ == 0;
-#else
-  static constexpr bool isClang150 = false;
-#endif
 };
 
 template <typename ElementType, size_t Width>
