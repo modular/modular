@@ -84,6 +84,9 @@ endfunction()
 # the CMake targets needed to depend on them from C/C++ code. Usage:
 #
 #  add_kgen_kernel(exp
+#    SFF_DEBUG #< This prints information about the SelectFastestFunction
+#              #< search process.
+#
 #    SOURCE exp.mlir
 #    KERNELS run_exp
 #    LINK_LIBS lib)
@@ -91,7 +94,7 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
 
@@ -102,7 +105,9 @@ function(add_kgen_kernel target)
     add_custom_command(
       OUTPUT ${object_file_name}
       OUTPUT "${kernel}.h"
-      COMMAND $<TARGET_FILE:kgen> -emit -func=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+      COMMAND $<TARGET_FILE:kgen> -emit
+      $<$<BOOL:KGEN_SFF_DEBUG>:-debug-only="select-fastest-function">
+      -func=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
     )

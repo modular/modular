@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
+#include "Support/AlignedAlloc.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -378,6 +379,13 @@ BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
              DTypeConstantAttr::get(ctx, dtype));
 }
 
+namespace {
+LLVM_PACKED(struct SizePointerPair {
+  intptr_t size;
+  void *data;
+});
+}
+
 /// This implements `OpaqueObjectInterface::populate`. It generates a buffer
 /// object, and furthermore allocates memory for the buffer's backing storage
 /// and places that in the pointer field of the buffer structure itself.
@@ -400,7 +408,9 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   else
     numElements = *sizeOr;
 
-  void *ptr = malloc(dtype.getSizeInBytes(numElements));
+  // Use std::aligned_alloc so it's compatible with SIMD. This is aligned to the
+  // max required alignment, which is for AVX512.
+  void *ptr = alignedAlloc(64, dtype.getSizeInBytes(numElements));
 
   if (sizeOr.has_value()) {
     // When the number of elements is statically-knowable, the object is just a
@@ -408,11 +418,6 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
     *((void **)obj) = ptr;
   } else {
     // Otherwise, it's a pair of intptr_t, void *
-    LLVM_PACKED(struct SizePointerPair {
-      intptr_t size;
-      void *data;
-    });
-
     SizePointerPair *objPtr = ((SizePointerPair *)obj);
     objPtr->size = numElements;
     objPtr->data = ptr;
@@ -425,7 +430,12 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
 /// This implements `OpaqueObjectInterface::destroy`. This deallocates any
 /// memory allocated in `populate`.
 void BufferType::destroy(Attribute tag, void *obj) const {
-  free(*((uint8_t **)obj));
+  // TODO: handle dynamic DType as well.
+  auto sizeOr = resolveSize();
+  if (sizeOr.has_value())
+    alignedFree(*(void **)obj);
+  else
+    alignedFree(((SizePointerPair *)obj)->data);
 }
 
 /// This implements `OpaqueObjectInterface::getSizeInBytes`. We don't care about
