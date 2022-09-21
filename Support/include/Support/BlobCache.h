@@ -86,9 +86,15 @@ public:
 
   /// Store an item in the provided backends. On a collision, the backends are
   /// expected to overwrite the existing contents, so it is incumbent on the
-  /// user to use a strong hash function!
-  ErrorOrSuccess insert(KeyTy key, llvm::MemoryBufferRef obj) {
-    return backendList->insert(KeyInfo::hashKey(key), obj);
+  /// user to use a strong hash function! Returns the cache key on success -
+  /// this can be used for speeding up future hash computations or simply
+  /// discarded.
+  ErrorOr<std::string> insert(KeyTy key, llvm::MemoryBufferRef obj) {
+    std::string keyHash = KeyInfo::hashKey(key);
+    if (auto err = backendList->insert(keyHash, obj))
+      return err.takeError();
+
+    return keyHash;
   }
 
   /// Check if any of the provided backends have the item.

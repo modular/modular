@@ -48,8 +48,9 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   // goes in and comes out the same.
   auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
 
-  auto err = cache.insert("zeros", *zerosBuf);
+  ErrorOr<std::string> err = cache.insert("zeros", *zerosBuf);
   EXPECT_FALSE(failed(err)) << err.getError() << '\n';
+  EXPECT_FALSE(err->empty()) << "expected to receive the hash key\v";
   EXPECT_TRUE(cache.contains("zeros"))
       << "expected to have item named 'zeros'\n";
 }
@@ -60,6 +61,8 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
 
   auto err = cache.insert("zeros", *zerosBuf);
+  ASSERT_FALSE(failed(err)) << err.getError() << '\n';
+
   auto zerosOr = cache.find("zeros");
   EXPECT_FALSE(failed(zerosOr)) << zerosOr.getError();
 
