@@ -10,10 +10,10 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "Support/IndexDialect/IndexOps.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/DialectConversion.h"
 
 using namespace M;
 using namespace KGEN;
@@ -27,11 +27,13 @@ namespace {
 //===----------------------------------------------------------------------===//
 
 struct ConvertZAPBufferStackAllocation
-    : mlir::OpRewritePattern<BufferStackAllocationOp> {
-  using OpRewritePattern::OpRewritePattern;
+    : mlir::OpConversionPattern<BufferStackAllocationOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(BufferStackAllocationOp op,
-                                PatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(BufferStackAllocationOp op,
+                  BufferStackAllocationOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     auto type = op.getType().cast<BufferType>();
     Value ptr = rewriter.create<StackAllocationOp>(
         op.getLoc(), PointerType::get(ScalarType::get(type.getDType())),
@@ -55,13 +57,14 @@ static Value createBufferConstant(PatternRewriter &rewriter, Location loc,
   return rewriter.create<BufferConstructOp>(loc, type, ptr);
 }
 
-struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(BufferConstantOp op,
-                                PatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(BufferConstantOp op, BufferConstantOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     Value buf = createBufferConstant(rewriter, op.getLoc(), op.getType(),
-                                     op.getValues());
+                                     adaptor.getValues());
     rewriter.replaceOp(op, buf);
     return success();
   }
@@ -71,13 +74,16 @@ struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
 // ConvertZAPBufferLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPBufferLoad : mlir::OpRewritePattern<BufferLoadOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPBufferLoad : mlir::OpConversionPattern<BufferLoadOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(BufferLoadOp op,
-                                PatternRewriter &rewriter) const override {
-    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
+  LogicalResult
+  matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value base =
+        rewriter.create<BufferAddressOp>(op.getLoc(), adaptor.getBuffer());
+    Value ptr =
+        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     rewriter.replaceOpWithNewOp<LoadOp>(op, ptr);
     return success();
   }
@@ -87,14 +93,17 @@ struct ConvertZAPBufferLoad : mlir::OpRewritePattern<BufferLoadOp> {
 // ConvertZAPBufferStore
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPBufferStore : mlir::OpConversionPattern<BufferStoreOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(BufferStoreOp op,
-                                PatternRewriter &rewriter) const override {
-    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
-    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), ptr);
+  LogicalResult
+  matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value base =
+        rewriter.create<BufferAddressOp>(op.getLoc(), adaptor.getBuffer());
+    Value ptr =
+        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
+    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr);
     return success();
   }
 };
@@ -103,13 +112,16 @@ struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
 // ConvertZAPSIMDLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPSIMDLoad : mlir::OpRewritePattern<SIMDLoadOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPSIMDLoad : mlir::OpConversionPattern<SIMDLoadOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(SIMDLoadOp op,
-                                PatternRewriter &rewriter) const override {
-    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
+  LogicalResult
+  matchAndRewrite(SIMDLoadOp op, SIMDLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value base =
+        rewriter.create<BufferAddressOp>(op.getLoc(), adaptor.getBuffer());
+    Value ptr =
+        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<BitcastOp>(
         op.getLoc(), PointerType::get(TypeConstantAttr::get(op.getType())),
         ptr);
@@ -122,17 +134,19 @@ struct ConvertZAPSIMDLoad : mlir::OpRewritePattern<SIMDLoadOp> {
 // ConvertZAPSIMDStore
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPSIMDStore : mlir::OpConversionPattern<SIMDStoreOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(SIMDStoreOp op,
-                                PatternRewriter &rewriter) const override {
-    Value base = rewriter.create<BufferAddressOp>(op.getLoc(), op.getBuffer());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
+  LogicalResult
+  matchAndRewrite(SIMDStoreOp op, SIMDStoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value base =
+        rewriter.create<BufferAddressOp>(op.getLoc(), adaptor.getBuffer());
+    Value ptr =
+        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<BitcastOp>(
-        op.getLoc(),
-        PointerType::get(TypeConstantAttr::get(op.getValue().getType())), ptr);
-    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), bitcastPtr);
+        op.getLoc(), PointerType::get(op.getValue().getType()), ptr);
+    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), bitcastPtr);
     return success();
   }
 };
@@ -141,11 +155,12 @@ struct ConvertZAPSIMDStore : mlir::OpRewritePattern<SIMDStoreOp> {
 // ConvertZAPPrint
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
-  using OpRewritePattern::OpRewritePattern;
+struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(PrintOp op,
-                                PatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(PrintOp op, PrintOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     // Lower the string into the a buffer constant. Null-terminate the string.
     SmallVector<char> fmtStr;
     fmtStr.reserve(op.getFmt().size() + 1);
@@ -160,7 +175,7 @@ struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
     SmallVector<Value> operands;
     operands.reserve(op.getNumOperands() + 1);
     operands.push_back(fmt);
-    llvm::append_range(operands, op.getOperands());
+    llvm::append_range(operands, adaptor.getOperands());
     rewriter.replaceOpWithNewOp<ExternalCallOp>(
         op, TypeRange(), "printf", operands,
         TypeAttr::get(rewriter.getFunctionType(fmtType, {})));
@@ -174,7 +189,8 @@ struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
+static void populateZAPToPOPPatterns(TypeConverter &converter,
+                                     RewritePatternSet &patterns) {
   patterns.insert<ConvertZAPBufferLoad, ConvertZAPBufferConstant,
                   ConvertZAPBufferStackAllocation, ConvertZAPBufferStore,
                   ConvertZAPPrint, ConvertZAPSIMDLoad, ConvertZAPSIMDStore>(
@@ -192,10 +208,21 @@ struct LowerZAPToPOPPass : public LowerZAPToPOPBase<LowerZAPToPOPPass> {
 } // namespace
 
 void LowerZAPToPOPPass::runOnOperation() {
+  // Configure the type converter.
+  TypeConverter typeConverter;
+
+  // Configure dialect conversion
+  ConversionTarget target(getContext());
+  target.addIllegalDialect<ZAPDialect>();
+  target.addLegalDialect<POPDialect, MetaDialect>();
+
+  // Populate patterns
   RewritePatternSet patterns(&getContext());
-  populateZAPToPOPPatterns(patterns);
-  if (failed(mlir::applyPatternsAndFoldGreedily(getOperation(),
-                                                std::move(patterns))))
+  populateZAPToPOPPatterns(typeConverter, patterns);
+
+  // Run the conversion.
+  if (failed(mlir::applyPartialConversion(getOperation(), target,
+                                          std::move(patterns))))
     return signalPassFailure();
 }
 
