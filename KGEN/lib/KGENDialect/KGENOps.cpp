@@ -551,15 +551,47 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-template <typename CallerRange, typename CalleeRange>
-static ParseResult verifyMatchingCallLists(const CallerRange &callerRange,
-                                           const CalleeRange &calleeRange,
-                                           Operation *caller, Operation *callee,
-                                           const char *itemName,
-                                           const char *propertyName) {
-  return verifyMatchingLists(callerRange, calleeRange, "caller",
-                             caller->getLoc(), "callee", callee->getLoc(),
-                             itemName, propertyName);
+/// Verify invariants for a CallOp or CallParamOp with a callee of a known
+/// signature.
+static ParseResult
+verifyCallAndCallee(Operation *theCall, SignatureType calleeSignature,
+                    ParamBindArrayAttr callerInputParams,
+                    ParamDeclArrayAttr callerOutputParamDecls,
+                    FunctionType functionType, Location calleeLoc) {
+
+  auto emitErrorFn = [&]() -> mlir::InFlightDiagnostic {
+    return theCall->emitError();
+  };
+
+  // Should move this to a "getSignature" method on CallOp.
+  // TODO: ParamBindAttr should contain ParamDeclAttr!
+  SmallVector<ParamDeclAttr> callerInputParamDecls;
+  llvm::append_range(callerInputParamDecls,
+                     llvm::map_range(callerInputParams, [](ParamBindAttr bind) {
+                       return ParamDeclAttr::get(bind.getName(),
+                                                 bind.getValue().getType());
+                     }));
+
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  SmallVector<Type> callerResultParamTypes;
+  llvm::append_range(callerResultParamTypes,
+                     llvm::map_range(callerOutputParamDecls, getType));
+
+  auto callerSignature = SignatureType::get(
+      theCall->getContext(),
+      ParamDeclArrayAttr::get(theCall->getContext(), callerInputParamDecls),
+      TypeArrayAttr::get(theCall->getContext(), callerResultParamTypes),
+      functionType);
+
+  // Get the substituted signature based on the input parameters specified.
+  calleeSignature =
+      calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
+  if (!calleeSignature)
+    return failure();
+
+  // TODO: Sink verifyMatchingLists into KGENUtils.cpp.
+  return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
+                                   "callee", calleeSignature, calleeLoc);
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
@@ -573,90 +605,20 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitError() << "'" << calleeAttr.getValue()
                        << "' does not reference a valid callee";
 
-  // Verify that the callee/caller parameters match.  The parameter names on the
-  // results don't need to match, but the parameter names on the argument
-  // bindings do.  The types always need to match.
-  auto calleeInputParamDecls = callee.getInputParamDecls();
-  auto calleeOutputParamTypes = callee.getResultParamTypes();
-
-  // Check the parameter values specified to the input parameters.
-  ArrayRef<ParamBindAttr> callerInputParams = getParamValues();
-  ArrayRef<ParamDeclAttr> callerOutputParamDecls = getParamDecls();
-
-  auto getParamDeclType = [](ArrayRef<ParamDeclAttr> decls) {
-    return llvm::map_range(
-        decls, [](ParamDeclAttr value) -> Type { return value.getType(); });
-  };
-
-  /// Check the input parameter names.  We don't check the result parameter
-  /// names because (in general) they are intentionally renamed at the call
-  /// site.
-  if (verifyMatchingCallLists(
-          llvm::map_range(
-              callerInputParams,
-              [](ParamBindAttr value) -> Attribute { return value.getName(); }),
-          llvm::map_range(
-              calleeInputParamDecls,
-              [](ParamDeclAttr value) -> Attribute { return value.getName(); }),
-          *this, callee, "input parameter", "name"))
-    return failure();
-
-  // We need to substitute and simplify expressions that occur in the argument
-  // list and parameter types, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
-  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
-  // ... call @callee1<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
-  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
-  //
-  // This can also occur in parameter types, e.g. for region types (dt vs f32):
-  //     kgen.generator @g<dt: dtype, region: () -> !meta.scalar<dt>>(...
-  //     call @g<dt: f32, region: () -> !meta.scalar<f32>(...
-
-  // We do this with with ParameterEvaluator which can do the remapping for us.
-  ParameterEvaluator evaluator;
-  for (auto [bind, decl] :
-       llvm::zip(callerInputParams, calleeInputParamDecls)) {
-    evaluator.setParameterValue(decl, bind.getValue());
-  }
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
-  // Check input parameter types match.
-  if (verifyMatchingCallLists(
-          llvm::map_range(callerInputParams,
-                          [](Attribute value) -> Type {
-                            return value.cast<ParamBindAttr>().getType();
-                          }),
-          llvm::map_range(getParamDeclType(calleeInputParamDecls), remapType),
-          *this, callee, "input parameter", "type") ||
-
-      /// Check result parameter types.
-      verifyMatchingCallLists(getParamDeclType(callerOutputParamDecls),
-                              calleeOutputParamTypes, *this, callee,
-                              "output parameter", "type")) {
-    return failure();
-  }
-
-  // Ok, now that we know the parameters match up, verify that the operand
-  // and result types match the callee.
-  auto fnType = callee.getFunctionType();
-  auto calleeInputTypes = llvm::map_range(fnType.getInputs(), remapType);
-  auto calleeResultTypes = llvm::map_range(fnType.getResults(), remapType);
-
-  // Check that the passed in operands, and returned types match our
-  // expectations.
-  if (verifyMatchingCallLists(getOperandTypes(), calleeInputTypes, *this,
-                              callee, "input", "type") ||
-      verifyMatchingCallLists(getResultTypes(), calleeResultTypes, *this,
-                              callee, "result", "type"))
+  // Check the parameters and operands align with the requirements of the
+  // callee's signature.
+  if (verifyCallAndCallee(
+          *this, callee.getSignature(), getParamValuesAttr(),
+          getParamDeclsAttr(),
+          FunctionType::get(getContext(), getOperandTypes(), getResultTypes()),
+          callee->getLoc()))
     return failure();
 
   // Ok, the call looks good.  Next, make sure that calls within a
   // kgen.func do not pass input arguments.  Input arguments are invalid to a
   // func, so it must be a generator or generator interface, and these will
   // not be elaborated unless they have zero input arguments.
-  if (!callerInputParams.empty()) {
+  if (!getParamValues().empty()) {
     if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
       auto diag = emitError() << "cannot call generator with input arguments "
                                  "from concrete kgen.func";
