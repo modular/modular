@@ -20,12 +20,10 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     InterfaceMethod<[{
       Return the parameter + SSA value signature.
     }], "SignatureType", "getSignature", (ins), [{
-      return SignatureType::get($_op.getContext(),
-                                $_op.getParamDeclsAttr(),
+      return SignatureType::get($_op.getParamDeclsAttr(),
                                 $_op.getResultParamTypesAttr(),
                                 $_op.getFunctionType());}], [{
-      return SignatureType::get($_op.getContext(),
-                                $_op.getParamDeclsAttr(),
+      return SignatureType::get($_op.getParamDeclsAttr(),
                                 $_op.getResultParamTypesAttr(),
                                 $_op.getFunctionType());}]>,
 
