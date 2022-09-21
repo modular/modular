@@ -29,7 +29,8 @@ inline ParseResult verifyMatchingLists(
                 << " has " << numOriginator << " " << itemName
                 << (numOriginator != 1 ? "s" : "") << " but " << targetName
                 << " expects " << numTarget;
-    diag.attachNote(targetLoc) << targetName << " declared here";
+    if (originatorLoc != targetLoc)
+      diag.attachNote(targetLoc) << targetName << " declared here";
     return failure();
   }
 
@@ -49,7 +50,8 @@ inline ParseResult verifyMatchingLists(
                 << ' ' << itemName << " #" << itemNum << " has " << propertyName
                 << ' ' << originatorVal << " but " << targetName << " expected "
                 << propertyName << ' ' << targetVal;
-    diag.attachNote(targetLoc) << targetName << " declared here";
+    if (originatorLoc != targetLoc)
+      diag.attachNote(targetLoc) << targetName << " declared here";
     return failure();
   }
 

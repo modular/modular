@@ -475,8 +475,17 @@ kgen.generator @test2() {
 // -----
 
 kgen.generator @call_param() {
-  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a region type}}
+  // expected-error @+1 {{'kgen.call_param' callee parameter type must be a signature type}}
   %0 = kgen.call_param[si32: 4]()
+  kgen.return
+}
+
+
+// -----
+
+kgen.generator @call_param<fn: signature<<ty: type>()->()>>() {
+  // expected-error @+1 {{caller input parameter #0 has type 'index' but callee parameter expected type}}
+  %0 = kgen.call_param[signature<<ty: type>()->()>: fn]<ty = 42>()
   kgen.return
 }
 

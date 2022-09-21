@@ -222,8 +222,9 @@ def CallParamOp : KGENOp<"call_param", []> {
   }];
 
   let assemblyFormat = [{
-    `[` custom<CallParamCallee>($callee, type($operands), type($results)) `]`
-      `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
+    `` custom<CallParamCallee>($callee, $paramValues, $paramDecls, 
+                            type($operands), type($results))
+    `(` $operands `)`
     attr-dict
   }];
 

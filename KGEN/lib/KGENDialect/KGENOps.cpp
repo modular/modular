@@ -182,63 +182,6 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   return failure();
 }
 
-//===----------------------------------------------------------------------===//
-// CallParamOp / custom<CallParamCallee>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
-                                        SmallVectorImpl<Type> &operandTypes,
-                                        SmallVectorImpl<Type> &resultTypes) {
-  Type type;
-  auto loc = p.getCurrentLocation();
-  if (parseKGENType(p, type) || p.parseColon() ||
-      parseParamValue(p, value, type))
-    return failure();
-
-  auto regionType = value.getType().dyn_cast<SignatureType>();
-  if (!regionType)
-    return p.emitError(loc, "callee parameter type must be a region type");
-
-  llvm::append_range(operandTypes, regionType.getValues().getInputs());
-  llvm::append_range(resultTypes, regionType.getValues().getResults());
-  return success();
-}
-
-static void printCallParamCallee(OpAsmPrinter &p, Operation *, TypedAttr value,
-                                 OperandRange::type_range operandTypes,
-                                 mlir::ResultRange::type_range resultTypes) {
-  printKGENType(p.getStream(), value.getType());
-  p << ": ";
-  printParamValue(p, value);
-}
-
-LogicalResult CallParamOp::canonicalize(CallParamOp op,
-                                        PatternRewriter &rewriter) {
-  // If the condition is a known symbol, then replace this with a kgen.call.
-  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
-    rewriter.replaceOpWithNewOp<CallOp>(
-        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
-        op.getParamValues(), op.getParamDecls(), op.getOperands());
-    return success();
-  }
-
-  return failure();
-}
-
-LogicalResult CallParamOp::verify() {
-  KGENDeclInterface parent =
-      getOperation()->getParentOfType<KGENDeclInterface>();
-  if (!parent || isa<FuncOp>(parent))
-    return emitError(
-        "kgen.call_param is only allowed in generators pre-elaboration");
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// Logic shared between FuncOp, GeneratorOp, and CallOp
-//===----------------------------------------------------------------------===//
-
 /// Parse a parameter binding list if present.
 ///
 ///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
@@ -335,6 +278,100 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
     printParamDecls(p.getStream(), paramDecls);
   }
   p << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// CallParamOp / custom<CallParamCallee>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
+                                        ParamBindArrayAttr &paramValues,
+                                        ParamDeclArrayAttr &paramResultDecls,
+                                        SmallVectorImpl<Type> &operandTypes,
+                                        SmallVectorImpl<Type> &resultTypes) {
+  Type type;
+  auto loc = p.getCurrentLocation();
+  if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
+      parseParamValue(p, value, type) || p.parseRSquare() ||
+      parseCallOpParams(p, paramValues, paramResultDecls))
+    return failure();
+
+  auto signature = value.getType().dyn_cast<SignatureType>();
+  if (!signature)
+    return p.emitError(loc, "callee parameter type must be a signature type");
+
+  auto nameGetter = [&](auto attr) -> Attribute { return attr.getName(); };
+  auto typeGetter = [&](auto attr) -> Type { return attr.getType(); };
+
+  // Check that the parameter names/types specified match
+  // up with the expected ones.
+  auto callLoc = p.getEncodedSourceLoc(loc);
+  if (verifyMatchingLists(
+          llvm::map_range(paramValues, nameGetter),
+          llvm::map_range(signature.getInputParams(), nameGetter), "caller",
+          callLoc, "callee parameter", callLoc, "input parameter", "name") ||
+      verifyMatchingLists(
+          llvm::map_range(paramValues, typeGetter),
+          llvm::map_range(signature.getInputParams(), typeGetter), "caller",
+          callLoc, "callee parameter", callLoc, "input parameter", "type"))
+    return failure();
+
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
+  // ... call ((@callee1))<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
+
+  ParameterEvaluator evaluator;
+  for (auto [bind, decl] : llvm::zip(paramValues, signature.getInputParams())) {
+    evaluator.setParameterValue(decl, bind.getValue());
+  }
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  for (Type inputType : signature.getValues().getInputs())
+    operandTypes.push_back(remapType(inputType));
+  for (Type resultType : signature.getValues().getResults())
+    resultTypes.push_back(remapType(resultType));
+
+  return success();
+}
+
+static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
+                                 TypedAttr value,
+                                 ParamBindArrayAttr paramValues,
+                                 ParamDeclArrayAttr paramDecls,
+                                 OperandRange::type_range operandTypes,
+                                 mlir::ResultRange::type_range resultTypes) {
+  p << "[";
+  printKGENType(p.getStream(), value.getType());
+  p << ": ";
+  printParamValue(p, value);
+  p << "]";
+  printCallOpParams(p, op, paramValues, paramDecls);
+}
+
+LogicalResult CallParamOp::canonicalize(CallParamOp op,
+                                        PatternRewriter &rewriter) {
+  // If the condition is a known symbol, then replace this with a kgen.call.
+  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
+    rewriter.replaceOpWithNewOp<CallOp>(
+        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+        op.getParamValues(), op.getParamDecls(), op.getOperands());
+    return success();
+  }
+
+  return failure();
+}
+
+LogicalResult CallParamOp::verify() {
+  KGENDeclInterface parent =
+      getOperation()->getParentOfType<KGENDeclInterface>();
+  if (!parent || isa<FuncOp>(parent))
+    return emitError(
+        "kgen.call_param is only allowed in generators pre-elaboration");
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -555,14 +592,12 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   /// names because (in general) they are intentionally renamed at the call
   /// site.
   if (verifyMatchingCallLists(
-          llvm::map_range(callerInputParams,
-                          [](Attribute value) -> Attribute {
-                            return value.cast<ParamBindAttr>().getName();
-                          }),
-          llvm::map_range(calleeInputParamDecls,
-                          [](Attribute value) -> Attribute {
-                            return value.cast<ParamDeclAttr>().getName();
-                          }),
+          llvm::map_range(
+              callerInputParams,
+              [](ParamBindAttr value) -> Attribute { return value.getName(); }),
+          llvm::map_range(
+              calleeInputParamDecls,
+              [](ParamDeclAttr value) -> Attribute { return value.getName(); }),
           *this, callee, "input parameter", "name"))
     return failure();
 
@@ -579,9 +614,9 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
-  for (auto [value, decl] :
+  for (auto [bind, decl] :
        llvm::zip(callerInputParams, calleeInputParamDecls)) {
-    evaluator.setParameterValue(decl, value.getValue());
+    evaluator.setParameterValue(decl, bind.getValue());
   }
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);

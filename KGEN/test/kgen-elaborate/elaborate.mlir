@@ -406,8 +406,9 @@ kgen.generator @takeParametricBinary
   >() {
 
   %0 = pop.constant(1) : !meta.scalar<dt>
-  // TODO: call_param type checking not correct.
-  //%1 = kgen.call_param[signature<<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>>: fn]<ty: type = !meta.scalar<dt>>(%0, %0) 
+
+  %1 = kgen.call_param[signature<<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>>: fn]
+                <ty: type = !meta.scalar<dt>>(%0, %0) 
   kgen.return
 }
 
