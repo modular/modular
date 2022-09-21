@@ -118,3 +118,12 @@ kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   kgen.return %0: si32
 }
+
+// CHECK-LABEL: kgen.generator @param_declare
+// https://github.com/modularml/modular/issues/3042
+kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
+  // CHECK: kgen.param.declare unroll_simd_size
+  kgen.param.declare unroll_simd_size = <mul(simd_width, unroll_factor)>
+  %result = kgen.param.constant = <unroll_simd_size>
+  kgen.return %result : index
+}

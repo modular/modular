@@ -262,7 +262,7 @@ def ParamConstantOp : KGENOp<"param.constant",
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-def ParamDeclareOp : KGENOp<"param.declare", [NoSideEffect]> {
+def ParamDeclareOp : KGENOp<"param.declare", []> {
   let summary = [{
     Declare a new parameter with a value.
   }];
