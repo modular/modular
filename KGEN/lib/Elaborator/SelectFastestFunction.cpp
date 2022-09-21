@@ -95,7 +95,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // Get all the various sizes. Keep these as a vector because we want to
     // index into the allocated memory later and we don't want to recompute all
     // the sizes.
-    SmallVector<size_t> sizes;
+    SmallVector<size_t> argSizes;
     for (auto [type, binding] :
          llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings())) {
       auto bytesOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
@@ -104,18 +104,18 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
         return Error(
             "unable to allocate the input space for kernel evaluation");
 
-      sizes.push_back(*bytesOr);
+      argSizes.push_back(*bytesOr);
     }
 
     // Use unique_ptr to make sure we don't accidentally leak this memory.
-    size_t totalMem =
-        std::accumulate(sizes.begin(), sizes.end(), 1, std::multiplies<>());
+    size_t totalMem = std::accumulate(argSizes.begin(), argSizes.end(), 1,
+                                      std::multiplies<>());
     std::unique_ptr<uint8_t[]> argMem(new uint8_t[totalMem]);
 
     // Actually fill in the memory.
     auto memptr = (uintptr_t)argMem.get();
     for (auto [type, binding, memptrIncrement] :
-         llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings(), sizes)) {
+         llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings(), argSizes)) {
       if (failed(cast<OpaqueObjectInterface>(type).populate(
               itf.getLoc(), cfg.getGenKind(), binding, (void *)memptr)))
         return Error(
@@ -183,6 +183,20 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
 
     // And append the best kernel to the list.
     bestPerConfig.push_back({currentBest, minTiming, cfg.getWeight()});
+
+    // Finally, free any memory allocated by any of the interface types.
+    auto resultPtr = (uintptr_t)resultMem.get();
+    for (auto [type, binding, memptrIncrement] : llvm::zip(
+             itf.getResultTypes(), cfg.getResultBindings(), resultSizes)) {
+      cast<OpaqueObjectInterface>(type).destroy(binding, (void *)resultPtr);
+      resultPtr += memptrIncrement;
+    }
+    auto argPtr = (uintptr_t)argMem.get();
+    for (auto [type, binding, memptrIncrement] :
+         llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings(), argSizes)) {
+      cast<OpaqueObjectInterface>(type).destroy(binding, (void *)argPtr);
+      argPtr += memptrIncrement;
+    }
   }
 
   // Now figure out which kernel is actually best by seeing which one has the
