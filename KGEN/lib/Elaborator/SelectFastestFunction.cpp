@@ -8,7 +8,10 @@
 
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
+#include "llvm/Support/Debug.h"
 #include <numeric>
+
+#define DEBUG_TYPE "select-fastest-function"
 
 using namespace M;
 using namespace KGEN;
@@ -170,6 +173,12 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
       // Now run the function.
       uint64_t thisFuncTiming =
           benchmarkSingleFunc(*wrapperOr, argMem.get(), resultMem.get());
+      LLVM_DEBUG({
+        llvm::dbgs() << "Timing: " << thisFuncTiming
+                     << " (ns) for configuration: " << cfg << " for func:\n";
+        func.print(llvm::dbgs());
+        llvm::dbgs() << "\n";
+      });
       // If this one is better than the previous best, use it.
       if (thisFuncTiming < minTiming) {
         minTiming = thisFuncTiming;
@@ -208,6 +217,12 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
       [](const EvaluatedFunc &lhs, const EvaluatedFunc &rhs) {
         return lhs.timing < rhs.timing && lhs.weight > rhs.weight;
       });
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Fastest implementation:\n";
+    specializations[best->funcIdx]->print(llvm::dbgs());
+    llvm::dbgs() << "\n";
+  });
 
   // Return the best kernel.
   return best->funcIdx;
