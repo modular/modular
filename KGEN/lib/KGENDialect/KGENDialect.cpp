@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -70,6 +71,87 @@ Type SignatureType::replaceImmediateSubElements(
   return SignatureType::get(replAttrs[0].cast<ParamDeclArrayAttr>(),
                             replAttrs[1].cast<TypeArrayAttr>(),
                             replTypes[0].cast<FunctionType>());
+}
+
+/// Return a signature with the specified parameter bindings substituted
+/// into it as happens in a call.  The types specified in the parameter
+/// bindings affects the type signature of the value input and outputs, and
+/// also can remap the signature in the parameter list itself.
+///
+/// If an error occurs making the substitution, report it with emitErrorFn
+/// and return null.
+SignatureType SignatureType::getSpecializedSignature(
+    ParamBindArrayAttr inputParamValues,
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
+  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
+  // ... call @callee1<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
+  //
+  // This can also occur in parameter types, e.g. for region types (dt vs f32):
+  //     kgen.generator @g<dt: dtype, region: () -> !meta.scalar<dt>>(...
+  //     call @g<dt: dtype = f32, region: () -> !meta.scalar<f32>(...
+
+  if (inputParamValues.size() != getInputParams().size()) {
+    emitErrorFn() << "caller has " << inputParamValues.size()
+                  << " input parameters but callee expects "
+                  << getInputParams().size();
+    return SignatureType();
+  }
+
+  // If the signature isn't parameterized, then there are no substitutions to
+  // perform.
+  if (inputParamValues.empty())
+    return *this;
+
+  // We do this with with ParameterEvaluator which can do the remapping for us.
+  ParameterEvaluator evaluator;
+  unsigned paramNo = 0;
+  for (auto [bind, decl] : llvm::zip(inputParamValues, getInputParams())) {
+    if (bind.getName() != decl.getName()) {
+      emitErrorFn() << "caller input parameter #" << paramNo << " has name "
+                    << bind.getName() << " but callee expected name "
+                    << decl.getName();
+      return SignatureType();
+    }
+    evaluator.setParameterValue(
+        // TODO: ParamBindAttr should maintain a ParamDeclAttr so we don't need
+        // to rebuild this.
+        ParamDeclAttr::get(bind.getName(), bind.getValue().getType()),
+        bind.getValue());
+    ++paramNo;
+  }
+
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+  auto remapParamDeclType = [&](ParamDeclAttr attr) -> ParamDeclAttr {
+    auto newTy = remapType(attr.getType());
+    return newTy == attr.getType() ? attr
+                                   : ParamDeclAttr::get(attr.getName(), newTy);
+  };
+
+  // Remap the parameter decls and result types.
+  SmallVector<ParamDeclAttr> newInputParams;
+  SmallVector<Type> newParamResultTypes;
+  llvm::append_range(newInputParams,
+                     llvm::map_range(getInputParams(), remapParamDeclType));
+  llvm::append_range(newParamResultTypes,
+                     llvm::map_range(getResultParamTypes(), remapType));
+
+  // Remap the value types.
+  SmallVector<Type> inputTypes, resultTypes;
+  llvm::append_range(inputTypes,
+                     llvm::map_range(getValues().getInputs(), remapType));
+  llvm::append_range(resultTypes,
+                     llvm::map_range(getValues().getResults(), remapType));
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(getContext(), newInputParams),
+      TypeArrayAttr::get(getContext(), newParamResultTypes),
+      FunctionType::get(getContext(), inputTypes, resultTypes));
 }
 
 //===----------------------------------------------------------------------===//

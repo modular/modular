@@ -113,6 +113,17 @@ def SignatureType
     /// Verify that this SignatureType is self-contained, all referenced
     /// parameters are defined within the signature.
     ErrorOrSuccess checkSelfContained();
+
+    /// Return a signature with the specified parameter bindings substituted
+    /// into it as happens in a call.  The types specified in the parameter
+    /// bindings affects the type signature of the value input and outputs, and
+    /// also can remap the signature in the parameter list itself. 
+    ///
+    /// If an error occurs making the substitution, report it with emitErrorFn
+    /// and return null.
+    SignatureType
+    getSpecializedSignature(ParamBindArrayAttr inputParams,
+      llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
   }];
 }
 

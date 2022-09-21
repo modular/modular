@@ -15,6 +15,7 @@
 #include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
+class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
 class TypeArrayAttr;
 } // namespace M::KGEN
