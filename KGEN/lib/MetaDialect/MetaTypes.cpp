@@ -13,6 +13,7 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Compiler.h"
 #include <random>
 
 using namespace M;
@@ -393,16 +394,29 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
            << "Buffers with unbound dtype are not yet supported: " << *this;
 
   auto sizeOr = resolveSize();
+  int64_t numElements;
   if (!sizeOr.has_value())
-    return emitError(loc) << "Buffers with unbound size are not yet supported: "
-                          << *this;
+    numElements = tag.cast<IntegerAttr>().getValue().getSExtValue();
+  else
+    numElements = *sizeOr;
 
-  int64_t numElements = *sizeOr;
-  auto *ptr = (std::byte *)malloc(dtype.getSizeInBytes(numElements));
+  void *ptr = malloc(dtype.getSizeInBytes(numElements));
 
-  // When the number of elements is statically-knowable, the object is just a
-  // pointer.
-  *((std::byte **)obj) = ptr;
+  if (sizeOr.has_value()) {
+    // When the number of elements is statically-knowable, the object is just a
+    // pointer.
+    *((void **)obj) = ptr;
+  } else {
+    // Otherwise, it's a pair of intptr_t, void *
+    LLVM_PACKED(struct SizePointerPair {
+      intptr_t size;
+      void *data;
+    });
+
+    SizePointerPair *objPtr = ((SizePointerPair *)obj);
+    objPtr->size = numElements;
+    objPtr->data = ptr;
+  }
 
   // Do the fill.
   return doFill(loc, kind, dtype, numElements, ptr);
