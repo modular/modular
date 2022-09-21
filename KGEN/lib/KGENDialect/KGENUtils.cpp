@@ -16,7 +16,9 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGENVerifyHelper.h"
 #include "Support/ML/DType.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/FunctionImplementation.h"
+
 using namespace M;
 using namespace KGEN;
 using mlir::OptionalParseResult;
@@ -414,6 +416,22 @@ static bool isLegalMLIRIdentifier(StringRef name) {
   });
 }
 
+/// Returns true if the given string could be an MLIR builtin type.
+/// TODO: Can't interact directly with the MLIR AsmParser.
+static bool isMLIRBuiltinType(StringRef name) {
+  // Check for a keyword type.
+  static const char *keywordTypes[] = {"bf16", "f16",  "f32",   "f64",
+                                       "f80",  "f128", "index", "none"};
+  if (auto it = llvm::find(keywordTypes, name); it != std::end(keywordTypes))
+    return true;
+  // Check for an integral type: (s|u)*i[0-9]+
+  if (name.front() == 's' || name.front() == 'u')
+    name = name.drop_front();
+  if (name.size() <= 1 || name.front() != 'i')
+    return false;
+  return llvm::all_of(name.drop_front(), isdigit);
+}
+
 ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
   // If this is a '*'-prefixed double quoted string, then this is an escaped
   // parameter name.
@@ -440,8 +458,8 @@ ParseResult KGEN::parseParamName(AsmParser &p, FailureOr<StringAttr> &name) {
 void KGEN::printParamName(StringRef name, raw_ostream &os) {
   // If this will conflict with a DType keyword or isn't a legal MLIR name,
   // then we need a '*' prefix and double quotes.
-  bool needsQuotes =
-      succeeded(DType::getFromString(name)) || !isLegalMLIRIdentifier(name);
+  bool needsQuotes = succeeded(DType::getFromString(name)) ||
+                     !isLegalMLIRIdentifier(name) || isMLIRBuiltinType(name);
   if (needsQuotes)
     os << "*\"";
   os << name;
@@ -512,6 +530,22 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       return failure();
     value = ParamDeclRefAttr::get(name, type);
     return success();
+  }
+
+  // If this parameter is a type, parse it as such here to catch MLIR builtin
+  // types that look like keywords.
+  if (type.isa<MLIRTypeType>()) {
+    Type result;
+    OptionalParseResult parseResult = p.parseOptionalType(result);
+    if (parseResult.has_value()) {
+      if (failed(parseResult.value()))
+        return failure();
+      // We always parse this as a parameterized type, but the builder will form
+      // a concrete type if there are no type parameters in it.  We could add
+      // specific syntax to differentiate them if there is a reason to.
+      value = TypeConstantAttr::get(result);
+      return success();
+    }
   }
 
   // Barewords / MLIR keywords are implicitly parameter declaration references
@@ -620,18 +654,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (needsInvert)
       value = ParamOperatorAttr::getNot(value);
 
-    return success();
-  }
-
-  // If this parameter is a type, parse it as such.
-  if (type.isa<MLIRTypeType>()) {
-    Type result;
-    if (p.parseType(result))
-      return failure();
-    // We always parse this as a parameterized type, but the builder will form
-    // a concrete type if there are no type parameters in it.  We could add
-    // specific syntax to differentiate them if there is a reason to.
-    value = ParameterizedTypeConstantAttr::get(result);
     return success();
   }
 

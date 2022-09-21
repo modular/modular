@@ -285,7 +285,7 @@ kgen.generator @test_region() {
   kgen.call @takeUnary<
      unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
 
-  kgen.return 
+  kgen.return
 }
 
 // CHECK-LABEL: @testTargetInfo
@@ -293,4 +293,22 @@ kgen.generator @testTargetInfo() {
   // CHECK: kgen.param.constant = <"darwin-arm64-21.0">
   %0 = kgen.param.constant = <"darwin-arm64-21.0">
   kgen.return
+}
+
+// COM: Test that `index` parses to the builtin MLIR type and that `*"index"`
+// COM: roundtrips as an escaped parameter name.
+
+// CHECK-LABEL: @mlir_builtin_types
+// CHECK-SAME: <*"index": type>
+// CHECK-SAME: %[[ARG0:.*]]: !meta.pointer<index>
+// CHECK-SAME: %[[ARG1:.*]]: !meta.pointer<*"index">
+kgen.generator @mlir_builtin_types<*"index": type>(
+  %arg0: !meta.pointer<index>, %arg1: !meta.pointer<*"index">
+) -> (index, !kgen.paramref<*"index">) {
+  // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !meta.pointer<index>
+  %0 = pop.load %arg0 : !meta.pointer<index>
+  // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !meta.pointer<*"index">
+  %1 = pop.load %arg1 : !meta.pointer<*"index">
+  // CHECK: return %[[V0]], %[[V1]] : index, !kgen.paramref<*"index">
+  kgen.return %0, %1 : index, !kgen.paramref<*"index">
 }
