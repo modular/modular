@@ -523,8 +523,7 @@ inline raw_ostream &operator<<(raw_ostream &os,
 
 // Defined the unroll macro to make both clang and GCC happy.
 #if defined(__clang__)
-#define PRAGMA_UNROLL(UNROLL_FACTOR)                                           \
-  _Pragma(PP_TO_STRING(unroll_and_jam(UNROLL_FACTOR)))
+#define PRAGMA_UNROLL(UNROLL_FACTOR) _Pragma(PP_TO_STRING(unroll UNROLL_FACTOR))
 #elif defined(__GNUC__)
 #define PRAGMA_UNROLL(UNROLL_FACTOR)                                           \
   _Pragma(PP_TO_STRING(GCC unroll UNROLL_FACTOR))
