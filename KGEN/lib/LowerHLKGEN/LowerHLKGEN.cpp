@@ -180,7 +180,8 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   // If one of these is a parameter, and one is concrete, then that infers a
   // value for the parameter.
   if (auto decl = itfParam.dyn_cast<ParamDeclRefAttr>())
-    return addEqualityConstraintFn(decl, genParam);
+    if (isSimpleConstant(genParam))
+      return addEqualityConstraintFn(decl, genParam);
 
   // Otherwise we don't know how to unify this.
   // TODO: Could handle node-wise merging of expressions to find constraints
@@ -202,6 +203,11 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   // If the types are identical then of course they match.
   if (itfArgTy == genArgTy)
     return success();
+
+  // If the interface type is a parameter reference, try to unify them.
+  if (auto itfParamRef = itfArgTy.dyn_cast<ParamRefType>())
+    return tryUnifyingTypeParameters(itfParamRef.getParam(),
+                                     TypeConstantAttr::get(genArgTy));
 
   // If both types are scalar types, try to unify them.
   if (auto itfScalarTy = itfArgTy.dyn_cast<ScalarType>())
