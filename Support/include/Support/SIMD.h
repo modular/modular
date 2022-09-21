@@ -44,6 +44,13 @@ static constexpr size_t kPreferredSIMDBitWidth = 128;
 #define LLCL_SIMD_EMULATED 1
 #endif
 
+/// Ignore warnings about using vector registers that are wider than what the
+/// hardware supports.
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpsabi"
+#endif
+
 template <typename T, size_t Width>
 class SIMDVector;
 
@@ -640,6 +647,9 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
 #endif // LLCL_SIMD_EMULATED
   return std::reduce(first, last, result, scalarFunc);
 }
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 } // namespace M
 
