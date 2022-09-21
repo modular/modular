@@ -77,6 +77,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // Create pointers for each result. We'll use this for comparing the outputs
     // against each other.
     SmallVector<size_t> resultSizes;
+    resultSizes.reserve(itf.getNumResults());
     for (auto [type, binding] :
          llvm::zip(itf.getResultTypes(), cfg.getResultBindings())) {
       auto sizeOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
@@ -96,6 +97,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
     // index into the allocated memory later and we don't want to recompute all
     // the sizes.
     SmallVector<size_t> argSizes;
+    argSizes.reserve(itf.getNumArguments());
     for (auto [type, binding] :
          llvm::zip(itf.getArgumentTypes(), cfg.getArgBindings())) {
       auto bytesOr = cast<OpaqueObjectInterface>(type).getSizeInBytes(
