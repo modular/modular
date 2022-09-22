@@ -408,9 +408,8 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   else
     numElements = *sizeOr;
 
-  // Use std::aligned_alloc so it's compatible with SIMD. This is aligned to the
-  // max required alignment, which is for AVX512.
-  void *ptr = alignedAlloc(64, dtype.getSizeInBytes(numElements));
+  void *ptr = alignedAlloc(kPreferredMemoryAlignment,
+                           dtype.getSizeInBytes(numElements));
 
   if (sizeOr.has_value()) {
     // When the number of elements is statically-knowable, the object is just a
