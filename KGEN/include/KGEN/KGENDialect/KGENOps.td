@@ -166,7 +166,10 @@ def CallOp
   let results = (outs Variadic<AnyType>);
 
   let extraClassDeclaration = [{
-    FunctionType getCalleeType();
+    FunctionType getFunctionType() {
+      return FunctionType::get(getContext(), getOperandTypes(), 
+                               getResultTypes());
+    }
 
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {
@@ -180,6 +183,9 @@ def CallOp
     CallInterfaceCallable getCallableForCallee() {
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
+
+    /// Return a signature for this call.
+    SignatureType getSignature();
   }];
 
   let assemblyFormat = [{
@@ -210,7 +216,10 @@ def CallParamOp : KGENOp<"call_param", []> {
   let results = (outs Variadic<AnyType>:$results);
 
   let extraClassDeclaration = [{
-    FunctionType getCalleeType();
+    FunctionType getFunctionType() {
+      return FunctionType::get(getContext(), getOperandTypes(), 
+                               getResultTypes());
+    }
 
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {
@@ -219,6 +228,9 @@ def CallParamOp : KGENOp<"call_param", []> {
 
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return a signature for this call.
+    SignatureType getSignature();
   }];
 
   let assemblyFormat = [{
