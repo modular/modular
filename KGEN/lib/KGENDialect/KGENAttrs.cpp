@@ -170,28 +170,6 @@ Attribute ConstraintArrayAttr::replaceImmediateSubElements(
 }
 
 //===----------------------------------------------------------------------===//
-// ParamDeclRefAttr
-//===----------------------------------------------------------------------===//
-
-Attribute ParamDeclRefAttr::parse(AsmParser &p, Type type) {
-  if (!type) {
-    p.emitError(p.getNameLoc(), "parameter reference requires a type");
-    return {};
-  }
-
-  StringAttr name;
-  if (p.parseLess() || parseParamName(p, name) || p.parseGreater())
-    return {};
-  return ParamDeclRefAttr::get(name, type);
-}
-
-void ParamDeclRefAttr::print(AsmPrinter &p) const {
-  p << "<";
-  printParamName(p, getName());
-  p << ">";
-}
-
-//===----------------------------------------------------------------------===//
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
