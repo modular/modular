@@ -182,6 +182,10 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   return failure();
 }
 
+//===----------------------------------------------------------------------===//
+// custom<CallOpParams>
+//===----------------------------------------------------------------------===//
+
 /// Parse a parameter binding list if present.
 ///
 ///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
@@ -197,14 +201,13 @@ static ParseResult parseParamBinds(AsmParser &p,
 
   // Handle the parameter-decl/parameter-result productions.
   auto parseParamBind = [&]() -> ParseResult {
-    StringAttr name;
-    Type type;
+    ParamDeclAttr decl;
     TypedAttr value;
 
-    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
-        p.parseEqual() || parseParamValue(p, value, type))
+    if (parseParamDecl(p, decl) || p.parseEqual() ||
+        parseParamValue(p, value, decl.getType()))
       return failure();
-    paramBinds.push_back(ParamBindAttr::get(name, value));
+    paramBinds.push_back(ParamBindAttr::get(decl, value));
     return success();
   };
 
@@ -213,10 +216,6 @@ static ParseResult parseParamBinds(AsmParser &p,
 
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// custom<CallOpParams>
-//===----------------------------------------------------------------------===//
 
 /// Parse the parameter spec for a call op.
 /// parameter-decl   ::= identifier (`:` type)?
@@ -266,8 +265,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
     p << "()";
   else {
     llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
-      printParamName(p, bind.getName().getValue());
-      printColonTypeOrIndex(p.getStream(), bind.getType());
+      printParamDecl(p, bind.getDecl());
       p << " = ";
       printParamValue(p, bind.getValue());
     });
@@ -278,100 +276,6 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
     printParamDecls(p.getStream(), paramDecls);
   }
   p << ">";
-}
-
-//===----------------------------------------------------------------------===//
-// CallParamOp / custom<CallParamCallee>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
-                                        ParamBindArrayAttr &paramValues,
-                                        ParamDeclArrayAttr &paramResultDecls,
-                                        SmallVectorImpl<Type> &operandTypes,
-                                        SmallVectorImpl<Type> &resultTypes) {
-  Type type;
-  auto loc = p.getCurrentLocation();
-  if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
-      parseParamValue(p, value, type) || p.parseRSquare() ||
-      parseCallOpParams(p, paramValues, paramResultDecls))
-    return failure();
-
-  auto signature = value.getType().dyn_cast<SignatureType>();
-  if (!signature)
-    return p.emitError(loc, "callee parameter type must be a signature type");
-
-  auto nameGetter = [&](auto attr) -> Attribute { return attr.getName(); };
-  auto typeGetter = [&](auto attr) -> Type { return attr.getType(); };
-
-  // Check that the parameter names/types specified match
-  // up with the expected ones.
-  auto callLoc = p.getEncodedSourceLoc(loc);
-  if (verifyMatchingLists(
-          llvm::map_range(paramValues, nameGetter),
-          llvm::map_range(signature.getInputParams(), nameGetter), "caller",
-          callLoc, "callee parameter", callLoc, "input parameter", "name") ||
-      verifyMatchingLists(
-          llvm::map_range(paramValues, typeGetter),
-          llvm::map_range(signature.getInputParams(), typeGetter), "caller",
-          callLoc, "callee parameter", callLoc, "input parameter", "type"))
-    return failure();
-
-  // We need to substitute and simplify expressions that occur in the argument
-  // list and parameter types, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
-  // ... call ((@callee1))<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
-
-  ParameterEvaluator evaluator;
-  for (auto [bind, decl] : llvm::zip(paramValues, signature.getInputParams())) {
-    evaluator.setParameterValue(decl, bind.getValue());
-  }
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
-  for (Type inputType : signature.getValues().getInputs())
-    operandTypes.push_back(remapType(inputType));
-  for (Type resultType : signature.getValues().getResults())
-    resultTypes.push_back(remapType(resultType));
-
-  return success();
-}
-
-static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
-                                 TypedAttr value,
-                                 ParamBindArrayAttr paramValues,
-                                 ParamDeclArrayAttr paramDecls,
-                                 OperandRange::type_range operandTypes,
-                                 mlir::ResultRange::type_range resultTypes) {
-  p << "[";
-  printKGENType(p.getStream(), value.getType());
-  p << ": ";
-  printParamValue(p, value);
-  p << "]";
-  printCallOpParams(p, op, paramValues, paramDecls);
-}
-
-LogicalResult CallParamOp::canonicalize(CallParamOp op,
-                                        PatternRewriter &rewriter) {
-  // If the condition is a known symbol, then replace this with a kgen.call.
-  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
-    rewriter.replaceOpWithNewOp<CallOp>(
-        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
-        op.getParamValues(), op.getParamDecls(), op.getOperands());
-    return success();
-  }
-
-  return failure();
-}
-
-LogicalResult CallParamOp::verify() {
-  KGENDeclInterface parent =
-      getOperation()->getParentOfType<KGENDeclInterface>();
-  if (!parent || isa<FuncOp>(parent))
-    return emitError(
-        "kgen.call_param is only allowed in generators pre-elaboration");
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -551,35 +455,35 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
+SignatureType CallOp::getSignature() {
+  // Should move this to a "getSignature" method on CallOp.
+  SmallVector<ParamDeclAttr> callerInputParamDecls;
+  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
+  llvm::append_range(callerInputParamDecls,
+                     llvm::map_range(getParamValues(), getBindDecl));
+
+  SmallVector<Type> callerResultParamTypes;
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  llvm::append_range(callerResultParamTypes,
+                     llvm::map_range(getParamDecls(), getType));
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
+      TypeArrayAttr::get(getContext(), callerResultParamTypes),
+      getFunctionType());
+}
+
 /// Verify invariants for a CallOp or CallParamOp with a callee of a known
 /// signature.
-static ParseResult
-verifyCallAndCallee(Operation *theCall, SignatureType calleeSignature,
-                    ParamBindArrayAttr callerInputParams,
-                    ParamDeclArrayAttr callerOutputParamDecls,
-                    FunctionType functionType, Location calleeLoc) {
+static ParseResult verifyCallAndCallee(Operation *theCall,
+                                       SignatureType callerSignature,
+                                       SignatureType calleeSignature,
+                                       ParamBindArrayAttr callerInputParams,
+                                       Location calleeLoc) {
 
   auto emitErrorFn = [&]() -> mlir::InFlightDiagnostic {
     return theCall->emitError();
   };
-
-  // Should move this to a "getSignature" method on CallOp.
-  SmallVector<ParamDeclAttr> callerInputParamDecls;
-  llvm::append_range(callerInputParamDecls,
-                     llvm::map_range(callerInputParams, [](ParamBindAttr bind) {
-                       return bind.getDecl();
-                     }));
-
-  auto getType = [](auto attr) -> Type { return attr.getType(); };
-  SmallVector<Type> callerResultParamTypes;
-  llvm::append_range(callerResultParamTypes,
-                     llvm::map_range(callerOutputParamDecls, getType));
-
-  auto callerSignature = SignatureType::get(
-      theCall->getContext(),
-      ParamDeclArrayAttr::get(theCall->getContext(), callerInputParamDecls),
-      TypeArrayAttr::get(theCall->getContext(), callerResultParamTypes),
-      functionType);
 
   // Get the substituted signature based on the input parameters specified.
   calleeSignature =
@@ -605,11 +509,8 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
-  if (verifyCallAndCallee(
-          *this, callee.getSignature(), getParamValuesAttr(),
-          getParamDeclsAttr(),
-          FunctionType::get(getContext(), getOperandTypes(), getResultTypes()),
-          callee->getLoc()))
+  if (verifyCallAndCallee(*this, getSignature(), callee.getSignature(),
+                          getParamValuesAttr(), callee->getLoc()))
     return failure();
 
   // Ok, the call looks good.  Next, make sure that calls within a
@@ -637,6 +538,125 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands);
+}
+
+//===----------------------------------------------------------------------===//
+// CallParamOp / custom<CallParamCallee>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
+                                        ParamBindArrayAttr &paramValues,
+                                        ParamDeclArrayAttr &paramResultDecls,
+                                        SmallVectorImpl<Type> &operandTypes,
+                                        SmallVectorImpl<Type> &resultTypes) {
+  Type type;
+  auto loc = p.getCurrentLocation();
+  if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
+      parseParamValue(p, value, type) || p.parseRSquare() ||
+      parseCallOpParams(p, paramValues, paramResultDecls))
+    return failure();
+
+  auto signature = value.getType().dyn_cast<SignatureType>();
+  if (!signature)
+    return p.emitError(loc, "callee parameter type must be a signature type");
+
+  auto nameGetter = [&](auto attr) -> Attribute { return attr.getName(); };
+  auto typeGetter = [&](auto attr) -> Type { return attr.getType(); };
+
+  // Check that the parameter names/types specified match
+  // up with the expected ones.
+  auto callLoc = p.getEncodedSourceLoc(loc);
+  if (verifyMatchingLists(
+          llvm::map_range(paramValues, nameGetter),
+          llvm::map_range(signature.getInputParams(), nameGetter), "caller",
+          callLoc, "callee parameter", callLoc, "input parameter", "name") ||
+      verifyMatchingLists(
+          llvm::map_range(paramValues, typeGetter),
+          llvm::map_range(signature.getInputParams(), typeGetter), "caller",
+          callLoc, "callee parameter", callLoc, "input parameter", "type"))
+    return failure();
+
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
+  // ... call ((@callee1))<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
+
+  ParameterEvaluator evaluator;
+  for (auto [bind, decl] : llvm::zip(paramValues, signature.getInputParams())) {
+    evaluator.setParameterValue(decl, bind.getValue());
+  }
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  for (Type inputType : signature.getValues().getInputs())
+    operandTypes.push_back(remapType(inputType));
+  for (Type resultType : signature.getValues().getResults())
+    resultTypes.push_back(remapType(resultType));
+
+  return success();
+}
+
+static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
+                                 TypedAttr value,
+                                 ParamBindArrayAttr paramValues,
+                                 ParamDeclArrayAttr paramDecls,
+                                 OperandRange::type_range operandTypes,
+                                 mlir::ResultRange::type_range resultTypes) {
+  p << "[";
+  printKGENType(p.getStream(), value.getType());
+  p << ": ";
+  printParamValue(p, value);
+  p << "]";
+  printCallOpParams(p, op, paramValues, paramDecls);
+}
+
+SignatureType CallParamOp::getSignature() {
+  // Should move this to a "getSignature" method on CallOp.
+  SmallVector<ParamDeclAttr> callerInputParamDecls;
+  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
+  llvm::append_range(callerInputParamDecls,
+                     llvm::map_range(getParamValues(), getBindDecl));
+
+  SmallVector<Type> callerResultParamTypes;
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  llvm::append_range(callerResultParamTypes,
+                     llvm::map_range(getParamDecls(), getType));
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
+      TypeArrayAttr::get(getContext(), callerResultParamTypes),
+      getFunctionType());
+}
+
+LogicalResult CallParamOp::canonicalize(CallParamOp op,
+                                        PatternRewriter &rewriter) {
+  // If the condition is a known symbol, then replace this with a kgen.call.
+  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
+    rewriter.replaceOpWithNewOp<CallOp>(
+        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+        op.getParamValues(), op.getParamDecls(), op.getOperands());
+    return success();
+  }
+
+  return failure();
+}
+
+LogicalResult CallParamOp::verify() {
+  KGENDeclInterface parent =
+      getOperation()->getParentOfType<KGENDeclInterface>();
+  if (!parent || isa<FuncOp>(parent))
+    return emitError(
+        "kgen.call_param is only allowed in generators pre-elaboration");
+
+  auto calleeSignature = getCallee().getType().dyn_cast<SignatureType>();
+  if (!calleeSignature)
+    return emitError("kgen.call_param requires callee of signature type");
+
+  // Check the parameters and operands align with the requirements of the
+  // callee's signature.
+  return verifyCallAndCallee(*this, getSignature(), calleeSignature,
+                             getParamValuesAttr(), getLoc());
 }
 
 //===----------------------------------------------------------------------===//
