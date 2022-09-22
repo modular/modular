@@ -16,7 +16,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGENVerifyHelper.h"
 #include "Support/ML/DType.h"
-#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/FunctionImplementation.h"
 
 using namespace M;
