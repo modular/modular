@@ -480,12 +480,8 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
                                        SignatureType calleeSignature,
                                        ParamBindArrayAttr callerInputParams,
                                        Location calleeLoc) {
-
-  auto emitErrorFn = [&]() -> mlir::InFlightDiagnostic {
-    return theCall->emitError();
-  };
-
   // Get the substituted signature based on the input parameters specified.
+  auto emitErrorFn = [&]() { return theCall->emitError(); };
   calleeSignature =
       calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
   if (!calleeSignature)
@@ -560,40 +556,19 @@ static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
   if (!signature)
     return p.emitError(loc, "callee parameter type must be a signature type");
 
-  auto nameGetter = [&](auto attr) -> Attribute { return attr.getName(); };
-  auto typeGetter = [&](auto attr) -> Type { return attr.getType(); };
-
-  // Check that the parameter names/types specified match
-  // up with the expected ones.
-  auto callLoc = p.getEncodedSourceLoc(loc);
-  if (verifyMatchingLists(
-          llvm::map_range(paramValues, nameGetter),
-          llvm::map_range(signature.getInputParams(), nameGetter), "caller",
-          callLoc, "callee parameter", callLoc, "input parameter", "name") ||
-      verifyMatchingLists(
-          llvm::map_range(paramValues, typeGetter),
-          llvm::map_range(signature.getInputParams(), typeGetter), "caller",
-          callLoc, "callee parameter", callLoc, "input parameter", "type"))
+  // Get the substituted signature based on the input parameters specified and
+  // check that the parameter names/types specified match up with the expected
+  // ones.
+  auto emitErrorFn = [&]() { return p.emitError(loc); };
+  auto substitutedSignature =
+      signature.getSpecializedSignature(paramValues, emitErrorFn);
+  if (!substitutedSignature)
     return failure();
 
-  // We need to substitute and simplify expressions that occur in the argument
-  // list and parameter types, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !meta.scalar<type>)
-  // ... call ((@callee1))<type: dtype = f32>(%arg1) : (!meta.scalar<f32>) -> ()
-
-  ParameterEvaluator evaluator;
-  for (auto [bind, decl] : llvm::zip(paramValues, signature.getInputParams())) {
-    evaluator.setParameterValue(decl, bind.getValue());
-  }
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
-  for (Type inputType : signature.getValues().getInputs())
-    operandTypes.push_back(remapType(inputType));
-  for (Type resultType : signature.getValues().getResults())
-    resultTypes.push_back(remapType(resultType));
-
+  llvm::append_range(operandTypes,
+                     substitutedSignature.getValues().getInputs());
+  llvm::append_range(resultTypes,
+                     substitutedSignature.getValues().getResults());
   return success();
 }
 

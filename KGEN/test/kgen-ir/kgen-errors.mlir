@@ -482,8 +482,16 @@ kgen.generator @call_param() {
 // -----
 
 kgen.generator @call_param<fn: signature<<ty: type>()->()>>() {
-  // expected-error @+1 {{caller input parameter #0 has type 'index' but callee parameter expected type}}
+  // expected-error @+1 {{cannot name an operation with no results}}
   %0 = kgen.call_param[signature<<ty: type>()->()>: fn]<ty = 42>()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @call_param<fn: signature<<ty: type>()->()>>() {
+  // expected-error @+1 {{caller input parameter #0 has type 'index' but callee expected type}}
+  kgen.call_param[signature<<ty: type>()->()>: fn]<ty = 42>()
   kgen.return
 }
 
