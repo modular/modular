@@ -564,12 +564,10 @@ verifyCallAndCallee(Operation *theCall, SignatureType calleeSignature,
   };
 
   // Should move this to a "getSignature" method on CallOp.
-  // TODO: ParamBindAttr should contain ParamDeclAttr!
   SmallVector<ParamDeclAttr> callerInputParamDecls;
   llvm::append_range(callerInputParamDecls,
                      llvm::map_range(callerInputParams, [](ParamBindAttr bind) {
-                       return ParamDeclAttr::get(bind.getName(),
-                                                 bind.getValue().getType());
+                       return bind.getDecl();
                      }));
 
   auto getType = [](auto attr) -> Type { return attr.getType(); };

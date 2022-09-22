@@ -113,6 +113,12 @@ ParseResult parseOptionalTypeParamValue(AsmParser &p,
 /// results in a null attribute.
 void printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value);
 
+/// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
+ParseResult parseParamDecl(AsmParser &p, FailureOr<ParamDeclAttr> &result);
+ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);
+void printParamDecl(raw_ostream &os, ParamDeclAttr decl);
+void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
+
 /// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
 /// information.
 void printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls);

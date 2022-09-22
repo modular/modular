@@ -195,6 +195,14 @@ void ParamDeclRefAttr::print(AsmPrinter &p) const {
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
+LogicalResult
+ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                      ParamDeclAttr decl, TypedAttr value) {
+  if (decl.getType() != value.getType())
+    return emitError() << "decl has incorrect type";
+  return success();
+}
+
 void ParamBindAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {

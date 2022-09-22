@@ -69,10 +69,7 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),
       "return $_get(type.getContext(), name, type);">,
     AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type),
-      "return get(StringAttr::get(type.getContext(), name), type);">,
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name), [{
-      return get(name, IndexType::get(name.getContext()));
-    }]>
+      "return get(StringAttr::get(type.getContext(), name), type);">
   ];
 }
 
@@ -138,25 +135,31 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
               [DeclareAttrInterfaceMethods<SubElementAttrInterface,
                                            ["replaceImmediateSubAttribute"]>]> {
   let summary = "Bind a value to a parameter declaration.";
-  let parameters = (ins "StringAttr":$name, "TypedAttr":$value);
+  let parameters = (ins "ParamDeclAttr":$decl, "TypedAttr":$value);
 
-  let assemblyFormat = "custom<ParamName>($name) `=` $value";
+  let assemblyFormat = "custom<ParamDecl>($decl) `=` $value";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "TypedAttr":$value),
-    [{
-      return get(name.getContext(), name, value);
+    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl,
+                                        "TypedAttr":$value), [{
+      return get(decl.getContext(), decl, value);
     }]>,
     AttrBuilderWithInferredContext<(ins "StringRef":$name, "TypedAttr":$value),
     [{
-      return get(StringAttr::get(value.getContext(), name), value);
+      return get(ParamDeclAttr::get(name, value.getType()), value);
     }]>,
   ];
 
   let extraClassDeclaration = [{
+    // Return the name of the declaration being initialized.
+    StringAttr getName() const;
     // Return the type of the value being bound.
     Type getType() { return getValue().getType(); }
   }];
+  let extraClassDefinition = [{
+    StringAttr ParamBindAttr::getName() const { return getDecl().getName(); }
+  }];
+  let genVerifyDecl = 1;
 }
 
 /// An array of ParamBindAttr's.

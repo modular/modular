@@ -116,11 +116,7 @@ SignatureType SignatureType::getSpecializedSignature(
                     << decl.getName();
       return SignatureType();
     }
-    evaluator.setParameterValue(
-        // TODO: ParamBindAttr should maintain a ParamDeclAttr so we don't need
-        // to rebuild this.
-        ParamDeclAttr::get(bind.getName(), bind.getValue().getType()),
-        bind.getValue());
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
     ++paramNo;
   }
 
