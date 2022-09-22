@@ -167,6 +167,25 @@ def ParamBindArrayAttr
     : ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
 
 //===----------------------------------------------------------------------===//
+// ParamRegionRefAttr
+//===----------------------------------------------------------------------===//
+
+def ParamCallRegionRefAttr
+   : ExprAttr<"ParamCallRegionRef", "param.call.region.ref"> {
+  let summary =
+    "A marker indicating a signature value is specified by a call region";
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+
+  let assemblyFormat = "`<` $type `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 
