@@ -1,0 +1,7 @@
+// RUN: kgen %s -emit -func="kernel:%t.o" -verify-diagnostics
+
+// expected-error @below {{bitwidth must be a power of 2}}
+// expected-note @below {{see current operation}}
+kgen.func public @kernel(%a: i24) -> i24 {
+  kgen.return %a : i24
+}
