@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ZAPDialect/ZAPOps.h"
-#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "Support/ForwardDecls.h"
 #include "Support/ML/DType.h"
