@@ -12,6 +12,7 @@
 #ifndef LLCL_RUNTIME_ALLOCATOR_H
 #define LLCL_RUNTIME_ALLOCATOR_H
 
+#include "Support/AlignedAlloc.h"
 #include <memory>
 
 namespace M::LLCL {
@@ -35,7 +36,8 @@ public:
   /// Allocate memory for one or more entries of type T.
   template <typename T>
   T *allocate(size_t numElements = 1) {
-    return static_cast<T *>(allocateBytes(sizeof(T) * numElements, alignof(T)));
+    return static_cast<T *>(
+        allocateBytes(sizeof(T) * numElements, kPreferredMemoryAlignment));
   }
 
   /// Deallocate the memory for one or more entries of type T.
