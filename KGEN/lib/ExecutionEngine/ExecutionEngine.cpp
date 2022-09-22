@@ -69,27 +69,27 @@ struct ModulePtrKeyInfo {
 };
 class LLVMOptimizer {
 public:
-  LLVMOptimizer() : PM(std::make_unique<llvm::legacy::PassManager>()) {
+  LLVMOptimizer() : passmgr(std::make_unique<llvm::legacy::PassManager>()) {
     using namespace llvm;
-    PM->add(createFunctionInliningPass());
-    PM->add(createSCCPPass());
-    PM->add(createLICMPass());
-    PM->add(createLoopStrengthReducePass());
-    PM->add(createCFGSimplificationPass());
-    PM->add(createAggressiveInstCombinerPass());
-    PM->add(createStripDeadDebugInfoPass());  // Remove dead debug info
-    PM->add(createStripDeadPrototypesPass()); // Remove dead func decls
+    passmgr->add(createFunctionInliningPass());
+    passmgr->add(createSCCPPass());
+    passmgr->add(createLICMPass());
+    passmgr->add(createLoopStrengthReducePass());
+    passmgr->add(createCFGSimplificationPass());
+    passmgr->add(createAggressiveInstCombinerPass());
+    passmgr->add(createStripDeadDebugInfoPass());  // Remove dead debug info
+    passmgr->add(createStripDeadPrototypesPass()); // Remove dead func decls
   }
 
   llvm::Expected<llvm::orc::ThreadSafeModule>
-  operator()(llvm::orc::ThreadSafeModule TSM,
-             llvm::orc::MaterializationResponsibility &R) {
-    TSM.withModuleDo([this](llvm::Module &M) { PM->run(M); });
-    return std::move(TSM);
+  operator()(llvm::orc::ThreadSafeModule tsm,
+             llvm::orc::MaterializationResponsibility &r) {
+    tsm.withModuleDo([this](llvm::Module &m) { passmgr->run(m); });
+    return std::move(tsm);
   }
 
 private:
-  std::unique_ptr<llvm::legacy::PassManager> PM;
+  std::unique_ptr<llvm::legacy::PassManager> passmgr;
 };
 
 } // namespace
