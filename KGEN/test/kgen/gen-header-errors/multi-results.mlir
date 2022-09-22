@@ -1,0 +1,7 @@
+// RUN: kgen %s -emit -func="kernel:%t.o" -verify-diagnostics
+
+// expected-error @below {{functions with more than 1 result unsupported}}
+// expected-note @below {{see current operation}}
+kgen.func public @kernel(%a: i32) -> (i32, i32) {
+  kgen.return %a, %a : i32, i32
+}

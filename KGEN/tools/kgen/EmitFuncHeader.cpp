@@ -15,96 +15,104 @@
 using namespace M;
 using namespace KGEN;
 
-namespace {
-/// This provides a method by which we can emit a func's signature to an
-/// llvm::formatv stream.
-struct FormatFunc : public llvm::FormatAdapter<FuncOp> {
-  FormatFunc(FuncOp func)
-      : llvm::FormatAdapter<FuncOp>(std::forward<FuncOp &&>(func)) {}
-
-  void format(llvm::raw_ostream &os, StringRef style) override {
-    auto printDTypeAsC = [&](DType dt) {
-      if (dt.isFloat()) {
-        switch (dt.getValue()) {
-        case DType::f32:
-          os << "float";
-          return;
-        case DType::f64:
-          os << "double";
-          return;
-        }
-        llvm_unreachable("TODO: unhandled float type");
-      }
-      if (dt.isInt())
-        os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
-    };
-
-    // Helper to print a function as a C type.
-    std::function<void(Type)> printTypeAsC = [&](Type t) {
-      if (auto scalar = t.dyn_cast<ScalarType>())
-        return printDTypeAsC(scalar.resolveDType());
-
-      if (auto simd = t.dyn_cast<SIMDType>()) {
-        printDTypeAsC(simd.resolveDType());
-        // Get the vector size in bytes to be used by the vector_size attribute.
-        // The `__attribute__ ((vector_size(N)))` must be specified in bytes.
-        auto vectorSizeInBytes =
-            simd.resolveDType().getSizeInBytes(*simd.resolveSize());
-        // Fixed vector types are easy and we add the simd attributes.
-        // TODO: This will only work on GNU and CLANG compilers.
-        os << " __attribute__ ((vector_size(" << vectorSizeInBytes << ")))";
-        return;
-      }
-      if (auto ptr = t.dyn_cast<PointerType>()) {
-        if (Type type = ptr.resolveElementType())
-          printTypeAsC(type);
-        else
-          os << "void";
-        os << " *";
-        return;
-      }
-      if (auto buffer = t.dyn_cast<BufferType>()) {
-        if (!buffer.getSize())
-          os << "intptr_t, ";
-        if (auto dtype = buffer.resolveDType(); dtype.isValid()) {
-          printDTypeAsC(dtype);
-          os << " *";
-        } else {
-          os << "void *, int8_t";
-        }
-        return;
-      }
-
-      assert((t.isIndex() || llvm::isPowerOf2_64(t.getIntOrFloatBitWidth())) &&
-             "bitwidth must be a power of 2");
-
-      // Elementary type, just print it.
-      if (t.isa<IntegerType>())
-        os << "int" << t.getIntOrFloatBitWidth() << "_t";
-      else if (t.isa<IndexType>())
-        os << "intptr_t";
-      else if (t.isF16())
-        llvm::report_fatal_error("no support for fp16 yet");
-      else if (t.isF32())
+/// Emit the C signature of a KGEN func.
+static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
+  auto printDTypeAsC = [&](DType dt) -> LogicalResult {
+    if (dt.isFloat()) {
+      switch (dt.getValue()) {
+      case DType::f32:
         os << "float";
-      else if (t.isF64())
+        return success();
+      case DType::f64:
         os << "double";
-      else
-        llvm::report_fatal_error("unknown type");
-    };
+        return success();
+      }
+      return func.emitError("unhandled floating point dtype: ")
+             << dt.getAsString();
+    }
+    if (dt.isInt())
+      os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
+    return success();
+  };
 
-    // Now print the function declaration.
-    os << "extern ";
-    if (Item.getNumResults())
-      printTypeAsC(Item.getResultTypes().front());
+  // Helper to print a function as a C type.
+  std::function<LogicalResult(Type)> printTypeAsC =
+      [&](Type t) -> LogicalResult {
+    if (auto scalar = t.dyn_cast<ScalarType>())
+      return printDTypeAsC(scalar.resolveDType());
+
+    if (auto simd = t.dyn_cast<SIMDType>()) {
+      if (failed(printDTypeAsC(simd.resolveDType())))
+        return failure();
+      // Get the vector size in bytes to be used by the vector_size attribute.
+      // The `__attribute__ ((vector_size(N)))` must be specified in bytes.
+      auto vectorSizeInBytes =
+          simd.resolveDType().getSizeInBytes(*simd.resolveSize());
+      // Fixed vector types are easy and we add the simd attributes.
+      // TODO: This will only work on GNU and CLANG compilers.
+      os << " __attribute__ ((vector_size(" << vectorSizeInBytes << ")))";
+      return success();
+    }
+    if (auto ptr = t.dyn_cast<PointerType>()) {
+      if (Type type = ptr.resolveElementType()) {
+        if (failed(printTypeAsC(type)))
+          return failure();
+      } else {
+        os << "void";
+      }
+      os << " *";
+      return success();
+    }
+    if (auto buffer = t.dyn_cast<BufferType>()) {
+      if (!buffer.getSize())
+        os << "intptr_t, ";
+      if (auto dtype = buffer.resolveDType(); dtype.isValid()) {
+        if (failed(printDTypeAsC(dtype)))
+          return failure();
+        os << " *";
+      } else {
+        os << "void *, int8_t";
+      }
+      return success();
+    }
+
+    if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
+      return func.emitError("bitwidth must be a power of 2");
+
+    // Elementary type, just print it.
+    if (t.isa<IntegerType>())
+      os << "int" << t.getIntOrFloatBitWidth() << "_t";
+    else if (t.isa<IndexType>())
+      os << "intptr_t";
+    else if (t.isF16())
+      llvm::report_fatal_error("no support for fp16 yet");
+    else if (t.isF32())
+      os << "float";
+    else if (t.isF64())
+      os << "double";
     else
-      os << "void";
-    os << " " << Item.getName() << "(";
-    llvm::interleaveComma(Item.getFunctionType().getInputs(), os, printTypeAsC);
-    os << ");";
+      return func.emitError("unhandled argument type: ") << t;
+    return success();
+  };
+
+  // Now print the function declaration.
+  os << "extern ";
+  if (func.getNumResults() > 1)
+    return func.emitError("functions with more than 1 result unsupported");
+  if (func.getNumResults() == 0)
+    os << "void";
+  else if (failed(printTypeAsC(func.getResultTypes().front())))
+    return failure();
+  os << " " << func.getName() << "(";
+  for (auto &it : llvm::enumerate(func.getFunctionType().getInputs())) {
+    if (it.index() != 0)
+      os << ", ";
+    if (failed(printTypeAsC(it.value())))
+      return failure();
   }
-};
-} // namespace
+  os << ");";
+  return success();
+}
 
 /// This allows us to emit a header file for the given func so that we can
 /// `#include` it and get nice autocompletion/etc. in users' IDEs.
@@ -114,7 +122,7 @@ LogicalResult M::KGEN::emitHeaderForFunc(FuncOp func, StringRef filename) {
   if (!outFile)
     return mlir::emitError(func.getLoc(), err);
 
-  llvm::StringLiteral fmtStr = R"literal(//===-{0}-===//
+  llvm::StringLiteral headerFmtStart = R"literal(//===-{0}-===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -126,27 +134,31 @@ LogicalResult M::KGEN::emitHeaderForFunc(FuncOp func, StringRef filename) {
 #define {2}
 
 #ifdef __cplusplus
-extern "C" {
+extern "C" {{
 #endif
 
 #include <stdint.h>
 #include <stddef.h>
 
-{3}
+)literal";
 
+  llvm::StringLiteral headerFmtEnd = R"literal(
 #ifdef __cplusplus
 } // extern "C"
 #endif
 
-#endif // {2}
+#endif // {0}
 )literal";
 
+  std::string headerGuard = "__KGEN_" + func.getName().upper() + "_H";
   outFile->os() << llvm::formatv(
-      fmtStr.data(),
+      headerFmtStart.data(),
       llvm::fmt_align(" " + func.getName() + ".h ", llvm::AlignStyle::Left,
                       80 - 2 * strlen("//===-"), '-'),
-      llvm::fmt_repeat('-', 80 - 2 * strlen("//===")),
-      "__KGEN_" + func.getName().upper() + "_H", FormatFunc(func));
+      llvm::fmt_repeat('-', 80 - 2 * strlen("//===")), headerGuard);
+  if (failed(emitSignature(outFile->os(), func)))
+    return failure();
+  outFile->os() << llvm::formatv(headerFmtEnd.data(), headerGuard);
 
   outFile->keep();
 
