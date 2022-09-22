@@ -286,6 +286,35 @@ ParseResult KGEN::parseOptionalTypeParamValue(AsmParser &p,
   return parseTypeParamValue(p, result);
 }
 
+/// We need this for an ODS reason, it doesn't know that ParamDeclAttr is
+/// nullable or something :-/.
+ParseResult KGEN::parseParamDecl(AsmParser &p,
+                                 FailureOr<ParamDeclAttr> &result) {
+  ParamDeclAttr pResult;
+  if (failed(parseParamDecl(p, pResult)))
+    return failure();
+  result = pResult;
+  return success();
+}
+
+ParseResult KGEN::parseParamDecl(AsmParser &p, ParamDeclAttr &result) {
+  StringAttr name;
+  Type type;
+  if (parseParamName(p, name) || parseColonTypeOrIndex(p, type))
+    return failure();
+  result = ParamDeclAttr::get(name, type);
+  return success();
+}
+
+void KGEN::printParamDecl(AsmPrinter &p, ParamDeclAttr decl) {
+  printParamDecl(p.getStream(), decl);
+}
+
+void KGEN::printParamDecl(raw_ostream &os, ParamDeclAttr decl) {
+  printParamName(decl.getName().getValue(), os);
+  printColonTypeOrIndex(os, decl.getType());
+}
+
 /// Parse a parameter declaration list if present.
 ///
 ///   parameter-decl   ::= identifier (`:` type)?
@@ -299,15 +328,9 @@ ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
     if (p.parseRParen())
       return failure();
   } else {
-    auto parseParamDecl = [&]() -> ParseResult {
-      StringAttr name;
-      Type type;
-      if (parseParamName(p, name) || parseColonTypeOrIndex(p, type))
-        return failure();
-      decls.push_back(ParamDeclAttr::get(name, type));
-      return success();
-    };
-    if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, parseParamDecl))
+    if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, [&]() {
+          return parseParamDecl(p, decls.emplace_back(ParamDeclAttr()));
+        }))
       return failure();
   }
 
@@ -320,10 +343,8 @@ void KGEN::printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls) {
   if (decls.empty()) {
     os << "()";
   } else {
-    llvm::interleaveComma(decls, os, [&](ParamDeclAttr ref) {
-      printParamName(ref.getName().getValue(), os);
-      printColonTypeOrIndex(os, ref.getType());
-    });
+    llvm::interleaveComma(
+        decls, os, [&](ParamDeclAttr decl) { printParamDecl(os, decl); });
   }
 }
 
