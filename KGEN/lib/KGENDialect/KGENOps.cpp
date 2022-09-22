@@ -15,7 +15,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGENVerifyHelper.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
@@ -487,7 +486,6 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
   if (!calleeSignature)
     return failure();
 
-  // TODO: Sink verifyMatchingLists into KGENUtils.cpp.
   return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
                                    "callee", calleeSignature, calleeLoc);
 }
