@@ -156,7 +156,8 @@ def GeneratorInterfaceOp
 
 def CallOp
   : KGENOp<"call", [CallOpInterface,
-                    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                    IsolatedFromAbove]> {
 
   let summary = "Call a func, generator, or generator interface";
 
@@ -164,6 +165,7 @@ def CallOp
    (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let extraClassDeclaration = [{
     FunctionType getFunctionType() {
@@ -191,6 +193,7 @@ def CallOp
   let assemblyFormat = [{
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
     attr-dict `:` functional-type($operands, results)
+    custom<CallRegions>($regions, ref($paramValues))
   }];
 
   let builders = [
@@ -207,13 +210,14 @@ def CallOp
 
 // NOTE: This cannot be a CallOpInterface, because the callee is not a
 // SymbolRefAttr, it is a different kind of attribute.
-def CallParamOp : KGENOp<"call_param", []> {
+def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
   let summary = "Call declaration specified by a parameter experession";
 
   let arguments =
    (ins ParameterExprAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let extraClassDeclaration = [{
     FunctionType getFunctionType() {
@@ -238,6 +242,7 @@ def CallParamOp : KGENOp<"call_param", []> {
                             type($operands), type($results))
     `(` $operands `)`
     attr-dict
+    custom<CallRegions>($regions, ref($paramValues))
   }];
 
   let builders = [
