@@ -3,7 +3,7 @@
 kgen.generator @test() {
   // expected-error @+1 {{invalid use of parameter with no declaration "p"}}
   "someop" () {
-    attr = #kgen.param.decl.ref<p> : i1
+    attr = #kgen.param.decl.ref<"p", i1>
   } : () -> ()
   kgen.return
 }
@@ -17,15 +17,6 @@ kgen.generator @test<p1>() {
   } : () -> ()
   kgen.return
 }
-
-// -----
-
-"someop" () {
-  use1 = #kgen.param.expr<add,
-  // expected-error @+2 {{failed to parse ParamOperatorAttr parameter}}
-  // expected-error @+1 {{parameter reference requires a type}}
-                          #kgen.param.decl.ref<"p1">, 42 : si64>
-} : () -> ()
 
 // -----
 
@@ -76,9 +67,10 @@ kgen.generator @foo() {
 
 // -----
 
+// expected-error @+2 {{reference to parameter "n" with incorrect type '!kgen.dtype'}}
+//expected-note @+1 {{parameter defined with type 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
-// expected-error @+1 {{expected '!kgen.dtype', but got 'index'}}
-           !meta.scalar<#kgen.param.decl.ref<n> : index>) {
+           !meta.scalar<#kgen.param.decl.ref<"n", index>>) {
   kgen.return
 }
 
