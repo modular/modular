@@ -81,7 +81,7 @@ def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
   }];
 
   let arguments = (ins IntOrFPElementsAttr:$values);
-  let results = (outs Res<ConcreteBuffer, "", [MemAlloc, MemWrite]>:$result);
+  let results = (outs Res<ConcreteBuffer, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     `(` $values `)` attr-dict `:`
