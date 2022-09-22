@@ -451,6 +451,68 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// Common CallOp / CallParamOp logic
+//===----------------------------------------------------------------------===//
+
+/// Verify invariants for a CallOp or CallParamOp with a callee of a known
+/// signature.
+static ParseResult verifyCallAndCallee(Operation *theCall,
+                                       SignatureType callerSignature,
+                                       SignatureType calleeSignature,
+                                       ParamBindArrayAttr callerInputParams,
+                                       Location calleeLoc) {
+  // Get the substituted signature based on the input parameters specified.
+  auto emitErrorFn = [&]() { return theCall->emitError(); };
+  calleeSignature =
+      calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
+  if (!calleeSignature)
+    return failure();
+
+  return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
+                                   "callee", calleeSignature, calleeLoc);
+}
+
+static ParseResult
+parseCallRegions(OpAsmParser &p,
+                 SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
+                 ParamBindArrayAttr paramValues) {
+  // We expect one region for each ParamCallRegionRefAttr.
+  for (auto paramBind : paramValues) {
+    if (!paramBind.getValue().isa<ParamCallRegionRefAttr>())
+      continue;
+
+    auto region = std::make_unique<Region>();
+    if (p.parseKeyword(paramBind.getName(), " region name") ||
+        p.parseRegion(*region))
+      return failure();
+    result.push_back(std::move(region));
+  }
+
+  return success();
+}
+
+static void printCallRegions(OpAsmPrinter &p, Operation *op,
+                             mlir::RegionRange regions,
+                             ParamBindArrayAttr paramValues) {
+  auto it = paramValues.begin(), itE = paramValues.end();
+  for (auto *region : regions) {
+    // Advance it to the next region name.
+    while (it != itE && !it->getValue().isa<ParamCallRegionRefAttr>())
+      ++it;
+    p.printNewline();
+    p << "  ";
+    if (it != itE) {
+      p << it->getName().strref() << " ";
+      ++it;
+    } else {
+      p << "<<BROKEN CALL SIGNATURE>> ";
+    }
+
+    p.printRegion(*region);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
@@ -470,24 +532,6 @@ SignatureType CallOp::getSignature() {
       ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
       TypeArrayAttr::get(getContext(), callerResultParamTypes),
       getFunctionType());
-}
-
-/// Verify invariants for a CallOp or CallParamOp with a callee of a known
-/// signature.
-static ParseResult verifyCallAndCallee(Operation *theCall,
-                                       SignatureType callerSignature,
-                                       SignatureType calleeSignature,
-                                       ParamBindArrayAttr callerInputParams,
-                                       Location calleeLoc) {
-  // Get the substituted signature based on the input parameters specified.
-  auto emitErrorFn = [&]() { return theCall->emitError(); };
-  calleeSignature =
-      calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
-  if (!calleeSignature)
-    return failure();
-
-  return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
-                                   "callee", calleeSignature, calleeLoc);
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
@@ -531,7 +575,8 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
                    OperandRange operands) {
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
         builder.getAttr<ParamBindArrayAttr>(inputParams),
-        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands);
+        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
+        /*numRegions=*/0);
 }
 
 //===----------------------------------------------------------------------===//
