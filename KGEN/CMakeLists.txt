@@ -105,9 +105,11 @@ function(add_kgen_kernel target)
     add_custom_command(
       OUTPUT ${object_file_name}
       OUTPUT "${kernel}.h"
+
       COMMAND $<TARGET_FILE:kgen> -emit
-      $<$<BOOL:KGEN_SFF_DEBUG>:-debug-only="select-fastest-function">
+      $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
       -func=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
     )
