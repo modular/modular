@@ -26,7 +26,7 @@
 #include <type_traits>
 
 namespace M {
-#if defined(__AVX512__)
+#if defined(__AVX512F__)
 static constexpr size_t kPreferredSIMDBitWidth = 512;
 #elif defined(__AVX2__) || defined(__AVX__)
 static constexpr size_t kPreferredSIMDBitWidth = 256;
