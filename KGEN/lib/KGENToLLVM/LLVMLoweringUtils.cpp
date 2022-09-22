@@ -215,7 +215,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   // Convert struct types to LLVM literal structs.
   addConversion([=](POP::StructType structType) -> Optional<Type> {
     SmallVector<Type> elementTypes;
-    elementTypes.reserve(structType.getElementTypes().size());
+    elementTypes.reserve(structType.getNumElements());
     for (TypedAttr elementType : structType.getElementTypes()) {
       auto typeCst = elementType.dyn_cast<ConcreteTypeConstantAttr>();
       if (!typeCst)
