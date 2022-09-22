@@ -410,35 +410,6 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
 }
 
 //===----------------------------------------------------------------------===//
-// StructConstructOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseConstructTypes(AsmParser &p,
-                                       SmallVectorImpl<Type> &elementTypes,
-                                       Type structType) {
-  // Infer the element types from the struct type.
-  for (TypedAttr elementType : structType.cast<StructType>().getElementTypes())
-    elementTypes.push_back(ParamRefType::get(elementType));
-  return success();
-}
-
-static void printConstructTypes(AsmPrinter &p, Operation *op,
-                                TypeRange elementTypes, StructType structType) {
-}
-
-LogicalResult StructConstructOp::verify() {
-  for (auto [idx, operandType, elementType] :
-       llvm::zip(llvm::seq<unsigned>(0, getNumOperands()), getOperandTypes(),
-                 getType().getElementTypes())) {
-    if (operandType != ParamRefType::get(elementType))
-      return emitOpError("operand #")
-             << idx << " type " << operandType
-             << " does not match struct element type " << elementType;
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // GetElementOp
 //===----------------------------------------------------------------------===//
 
@@ -487,7 +458,7 @@ LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
   if (!indexAttr)
     return emitError("expected an integer index attribute");
   size_t index = indexAttr.getInt();
-  if (index >= structType.getElementTypes().size())
+  if (index >= structType.getNumElements())
     return emitError("struct element index out of bounds");
   types.push_back(ParamRefType::get(structType.getElementTypes()[index]));
   return success();

@@ -790,7 +790,11 @@ def POP_OffsetOp : POPOp<"offset",
 // StructConstructOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect]> {
+def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect,
+    TypesMatchWith<"operand types match struct element types",
+                   "result", "elements",
+                   "$_self.cast<StructType>().getParameterizedElementTypes()">
+]> {
   let summary = "construct a struct";
   let description = [{
     The `pop.struct.construct` operation creates a struct of the given type
@@ -810,11 +814,8 @@ def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect]> {
   let arguments = (ins Variadic<AnyType>:$elements);
   let results = (outs POP_StructType:$result);
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` qualified(type($result)) ``
-    custom<ConstructTypes>(type($elements), ref(type($result)))
+    `(` operands `)` attr-dict `:` qualified(type($result))
   }];
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

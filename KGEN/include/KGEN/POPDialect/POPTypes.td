@@ -98,6 +98,12 @@ def POP_StructType : POPType<"Struct", "struct"> {
     /// Try to narrow all the element type expressions to MLIR types.
     LogicalResult
     resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const;
+
+    /// Get the number of struct elements.
+    unsigned getNumElements() const { return getElementTypes().size(); }
+
+    /// Get the element types as parameterized types.
+    SmallVector<Type> getParameterizedElementTypes() const;
   }];
 }
 

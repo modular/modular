@@ -98,7 +98,7 @@ void StructType::walkImmediateSubElements(
 
 Type StructType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
                                              ArrayRef<Type> types) const {
-  assert(types.empty() && attrs.size() == getElementTypes().size() &&
+  assert(types.empty() && attrs.size() == getNumElements() &&
          "expected same number of sub-attributes as element types");
   SmallVector<TypedAttr> elementTypes;
   elementTypes.reserve(attrs.size());
@@ -116,6 +116,14 @@ StructType::resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const {
       return failure();
   }
   return success();
+}
+
+SmallVector<Type> StructType::getParameterizedElementTypes() const {
+  SmallVector<Type> elementTypes;
+  elementTypes.reserve(getNumElements());
+  for (TypedAttr elementType : getElementTypes())
+    elementTypes.push_back(ParamRefType::get(elementType));
+  return elementTypes;
 }
 
 /// Parse a comma-separated list of type parameter values.
