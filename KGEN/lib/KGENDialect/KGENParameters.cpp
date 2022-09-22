@@ -13,7 +13,6 @@
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
-#include "KGENVerifyHelper.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
