@@ -31,12 +31,16 @@ class BlockAndValueMapping;
 class BlockArgument;
 class BoolAttr;
 class Builder;
+class BuiltinDialect;
 class NamedAttrList;
 class ConversionPattern;
 class ConversionPatternRewriter;
 class ConversionTarget;
 class DenseElementsAttr;
 class DenseIntElementsAttr;
+class DenseResourceElementsAttr;
+template <typename T>
+struct DialectResourceBlobHandle;
 class Diagnostic;
 class Dialect;
 class DialectAsmParser;
@@ -82,6 +86,8 @@ class Pass;
 class PatternRewriter;
 class RankedTensorType;
 class Region;
+template <typename HandleT>
+class ResourceBlobManagerDialectInterfaceBase;
 class RewritePattern;
 class RewritePatternSet;
 class ShapedType;
@@ -148,6 +154,11 @@ using mlir::ConversionTarget;
 using mlir::DefaultTypeStorage;
 using mlir::DenseElementsAttr;
 using mlir::DenseIntElementsAttr;
+using mlir::DenseResourceElementsAttr;
+using DenseResourceElementsHandle =
+    mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
+using DenseResourceElementsHandleManager =
+    mlir::ResourceBlobManagerDialectInterfaceBase<DenseResourceElementsHandle>;
 using mlir::Diagnostic;
 using mlir::Dialect;
 using mlir::DialectAsmParser;
