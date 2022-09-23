@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/MathExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -194,21 +195,10 @@ static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
 static FailureOr<bool> dataEquals(Location loc, DType dtype, size_t numElements,
                                   void *lhs, void *rhs) {
   return dtype.dispatch<FailureOr<bool>>(lhs, rhs)
-      .whenCXXInt([&](auto *lhs, auto *rhs) {
-        for (size_t i = 0; i < numElements; ++i)
-          if (lhs[i] != rhs[i])
-            return false;
-        return true;
-      })
-      .whenCXXFP([&](auto *lhs, auto *rhs) {
-        // This comparison could be improved if we wanted to, currently it more
-        // or less just compares with relative tolerance.
-        double epsilon = 1.0e-8;
-        for (size_t i = 0; i < numElements; ++i)
-          if (std::abs(lhs[i] - rhs[i]) >
-              (std::min(std::abs(lhs[i]), std::abs(rhs[i])) * epsilon))
-            return false;
-        return true;
+      .whenCXXArithmeticType([&](auto *lhs, auto *rhs) {
+        return llvm::all_of_zip(llvm::makeArrayRef(lhs, numElements),
+                                llvm::makeArrayRef(rhs, numElements),
+                                [](auto a, auto b) { return isClose(a, b); });
       })
       .otherwise([&]() {
         return mlir::emitError(loc) << "unknown dtype: " << dtype.getAsString();
