@@ -160,11 +160,13 @@ static ErrorOr<TypedAttr> reifyContant(TypedAttr attr, DType dtype, Type type) {
 }
 
 /// Verify a scalar or SIMD constant value.
-static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
+static LogicalResult
+verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
+               TypedAttr value, Type type) {
   // If the type is unresolved, allow only scalar constants.
   if (type.isa<ParamRefType>()) {
     if (!value.isa<IntegerAttr, FloatAttr>())
-      return op->emitOpError(
+      return emitError(
           "expected integer or float attribute for unspecified result type");
     return success();
   }
@@ -173,7 +175,7 @@ static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
     Type valueType = mlir::getElementTypeOrSelf(value);
     if (auto dtype = type.getDType().dyn_cast<DTypeConstantAttr>())
       if (!dtype.isConvertibleFrom(valueType))
-        return op->emitOpError("cannot convert from attribute type ")
+        return emitError("cannot convert from attribute type ")
                << valueType << " to dtype " << dtype.getDType().getAsString();
     return success();
   };
@@ -181,8 +183,8 @@ static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
   // If the type is a scalar, allow only scalar constant attributes.
   if (auto scalar = type.dyn_cast<ScalarType>()) {
     if (!value.isa<IntegerAttr, FloatAttr>())
-      return op->emitOpError("scalar constant expected integer or float "
-                             "attribute for constant value");
+      return emitError("scalar constant expected integer or float "
+                       "attribute for constant value");
     // If the dtype is specified, ensure it matches the attribute type.
     return checkDType(scalar.cast<DTypeInterface>());
   }
@@ -193,20 +195,20 @@ static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
     if (Optional<int64_t> size = array.resolveSize()) {
       auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
       if (!elements)
-        return op->emitOpError("expected dense elements attribute for array "
-                               "constant with known size");
+        return emitError("expected dense elements attribute for array "
+                         "constant with known size");
       auto type = elements.getType().dyn_cast<RankedTensorType>();
       if (!type || type.getRank() != 1 || type.getShape().front() != *size)
-        return op->emitOpError("expected attribute type to be tensor<")
+        return emitError("expected attribute type to be tensor<")
                << *size << "xT>";
     } else if (!value.isa<IntegerAttr, FloatAttr>()) {
-      return op->emitOpError("expected integer or float attribute for array "
-                             "constant of unspecified size");
+      return emitError("expected integer or float attribute for array "
+                       "constant of unspecified size");
     }
     // Only scalar arrays can be created.
     auto scalar = array.resolveElementType().dyn_cast_or_null<ScalarType>();
     if (!scalar)
-      return op->emitOpError("array constant must have scalar elements");
+      return emitError("array constant must have scalar elements");
     return checkDType(scalar.cast<DTypeInterface>());
   }
 
@@ -216,15 +218,15 @@ static LogicalResult verifyConstant(Operation *op, TypedAttr value, Type type) {
   if (Optional<int64_t> size = simd.resolveSize()) {
     auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
     if (!elements)
-      return op->emitOpError("expected dense elements attribute for vector "
-                             "constant with known size");
+      return emitError("expected dense elements attribute for vector "
+                       "constant with known size");
     auto type = elements.getType().dyn_cast<VectorType>();
     if (!type || type.getRank() != 1 || type.getShape().front() != *size)
-      return op->emitOpError("expected attribute type to be vector<")
+      return emitError("expected attribute type to be vector<")
              << *size << "xT>";
   } else if (!value.isa<IntegerAttr, FloatAttr>()) {
-    return op->emitOpError("expected integer or float attribute for vector "
-                           "constant of unspecified size");
+    return emitError("expected integer or float attribute for vector "
+                     "constant of unspecified size");
   }
   // If the dtype is specified, ensure it matches the attribute type.
   return checkDType(simd.cast<DTypeInterface>());
@@ -245,23 +247,22 @@ void ConstantOp::getAsmResultNames(
 }
 
 LogicalResult ConstantOp::verify() {
-  return verifyConstant(*this, getValue(), getType());
+  return verifyConstant([this](StringRef msg) { return emitOpError(msg); },
+                        getValue(), getType());
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
   auto attr = value.dyn_cast<TypedAttr>();
   if (!attr)
     return false;
-  return succeeded(checkMetaCastedTypes(
+  // Call the verify function without emitting any errors.
+  return succeeded(verifyConstant(
       [](StringRef msg) {
         InFlightDiagnostic diag;
         diag.abandon();
         return diag;
       },
-      type, attr.getType(),
-      [](Type type, DTypeConstantAttr dtype) {
-        return success(dtype.isConvertibleFrom(type));
-      }));
+      attr, type));
 }
 
 OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
@@ -531,8 +532,83 @@ ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
 }
 
 LogicalResult GlobalConstantOp::verify() {
-  return verifyConstant(*this, getValue(),
+  return verifyConstant([this](StringRef msg) { return emitOpError(msg); },
+                        getValue(),
                         ParamRefType::get(getType().getElementType()));
+}
+
+//===----------------------------------------------------------------------===//
+// TypeLowerOp
+//===----------------------------------------------------------------------===//
+
+/// Verify the conversion between the higher-level type and lower-level type.
+static LogicalResult
+verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
+                     Type high, Type low) {
+  // Verify the scalar dtype matches the MLIR type.
+  if (auto scalar = high.dyn_cast<ScalarType>()) {
+    if (!low.isa<IntegerType, FloatType>())
+      return emitError("expected an integer or float type");
+
+    if (auto dtype = scalar.getDType().dyn_cast<DTypeConstantAttr>();
+        dtype && !dtype.isConvertibleTo(low))
+      return emitError("cannot convert from scalar dtype ")
+             << dtype.getDType().getAsString() << " to " << low;
+    return success();
+  }
+
+  // Verify the SIMD size matches the vector size and the dtypes match.
+  if (auto simd = high.dyn_cast<SIMDType>()) {
+    auto vector = low.dyn_cast<VectorType>();
+    if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
+      return emitError("expected a rank 1 non-scalable vector");
+
+    auto size = simd.getSize().dyn_cast<IntegerAttr>();
+    if (size && size.getInt() != vector.getShape().front())
+      return emitError("expected vector<") << size.getInt() << "xT>";
+
+    if (auto dtype = simd.getDType().dyn_cast<DTypeConstantAttr>();
+        dtype && !dtype.isConvertibleTo(vector.getElementType()))
+      return emitError("cannot convert from SIMD dtype ")
+             << dtype.getDType().getAsString() << " to vector element "
+             << vector.getElementType();
+    return success();
+  }
+
+  // TODO: Verify other types through an interface.
+  return success();
+}
+
+LogicalResult TypeLowerOp::verify() {
+  return verifyConversionCast(
+      [this](StringRef msg) { return emitOpError(msg); }, getInput().getType(),
+      getType());
+}
+
+OpFoldResult TypeLowerOp::fold(ArrayRef<Attribute> operands) {
+  // Fold A->B->A cast.
+  if (auto parent = getInput().getDefiningOp<TypeRaiseOp>();
+      parent && parent.getInput().getType() == getType())
+    return parent.getInput();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// TypeRaiseOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TypeRaiseOp::verify() {
+  return verifyConversionCast(
+      [this](StringRef msg) { return emitOpError(msg); }, getType(),
+      getInput().getType());
+}
+
+OpFoldResult TypeRaiseOp::fold(ArrayRef<Attribute> operands) {
+  // Fold A->B->A cast.
+  if (auto parent = getInput().getDefiningOp<TypeLowerOp>();
+      parent && parent.getInput().getType() == getType())
+    return parent.getInput();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

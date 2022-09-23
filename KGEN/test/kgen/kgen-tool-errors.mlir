@@ -8,8 +8,8 @@ kgen.generator.interface @exp<type: dtype>(%x: !meta.scalar<type>) -> !meta.scal
 
 // expected-error@below {{command-line specified signature does not match the IR signature}}
 kgen.generator public @exp_f32(%arg0: f32) -> f32 {
-  %0 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
+  %0 = pop.type_raise %arg0 : f32 to !meta.scalar<f32>
   %1 = kgen.call @exp<type: dtype = f32>(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
-  %2 = meta.cast_to_builtin %1 : !meta.scalar<f32> to f32
+  %2 = pop.type_lower %1 : !meta.scalar<f32> to f32
   kgen.return %2 : f32
 }

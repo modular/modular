@@ -7,8 +7,6 @@
 #include "KGEN/KGENPasses.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/MetaDialect/MetaDialect.h"
-#include "KGEN/MetaDialect/MetaOps.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -160,41 +158,6 @@ public:
   }
 };
 
-//===----------------------------------------------------------------------===//
-// ConvertMetaCastToBuiltin
-//===----------------------------------------------------------------------===//
-
-class ConvertMetaCastToBuiltin
-    : public mlir::ConvertOpToLLVMPattern<MetaCastToBuiltinOp> {
-public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MetaCastToBuiltinOp op, MetaCastToBuiltinOpAdaptor opAdaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, opAdaptor.getOperands());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertMetaCastFromBuiltin
-//===----------------------------------------------------------------------===//
-
-class ConvertMetaCastFromBuiltin
-    : public mlir::ConvertOpToLLVMPattern<MetaCastFromBuiltinOp> {
-public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MetaCastFromBuiltinOp op,
-                  MetaCastFromBuiltinOpAdaptor opAdaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, opAdaptor.getOperands());
-    return success();
-  }
-};
-
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -208,9 +171,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENCall,
       ConvertKGENFunc,
       ConvertKGENParamConstant,
-      ConvertKGENReturn,
-      ConvertMetaCastFromBuiltin,
-      ConvertMetaCastToBuiltin
+      ConvertKGENReturn
       // clang-format on
       >(typeConverter);
 }
@@ -586,7 +547,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
-  target.addIllegalDialect<KGENDialect, MetaDialect>();
+  target.addIllegalDialect<KGENDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.

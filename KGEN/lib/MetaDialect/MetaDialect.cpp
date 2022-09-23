@@ -11,7 +11,6 @@
 #include "KGEN/MetaDialect/MetaDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/MetaDialect/MetaOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 using namespace M;

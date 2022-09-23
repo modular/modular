@@ -19,16 +19,16 @@ kgen.generator.interface @add<ty: dtype>(%arg0: !meta.scalar<ty>, %arg1: !meta.s
 kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scalar<ty>) -> !meta.scalar<ty>
   constraints <[eq(:dtype ty, f32), "f32 feels great"]> implements @add {
 
-  // CHECK: %[[V0:.*]] = meta.cast_to_builtin %[[ARG0]] : !meta.scalar<ty> to f32
-  %0 = meta.cast_to_builtin %arg0 : !meta.scalar<ty> to f32
-  // CHECK: %[[V1:.*]] = meta.cast_to_builtin %[[ARG1]] : !meta.scalar<ty> to f32
-  %1 = meta.cast_to_builtin %arg1 : !meta.scalar<ty> to f32
+  // CHECK: %[[V0:.*]] = pop.type_lower %[[ARG0]] : !meta.scalar<ty> to f32
+  %0 = pop.type_lower %arg0 : !meta.scalar<ty> to f32
+  // CHECK: %[[V1:.*]] = pop.type_lower %[[ARG1]] : !meta.scalar<ty> to f32
+  %1 = pop.type_lower %arg1 : !meta.scalar<ty> to f32
 
   // CHECK: %[[V2:.*]] = llvm.fadd %[[V0]], %[[V1]] : f32
   %2 = llvm.fadd %0, %1 : f32
 
-  // CHECK: %[[V3:.*]] = meta.cast_from_builtin %[[V2]] : f32 to !meta.scalar<ty>
-  %3 = meta.cast_from_builtin %2 : f32 to !meta.scalar<ty>
+  // CHECK: %[[V3:.*]] = pop.type_raise %[[V2]] : f32 to !meta.scalar<ty>
+  %3 = pop.type_raise %2 : f32 to !meta.scalar<ty>
   // CHECK: kgen.return %[[V3]]
   kgen.return %3 : !meta.scalar<ty>
 }
@@ -36,10 +36,10 @@ kgen.generator @add_f32<ty: dtype>(%arg0 : !meta.scalar<ty>, %arg1 : !meta.scala
 // This should be fine, but we're missing meta.scalar bind ops.
 hlkgen.generator @add_64<ty: dtype>(%arg0 : !meta.scalar<f64>, %arg1 : !meta.scalar<f64>)
     -> !meta.scalar<ty> implements @add {
-  %0 = meta.cast_to_builtin %arg0 : !meta.scalar<f64> to f64
-  %1 = meta.cast_to_builtin %arg1 : !meta.scalar<f64> to f64
+  %0 = pop.type_lower %arg0 : !meta.scalar<f64> to f64
+  %1 = pop.type_lower %arg1 : !meta.scalar<f64> to f64
   %2 = llvm.fadd %0, %1 : f64
-  %3 = meta.cast_from_builtin %2 : f64 to !meta.scalar<ty>
+  %3 = pop.type_raise %2 : f64 to !meta.scalar<ty>
   kgen.return %3 : !meta.scalar<ty>
 }
 

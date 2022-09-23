@@ -233,7 +233,7 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
   %0 = pop.constant(1.0 : f32) : !meta.scalar<ty>
-  %1 = meta.cast_to_builtin %0: !meta.scalar<ty> to i8
+  %1 = pop.type_lower %0: !meta.scalar<ty> to i8
   kgen.return
 }
 
@@ -285,24 +285,24 @@ kgen.generator @track_expansions(%arg0: si32) {
 // CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !meta.scalar<f32> {
 // ...
 // CHECK:    %[[V1:.*]] = llvm.fptrunc
-// CHECK:    %[[V2:.*]] = meta.cast_from_builtin %[[V1]] : f32 to !meta.scalar<f32>
+// CHECK:    %[[V2:.*]] = pop.type_raise %[[V1]] : f32 to !meta.scalar<f32>
 // CHECK:    kgen.return %[[V2]] : !meta.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
   constraints <[eq(:dtype type, f32), "float please"]>  {
   %0 = kgen.param.constant : f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
-  %2 = meta.cast_from_builtin %1: f32 to !meta.scalar<type>
+  %2 = pop.type_raise %1: f32 to !meta.scalar<type>
   kgen.return %2 : !meta.scalar<type>
 }
 
 // CHECK-LABEL: kgen.func @test_f32() -> f32 {
 // CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !meta.scalar<f32>
-// CHECK:    %[[V1:.*]] = meta.cast_to_builtin %[[V0]] : !meta.scalar<f32> to f32
+// CHECK:    %[[V1:.*]] = pop.type_lower %[[V0]] : !meta.scalar<f32> to f32
 kgen.generator @test_f32() -> f32 {
   kgen.param.declare type : dtype = <f32>
   %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !meta.scalar<type>
-  %2 = meta.cast_to_builtin %1 : !meta.scalar<type> to f32
+  %2 = pop.type_lower %1 : !meta.scalar<type> to f32
   kgen.return %2 : f32
 }
 
