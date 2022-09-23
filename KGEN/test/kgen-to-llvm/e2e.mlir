@@ -2,17 +2,17 @@
 
 // CHECK-LABEL: llvm.func private @e2e_lower
 // CHECK-NOT: unrealized_conversion_cast
-kgen.func @e2e_lower(%a: !meta.scalar<f32>, %b: !meta.scalar<f32>, %cond: i1) -> !meta.scalar<f32> {
+kgen.func @e2e_lower(%a: !pop.scalar<f32>, %b: !pop.scalar<f32>, %cond: i1) -> !pop.scalar<f32> {
   pop.external_call @foo() : () -> ()
   // CHECK: llvm.cond_br
-  %r = scf.if %cond -> (!meta.scalar<f32>) {
+  %r = scf.if %cond -> (!pop.scalar<f32>) {
     // CHECK: llvm.fadd
-    %0 = pop.add %a, %b : !meta.scalar<f32>
-    scf.yield %0 : !meta.scalar<f32>
+    %0 = pop.add %a, %b : !pop.scalar<f32>
+    scf.yield %0 : !pop.scalar<f32>
   } else {
-    scf.yield %a : !meta.scalar<f32>
+    scf.yield %a : !pop.scalar<f32>
   }
-  kgen.return %r : !meta.scalar<f32>
+  kgen.return %r : !pop.scalar<f32>
 }
 
 // CHECK: llvm.func @foo

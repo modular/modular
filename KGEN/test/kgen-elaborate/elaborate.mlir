@@ -55,7 +55,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
   %2 = kgen.param.constant : f32 = <val>
 
   // Silly op so we know when something used this.
-  "genA op"() { value = #kgen.param.decl.ref<"size", index>} : () -> !meta.scalar<type>
+  "genA op"() { value = #kgen.param.decl.ref<"size", index>} : () -> !pop.scalar<type>
 
   kgen.return<mul(size, 2)> %arg0 : si32
 }
@@ -64,7 +64,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant  = <46>
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant : dtype = <f32>
 // CHECK-NEXT:   %[[V2:.*]] = kgen.param.constant : f32 = <2.000000e+00>
-// CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !meta.scalar<f32>
+// CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !pop.scalar<f32>
 // CHECK-NEXT:   kgen.return<84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 
@@ -73,7 +73,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant  = <23>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant : dtype = <si8>
 // CHECK-NEXT:    %[[V2:.*]] = kgen.param.constant : f32 = <1.500000e+00>
-// CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !meta.scalar<si8>
+// CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !pop.scalar<si8>
 // CHECK-NEXT:    kgen.return<38> %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
@@ -232,8 +232,8 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // deleted.
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %0 = pop.constant(1.0 : f32) : !meta.scalar<ty>
-  %1 = pop.type_lower %0: !meta.scalar<ty> to i8
+  %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
+  %1 = pop.type_lower %0: !pop.scalar<ty> to i8
   kgen.return
 }
 
@@ -282,27 +282,27 @@ kgen.generator @track_expansions(%arg0: si32) {
 
 // Test that parameter and result argument types get rewritten and specialized.
 
-// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !meta.scalar<f32> {
+// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !pop.scalar<f32> {
 // ...
 // CHECK:    %[[V1:.*]] = llvm.fptrunc
-// CHECK:    %[[V2:.*]] = pop.type_raise %[[V1]] : f32 to !meta.scalar<f32>
-// CHECK:    kgen.return %[[V2]] : !meta.scalar<f32>
+// CHECK:    %[[V2:.*]] = pop.type_raise %[[V1]] : f32 to !pop.scalar<f32>
+// CHECK:    kgen.return %[[V2]] : !pop.scalar<f32>
 
-kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !meta.scalar<type>
+kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !pop.scalar<type>
   constraints <[eq(:dtype type, f32), "float please"]>  {
   %0 = kgen.param.constant : f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
-  %2 = pop.type_raise %1: f32 to !meta.scalar<type>
-  kgen.return %2 : !meta.scalar<type>
+  %2 = pop.type_raise %1: f32 to !pop.scalar<type>
+  kgen.return %2 : !pop.scalar<type>
 }
 
 // CHECK-LABEL: kgen.func @test_f32() -> f32 {
-// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !meta.scalar<f32>
-// CHECK:    %[[V1:.*]] = pop.type_lower %[[V0]] : !meta.scalar<f32> to f32
+// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !pop.scalar<f32>
+// CHECK:    %[[V1:.*]] = pop.type_lower %[[V0]] : !pop.scalar<f32> to f32
 kgen.generator @test_f32() -> f32 {
   kgen.param.declare type : dtype = <f32>
-  %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !meta.scalar<type>
-  %2 = pop.type_lower %1 : !meta.scalar<type> to f32
+  %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !pop.scalar<type>
+  %2 = pop.type_lower %1 : !pop.scalar<type> to f32
   kgen.return %2 : f32
 }
 
@@ -341,16 +341,16 @@ kgen.generator @paramAssertExample() {
 }
 
 // CHECK-LABEL: kgen.func @parametricTypes(
-kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, f32>) {
+kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !meta.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
-  kgen.param.declare ty1: type = <!meta.scalar<dt>>
+  kgen.param.declare ty1: type = <!pop.scalar<dt>>
 
-  // CHECK-NEXT:   "impl0"() : () -> !meta.scalar<ui32>
+  // CHECK-NEXT:   "impl0"() : () -> !pop.scalar<ui32>
   "impl0"() : () -> !kgen.paramref<ty1>
 
-  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.scalar<ui64>"
-  // CHECK-SAME: (%[[ARG0:.*]], %[[ARG0:.*]]) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
-  %0 = kgen.call @parametricAdd<ty: type = !meta.scalar<ui64>>(%arg0, %arg0) : (!meta.scalar<ui64>, !meta.scalar<ui64>) -> !meta.scalar<ui64>
+  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!pop.scalar<ui64>"
+  // CHECK-SAME: (%[[ARG0:.*]], %[[ARG0:.*]]) : (!pop.scalar<ui64>, !pop.scalar<ui64>) -> !pop.scalar<ui64>
+  %0 = kgen.call @parametricAdd<ty: type = !pop.scalar<ui64>>(%arg0, %arg0) : (!pop.scalar<ui64>, !pop.scalar<ui64>) -> !pop.scalar<ui64>
 
   // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.simd<2, f32>"(%[[ARG1]], %[[ARG1]]) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
   %1 = kgen.call @parametricAdd<ty: type = !meta.simd<2, f32>>(%arg1, %arg1) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
@@ -358,10 +358,10 @@ kgen.generator @parametricTypes(%arg0: !meta.scalar<ui64>, %arg1: !meta.simd<2, 
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"parametricAdd,ty=!meta.scalar<ui64>"
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<ui64>, %[[ARG1:.*]]: !meta.scalar<ui64>) -> !meta.scalar<ui64> {
-// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !meta.scalar<ui64>
-// CHECK-NEXT: kgen.return %[[V0]] : !meta.scalar<ui64>
+// CHECK-LABEL: kgen.func @"parametricAdd,ty=!pop.scalar<ui64>"
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<ui64>, %[[ARG1:.*]]: !pop.scalar<ui64>) -> !pop.scalar<ui64> {
+// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.scalar<ui64>
+// CHECK-NEXT: kgen.return %[[V0]] : !pop.scalar<ui64>
 
 // CHECK-LABEL: kgen.func @"parametricAdd,ty=!meta.simd<2, f32>"
 // CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<2, f32>, %[[ARG1:.*]]: !meta.simd<2, f32>) -> !meta.simd<2, f32> {
@@ -375,29 +375,29 @@ kgen.generator @parametricAdd<ty: type>
 }
 
 // CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=@doubleExample"()
-// CHECK: %0 = kgen.call @"doubleExample,dt=si32"(%cst) : (!meta.scalar<si32>) -> !meta.scalar<si32>
-// CHECK:  %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!meta.scalar<si32>) -> !meta.scalar<si32>
+// CHECK: %0 = kgen.call @"doubleExample,dt=si32"(%cst) : (!pop.scalar<si32>) -> !pop.scalar<si32>
+// CHECK:  %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!pop.scalar<si32>) -> !pop.scalar<si32>
 
 // CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=@nopExample"() {
-// CHECK:    %0 = kgen.call @"nopExample,dt=f32"(%cst) : (!meta.scalar<f32>) -> !meta.scalar<f32>
-// CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
+// CHECK:    %0 = kgen.call @"nopExample,dt=f32"(%cst) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+// CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
 kgen.generator @takeUnary
-  <dt: dtype, fn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <dt: dtype, fn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
 
-  %0 = pop.constant(1) : !meta.scalar<dt>
-  %1 = kgen.call_param[<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>: fn]<dt: dtype = dt>(%0)
-  %2 = kgen.call_param[<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>: fn]<dt: dtype = dt>(%1)
+  %0 = pop.constant(1) : !pop.scalar<dt>
+  %1 = kgen.call_param[<dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>: fn]<dt: dtype = dt>(%0)
+  %2 = kgen.call_param[<dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>: fn]<dt: dtype = dt>(%1)
   kgen.return
 }
 
-kgen.generator @doubleExample<dt:dtype>(%arg0: !meta.scalar<dt>) -> !meta.scalar<dt> {
-  %0 = pop.add %arg0, %arg0: !meta.scalar<dt>
-  kgen.return %0 : !meta.scalar<dt>
+kgen.generator @doubleExample<dt:dtype>(%arg0: !pop.scalar<dt>) -> !pop.scalar<dt> {
+  %0 = pop.add %arg0, %arg0: !pop.scalar<dt>
+  kgen.return %0 : !pop.scalar<dt>
 }
 
-kgen.generator @nopExample<dt:dtype>(%arg0: !meta.scalar<dt>) -> !meta.scalar<dt> {
-  kgen.return %arg0 : !meta.scalar<dt>
+kgen.generator @nopExample<dt:dtype>(%arg0: !pop.scalar<dt>) -> !pop.scalar<dt> {
+  kgen.return %arg0 : !pop.scalar<dt>
 }
 
 kgen.generator @takeParametricBinary
@@ -405,10 +405,10 @@ kgen.generator @takeParametricBinary
    fn: <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
   >() {
 
-  %0 = pop.constant(1) : !meta.scalar<dt>
+  %0 = pop.constant(1) : !pop.scalar<dt>
 
   %1 = kgen.call_param[<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>: fn]
-                <ty: type = !meta.scalar<dt>>(%0, %0)
+                <ty: type = !pop.scalar<dt>>(%0, %0)
   kgen.return
 }
 
@@ -416,11 +416,11 @@ kgen.generator @takeParametricBinary
 kgen.generator @test_region() {
   // CHECK: kgen.call @"takeUnary,dt=si32,fn=@doubleExample"()
   kgen.call @takeUnary<dt: dtype = si32,
-     fn : <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt> = @doubleExample>() : () -> ()
+     fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = @doubleExample>() : () -> ()
 
   // CHECK: kgen.call @"takeUnary,dt=f32,fn=@nopExample"()
   kgen.call @takeUnary<dt: dtype = f32,
-     fn : <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt> = @nopExample>() : () -> ()
+     fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = @nopExample>() : () -> ()
 
   // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=@parametricAdd"()
   kgen.call @takeParametricBinary<dt: dtype = f32,

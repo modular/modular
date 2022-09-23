@@ -115,7 +115,7 @@ void ParameterCollector::collectParameterUsesFromType(
 
   if (!skipScan) {
     // Recursively check for any nested types, e.g. the input/outputs of a
-    // function type, types like !meta.scalar<ty> etc.
+    // function type, types like !pop.scalar<ty> etc.
     if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
       size_t oldSize = uses.size();
       itf.walkImmediateSubElements(

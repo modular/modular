@@ -1,112 +1,112 @@
 // RUN: kgen-opt -split-input-file -elaborate-generators %s | FileCheck %s
 
 // CHECK-LABEL: @"int_to_wider_int
-kgen.generator @int_to_wider_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @int_to_wider_int<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(4 : ui32)
-  %0 = pop.constant(4 : i8) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(4 : i8) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_to_wider_int<type: dtype = ui32>() : () -> !meta.scalar<ui32>
+  %0 = kgen.call @int_to_wider_int<type: dtype = ui32>() : () -> !pop.scalar<ui32>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"int_to_same_width_int
-kgen.generator @int_to_same_width_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @int_to_same_width_int<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(65532 : ui16)
-  %0 = pop.constant(-4 : i16) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(-4 : i16) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_to_same_width_int<type: dtype = ui16>() : () -> !meta.scalar<ui16>
+  %0 = kgen.call @int_to_same_width_int<type: dtype = ui16>() : () -> !pop.scalar<ui16>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"int_to_shorter_int
-kgen.generator @int_to_shorter_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @int_to_shorter_int<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(42 : si8)
-  %0 = pop.constant(42 : si64) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(42 : si64) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_to_shorter_int<type: dtype = si8>() : () -> !meta.scalar<si8>
+  %0 = kgen.call @int_to_shorter_int<type: dtype = si8>() : () -> !pop.scalar<si8>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"int_to_float
-kgen.generator @int_to_float<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @int_to_float<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(5.{{0+}}e+02 : f32)
-  %0 = pop.constant(500) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(500) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_to_float<type: dtype = f32>() : () -> !meta.scalar<f32>
+  %0 = kgen.call @int_to_float<type: dtype = f32>() : () -> !pop.scalar<f32>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"int_to_float
-kgen.generator @int_to_float<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @int_to_float<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(-5.{{0+}}e+02 : f32)
-  %0 = pop.constant(-500) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(-500) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_to_float<type: dtype = f32>() : () -> !meta.scalar<f32>
+  %0 = kgen.call @int_to_float<type: dtype = f32>() : () -> !pop.scalar<f32>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"float_to_int
-kgen.generator @float_to_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @float_to_int<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(15 : ui8)
-  %0 = pop.constant(15.0) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(15.0) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @float_to_int<type: dtype = ui8>() : () -> !meta.scalar<ui8>
+  %0 = kgen.call @float_to_int<type: dtype = ui8>() : () -> !pop.scalar<ui8>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"float_to_int
-kgen.generator @float_to_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @float_to_int<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(-15 : si8)
-  %0 = pop.constant(-15.0) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(-15.0) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @float_to_int<type: dtype = si8>() : () -> !meta.scalar<si8>
+  %0 = kgen.call @float_to_int<type: dtype = si8>() : () -> !pop.scalar<si8>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"float_to_float
-kgen.generator @float_to_float<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @float_to_float<type: dtype>() -> !pop.scalar<type> {
   // CHECK: pop.constant(1.195{{.*}}e+00 : bf16)
-  %0 = pop.constant(1.2) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(1.2) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @float_to_float<type: dtype = bf16>() : () -> !meta.scalar<bf16>
+  %0 = kgen.call @float_to_float<type: dtype = bf16>() : () -> !pop.scalar<bf16>
   kgen.return
 }
 
@@ -154,11 +154,11 @@ kgen.generator @impl() {
 
 // -----
 
-// CHECK-LABEL: @"splat_constant,type=!meta.scalar<si32>"
-// CHECK: pop.constant(1 : si32) : !meta.scalar<si32>
+// CHECK-LABEL: @"splat_constant,type=!pop.scalar<si32>"
+// CHECK: pop.constant(1 : si32) : !pop.scalar<si32>
 
-// CHECK-LABEL: @"splat_constant,type=!meta.scalar<f32>"
-// CHECK: pop.constant(1.{{0+}}e+00 : f32) : !meta.scalar<f32>
+// CHECK-LABEL: @"splat_constant,type=!pop.scalar<f32>"
+// CHECK: pop.constant(1.{{0+}}e+00 : f32) : !pop.scalar<f32>
 
 // CHECK-LABEL: @"splat_constant,type=!meta.simd<4, si32>"
 // CHECK: pop.constant(dense<1> : vector<4xsi32>) : !meta.simd<4, si32>
@@ -169,8 +169,8 @@ kgen.generator @splat_constant<type: type>() -> !kgen.paramref<type> {
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @splat_constant<type: type = !meta.scalar<si32>>() : () -> !meta.scalar<si32>
-  %1 = kgen.call @splat_constant<type: type = !meta.scalar<f32>>() : () -> !meta.scalar<f32>
+  %0 = kgen.call @splat_constant<type: type = !pop.scalar<si32>>() : () -> !pop.scalar<si32>
+  %1 = kgen.call @splat_constant<type: type = !pop.scalar<f32>>() : () -> !pop.scalar<f32>
   %2 = kgen.call @splat_constant<type: type = !meta.simd<4, si32>>() : () -> !meta.simd<4, si32>
   kgen.return
 }
@@ -179,8 +179,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<dtype: dtype>() {
-  // CHECK: pop.global_constant(dense<[1.{{0+}}e+00, 2.{{0+}}e+00]> : tensor<2xf32>) : !pop.array<2, !meta.scalar<f32>>
-  %0 = pop.global_constant(dense<[1, 2]> : tensor<2xi32>) : !pop.array<2, !meta.scalar<dtype>>
+  // CHECK: pop.global_constant(dense<[1.{{0+}}e+00, 2.{{0+}}e+00]> : tensor<2xf32>) : !pop.array<2, !pop.scalar<f32>>
+  %0 = pop.global_constant(dense<[1, 2]> : tensor<2xi32>) : !pop.array<2, !pop.scalar<dtype>>
   kgen.return
 }
 
@@ -193,8 +193,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<size>() {
-  // CHECK: pop.global_constant(dense<1> : tensor<2xui64>) : !pop.array<2, !meta.scalar<ui64>>
-  %0 = pop.global_constant(1 : ui64) : !pop.array<size, !meta.scalar<ui64>>
+  // CHECK: pop.global_constant(dense<1> : tensor<2xui64>) : !pop.array<2, !pop.scalar<ui64>>
+  %0 = pop.global_constant(1 : ui64) : !pop.array<size, !pop.scalar<ui64>>
   kgen.return
 }
 

@@ -14,12 +14,10 @@
 
 namespace M {
 class DType;
-namespace KGEN {
-class ScalarType;
-namespace POP {
+namespace KGEN::POP {
 class PointerType;
-} // namespace POP
-} // namespace KGEN
+class ScalarType;
+} // namespace KGEN::POP
 } // namespace M
 
 #define GET_TYPEDEF_CLASSES

@@ -2,29 +2,29 @@
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
-  %a: i32, %b: !meta.scalar<f32>, %c: !meta.scalar<dtype>, %d: !kgen.paramref<type>
+  %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.paramref<type>
 ) -> (
-  i32, !meta.scalar<f32>, !meta.scalar<dtype>, !kgen.paramref<type>
+  i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 ) {
   // CHECK-NOT: kgen.rebind
   %0 = kgen.rebind %a : i32 to i32
-  %1 = kgen.rebind %b : !meta.scalar<f32> to !meta.scalar<f32>
-  %2 = kgen.rebind %c : !meta.scalar<dtype> to !meta.scalar<dtype>
+  %1 = kgen.rebind %b : !pop.scalar<f32> to !pop.scalar<f32>
+  %2 = kgen.rebind %c : !pop.scalar<dtype> to !pop.scalar<dtype>
   %3 = kgen.rebind %d : !kgen.paramref<type> to !kgen.paramref<type>
-  kgen.return %0, %1, %2, %3 : i32, !meta.scalar<f32>, !meta.scalar<dtype>, !kgen.paramref<type>
+  kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 }
 
 // CHECK-LABEL: kgen.func @meta_cast_from_folds
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {
-kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
+kgen.func @meta_cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
   // A-B-A cast.
-  %1 = pop.type_lower %arg0 : !meta.scalar<f32> to f32
-  %2 = pop.type_raise %1 : f32 to !meta.scalar<f32>
+  %1 = pop.type_lower %arg0 : !pop.scalar<f32> to f32
+  %2 = pop.type_raise %1 : f32 to !pop.scalar<f32>
 
   // TODO: Update return check once meta.scalar.cast is implemented.
   // CHECK: kgen.return %[[ARG0]]
-  kgen.return %2 : !meta.scalar<f32>
+  kgen.return %2 : !pop.scalar<f32>
 }
 
 // CHECK-LABEL: kgen.func @meta_cast_to_folds
@@ -32,8 +32,8 @@ kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
-  %1 = pop.type_raise %arg0 : f32 to !meta.scalar<f32>
-  %2 = pop.type_lower %1 : !meta.scalar<f32> to f32
+  %1 = pop.type_raise %arg0 : f32 to !pop.scalar<f32>
+  %2 = pop.type_lower %1 : !pop.scalar<f32> to f32
 
   // CHECK: kgen.return %[[ARG0]]
   kgen.return %2 : f32

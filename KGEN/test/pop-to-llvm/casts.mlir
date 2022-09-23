@@ -5,23 +5,23 @@
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
 kgen.func @scalar_bitcast(
-    %ui32: !meta.scalar<ui32>,
-    %f32: !meta.scalar<f32>,
-    %f64: !meta.scalar<f64>) -> (
-      !meta.scalar<f32>,
-      !meta.scalar<si32>,
-      !meta.scalar<ui64>
+    %ui32: !pop.scalar<ui32>,
+    %f32: !pop.scalar<f32>,
+    %f64: !pop.scalar<f64>) -> (
+      !pop.scalar<f32>,
+      !pop.scalar<si32>,
+      !pop.scalar<ui64>
     ) {
   // CHECK: llvm.bitcast %[[UI32]]
-  %0 = pop.bitcast %ui32 : !meta.scalar<ui32> to !meta.scalar<f32>
+  %0 = pop.bitcast %ui32 : !pop.scalar<ui32> to !pop.scalar<f32>
   // CHECK: llvm.bitcast %[[F32]]
-  %1 = pop.bitcast %f32 : !meta.scalar<f32> to !meta.scalar<si32>
+  %1 = pop.bitcast %f32 : !pop.scalar<f32> to !pop.scalar<si32>
   // CHECK: llvm.bitcast %[[F64]]
-  %2 = pop.bitcast %f64 : !meta.scalar<f64> to !meta.scalar<ui64>
+  %2 = pop.bitcast %f64 : !pop.scalar<f64> to !pop.scalar<ui64>
   kgen.return %0, %1, %2 :
-      !meta.scalar<f32>,
-      !meta.scalar<si32>,
-      !meta.scalar<ui64>
+      !pop.scalar<f32>,
+      !pop.scalar<si32>,
+      !pop.scalar<ui64>
 }
 
 // CHECK-LABEL: @simd_bitcast
@@ -53,26 +53,26 @@ kgen.func @simd_bitcast(
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
 kgen.func @pointer_bitcast(
-    %ui32:!pop.pointer<!meta.scalar<ui32>>,
+    %ui32:!pop.pointer<!pop.scalar<ui32>>,
     %simd_f32:!pop.pointer<!meta.simd<4, f32>>,
     %simd_f64:!pop.pointer<!meta.simd<2, f64>>) -> (
      !pop.pointer<!meta.simd<4, f32>>,
-     !pop.pointer<!meta.scalar<si32>>,
-     !pop.pointer<!meta.scalar<ui32>>,
+     !pop.pointer<!pop.scalar<si32>>,
+     !pop.pointer<!pop.scalar<ui32>>,
      !pop.pointer<?>
     ) {
   // CHECK: llvm.bitcast %[[UI32]]
-  %0 = pop.pointer.bitcast %ui32 : !pop.pointer<!meta.scalar<ui32>> to !pop.pointer<!meta.simd<4, f32>>
+  %0 = pop.pointer.bitcast %ui32 : !pop.pointer<!pop.scalar<ui32>> to !pop.pointer<!meta.simd<4, f32>>
   // CHECK: llvm.bitcast %[[F32]]
-  %1 = pop.pointer.bitcast %simd_f32 : !pop.pointer<!meta.simd<4, f32>> to !pop.pointer<!meta.scalar<si32>>
+  %1 = pop.pointer.bitcast %simd_f32 : !pop.pointer<!meta.simd<4, f32>> to !pop.pointer<!pop.scalar<si32>>
   // CHECK: llvm.bitcast %[[F64]]
-  %2 = pop.pointer.bitcast %simd_f64 : !pop.pointer<!meta.simd<2, f64>> to !pop.pointer<!meta.scalar<ui32>>
+  %2 = pop.pointer.bitcast %simd_f64 : !pop.pointer<!meta.simd<2, f64>> to !pop.pointer<!pop.scalar<ui32>>
   // CHECK: llvm.bitcast %[[UI32]]
-  %3 = pop.pointer.bitcast %ui32 : !pop.pointer<!meta.scalar<ui32>> to !pop.pointer<?>
+  %3 = pop.pointer.bitcast %ui32 : !pop.pointer<!pop.scalar<ui32>> to !pop.pointer<?>
   kgen.return %0, %1, %2, %3 :
      !pop.pointer<!meta.simd<4, f32>>,
-     !pop.pointer<!meta.scalar<si32>>,
-     !pop.pointer<!meta.scalar<ui32>>,
+     !pop.pointer<!pop.scalar<si32>>,
+     !pop.pointer<!pop.scalar<ui32>>,
      !pop.pointer<?>
 }
 
@@ -82,42 +82,42 @@ kgen.func @pointer_bitcast(
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
 kgen.func @scalar_cast(
-    %ui32: !meta.scalar<ui32>,
-    %si32: !meta.scalar<si32>,
-    %f32: !meta.scalar<f32>,
-    %f64: !meta.scalar<f64>) -> (
-    !meta.scalar<ui64>,
-    !meta.scalar<si64>,
-    !meta.scalar<ui16>,
-    !meta.scalar<si32>,
-    !meta.scalar<f64>,
-    !meta.scalar<f32>,
-    !meta.scalar<si64>,
-    !meta.scalar<ui32>,
-    !meta.scalar<f64>,
-    !meta.scalar<f32>,
-    !meta.scalar<f32>
+    %ui32: !pop.scalar<ui32>,
+    %si32: !pop.scalar<si32>,
+    %f32: !pop.scalar<f32>,
+    %f64: !pop.scalar<f64>) -> (
+    !pop.scalar<ui64>,
+    !pop.scalar<si64>,
+    !pop.scalar<ui16>,
+    !pop.scalar<si32>,
+    !pop.scalar<f64>,
+    !pop.scalar<f32>,
+    !pop.scalar<si64>,
+    !pop.scalar<ui32>,
+    !pop.scalar<f64>,
+    !pop.scalar<f32>,
+    !pop.scalar<f32>
     ) {
   // CHECK: %[[V0:.*]] = llvm.sext %[[SI32]]
-  %0 = pop.cast %si32 : !meta.scalar<si32> to !meta.scalar<ui64>
+  %0 = pop.cast %si32 : !pop.scalar<si32> to !pop.scalar<ui64>
   // CHECK: %[[V1:.*]] = llvm.zext %[[UI32]]
-  %1 = pop.cast %ui32 : !meta.scalar<ui32> to !meta.scalar<si64>
+  %1 = pop.cast %ui32 : !pop.scalar<ui32> to !pop.scalar<si64>
   // CHECK: %[[V2:.*]] = llvm.trunc %[[SI32]]
-  %2 = pop.cast %si32 : !meta.scalar<si32> to !meta.scalar<ui16>
-  %3 = pop.cast %ui32 : !meta.scalar<ui32> to !meta.scalar<si32>
+  %2 = pop.cast %si32 : !pop.scalar<si32> to !pop.scalar<ui16>
+  %3 = pop.cast %ui32 : !pop.scalar<ui32> to !pop.scalar<si32>
   // CHECK: %[[V4:.*]] = llvm.sitofp %[[SI32]]
-  %4 = pop.cast %si32 : !meta.scalar<si32> to !meta.scalar<f64>
+  %4 = pop.cast %si32 : !pop.scalar<si32> to !pop.scalar<f64>
   // CHECK: %[[V5:.*]] = llvm.uitofp %[[UI32]]
-  %5 = pop.cast %ui32 : !meta.scalar<ui32> to !meta.scalar<f32>
+  %5 = pop.cast %ui32 : !pop.scalar<ui32> to !pop.scalar<f32>
   // CHECK: %[[V6:.*]] = llvm.fptosi %[[F32]]
-  %6 = pop.cast %f32 : !meta.scalar<f32> to !meta.scalar<si64>
+  %6 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<si64>
   // CHECK: %[[V7:.*]] = llvm.fptoui %[[F64]]
-  %7 = pop.cast %f64 : !meta.scalar<f64> to !meta.scalar<ui32>
+  %7 = pop.cast %f64 : !pop.scalar<f64> to !pop.scalar<ui32>
   // CHECK: %[[V8:.*]] = llvm.fpext %[[F32]]
-  %8 = pop.cast %f32 : !meta.scalar<f32> to !meta.scalar<f64>
+  %8 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f64>
   // CHECK: %[[V9:.*]] = llvm.fptrunc %[[F64]]
-  %9 = pop.cast %f64 : !meta.scalar<f64> to !meta.scalar<f32>
-  %10 = pop.cast %f32 : !meta.scalar<f32> to !meta.scalar<f32>
+  %9 = pop.cast %f64 : !pop.scalar<f64> to !pop.scalar<f32>
+  %10 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f32>
   // CHECK: insertvalue %[[V0]]
   // CHECK: insertvalue %[[V1]]
   // CHECK: insertvalue %[[V2]]
@@ -130,17 +130,17 @@ kgen.func @scalar_cast(
   // CHECK: insertvalue %[[V9]]
   // CHECK: insertvalue %[[F32]]
   kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10 :
-    !meta.scalar<ui64>,
-    !meta.scalar<si64>,
-    !meta.scalar<ui16>,
-    !meta.scalar<si32>,
-    !meta.scalar<f64>,
-    !meta.scalar<f32>,
-    !meta.scalar<si64>,
-    !meta.scalar<ui32>,
-    !meta.scalar<f64>,
-    !meta.scalar<f32>,
-    !meta.scalar<f32>
+    !pop.scalar<ui64>,
+    !pop.scalar<si64>,
+    !pop.scalar<ui16>,
+    !pop.scalar<si32>,
+    !pop.scalar<f64>,
+    !pop.scalar<f32>,
+    !pop.scalar<si64>,
+    !pop.scalar<ui32>,
+    !pop.scalar<f64>,
+    !pop.scalar<f32>,
+    !pop.scalar<f32>
 }
 
 // CHECK-LABEL: @simd_cast

@@ -85,10 +85,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   %22 = kgen.param.constant: dtype = <get_dtype(mlirType)>
 
   // CHECK: = kgen.param.constant : dtype = <get_dtype(mlirType)>
-  %23 = kgen.param.constant: dtype = <get_dtype(!meta.scalar<get_dtype(mlirType)>)>
+  %23 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<get_dtype(mlirType)>)>
 
   // CHECK: = kgen.param.constant : dtype = <f32>
-  %24 = kgen.param.constant: dtype = <get_dtype(!meta.scalar<f32>)>
+  %24 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<f32>)>
 
   kgen.return
 }
@@ -215,22 +215,22 @@ kgen.generator @dtype_params<dt: !kgen.dtype, *"f32", *"ui32">() {
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>()
-// CHECK: constraints <[eq(:type typeParam, !meta.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
-   constraints <[eq(:type typeParam, !meta.scalar<f32>), "f32 scalarzzz"]>
+// CHECK: constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
+   constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
  {
-  // CHECK: kgen.param.declare ty1: type = <!meta.scalar<f32>>
-  kgen.param.declare ty1: type = <!meta.scalar<f32>>
+  // CHECK: kgen.param.declare ty1: type = <!pop.scalar<f32>>
+  kgen.param.declare ty1: type = <!pop.scalar<f32>>
 
-  // CHECK: kgen.param.declare ty2: type = <!meta.scalar<dt>>
-  kgen.param.declare ty2: type = <!meta.scalar<dt>>
+  // CHECK: kgen.param.declare ty2: type = <!pop.scalar<dt>>
+  kgen.param.declare ty2: type = <!pop.scalar<dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
   // CHECK: "someop"() : () -> !kgen.paramref<ty2>
   "someop"() : () -> !kgen.paramref<ty2>
 
   // kgen.paramref auto-folds non-parameterized types on construction.
-  // CHECK: "someop"() : () -> !meta.scalar<f32>
-  "someop"() : () -> !kgen.paramref<!meta.scalar<f32>>
+  // CHECK: "someop"() : () -> !pop.scalar<f32>
+  "someop"() : () -> !kgen.paramref<!pop.scalar<f32>>
 
   kgen.return
 }
@@ -269,21 +269,21 @@ kgen.generator @region_params
   kgen.return
 }
 
-kgen.generator @takeUnary<unaryFn: (!meta.scalar<si32>) -> !meta.scalar<si32>>() {
+kgen.generator @takeUnary<unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
   // use unaryFn
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !meta.scalar<si32>
-  kgen.return %0 : !meta.scalar<si32>
+kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
 }
 
 kgen.generator @test_region() {
   // CHECK: kgen.call @takeUnary<
-  // CHECK-SAME: unaryFn: (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>()
+  // CHECK-SAME: unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>()
   kgen.call @takeUnary<
-     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
+     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>() : () -> ()
 
   kgen.return
 }

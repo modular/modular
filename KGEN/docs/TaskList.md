@@ -265,10 +265,10 @@ As we start writing more kernels, doing so at a high level will become painful f
 ✅[Issue #1250](https://github.com/modularml/modular/issues/1250) One issue we have is that these dialects do not support parametric types, and defining overloads (like the fadd example above) for every integer width will be a huge pain for us humans, and not be great for compile time.  The reason we need to do this is that the LLVM dialect (for example) doesn’t support parametric types.  We could solve this by adding a “parametric operations” (pop) dialect that allows things like this:
 
 ```mlir
-kgen.generator @fadd<dt: dtype>(%lhs: !meta.scalar<dt>,
-                                %rhs: !meta.scalar<dt>) -> !meta.scalar<dt>
+kgen.generator @fadd<dt: dtype>(%lhs: !pop.scalar<dt>,
+                                %rhs: !pop.scalar<dt>) -> !pop.scalar<dt>
  constraints type = f32, f64 {
-  %res = pop.add %lhs, %rhs : !meta.scalar<dt>
+  %res = pop.add %lhs, %rhs : !pop.scalar<dt>
   kgen.return %res
 }
 ```

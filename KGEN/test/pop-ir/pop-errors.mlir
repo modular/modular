@@ -10,7 +10,7 @@ kgen.generator @pop_constant<type: type>() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{cannot convert from attribute type 'f32' to dtype si64}}
-  %0 = pop.constant(32.0 : f32) : !meta.scalar<si64>
+  %0 = pop.constant(32.0 : f32) : !pop.scalar<si64>
   kgen.return
 }
 
@@ -18,7 +18,7 @@ kgen.func @pop_constant() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{scalar constant expected integer or float attribute for constant value}}
-  %0 = pop.constant(dense<0> : vector<1xi32>) : !meta.scalar<si32>
+  %0 = pop.constant(dense<0> : vector<1xi32>) : !pop.scalar<si32>
   kgen.return
 }
 
@@ -74,10 +74,10 @@ kgen.generator @pop_constant<size>() {
 
 // COM: copysign is not defined on non-floating point types
 
-kgen.func @pop_copysign(%arg0 : !meta.scalar<si32>, %arg1 : !meta.scalar<si32>) -> !meta.scalar<si32> {
+kgen.func @pop_copysign(%arg0 : !pop.scalar<si32>, %arg1 : !pop.scalar<si32>) -> !pop.scalar<si32> {
   // expected-error @below {{whose value is either unbound or a floating-point dtype}}
-  %0 = pop.copysign %arg0, %arg1 : !meta.scalar<si32>
-  kgen.return %0 : !meta.scalar<si32>
+  %0 = pop.copysign %arg0, %arg1 : !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
 }
 
 // -----
@@ -94,11 +94,11 @@ kgen.func @pop_copysign(%arg0 : !meta.simd<4, si32>, %arg1 : !meta.simd<4, si32>
 
 kgen.func @pop_select_simd(
     // expected-note @below {{prior use here}}
-    %arg0: !meta.scalar<bool>,
+    %arg0: !pop.scalar<bool>,
     %arg1: !meta.simd<4, si32>,
     %arg2: !meta.simd<4, si32>
   ) -> !meta.simd<4, si32> {
-  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!meta.simd<4, bool>' vs '!meta.scalar<bool>'}}
+  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!meta.simd<4, bool>' vs '!pop.scalar<bool>'}}
   %0 = pop.select %arg0, %arg1, %arg2 : !meta.simd<4, si32>
   kgen.return %0 : !meta.simd<4, si32>
 }
@@ -118,9 +118,9 @@ kgen.func @pop_select_simd(
 
 // -----
 
-kgen.generator @bitcast_scalar(%a: !meta.scalar<f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!meta.scalar<f32>' and result type '!meta.scalar<si8>' are cast incompatible}}
-  %0 = pop.bitcast %a : !meta.scalar<f32> to !meta.scalar<si8>
+kgen.generator @bitcast_scalar(%a: !pop.scalar<f32>) {
+  // expected-error @below {{'pop.bitcast' op operand type '!pop.scalar<f32>' and result type '!pop.scalar<si8>' are cast incompatible}}
+  %0 = pop.bitcast %a : !pop.scalar<f32> to !pop.scalar<si8>
   kgen.return
 }
 
@@ -142,9 +142,9 @@ kgen.generator @bitcast_simd(%a: !meta.simd<4, f32>) {
 
 // -----
 
-kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !meta.scalar<type>) {
+kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !pop.scalar<type>) {
   // expected-error @below {{cannot cast between a scalar type and SIMD type}}
-  %0 = pop.cast %a : !meta.scalar<type> to !meta.simd<size, type>
+  %0 = pop.cast %a : !pop.scalar<type> to !meta.simd<size, type>
   kgen.return
 }
 
@@ -152,7 +152,7 @@ kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !meta.scalar<type>) {
 
 kgen.generator @cast_simd_to_scalar<size, type: dtype>(%a: !meta.simd<size, type>) {
   // expected-error @below {{cannot cast between a scalar type and SIMD type}}
-  %0 = pop.cast %a : !meta.simd<size, type> to !meta.scalar<type>
+  %0 = pop.cast %a : !meta.simd<size, type> to !pop.scalar<type>
   kgen.return
 }
 
@@ -208,7 +208,7 @@ kgen.generator @simd_shuffle<size>(%a: !meta.simd<2, f32>) {
 
 kgen.func @global_constant() {
   // expected-error @below {{cannot convert from attribute type 'f32' to dtype f64}}
-  %0 = pop.global_constant(0.0 : f32) : !meta.scalar<f64>
+  %0 = pop.global_constant(0.0 : f32) : !pop.scalar<f64>
   kgen.return
 }
 
@@ -216,7 +216,7 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{expected dense elements attribute for array constant with known size}}
-  %0 = pop.global_constant(0.0 : f32) : !pop.array<4, !meta.scalar<f32>>
+  %0 = pop.global_constant(0.0 : f32) : !pop.array<4, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -224,7 +224,7 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : vector<2xf32>) : !pop.array<2, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<0.0> : vector<2xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -232,7 +232,7 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : tensor<2x2xf32>) : !pop.array<2, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<0.0> : tensor<2x2xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -240,7 +240,7 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<2, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -248,7 +248,7 @@ kgen.func @global_constant() {
 
 kgen.generator @global_constant<size>() {
   // expected-error @below {{expected integer or float attribute for array constant of unspecified size}}
-  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<size, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<size, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -264,15 +264,15 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{convert from attribute type 'f64' to dtype f32}}
-  %0 = pop.global_constant(dense<0.0> : tensor<2xf64>) : !pop.array<2, !meta.scalar<f32>>
+  %0 = pop.global_constant(dense<0.0> : tensor<2xf64>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
 // -----
 
-kgen.func @cast_from_builtin_type(%arg0: !meta.scalar<si32>) {
+kgen.func @cast_from_builtin_type(%arg0: !pop.scalar<si32>) {
   // expected-error @below {{expected an integer or float type}}
-  %0 = pop.type_lower %arg0: !meta.scalar<si32> to vector<1xsi32>
+  %0 = pop.type_lower %arg0: !pop.scalar<si32> to vector<1xsi32>
   kgen.return
 }
 
@@ -280,7 +280,7 @@ kgen.func @cast_from_builtin_type(%arg0: !meta.scalar<si32>) {
 
 kgen.func @cast_from_builtin_type(%arg0: si32) {
   // expected-error @below {{cannot convert from scalar dtype ui32 to 'si32'}}
-  %0 = pop.type_raise %arg0 : si32 to !meta.scalar<ui32>
+  %0 = pop.type_raise %arg0 : si32 to !pop.scalar<ui32>
   kgen.return
 }
 

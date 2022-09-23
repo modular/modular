@@ -14,88 +14,6 @@ using namespace M;
 using namespace KGEN;
 using namespace ZAP;
 
-/// Fill `obj` according to `kind`, `dtype`, and `numElements`. Despite `obj`
-/// being suggestively named, `obj` can be any pointer - it does not have to be
-/// the pointer passed to ::populate. It must have a space allocated for
-/// `numElements` objects of type `dtype`, however.
-static LogicalResult doFill(Location loc, InputGenKind kind, DType dtype,
-                            size_t numElements, void *obj) {
-  switch (kind) {
-  case InputGenKind::Zeros:
-    memset(obj, 0, dtype.getSizeInBytes(numElements));
-    return success();
-  case InputGenKind::Ones: {
-    if (dtype.isComplex()) {
-      unsigned widthInBytes = dtype.getWidthInBits() / 8;
-      // Set the imaginary component to zero.
-      memset((char *)obj + widthInBytes, 0, widthInBytes);
-      dtype = dtype.stripComplex();
-    }
-
-    // Dispatch the dtype, and just fill directly with ones.
-    return dtype.dispatch<LogicalResult>(obj)
-        .when([&](bool *ptr) {
-          std::generate(ptr, ptr + numElements, []() { return true; });
-          return success();
-        })
-        .whenCXXInt([&](auto *ptr) { // Standard C++ integers.
-          std::generate(ptr, ptr + numElements, []() { return 1; });
-          return success();
-        })
-        .whenCXXFP([&](auto *ptr) { // float and double.
-          std::generate(ptr, ptr + numElements, []() { return 1.0; });
-          return success();
-        })
-        .otherwise([&]() { return failure(); });
-  }
-  case InputGenKind::Random: {
-    // Fill the given buffer with random elements from the provided
-    // distribution.
-    auto fillWithDistribution = [&](auto *ptr, auto distribution) {
-      std::default_random_engine randEngine(/*seed=*/0);
-      std::generate(ptr, ptr + numElements,
-                    [&]() { return distribution(randEngine); });
-    };
-
-    return dtype.dispatch<LogicalResult>(obj)
-        .when([&](bool *destPtr) {
-          fillWithDistribution(destPtr, std::bernoulli_distribution());
-          return success();
-        })
-        .whenCXXInt([&](auto *destPtr) {
-          fillWithDistribution(destPtr, std::uniform_int_distribution<>(
-                                            dtype.isSInt() ? -10 : 0, 10));
-          return success();
-        })
-        .whenCXXFP([&](auto *destPtr) {
-          fillWithDistribution(destPtr,
-                               std::uniform_real_distribution<>(-1.0, 1.0));
-          return success();
-        })
-        .otherwise([&]() { return failure(); });
-  }
-  }
-
-  return emitError(loc) << "could not fill with gen kind: "
-                        << stringifyInputGenKind(kind);
-}
-
-/// Compares raw buffers `lhs` and `rhs` of type `dtype` with `numElements`
-/// elements. Returns true if they are equal, false if they are not, and failure
-/// if they cannot be compared.
-static FailureOr<bool> dataEquals(Location loc, DType dtype, size_t numElements,
-                                  void *lhs, void *rhs) {
-  return dtype.dispatch<FailureOr<bool>>(lhs, rhs)
-      .whenCXXArithmeticType([&](auto *lhs, auto *rhs) {
-        return llvm::all_of_zip(llvm::makeArrayRef(lhs, numElements),
-                                llvm::makeArrayRef(rhs, numElements),
-                                [](auto a, auto b) { return isClose(a, b); });
-      })
-      .otherwise([&]() {
-        return mlir::emitError(loc) << "unknown dtype: " << dtype.getAsString();
-      });
-}
-
 //===----------------------------------------------------------------------===//
 // BufferType
 //===----------------------------------------------------------------------===//
@@ -106,7 +24,7 @@ LLVM_PACKED(struct OpaqueBuffer {
   void *data;
   int8_t dtype;
 });
-}
+} // namespace
 
 /// This implements `OpaqueObjectInterface::populate`. It generates a buffer
 /// object, and furthermore allocates memory for the buffer's backing storage
@@ -139,7 +57,7 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   objPtr->dtype = (*dtype).getValue();
 
   // Do the fill.
-  return doFill(loc, kind, *dtype, numElements, ptr);
+  return fillOpaqueElements(loc, kind, *dtype, numElements, ptr);
 }
 
 /// This implements `OpaqueObjectInterface::destroy`. This deallocates any
@@ -162,5 +80,6 @@ FailureOr<bool> BufferType::equals(Location loc, Attribute tag, void *lhsData,
   auto *lhs = (OpaqueBuffer *)lhsData;
   auto *rhs = (OpaqueBuffer *)rhsData;
   assert(lhs->dtype == rhs->dtype && lhs->size == rhs->size);
-  return dataEquals(loc, DType(lhs->dtype), lhs->size, lhs->data, rhs->data);
+  return compareOpaqueElements(loc, DType(lhs->dtype), lhs->size, lhs->data,
+                               rhs->data);
 }

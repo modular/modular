@@ -6,11 +6,11 @@ kgen.generator.interface @ptr_itf<eltype: type, rettype: type>
     (!pop.pointer<eltype>) -> !kgen.paramref<rettype>
 
 // CHECK: kgen.generator @eltype_inf_thunk
-// CHECK-NEXT: eq(:type eltype, !meta.scalar<f32>)
+// CHECK-NEXT: eq(:type eltype, !pop.scalar<f32>)
 
-// Implementation specifies that `eltype` must be `!meta.scalar<f32>`
+// Implementation specifies that `eltype` must be `!pop.scalar<f32>`
 hlkgen.generator @eltype_inf<rettype: type>
-    (%arg0: !pop.pointer<!meta.scalar<f32>>) -> !kgen.paramref<rettype>
+    (%arg0: !pop.pointer<!pop.scalar<f32>>) -> !kgen.paramref<rettype>
     implements @ptr_itf {
   %0 = "a"() : () -> !kgen.paramref<rettype>
   kgen.return %0 : !kgen.paramref<rettype>
@@ -31,7 +31,7 @@ hlkgen.generator @rettype_inf<eltype: type>
 
 // CHECK-LABEL: kgen.generator.interface @struct_itf
 kgen.generator.interface @struct_itf<eltype: type, dtype: dtype>
-    (!pop.struct<eltype, !meta.scalar<dtype>>) -> ()
+    (!pop.struct<eltype, !pop.scalar<dtype>>) -> ()
 
 // CHECK: kgen.generator @struct_inf_thunk
 // CHECK-NEXT: constraints <
@@ -39,7 +39,7 @@ kgen.generator.interface @struct_itf<eltype: type, dtype: dtype>
 // CHECK-NEXT: eq(:dtype dtype, f32)
 
 hlkgen.generator @struct_inf
-    (%arg0: !pop.struct<index, !meta.scalar<f32>>) -> ()
+    (%arg0: !pop.struct<index, !pop.scalar<f32>>) -> ()
     implements @struct_itf {
   kgen.return
 }

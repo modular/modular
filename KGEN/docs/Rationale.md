@@ -122,7 +122,7 @@ kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
 }
 ```
 
-Note that we do *not* support dynamic shapes or dtypes for the `!meta.scalar` or
+Note that we do *not* support dynamic shapes or dtypes for the `!pop.scalar` or
 `!meta.simd` types.  These may be *parameterized* with arithmetic that
 determines the vector length or element, but it may not be dynamic (that is, there
 is no `?` allowed) - parameters are always resolved to static values as part of
@@ -172,8 +172,8 @@ The `pop.constant` operation allows things like this, which have mismatched
 attribute types and the result type:
 
 ```
-  %c1 = pop.constant(1.5 : f64) : !meta.scalar<f32>  // wrong fp type
-  %c2 = pop.constant(12 : i8) : !meta.scalar<f32> // means 12.0f
+  %c1 = pop.constant(1.5 : f64) : !pop.scalar<f32>  // wrong fp type
+  %c2 = pop.constant(12 : i8) : !pop.scalar<f32> // means 12.0f
   %c3 = pop.constant(256) : scalar<si8>   // too big for si8
 ```
 
@@ -182,7 +182,7 @@ concrete type to be resolved late.  The first code could very reasonably have
 started out as:
 
 ```
-  %0 = pop.constant(1.5 : f64) : !meta.scalar<someFPType>
+  %0 = pop.constant(1.5 : f64) : !pop.scalar<someFPType>
 ```
 
 and `someFPType` got resolve to `f32` by the elaborator, which generically

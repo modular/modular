@@ -1,105 +1,105 @@
 // RUN: kgen-opt -elaborate-generators %s -verify-diagnostics -split-input-file
 
-kgen.generator @invalid_signedness<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_signedness<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{cannot change signfulness when converting from si8 to ui32}}
-  %0 = pop.constant(4 : si8) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(4 : si8) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_signedness<type: dtype = ui32>() : () -> !meta.scalar<ui32>
+  %0 = kgen.call @invalid_signedness<type: dtype = ui32>() : () -> !pop.scalar<ui32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @invalid_trunc<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_trunc<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{integer constant does not fit into ui8}}
-  %0 = pop.constant(600 : i32) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(600 : i32) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_trunc<type: dtype = ui8>() : () -> !meta.scalar<ui8>
+  %0 = kgen.call @invalid_trunc<type: dtype = ui8>() : () -> !pop.scalar<ui8>
   kgen.return
 }
 
 // -----
 
-kgen.generator @invalid_fp_type<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_fp_type<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{unsupported floating point type: f8}}
-  %0 = pop.constant(600 : i32) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(600 : i32) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_fp_type<type: dtype = f8>() : () -> !meta.scalar<f8>
+  %0 = kgen.call @invalid_fp_type<type: dtype = f8>() : () -> !pop.scalar<f8>
   kgen.return
 }
 
 // -----
 
-kgen.generator @invalid_fp_type<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_fp_type<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{integer constant could not be exactly converted to f32}}
-  %0 = pop.constant(16777217 : i32) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(16777217 : i32) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_fp_type<type: dtype = f32>() : () -> !meta.scalar<f32>
+  %0 = kgen.call @invalid_fp_type<type: dtype = f32>() : () -> !pop.scalar<f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @invalid_bool<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_bool<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{cannot coerce constant value to bool}}
-  %0 = pop.constant(1 : i32) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(1 : i32) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_bool<type: dtype = bool>() : () -> !meta.scalar<bool>
+  %0 = kgen.call @invalid_bool<type: dtype = bool>() : () -> !pop.scalar<bool>
   kgen.return
 }
 
 // -----
 
-kgen.generator @inexact_int<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @inexact_int<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{only exact integer floats can be converted to integers}}
-  %0 = pop.constant(1.2) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(1.2) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @inexact_int<type: dtype = si8>() : () -> !meta.scalar<si8>
+  %0 = kgen.call @inexact_int<type: dtype = si8>() : () -> !pop.scalar<si8>
   kgen.return
 }
 
 // -----
 
-kgen.generator @invalid_fp_type<type: dtype>() -> !meta.scalar<type> {
+kgen.generator @invalid_fp_type<type: dtype>() -> !pop.scalar<type> {
   // expected-note @below {{unsupported floating point type}}
-  %0 = pop.constant(1.2) : !meta.scalar<type>
-  kgen.return %0 : !meta.scalar<type>
+  %0 = pop.constant(1.2) : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
 }
 
 // expected-error @below {{no viable implementations}}
 kgen.generator @impl() {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_fp_type<type: dtype = f8>() : () -> !meta.scalar<f8>
+  %0 = kgen.call @invalid_fp_type<type: dtype = f8>() : () -> !pop.scalar<f8>
   kgen.return
 }
 

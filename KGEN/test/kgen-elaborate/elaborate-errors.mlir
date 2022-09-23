@@ -12,10 +12,10 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
-  %0 = pop.constant(1.0 : f32) : !meta.scalar<ty>
+  %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
 
   // expected-note @+1 {{verification error: 'pop.type_lower' op cannot convert from scalar dtype f32 to 'i8'}}
-  %1 = pop.type_lower %0: !meta.scalar<ty> to i8
+  %1 = pop.type_lower %0: !pop.scalar<ty> to i8
   kgen.return
 }
 

@@ -1,12 +1,12 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!meta.scalar<f32>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
 // CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<?>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
-  %ptr: !pop.pointer<!meta.scalar<f32>>,
+  %ptr: !pop.pointer<!pop.scalar<f32>>,
   %opaque: !pop.pointer<?>,
   %size: index,
   %dtype: !kgen.dtype) -> (
@@ -140,9 +140,9 @@ kgen.generator @zap_buffer_load<size, type: dtype>(
 // CHECK-SAME: %[[B:[a-z0-9]+]]:
 // CHECK-SAME: %[[C:[a-z0-9]+]]:
 kgen.generator @zap_buffer_store<size, type: dtype>(
-    %v0: !meta.scalar<type>,
-    %v1: !meta.scalar<f32>,
-    %v2: !meta.scalar<si32>,
+    %v0: !pop.scalar<type>,
+    %v1: !pop.scalar<f32>,
+    %v2: !pop.scalar<si32>,
     %a: !zap.buffer<size, type>,
     %b: !zap.buffer<size, f32>,
     %c: !zap.buffer<4, si32>
@@ -214,8 +214,8 @@ kgen.generator @zap_simd_store<size, type: dtype>(
 }
 
 // CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !meta.scalar<f32>) {
-  // CHECK: zap.print "foo %f"(%{{.*}}) : !meta.scalar<f32>
-  zap.print "foo %f"(%a) : !meta.scalar<f32>
+kgen.generator @zap_print(%a: !pop.scalar<f32>) {
+  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
+  zap.print "foo %f"(%a) : !pop.scalar<f32>
   kgen.return
 }

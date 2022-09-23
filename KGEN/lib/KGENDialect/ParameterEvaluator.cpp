@@ -84,7 +84,7 @@ bool KGEN::isValidParameterExpr(TypedAttr value) {
 }
 
 /// Return true if the specified type contains parameter references, e.g.
-/// `!meta.scalar<dt>` returns true, but `!meta.scalar<f32>` returns false.
+/// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
 ///
 /// NOTE: This must be kept in sync with ParameterEvaluator::getReboundType.
 ///

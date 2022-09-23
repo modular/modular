@@ -73,13 +73,13 @@ Optional<DType> BufferType::resolveDType() const {
 
 POP::PointerType BufferType::getPointerType() const {
   if (TypedAttr dtype = getDType())
-    return POP::PointerType::get(ScalarType::get(dtype));
+    return POP::PointerType::get(POP::ScalarType::get(dtype));
   return POP::PointerType::get(getContext(), nullptr);
 }
 
-ScalarType BufferType::getElementType() const {
+POP::ScalarType BufferType::getElementType() const {
   assert(getDType() && "expected buffer with known dtype");
-  return ScalarType::get(getDType());
+  return POP::ScalarType::get(getDType());
 }
 
 BufferType BufferType::get(TypedAttr size, TypedAttr dtype) {

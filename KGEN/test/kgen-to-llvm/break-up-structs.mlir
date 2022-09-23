@@ -44,7 +44,7 @@ llvm.func @kernel(%a: !nestedStruct) -> !nestedStruct {
 // CHECK-SAME: %[[I:.*]]: f32
 // CHECK: llvm.return
 
-kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !pop.pointer<!meta.scalar<f32>>, !kgen.dtype>) {
+kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !pop.pointer<!pop.scalar<f32>>, !kgen.dtype>) {
   kgen.return
 }
 
@@ -55,7 +55,7 @@ kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !pop.pointer<!meta.scal
 // CHECK: %[[RESULT:.*]] = llvm.mlir.constant
 // CHECK: llvm.return %[[RESULT]]
 
-kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!meta.scalar<f32>>, !kgen.dtype>) -> i64 {
+kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<f32>>, !kgen.dtype>) -> i64 {
   %0 = llvm.mlir.constant(1 : i64) : i64
   kgen.return %0 : i64
 }
