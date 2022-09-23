@@ -33,7 +33,6 @@ kgen.generator @add_f32<ty: dtype>(%arg0 : !pop.scalar<ty>, %arg1 : !pop.scalar<
   kgen.return %3 : !pop.scalar<ty>
 }
 
-// This should be fine, but we're missing meta.scalar bind ops.
 hlkgen.generator @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
     -> !pop.scalar<ty> implements @add {
   %0 = pop.type_lower %arg0 : !pop.scalar<f64> to f64

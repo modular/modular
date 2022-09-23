@@ -8,7 +8,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>) {
 
 // -----
 
-kgen.func @meta_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: index) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: index) {
   // expected-error @below {{either a size operand or a buffer type with static size}}
   %0 = zap.buffer.construct %ptr[%size] : !zap.buffer<4, f32>
   kgen.return
@@ -16,7 +16,7 @@ kgen.func @meta_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: in
 
 // -----
 
-kgen.func @meta_buffer_construct(%ptr: !pop.pointer<?>) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<?>) {
   // expected-error @below {{either a dtype operand or a buffer type with static dtype}}
   %0 = zap.buffer.construct %ptr : !zap.buffer<4, ?>
   kgen.return
@@ -24,7 +24,7 @@ kgen.func @meta_buffer_construct(%ptr: !pop.pointer<?>) {
 
 // -----
 
-kgen.func @meta_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %dtype: !kgen.dtype) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %dtype: !kgen.dtype) {
   // expected-error @below {{either a dtype operand or a buffer type with static dtype}}
   %0 = zap.buffer.construct %ptr of %dtype : !zap.buffer<4, f32>
   kgen.return

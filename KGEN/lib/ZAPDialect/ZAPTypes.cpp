@@ -8,7 +8,6 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "Support/ML/DType.h"

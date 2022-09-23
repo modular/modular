@@ -14,6 +14,5 @@ add_modular_conversion_library(LowerHLKGEN
   LINK_LIBS PUBLIC
   KGENDialect
   HLKGENDialect
-  MetaDialect
   MLIRIR
   )

@@ -10,6 +10,8 @@
 
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ML/DType.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 

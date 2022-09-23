@@ -27,10 +27,10 @@ def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
-  let summary = "Lower the `zap` dialects to the `pop` and `meta` dialects.";
+  let summary = "Lower the `zap` dialect to the `pop` dialect.";
   let description = [{
-    This pass lowers `zap` dialect operations to combinations of `pop` and
-    `meta` dialect operations. This pass can run pre-elaboration.
+    This pass lowers `zap` dialect operations to `pop` dialect operations. This
+    pass can run pre-elaboration.
   }];
 
   let dependentDialects = ["POP::POPDialect"];
@@ -43,10 +43,10 @@ def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
-  let summary = "Lower the `kgen` and `meta` dialects to the `llvm` dialect.";
+  let summary = "Lower the `kgen` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion from the fully-elaborated and specified
-    kgen.func ops and kgen/meta types to the corresponding LLVM-dialect
+    kgen.func ops and kgen types to the corresponding LLVM-dialect
     structures/types/ops.
 
     Set `break-up-structs` to the names of top-level funcs for which to break

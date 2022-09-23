@@ -7,15 +7,15 @@
 #ifndef KGEN_LLVM_LOWERING_UTILS_H
 #define KGEN_LLVM_LOWERING_UTILS_H
 
-#include "KGEN/MetaDialect/MetaTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
-// MetaToLLVMTypeConverter
+// POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
 /// Get the MLIR type for a data type.
@@ -26,12 +26,12 @@ llvm::Optional<mlir::Type> getMLIRTypeForDType(mlir::MLIRContext *ctx,
 /// untyped pointer.
 mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, DType dtype);
 
-/// This type converter maps fully-specified meta dialect parametric types and
+/// This type converter maps fully-specified pop dialect parametric types and
 /// built-in MLIR types to LLVM types.
-class MetaToLLVMTypeConverter : public mlir::LLVMTypeConverter {
+class POPToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
-  MetaToLLVMTypeConverter(mlir::Location loc,
-                          const mlir::LowerToLLVMOptions &options);
+  POPToLLVMTypeConverter(mlir::Location loc,
+                         const mlir::LowerToLLVMOptions &options);
 
   /// Report an error or conversion failure.
   /// TODO: TypeConverter needs an error reporting mechanism.

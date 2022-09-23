@@ -17,12 +17,12 @@ kgen.func @produces_result<() -> index>() {
 
 // -----
 
-// CHECK-LABEL: llvm.func private @convert_meta_types
+// CHECK-LABEL: llvm.func private @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
 // CHECK-SAME: %{{.*}}: vector<4xf32>
 
-kgen.func @convert_meta_types(
+kgen.func @convert_pop_types(
     %arg0: !pop.scalar<f32>,
     %arg1: !pop.pointer<!pop.scalar<f32>>,
     %arg2: !pop.simd<4, f32>) {

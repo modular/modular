@@ -11,7 +11,6 @@ add_modular_conversion_library(LowerZAPToPOP
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
-  MetaDialect
   POPDialect
   ZAPDialect
 

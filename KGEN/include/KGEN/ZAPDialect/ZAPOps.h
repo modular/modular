@@ -7,10 +7,14 @@
 #ifndef KGEN_ZAPDIALECT_ZAPOPS_H
 #define KGEN_ZAPDIALECT_ZAPOPS_H
 
-#include "KGEN/MetaDialect/MetaTypes.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+
+namespace mlir {
+class IndexType;
+} // namespace mlir
 
 namespace M::KGEN {
 class DTypeType;

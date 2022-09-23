@@ -22,7 +22,7 @@ namespace {
 
 // These patterns were copied from `ConvertSCFToControlFlow.cpp`. The main
 // difference is the use of LLVM operations and the region type conversions,
-// mainly to convert `index` and other `meta` dialect types to LLVM.
+// mainly to convert `index` and other `pop` dialect types to LLVM.
 
 //===----------------------------------------------------------------------===//
 // ConvertSCFWhileOp
@@ -295,7 +295,7 @@ void LowerSCFToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  MetaToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
+  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

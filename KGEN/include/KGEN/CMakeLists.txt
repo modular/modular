@@ -6,7 +6,6 @@
 
 add_subdirectory(KGENDialect)
 add_subdirectory(HLKGENDialect)
-add_subdirectory(MetaDialect)
 add_subdirectory(POPDialect)
 add_subdirectory(ZAPDialect)
 

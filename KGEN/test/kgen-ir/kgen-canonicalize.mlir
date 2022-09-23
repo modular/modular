@@ -14,22 +14,21 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
   kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 }
 
-// CHECK-LABEL: kgen.func @meta_cast_from_folds
+// CHECK-LABEL: kgen.func @cast_from_folds
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
-kgen.func @meta_cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
   // A-B-A cast.
   %1 = pop.type_lower %arg0 : !pop.scalar<f32> to f32
   %2 = pop.type_raise %1 : f32 to !pop.scalar<f32>
 
-  // TODO: Update return check once meta.scalar.cast is implemented.
   // CHECK: kgen.return %[[ARG0]]
   kgen.return %2 : !pop.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @meta_cast_to_folds
+// CHECK-LABEL: kgen.func @cast_to_folds
 // CHECK-SAME: (%[[ARG0:.*]]: f32) -> f32 {
-kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
+kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
   %1 = pop.type_raise %arg0 : f32 to !pop.scalar<f32>

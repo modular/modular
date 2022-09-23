@@ -15,7 +15,7 @@ using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
 //===----------------------------------------------------------------------===//
-// MetaToLLVMTypeConverter
+// POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
 Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
@@ -40,7 +40,7 @@ Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, DType dtype) {
   return LLVM::LLVMPointerType::get(ctx);
 }
 
-MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
+POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     mlir::Location loc, const mlir::LowerToLLVMOptions &options)
     : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
 

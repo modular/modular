@@ -8,7 +8,7 @@
 #define POPTYPES_TD
 
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
-include "KGEN/MetaDialect/MetaTypes.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"

@@ -745,7 +745,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  MetaToLLVMTypeConverter typeConverter(func->getLoc(), options);
+  POPToLLVMTypeConverter typeConverter(func->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
@@ -880,7 +880,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  MetaToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
