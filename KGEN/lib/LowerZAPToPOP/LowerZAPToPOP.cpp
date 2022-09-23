@@ -141,8 +141,8 @@ struct ConvertZAPBufferConvert
     Value ptr = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getInput(),
                                               kBufferAddressPosition);
     if (type.getDType() != op.getInput().getType().getDType())
-      ptr = rewriter.create<BitcastOp>(op.getLoc(),
-                                       op.getType().getPointerType(), ptr);
+      ptr = rewriter.create<PointerBitcastOp>(
+          op.getLoc(), op.getType().getPointerType(), ptr);
 
     // Conversion from `? -> N` means we overwrite in the output, and `N -> ?`
     // means we can use the input expression as a constant.
@@ -213,8 +213,8 @@ struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
     Value global = rewriter.create<GlobalConstantOp>(
         op.getLoc(), PointerType::get(ArrayType::get(type.getSize(), elType)),
         op.getValues());
-    Value ptr = rewriter.create<BitcastOp>(op.getLoc(),
-                                           PointerType::get(elType), global);
+    Value ptr = rewriter.create<PointerBitcastOp>(
+        op.getLoc(), PointerType::get(elType), global);
     Value buf =
         constructBuffer(rewriter, *getTypeConverter(), op.getLoc(), type, ptr);
     rewriter.replaceOp(op, buf);
@@ -274,7 +274,7 @@ struct ConvertZAPSIMDLoad : mlir::OpConversionPattern<SIMDLoadOp> {
                                                kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
-    Value bitcastPtr = rewriter.create<BitcastOp>(
+    Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(TypeConstantAttr::get(op.getType())),
         ptr);
     rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr);
@@ -296,7 +296,7 @@ struct ConvertZAPSIMDStore : mlir::OpConversionPattern<SIMDStoreOp> {
                                                kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
-    Value bitcastPtr = rewriter.create<BitcastOp>(
+    Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(op.getValue().getType()), ptr);
     rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), bitcastPtr);
     return success();
@@ -325,8 +325,8 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
     Value fmtData = rewriter.create<GlobalConstantOp>(
         op.getLoc(), PointerType::get(ArrayType::get(fmtStr.size(), charType)),
         values);
-    Value fmt = rewriter.create<BitcastOp>(op.getLoc(),
-                                           PointerType::get(charType), fmtData);
+    Value fmt = rewriter.create<PointerBitcastOp>(
+        op.getLoc(), PointerType::get(charType), fmtData);
 
     // Create the invocation to `printf`.
     SmallVector<Value> operands;

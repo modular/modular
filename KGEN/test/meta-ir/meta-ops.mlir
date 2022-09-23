@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
 // CHECK-LABEL: @pointer_types
 kgen.generator @pointer_types<dt: dtype>(
-  // CHECK-SAME: %{{.*}}: !meta.pointer<!meta.scalar<dt>>, %{{.*}}: !meta.pointer<!meta.scalar<f32>>, %{{.*}}: !meta.pointer<?>
-  %arg0: !meta.pointer<!meta.scalar<dt>>, %arg1: !meta.pointer<!meta.scalar<f32>>, %arg2: !meta.pointer<?>) {
+  // CHECK-SAME: %{{.*}}: !pop.pointer<!meta.scalar<dt>>, %{{.*}}: !pop.pointer<!meta.scalar<f32>>, %{{.*}}: !pop.pointer<?>
+  %arg0: !pop.pointer<!meta.scalar<dt>>, %arg1: !pop.pointer<!meta.scalar<f32>>, %arg2: !pop.pointer<?>) {
   kgen.return
 }
 

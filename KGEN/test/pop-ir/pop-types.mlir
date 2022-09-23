@@ -14,9 +14,9 @@ kgen.generator @array<size, type: type>(
 kgen.generator @struct<size, dtype: dtype, type: type>(
   // CHECK-SAME: !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>
   %arg0: !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>,
-  // CHECK-SAME: !pop.struct<!meta.pointer<!meta.simd<4, si8>>, !pop.array<24, !meta.scalar<si64>>, !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>>
+  // CHECK-SAME: !pop.struct<!pop.pointer<!meta.simd<4, si8>>, !pop.array<24, !meta.scalar<si64>>, !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>>
   %arg1: !pop.struct<
-    !meta.pointer<!meta.simd<4, si8>>,
+    !pop.pointer<!meta.simd<4, si8>>,
     !pop.array<24, !meta.scalar<si64>>,
     !pop.struct<
       !meta.scalar<f32>,

@@ -14,6 +14,9 @@
 
 namespace M::KGEN {
 class DTypeType;
+namespace POP {
+class PointerType;
+} // namespace POP
 namespace ZAP {
 class BufferType;
 } // namespace ZAP

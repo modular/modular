@@ -290,16 +290,16 @@ kgen.generator @bitcast_parametric<size1, size2, type1: dtype, type2: dtype>(
 // CHECK-LABEL: @pointer_bitcast
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.generator @pointer_bitcast(%arg0: !meta.pointer<!meta.scalar<f32>>, %arg1: !meta.pointer<!meta.simd<4, f64>>) ->
-   (!meta.pointer<!meta.simd<4, si32>>, !meta.pointer<!meta.scalar<f64>>) {
-  // CHECK: %[[V0:.*]] = pop.bitcast %[[ARG0]] : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.simd<4, si32>>
-  %0 = pop.bitcast %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<!meta.simd<4, si32>>
-  // CHECK: %[[V1:.*]] = pop.bitcast %[[ARG1]] : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
-  %1 = pop.bitcast %arg1 : !meta.pointer<!meta.simd<4, f64>> to !meta.pointer<!meta.scalar<f64>>
-  // CHECK: %{{.*}} = pop.bitcast %[[ARG0]] : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<?>
-  %2 = pop.bitcast %arg0 : !meta.pointer<!meta.scalar<f32>> to !meta.pointer<?>
+kgen.generator @pointer_bitcast(%arg0: !pop.pointer<!meta.scalar<f32>>, %arg1: !pop.pointer<!meta.simd<4, f64>>) ->
+   (!pop.pointer<!meta.simd<4, si32>>, !pop.pointer<!meta.scalar<f64>>) {
+  // CHECK: %[[V0:.*]] = pop.pointer.bitcast %[[ARG0]] : !pop.pointer<!meta.scalar<f32>> to !pop.pointer<!meta.simd<4, si32>>
+  %0 = pop.pointer.bitcast %arg0 : !pop.pointer<!meta.scalar<f32>> to !pop.pointer<!meta.simd<4, si32>>
+  // CHECK: %[[V1:.*]] = pop.pointer.bitcast %[[ARG1]] : !pop.pointer<!meta.simd<4, f64>> to !pop.pointer<!meta.scalar<f64>>
+  %1 = pop.pointer.bitcast %arg1 : !pop.pointer<!meta.simd<4, f64>> to !pop.pointer<!meta.scalar<f64>>
+  // CHECK: %{{.*}} = pop.pointer.bitcast %[[ARG0]] : !pop.pointer<!meta.scalar<f32>> to !pop.pointer<?>
+  %2 = pop.pointer.bitcast %arg0 : !pop.pointer<!meta.scalar<f32>> to !pop.pointer<?>
   // CHECK: return %[[V0]], %[[V1]]
-  kgen.return %0, %1 : !meta.pointer<!meta.simd<4, si32>>, !meta.pointer<!meta.scalar<f64>>
+  kgen.return %0, %1 : !pop.pointer<!meta.simd<4, si32>>, !pop.pointer<!meta.scalar<f64>>
 }
 
 // CHECK-LABEL: @scalar_cast
@@ -445,62 +445,62 @@ kgen.generator @pop_simd_reduce_max<size, type: dtype>(%a: !meta.simd<4, f32>, %
 
 
 // CHECK-LABEL: @pop_load_store
-kgen.generator @pop_load_store<type: dtype>(%p0: !meta.pointer<!meta.scalar<f32>>, %p1: !meta.pointer<!meta.scalar<type>>) {
-  // CHECK: %[[V0:.*]] = pop.load %{{.*}} : !meta.pointer<!meta.scalar<f32>>
-  %0 = pop.load %p0 : !meta.pointer<!meta.scalar<f32>>
-  // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !meta.pointer<!meta.scalar<type>>
-  %1 = pop.load %p1 : !meta.pointer<!meta.scalar<type>>
-  // CHECK: pop.store %[[V0]], %{{.*}} : !meta.pointer<!meta.scalar<f32>>
-  pop.store %0, %p0 : !meta.pointer<!meta.scalar<f32>>
-  // CHECK: pop.store %[[V1]], %{{.*}} : !meta.pointer<!meta.scalar<type>>
-  pop.store %1, %p1 : !meta.pointer<!meta.scalar<type>>
+kgen.generator @pop_load_store<type: dtype>(%p0: !pop.pointer<!meta.scalar<f32>>, %p1: !pop.pointer<!meta.scalar<type>>) {
+  // CHECK: %[[V0:.*]] = pop.load %{{.*}} : !pop.pointer<!meta.scalar<f32>>
+  %0 = pop.load %p0 : !pop.pointer<!meta.scalar<f32>>
+  // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !pop.pointer<!meta.scalar<type>>
+  %1 = pop.load %p1 : !pop.pointer<!meta.scalar<type>>
+  // CHECK: pop.store %[[V0]], %{{.*}} : !pop.pointer<!meta.scalar<f32>>
+  pop.store %0, %p0 : !pop.pointer<!meta.scalar<f32>>
+  // CHECK: pop.store %[[V1]], %{{.*}} : !pop.pointer<!meta.scalar<type>>
+  pop.store %1, %p1 : !pop.pointer<!meta.scalar<type>>
   kgen.return
 }
 
 // CHECK-LABEL: @pop_offset
-kgen.generator @pop_offset<type: dtype>(%p: !meta.pointer<!meta.scalar<f32>>, %idx: index) {
-  // pop.offset %{{.*}}[{{.*}}] : !meta.pointer<!meta.scalar<f32>>
-  %0 = pop.offset %p[%idx] : !meta.pointer<!meta.scalar<f32>>
+kgen.generator @pop_offset<type: dtype>(%p: !pop.pointer<!meta.scalar<f32>>, %idx: index) {
+  // pop.offset %{{.*}}[{{.*}}] : !pop.pointer<!meta.scalar<f32>>
+  %0 = pop.offset %p[%idx] : !pop.pointer<!meta.scalar<f32>>
   kgen.return
 }
 
 // CHECK-LABEL: @pop_generic_load_store
 kgen.generator @pop_generic_load_store<type: type, dtype: dtype, size>(
-    %p0: !meta.pointer<type>,
-    %p1: !meta.pointer<!meta.scalar<dtype>>,
-    %p2: !meta.pointer<!meta.simd<size, dtype>>)
+    %p0: !pop.pointer<type>,
+    %p1: !pop.pointer<!meta.scalar<dtype>>,
+    %p2: !pop.pointer<!meta.simd<size, dtype>>)
   -> (
     !kgen.paramref<type>,
     !meta.scalar<dtype>,
     !meta.simd<size, dtype>
   ) {
-  // CHECK: pop.load %{{.*}} : !meta.pointer<type>
-  // CHECK: pop.store %{{.*}} : !meta.pointer<type>
-  %0 = pop.load %p0 : !meta.pointer<type>
-  pop.store %0, %p0 : !meta.pointer<type>
+  // CHECK: pop.load %{{.*}} : !pop.pointer<type>
+  // CHECK: pop.store %{{.*}} : !pop.pointer<type>
+  %0 = pop.load %p0 : !pop.pointer<type>
+  pop.store %0, %p0 : !pop.pointer<type>
 
-  // CHECK: pop.load %{{.*}} : !meta.pointer<!meta.scalar<dtype>>
-  // CHECK: pop.store %{{.*}} : !meta.pointer<!meta.scalar<dtype>>
-  %1 = pop.load %p1 : !meta.pointer<!meta.scalar<dtype>>
-  pop.store %1, %p1 : !meta.pointer<!meta.scalar<dtype>>
+  // CHECK: pop.load %{{.*}} : !pop.pointer<!meta.scalar<dtype>>
+  // CHECK: pop.store %{{.*}} : !pop.pointer<!meta.scalar<dtype>>
+  %1 = pop.load %p1 : !pop.pointer<!meta.scalar<dtype>>
+  pop.store %1, %p1 : !pop.pointer<!meta.scalar<dtype>>
 
-  // CHECK: pop.load %{{.*}} : !meta.pointer<!meta.simd<size, dtype>>
-  // CHECK: pop.store %{{.*}} : !meta.pointer<!meta.simd<size, dtype>>
-  %2 = pop.load %p2 : !meta.pointer<!meta.simd<size, dtype>>
-  pop.store %2, %p2 : !meta.pointer<!meta.simd<size, dtype>>
+  // CHECK: pop.load %{{.*}} : !pop.pointer<!meta.simd<size, dtype>>
+  // CHECK: pop.store %{{.*}} : !pop.pointer<!meta.simd<size, dtype>>
+  %2 = pop.load %p2 : !pop.pointer<!meta.simd<size, dtype>>
+  pop.store %2, %p2 : !pop.pointer<!meta.simd<size, dtype>>
 
   kgen.return %0, %1, %2 : !kgen.paramref<type>, !meta.scalar<dtype>, !meta.simd<size, dtype>
 }
 
 // CHECK-LABEL: @pop_generic_offset
 kgen.generator @pop_generic_offset<type: type>(
-    %p0: !meta.pointer<type>,
-    %p1: !meta.pointer<!meta.simd<4, f32>>,
+    %p0: !pop.pointer<type>,
+    %p1: !pop.pointer<!meta.simd<4, f32>>,
     %i: index) {
-  // CHECK: pop.offset %{{.*}} : !meta.pointer<type>
-  %0 = pop.offset %p0[%i] : !meta.pointer<type>
-  // CHECK: pop.offset %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
-  %1 = pop.offset %p1[%i] : !meta.pointer<!meta.simd<4, f32>>
+  // CHECK: pop.offset %{{.*}} : !pop.pointer<type>
+  %0 = pop.offset %p0[%i] : !pop.pointer<type>
+  // CHECK: pop.offset %{{.*}} : !pop.pointer<!meta.simd<4, f32>>
+  %1 = pop.offset %p1[%i] : !pop.pointer<!meta.simd<4, f32>>
   kgen.return
 }
 
@@ -534,42 +534,42 @@ kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>
 }
 
 // CHECK-LABEL: @global_constant
-kgen.generator @global_constant<type: type, dtype: dtype>() -> !meta.pointer<type> {
+kgen.generator @global_constant<type: type, dtype: dtype>() -> !pop.pointer<type> {
   // CHECK: pop.global_constant(5 : i32) : type
   %0 = pop.global_constant(5 : i32) : type
   // CHECK: pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !meta.scalar<ui32>>
   %1 = pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !meta.scalar<ui32>>
   // CHECK: pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<dtype>>
   %2 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !meta.scalar<dtype>>
-  kgen.return %0 : !meta.pointer<type>
+  kgen.return %0 : !pop.pointer<type>
 }
 
 // CHECK-LABEL: @pointer_to_index
-kgen.generator @pointer_to_index<type: type>(%a: !meta.pointer<type>,
-                                             %b: !meta.pointer<!meta.scalar<f32>>,
-                                             %c: !meta.pointer<!meta.simd<4, f32>>,
-                                             %d: !meta.pointer<?>) {
-  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<type>
-  %0 = pop.pointer_to_index %a : !meta.pointer<type>
-  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<!meta.scalar<f32>>
-  %1 = pop.pointer_to_index %b : !meta.pointer<!meta.scalar<f32>>
-  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
-  %2 = pop.pointer_to_index %c : !meta.pointer<!meta.simd<4, f32>>
-  // CHECK: pop.pointer_to_index %{{.*}} : !meta.pointer<?>
-  %3 = pop.pointer_to_index %d : !meta.pointer<?>
+kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
+                                             %b: !pop.pointer<!meta.scalar<f32>>,
+                                             %c: !pop.pointer<!meta.simd<4, f32>>,
+                                             %d: !pop.pointer<?>) {
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<type>
+  %0 = pop.pointer_to_index %a : !pop.pointer<type>
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<!meta.scalar<f32>>
+  %1 = pop.pointer_to_index %b : !pop.pointer<!meta.scalar<f32>>
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<!meta.simd<4, f32>>
+  %2 = pop.pointer_to_index %c : !pop.pointer<!meta.simd<4, f32>>
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<?>
+  %3 = pop.pointer_to_index %d : !pop.pointer<?>
   kgen.return
 }
 
 // CHECK-LABEL: @index_to_pointer
 kgen.generator @index_to_pointer<type: type>(%idx: index) {
-  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<type>
-  %0 = pop.index_to_pointer %idx : !meta.pointer<type>
-  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<!meta.scalar<f32>>
-  %1 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<!meta.simd<4, f32>>
-  %2 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : !meta.pointer<?>
-  %3 = pop.index_to_pointer %idx : !meta.pointer<?>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<type>
+  %0 = pop.index_to_pointer %idx : !pop.pointer<type>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<!meta.scalar<f32>>
+  %1 = pop.index_to_pointer %idx : !pop.pointer<!meta.scalar<f32>>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<!meta.simd<4, f32>>
+  %2 = pop.index_to_pointer %idx : !pop.pointer<!meta.simd<4, f32>>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<?>
+  %3 = pop.index_to_pointer %idx : !pop.pointer<?>
   kgen.return
 }
 

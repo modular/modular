@@ -300,15 +300,15 @@ kgen.generator @testTargetInfo() {
 
 // CHECK-LABEL: @mlir_builtin_types
 // CHECK-SAME: <*"index": type>
-// CHECK-SAME: %[[ARG0:.*]]: !meta.pointer<index>
-// CHECK-SAME: %[[ARG1:.*]]: !meta.pointer<*"index">
+// CHECK-SAME: %[[ARG0:.*]]: !pop.pointer<index>
+// CHECK-SAME: %[[ARG1:.*]]: !pop.pointer<*"index">
 kgen.generator @mlir_builtin_types<*"index": type>(
-  %arg0: !meta.pointer<index>, %arg1: !meta.pointer<*"index">
+  %arg0: !pop.pointer<index>, %arg1: !pop.pointer<*"index">
 ) -> (index, !kgen.paramref<*"index">) {
-  // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !meta.pointer<index>
-  %0 = pop.load %arg0 : !meta.pointer<index>
-  // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !meta.pointer<*"index">
-  %1 = pop.load %arg1 : !meta.pointer<*"index">
+  // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !pop.pointer<index>
+  %0 = pop.load %arg0 : !pop.pointer<index>
+  // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !pop.pointer<*"index">
+  %1 = pop.load %arg1 : !pop.pointer<*"index">
   // CHECK: return %[[V0]], %[[V1]] : index, !kgen.paramref<*"index">
   kgen.return %0, %1 : index, !kgen.paramref<*"index">
 }

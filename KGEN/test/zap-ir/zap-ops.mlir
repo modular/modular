@@ -1,13 +1,13 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !meta.pointer<!meta.scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !meta.pointer<?>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!meta.scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<?>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
-  %ptr: !meta.pointer<!meta.scalar<f32>>,
-  %opaque: !meta.pointer<?>,
+  %ptr: !pop.pointer<!meta.scalar<f32>>,
+  %opaque: !pop.pointer<?>,
   %size: index,
   %dtype: !kgen.dtype) -> (
   !zap.buffer<4, f32>,

@@ -24,7 +24,7 @@ kgen.func @produces_result<() -> index>() {
 
 kgen.func @convert_meta_types(
     %arg0: !meta.scalar<f32>,
-    %arg1: !meta.pointer<!meta.scalar<f32>>,
+    %arg1: !pop.pointer<!meta.scalar<f32>>,
     %arg2: !meta.simd<4, f32>) {
   kgen.return
 }
