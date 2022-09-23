@@ -17,6 +17,7 @@ class DTypeType;
 namespace POP {
 class PointerType;
 class ScalarType;
+class SIMDType;
 } // namespace POP
 namespace ZAP {
 class BufferType;

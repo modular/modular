@@ -1,10 +1,10 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-global-pop-to-llvm %s | FileCheck %s
 
 // CHECK-LABEL: @external_call
-kgen.func @external_call(%a: !pop.scalar<ui32>) -> !meta.simd<4, f64> {
+kgen.func @external_call(%a: !pop.scalar<ui32>) -> !pop.simd<4, f64> {
   // CHECK: llvm.call @foo
-  %0 = pop.external_call @foo(%a) : (!pop.scalar<ui32>) -> !meta.simd<4, f64>
-  kgen.return %0 : !meta.simd<4, f64>
+  %0 = pop.external_call @foo(%a) : (!pop.scalar<ui32>) -> !pop.simd<4, f64>
+  kgen.return %0 : !pop.simd<4, f64>
 }
 
 // CHECK: llvm.func @foo(i32) -> vector<4xf64>

@@ -34,16 +34,16 @@ kgen.func @meta_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %dtype: !
 
 kgen.func @simd_load(%buff: !zap.buffer<4, si32>) {
   %idx = index.constant 0
-  // expected-error @below {{'zap.simd.load' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the result simd type ('!meta.simd<4, f32>')}}
-  %0 = zap.simd.load %buff[%idx]: !zap.buffer<4, si32>, !meta.simd<4, f32>
+  // expected-error @below {{'zap.simd.load' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the result simd type ('!pop.simd<4, f32>')}}
+  %0 = zap.simd.load %buff[%idx]: !zap.buffer<4, si32>, !pop.simd<4, f32>
 }
 
 // -----
 
-kgen.func @simd_store(%val : !meta.simd<4, f32>, %buff: !zap.buffer<4, si32>) {
+kgen.func @simd_store(%val : !pop.simd<4, f32>, %buff: !zap.buffer<4, si32>) {
   %idx = index.constant 0
-  // expected-error @below {{'zap.simd.store' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the value simd type ('!meta.simd<4, f32>')}}
-  zap.simd.store %val, %buff[%idx]: !meta.simd<4, f32>, !zap.buffer<4, si32>
+  // expected-error @below {{'zap.simd.store' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the value simd type ('!pop.simd<4, f32>')}}
+  zap.simd.store %val, %buff[%idx]: !pop.simd<4, f32>, !zap.buffer<4, si32>
 }
 
 // -----

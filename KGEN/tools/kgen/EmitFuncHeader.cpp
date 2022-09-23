@@ -43,7 +43,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     if (auto scalar = t.dyn_cast<POP::ScalarType>())
       return printDTypeAsC(scalar.resolveDType());
 
-    if (auto simd = t.dyn_cast<SIMDType>()) {
+    if (auto simd = t.dyn_cast<POP::SIMDType>()) {
       // Since the vector_size attribute only works on GNU and CLANG compilers,
       // we pass in an array.
       if (failed(printDTypeAsC(simd.resolveDType())))

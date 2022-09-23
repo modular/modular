@@ -341,7 +341,7 @@ kgen.generator @paramAssertExample() {
 }
 
 // CHECK-LABEL: kgen.func @parametricTypes(
-kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !meta.simd<2, f32>) {
+kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
   kgen.param.declare ty1: type = <!pop.scalar<dt>>
 
@@ -352,8 +352,8 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !meta.simd<2, f
   // CHECK-SAME: (%[[ARG0:.*]], %[[ARG0:.*]]) : (!pop.scalar<ui64>, !pop.scalar<ui64>) -> !pop.scalar<ui64>
   %0 = kgen.call @parametricAdd<ty: type = !pop.scalar<ui64>>(%arg0, %arg0) : (!pop.scalar<ui64>, !pop.scalar<ui64>) -> !pop.scalar<ui64>
 
-  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!meta.simd<2, f32>"(%[[ARG1]], %[[ARG1]]) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
-  %1 = kgen.call @parametricAdd<ty: type = !meta.simd<2, f32>>(%arg1, %arg1) : (!meta.simd<2, f32>, !meta.simd<2, f32>) -> !meta.simd<2, f32>
+  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!pop.simd<2, f32>"(%[[ARG1]], %[[ARG1]]) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
+  %1 = kgen.call @parametricAdd<ty: type = !pop.simd<2, f32>>(%arg1, %arg1) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
 
   kgen.return
 }
@@ -363,10 +363,10 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !meta.simd<2, f
 // CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.scalar<ui64>
 // CHECK-NEXT: kgen.return %[[V0]] : !pop.scalar<ui64>
 
-// CHECK-LABEL: kgen.func @"parametricAdd,ty=!meta.simd<2, f32>"
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.simd<2, f32>, %[[ARG1:.*]]: !meta.simd<2, f32>) -> !meta.simd<2, f32> {
-// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !meta.simd<2, f32>
-// CHECK-NEXT: kgen.return %[[V0]] : !meta.simd<2, f32>
+// CHECK-LABEL: kgen.func @"parametricAdd,ty=!pop.simd<2, f32>"
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<2, f32>
+// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<2, f32>
 
 kgen.generator @parametricAdd<ty: type>
   (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {

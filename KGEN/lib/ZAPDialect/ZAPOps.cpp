@@ -21,7 +21,7 @@ using namespace ZAP;
 
 /// Returns true if the buffer value and SIMD value have the same dtype.
 static bool hasSameUnderlyingDType(Value buffer,
-                                   mlir::TypedValue<SIMDType> simd) {
+                                   mlir::TypedValue<POP::SIMDType> simd) {
   TypedAttr aDType = buffer.getType().cast<BufferType>().getDType();
   TypedAttr bDType = simd.getType().getDType();
   return aDType == bDType;

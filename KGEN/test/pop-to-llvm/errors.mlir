@@ -4,7 +4,7 @@
 // expected-note @below {{try running it before lower-scf-to-llvm}}
 kgen.func @stack_allocation(%cond: i1) {
   scf.if %cond {
-    %0 = pop.stack_allocation 4 : !meta.simd<4, f32>
+    %0 = pop.stack_allocation 4 : !pop.simd<4, f32>
   }
   kgen.return
 }

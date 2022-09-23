@@ -23,6 +23,7 @@ enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
 class PointerType;
 class ScalarType;
+class SIMDType;
 class StructType;
 } // namespace M::KGEN::POP
 

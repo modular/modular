@@ -318,7 +318,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
   // Using them is not.
   // expected-error@+1 {{invalid use of parameter "someParam" in kgen.func}}
-  "someop" () {} : () -> !meta.simd<someParam, f32>
+  "someop" () {} : () -> !pop.simd<someParam, f32>
 
   kgen.return
 }

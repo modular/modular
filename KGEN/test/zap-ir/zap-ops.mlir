@@ -178,12 +178,12 @@ kgen.generator @zap_simd_load<size, type: dtype>(
   ) {
   // CHECK: %[[IDX:.*]] =  index.constant
   %idx = index.constant 0
-  // CHECK: %[[U:.*]] = zap.simd.load %[[A]][%[[IDX]]] : !zap.buffer<size, type>, !meta.simd<4, type>
-  %u = zap.simd.load %a[%idx] : !zap.buffer<size, type>, !meta.simd<4, type>
-  // CHECK: %[[V:.*]] = zap.simd.load %[[B]][%[[IDX]]] : !zap.buffer<size, f32>, !meta.simd<4, f32>
-  %v = zap.simd.load %b[%idx] : !zap.buffer<size, f32>, !meta.simd<4, f32>
-  // CHECK: %[[W:.*]] = zap.simd.load %[[C]][%[[IDX]]] : !zap.buffer<4, si32>, !meta.simd<4, si32>
-  %w = zap.simd.load %c[%idx] : !zap.buffer<4, si32>, !meta.simd<4, si32>
+  // CHECK: %[[U:.*]] = zap.simd.load %[[A]][%[[IDX]]] : !zap.buffer<size, type>, !pop.simd<4, type>
+  %u = zap.simd.load %a[%idx] : !zap.buffer<size, type>, !pop.simd<4, type>
+  // CHECK: %[[V:.*]] = zap.simd.load %[[B]][%[[IDX]]] : !zap.buffer<size, f32>, !pop.simd<4, f32>
+  %v = zap.simd.load %b[%idx] : !zap.buffer<size, f32>, !pop.simd<4, f32>
+  // CHECK: %[[W:.*]] = zap.simd.load %[[C]][%[[IDX]]] : !zap.buffer<4, si32>, !pop.simd<4, si32>
+  %w = zap.simd.load %c[%idx] : !zap.buffer<4, si32>, !pop.simd<4, si32>
   kgen.return
 }
 
@@ -195,21 +195,21 @@ kgen.generator @zap_simd_load<size, type: dtype>(
 // CHECK-SAME: %[[B:[a-z0-9]+]]:
 // CHECK-SAME: %[[C:[a-z0-9]+]]:
 kgen.generator @zap_simd_store<size, type: dtype>(
-    %v0: !meta.simd<size, type>,
-    %v1: !meta.simd<8, f32>,
-    %v2: !meta.simd<2, si32>,
+    %v0: !pop.simd<size, type>,
+    %v1: !pop.simd<8, f32>,
+    %v2: !pop.simd<2, si32>,
     %a: !zap.buffer<size, type>,
     %b: !zap.buffer<size, f32>,
     %c: !zap.buffer<4, si32>
   ) {
   // CHECK: %[[IDX:.*]] =  index.constant
   %idx = index.constant 0
-  // CHECK: zap.simd.store %[[V0]], %[[A]][%[[IDX]]] : !meta.simd<size, type>, !zap.buffer<size, type>
-  zap.simd.store %v0, %a[%idx] : !meta.simd<size, type>, !zap.buffer<size, type>
-  // CHECK: zap.simd.store %[[V1]], %[[B]][%[[IDX]]] : !meta.simd<8, f32>, !zap.buffer<size, f32>
-  zap.simd.store %v1, %b[%idx] : !meta.simd<8, f32>, !zap.buffer<size, f32>
-  // CHECK: zap.simd.store %[[V2]], %[[C]][%[[IDX]]] : !meta.simd<2, si32>, !zap.buffer<4, si32>
-  zap.simd.store %v2, %c[%idx] : !meta.simd<2, si32>, !zap.buffer<4, si32>
+  // CHECK: zap.simd.store %[[V0]], %[[A]][%[[IDX]]] : !pop.simd<size, type>, !zap.buffer<size, type>
+  zap.simd.store %v0, %a[%idx] : !pop.simd<size, type>, !zap.buffer<size, type>
+  // CHECK: zap.simd.store %[[V1]], %[[B]][%[[IDX]]] : !pop.simd<8, f32>, !zap.buffer<size, f32>
+  zap.simd.store %v1, %b[%idx] : !pop.simd<8, f32>, !zap.buffer<size, f32>
+  // CHECK: zap.simd.store %[[V2]], %[[C]][%[[IDX]]] : !pop.simd<2, si32>, !zap.buffer<4, si32>
+  zap.simd.store %v2, %c[%idx] : !pop.simd<2, si32>, !zap.buffer<4, si32>
   kgen.return
 }
 

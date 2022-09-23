@@ -81,7 +81,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
     !pop.pointer<!pop.scalar<f32>>
 
     // A pointer to a SIMD vector.
-    !pop.pointer<!meta.simd<4, f32>>
+    !pop.pointer<!pop.simd<4, f32>>
 
     // An opaque pointer.
     !pop.pointer<?>
@@ -161,19 +161,56 @@ def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
 // TypeConstraints
 
 def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
-def BoolSIMD : AllOfType<[SIMDType, BoolDType], "!meta.simd<N, bool>">;
 
 def UnboundOrIntegerScalar : AllOfType<[POP_ScalarType, IntegerOrUnboundDType],
     "whose value is either unbound or a integral dtype">;
 def UnboundOrFloatScalar : AllOfType<[POP_ScalarType, FloatOrUnboundDType],
     "whose value is either unbound or a floating-point dtype">;
-def UnboundOrIntegerSIMD : AllOfType<[SIMDType, IntegerOrUnboundDType],
+
+class ScalarOfSameDType<string operand, string value> : TypesMatchWith<
+    value # " type matches dtype of the " # operand # " operand", operand,
+    value, "POP::ScalarType::get($_self.cast<DTypeInterface>().getDType())">;
+
+//===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
+    DeclareTypeInterfaceMethods<OpaqueObjectInterface>]> {
+  let summary = "parameterized SIMD vector type";
+  let description = [{
+    This type is parameterized with a size and a !kgen.dtype type.
+  }];
+
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
+  let assemblyFormat = [{
+    `<` custom<IndexParamValue>($size) `,` ` `
+        custom<DTypeParamValue>($dType) `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the size expression of the SIMD type to an integer.
+    Optional<int64_t> resolveSize() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeConstraints
+
+def BoolSIMD : AllOfType<[POP_SIMDType, BoolDType], "!pop.simd<N, bool>">;
+
+def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
     "whose element type is either unbound or a integral dtype">;
-def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
+def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
 
 def ScalarOrSIMD : AnyTypeOf<
-    [POP_ScalarType, SIMDType, ParamRefType]>;
+    [POP_ScalarType, POP_SIMDType, ParamRefType]>;
 
 def BoolScalarOrSIMD : AnyTypeOf<
     [BoolScalar, BoolSIMD, ParamRefType]>;
@@ -183,10 +220,6 @@ def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
 
 def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
     [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
-
-class ScalarOfSameDType<string operand, string value> : TypesMatchWith<
-    value # " type matches dtype of the " # operand # " operand", operand,
-    value, "POP::ScalarType::get($_self.cast<DTypeInterface>().getDType())">;
 
 //===----------------------------------------------------------------------===//
 // StructType
@@ -202,11 +235,11 @@ def POP_StructType : POPType<"Struct", "struct"> {
 
     ```mlir
     // A struct with primitive element types.
-    !pop.struct<!pop.scalar<f32>, !meta.simd<4, ui64>>
+    !pop.struct<!pop.scalar<f32>, !pop.simd<4, ui64>>
 
     // A struct with nested types.
     !pop.struct<
-      !pop.pointer<!meta.simd<4, si8>>,
+      !pop.pointer<!pop.simd<4, si8>>,
       !pop.array<24, !pop.scalar<si64>>,
       !pop.struct<
         !pop.scalar<f32>,
