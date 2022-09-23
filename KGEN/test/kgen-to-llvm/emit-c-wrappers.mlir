@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, ?> {
-  kgen.return %a : !meta.buffer<?, ?>
+kgen.func public @kernel(%a: !pop.struct<index, !meta.pointer<?>, !kgen.dtype>) -> !pop.struct<index, !meta.pointer<?>, !kgen.dtype> {
+  kgen.return %a : !pop.struct<index, !meta.pointer<?>, !kgen.dtype>
 }
 
 // CHECK: @kernel_c_wrapper
@@ -26,7 +26,7 @@ kgen.func public @kernel(%a: !meta.buffer<?, ?>) -> !meta.buffer<?, ?> {
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%i: f32, %a: !meta.buffer<?, f32>) {
+kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !meta.pointer<!meta.scalar<f32>>, !kgen.dtype>) {
   kgen.return
 }
 
@@ -38,7 +38,7 @@ kgen.func public @kernel(%i: f32, %a: !meta.buffer<?, f32>) {
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%a: !meta.buffer<?, f32>) -> i64 {
+kgen.func public @kernel(%a: !pop.struct<index, !meta.pointer<!meta.scalar<f32>>, !kgen.dtype>) -> i64 {
   %0 = llvm.mlir.constant(1 : i64) : i64
   kgen.return %0 : i64
 }

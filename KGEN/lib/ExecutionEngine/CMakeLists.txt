@@ -15,6 +15,7 @@ add_modular_mlir_library(KGENExecutionEngine
 
   LINK_LIBS PUBLIC
   IndexToLLVM
+  LowerZAPToPOP
   KGENDialect
   KGENToLLVM
 

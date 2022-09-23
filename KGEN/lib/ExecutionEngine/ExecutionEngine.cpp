@@ -330,6 +330,11 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
 static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   mlir::PassManager pm(module.getContext());
   LowerToLLVMOptions options;
+
+  // FIXME: This pass should run pre-elaboration, but we have no way for user
+  // defined typed to specify the functions in OpaqueObjectInterface.
+  pm.addPass(createLowerZAPToPOPPass());
+
   options.topLevelKernel = name;
   options.emitOpaqueWrappers = true;
   buildLowerToLLVMPipeline(pm, options);

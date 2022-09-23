@@ -1,26 +1,5 @@
 // RUN: kgen-opt -canonicalize %s | FileCheck %s
 
-// CHECK-LABEL: kgen.func @buffer_size_dtype_folds
-// CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<{{.*}}>, %[[ARG1:.*]]: !meta.buffer<{{.*}}>, %[[ARG2:.*]]: !meta.buffer<{{.*}}>
-kgen.func @buffer_size_dtype_folds(%arg0: !meta.buffer<42, f32>,
-                              %arg1: !meta.buffer<?, f32>,
-                              %arg2: !meta.buffer<42, ?>)
-  -> (index, index, !kgen.dtype, !kgen.dtype) {
-  // CHECK: %[[V0:.*]] = kgen.param.constant : dtype = <f32>
-  // CHECK: %[[V1:.*]] = kgen.param.constant = <42>
-
-  %0 = meta.buffer.size %arg0 : !meta.buffer<42, f32>
-  // CHECK: %[[V2:.*]] = meta.buffer.size %[[ARG1]]
-  %1 = meta.buffer.size %arg1 : !meta.buffer<?, f32>
-
-  %2 = meta.buffer.dtype %arg0 : !meta.buffer<42, f32>
-  // CHECK: %[[V3:.*]] = meta.buffer.dtype %[[ARG2]]
-  %3 = meta.buffer.dtype %arg2 : !meta.buffer<42, ?>
-
-  // CHECK: kgen.return %[[V1]], %[[V2]], %[[V0]], %[[V3]]
-  kgen.return %0, %1, %2, %3 : index, index, !kgen.dtype, !kgen.dtype
-}
-
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
   %a: i32, %b: !meta.scalar<f32>, %c: !meta.scalar<dtype>, %d: !kgen.paramref<type>
@@ -34,27 +13,6 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
   %3 = kgen.rebind %d : !kgen.paramref<type> to !kgen.paramref<type>
   kgen.return %0, %1, %2, %3 : i32, !meta.scalar<f32>, !meta.scalar<dtype>, !kgen.paramref<type>
 }
-
-// CHECK-LABEL: kgen.func @buffer_rebind_folds
-// CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<{{.*}}>, %[[ARG1:.*]]: !meta.buffer<{{.*}}
-kgen.func @buffer_rebind_folds(%arg0: !meta.buffer<?, ?>, %arg1: !meta.buffer<10, f32>)
- -> (!meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>) {
-  // Noop casts get folded away.
-  %0 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, ?>
-
-  // A-B-A cast.
-  %1 = meta.buffer.convert %arg0 : !meta.buffer<?, ?> to !meta.buffer<?, f32>
-  %2 = meta.buffer.convert %1 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
-
-  // A-B-C cast.
-  // CHECK:  %[[V0:.*]] = meta.buffer.convert %[[ARG1]] : !meta.buffer<10, f32> to !meta.buffer<?, ?>
-  %3 = meta.buffer.convert %arg1 : !meta.buffer<10, f32> to !meta.buffer<?, f32>
-  %4 = meta.buffer.convert %3 : !meta.buffer<?, f32> to !meta.buffer<?, ?>
-
-  // CHECK: kgen.return %[[ARG0]], %[[ARG0]], %[[V0]]
-  kgen.return %0, %2, %4 : !meta.buffer<?, ?>, !meta.buffer<?, ?>, !meta.buffer<?, ?>
-}
-
 
 // CHECK-LABEL: kgen.func @meta_cast_from_folds
 // CHECK-SAME: (%[[ARG0:.*]]: !meta.scalar<f32>) -> !meta.scalar<f32> {

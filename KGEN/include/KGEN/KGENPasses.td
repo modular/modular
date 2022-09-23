@@ -26,7 +26,7 @@ def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
 // LowerZAPToPOP
 //===----------------------------------------------------------------------===//
 
-def LowerZAPToPOP : Pass<"lower-zap-to-pop"> {
+def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
   let summary = "Lower the `zap` dialects to the `pop` and `meta` dialects.";
   let description = [{
     This pass lowers `zap` dialect operations to combinations of `pop` and

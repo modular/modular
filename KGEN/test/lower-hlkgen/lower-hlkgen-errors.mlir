@@ -30,28 +30,28 @@ hlkgen.generator @impl(%arg0 : i12) implements @itf {
 // -----
 
 // expected-note @+1 {{interface declared here}}
-kgen.generator.interface @itf(%arg0: !meta.buffer<?, f32>)
+kgen.generator.interface @itf(%arg0: !zap.buffer<?, f32>)
 
 // expected-error @+1 {{argument #0: dynamic `?` value cannot have static constraint: '4 : index'}}
-hlkgen.generator @impl(%arg0 : !meta.buffer<4, f32>) implements @itf {
+hlkgen.generator @impl(%arg0 : !zap.buffer<4, f32>) implements @itf {
   kgen.return
 }
 
 
 // -----
 
-kgen.generator.interface @bufitf<size, ty: dtype -> index>(!meta.buffer<size, ty>) -> index
+kgen.generator.interface @bufitf<size, ty: dtype -> index>(!zap.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
 
 // expected-error @+2 {{constraint contradiction detected: "argument #0 specifies 'ty' = f32"}}
 // expected-note @+1 {{generator declared here}}
-hlkgen.generator @impl<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f32>) -> index
+hlkgen.generator @impl<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
   // This has an explicit constraint saying it must be f64.
   // expected-note @below {{previously constrained "someone told us 'ty' should be f64 dontcha know"}}
   constraints <[eq(:dtype ty, f64), "someone told us 'ty' should be f64 dontcha know"]>
   implements @bufitf {
-  %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
+  %0 = zap.buffer.size %arg0 : !zap.buffer<size, f32>
   kgen.return<add(size, 2)> %0 : index
 }
 

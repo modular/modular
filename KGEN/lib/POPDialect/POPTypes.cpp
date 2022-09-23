@@ -75,6 +75,10 @@ ArrayType ArrayType::get(TypedAttr size, Type elementType) {
   return get(size.getContext(), size, TypeConstantAttr::get(elementType));
 }
 
+ArrayType ArrayType::get(int64_t size, Type elementType) {
+  return get(Builder(elementType.getContext()).getIndexAttr(size), elementType);
+}
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
@@ -124,6 +128,15 @@ SmallVector<Type> StructType::getParameterizedElementTypes() const {
   for (TypedAttr elementType : getElementTypes())
     elementTypes.push_back(ParamRefType::get(elementType));
   return elementTypes;
+}
+
+StructType StructType::get(ArrayRef<Type> elementTypes) {
+  assert(!elementTypes.empty() && "expected at least one element type");
+  SmallVector<TypedAttr> elementTypeExprs;
+  elementTypeExprs.reserve(elementTypes.size());
+  for (Type elementType : elementTypes)
+    elementTypeExprs.push_back(TypeConstantAttr::get(elementType));
+  return get(elementTypes.front().getContext(), elementTypeExprs);
 }
 
 /// Parse a comma-separated list of type parameter values.

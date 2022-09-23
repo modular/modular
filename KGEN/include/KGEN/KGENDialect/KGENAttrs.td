@@ -521,7 +521,7 @@ def EvalConfigurationAttr
 
     /// And this would be in-situ.
     kgen.generator.interface(
-      %arg0 : !meta.buffer<?, f32>, %arg1 : !user.type<f4>,
+      %arg0 : !zap.buffer<?, f32>, %arg1 : !user.type<f4>,
       %arg2 : !user.othertype<?>, ...
     ) attributes {
       evalCfg = [

@@ -7,18 +7,18 @@ kgen.generator.interface @index2D(%row: index, %col: index, %stride: index) -> i
 
 
 kgen.generator.interface @matmul<type: dtype>(
-    %A: !meta.buffer<?, type>,
-    %B: !meta.buffer<?, type>,
-    %C: !meta.buffer<?, type>,
+    %A: !zap.buffer<?, type>,
+    %B: !zap.buffer<?, type>,
+    %C: !zap.buffer<?, type>,
     %M: index,
     %N: index,
     %K: index)
 
 // Implements a naive matrix multiplication kernel.
 hlkgen.generator @matmaul_naive<type: dtype>(
-    %A: !meta.buffer<?, type>,
-    %B: !meta.buffer<?, type>,
-    %C: !meta.buffer<?, type>,
+    %A: !zap.buffer<?, type>,
+    %B: !zap.buffer<?, type>,
+    %C: !zap.buffer<?, type>,
     %M: index,
     %N: index,
     %K: index)
@@ -31,13 +31,13 @@ hlkgen.generator @matmaul_naive<type: dtype>(
       %acc = scf.for %k = %zero to %K step %one iter_args(%sum = %init) -> (!meta.scalar<type>) {
         %aikIndex = kgen.call @index2D(%i, %k, %N) : (index, index, index) -> index
         %bkjIndex = kgen.call @index2D(%k, %j, %M) : (index, index, index) -> index
-        %aik = zap.buffer.load %A[%aikIndex] : !meta.buffer<?, type>
-        %bkj = zap.buffer.load %B[%bkjIndex] : !meta.buffer<?, type>
+        %aik = zap.buffer.load %A[%aikIndex] : !zap.buffer<?, type>
+        %bkj = zap.buffer.load %B[%bkjIndex] : !zap.buffer<?, type>
         %res = pop.fma %aik, %bkj, %sum : !meta.scalar<type>
         scf.yield %res : !meta.scalar<type>
       }
       %cij = kgen.call @index2D(%i, %j, %K) : (index, index, index) -> index
-      zap.buffer.store %acc, %C[%cij] : !meta.buffer<?, type>
+      zap.buffer.store %acc, %C[%cij] : !zap.buffer<?, type>
     }
   }
   kgen.return
@@ -48,13 +48,13 @@ hlkgen.generator @matmaul_naive<type: dtype>(
 // CHECK-LABEL: kgen.func @matmul_f32
 // CHECK: kgen.call @"matmaul_naive,type=f32"
 kgen.generator @matmul_f32(
-    %A: !meta.buffer<?, f32>,
-    %B: !meta.buffer<?, f32>,
-    %C: !meta.buffer<?, f32>,
+    %A: !zap.buffer<?, f32>,
+    %B: !zap.buffer<?, f32>,
+    %C: !zap.buffer<?, f32>,
     %M: index,
     %N: index,
     %K: index) {
   kgen.call @matmul<type: dtype = f32>(%A, %B, %C, %M, %N, %K) :
-    (!meta.buffer<?, f32>, !meta.buffer<?, f32>, !meta.buffer<?, f32>, index, index, index) -> ()
+    (!zap.buffer<?, f32>, !zap.buffer<?, f32>, !zap.buffer<?, f32>, index, index, index) -> ()
   kgen.return
 }

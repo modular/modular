@@ -55,58 +55,58 @@ hlkgen.generator @add_64<ty: dtype>(%arg0 : !meta.scalar<f64>, %arg1 : !meta.sca
 // Infer argument constraints.
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @bufitf<size, ty: dtype -> index>(!meta.buffer<size, ty>) -> index
+kgen.generator.interface @bufitf<size, ty: dtype -> index>(!zap.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
-hlkgen.generator @arg_inf<size, ty: dtype -> index>(%arg0: !meta.buffer<size, f32>) -> index
+hlkgen.generator @arg_inf<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
   implements @bufitf {
-  %0 = meta.buffer.size %arg0 : !meta.buffer<size, f32>
+  %0 = zap.buffer.size %arg0 : !zap.buffer<size, f32>
   kgen.return<add(size, 2)> %0 : index
 }
 
 // This causes synthesization of a thunk for impl1 that adapts the calling convention.
 
 // CHECK-LABEL: kgen.generator @arg_inf_thunk<size, ty: dtype -> index>
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<size, ty>) -> index
+// CHECK-SAME: (%[[ARG0:.*]]: !zap.buffer<size, ty>) -> index
 // CHECK-NEXT:  constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
 // CHECK-NEXT:  implements @bufitf {
-// CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]] : !meta.buffer<size, ty> to !meta.buffer<size, f32>
-// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> resultParam0>(%[[V0]]) : (!meta.buffer<size, f32>) -> index
+// CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]] : !zap.buffer<size, ty> to !zap.buffer<size, f32>
+// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> resultParam0>(%[[V0]]) : (!zap.buffer<size, f32>) -> index
 // CHECK-NEXT:    kgen.return<resultParam0> %[[V1]] : index
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @arg_inf<size, ty: dtype -> index>
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<size, f32>) -> index
+// CHECK-SAME: (%[[ARG0:.*]]: !zap.buffer<size, f32>) -> index
 // CHECK-NEXT: constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
-// CHECK: %{{.*}} = meta.buffer.size %[[ARG0]] : !meta.buffer<size, f32>
+// CHECK: %{{.*}} = zap.buffer.size %[[ARG0]] : !zap.buffer<size, f32>
 
 //===----------------------------------------------------------------------===//
 // Infer result constraints.
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @returnbufItf<size, ty: dtype>(!meta.buffer<123, f32>) -> !meta.buffer<size, ty>
+kgen.generator.interface @returnbufItf<size, ty: dtype>(!zap.buffer<123, f32>) -> !zap.buffer<size, ty>
 
 // This implementation infers that the ty argument must be f32 and size must be 123
-hlkgen.generator @returnbufItf_impl(%a : !meta.buffer<123, f32>) -> !meta.buffer<123, f32>
+hlkgen.generator @returnbufItf_impl(%a : !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
   implements @returnbufItf {
-  kgen.return %a : !meta.buffer<123, f32>
+  kgen.return %a : !zap.buffer<123, f32>
 }
 
 // This causes synthesization of a thunk for impl1 that adapts the calling convention.
 
 // CHECK-LABEL: kgen.generator @returnbufItf_impl_thunk<size, ty: dtype>
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<123, f32>) -> !meta.buffer<size, ty>
+// CHECK-SAME: (%[[ARG0:.*]]: !zap.buffer<123, f32>) -> !zap.buffer<size, ty>
 // CHECK-NEXT:   constraints <
 // CHECK-NEXT:     [eq(size, 123), "result #0 specifies 'size' = 123", #
 // CHECK-NEXT:     [eq(:dtype ty, f32), "result #0 specifies 'ty' = f32", #
 // CHECK-NEXT:   implements @returnbufItf {
 // CHECK-NEXT:   %[[V0:.*]] = kgen.call @returnbufItf_impl<size = size, ty: dtype = ty>(%[[ARG0]]
-// CHECK-NEXT:   %[[V1:.*]] = kgen.rebind %[[V0]] : !meta.buffer<123, f32> to !meta.buffer<size, ty>
+// CHECK-NEXT:   %[[V1:.*]] = kgen.rebind %[[V0]] : !zap.buffer<123, f32> to !zap.buffer<size, ty>
 // CHECK-NEXT:   kgen.return %[[V1]]
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.generator @returnbufItf_impl<size, ty: dtype>
-// CHECK-SAME: (%[[ARG0:.*]]: !meta.buffer<123, f32>) -> !meta.buffer<123, f32>
+// CHECK-SAME: (%[[ARG0:.*]]: !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
 
 
 //===----------------------------------------------------------------------===//

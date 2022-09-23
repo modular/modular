@@ -464,6 +464,11 @@ LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
   return success();
 }
 
+void GetElementOp::build(OpBuilder &b, OperationState &state, Value container,
+                         int64_t index) {
+  return build(b, state, container, b.getIndexAttr(index));
+}
+
 //===----------------------------------------------------------------------===//
 // ReplaceElementOp
 //===----------------------------------------------------------------------===//
