@@ -227,28 +227,28 @@ kgen.func @select(%arg0: !meta.scalar<bool>, %arg1: !meta.scalar<f32>, %arg2: !m
 // -----
 
 // CHECK-LABEL: @load
-kgen.func @load(%p: !meta.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
+kgen.func @load(%p: !pop.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
   // CHECK: llvm.load
-  %0 = pop.load %p : !meta.pointer<!meta.scalar<f32>>
+  %0 = pop.load %p : !pop.pointer<!meta.scalar<f32>>
   kgen.return %0 : !meta.scalar<f32>
 }
 
 // -----
 
 // CHECK-LABEL: @store
-kgen.func @store(%p: !meta.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
+kgen.func @store(%p: !pop.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
   // CHECK: llvm.store
-  pop.store %v, %p : !meta.pointer<!meta.scalar<si32>>
+  pop.store %v, %p : !pop.pointer<!meta.scalar<si32>>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !meta.pointer<!meta.scalar<f32>>, %i: index) -> !meta.pointer<!meta.scalar<f32>> {
+kgen.func @offset(%p: !pop.pointer<!meta.scalar<f32>>, %i: index) -> !pop.pointer<!meta.scalar<f32>> {
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
-  %0 = pop.offset %p[%i] : !meta.pointer<!meta.scalar<f32>>
-  kgen.return %0 : !meta.pointer<!meta.scalar<f32>>
+  %0 = pop.offset %p[%i] : !pop.pointer<!meta.scalar<f32>>
+  kgen.return %0 : !pop.pointer<!meta.scalar<f32>>
 }
 
 // -----
@@ -347,12 +347,12 @@ kgen.func @cmp_simd(%lhs: !meta.simd<4, f32>, %rhs: !meta.simd<4, f32>) -> !meta
 // -----
 
 // CHECK-LABEL: @pointer_to_index
-kgen.func @pointer_to_index(%a: !meta.pointer<!meta.scalar<f32>>,
-                            %b: !meta.pointer<!meta.simd<4, si32>>) -> (index, index) {
+kgen.func @pointer_to_index(%a: !pop.pointer<!meta.scalar<f32>>,
+                            %b: !pop.pointer<!meta.simd<4, si32>>) -> (index, index) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !meta.pointer<!meta.scalar<f32>>
+  %0 = pop.pointer_to_index %a : !pop.pointer<!meta.scalar<f32>>
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !meta.pointer<!meta.simd<4, si32>>
+  %1 = pop.pointer_to_index %b : !pop.pointer<!meta.simd<4, si32>>
   kgen.return %0, %1 : index, index
 }
 
@@ -360,13 +360,13 @@ kgen.func @pointer_to_index(%a: !meta.pointer<!meta.scalar<f32>>,
 
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer(%idx: index) -> (
-      !meta.pointer<!meta.scalar<f32>>,
-      !meta.pointer<!meta.simd<4, si32>>) {
+      !pop.pointer<!meta.scalar<f32>>,
+      !pop.pointer<!meta.simd<4, si32>>) {
   // CHECK: llvm.inttoptr
-  %0 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
+  %0 = pop.index_to_pointer %idx : !pop.pointer<!meta.scalar<f32>>
   // CHECK: llvm.inttoptr
-  %1 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, si32>>
-  kgen.return %0, %1 :!meta.pointer<!meta.scalar<f32>>, !meta.pointer<!meta.simd<4, si32>>
+  %1 = pop.index_to_pointer %idx : !pop.pointer<!meta.simd<4, si32>>
+  kgen.return %0, %1 :!pop.pointer<!meta.scalar<f32>>, !pop.pointer<!meta.simd<4, si32>>
 }
 
 // -----

@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
@@ -70,10 +71,10 @@ Optional<DType> BufferType::resolveDType() const {
   return {};
 }
 
-PointerType BufferType::getPointerType() const {
+POP::PointerType BufferType::getPointerType() const {
   if (TypedAttr dtype = getDType())
-    return PointerType::get(ScalarType::get(dtype));
-  return PointerType::get(getContext(), nullptr);
+    return POP::PointerType::get(ScalarType::get(dtype));
+  return POP::PointerType::get(getContext(), nullptr);
 }
 
 ScalarType BufferType::getElementType() const {

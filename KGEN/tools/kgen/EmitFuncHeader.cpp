@@ -52,7 +52,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return success();
     }
 
-    if (auto ptr = t.dyn_cast<PointerType>()) {
+    if (auto ptr = t.dyn_cast<POP::PointerType>()) {
       if (Type type = ptr.resolveElementType()) {
         if (failed(printTypeAsC(type)))
           return failure();

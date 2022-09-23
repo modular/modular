@@ -9,6 +9,7 @@
 
 include "KGEN/POPDialect/POPDialect.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/SubElementInterfaces.td"
 
 class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
   : TypeDef<POPDialect, typeName,
@@ -61,6 +62,65 @@ def POP_ArrayType : POPType<"Array", "array"> {
 }
 
 //===----------------------------------------------------------------------===//
+// PointerType
+//===----------------------------------------------------------------------===//
+
+def POP_PointerType : POPType<"Pointer", "pointer"> {
+  let summary = "parameterized pointer type";
+  let description = [{
+    This type represents a pointer. The pointee type is parameterized with a
+    `!kgen.mlirtype` type. The element type is also optional, in which case this
+    represents an opaque pointer.
+
+    Example:
+
+    ```mlir
+    // A pointer to a scalar.
+    !pop.pointer<!meta.scalar<f32>>
+
+    // A pointer to a SIMD vector.
+    !pop.pointer<!meta.simd<4, f32>>
+
+    // An opaque pointer.
+    !pop.pointer<?>
+
+    // A parameterized scalar pointer.
+    !pop.pointer<!meta.scalar<type>>
+
+    // A completely parameterized pointer.
+    !pop.pointer<elementType>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$elementType);
+  let assemblyFormat = [{
+    `<` custom<OptionalTypeParamValue>($elementType) `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the type expression of the pointer type to an MLIR type.
+    Type resolveElementType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Type Constraints
+
+def ConcretePointer : ConfinedType<POP_PointerType,
+    [CPred<"$_self.cast<POP::PointerType>().getElementType()">],
+    "pointer with concrete element type">;
+
+class PointerElementType<string lhs, string rhs> : TypesMatchWith<
+    "pointer element type", lhs, rhs,
+    "ParamRefType::get($_self.cast<POP::PointerType>().getElementType())">;
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 
@@ -78,7 +138,7 @@ def POP_StructType : POPType<"Struct", "struct"> {
 
     // A struct with nested types.
     !pop.struct<
-      !meta.pointer<!meta.simd<4, si8>>,
+      !pop.pointer<!meta.simd<4, si8>>,
       !pop.array<24, !meta.scalar<si64>>,
       !pop.struct<
         !meta.scalar<f32>,
@@ -92,7 +152,6 @@ def POP_StructType : POPType<"Struct", "struct"> {
   }];
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$elementTypes);
-  // FIXME: Empty structs won't work until https://reviews.llvm.org/D133819.
   let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($elementTypes) `>`";
   let genVerifyDecl = 1;
 

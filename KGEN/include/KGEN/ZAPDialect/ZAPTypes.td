@@ -49,7 +49,7 @@ def ZAP_BufferType : ZAPType<"Buffer", "buffer",
     /// Try to narrow the dtype expression of the buffer type to a dtype.
     Optional<DType> resolveDType() const;
     /// Get the pointer type for the buffer.
-    PointerType getPointerType() const;
+    POP::PointerType getPointerType() const;
     /// Get the scalar element type for the buffer.
     ScalarType getElementType() const;
   }];

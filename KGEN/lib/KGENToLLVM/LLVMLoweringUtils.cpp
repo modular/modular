@@ -72,7 +72,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
 
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
-  addConversion([=](PointerType pointer) -> Optional<Type> {
+  addConversion([=](POP::PointerType pointer) -> Optional<Type> {
     Type type = pointer.resolveElementType();
     if (!type)
       return LLVM::LLVMPointerType::get(pointer.getContext());

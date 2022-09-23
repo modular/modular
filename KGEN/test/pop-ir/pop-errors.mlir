@@ -134,24 +134,6 @@ kgen.generator @bitcast_simd(%a: !meta.simd<4, f32>) {
 
 // -----
 
-// You are not allowed to bitcast a pointer to a scalar.
-kgen.generator @bitcast_pointer(%a: !meta.pointer<!meta.scalar<f32>>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!meta.pointer<!meta.scalar<f32>>' and result type '!meta.scalar<f32>' are cast incompatible}}
-  %0 = pop.bitcast %a : !meta.pointer<!meta.scalar<f32>> to !meta.scalar<f32>
-  kgen.return
-}
-
-// -----
-
-// You are not allowed to bitcast a pointer to a scalar.
-kgen.generator @bitcast_pointer(%a: !meta.scalar<f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!meta.scalar<f32>' and result type '!meta.pointer<!meta.scalar<f32>>' are cast incompatible}}
-  %1 = pop.bitcast %a : !meta.scalar<f32> to !meta.pointer<!meta.scalar<f32>>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @bitcast_simd(%a: !meta.simd<4, f32>) {
   // expected-error @below {{'pop.bitcast' op operand type '!meta.simd<4, f32>' and result type '!meta.simd<4, f64>' are cast incompatible}}
   %0 = pop.bitcast %a : !meta.simd<4, f32> to !meta.simd<4, f64>

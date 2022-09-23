@@ -8,6 +8,7 @@
 #define ZAPOPS_TD
 
 include "KGEN/MetaDialect/MetaTypes.td"
+include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
 include "KGEN/ZAPDialect/ZAPTypes.td"
 include "mlir/Interfaces/CastInterfaces.td"
@@ -50,7 +51,7 @@ def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [NoSideEffect,
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, Optional<Index>:$size,
+  let arguments = (ins POP_PointerType:$ptr, Optional<Index>:$size,
                        Optional<DTypeType>:$dType);
   let results = (outs ZAP_BufferType:$result);
   let assemblyFormat = [{
@@ -130,7 +131,7 @@ def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [NoSideEffect,
   }];
 
   let arguments = (ins ZAP_BufferType:$buffer);
-  let results = (outs PointerType:$ptr);
+  let results = (outs POP_PointerType:$ptr);
   let assemblyFormat = "$buffer attr-dict `:` qualified(type($buffer))";
 }
 

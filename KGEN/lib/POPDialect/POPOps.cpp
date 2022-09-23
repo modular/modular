@@ -303,23 +303,10 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
 
-  auto firstInput = inputs.front();
-  auto firstOutput = outputs.front();
-
-  // If the input is a pointer type then the output must be a pointer type as
-  // well (and vice versa).
-  bool inputIsPointer = firstInput.isa<PointerType>();
-  bool ouputIsPointer = firstOutput.isa<PointerType>();
-  if (inputIsPointer || ouputIsPointer)
-    return inputIsPointer && ouputIsPointer;
-
   // The input and output must be either both scalar or both SIMD. And so,
   // implement the DTypeInterface.
-  // TODO: This logic can be simplified by using the getSizeInBytes in
-  // OpaqueObjectInterface , but this is not what OpaqueObjectInterface is meant
-  // to do.
-  auto inputType = firstInput.cast<DTypeInterface>();
-  auto outputType = firstOutput.cast<DTypeInterface>();
+  auto inputType = inputs.front().cast<DTypeInterface>();
+  auto outputType = outputs.front().cast<DTypeInterface>();
 
   // First, check the input and output types must be of the same kind.
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.
@@ -328,31 +315,41 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
     return false;
 
-  auto inputDType = inputType.resolveDType();
-  auto outputDType = outputType.resolveDType();
+  DType inputDType = inputType.resolveDType();
+  DType outputDType = outputType.resolveDType();
 
   // If neither dtype could be resolved, allow the cast.
   if (inputDType.isInvalid() || outputDType.isInvalid())
     return true;
 
-  auto inputDTypeWidth = inputDType.getWidthInBits();
-  auto outputDTypeWidth = outputDType.getWidthInBits();
+  ssize_t inputDTypeWidth = inputDType.getWidthInBits();
+  ssize_t outputDTypeWidth = outputDType.getWidthInBits();
 
   // If we have a simd type, then the bitwidths must match.
+  Optional<int64_t> inputSize = 1, outputSize = 1;
   if (auto inputSimd = inputType.dyn_cast<SIMDType>()) {
     auto outputSimd = outputType.cast<SIMDType>();
-    auto inputSimdSize = inputSimd.resolveSize();
-    auto outputSimdSize = outputSimd.resolveSize();
+    inputSize = inputSimd.resolveSize();
+    outputSize = outputSimd.resolveSize();
     // If neither size could be resolved, allow the cast.
-    if (!inputSimdSize || !outputSimdSize)
+    if (!inputSize || !outputSize)
       return true;
-    // If the sizes do not match, then we cannot cast.
-    return inputSimdSize.value() * inputDTypeWidth ==
-           outputSimdSize.value() * outputDTypeWidth;
   }
 
-  // Otherwise, we have a scalar type. So the bitwidths must match.
-  return inputDTypeWidth == outputDTypeWidth;
+  // If the sizes do not match, then we cannot cast.
+  return inputDTypeWidth * inputSize.value() ==
+         outputDTypeWidth * outputSize.value();
+}
+
+//===----------------------------------------------------------------------===//
+// PointerBitcastOp
+//===----------------------------------------------------------------------===//
+
+bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  if (inputs.size() != 1 || outputs.size() != 1)
+    return false;
+  return inputs.front().isa<PointerType>() &&
+         outputs.front().isa<PointerType>();
 }
 
 //===----------------------------------------------------------------------===//

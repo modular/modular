@@ -15,8 +15,10 @@
 namespace M {
 class DType;
 namespace KGEN {
-class PointerType;
 class ScalarType;
+namespace POP {
+class PointerType;
+} // namespace POP
 } // namespace KGEN
 } // namespace M
 

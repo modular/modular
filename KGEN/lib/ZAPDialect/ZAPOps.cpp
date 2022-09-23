@@ -7,6 +7,7 @@
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/ForwardDecls.h"

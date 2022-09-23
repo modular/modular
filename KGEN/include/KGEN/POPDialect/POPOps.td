@@ -490,8 +490,9 @@ def POP_SelectOp : POPOp<"select",
 //===----------------------------------------------------------------------===//
 
 def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
-                                  DeclareOpInterfaceMethods<CastOpInterface>]> {
-  let summary = [{
+    DeclareOpInterfaceMethods<CastOpInterface>]> {
+  let summary = "scalar and simd bitcast";
+  let description = [{
     Bitcast an integer or floating point value to an integer or floating point
     value of equal bit width. The bitcast operation is also used to cast between
     pointer types. When casting between pointer types, both the source and the
@@ -504,13 +505,42 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
     %1 = pop.bitcast %b : !meta.scalar<ui64> to !meta.scalar<si64>
     %2 = pop.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
     %3 = pop.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
-    %4 = pop.bitcast %d : !meta.pointer<f64> to !meta.pointer<!meta.simd<4, f32>>
+    %4 = pop.bitcast %d : !pop.pointer<f64> to !pop.pointer<!meta.simd<4, f32>>
     ```
   }];
 
-  let arguments = (ins ScalarOrSIMDOrPointer:$input);
-  let results = (outs ScalarOrSIMDOrPointer:$output);
+  let arguments = (ins ScalarOrSIMD:$input);
+  let results = (outs ScalarOrSIMD:$output);
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+}
+
+//===----------------------------------------------------------------------===//
+// PointerBitCastOp
+//===----------------------------------------------------------------------===//
+
+def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [NoSideEffect,
+    DeclareOpInterfaceMethods<CastOpInterface>]> {
+  let summary = "pointer bitcast";
+  let description = [{
+    The `pop.pointer.bitcast` operation reinterprets a pointer as a pointer to
+    a different element type.
+
+    Example:
+
+    ```mlir
+    %0 = pop.pointer.bitcast %arg0 : !pop.pointer<?> to
+                                     !pop.pointer<!meta.scalar<f32>>
+
+    %1 = pop.pointer.bitcast %0 : !pop.pointer<!meta.scalar<f32>> to
+                                  !pop.pointer<!meta.simd<4, f32>>
+    ```
+  }];
+
+  let arguments = (ins POP_PointerType:$input);
+  let results = (outs POP_PointerType:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -518,7 +548,8 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
 //===----------------------------------------------------------------------===//
 
 def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
-  let summary = [{
+  let summary = "element wise cast";
+  let description = [{
     Perform an element-wise cast between SIMD vectors types or between scalar
     types. SIMD vectors must have the same size. The cast semantics are the same
     as C casts. Only bool, integer, and floating point dtypes are supported.
@@ -718,7 +749,7 @@ def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-def POP_LoadOp : POPOp<"load", [TypeMatchesElementType<"ptr", "result">]> {
+def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
@@ -727,8 +758,8 @@ def POP_LoadOp : POPOp<"load", [TypeMatchesElementType<"ptr", "result">]> {
     Example:
 
     ```mlir
-    %0 = pop.load %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    %1 = pop.load %ptr1 : !meta.pointer<!meta.simd<4, type>>
+    %0 = pop.load %ptr0 : !pop.pointer<!meta.scalar<f32>>
+    %1 = pop.load %ptr1 : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
 
@@ -743,7 +774,7 @@ def POP_LoadOp : POPOp<"load", [TypeMatchesElementType<"ptr", "result">]> {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-def POP_StoreOp : POPOp<"store", [TypeMatchesElementType<"ptr", "arg">]> {
+def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
   let summary = "pointer store operation";
   let description = [{
     Store the given scalar data to the given pointer of the same dtype. The
@@ -752,8 +783,8 @@ def POP_StoreOp : POPOp<"store", [TypeMatchesElementType<"ptr", "arg">]> {
     Example:
 
     ```mlir
-    pop.store %0, %ptr0 : !meta.pointer<!meta.scalar<f32>>
-    pop.store %1, %ptr1 : !meta.pointer<!meta.simd<4, type>>
+    pop.store %0, %ptr0 : !pop.pointer<!meta.scalar<f32>>
+    pop.store %1, %ptr1 : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
 
@@ -775,8 +806,8 @@ def POP_OffsetOp : POPOp<"offset",
     Example:
 
     ```mlir
-    %addr0 = pop.offset %ptr0[%idx] : !meta.pointer<!meta.scalar<f32>>
-    %addr1 = pop.offset %ptr1[%idx] : !meta.pointer<!meta.simd<4, type>>
+    %addr0 = pop.offset %ptr0[%idx] : !pop.pointer<!meta.scalar<f32>>
+    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
 
@@ -808,7 +839,7 @@ def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect,
       : !pop.struct<!meta.scalar<f32>, !meta.scalar<f64>>
 
     %1 = pop.struct.construct(%arr, %ptr, %v)
-      : !pop.struct<!pop.array<size, type>, !meta.pointer<type>, type>
+      : !pop.struct<!pop.array<size, type>, !pop.pointer<type>, type>
     ```
   }];
 
@@ -942,19 +973,19 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
     // Scoped to the enclosing region.
     %0 = pop.stack_allocation size : type
 
-    %mem = scf.if %cond -> !meta.pointer<type> {
+    %mem = scf.if %cond -> !pop.pointer<type> {
       // OK: The memory is scoped to the enclosing region.
-      scf.yield %0 : !meta.pointer<type>
+      scf.yield %0 : !pop.pointer<type>
     } else {
       // Scoped to the 'else' region.
       %1 = pop.stack_allocation size : type
 
       // The memory is escaping its enclosed region.
-      scf.yield %1 : !meta.pointer<type>
+      scf.yield %1 : !pop.pointer<type>
     }
 
     // NOT OK: Loading pointer to invalid memory.
-    %v = pop.load %mem : !meta.pointer<type>
+    %v = pop.load %mem : !pop.pointer<type>
     ```
   }];
 
@@ -996,7 +1027,7 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     non-variadic arguments.
 
     ```mlir
-    pop.external_call @printf(%fmt, %v0, %v1) (!meta.pointer<si8>) -> ()
+    pop.external_call @printf(%fmt, %v0, %v1) (!pop.pointer<si8>) -> ()
       : (!zap.buffer<16, si8>, !meta.scalar<f32>, !meta.scalar<ui32>) -> ()
     ```
   }];
@@ -1059,13 +1090,13 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [NoSideEffect]> {
     Example:
 
     ```mlir
-    %addr0 = pop.index_to_pointer %idx : !meta.pointer<!meta.scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, type>>
+    %addr0 = pop.index_to_pointer %idx : !pop.pointer<!meta.scalar<f32>>
+    %addr1 = pop.index_to_pointer %idx : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
 
   let arguments = (ins Index:$value);
-  let results = (outs PointerType:$result);
+  let results = (outs POP_PointerType:$result);
   let assemblyFormat = "$value attr-dict `:` qualified(type($result))";
 }
 
@@ -1082,12 +1113,12 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !meta.pointer<!meta.scalar<f32>>
-    %addr1 = pop.pointer_to_index %idx : !meta.pointer<!meta.simd<4, type>>
+    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<!meta.scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
 
-  let arguments = (ins PointerType:$value);
+  let arguments = (ins POP_PointerType:$value);
   let results = (outs Index:$result);
   let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
 }

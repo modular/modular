@@ -80,6 +80,44 @@ ArrayType ArrayType::get(int64_t size, Type elementType) {
 }
 
 //===----------------------------------------------------------------------===//
+// PointerType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                    TypedAttr dtype) {
+  if (dtype && !dtype.getType().isa<MLIRTypeType>())
+    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
+  return success();
+}
+
+void PointerType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getElementType());
+}
+
+Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                              ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.empty());
+  return PointerType::get(replAttrs[0]);
+}
+
+Type PointerType::resolveElementType() const {
+  if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
+    return typeCst.getValue();
+  return nullptr;
+}
+
+PointerType PointerType::get(TypedAttr elementType) {
+  return PointerType::get(elementType.getContext(), elementType);
+}
+
+PointerType PointerType::get(Type elementType) {
+  return PointerType::get(TypeConstantAttr::get(elementType));
+}
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 

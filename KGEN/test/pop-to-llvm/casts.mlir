@@ -53,27 +53,27 @@ kgen.func @simd_bitcast(
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F64:[a-z0-9]+]]:
 kgen.func @pointer_bitcast(
-    %ui32:!meta.pointer<!meta.scalar<ui32>>,
-    %simd_f32:!meta.pointer<!meta.simd<4, f32>>,
-    %simd_f64:!meta.pointer<!meta.simd<2, f64>>) -> (
-     !meta.pointer<!meta.simd<4, f32>>,
-     !meta.pointer<!meta.scalar<si32>>,
-     !meta.pointer<!meta.scalar<ui32>>,
-     !meta.pointer<?>
+    %ui32:!pop.pointer<!meta.scalar<ui32>>,
+    %simd_f32:!pop.pointer<!meta.simd<4, f32>>,
+    %simd_f64:!pop.pointer<!meta.simd<2, f64>>) -> (
+     !pop.pointer<!meta.simd<4, f32>>,
+     !pop.pointer<!meta.scalar<si32>>,
+     !pop.pointer<!meta.scalar<ui32>>,
+     !pop.pointer<?>
     ) {
-  // CHECK: lvm.bitcast %[[UI32]]
-  %0 = pop.bitcast %ui32 : !meta.pointer<!meta.scalar<ui32>> to !meta.pointer<!meta.simd<4, f32>>
-  // CHECK: llvm.bitcast %[[F32]]
-  %1 = pop.bitcast %simd_f32 : !meta.pointer<!meta.simd<4, f32>> to !meta.pointer<!meta.scalar<si32>>
-  // CHECK: llvm.bitcast %[[F64]]
-  %2 = pop.bitcast %simd_f64 : !meta.pointer<!meta.simd<2, f64>> to !meta.pointer<!meta.scalar<ui32>>
   // CHECK: llvm.bitcast %[[UI32]]
-  %3 = pop.bitcast %ui32 : !meta.pointer<!meta.scalar<ui32>> to !meta.pointer<?>
+  %0 = pop.pointer.bitcast %ui32 : !pop.pointer<!meta.scalar<ui32>> to !pop.pointer<!meta.simd<4, f32>>
+  // CHECK: llvm.bitcast %[[F32]]
+  %1 = pop.pointer.bitcast %simd_f32 : !pop.pointer<!meta.simd<4, f32>> to !pop.pointer<!meta.scalar<si32>>
+  // CHECK: llvm.bitcast %[[F64]]
+  %2 = pop.pointer.bitcast %simd_f64 : !pop.pointer<!meta.simd<2, f64>> to !pop.pointer<!meta.scalar<ui32>>
+  // CHECK: llvm.bitcast %[[UI32]]
+  %3 = pop.pointer.bitcast %ui32 : !pop.pointer<!meta.scalar<ui32>> to !pop.pointer<?>
   kgen.return %0, %1, %2, %3 :
-     !meta.pointer<!meta.simd<4, f32>>,
-     !meta.pointer<!meta.scalar<si32>>,
-     !meta.pointer<!meta.scalar<ui32>>,
-     !meta.pointer<?>
+     !pop.pointer<!meta.simd<4, f32>>,
+     !pop.pointer<!meta.scalar<si32>>,
+     !pop.pointer<!meta.scalar<ui32>>,
+     !pop.pointer<?>
 }
 
 // CHECK-LABEL: @scalar_cast
