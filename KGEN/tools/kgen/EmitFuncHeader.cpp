@@ -44,15 +44,11 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return printDTypeAsC(scalar.resolveDType());
 
     if (auto simd = t.dyn_cast<SIMDType>()) {
+      // Since the vector_size attribute only works on GNU and CLANG compilers,
+      // we pass in an array.
       if (failed(printDTypeAsC(simd.resolveDType())))
         return failure();
-      // Get the vector size in bytes to be used by the vector_size attribute.
-      // The `__attribute__ ((vector_size(N)))` must be specified in bytes.
-      auto vectorSizeInBytes =
-          simd.resolveDType().getSizeInBytes(*simd.resolveSize());
-      // Fixed vector types are easy and we add the simd attributes.
-      // TODO: This will only work on GNU and CLANG compilers.
-      os << " __attribute__ ((vector_size(" << vectorSizeInBytes << ")))";
+      os << "[" << simd.resolveSize() << "]";
       return success();
     }
 

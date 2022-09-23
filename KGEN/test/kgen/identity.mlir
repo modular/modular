@@ -5,4 +5,4 @@ kgen.func public @identity(%arg0: !meta.simd<4, f32>) -> !meta.simd<4, f32> {
   kgen.return %arg0 : !meta.simd<4, f32>
 }
 
-// CHECK: extern float __attribute__ ((vector_size(16))) identity(float __attribute__ ((vector_size(16))));
+// CHECK: extern float[4] identity(float[4]);
