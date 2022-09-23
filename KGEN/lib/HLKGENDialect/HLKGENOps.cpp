@@ -38,7 +38,7 @@ LogicalResult
 HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check result types match the ReturnOp.
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              getResultTypes())) ||
+                                              {getResultTypes()})) ||
       // See if the parameter definitions and uses within the generator are
       // structured correctly.
       failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))

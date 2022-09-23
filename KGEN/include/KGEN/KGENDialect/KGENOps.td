@@ -156,8 +156,7 @@ def GeneratorInterfaceOp
 
 def CallOp
   : KGENOp<"call", [CallOpInterface,
-                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                    IsolatedFromAbove]> {
+                    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
 
   let summary = "Call a func, generator, or generator interface";
 
@@ -202,6 +201,8 @@ def CallOp
                    "ArrayRef<ParamDeclAttr>":$resultParams,
                    "OperandRange":$operands)>,
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -210,7 +211,7 @@ def CallOp
 
 // NOTE: This cannot be a CallOpInterface, because the callee is not a
 // SymbolRefAttr, it is a different kind of attribute.
-def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
+def CallParamOp : KGENOp<"call_param"> {
   let summary = "Call declaration specified by a parameter experession";
 
   let arguments =
@@ -262,7 +263,9 @@ def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
 
 def RegionBodyOp : KGENOp<"region.body",
     [IsolatedFromAbove, Terminator, ParentOneOf<["CallOp", "CallParamOp"]>,
-     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+     SingleBlockImplicitTerminator<"ReturnOp">,
+     DeclareOpInterfaceMethods<KGENDeclInterface>,
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Define a region parameter body";
 
   let arguments = (ins ParamDeclArrayAttr:$paramDecls,
@@ -274,6 +277,11 @@ def RegionBodyOp : KGENOp<"region.body",
     `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
     `` custom<OptionalConstraints>($constraints) `` custom<RegionBody>($body)
     attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    /// Get the terminator.
+    ReturnOp getReturnOp();
   }];
 }
 
@@ -355,9 +363,9 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
 
   let extraClassDeclaration = [{
     /// Verify that the operands of this ReturnOp match the specified set of
-    /// types.
+    /// types. Only check the result types if they were provided.
     LogicalResult checkArgumentTypes(ArrayRef<Type> resultParamTypes,
-                                     TypeRange types);
+                                     Optional<TypeRange> types);
   }];
 }
 
