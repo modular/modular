@@ -169,7 +169,7 @@ def CallOp
 
   let extraClassDeclaration = [{
     FunctionType getFunctionType() {
-      return FunctionType::get(getContext(), getOperandTypes(), 
+      return FunctionType::get(getContext(), getOperandTypes(),
                                getResultTypes());
     }
 
@@ -221,7 +221,7 @@ def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
 
   let extraClassDeclaration = [{
     FunctionType getFunctionType() {
-      return FunctionType::get(getContext(), getOperandTypes(), 
+      return FunctionType::get(getContext(), getOperandTypes(),
                                getResultTypes());
     }
 
@@ -238,7 +238,7 @@ def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
   }];
 
   let assemblyFormat = [{
-    `` custom<CallParamCallee>($callee, $paramValues, $paramDecls, 
+    `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                             type($operands), type($results))
     `(` $operands `)`
     attr-dict
@@ -254,6 +254,27 @@ def CallParamOp : KGENOp<"call_param", [IsolatedFromAbove]> {
 
   let hasCanonicalizeMethod = 1;
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// RegionBodyOp
+//===----------------------------------------------------------------------===//
+
+def RegionBodyOp : KGENOp<"region.body",
+    [IsolatedFromAbove, Terminator, ParentOneOf<["CallOp", "CallParamOp"]>,
+     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+  let summary = "Define a region parameter body";
+
+  let arguments = (ins ParamDeclArrayAttr:$paramDecls,
+                       KTypeArrayAttr:$resultParamTypes,
+                       ConstraintArrayAttr:$constraints);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    `` custom<OptionalConstraints>($constraints) `` custom<RegionBody>($body)
+    attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//

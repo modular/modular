@@ -399,6 +399,12 @@ void KGEN::printOptionalParameterSpec(raw_ostream &os,
   os << '>';
 }
 
+void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
+                                      ParamDeclArrayAttr paramDecls,
+                                      TypeArrayAttr resultParamTypes) {
+  printOptionalParameterSpec(p.getStream(), paramDecls, resultParamTypes);
+}
+
 //===----------------------------------------------------------------------===//
 // "Pretty" parameter printing and parsing
 //===----------------------------------------------------------------------===//
@@ -837,7 +843,15 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
   // Funcs cannot have constraint specifications.
   if (opKind == GeneratorOrFuncKind::func)
     return success();
+  ConstraintArrayAttr constraints;
+  if (parseOptionalConstraints(parser, constraints))
+    return failure();
+  result.addAttribute("constraints", constraints);
+  return success();
+}
 
+ParseResult KGEN::parseOptionalConstraints(OpAsmParser &parser,
+                                           ConstraintArrayAttr &result) {
   SmallVector<ConstraintAttr> constraints;
 
   if (succeeded(parser.parseOptionalKeyword("constraints"))) {
@@ -853,9 +867,26 @@ static ParseResult parseOptionalConstraints(OpAsmParser &parser,
                                        parseConstraint))
       return failure();
   }
-  result.addAttribute("constraints", ConstraintArrayAttr::get(
-                                         parser.getContext(), constraints));
+  result = ConstraintArrayAttr::get(parser.getContext(), constraints);
   return success();
+}
+
+/// Print a constraint list for a generator or interface.
+void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
+                                    ConstraintArrayAttr constraints) {
+  if (!constraints || constraints.empty())
+    return;
+
+  p.printNewline();
+  p << "  constraints <";
+  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
+    if (constraints.size() > 1) {
+      p.printNewline();
+      p << "    ";
+    }
+    constraint.print(p);
+  });
+  p << ">";
 }
 
 /// Parse either a kgen.generator or kgen.func declaration, depending on what
@@ -889,7 +920,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
       parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
                              isVariadic, resultTypes, resultAttrs) ||
-      parseOptionalConstraints(parser, result, opKind))
+      ::parseOptionalConstraints(parser, result, opKind))
     return failure();
 
   result.addAttribute("paramDecls", inputParamDecls);
@@ -954,24 +985,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   return success();
 }
 
-/// Print a constraint list for a generator or interface.
-static void printConstraints(KGENDeclInterface decl, OpAsmPrinter &p) {
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return;
-
-  p.printNewline();
-  p << "  constraints <";
-  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    if (constraints.size() > 1) {
-      p.printNewline();
-      p << "    ";
-    }
-    constraint.print(p);
-  });
-  p << ">";
-}
-
 void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   using namespace mlir::function_interface_impl;
 
@@ -997,7 +1010,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           GeneratorOp::getAttributeNames());
-  printConstraints(opDecl, p);
+  printOptionalConstraints(p, opDecl, opDecl.getConstraintsAttr());
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
