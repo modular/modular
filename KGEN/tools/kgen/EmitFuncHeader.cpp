@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "EmitFuncHeader.h"
-#include "KGEN/MetaDialect/MetaTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/ML/DType.h"

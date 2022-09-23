@@ -19,7 +19,6 @@ add_modular_tool(kgen
   ZAPDialect
   LowerHLKGEN
   LowerZAPToPOP
-  MetaDialect
   POPDialect
 
   MLIRParser

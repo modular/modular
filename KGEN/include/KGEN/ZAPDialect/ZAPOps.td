@@ -7,7 +7,6 @@
 #ifndef ZAPOPS_TD
 #define ZAPOPS_TD
 
-include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
 include "KGEN/ZAPDialect/ZAPTypes.td"

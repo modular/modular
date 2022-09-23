@@ -28,7 +28,6 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDialect;
-class MetaDialect;
 class FuncOp;
 namespace POP {
 class POPDialect;

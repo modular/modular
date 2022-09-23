@@ -8,6 +8,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -554,7 +555,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
-  MetaToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

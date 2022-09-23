@@ -30,7 +30,7 @@ Individual parameters:
 2) We want to reduce syntactic verbosity where reasonably possible, because
    syntactic noise makes it more difficult to write and read IR dumps.  In some
    cases, we "know" the type of a parameter expression, for example, in a buffer
-   type like `!meta.buffer<a, b>` we "know" the type of `a` is `index` and the
+   type like `!zap.buffer<a, b>` we "know" the type of `a` is `index` and the
    type of `b` is `!kgen.dtype`, as such, we don't require their type specifiers
    at all.
 
@@ -101,10 +101,10 @@ represents an insertion point, not the order of execution of the metaprogram.
 
 ## Meta dialect types
 
-### Support for dynamic shapes in `!meta.buffer` et al
+### Support for dynamic shapes in `!zap.buffer` et al
 
 The kgen infrastructure natively supports kernels that work with dynamic shapes
-and dynamic dtypes, currently with the `!meta.buffer<?, ?>` type.  This allows
+and dynamic dtypes, currently with the `!zap.buffer<?, ?>` type.  This allows
 extracting the size/dtype as SSA values, which can then be switched over, or
 have other calculations done at runtime.  When kgen supports Nd-arrays (tensors)
 we will have the equivalent for that.  In order to work with dynamic shapes,
@@ -112,12 +112,12 @@ we need to be able to extract the only-known-at-runtime values with some
 operations that produce SSA values.  These are:
 
 ```mlir
-kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
+kgen.generator @algo(%dest: !zap.buffer<?, ?>) {
   // This returns a SSA value of type `!kgen.dtype`.
-  %dtype = meta.buffer.dtype %dest: !meta.buffer<?, ?>
+  %dtype = zap.buffer.dtype %dest: !zap.buffer<?, ?>
 
   // This returns a SSA value of type `index`.
-  %size = meta.buffer.size %dest: !meta.buffer<?, ?>
+  %size = zap.buffer.size %dest: !zap.buffer<?, ?>
   ...
 }
 ```
@@ -133,15 +133,15 @@ dtype doesn't affect how the buffer value itself is codegen'd: it is always a
 tuple of `{void*, numElements, dtype}` at runtime.
 
 Because the SIMD/scalar types do not support dynamic shapes or dtypes, they also
-do not need operations like `meta.simd.size`. For any SIMD type, you either have
+do not need operations like `pop.simd.size`. For any SIMD type, you either have
 an integer constant in the IR or a parameter expression.  You can materialize
 either of these into an SSA value with `kgen.param.constant`:
 
 ```mlir
 kgen.generator @algo<veclen, dt: dtype>(%src: !pop.simd<mul(veclen,veclen), dt>) {
   // These do not need to exist!
-  %dtypeSSAValue = meta.simd.dtype %src: !pop.simd<mul(veclen,veclen), dt>
-  %veclenSSAValue = meta.simd.size %src: !pop.simd<mul(veclen,veclen), dt>
+  %dtypeSSAValue = pop.simd.dtype %src: !pop.simd<mul(veclen,veclen), dt>
+  %veclenSSAValue = pop.simd.size %src: !pop.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
   %dtypeSSAValue = kgen.param.constant : dtype = <dt>
@@ -204,9 +204,7 @@ The benefit of #2 is that it would lead to a simpler IR.
 
 The `zap` dialect is a substitute for language-level features and libraries
 until those can exist. The `zap` dialect exists only pre-elaboration and is
-lowered to the `pop` and `meta` dialect before elaboration.
+lowered to the `pop` dialect before elaboration.
 
-For example, `meta.buffer` is a substitute for a user-defined/library type.
-Operations on buffers should reside in the `zap` dialect. The meta dialect
-contains basic operations for interfacing with buffers until a model for
-lowering custom types is devised.
+For example, `zap.buffer` is a substitute for a user-defined/library type.
+Operations on buffers reside in the `zap` dialect.

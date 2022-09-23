@@ -23,8 +23,8 @@ def ZAPDialect : Dialect {
     operations. It is meant as a substitute for a kernel programming language
     and its standard libraries until they exist.
 
-    This dialect contains operations that are conceptually above the `pop` and
-    `meta` dialects in terms of abstraction level and which lower to them.
+    This dialect contains operations that are conceptually above the `pop`
+    dialect in terms of abstraction level and which lower to it.
   }];
 
   let cppNamespace = "::M::KGEN::ZAP";
