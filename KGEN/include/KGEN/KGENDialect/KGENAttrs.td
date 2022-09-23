@@ -176,7 +176,7 @@ def ParamCallRegionRefAttr
     "A marker indicating a signature value is specified by a call region";
   let parameters = (ins AttributeSelfTypeParameter<"">:$type);
 
-  let assemblyFormat = "`<` $type `>`";
+  let assemblyFormat = "";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$type), [{

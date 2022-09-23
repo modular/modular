@@ -20,6 +20,7 @@ class FunctionOpInterface;
 }
 
 namespace M::KGEN {
+class ConstraintArrayAttr;
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 class ParamDeclArrayAttr;
@@ -131,6 +132,15 @@ ParseResult parseOptionalParameterSpec(AsmParser &parser,
 void printOptionalParameterSpec(raw_ostream &os,
                                 ParamDeclArrayAttr inputParamDecls,
                                 TypeArrayAttr resultParamTypes);
+void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
+                                ParamDeclArrayAttr paramDecls,
+                                TypeArrayAttr resultParamTypes);
+
+/// Parse and print a constraint specification if present.
+ParseResult parseOptionalConstraints(OpAsmParser &p,
+                                     ConstraintArrayAttr &constraints);
+void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
+                              ConstraintArrayAttr constraints);
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces

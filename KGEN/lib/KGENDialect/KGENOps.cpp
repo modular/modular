@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
@@ -477,39 +478,42 @@ parseCallRegions(OpAsmParser &p,
                  SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
                  ParamBindArrayAttr paramValues) {
   // We expect one region for each ParamCallRegionRefAttr.
-  for (auto paramBind : paramValues) {
-    if (!paramBind.getValue().isa<ParamCallRegionRefAttr>())
-      continue;
+  auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
+    return bind.getValue().isa<ParamCallRegionRefAttr>();
+  });
 
-    auto region = std::make_unique<Region>();
-    if (p.parseKeyword(paramBind.getName(), " region name") ||
-        p.parseRegion(*region))
+  auto parseFn = [&](ParamBindAttr bind) -> ParseResult {
+    // Parse the region body operation in-line.
+    OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
+                              RegionBodyOp::getOperationName());
+    if (p.parseKeyword(bind.getName(), " region name") ||
+        RegionBodyOp::parse(p, regionBody))
       return failure();
-    result.push_back(std::move(region));
-  }
 
-  return success();
+    // Create a single-block body with only the region body operation.
+    auto *body = new Block;
+    body->push_back(Operation::create(regionBody));
+    auto region = std::make_unique<Region>();
+    region->push_back(body);
+    result.push_back(std::move(region));
+    return success();
+  };
+  return failableInterleave(binds, parseFn, [&] { return p.parseComma(); });
 }
 
 static void printCallRegions(OpAsmPrinter &p, Operation *op,
                              mlir::RegionRange regions,
                              ParamBindArrayAttr paramValues) {
-  auto it = paramValues.begin(), itE = paramValues.end();
-  for (auto *region : regions) {
-    // Advance it to the next region name.
-    while (it != itE && !it->getValue().isa<ParamCallRegionRefAttr>())
-      ++it;
-    p.printNewline();
-    p << "  ";
-    if (it != itE) {
-      p << it->getName().strref() << " ";
-      ++it;
-    } else {
-      p << "<<BROKEN CALL SIGNATURE>> ";
-    }
+  auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
+    return bind.getValue().isa<ParamCallRegionRefAttr>();
+  });
 
-    p.printRegion(*region);
-  }
+  auto printFn = [&](auto &bind) {
+    p.printNewline();
+    p << bind.value().getName().strref();
+    cast<RegionBodyOp>(regions[bind.index()]->front().getTerminator()).print(p);
+  };
+  llvm::interleave(llvm::enumerate(binds), p, printFn, ",");
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,7 +540,7 @@ SignatureType CallOp::getSignature() {
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
-  auto calleeAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
+  auto calleeAttr = getCalleeAttr();
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
   auto callee = dyn_cast_or_null<KGENDeclInterface>(
@@ -675,6 +679,36 @@ LogicalResult CallParamOp::verify() {
   // callee's signature.
   return verifyCallAndCallee(*this, getSignature(), calleeSignature,
                              getParamValuesAttr(), getLoc());
+}
+
+//===----------------------------------------------------------------------===//
+// RegionBodyOp / custom<RegionBody>
+//===----------------------------------------------------------------------===//
+
+/// Parse a single-block isolated from above region.
+static ParseResult parseRegionBody(OpAsmParser &p, Region &body) {
+  SmallVector<OpAsmParser::Argument> args;
+  if (p.parseArgumentList(args, AsmParser::Delimiter::Paren,
+                          /*allowType=*/true) ||
+      p.parseRegion(body, args))
+    return failure();
+  return success();
+}
+
+/// Print a single-block isolated from above region.
+static void printRegionBody(OpAsmPrinter &p, Operation *op, Region &body) {
+  p << '(';
+  llvm::interleaveComma(body.getArguments(), p,
+                        [&](BlockArgument arg) { p.printRegionArgument(arg); });
+  p << ") ";
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+}
+
+/// Derive the region's function type from its arguments and result types.
+FunctionType RegionBodyOp::getFunctionType() {
+  return FunctionType::get(
+      getContext(), getBody().getArgumentTypes(),
+      getBody().front().getTerminator()->getOperandTypes());
 }
 
 //===----------------------------------------------------------------------===//
