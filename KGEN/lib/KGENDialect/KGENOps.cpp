@@ -297,7 +297,7 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              getResultTypes())))
+                                              {getResultTypes()})))
     return failure();
 
   // See if the parameter definitions and uses within the generator are
@@ -381,7 +381,7 @@ void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              getResultTypes())))
+                                              {getResultTypes()})))
     return failure();
 
   // kgen.func's are not allowed to have input parameter lists.
@@ -471,6 +471,42 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
 
   return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
                                    "callee", calleeSignature, calleeLoc);
+}
+
+/// Verify that regions used as signature parameters match in signature.
+static LogicalResult verifyRegionSignatures(Operation *theCall) {
+  // TODO: We need an interface for call operations.
+  auto values = theCall->getAttrOfType<ParamBindArrayAttr>("paramValues");
+  assert(values && "expected parameter values");
+  auto regionValues = llvm::make_filter_range(values, [](ParamBindAttr value) {
+    return value.getValue().isa<ParamCallRegionRefAttr>();
+  });
+
+  size_t numRegionParams =
+      std::distance(regionValues.begin(), regionValues.end());
+  if (numRegionParams != theCall->getNumRegions())
+    return theCall->emitOpError("expected ")
+           << numRegionParams << " body regions but has "
+           << theCall->getNumRegions();
+
+  // Ensure each region parameter matches up in order with the regions.
+  for (auto &it : llvm::enumerate(regionValues)) {
+    auto paramSignature = it.value().getValue().getType().cast<SignatureType>();
+    Region &region = theCall->getRegion(it.index());
+    auto body = cast<RegionBodyOp>(region.front().getTerminator());
+    if (region.front().getOperations().size() != 1)
+      return theCall->emitOpError("expected region #")
+             << it.index() << " to contain only a `kgen.region.body` op";
+
+    auto regionSignature = SignatureType::get(body.getParamDeclsAttr(),
+                                              body.getResultParamTypesAttr(),
+                                              body.getFunctionType());
+    if (failed(verifyDeclSignaturesMatch("region", regionSignature,
+                                         body.getLoc(), "parameter",
+                                         paramSignature, theCall->getLoc())))
+      return failure();
+  }
+  return success();
 }
 
 static ParseResult
@@ -583,6 +619,11 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
         /*numRegions=*/0);
 }
 
+LogicalResult CallOp::verify() {
+  // Verify the region signatures match region parameter signatures.
+  return verifyRegionSignatures(*this);
+}
+
 //===----------------------------------------------------------------------===//
 // CallParamOp / custom<CallParamCallee>
 //===----------------------------------------------------------------------===//
@@ -677,13 +718,21 @@ LogicalResult CallParamOp::verify() {
 
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
-  return verifyCallAndCallee(*this, getSignature(), calleeSignature,
-                             getParamValuesAttr(), getLoc());
+  if (failed(verifyCallAndCallee(*this, getSignature(), calleeSignature,
+                                 getParamValuesAttr(), getLoc())))
+    return failure();
+
+  // Verify the region signatures match region parameter signatures.
+  return verifyRegionSignatures(*this);
 }
 
 //===----------------------------------------------------------------------===//
 // RegionBodyOp / custom<RegionBody>
 //===----------------------------------------------------------------------===//
+
+ReturnOp RegionBodyOp::getReturnOp() {
+  return cast<ReturnOp>(getBody().front().getTerminator());
+}
 
 /// Parse a single-block isolated from above region.
 static ParseResult parseRegionBody(OpAsmParser &p, Region &body) {
@@ -711,6 +760,16 @@ FunctionType RegionBodyOp::getFunctionType() {
       getBody().front().getTerminator()->getOperandTypes());
 }
 
+/// Verify the parameters in the region body.
+LogicalResult
+RegionBodyOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(), None)))
+    return failure();
+
+  // Verify the parameter definitions and uses within the region body.
+  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+}
+
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
@@ -732,7 +791,7 @@ void ParamConstantOp::build(OpBuilder &b, OperationState &state,
 /// Containers verify that the operands of this ReturnOp match the specified set
 /// of types.
 LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
-                                           TypeRange types) {
+                                           Optional<TypeRange> types) {
   // Check the parameters match up.
   auto returnedParams = getParameters();
   if (returnedParams.size() != paramResultTypes.size())
@@ -747,16 +806,20 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
                                         << " but should be " << expectedTy;
   }
 
+  // Verify the result types if they were provided.
+  if (!types)
+    return success();
+
   // Verify our result types match up with the enclosing result type.
-  if (getNumOperands() != types.size())
+  if (getNumOperands() != types->size())
     return emitOpError("expected ")
-           << types.size() << " operands for enclosing op";
+           << types->size() << " operands for enclosing op";
 
   for (size_t i = 0, e = getNumOperands(); i != e; ++i) {
-    if (getOperand(i).getType() != types[i])
+    if (getOperand(i).getType() != (*types)[i])
       return emitOpError("operand #")
              << i << " has type " << getOperand(i).getType()
-             << " but should be " << types[i];
+             << " but should be " << (*types)[i];
   }
   return success();
 }

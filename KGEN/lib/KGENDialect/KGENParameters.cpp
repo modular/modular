@@ -249,9 +249,12 @@ private:
 /// definitions and uses of parameters.  This diagnoses and rejects parameter
 /// definitions in invalid positions as well.
 LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
-  // TODO: We probably shouldn't walk into IsolatedFromAbove operations.  This
-  // walk may need to be adjusted if we have any.
   topLevelDeclOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+    // Walk over nested operations isolated from above.
+    if (bodyOp != topLevelDeclOp &&
+        bodyOp->hasTrait<OpTrait::IsIsolatedFromAbove>())
+      return WalkResult::skip();
+
     ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> paramUses;
 
@@ -271,7 +274,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
           bodyOp->emitError("paramDecls attribute should be an array ")
               << namedAttr.getValue();
           hadError = true;
-          return;
+          return WalkResult::advance();
         }
       }
     }
@@ -301,7 +304,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
 
     // Ok, check parameter declarations if present.
     if (!paramDeclsAttr)
-      return;
+      return WalkResult::advance();
 
     for (ParamDeclAttr param : paramDeclsAttr) {
       // We cannot have any redefinitions.
@@ -312,11 +315,13 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
         diag.attachNote(opAndDeclAttr.first->getLoc())
             << "previous declaration here";
         hadError = true;
-        return;
+        return WalkResult::advance();
       }
 
       opAndDeclAttr = {bodyOp, param};
     }
+
+    return WalkResult::advance();
   });
   return failure(hadError);
 }

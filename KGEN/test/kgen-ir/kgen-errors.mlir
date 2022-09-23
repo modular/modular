@@ -515,3 +515,19 @@ kgen.func @rebind(%a: !meta.scalar<f32>) {
   %0 = kgen.rebind %a : !meta.scalar<f32> to i32
   kgen.return
 }
+
+// -----
+
+kgen.generator @signature_taking_callee<fn: <size>() -> ()>() {
+  kgen.return
+}
+
+kgen.generator @call_region() {
+  // expected-note @below {{parameter declared here}}
+  kgen.call @signature_taking_callee<fn: <size>() -> () = region>() : () -> ()
+  // expected-error @below {{region has 1 argument but parameter expects 0}}
+  fn<size>(%arg0: i32) {
+    kgen.return
+  }
+  kgen.return
+}
