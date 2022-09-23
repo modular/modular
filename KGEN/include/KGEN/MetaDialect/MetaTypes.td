@@ -42,9 +42,8 @@ def ScalarType : ParameterizedMetaType<"Scalar", "scalar", [DTypeInterface]> {
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$parameter), [{
-      return $_get(parameter.getContext(), parameter);
-    }]>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$dtype)>,
+    TypeBuilder<(ins "DType":$dtype)>
   ];
 }
 
@@ -73,37 +72,6 @@ def SIMDType : ParameterizedMetaType<"SIMD", "simd", [DTypeInterface]> {
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> resolveSize() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// BufferType
-//===----------------------------------------------------------------------===//
-
-def BufferType : ParameterizedMetaType<"Buffer", "buffer", [DTypeInterface]> {
-  let summary = "parameterized buffer type";
-  let description = [{
-    This type is parameterized with a size and a !kgen.dtype type.  The size
-    field is optional (may be null) in which case this is a buffer with an
-    unknown size.  The dtype type is also optional, in which case this is a
-    buffer with unknown element type.
-  }];
-
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
-  let assemblyFormat = [{
-    `<` custom<OptionalIndexParamValue>($size) `,` ` `
-        custom<OptionalDTypeParamValue>($dType) `>`
-  }];
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "int64_t":$size, "DType":$dtype)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Try to narrow the size expression of the buffer type to an integer.
     Optional<int64_t> resolveSize() const;
   }];
 }
@@ -184,16 +152,6 @@ def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
 def ConcretePointer : ConfinedType<PointerType,
     [CPred<"$_self.cast<PointerType>().getElementType()">],
     "pointer with known element type">;
-/// A buffer type with a concrete dtype.
-def BufferKnownDType : ConfinedType<BufferType,
-    [CPred<"$_self.cast<BufferType>().getDType()">],
-    "buffer with concrete dtype">;
-/// A buffer type with a concrete size and dtype.
-def ConcreteBuffer : ConfinedType<BufferType,
-    [CPred<"$_self.cast<BufferType>().getDType() && " #
-           "$_self.cast<BufferType>().getSize()">],
-    "buffer with concrete size and dtype">;
-
 
 def ScalarOrSIMD : AnyTypeOf<
     [ScalarType, SIMDType, ParamRefType]>;

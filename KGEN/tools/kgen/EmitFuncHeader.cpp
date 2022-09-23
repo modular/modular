@@ -6,6 +6,8 @@
 
 #include "EmitFuncHeader.h"
 #include "KGEN/MetaDialect/MetaTypes.h"
+#include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/ML/DType.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/FormatAdapters.h"
@@ -53,6 +55,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       os << " __attribute__ ((vector_size(" << vectorSizeInBytes << ")))";
       return success();
     }
+
     if (auto ptr = t.dyn_cast<PointerType>()) {
       if (Type type = ptr.resolveElementType()) {
         if (failed(printTypeAsC(type)))
@@ -63,21 +66,44 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       os << " *";
       return success();
     }
-    if (auto buffer = t.dyn_cast<BufferType>()) {
-      if (!buffer.getSize())
-        os << "intptr_t, ";
-      if (auto dtype = buffer.resolveDType(); dtype.isValid()) {
-        if (failed(printDTypeAsC(dtype)))
+
+    if (auto array = t.dyn_cast<POP::ArrayType>()) {
+      if (failed(printTypeAsC(array.resolveElementType())))
+        return failure();
+      os << "[" << *array.resolveSize() << "]";
+      return success();
+    }
+
+    // FIXME: This pass should run pre-elaboration, but we have no way for user
+    // defined typed to specify the functions in OpaqueObjectInterface.
+    if (auto buffer = t.dyn_cast<ZAP::BufferType>()) {
+      os << "intptr_t, void *, int8_t";
+      return success();
+    }
+
+    if (auto structType = t.dyn_cast<POP::StructType>()) {
+      SmallVector<Type> elementTypes;
+      elementTypes.reserve(structType.getElementTypes().size());
+      if (failed(structType.resolveElementTypes(elementTypes)))
+        return failure();
+      for (auto &elTy : llvm::enumerate(elementTypes)) {
+        if (elTy.index() != 0)
+          os << ", ";
+        if (failed(printTypeAsC(elTy.value())))
           return failure();
-        os << " *";
-      } else {
-        os << "void *, int8_t";
       }
       return success();
     }
 
+    if (t.isa<DTypeType>()) {
+      os << "int8_t";
+      return success();
+    }
+
+    if (!t.isa<IndexType, IntegerType, FloatType>())
+      return func.emitError("unsupported argument type: ") << t;
     if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
-      return func.emitError("bitwidth must be a power of 2");
+      return func.emitError("integer or float bitwidth must be a power of 2");
 
     // Elementary type, just print it.
     if (t.isa<IntegerType>())
@@ -91,7 +117,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     else if (t.isF64())
       os << "double";
     else
-      return func.emitError("unhandled argument type: ") << t;
+      return func.emitError("unhandled float type: ") << t;
     return success();
   };
 
@@ -157,7 +183,8 @@ extern "C" {{
                       80 - 2 * strlen("//===-"), '-'),
       llvm::fmt_repeat('-', 80 - 2 * strlen("//===")), headerGuard);
   if (failed(emitSignature(outFile->os(), func)))
-    return failure();
+    return mlir::emitError(func.getLoc(),
+                           "during header emission for this function");
   outFile->os() << llvm::formatv(headerFmtEnd.data(), headerGuard);
 
   outFile->keep();

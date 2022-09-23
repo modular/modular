@@ -130,7 +130,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerHLKGENPass());
-  pm.addPass(createLowerZAPToPOPPass());
+
+  // FIXME: This has to be disabled to avoid lowering buffer types before
+  // elaboration.
+  // pm.addPass(createLowerZAPToPOPPass());
+
   pm.addPass(mlir::createCanonicalizerPass());
   if (clOptions.cmd != Command::kGenLibraryFile)
     pm.addPass(createElaboratorPass(clOptions));

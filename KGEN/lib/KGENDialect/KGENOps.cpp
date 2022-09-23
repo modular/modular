@@ -686,6 +686,11 @@ OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
   return getValueAttr();
 }
 
+void ParamConstantOp::build(OpBuilder &b, OperationState &state,
+                            TypedAttr value) {
+  build(b, state, value.getType(), value);
+}
+
 //===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//

@@ -99,6 +99,14 @@ Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return ScalarType::get(replAttrs[0]);
 }
 
+ScalarType ScalarType::get(TypedAttr dtype) {
+  return get(dtype.getContext(), dtype);
+}
+
+ScalarType ScalarType::get(MLIRContext *ctx, DType dtype) {
+  return get(ctx, DTypeConstantAttr::get(ctx, dtype));
+}
+
 /// Resolve the dtype of a DTypeInterface Type. If the interface has `invalid`
 /// DType, then given a `tag` attribute, if it's a DTypeConstantAttr then pull
 /// out the DType and return it. Otherwise, return failure.
@@ -333,140 +341,6 @@ FailureOr<bool> SIMDType::equals(Location loc, Attribute tag, void *lhsData,
 
   Optional<int64_t> sizeOr = resolveSize();
   assert(sizeOr.has_value() && "SIMDType must have a statically-known size");
-
-  return dataEquals(loc, dtype, *sizeOr, lhsData, rhsData);
-}
-
-//===----------------------------------------------------------------------===//
-// BufferType
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-BufferType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                   TypedAttr size, TypedAttr dtype) {
-  if (size && !size.getType().isIndex())
-    return emitError() << "size parameter for buffer must have type `index`";
-  if (dtype && !dtype.getType().isa<DTypeType>())
-    return emitError() << "type parameter for buffer must be a !kgen.dtype";
-  return success();
-}
-
-void BufferType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getSize());
-  walkAttrsFn(getDType());
-}
-
-Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                             ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.empty());
-  return BufferType::get(getContext(), replAttrs[0], replAttrs[1]);
-}
-
-Optional<int64_t> BufferType::resolveSize() const {
-  if (auto intAttr = getSize().dyn_cast_or_null<IntegerAttr>())
-    return intAttr.getInt();
-  return {};
-}
-
-BufferType BufferType::get(TypedAttr size, TypedAttr dtype) {
-  return get(size.getContext(), size, dtype);
-}
-
-BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
-  return get(OpBuilder(ctx).getIndexAttr(size),
-             DTypeConstantAttr::get(ctx, dtype));
-}
-
-namespace {
-LLVM_PACKED(struct SizePointerPair {
-  intptr_t size;
-  void *data;
-});
-}
-
-/// This implements `OpaqueObjectInterface::populate`. It generates a buffer
-/// object, and furthermore allocates memory for the buffer's backing storage
-/// and places that in the pointer field of the buffer structure itself.
-LogicalResult BufferType::populate(Location loc, InputGenKind kind,
-                                   Attribute tag, void *obj) const {
-  // FIXME: This doesn't currently handle dynamic size/type buffers - we need
-  //        the tag to contain size, type, or both. Come up with a nice
-  //        attribute structure that enables that use case.
-
-  // Resolve the dtype.
-  DType dtype = resolveDType();
-  if (dtype == DType::invalid)
-    return emitError(loc)
-           << "Buffers with unbound dtype are not yet supported: " << *this;
-
-  auto sizeOr = resolveSize();
-  int64_t numElements;
-  if (!sizeOr.has_value())
-    numElements = tag.cast<IntegerAttr>().getValue().getSExtValue();
-  else
-    numElements = *sizeOr;
-
-  void *ptr = alignedAlloc(kPreferredMemoryAlignment,
-                           dtype.getSizeInBytes(numElements));
-
-  if (sizeOr.has_value()) {
-    // When the number of elements is statically-knowable, the object is just a
-    // pointer.
-    *((void **)obj) = ptr;
-  } else {
-    // Otherwise, it's a pair of intptr_t, void *
-    SizePointerPair *objPtr = ((SizePointerPair *)obj);
-    objPtr->size = numElements;
-    objPtr->data = ptr;
-  }
-
-  // Do the fill.
-  return doFill(loc, kind, dtype, numElements, ptr);
-}
-
-/// This implements `OpaqueObjectInterface::destroy`. This deallocates any
-/// memory allocated in `populate`.
-void BufferType::destroy(Attribute tag, void *obj) const {
-  // TODO: handle dynamic DType as well.
-  auto sizeOr = resolveSize();
-  if (sizeOr.has_value())
-    alignedFree(*(void **)obj);
-  else
-    alignedFree(((SizePointerPair *)obj)->data);
-}
-
-/// This implements `OpaqueObjectInterface::getSizeInBytes`. We don't care about
-/// the buffer's allocation, we care about the size of the buffer itself.
-FailureOr<size_t> BufferType::getSizeInBytes(Location loc,
-                                             Attribute tag) const {
-  // The size of a buffer is at worst size of (length, pointer, dtype).
-  size_t size = sizeof(intptr_t) + sizeof(void *) + sizeof(int8_t);
-  if (resolveSize().has_value())
-    size -= sizeof(intptr_t);
-
-  if (resolveDType() != M::DType::invalid)
-    size -= sizeof(int8_t);
-
-  return size;
-}
-
-/// This method compares two instances of data held in a buffer of a given type.
-/// This is a deep comparison.
-FailureOr<bool> BufferType::equals(Location loc, Attribute tag, void *lhsData,
-                                   void *rhsData) const {
-  // TODO: Much like above, this doesn't handle the dynamic-size or
-  //       dynamic-dtype buffers.
-  DType dtype = resolveDType();
-  if (dtype == DType::invalid)
-    return emitError(loc)
-           << "Buffers with unbound dtype are not yet supported: " << *this;
-
-  Optional<int64_t> sizeOr = resolveSize();
-  if (!sizeOr.has_value())
-    return emitError(loc) << "Buffers with unbound size are not yet supported: "
-                          << *this;
 
   return dataEquals(loc, dtype, *sizeOr, lhsData, rhsData);
 }

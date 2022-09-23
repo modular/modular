@@ -848,6 +848,8 @@ def POP_GetElementOp : POPOp<"get_element", [NoSideEffect,
     $container `[` $index `]` attr-dict `:` qualified(type($container))
   }];
 
+  let builders = [OpBuilder<(ins "Value":$container, "int64_t":$index)>];
+
   let hasVerifier = 1;
 }
 
@@ -994,7 +996,7 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
 
     ```mlir
     pop.external_call @printf(%fmt, %v0, %v1) (!meta.pointer<si8>) -> ()
-      : (!meta.buffer<16, si8>, !meta.scalar<f32>, !meta.scalar<ui32>) -> ()
+      : (!zap.buffer<16, si8>, !meta.scalar<f32>, !meta.scalar<ui32>) -> ()
     ```
   }];
 

@@ -80,22 +80,6 @@ kgen.func @cast_from_meta_type(%arg0: f64) {
 
 // -----
 
-kgen.func @meta_buffer_construct(%ptr: !meta.pointer<!meta.scalar<f32>>) {
-  // expected-error @below {{requires a size operand}}
-  %0 = meta.buffer.construct %ptr : !meta.buffer<?, f32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @meta_buffer_construct(%ptr: !meta.pointer<?>) {
-  // expected-error @below {{requires a dtype operand}}
-  %0 = meta.buffer.construct %ptr : !meta.buffer<4, ?>
-  kgen.return
-}
-
-// -----
-
 // expected-error @+1 {{expected attribute value}}
 kgen.func @unknown_size_simd(%arg0: !meta.simd<?, f32>) -> !meta.simd<?, f32> {
   kgen.return %arg0 : !meta.simd<?, f32>

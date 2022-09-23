@@ -47,7 +47,9 @@ def POP_ArrayType : POPType<"Array", "array"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
                                         "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "Type":$elementType)>
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
+                                        "Type":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "int64_t":$size, "Type":$elementType)>
   ];
 
   let extraClassDeclaration = [{
@@ -93,6 +95,10 @@ def POP_StructType : POPType<"Struct", "struct"> {
   // FIXME: Empty structs won't work until https://reviews.llvm.org/D133819.
   let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($elementTypes) `>`";
   let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>
+  ];
 
   let extraClassDeclaration = [{
     /// Try to narrow all the element type expressions to MLIR types.

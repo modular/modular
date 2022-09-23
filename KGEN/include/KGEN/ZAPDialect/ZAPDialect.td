@@ -28,10 +28,14 @@ def ZAPDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN::ZAP";
+  let useDefaultTypePrinterParser = 1;
+  let hasConstantMaterializer = 1;
 
   let extraClassDeclaration = [{
     /// Register all dialect operations.
     void registerOperations();
+    /// Register all dialect types.
+    void registerTypes();
   }];
 }
 

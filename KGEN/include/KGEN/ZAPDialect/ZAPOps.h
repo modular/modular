@@ -9,7 +9,15 @@
 
 #include "KGEN/MetaDialect/MetaTypes.h"
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+
+namespace M::KGEN {
+class DTypeType;
+namespace ZAP {
+class BufferType;
+} // namespace ZAP
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

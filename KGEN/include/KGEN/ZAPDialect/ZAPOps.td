@@ -9,6 +9,8 @@
 
 include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
+include "KGEN/ZAPDialect/ZAPTypes.td"
+include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -18,6 +20,170 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 /// Base class for ZAP dialect operations.
 class ZAPOp<string mnemonic, list<Trait> traits = []>
     : Op<ZAPDialect, mnemonic, traits>;
+
+//===----------------------------------------------------------------------===//
+// BufferConstructOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [NoSideEffect,
+    AttrSizedOperandSegments, BufferPointerType<"result", "ptr">]> {
+  let summary = "construct a buffer with a pointer";
+  let description = [{
+    The `zap.buffer.construct` operation constructs a buffer around a base
+    pointer. Requires size and/or dtype operands as necessary, if they are
+    unknown in the return type.
+
+    Example:
+
+    ```mlir
+    // Construct a buffer with a known size and type.
+    %0 = zap.buffer.construct %ptr : !zap.buffer<4, f32>
+
+    // Construct a buffer with an unknown size.
+    %1 = zap.buffer.construct %ptr[%size] : !zap.buffer<?, f32>
+
+    // Construct a buffer with an unknown dtype.
+    %2 = zap.buffer.construct %ptr of %dtype : !zap.buffer<4, ?>
+
+    // Construct a buffer with an unknown size and dtype.
+    %3 = zap.buffer.construct %ptr[%size] of %dtype : !zap.buffer<?, ?>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$ptr, Optional<Index>:$size,
+                       Optional<DTypeType>:$dType);
+  let results = (outs ZAP_BufferType:$result);
+  let assemblyFormat = [{
+    $ptr (`[` $size^ `]`)? (`of` $dType^)? attr-dict `:`
+    qualified(type($result))
+  }];
+  let hasVerifier = 1;
+
+  let builders = [OpBuilder<(ins "Type":$type, "Value":$ptr)>];
+}
+
+//===----------------------------------------------------------------------===//
+// BufferSizeOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferSizeOp : ZAPOp<"buffer.size", [NoSideEffect]> {
+  let summary = "get the size of a buffer";
+  let description = [{
+    The `zap.buffer.size` operation returns the size of the given buffer as an
+    SSA value (of type `index`) that may be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = zap.buffer.size %arg0 : !zap.buffer<3, f32>
+    %1 = zap.buffer.size %arg1 : !zap.buffer<?, f32>
+    ```
+  }];
+
+  let arguments = (ins ZAP_BufferType:$buffer);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$buffer attr-dict `:` qualified(type($buffer))";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BufferDTypeOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferDTypeOp : ZAPOp<"buffer.dtype", [NoSideEffect]> {
+  let summary = "get the dtype of a buffer";
+  let description = [{
+    The `zap.buffer.dtype` operation returns the dtype of the given buffer as an
+    SSA value (of type `!kgen.dtype`) that may be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = zap.buffer.dtype %arg0 : !zap.buffer<3, f32>
+    %1 = zap.buffer.dtype %arg0 : !zap.buffer<3, ?>
+    ```
+  }];
+
+  let arguments = (ins ZAP_BufferType:$buffer);
+  let results = (outs DTypeType:$dtype);
+  let assemblyFormat = "$buffer attr-dict `:` qualified(type($buffer))";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BufferAddressOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [NoSideEffect,
+    BufferPointerType<"buffer", "ptr">]> {
+  let summary = "get the starting address of a buffer";
+  let description = [{
+    The `zap.buffer.address` operation returns the address of the given buffer
+    as a pointer to a scalar of the buffer dtype.
+
+    Example:
+
+    ```mlir
+    %0 = zap.buffer.address %arg0 : !zap.buffer<3, f32>
+    %1 = zap.buffer.address %arg1 : !zap.buffer<3, ?>
+    ```
+  }];
+
+  let arguments = (ins ZAP_BufferType:$buffer);
+  let results = (outs PointerType:$ptr);
+  let assemblyFormat = "$buffer attr-dict `:` qualified(type($buffer))";
+}
+
+//===----------------------------------------------------------------------===//
+// BufferConvertOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_BufferConvertOp : ZAPOp<"buffer.bitcast", [NoSideEffect,
+    DeclareOpInterfaceMethods<CastOpInterface>]> {
+  let summary = "cast a buffer type";
+  let description = [{
+    The `zap.buffer.convert` operation converts a buffer type to another buffer
+    type. It can convert between buffers with static sizes and dynamic sizes and
+    between those of static dtypes and dynamic dtypes.
+
+    Example:
+
+    ```mlir
+    // Convert a dynamic buffer to a dynamic size buffer.
+    %0 = zap.buffer.bitcast %a : !zap.buffer<?, ?> to !zap.buffer<?, f32>
+
+    // Convert a static buffer to a dynamic size buffer.
+    %1 = zap.buffer.bitcast %b : !zap.buffer<1024, f32> to !zap.buffer<?, f32>
+
+    // Convert a dynamic dtype buffer to a dynamic size buffer.
+    %2 = zap.buffer.bitcast %c : !zap.buffer<32, ?> to !zap.buffer<?, f32>
+    ```
+
+    The operation can bitcast between buffer types of the same arity with
+    different sizes or dtypes.
+
+    Example:
+
+    ```mlir
+    // Convert a size 32 buffer to a size 64 buffer.
+    %0 = zap.buffer.bitcast %a : !zap.buffer<32, ?> to !zap.buffer<64, ?>
+
+    // Convert a ui32 buffer to a si32 buffer.
+    %0 = zap.buffer.bitcast %b : !zap.buffer<?, ui32> to !zap.buffer<?, si32>
+    ```
+
+    If the size or dtype is concrete in the result type, it overwrites the
+    size or dtype in the input buffer.
+  }];
+
+  let arguments = (ins ZAP_BufferType:$input);
+  let results = (outs ZAP_BufferType:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
+
+  let hasFolder = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // BufferStackAllocation
@@ -37,11 +203,11 @@ def ZAP_BufferStackAllocationOp : ZAPOp<"buffer.stack_allocation"> {
     Example:
 
     ```mlir
-    %0 = zap.buffer.stack_allocation : !meta.buffer<4, f32>
-    %1 = zap.buffer.stack_allocation : !meta.buffer<size, f32>
-    %2 = zap.buffer.stack_allocation : !meta.buffer<size, type>
+    %0 = zap.buffer.stack_allocation : !zap.buffer<4, f32>
+    %1 = zap.buffer.stack_allocation : !zap.buffer<size, f32>
+    %2 = zap.buffer.stack_allocation : !zap.buffer<size, type>
     // The following is not allowed
-    %3 = pop.buffer.stack_allocation : !meta.buffer<?, f32>
+    %3 = pop.buffer.stack_allocation : !zap.buffer<?, f32>
     ```
   }];
 
@@ -81,7 +247,7 @@ def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
   }];
 
   let arguments = (ins IntOrFPElementsAttr:$values);
-  let results = (outs Res<ConcreteBuffer, "", [MemAlloc]>:$result);
+  let results = (outs Res<ConcreteBuffer, "", [MemAlloc, MemWrite]>:$result);
 
   let assemblyFormat = [{
     `(` $values `)` attr-dict `:`
@@ -95,8 +261,8 @@ def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
-     ScalarOfSameDType<"buffer", "result">]> {
+def ZAP_BufferLoadOp : ZAPOp<"buffer.load",
+    [BufferElementType<"buffer", "result">]> {
   let summary = "buffer load operation";
   let description = [{
     The `buffer.load` operation takes a buffer and an index position and
@@ -106,7 +272,7 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
     Example:
 
     ```mlir
-    %1 = zap.buffer.load %0[%position]: !meta.buffer<size, dtype>
+    %1 = zap.buffer.load %0[%position]: !zap.buffer<size, dtype>
     ```
   }];
 
@@ -123,8 +289,8 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load", [
 // BufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
-     ScalarOfSameDType<"buffer", "value">]> {
+def ZAP_BufferStoreOp : ZAPOp<"buffer.store",
+    [BufferElementType<"buffer", "value">]> {
   let summary = "buffer store operation";
   let description = [{
     The `buffer.store.` operation takes a source value, a buffer, and an index
@@ -134,7 +300,7 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
     Example:
 
     ```mlir
-    zap.buffer.store %val, %buf[%position]: !meta.buffer<size, dtype>
+    zap.buffer.store %val, %buf[%position]: !zap.buffer<size, dtype>
     ```
   }];
 
@@ -145,7 +311,6 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store", [
     $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
   }];
 }
-
 
 //===----------------------------------------------------------------------===//
 // SIMDLoadOp
@@ -161,7 +326,7 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
     Example:
 
     ```mlir
-    %1 = zap.buffer.load %0[%idx]: !meta.buffer<size, dtype>, !meta.simd<4, f32>
+    %1 = zap.buffer.load %0[%idx]: !zap.buffer<size, dtype>, !meta.simd<4, f32>
     ```
   }];
 
@@ -177,7 +342,7 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
 }
 
 //===----------------------------------------------------------------------===//
-// BufferStoreOp
+// SIMDStoreOp
 //===----------------------------------------------------------------------===//
 
 def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
@@ -190,7 +355,7 @@ def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
     Example:
 
     ```mlir
-    zap.simd.store %val, %buf[%idx]: !meta.simd<4, f32>, !meta.buffer<size, f32>
+    zap.simd.store %val, %buf[%idx]: !meta.simd<4, f32>, !zap.buffer<size, f32>
     ```
   }];
 

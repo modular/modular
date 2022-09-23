@@ -48,20 +48,20 @@ kgen.generator @erf_scalar_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-kgen.generator.interface @erf<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
+kgen.generator.interface @erf<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
 
-hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !meta.buffer<?, type>)
+hlkgen.generator @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
   implements @erf {
   %zero = index.constant 0
   %one = index.constant 1
 
   // TODO: Must assert that size of in and out buffers are the same
-  %size = meta.buffer.size %in: !meta.buffer<?, type>
+  %size = zap.buffer.size %in: !zap.buffer<?, type>
 
   scf.for %i = %zero to %size step %one {
-      %src  = zap.buffer.load %in[%i] : !meta.buffer<?, type>
+      %src  = zap.buffer.load %in[%i] : !zap.buffer<?, type>
       %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!meta.scalar<type>) -> !meta.scalar<type>
-      zap.buffer.store %res, %out[%i] : !meta.buffer<?, type>
+      zap.buffer.store %res, %out[%i] : !zap.buffer<?, type>
   }
 
   kgen.return
@@ -70,9 +70,9 @@ hlkgen.generator @erf_impl1<type: dtype>(%in: !meta.buffer<?, type>, %out : !met
 // Instantiate @erf for concrete buffer size and element type
 
 // CHECK-LABEL: kgen.func @erf_f32
-// CHECK-SAME: %[[ARG0:.*]]: !meta.buffer<?, f32>, %[[ARG1:.*]]: !meta.buffer<?, f32>
-// CHECK: kgen.call @"erf_impl1,type=f32"(%[[ARG0]], %[[ARG1]]) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
-kgen.generator @erf_f32(%in: !meta.buffer<?, f32>, %out: !meta.buffer<?, f32>) {
-  kgen.call @erf<type: dtype = f32>(%in, %out) : (!meta.buffer<?, f32>, !meta.buffer<?, f32>) -> ()
+// CHECK-SAME: %[[ARG0:.*]]: !zap.buffer<?, f32>, %[[ARG1:.*]]: !zap.buffer<?, f32>
+// CHECK: kgen.call @"erf_impl1,type=f32"(%[[ARG0]], %[[ARG1]]) : (!zap.buffer<?, f32>, !zap.buffer<?, f32>) -> ()
+kgen.generator @erf_f32(%in: !zap.buffer<?, f32>, %out: !zap.buffer<?, f32>) {
+  kgen.call @erf<type: dtype = f32>(%in, %out) : (!zap.buffer<?, f32>, !zap.buffer<?, f32>) -> ()
   kgen.return
 }

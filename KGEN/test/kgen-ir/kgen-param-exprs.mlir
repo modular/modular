@@ -262,8 +262,8 @@ kgen.generator @region_params
    // CHECK-SAME: r2: signature<<() -> i1>() -> ()>,
    r2: signature<<() -> i1>() -> ()>,
    // This uses a different parameter.
-   // CHECK-SAME: r3: signature<<dt: dtype>() -> !meta.buffer<4, dt>>
-   r3: signature<<dt: dtype>() -> !meta.buffer<4, dt>>
+   // CHECK-SAME: r3: signature<<dt: dtype>() -> !zap.buffer<4, dt>>
+   r3: signature<<dt: dtype>() -> !zap.buffer<4, dt>>
    >() {
   // use unaryFn
   kgen.return

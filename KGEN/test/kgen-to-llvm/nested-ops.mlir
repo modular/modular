@@ -1,12 +1,16 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm | FileCheck %s
 
 // CHECK-LABEL: @nested_ops
-kgen.func @nested_ops(%cond: i1, %a: !meta.buffer<?, f32>, %v: !meta.scalar<f32>) {
+kgen.func @nested_ops(%cond: i1) -> index {
   // CHECK: scf.if
-  scf.if %cond {
-    // CHECK-NOT: meta.buffer.address
-    %0 = meta.buffer.address %a : !meta.buffer<?, f32>
-    pop.store %v, %0 : !meta.pointer<!meta.scalar<f32>>
+  %2 = scf.if %cond -> index {
+    // CHECK-NOT: kgen.param.constant
+    %0 = kgen.param.constant = <4>
+    scf.yield %0 : index
+  } else {
+    // CHECK-NOT: kgen.param.constant
+    %1 = kgen.param.constant = <1>
+    scf.yield %1 : index
   }
-  kgen.return
+  kgen.return %2 : index
 }

@@ -8,14 +8,14 @@
 //===----------------------------------------------------------------------===//
 
 kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
-  (%buffer: !meta.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
+  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
 
 kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
-  (%buffer: !meta.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
+  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
   implements @buffer.loadOrValue {
   %isLoad = kgen.param.constant : i1 = <isLoad>
   %res = scf.if %isLoad -> !meta.scalar<type> {
-    %t0 = zap.buffer.load %buffer[%idx] : !meta.buffer<?, type>
+    %t0 = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>
     scf.yield %t0 : !meta.scalar<type>
   } else {
     scf.yield %val : !meta.scalar<type>
@@ -27,7 +27,7 @@ kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
 // polynomial_evaluate
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !zap.buffer<size, type>) -> !meta.scalar<type>
 
 /// Evaluates a polynomial using the horner scheme.
 ///
@@ -35,14 +35,14 @@ kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !meta.sca
 /// coefficients [c0, c1, c2, ..., cn] is defined by the following equation:
 /// horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
 ///                     = fma(val, horner(val, coeffs[1:]), c0)
-kgen.generator @horner<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !meta.buffer<size, type>) -> !meta.scalar<type>
+kgen.generator @horner<type: dtype, size>(%val: !meta.scalar<type>, %coefficients: !zap.buffer<size, type>) -> !meta.scalar<type>
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @polynomial_evaluate {
   %zero = index.constant 0
   %one = index.constant 1
   %zerof = pop.constant(0.0) : !meta.scalar<type>
-  %numCoeffs = meta.buffer.size %coefficients: !meta.buffer<size, type>
+  %numCoeffs = zap.buffer.size %coefficients: !zap.buffer<size, type>
   %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !meta.scalar<type> {
-    %coeff = zap.buffer.load %coefficients[%i] : !meta.buffer<size, type>
+    %coeff = zap.buffer.load %coefficients[%i] : !zap.buffer<size, type>
     %res = pop.fma %sum, %val, %coeff : !meta.scalar<type>
     scf.yield %res : !meta.scalar<type>
   }

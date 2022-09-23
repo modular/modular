@@ -272,6 +272,9 @@ def ParamConstantOp : KGENOp<"param.constant",
   let results = (outs AnyType:$result);
   let assemblyFormat =
      "custom<ParamConstantOpValue>($value, qualified(type($result))) attr-dict";
+
+  let builders = [OpBuilder<(ins "TypedAttr":$value)>];
+
   let hasFolder = true;
 }
 
@@ -286,11 +289,10 @@ def ParamDeclareOp : KGENOp<"param.declare", []> {
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
                        ParameterExprAttr:$value);
-  let results = (outs);
   let assemblyFormat =
      "custom<ParamDeclareOpValue>($paramDecls, $value) attr-dict";
 
-   let builders = [
+  let builders = [
     OpBuilder<(ins "ParamDeclAttr":$decl, "Attribute":$value)>,
   ];
 

@@ -113,7 +113,7 @@ kgen.generator @dtype_params() {
 
 // expected-note @+2 {{parameter defined with type 'ui32'}}
 // expected-error @+1 {{reference to parameter "n" with incorrect type 'index'}}
-kgen.generator @scalar_params_verbose<n : ui32>(%x : !meta.buffer<n, f32>) {
+kgen.generator @scalar_params_verbose<n : ui32>(%x : !zap.buffer<n, f32>) {
   kgen.return
 }
 
@@ -161,37 +161,6 @@ kgen.func @test_only_returns() {
   // expected-error @+1 {{caller has 0 input parameters but callee expects 1}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
-}
-
-// -----
-
-kgen.func @meta_buffer_size(%arg0: i32) -> index {
-  // expected-error @+1 {{'meta.buffer.size' op operand #0 must be parameterized buffer type, but got 'i32'}}
-  %0 = meta.buffer.size %arg0 : i32
-  kgen.return %0 : index
-}
-// -----
-
-kgen.func @bad_buffer_rebind_size(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<1, f32> {
-  // expected-error @+1 {{input buffer size '42' disagrees with result buffer size '1'}}
-  %0 = meta.buffer.convert %arg0 : !meta.buffer<42, f32> to !meta.buffer<1, f32>
-  kgen.return %0 : !meta.buffer<1, f32>
-}
-
-// -----
-
-kgen.func @bad_buffer_rebind_dtype(%arg0 : !meta.buffer<42, f32>) -> !meta.buffer<42, f64> {
-  // expected-error @+1 {{input buffer dtype 'f32' disagrees with result buffer dtype 'f64'}}
-  %0 = meta.buffer.convert %arg0 : !meta.buffer<42, f32> to !meta.buffer<42, f64>
-  kgen.return %0 : !meta.buffer<42, f64>
-}
-
-// -----
-
-kgen.func @meta_buffer_dtype(%arg0: i32) -> !kgen.dtype {
-  // expected-error @+1 {{'meta.buffer.dtype' op operand #0 must be parameterized buffer type, but got 'i32'}}
-  %0 = meta.buffer.dtype %arg0 : i32
-  kgen.return %0 : !kgen.dtype
 }
 
 // -----
@@ -389,7 +358,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 // -----
 
 // expected-error @below {{"dt" parameter not defined in signature}}
-kgen.generator @region_params<r3: () -> !meta.buffer<4, dt>>() {
+kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
   kgen.return
 }
 

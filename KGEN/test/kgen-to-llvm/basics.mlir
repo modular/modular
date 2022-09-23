@@ -1,5 +1,4 @@
 // RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
-// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=32" %s | FileCheck %s --check-prefixes=INDEX32
 
 // CHECK-LABEL: llvm.func private @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
@@ -22,19 +21,11 @@ kgen.func @produces_result<() -> index>() {
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
 // CHECK-SAME: %{{.*}}: vector<4xf32>
-// CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<i64>)>
-// CHECK-SAME: %{{.*}}: !llvm.struct<(i64, ptr<f32>)>
-
-// INDEX32-LABEL: llvm.func private @convert_meta_types
-// INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<i64>)>
-// INDEX32-SAME: %{{.*}}: !llvm.struct<(i32, ptr<f32>)>
 
 kgen.func @convert_meta_types(
     %arg0: !meta.scalar<f32>,
     %arg1: !meta.pointer<!meta.scalar<f32>>,
-    %arg2: !meta.simd<4, f32>,
-    %arg3: !meta.buffer<?, si64>,
-    %arg4: !meta.buffer<?, f32>) {
+    %arg2: !meta.simd<4, f32>) {
   kgen.return
 }
 
