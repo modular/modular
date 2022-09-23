@@ -366,7 +366,7 @@ kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @takeUnary
-  <unaryFn: signature<<dt: dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
+  <unaryFn: <dt: dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
   kgen.return
 }
 
@@ -396,7 +396,7 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
+  <unaryFn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
   kgen.return
 }
 
@@ -415,7 +415,7 @@ kgen.generator @test1() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
+  <unaryFn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
   kgen.return
 }
 
@@ -442,17 +442,17 @@ kgen.generator @call_param() {
 
 // -----
 
-kgen.generator @call_param<fn: signature<<ty: type>()->()>>() {
+kgen.generator @call_param<fn: <ty: type>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[signature<<ty: type>()->()>: fn]<ty = 42>()
+  %0 = kgen.call_param[<ty: type>()->(): fn]<ty = 42>()
   kgen.return
 }
 
 // -----
 
-kgen.generator @call_param<fn: signature<<ty: type>()->()>>() {
+kgen.generator @call_param<fn: <ty: type>()->()>() {
   // expected-error @+1 {{caller input parameter #0 has type 'index' but callee expected type}}
-  kgen.call_param[signature<<ty: type>()->()>: fn]<ty = 42>()
+  kgen.call_param[<ty: type>()->(): fn]<ty = 42>()
   kgen.return
 }
 
@@ -470,7 +470,7 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
 
 // -----
 
-kgen.generator @takeFn<unaryFn: signature<<abc>()->()>>() {
+kgen.generator @takeFn<unaryFn: <abc>()->()>() {
   kgen.return
 }
 
@@ -481,21 +481,21 @@ kgen.generator @thing<dt>() {
 
 kgen.generator @test2() {
   // expected-error @+1 {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
-  kgen.call @takeFn<unaryFn : signature<<abc>()->()> = @thing>() : () -> ()
+  kgen.call @takeFn<unaryFn : <abc>()->() = @thing>() : () -> ()
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{"ty" parameter not defined in signature}}
-kgen.generator @test<ty: type, p : signature<<x>(!kgen.paramref<ty>)->()>>() {
+kgen.generator @test<ty: type, p : <x>(!kgen.paramref<ty>)->()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{signature parameter "x" redefined}}
-kgen.generator @test<ty: type, p : signature<<x,x>()->()>>
+kgen.generator @test<ty: type, p : <x,x>()->()>
 () {
   kgen.return
 }
