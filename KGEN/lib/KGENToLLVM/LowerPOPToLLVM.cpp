@@ -15,6 +15,7 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/Target/LLVMIR/TypeToLLVM.h"
 
 using namespace M;
 using namespace KGEN;
@@ -506,6 +507,60 @@ struct ConvertPOPGetElement : mlir::ConvertOpToLLVMPattern<GetElementOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// getAlignment
+//===----------------------------------------------------------------------===//
+
+static unsigned getAlignment(const llvm::DataLayout &dataLayout, Value ptr,
+                             Optional<TypedAttr> alignmentAttr) {
+  // If we have the alignment attribute, use it.
+  if (alignmentAttr)
+    return alignmentAttr->cast<IntegerAttr>().getInt();
+
+  // Otherwise, get the preferred alignment for the type.
+  llvm::LLVMContext llvmContext;
+  return LLVM::TypeToLLVMIRTranslator(llvmContext)
+      .getPreferredAlignment(
+          ptr.getType().cast<LLVM::LLVMPointerType>().getElementType(),
+          dataLayout);
+}
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPLoad
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPLoad : mlir::ConvertOpToLLVMPattern<LoadOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(LoadOp op, LoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+        op, adaptor.getPtr(),
+        getAlignment(getTypeConverter()->getDataLayout(), adaptor.getPtr(),
+                     adaptor.getAlignment()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPStore
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StoreOp op, StoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+        op, adaptor.getArg(), adaptor.getPtr(),
+        getAlignment(getTypeConverter()->getDataLayout(), adaptor.getPtr(),
+                     adaptor.getAlignment()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPTypeLowerCast
 //===----------------------------------------------------------------------===//
 
@@ -578,9 +633,6 @@ using ConvertPOPSIMDReduceMin =
     OneToOneFloatOrIntConversion<SIMDReduceMinOp, LLVM::vector_reduce_fmin,
                                  LLVM::vector_reduce_smin,
                                  LLVM::vector_reduce_umin>;
-using ConvertPOPLoad = mlir::OneToOneConvertToLLVMPattern<LoadOp, LLVM::LoadOp>;
-using ConvertPOPStore =
-    mlir::OneToOneConvertToLLVMPattern<StoreOp, LLVM::StoreOp>;
 using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =

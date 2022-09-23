@@ -16,6 +16,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -399,12 +400,54 @@ LogicalResult SIMDShuffleOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// OptionalAlignmentParamValue
+//===----------------------------------------------------------------------===//
+
+static void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
+                                             TypedAttr alignment) {
+  if (!alignment)
+    return;
+  p << "align ";
+  printParamValue(p, alignment);
+  p << " ";
+}
+
+/// Parse a parameter value that is known to be an alignment type.
+ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result) {
+  if (p.parseOptionalKeyword("align")) {
+    result = TypedAttr();
+    return success();
+  }
+
+  if (parseIndexParamValue(p, result))
+    return failure();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr) {
-  auto type = ptr.getType().cast<PointerType>().getElementType();
-  build(b, state, ParamRefType::get(type), ptr);
+void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
+                   Optional<unsigned> alignment) {
+  auto type =
+      ParamRefType::get(ptr.getType().cast<PointerType>().getElementType());
+  TypedAttr alignmentAttr;
+  if (alignment)
+    alignmentAttr = b.getIndexAttr(*alignment);
+  build(b, state, type, ptr, alignmentAttr);
+}
+
+//===----------------------------------------------------------------------===//
+// StoreOp
+//===----------------------------------------------------------------------===//
+
+void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
+                    Optional<unsigned> alignment) {
+  TypedAttr alignmentAttr;
+  if (alignment)
+    alignmentAttr = b.getIndexAttr(*alignment);
+  build(b, state, arg, ptr, alignmentAttr);
 }
 
 //===----------------------------------------------------------------------===//

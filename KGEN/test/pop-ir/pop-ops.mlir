@@ -457,6 +457,26 @@ kgen.generator @pop_load_store<type: dtype>(%p0: !pop.pointer<!meta.scalar<f32>>
   kgen.return
 }
 
+// CHECK-LABEL: @pop_load_store_alignment
+kgen.generator @pop_load_store_alignment<type: dtype>(%p0: !pop.pointer<!meta.scalar<f32>>, %p1: !pop.pointer<!meta.scalar<type>>) {
+  // CHECK: pop.load %{{.*}} align 42 : !pop.pointer<!meta.scalar<f32>>
+  %0 = pop.load %p0 align 42: !pop.pointer<!meta.scalar<f32>>
+  // CHECK: pop.load %{{.*}} align 8 : !pop.pointer<!meta.scalar<type>>
+  %1 = pop.load %p1 align 8: !pop.pointer<!meta.scalar<type>>
+  // CHECK: pop.store %{{.*}}, %{{.*}} align 4 : !pop.pointer<!meta.scalar<f32>>
+  pop.store %0, %p0 align 4: !pop.pointer<!meta.scalar<f32>>
+  // CHECK: pop.store %{{.*}}, %{{.*}} align 89 : !pop.pointer<!meta.scalar<type>>
+  pop.store %1, %p1 align 89: !pop.pointer<!meta.scalar<type>>
+  kgen.return
+}
+
+// CHECK-LABEL: @pop_load_alignment_generator
+kgen.generator @pop_load_alignment_generator<alignment>(%ptr: !pop.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
+  // CHECK: pop.load %{{.*}} align alignment : !pop.pointer<!meta.scalar<f32>>
+  %0 = pop.load %ptr align alignment : !pop.pointer<!meta.scalar<f32>>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
 // CHECK-LABEL: @pop_offset
 kgen.generator @pop_offset<type: dtype>(%p: !pop.pointer<!meta.scalar<f32>>, %idx: index) {
   // pop.offset %{{.*}}[{{.*}}] : !pop.pointer<!meta.scalar<f32>>
