@@ -235,10 +235,34 @@ kgen.func @load(%p: !pop.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
 
 // -----
 
+// CHECK-LABEL: @load_with_alignment
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+kgen.func @load_with_alignment(%p: !pop.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
+  // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: llvm.load %[[PTR]] {alignment = 128 : i64}
+  %0 = pop.load %p align 128 : !pop.pointer<!meta.scalar<f32>>
+  kgen.return %0 : !meta.scalar<f32>
+}
+
+// -----
+
 // CHECK-LABEL: @store
 kgen.func @store(%p: !pop.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
   // CHECK: llvm.store
   pop.store %v, %p : !pop.pointer<!meta.scalar<si32>>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @store_with_alignment
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.func @store_with_alignment(%p: !pop.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
+  // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
+  pop.store %v, %p align 128 : !pop.pointer<!meta.scalar<si32>>
   kgen.return
 }
 

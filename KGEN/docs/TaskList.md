@@ -6,7 +6,7 @@ Modular Confidential (obviously)
 
 # Introduction
 
-This document outlines tasks for the implementation work to bring up the [Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).  This document describes the implementation effort in granular chunks.  It is intended to be a working document that we evolve over time.  
+This document outlines tasks for the implementation work to bring up the [Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).  This document describes the implementation effort in granular chunks.  It is intended to be a working document that we evolve over time.
 
 
 # Tasks to be implemented
@@ -64,7 +64,7 @@ We need to define a new top-level directory with the usual include/lib/tools/tes
 
 The hardest part of this is to decide on a name for the project, something I deftly dodged in the design doc.  Some options:
 
-* One name I considered but didn’t like is “corn” or “popcorn” given it has kernels, pro: there is an emoji, con: it sounds dumb.  
+* One name I considered but didn’t like is “corn” or “popcorn” given it has kernels, pro: there is an emoji, con: it sounds dumb.
 * Abdul suggest “kgen”, pronounced 🍤 Cajun, contraction of  kernel generator.
 * Tatiana suggests  “kir” kernel intermediate representation
 
@@ -81,7 +81,7 @@ One of the key things we need to do is describe both a program and a metaprogram
 3. ✅I am not happy with the printed/parsed syntax of CIRCT param attrs. I never got around to sugaring “`#hw.param.expr.add<#hw.param.expr.mul<#hw.param.decl.ref<"p1">, 2>, 4>`” as something like “`#hw.param.expr<p1*2+4>`”.  This is super important to get right before we create lots of test cases that use the wrong syntax.
 4. ✅We then need the `kgen.param.constant` op in the design doc (the equivalent of [hw.param.value](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWMiscOps.td#L71)) which projects a parameter into an SSA value.  This allows using values from the metaprogram in the program
 5. ✅We need the ability to return parameters, e.g. like `panelDotInner` in the whitepaper.  CIRCT doesn’t have an analog of this, but it should just be a terminator like hw.output but that allows a parameter list as attributes.  This does bring up a significant representational issue that I’m not sure about: in CIRCT all parameters are resolved by looking at the hw.module, but now parameters will be defined by other operations in the kgen.generator op.  This raises some annoying implementation concerns that we’ll have to wrestle with.
-6. ✅[Issue #983](https://github.com/modularml/modular/issues/983) We need to decide what to do with the type system for parameters: I recommend allowing parameters with any type, but parameters with no specified types should default to being index types with signed interpretation.  Use of index allows projections into the SSA domain to be architecture independent, and dovetails with things like the SCF dialect better. Syntactically, this means that these are equivalent: 
+6. ✅[Issue #983](https://github.com/modularml/modular/issues/983) We need to decide what to do with the type system for parameters: I recommend allowing parameters with any type, but parameters with no specified types should default to being index types with signed interpretation.  Use of index allows projections into the SSA domain to be architecture independent, and dovetails with things like the SCF dialect better. Syntactically, this means that these are equivalent:
     1. `kgen.generator @foo<p1, p2, p3>(`...  (
     2. `kgen.generator @foo<p1: index, p2: index, p3: index>(`...  (
 7. ✅[Issue #960](https://github.com/modularml/modular/issues/960) We need a `kgen.call` op + verification so generators can invoke other generators.
@@ -120,10 +120,10 @@ and:
 
 Given a parameterization system, we need to build parameterized types, specifically these to start (take a look at `hw.Int` and `hw.Array` in CIRCT, which have parameterized widths):
 
-1. ✅[Issue #978](https://github.com/modularml/modular/issues/978) `meta.scalar<x>` where x is a `dtype`: represents a concrete scalar type like `scalar<f32>` but also things like `scalar<someparameter>` in parameterized type contexts.  
+1. ✅[Issue #978](https://github.com/modularml/modular/issues/978) `meta.scalar<x>` where x is a `dtype`: represents a concrete scalar type like `scalar<f32>` but also things like `scalar<someparameter>` in parameterized type contexts.
 2. ✅[Issue #1009](https://github.com/modularml/modular/issues/1009) `meta.buffer<size, x> `here size is an `index` and x is a dtype, an analog of “memref” (I still regret the name “memref” btw :))
 3. ✅`meta.simd<size, ty>` where size is an `index` and `ty` is a `dtype`.  The integer can be an arbitrary parameter expression of course.
-4. ✅[Issue #1663](https://github.com/modularml/modular/issues/1663) `meta.pointer<T>` for boundless pointer arithmetic.
+4. ✅[Issue #1663](https://github.com/modularml/modular/issues/1663) `pop.pointer<T>` for boundless pointer arithmetic.
 5. Not initially, but we’ll need other types for nD arrays etc.
 
 In addition to the types themselves, we need supporting infrastructure for working with them, including:
@@ -191,7 +191,7 @@ Generator interfaces should have the same functionality to allow constraining al
 3. ✅Generators failing leads to a new set of challenges with error reporting: when we fail to generate /any/ variant of a kernel, we need to report an elaboration “stack trace” of why expansion failed.  This means we need to revamp error diagnoses and tracking.
 4. ✅We should support kgen.param.assert as a generalized assertion that works against arbitrary parameter expressions, even those that aren’t direct generator parameters.
 
-## ✅ Build compiler elaboration algorithm to run the generator 
+## ✅ Build compiler elaboration algorithm to run the generator
 
 Given the ability to describe things, and given multiple implementations and basic parameters, we need the compiler infrastructure that walks the tree of expansions.  In time this will be done with search, but initially we should just **generate all** of the possible implementations of the kernels exhaustively.
 
@@ -284,6 +284,3 @@ full support for type parameters:  With the support above, we have the ability t
 element type (and vector length), but we don't have the ability to write
 kernels that are generic over both scalar and vector.  This is a different
 form of parametricity which requires MLIR types as parameter values.
-
-
-
