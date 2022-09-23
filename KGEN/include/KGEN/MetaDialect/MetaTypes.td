@@ -30,33 +30,4 @@ class ParameterizedMetaType<string name, string typeMnemonic,
         DeclareTypeInterfaceMethods<SubElementTypeInterface>,
       ] # traits>;
 
-//===----------------------------------------------------------------------===//
-// SIMDType
-//===----------------------------------------------------------------------===//
-
-def SIMDType : ParameterizedMetaType<"SIMD", "simd", [DTypeInterface]> {
-  let summary = "parameterized SIMD vector type";
-  let description = [{
-    This type is parameterized with a size and a !kgen.dtype type.
-  }];
-
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
-  let assemblyFormat = [{
-    `<` custom<IndexParamValue>($size) `,` ` `
-        custom<DTypeParamValue>($dType) `>`
-  }];
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$ty), [{
-      return $_get(size.getContext(), size, ty);
-    }]>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> resolveSize() const;
-  }];
-}
-
 #endif // METATYPES_TD

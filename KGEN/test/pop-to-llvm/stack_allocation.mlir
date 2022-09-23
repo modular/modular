@@ -12,7 +12,7 @@ kgen.func @stack_allocation(%cond: i1) {
   scf.if %cond {
     // CHECK-NEXT: llvm.intr.lifetime.start 4, %[[PTR1]]
     // CHECK-NEXT: llvm.intr.lifetime.end 4, %[[PTR1]]
-    %1 = pop.stack_allocation 4 : !meta.simd<4, f32>
+    %1 = pop.stack_allocation 4 : !pop.simd<4, f32>
     // CHECK: }
   }
   // CHECK-NEXT: llvm.intr.lifetime.end 16, %[[PTR0]]

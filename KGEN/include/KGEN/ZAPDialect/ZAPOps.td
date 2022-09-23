@@ -321,19 +321,19 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
   let summary = "simd load operation";
   let description = [{
     The `zap.simd.load` operation takes a buffer and an index position and
-    extracts the `!meta.simd` value from the specified position. The
+    extracts the `!pop.simd` value from the specified position. The
     position must be of type index.
 
     Example:
 
     ```mlir
-    %1 = zap.buffer.load %0[%idx]: !zap.buffer<size, dtype>, !meta.simd<4, f32>
+    %1 = zap.buffer.load %0[%idx]: !zap.buffer<size, dtype>, !pop.simd<4, f32>
     ```
   }];
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
                        Index:$position);
-  let results = (outs SIMDType:$result);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat =  [{
     $buffer `[` $position `]` attr-dict `:`
@@ -356,12 +356,12 @@ def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
     Example:
 
     ```mlir
-    zap.simd.store %val, %buf[%idx]: !meta.simd<4, f32>, !zap.buffer<size, f32>
+    zap.simd.store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
     ```
   }];
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
-                       SIMDType:$value, Index:$position);
+                       POP_SIMDType:$value, Index:$position);
 
   let assemblyFormat = [{
     $value `,` $buffer `[` $position `]` attr-dict `:`

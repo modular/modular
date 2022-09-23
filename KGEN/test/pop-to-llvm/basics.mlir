@@ -237,11 +237,11 @@ kgen.func @load(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @load_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-kgen.func @load_with_alignment(%p: !pop.pointer<!meta.scalar<f32>>) -> !meta.scalar<f32> {
+kgen.func @load_with_alignment(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK: llvm.load %[[PTR]] {alignment = 128 : i64}
-  %0 = pop.load %p align 128 : !pop.pointer<!meta.scalar<f32>>
-  kgen.return %0 : !meta.scalar<f32>
+  %0 = pop.load %p align 128 : !pop.pointer<!pop.scalar<f32>>
+  kgen.return %0 : !pop.scalar<f32>
 }
 
 // -----
@@ -258,11 +258,11 @@ kgen.func @store(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
 // CHECK-LABEL: @store_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @store_with_alignment(%p: !pop.pointer<!meta.scalar<si32>>, %v: !meta.scalar<si32>) {
+kgen.func @store_with_alignment(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
-  pop.store %v, %p align 128 : !pop.pointer<!meta.scalar<si32>>
+  pop.store %v, %p align 128 : !pop.pointer<!pop.scalar<si32>>
   kgen.return
 }
 
@@ -291,13 +291,13 @@ kgen.func @shifts(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>, %arg2: !po
 // -----
 
 // CHECK-LABEL: @simd_shift
-kgen.func @simd_shift(%arg0: !meta.simd<4, si32>, %arg1: !meta.simd<4, si32>, %arg2: !meta.simd<4, ui32>, %arg3: !meta.simd<4, ui32>) {
+kgen.func @simd_shift(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>, %arg2: !pop.simd<4, ui32>, %arg3: !pop.simd<4, ui32>) {
   // CHECK: llvm.shl
-  %0 = pop.shl %arg0, %arg1 : !meta.simd<4, si32>
+  %0 = pop.shl %arg0, %arg1 : !pop.simd<4, si32>
   // CHECK: llvm.ashr
-  %1 = pop.shr %arg0, %arg1 : !meta.simd<4, si32>
+  %1 = pop.shr %arg0, %arg1 : !pop.simd<4, si32>
   // CHECKL llvm.lshr
-  %2 = pop.shr %arg2, %arg3 : !meta.simd<4, ui32>
+  %2 = pop.shr %arg2, %arg3 : !pop.simd<4, ui32>
   kgen.return
 }
 
@@ -361,22 +361,22 @@ kgen.func @cmp_fp(%lhs: !pop.scalar<f32>, %rhs: !pop.scalar<f32>) {
 // -----
 
 // CHECK-LABEL: @cmp_simd
-kgen.func @cmp_simd(%lhs: !meta.simd<4, f32>, %rhs: !meta.simd<4, f32>) -> !meta.simd<4, bool> {
+kgen.func @cmp_simd(%lhs: !pop.simd<4, f32>, %rhs: !pop.simd<4, f32>) -> !pop.simd<4, bool> {
   // CHECK: llvm.fcmp {{.*}} : vector<4xf32>
-  %0 = pop.cmp lt(%lhs, %rhs) : !meta.simd<4, f32>
+  %0 = pop.cmp lt(%lhs, %rhs) : !pop.simd<4, f32>
   // CHECK: vector<4xi1>
-  kgen.return %0 : !meta.simd<4, bool>
+  kgen.return %0 : !pop.simd<4, bool>
 }
 
 // -----
 
 // CHECK-LABEL: @pointer_to_index
 kgen.func @pointer_to_index(%a: !pop.pointer<!pop.scalar<f32>>,
-                            %b: !pop.pointer<!meta.simd<4, si32>>) -> (index, index) {
+                            %b: !pop.pointer<!pop.simd<4, si32>>) -> (index, index) {
   // CHECK: llvm.ptrtoint
   %0 = pop.pointer_to_index %a : !pop.pointer<!pop.scalar<f32>>
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !pop.pointer<!meta.simd<4, si32>>
+  %1 = pop.pointer_to_index %b : !pop.pointer<!pop.simd<4, si32>>
   kgen.return %0, %1 : index, index
 }
 
@@ -385,12 +385,12 @@ kgen.func @pointer_to_index(%a: !pop.pointer<!pop.scalar<f32>>,
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer(%idx: index) -> (
       !pop.pointer<!pop.scalar<f32>>,
-      !pop.pointer<!meta.simd<4, si32>>) {
+      !pop.pointer<!pop.simd<4, si32>>) {
   // CHECK: llvm.inttoptr
   %0 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<f32>>
   // CHECK: llvm.inttoptr
-  %1 = pop.index_to_pointer %idx : !pop.pointer<!meta.simd<4, si32>>
-  kgen.return %0, %1 :!pop.pointer<!pop.scalar<f32>>, !pop.pointer<!meta.simd<4, si32>>
+  %1 = pop.index_to_pointer %idx : !pop.pointer<!pop.simd<4, si32>>
+  kgen.return %0, %1 :!pop.pointer<!pop.scalar<f32>>, !pop.pointer<!pop.simd<4, si32>>
 }
 
 // -----

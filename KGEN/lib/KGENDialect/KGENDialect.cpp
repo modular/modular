@@ -86,9 +86,9 @@ SignatureType SignatureType::getSpecializedSignature(
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
   //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
-  //     kgen.generator @callee2<size>(%x: !meta.simd<size, f32>)
+  //     kgen.generator @callee2<size>(%x: !pop.simd<size, f32>)
   // ... call @callee1<type: dtype = f32>(%arg1) : (!pop.scalar<f32>) -> ()
-  // ... call @callee2<size=4>(%arg2) : (!meta.simd<4, f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!pop.simd<4, f32>) -> ()
   //
   // This can also occur in parameter types, e.g. for region types (dt vs f32):
   //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...

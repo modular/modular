@@ -105,15 +105,15 @@ kgen.generator @impl() {
 
 // -----
 
-kgen.generator @invalid_bitcast<size, type: dtype>(%a: !meta.simd<4, f32>) -> !meta.simd<size, type> {
-  // expected-note @below {{'!meta.simd<4, f32>' and result type '!meta.simd<2, ui32>' are cast incompatible}}
-  %0 = pop.bitcast %a : !meta.simd<4, f32> to !meta.simd<size, type>
-  kgen.return %0 : !meta.simd<size, type>
+kgen.generator @invalid_bitcast<size, type: dtype>(%a: !pop.simd<4, f32>) -> !pop.simd<size, type> {
+  // expected-note @below {{'!pop.simd<4, f32>' and result type '!pop.simd<2, ui32>' are cast incompatible}}
+  %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<size, type>
+  kgen.return %0 : !pop.simd<size, type>
 }
 
 // expected-error @below {{no viable implementations}}
-kgen.generator @impl(%a: !meta.simd<4, f32>) {
+kgen.generator @impl(%a: !pop.simd<4, f32>) {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_bitcast<size = 2, type: dtype = ui32>(%a) : (!meta.simd<4, f32>) -> (!meta.simd<2, ui32>)
+  %0 = kgen.call @invalid_bitcast<size = 2, type: dtype = ui32>(%a) : (!pop.simd<4, f32>) -> (!pop.simd<2, ui32>)
   kgen.return
 }

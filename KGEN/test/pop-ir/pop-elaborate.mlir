@@ -113,42 +113,42 @@ kgen.generator @impl() {
 // -----
 
 // CHECK-LABEL: @"int_vec
-kgen.generator @int_vec<type: dtype>() -> !meta.simd<4, type> {
+kgen.generator @int_vec<type: dtype>() -> !pop.simd<4, type> {
   // CHECK: pop.constant(dense<[1, 2, 3, 4]> : vector<4xsi8>)
-  %0 = pop.constant(dense<[1., 2., 3., 4.]> : vector<4xf32>) : !meta.simd<4, type>
-  kgen.return %0 : !meta.simd<4, type>
+  %0 = pop.constant(dense<[1., 2., 3., 4.]> : vector<4xf32>) : !pop.simd<4, type>
+  kgen.return %0 : !pop.simd<4, type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @int_vec<type: dtype = si8>() : () -> !meta.simd<4, si8>
+  %0 = kgen.call @int_vec<type: dtype = si8>() : () -> !pop.simd<4, si8>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"flt_vec
-kgen.generator @flt_vec<type: dtype>() -> !meta.simd<4, type> {
+kgen.generator @flt_vec<type: dtype>() -> !pop.simd<4, type> {
   // CHECK: pop.constant(dense<[1.{{.*}}, 2.{{.*}}, 3.{{.*}}, 4.{{.*}}]> : vector<4xbf16>)
-  %0 = pop.constant(dense<[1, 2, 3, 4]> : vector<4xi64>) : !meta.simd<4, type>
-  kgen.return %0 : !meta.simd<4, type>
+  %0 = pop.constant(dense<[1, 2, 3, 4]> : vector<4xi64>) : !pop.simd<4, type>
+  kgen.return %0 : !pop.simd<4, type>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @flt_vec<type: dtype = bf16>() : () -> !meta.simd<4, bf16>
+  %0 = kgen.call @flt_vec<type: dtype = bf16>() : () -> !pop.simd<4, bf16>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @"splat_constant
-kgen.generator @splat_constant<size>() -> !meta.simd<size, f32> {
+kgen.generator @splat_constant<size>() -> !pop.simd<size, f32> {
   // CHECK: pop.constant(dense<0.{{0+}}e+00> : vector<8xf32>)
-  %0 = pop.constant(0.0 : f32) : !meta.simd<size, f32>
-  kgen.return %0 : !meta.simd<size, f32>
+  %0 = pop.constant(0.0 : f32) : !pop.simd<size, f32>
+  kgen.return %0 : !pop.simd<size, f32>
 }
 
 kgen.generator @impl() {
-  %0 = kgen.call @splat_constant<size = 8>() : () -> !meta.simd<8, f32>
+  %0 = kgen.call @splat_constant<size = 8>() : () -> !pop.simd<8, f32>
   kgen.return
 }
 
@@ -160,8 +160,8 @@ kgen.generator @impl() {
 // CHECK-LABEL: @"splat_constant,type=!pop.scalar<f32>"
 // CHECK: pop.constant(1.{{0+}}e+00 : f32) : !pop.scalar<f32>
 
-// CHECK-LABEL: @"splat_constant,type=!meta.simd<4, si32>"
-// CHECK: pop.constant(dense<1> : vector<4xsi32>) : !meta.simd<4, si32>
+// CHECK-LABEL: @"splat_constant,type=!pop.simd<4, si32>"
+// CHECK: pop.constant(dense<1> : vector<4xsi32>) : !pop.simd<4, si32>
 
 kgen.generator @splat_constant<type: type>() -> !kgen.paramref<type> {
   %0 = pop.constant(1) : !kgen.paramref<type>
@@ -171,7 +171,7 @@ kgen.generator @splat_constant<type: type>() -> !kgen.paramref<type> {
 kgen.generator @impl() {
   %0 = kgen.call @splat_constant<type: type = !pop.scalar<si32>>() : () -> !pop.scalar<si32>
   %1 = kgen.call @splat_constant<type: type = !pop.scalar<f32>>() : () -> !pop.scalar<f32>
-  %2 = kgen.call @splat_constant<type: type = !meta.simd<4, si32>>() : () -> !meta.simd<4, si32>
+  %2 = kgen.call @splat_constant<type: type = !pop.simd<4, si32>>() : () -> !pop.simd<4, si32>
   kgen.return
 }
 

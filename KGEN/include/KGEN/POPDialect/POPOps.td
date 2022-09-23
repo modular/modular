@@ -33,7 +33,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
   ]> {
   let summary = "integer or floating point constant";
   let description = [{
-    The `pop.constant` operation produces a `!pop.scalar` or `!meta.simd` equal
+    The `pop.constant` operation produces a `!pop.scalar` or `!pop.simd` equal
     to the specified integer, floating point, or vector constant. If the
     constant attribute is an integer or floating point, the result type must be
     a scalar. If the constant is a 1D vector elements attribute, the result type
@@ -50,7 +50,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
     // Explicitly signed or unsigned integers can form only integers of the
     // same bitwidth and signedness.
 
-    %1 = pop.constant(dense<[42, 24]> : vector<2xui64>) : !meta.simd<2, ui64>
+    %1 = pop.constant(dense<[42, 24]> : vector<2xui64>) : !pop.simd<2, ui64>
     // Floats can only form equivalent floating point.
     %2 = pop.constant(12.3 : f80) : !pop.scalar<f80>
     ```
@@ -61,8 +61,8 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
     ```mlir
     %0 = pop.constant(42) : !pop.scalar<type>
     %1 = pop.constant(12.3 : f32) : !pop.scalar<type>
-    %2 = pop.constant(dense<[1, 2]> : vector<2xi64>) : !meta.simd<2, type>
-    %3 = pop.constant(dense<[0.1]> : vector<4xbf16>) : !meta.simd<4, type>
+    %2 = pop.constant(dense<[1, 2]> : vector<2xi64>) : !pop.simd<2, type>
+    %3 = pop.constant(dense<[0.1]> : vector<4xbf16>) : !pop.simd<4, type>
     ```
 
     When the operation is elaborated, the constant is reified according to the
@@ -142,7 +142,7 @@ def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 
     ```mlir
     %b = pop.abs %a : !pop.scalar<type>
-    %b = pop.abs %a : !meta.simd<size, type>
+    %b = pop.abs %a : !pop.simd<size, type>
     ```
   }];
 }
@@ -161,7 +161,7 @@ def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
 
     ```mlir
     %b = pop.neg %a : !pop.scalar<type>
-    %b = pop.neg %a : !meta.simd<size, type>
+    %b = pop.neg %a : !pop.simd<size, type>
     ```
   }];
 }
@@ -198,7 +198,7 @@ def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 
     ```mlir
     %c = pop.add %a, %b : !pop.scalar<type>
-    %c = pop.add %a, %b : !meta.simd<size, type>
+    %c = pop.add %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -217,7 +217,7 @@ def POP_SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 
     ```mlir
     %c = pop.sub %a, %b : !pop.scalar<type>
-    %c = pop.sub %a, %b : !meta.simd<size, type>
+    %c = pop.sub %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -236,7 +236,7 @@ def POP_MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 
     ```mlir
     %c = pop.mul %a, %b : !pop.scalar<type>
-    %c = pop.mul %a, %b : !meta.simd<size, type>
+    %c = pop.mul %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -255,7 +255,7 @@ def POP_DivOp : POP_MetaArithmeticBinaryOp<"div"> {
 
     ```mlir
     %c = pop.div %a, %b : !pop.scalar<type>
-    %c = pop.div %a, %b : !meta.simd<size, type>
+    %c = pop.div %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -275,7 +275,7 @@ def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
 
     ```mlir
     %c = pop.max %a, %b : !pop.scalar<type>
-    %c = pop.max %a, %b : !meta.simd<size, type>
+    %c = pop.max %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -295,7 +295,7 @@ def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
 
     ```mlir
     %c = pop.min %a, %b : !pop.scalar<type>
-    %c = pop.min %a, %b : !meta.simd<size, type>
+    %c = pop.min %a, %b : !pop.simd<size, type>
     ```
   }];
 }
@@ -322,7 +322,7 @@ def POP_ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
 
     ```mlir
     %0 = pop.shl %val, %shft: !pop.scalar<type>
-    %0 = pop.shl %val, %shft: !meta.simd<size, type>
+    %0 = pop.shl %val, %shft: !pop.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
@@ -353,7 +353,7 @@ def POP_ShrOp : POP_MetaArithmeticBinaryOp<"shr"> {
 
     ```mlir
     %0 = pop.shr %val, %shft: !pop.scalar<type>
-    %0 = pop.shr %val, %shft: !meta.simd<size, type>
+    %0 = pop.shr %val, %shft: !pop.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
@@ -376,7 +376,7 @@ def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
 
     ```mlir
     %c = pop.copysign %a, %b : !pop.scalar<type>
-    %c = pop.copysign %a, %b : !meta.simd<size, type>
+    %c = pop.copysign %a, %b : !pop.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrFloatScalarOrSIMD:$lhs,
@@ -415,7 +415,7 @@ def POP_FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
 
     ```mlir
     %d = pop.fma %a, %b, %c : !pop.scalar<type>
-    %d = pop.fma %a, %b, %c : !meta.simd<size, type>
+    %d = pop.fma %a, %b, %c : !pop.simd<size, type>
     ```
   }];
 }
@@ -438,7 +438,7 @@ def POP_CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
 
     ```mlir
     %b0 = pop.cmp lt(%a, %b) : !pop.scalar<type>
-    %b1 = pop.cmp ge(%c, %d) : !meta.simd<?, type>
+    %b1 = pop.cmp ge(%c, %d) : !pop.simd<?, type>
     ```
   }];
 
@@ -474,7 +474,7 @@ def POP_SelectOp : POPOp<"select",
 
     ```mlir
     %a = pop.select %cond, %trueVal, %falseVal : !pop.scalar<type>
-    %b = pop.select %cond, %trueVal, %falseVal : !meta.simd<size, type>
+    %b = pop.select %cond, %trueVal, %falseVal : !pop.simd<size, type>
     ```
   }];
 
@@ -503,9 +503,9 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
     ```mlir
     %0 = pop.bitcast %a : !pop.scalar<si32> to !pop.scalar<f32>
     %1 = pop.bitcast %b : !pop.scalar<ui64> to !pop.scalar<si64>
-    %2 = pop.bitcast %c : !meta.simd<4, f64> to !meta.simd<4, si64>
-    %3 = pop.bitcast %d : !meta.simd<2, f64> to !meta.simd<4, f32>
-    %4 = pop.bitcast %d : !pop.pointer<f64> to !pop.pointer<!meta.simd<4, f32>>
+    %2 = pop.bitcast %c : !pop.simd<4, f64> to !pop.simd<4, si64>
+    %3 = pop.bitcast %d : !pop.simd<2, f64> to !pop.simd<4, f32>
+    %4 = pop.bitcast %d : !pop.pointer<f64> to !pop.pointer<!pop.simd<4, f32>>
     ```
   }];
 
@@ -532,7 +532,7 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [NoSideEffect,
                                      !pop.pointer<!pop.scalar<f32>>
 
     %1 = pop.pointer.bitcast %0 : !pop.pointer<!pop.scalar<f32>> to
-                                  !pop.pointer<!meta.simd<4, f32>>
+                                  !pop.pointer<!pop.simd<4, f32>>
     ```
   }];
 
@@ -559,7 +559,7 @@ def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
     ```mlir
     %0 = pop.cast %a : !pop.scalar<si32> to !pop.scalar<f32>
     %1 = pop.cast %b : !pop.scalar<ui64> to !pop.scalar<si32>
-    %2 = pop.cast %c : !meta.simd<4, f64> to !meta.simd<4, ui32>
+    %2 = pop.cast %c : !pop.simd<4, f64> to !pop.simd<4, ui32>
     ```
   }];
 
@@ -584,11 +584,11 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
     Example:
 
     ```mlir
-    %0 = pop.simd.extractelement %0[%position]: !meta.simd<16, f32>
+    %0 = pop.simd.extractelement %0[%position]: !pop.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins SIMDType:$vector, Index:$position);
+  let arguments = (ins POP_SIMDType:$vector, Index:$position);
   let results = (outs POP_ScalarType:$result);
 
   let assemblyFormat = [{
@@ -612,13 +612,13 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
     Example:
 
     ```mlir
-    %0 = pop.simd.extractelement %val, %vec[%position]: !meta.simd<16, f32>
+    %0 = pop.simd.extractelement %val, %vec[%position]: !pop.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins SIMDType:$vector, POP_ScalarType:$value,
+  let arguments = (ins POP_SIMDType:$vector, POP_ScalarType:$value,
                        Index:$position);
-  let results = (outs SIMDType:$result);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
     $value `,` $vector `[` $position `]` attr-dict `:` qualified(type($vector))
@@ -641,12 +641,13 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
 
     ```mlir
     %0 = pop.simd.shuffle %lhs, %rhs [0, 1, 2, 3]
-        : !meta.simd<2, f32> -> !meta.simd<4, f32>
+        : !pop.simd<2, f32> -> !pop.simd<4, f32>
     ```
   }];
 
-  let arguments = (ins SIMDType:$lhs, SIMDType:$rhs, DenseI32ArrayAttr:$mask);
-  let results = (outs SIMDType:$result);
+  let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs,
+                       DenseI32ArrayAttr:$mask);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
     $lhs `,` $rhs $mask attr-dict `:` qualified(type($lhs)) `->`
@@ -669,18 +670,18 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 
     ```mlir
     %a = pop.abs %arg0 : !pop.scalar<f32>
-    %v = pop.simd.splat %a : !meta.simd<4, f32>
+    %v = pop.simd.splat %a : !pop.simd<4, f32>
 
     %u = pop.neg %arg1 : !pop.scalar<type>
-    %w = pop.simd.splat %u : !meta.simd<size, type>
+    %w = pop.simd.splat %u : !pop.simd<size, type>
     ```
 
-    Note that `!meta.simd<1, type>` is not the same as `!pop.scalar<type>`.
+    Note that `!pop.simd<1, type>` is not the same as `!pop.scalar<type>`.
     Hence, this operation will not fold away in those cases.
   }];
 
   let arguments = (ins POP_ScalarType:$scalar);
-  let results = (outs SIMDType:$result);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
 }
@@ -693,7 +694,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
     POPOp<mnemonic, traits # [ NoSideEffect,
                                ScalarOfSameDType<"operand", "result">]>,
-    Arguments<(ins SIMDType:$operand)>,
+    Arguments<(ins POP_SIMDType:$operand)>,
     Results<(outs POP_ScalarType:$result)> {
   let assemblyFormat = "$operand attr-dict `:` qualified(type($operand))";
 }
@@ -705,7 +706,7 @@ def POP_SIMDReduceAddOp : POP_MetaSIMDReduceOp<"simd.reduce.add"> {
     into a scalar.
 
     ```mlir
-    %a = pop.reduce.add %arg0 : !meta.simd<size, type>
+    %a = pop.reduce.add %arg0 : !pop.simd<size, type>
     ```
   }];
 }
@@ -717,7 +718,7 @@ def POP_SIMDReduceMulOp : POP_MetaSIMDReduceOp<"simd.reduce.mul"> {
     elements into a scalar
 
     ```mlir
-    %a = pop.reduce.mul %arg0 : !meta.simd<size, type>
+    %a = pop.reduce.mul %arg0 : !pop.simd<size, type>
     ```
   }];
 }
@@ -729,7 +730,7 @@ def POP_SIMDReduceMaxOp : POP_MetaSIMDReduceOp<"simd.reduce.max"> {
     element in the vector.
 
     ```mlir
-    %a = pop.reduce.max %arg0 : !meta.simd<size, type>
+    %a = pop.reduce.max %arg0 : !pop.simd<size, type>
     ```
   }];
 }
@@ -741,7 +742,7 @@ def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
     element in the vector.
 
     ```mlir
-    %a = pop.reduce.min %arg0 : !meta.simd<size, type>
+    %a = pop.reduce.min %arg0 : !pop.simd<size, type>
     ```
   }];
 }
@@ -761,8 +762,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
 
     ```mlir
     %0 = pop.load %ptr0 : !pop.pointer<!pop.scalar<f32>>
-    %1 = pop.load %ptr1 : !pop.pointer<!meta.simd<4, type>>
-    %2 = pop.load %ptr0 align 8 : !pop.pointer<!meta.scalar<f32>>
+    %1 = pop.load %ptr1 : !pop.pointer<!pop.simd<4, type>>
+    %2 = pop.load %ptr0 align 8 : !pop.pointer<!pop.scalar<f32>>
     ```
   }];
 
@@ -794,7 +795,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
 
     ```mlir
     pop.store %0, %ptr0 : !pop.pointer<!pop.scalar<f32>>
-    pop.store %1, %ptr1 : !pop.pointer<!meta.simd<4, type>>
+    pop.store %1, %ptr1 : !pop.pointer<!pop.simd<4, type>>
     pop.store %1, %ptr1 align 8 : !pop.pointer<!meta.simd<4, type>>
     ```
   }];
@@ -827,7 +828,7 @@ def POP_OffsetOp : POPOp<"offset",
 
     ```mlir
     %addr0 = pop.offset %ptr0[%idx] : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<!meta.simd<4, type>>
+    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<!pop.simd<4, type>>
     ```
   }];
 
@@ -955,7 +956,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
     Example:
 
     ```mlir
-    %0 = pop.stack_allocation size : !meta.simd<4, f32>
+    %0 = pop.stack_allocation size : !pop.simd<4, f32>
     %1 = pop.stack_allocation size : !pop.scalar<ui64>
     ```
 
@@ -1076,7 +1077,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
     ```mlir
     %0 = pop.global_constant(5 : i32) : !pop.scalar<ui32>
     %1 = pop.global_constant(12.0) : type
-    %2 = pop.global_constant(dense<[4, 2]>) : !meta.simd<2, dtype>
+    %2 = pop.global_constant(dense<[4, 2]>) : !pop.simd<2, dtype>
     ```
   }];
 
@@ -1104,7 +1105,7 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [NoSideEffect]> {
 
     ```mlir
     %addr0 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : !pop.pointer<!meta.simd<4, type>>
+    %addr1 = pop.index_to_pointer %idx : !pop.pointer<!pop.simd<4, type>>
     ```
   }];
 
@@ -1127,7 +1128,7 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
 
     ```mlir
     %addr0 = pop.pointer_to_index %ptr : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.pointer_to_index %idx : !pop.pointer<!meta.simd<4, type>>
+    %addr1 = pop.pointer_to_index %idx : !pop.pointer<!pop.simd<4, type>>
     ```
   }];
 

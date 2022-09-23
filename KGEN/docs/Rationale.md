@@ -123,7 +123,7 @@ kgen.generator @algo(%dest: !meta.buffer<?, ?>) {
 ```
 
 Note that we do *not* support dynamic shapes or dtypes for the `!pop.scalar` or
-`!meta.simd` types.  These may be *parameterized* with arithmetic that
+`!pop.simd` types.  These may be *parameterized* with arithmetic that
 determines the vector length or element, but it may not be dynamic (that is, there
 is no `?` allowed) - parameters are always resolved to static values as part of
 the code generation process.
@@ -138,10 +138,10 @@ an integer constant in the IR or a parameter expression.  You can materialize
 either of these into an SSA value with `kgen.param.constant`:
 
 ```mlir
-kgen.generator @algo<veclen, dt: dtype>(%src: !meta.simd<mul(veclen,veclen), dt>) {
+kgen.generator @algo<veclen, dt: dtype>(%src: !pop.simd<mul(veclen,veclen), dt>) {
   // These do not need to exist!
-  %dtypeSSAValue = meta.simd.dtype %src: !meta.simd<mul(veclen,veclen), dt>
-  %veclenSSAValue = meta.simd.size %src: !meta.simd<mul(veclen,veclen), dt>
+  %dtypeSSAValue = meta.simd.dtype %src: !pop.simd<mul(veclen,veclen), dt>
+  %veclenSSAValue = meta.simd.size %src: !pop.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
   %dtypeSSAValue = kgen.param.constant : dtype = <dt>

@@ -5,6 +5,6 @@ kgen.func @external_call(%a: !pop.scalar<ui32>) {
   pop.external_call @foo(%a) : (!pop.scalar<ui32>) -> ()
   // expected-error @below {{existing function with conflicting signature}}
   // expected-error @below {{failed to legalize}}
-  %0 = pop.external_call @foo(%a) : (!pop.scalar<ui32>) -> !meta.simd<4, f64>
+  %0 = pop.external_call @foo(%a) : (!pop.scalar<ui32>) -> !pop.simd<4, f64>
   kgen.return
 }

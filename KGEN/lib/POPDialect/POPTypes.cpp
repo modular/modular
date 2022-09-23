@@ -83,9 +83,8 @@ ArrayType ArrayType::get(int64_t size, Type elementType) {
 // PointerType
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-PointerType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                    TypedAttr dtype) {
+LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr dtype) {
   if (dtype && !dtype.getType().isa<MLIRTypeType>())
     return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
   return success();
@@ -121,9 +120,8 @@ PointerType PointerType::get(Type elementType) {
 // ScalarType
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                   TypedAttr dtype) {
+LogicalResult ScalarType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 TypedAttr dtype) {
   if (!dtype.getType().isa<DTypeType>())
     return emitError() << "parameter for scalar type must be a !kgen.dtype";
   return success();
@@ -147,6 +145,44 @@ ScalarType ScalarType::get(TypedAttr dtype) {
 
 ScalarType ScalarType::get(MLIRContext *ctx, DType dtype) {
   return get(ctx, DTypeConstantAttr::get(ctx, dtype));
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
+                               TypedAttr size, TypedAttr dtype) {
+  if (!size || !dtype)
+    return emitError() << "simd type requires size and dtype";
+  if (!size.getType().isIndex())
+    return emitError() << "size parameter for simd must have type `index`";
+  if (!dtype.getType().isa<DTypeType>())
+    return emitError() << "type parameter for simd must be a !kgen.dtype";
+  return success();
+}
+
+void SIMDType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getSize());
+  walkAttrsFn(getDType());
+}
+
+Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                           ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.empty());
+  return SIMDType::get(replAttrs[0], replAttrs[1]);
+}
+
+Optional<int64_t> SIMDType::resolveSize() const {
+  if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
+    return intAttr.getInt();
+  return {};
+}
+
+SIMDType SIMDType::get(TypedAttr size, TypedAttr dtype) {
+  return get(size.getContext(), size, dtype);
 }
 
 //===----------------------------------------------------------------------===//

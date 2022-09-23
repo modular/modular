@@ -427,7 +427,7 @@ def RebindOp : KGENOp<"rebind"> {
     %0 = kgen.rebind %arg0 : !kgen.paramref<type> to !pop.scalar<f32>
 
     // Rebind between parameter domains.
-    %1 = kgen.rebind %arg1 : !kgen.paramref<type> to !meta.simd<size, dtype>
+    %1 = kgen.rebind %arg1 : !kgen.paramref<type> to !pop.simd<size, dtype>
 
     // Unbind a concrete type to one with a parameter.
     %2 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<dtype>

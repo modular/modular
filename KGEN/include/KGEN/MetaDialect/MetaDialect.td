@@ -27,7 +27,6 @@ def MetaDialect : Dialect {
   // We don't need an extra C++ namespace, keep this in the KGEN namespace.
   let cppNamespace = "::M::KGEN";
   let dependentDialects = ["::M::KGEN::KGENDialect"];
-  let useDefaultTypePrinterParser = 1;
   let hasConstantMaterializer = 1;
 
   let extraClassDeclaration = [{

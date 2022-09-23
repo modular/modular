@@ -110,7 +110,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   });
 
   // Convert SIMD types to vector types.
-  addConversion([=](SIMDType simd) -> Optional<Type> {
+  addConversion([=](POP::SIMDType simd) -> Optional<Type> {
     Optional<Type> dtype = convertDType(simd);
     Optional<uint64_t> size = convertSize(simd);
     if (dtype && size)
