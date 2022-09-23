@@ -26,8 +26,7 @@ kgen.func @stack_allocation_insertion(%v: !meta.scalar<si32>, %lb: index, %ub: i
   // CHECK: scf.for
   scf.for %i = %lb to %ub step %step iter_args(%sum = %v) -> !meta.scalar<si32> {
     %0 = index.casts %i : index to i32
-    // CHECK: cast_from_builtin
-    %1 = meta.cast_from_builtin %0 : i32 to !meta.scalar<si32>
+    %1 = pop.type_raise %0 : i32 to !meta.scalar<si32>
     // CHECK: llvm.intr.lifetime.start
     %2 = pop.stack_allocation 1 : !meta.scalar<si32>
     pop.store %sum, %2 : !meta.pointer<!meta.scalar<si32>>

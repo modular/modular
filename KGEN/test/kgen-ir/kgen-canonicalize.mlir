@@ -19,8 +19,8 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
 kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 
   // A-B-A cast.
-  %1 = meta.cast_to_builtin %arg0 : !meta.scalar<f32> to f32
-  %2 = meta.cast_from_builtin %1 : f32 to !meta.scalar<f32>
+  %1 = pop.type_lower %arg0 : !meta.scalar<f32> to f32
+  %2 = pop.type_raise %1 : f32 to !meta.scalar<f32>
 
   // TODO: Update return check once meta.scalar.cast is implemented.
   // CHECK: kgen.return %[[ARG0]]
@@ -32,8 +32,8 @@ kgen.func @meta_cast_from_folds(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
 kgen.func @meta_cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
-  %1 = meta.cast_from_builtin %arg0 : f32 to !meta.scalar<f32>
-  %2 = meta.cast_to_builtin %1 : !meta.scalar<f32> to f32
+  %1 = pop.type_raise %arg0 : f32 to !meta.scalar<f32>
+  %2 = pop.type_lower %1 : !meta.scalar<f32> to f32
 
   // CHECK: kgen.return %[[ARG0]]
   kgen.return %2 : f32

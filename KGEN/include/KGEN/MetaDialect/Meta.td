@@ -12,6 +12,5 @@
 #define META_TD
 
 include "KGEN/MetaDialect/MetaTypes.td"
-include "KGEN/MetaDialect/MetaOps.td"
 
 #endif // KGEN_TD

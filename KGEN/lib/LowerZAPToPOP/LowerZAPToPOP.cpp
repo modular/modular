@@ -6,8 +6,6 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
-#include "KGEN/MetaDialect/MetaDialect.h"
-#include "KGEN/MetaDialect/MetaOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -505,7 +503,7 @@ void LowerZAPToPOPPass::runOnOperation() {
   // Configure dialect conversion
   ConversionTarget target(getContext());
   target.addIllegalDialect<ZAPDialect>();
-  target.addLegalDialect<POPDialect, MetaDialect, KGENDialect>();
+  target.addLegalDialect<POPDialect, KGENDialect>();
 
   auto isZAPType = [&](Type type) { return type.isa<BufferType>(); };
 

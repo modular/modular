@@ -506,6 +506,36 @@ struct ConvertPOPGetElement : mlir::ConvertOpToLLVMPattern<GetElementOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPTypeLowerCast
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPTypeLowerCast : mlir::ConvertOpToLLVMPattern<TypeLowerOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(TypeLowerOp op, TypeLowerOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getInput());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPTypeRaiseCast
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPTypeRaiseCast : mlir::ConvertOpToLLVMPattern<TypeRaiseOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(TypeRaiseOp op, TypeRaiseOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getInput());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -573,6 +603,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,
+      ConvertPOPGetElement,
       ConvertPOPIndexToPointer,
       ConvertPOPLoad,
       ConvertPOPMax,
@@ -581,6 +612,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPNeg,
       ConvertPOPOffset,
       ConvertPOPPointerToIndex,
+      ConvertPOPReplaceElement,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
@@ -594,9 +626,9 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPStructConstruct,
-      ConvertPOPGetElement,
-      ConvertPOPReplaceElement,
-      ConvertPOPSub
+      ConvertPOPSub,
+      ConvertPOPTypeLowerCast,
+      ConvertPOPTypeRaiseCast
       // clang-format on
       >(typeConverter);
 }

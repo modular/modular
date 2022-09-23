@@ -368,3 +368,16 @@ kgen.func @index_to_pointer(%idx: index) -> (
   %1 = pop.index_to_pointer %idx : !meta.pointer<!meta.simd<4, si32>>
   kgen.return %0, %1 :!meta.pointer<!meta.scalar<f32>>, !meta.pointer<!meta.simd<4, si32>>
 }
+
+// -----
+
+// CHECK-LABEL: @lower_raise_cast
+kgen.func @lower_raise_cast(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
+  // CHECK: builtin.unrealized_conversion_cast %arg0 : !meta.scalar<f32> to f32
+  %0 = pop.type_lower %arg0 : !meta.scalar<f32> to f32
+  // CHECK: %[[R:.*]] = llvm.fmul
+  %1 = llvm.fmul %0, %0 : f32
+  // CHECK: builtin.unrealized_conversion_cast %[[R]] : f32 to !meta.scalar<f32>
+  %2 = pop.type_raise %1 : f32 to !meta.scalar<f32>
+  kgen.return %2 : !meta.scalar<f32>
+}

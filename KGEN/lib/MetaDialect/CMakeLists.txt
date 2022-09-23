@@ -6,7 +6,6 @@
 
 add_modular_dialect_library(MetaDialect
   MetaDialect.cpp
-  MetaOps.cpp
   MetaTypes.cpp
 
   ADDITIONAL_HEADER_DIRS
