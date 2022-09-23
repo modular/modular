@@ -35,6 +35,27 @@ std::string KGEN::getParamAsString(Attribute value) {
   return std::string(result.data(), result.size());
 }
 
+/// Parse a non-empty parameter list without the surrounding braces.
+static ParseResult parseParameterSpec(AsmParser &parser,
+                                      ParamDeclArrayAttr &inputParamDecls,
+                                      TypeArrayAttr &resultParamTypesAttr) {
+  // Parse the input list.
+  if (parseParamDecls(parser, inputParamDecls))
+    return failure();
+
+  // Check to see if we have results and parse them if so.
+  SmallVector<Type> resultParamTypes;
+  if (succeeded(parser.parseOptionalArrow())) {
+    if (parser.parseCommaSeparatedList([&]() -> ParseResult {
+          return parseKGENType(parser, resultParamTypes.emplace_back(Type()));
+        }))
+      return failure();
+  }
+  resultParamTypesAttr =
+      TypeArrayAttr::get(parser.getContext(), resultParamTypes);
+  return success();
+}
+
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
 ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
@@ -71,14 +92,19 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return LogicalResult::success();
   };
 
-  if (succeeded(parser.parseOptionalKeyword("signature"))) {
+  if (succeeded(parser.parseOptionalLess())) {
     // signature for values and parameters.
     ParamDeclArrayAttr inputParams;
     TypeArrayAttr resultParamTypes;
+    if (succeeded(parser.parseOptionalGreater())) {
+      inputParams = ParamDeclArrayAttr::get(parser.getContext(), {});
+      resultParamTypes = TypeArrayAttr::get(parser.getContext(), {});
+    } else if (parseParameterSpec(parser, inputParams, resultParamTypes) ||
+               parser.parseGreater()) {
+      return failure();
+    }
     FunctionType valuesType;
-    if (parser.parseLess() ||
-        parseOptionalParameterSpec(parser, inputParams, resultParamTypes) ||
-        parser.parseType(valuesType) || parser.parseGreater())
+    if (parser.parseType(valuesType))
       return failure();
     return returnSignatureType(inputParams, resultParamTypes, valuesType);
   }
@@ -113,11 +139,10 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     if (signature.getInputParams().empty() &&
         signature.getResultParamTypes().empty())
       os << signature.getValues();
-    else { // Otherwise print it as "signature<p1, p2 -> r3, () -> ())>"
-      os << "signature<";
+    else { // Otherwise print it as "p1, p2 -> r3, () -> ())"
       printOptionalParameterSpec(os, signature.getInputParams(),
                                  signature.getResultParamTypes());
-      os << signature.getValues() << ">";
+      os << signature.getValues();
     }
   } else
     os << type;
@@ -363,22 +388,10 @@ KGEN::parseOptionalParameterSpec(AsmParser &parser,
     return success();
   }
 
-  // Parse the input list.
-  if (parseParamDecls(parser, inputParamDecls))
+  if (parseParameterSpec(parser, inputParamDecls, resultParamTypesAttr) ||
+      parser.parseGreater())
     return failure();
-
-  // Check to see if we have results and parse them if so.
-  SmallVector<Type> resultParamTypes;
-  if (succeeded(parser.parseOptionalArrow())) {
-    if (parser.parseCommaSeparatedList([&]() -> ParseResult {
-          return parseKGENType(parser, resultParamTypes.emplace_back(Type()));
-        }))
-      return failure();
-  }
-  resultParamTypesAttr =
-      TypeArrayAttr::get(parser.getContext(), resultParamTypes);
-
-  return parser.parseGreater();
+  return success();
 }
 
 /// Print a parameter list for a generator, func or interface.

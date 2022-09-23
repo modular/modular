@@ -383,11 +383,11 @@ kgen.generator @parametricAdd<ty: type>
 // CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!meta.scalar<f32>) -> !meta.scalar<f32>
 
 kgen.generator @takeUnary
-  <dt: dtype, fn: signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>>() {
+  <dt: dtype, fn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
 
   %0 = pop.constant(1) : !meta.scalar<dt>
-  %1 = kgen.call_param[signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>: fn]<dt: dtype = dt>(%0) 
-  %2 = kgen.call_param[signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>: fn]<dt: dtype = dt>(%1)
+  %1 = kgen.call_param[<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>: fn]<dt: dtype = dt>(%0)
+  %2 = kgen.call_param[<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>: fn]<dt: dtype = dt>(%1)
   kgen.return
 }
 
@@ -402,13 +402,13 @@ kgen.generator @nopExample<dt:dtype>(%arg0: !meta.scalar<dt>) -> !meta.scalar<dt
 
 kgen.generator @takeParametricBinary
   <dt: dtype,
-   fn: signature<<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>>
+   fn: <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
   >() {
 
   %0 = pop.constant(1) : !meta.scalar<dt>
 
-  %1 = kgen.call_param[signature<<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>>: fn]
-                <ty: type = !meta.scalar<dt>>(%0, %0) 
+  %1 = kgen.call_param[<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>: fn]
+                <ty: type = !meta.scalar<dt>>(%0, %0)
   kgen.return
 }
 
@@ -416,18 +416,16 @@ kgen.generator @takeParametricBinary
 kgen.generator @test_region() {
   // CHECK: kgen.call @"takeUnary,dt=si32,fn=@doubleExample"()
   kgen.call @takeUnary<dt: dtype = si32,
-     fn : signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>> = @doubleExample>() : () -> ()
+     fn : <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt> = @doubleExample>() : () -> ()
 
   // CHECK: kgen.call @"takeUnary,dt=f32,fn=@nopExample"()
   kgen.call @takeUnary<dt: dtype = f32,
-     fn : signature<<dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>> = @nopExample>() : () -> ()
+     fn : <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt> = @nopExample>() : () -> ()
 
   // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=@parametricAdd"()
   kgen.call @takeParametricBinary<dt: dtype = f32,
-      fn : signature<<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>>
+      fn : <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
       = @parametricAdd>() : () -> ()
 
-  kgen.return 
+  kgen.return
 }
-
-

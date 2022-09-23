@@ -2,7 +2,7 @@
 
 kgen.include "library-test.mlir"
 
-kgen.generator.interface @param_call<fn: signature<() -> ()>>()
+kgen.generator.interface @param_call<fn: () -> ()>()
 
 // CHECK-LABEL: kgen.func @"simple_param_call,fn=@body"
 kgen.generator @body() {
@@ -11,6 +11,6 @@ kgen.generator @body() {
 
 kgen.generator public @test_param_call() {
   // CHECK: @"simple_param_call,fn=@body"
-  kgen.call @param_call<fn: signature<() -> ()> = @body>() : () -> ()
+  kgen.call @param_call<fn: () -> () = @body>() : () -> ()
   kgen.return
 }
