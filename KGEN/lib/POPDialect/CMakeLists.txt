@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(POPDialect
+  OpaqueObjectImpl.cpp
   POPAttrs.cpp
   POPDialect.cpp
   POPOps.cpp

@@ -7,6 +7,8 @@
 #ifndef POPTYPES_TD
 #define POPTYPES_TD
 
+include "KGEN/KGENDialect/KGENTypeInterfaces.td"
+include "KGEN/MetaDialect/MetaTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
@@ -31,7 +33,7 @@ def POP_ArrayType : POPType<"Array", "array"> {
 
     ```mlir
     // An array of four scalar floats.
-    !pop.array<4, !meta.scalar<f32>>
+    !pop.array<4, !pop.scalar<f32>>
 
     // A parameterized array.
     !pop.array<size, type>
@@ -76,7 +78,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
     ```mlir
     // A pointer to a scalar.
-    !pop.pointer<!meta.scalar<f32>>
+    !pop.pointer<!pop.scalar<f32>>
 
     // A pointer to a SIMD vector.
     !pop.pointer<!meta.simd<4, f32>>
@@ -85,7 +87,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
     !pop.pointer<?>
 
     // A parameterized scalar pointer.
-    !pop.pointer<!meta.scalar<type>>
+    !pop.pointer<!pop.scalar<type>>
 
     // A completely parameterized pointer.
     !pop.pointer<elementType>
@@ -121,6 +123,72 @@ class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "ParamRefType::get($_self.cast<POP::PointerType>().getElementType())">;
 
 //===----------------------------------------------------------------------===//
+// ScalarType
+//===----------------------------------------------------------------------===//
+
+def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
+    DeclareTypeInterfaceMethods<OpaqueObjectInterface>]> {
+  let summary = "parameterized scalar type";
+  let description = [{
+    This type represents a parameterized scalar value. The dtype is
+    parameterized with a `!kgen.dtype`.
+
+    Example:
+
+    ```mlir
+    // A floating point scalar.
+    !pop.scalar<f32>
+
+    // An unsigned integer scalar.
+    !pop.scalar<ui64>
+
+    // A parameterized scalar.
+    !pop.scalar<dtype>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$dType);
+  let assemblyFormat = "`<` custom<DTypeParamValue>($dType) `>`";
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$dtype)>,
+    TypeBuilder<(ins "DType":$dtype)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeConstraints
+
+def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
+def BoolSIMD : AllOfType<[SIMDType, BoolDType], "!meta.simd<N, bool>">;
+
+def UnboundOrIntegerScalar : AllOfType<[POP_ScalarType, IntegerOrUnboundDType],
+    "whose value is either unbound or a integral dtype">;
+def UnboundOrFloatScalar : AllOfType<[POP_ScalarType, FloatOrUnboundDType],
+    "whose value is either unbound or a floating-point dtype">;
+def UnboundOrIntegerSIMD : AllOfType<[SIMDType, IntegerOrUnboundDType],
+    "whose element type is either unbound or a integral dtype">;
+def UnboundOrFloatSIMD : AllOfType<[SIMDType, FloatOrUnboundDType],
+    "whose element type is either unbound or a floating-point dtype">;
+
+def ScalarOrSIMD : AnyTypeOf<
+    [POP_ScalarType, SIMDType, ParamRefType]>;
+
+def BoolScalarOrSIMD : AnyTypeOf<
+    [BoolScalar, BoolSIMD, ParamRefType]>;
+
+def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
+    [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
+
+def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
+    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
+
+class ScalarOfSameDType<string operand, string value> : TypesMatchWith<
+    value # " type matches dtype of the " # operand # " operand", operand,
+    value, "POP::ScalarType::get($_self.cast<DTypeInterface>().getDType())">;
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 
@@ -134,20 +202,20 @@ def POP_StructType : POPType<"Struct", "struct"> {
 
     ```mlir
     // A struct with primitive element types.
-    !pop.struct<!meta.scalar<f32>, !meta.simd<4, ui64>>
+    !pop.struct<!pop.scalar<f32>, !meta.simd<4, ui64>>
 
     // A struct with nested types.
     !pop.struct<
       !pop.pointer<!meta.simd<4, si8>>,
-      !pop.array<24, !meta.scalar<si64>>,
+      !pop.array<24, !pop.scalar<si64>>,
       !pop.struct<
-        !meta.scalar<f32>,
-        !meta.scalar<f64>
+        !pop.scalar<f32>,
+        !pop.scalar<f64>
       >
     >
 
     // A struct with parameterized element types.
-    !pop.struct<type, !pop.array<size, !meta.scalar<dtype>>>
+    !pop.struct<type, !pop.array<size, !pop.scalar<dtype>>>
     ```
   }];
 

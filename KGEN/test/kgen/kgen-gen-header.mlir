@@ -21,8 +21,8 @@ kgen.func public @someBufferKernel(%a: !pop.struct<index, !pop.pointer<?>, !kgen
 
 
 // https://github.com/modularml/modular/issues/2636
-kgen.func public @someMetaScalarKernel(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  kgen.return %arg0 : !meta.scalar<f32>
+kgen.func public @someMetaScalarKernel(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  kgen.return %arg0 : !pop.scalar<f32>
 }
 
 // SCALARMETA: extern float someMetaScalarKernel(float);

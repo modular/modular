@@ -9,7 +9,7 @@ kgen.generator @impl<lb, ub, step>(%buf: !zap.buffer<?, si64>) {
     %v = zap.buffer.load %buf[%i] : !zap.buffer<?, si64>
     // Cast the index to i64
     %is = index.casts %i : index to si64
-    zap.print "  buf[%lli] = %lli\n"(%is, %v) : si64, !meta.scalar<si64>
+    zap.print "  buf[%lli] = %lli\n"(%is, %v) : si64, !pop.scalar<si64>
   }
   kgen.return
 }

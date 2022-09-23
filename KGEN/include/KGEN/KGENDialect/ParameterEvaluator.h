@@ -36,7 +36,7 @@ collectParameterReferences(Type type, SmallVector<ParamDeclRefAttr> &results);
 bool isValidParameterExpr(TypedAttr value);
 
 /// Return true if the specified type contains parameter references, e.g.
-/// `!meta.scalar<dt>` returns true, but `!meta.scalar<f32>` returns false.
+/// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
 bool isParameterizedType(Type type);
 
 //===----------------------------------------------------------------------===//

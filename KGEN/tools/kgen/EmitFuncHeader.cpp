@@ -40,7 +40,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   // Helper to print a function as a C type.
   std::function<LogicalResult(Type)> printTypeAsC =
       [&](Type t) -> LogicalResult {
-    if (auto scalar = t.dyn_cast<ScalarType>())
+    if (auto scalar = t.dyn_cast<POP::ScalarType>())
       return printDTypeAsC(scalar.resolveDType());
 
     if (auto simd = t.dyn_cast<SIMDType>()) {

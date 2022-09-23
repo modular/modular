@@ -267,7 +267,7 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load",
   let summary = "buffer load operation";
   let description = [{
     The `buffer.load` operation takes a buffer and an index position and
-    extracts the `!meta.scalar` value at that position. The position must be of
+    extracts the `!pop.scalar` value at that position. The position must be of
     type index.
 
     Example:
@@ -279,7 +279,7 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load",
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
                        Index:$position);
-  let results = (outs ScalarType:$result);
+  let results = (outs POP_ScalarType:$result);
 
   let assemblyFormat = [{
     $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
@@ -306,7 +306,7 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store",
   }];
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
-                       ScalarType:$value, Index:$position);
+                       POP_ScalarType:$value, Index:$position);
 
   let assemblyFormat = [{
     $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
@@ -384,7 +384,7 @@ def ZAP_PrintOp : ZAPOp<"print"> {
     Example:
 
     ```mlir
-    zap.print "foo %d / %f bar"(%a, %b) : !meta.scalar<type>,
+    zap.print "foo %d / %f bar"(%a, %b) : !pop.scalar<type>,
                                           !kgen.paramref<type>
     ```
 

@@ -63,7 +63,7 @@ MetaToLLVMTypeConverter::MetaToLLVMTypeConverter(
   };
 
   // Convert scalar types directly to the dtype.
-  addConversion([=](ScalarType scalar) {
+  addConversion([=](POP::ScalarType scalar) {
     Optional<Type> dtype = convertDType(scalar);
     if (!dtype)
       emitError("scalar dtype not fully specified: ") << scalar;

@@ -70,14 +70,14 @@ kgen.generator @foo() {
 // expected-error @+2 {{reference to parameter "n" with incorrect type '!kgen.dtype'}}
 //expected-note @+1 {{parameter defined with type 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
-           !meta.scalar<#kgen.param.decl.ref<"n", index>>) {
+           !pop.scalar<#kgen.param.decl.ref<"n", index>>) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
-kgen.generator @scalar_params_verbose(%x : !meta.scalar<abc>) {
+kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
   kgen.return
 }
 
@@ -85,7 +85,7 @@ kgen.generator @scalar_params_verbose(%x : !meta.scalar<abc>) {
 
 kgen.generator @dtype_params() {
   // expected-error @+1 {{invalid use of parameter with no declaration "type"}}
-  %y = "someop" () {} : () -> !meta.scalar<type>
+  %y = "someop" () {} : () -> !pop.scalar<type>
   kgen.return
 }
 
@@ -294,18 +294,18 @@ kgen.generator.interface @constrained<width, height>()
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "ty2"}}
-kgen.generator.interface @badTypes<ty1 : dtype>(%a : !meta.scalar<ty2>)
+kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
 
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @callee<type: dtype>(%x: !meta.scalar<type>) {
+kgen.generator @callee<type: dtype>(%x: !pop.scalar<type>) {
   kgen.return
 }
 
-kgen.generator @caller<type : dtype>(%arg0: !meta.scalar<type>) {
-  // expected-error @+1 {{caller argument #0 has type '!meta.scalar<type>' but callee expected type '!meta.scalar<f64>'}}
-  kgen.call @callee<type: dtype = f64>(%arg0) : (!meta.scalar<type>) -> ()
+kgen.generator @caller<type : dtype>(%arg0: !pop.scalar<type>) {
+  // expected-error @+1 {{caller argument #0 has type '!pop.scalar<type>' but callee expected type '!pop.scalar<f64>'}}
+  kgen.call @callee<type: dtype = f64>(%arg0) : (!pop.scalar<type>) -> ()
   kgen.return
 }
 
@@ -366,19 +366,19 @@ kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @takeUnary
-  <unaryFn: <dt: dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: <dt: dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !meta.scalar<si32>
-  kgen.return %0 : !meta.scalar<si32>
+kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
 }
 
 kgen.generator @test_region() {
   // expected-error @+1 {{caller input parameter #0 has type}}
   kgen.call @takeUnary<
-     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @doubleExample>() : () -> ()
+     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>() : () -> ()
   kgen.return
 }
 
@@ -396,38 +396,38 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
   kgen.return
 }
 
 // expected-note @+1 {{@unary declared here}}
-kgen.func @unary(%arg0: !meta.scalar<f32>) -> !meta.scalar<f32> {
-  kgen.return %arg0 : !meta.scalar<f32>
+kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  kgen.return %arg0 : !pop.scalar<f32>
 }
 
 kgen.generator @test1() {
-  // expected-error @+1 {{symbol use argument #0 has type '!meta.scalar<si32>' but @unary expected type '!meta.scalar<f32>'}}
+  // expected-error @+1 {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
   kgen.call @takeUnary<
-     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary>() : () -> ()
+     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary>() : () -> ()
   kgen.return
 }
 
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!meta.scalar<dt>) -> !meta.scalar<dt>>() {
+  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
   kgen.return
 }
 
 // expected-note @+1 {{@unary2 declared here}}
-kgen.generator @unary2<dt: dtype>(%arg0: !meta.scalar<si32>) -> !meta.scalar<si32> {
-  kgen.return %arg0 : !meta.scalar<si32>
+kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  kgen.return %arg0 : !pop.scalar<si32>
 }
 
 kgen.generator @test2() {
   // expected-error @+1 {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<
-     unaryFn : (!meta.scalar<si32>) -> !meta.scalar<si32> = @unary2>() : () -> ()
+     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary2>() : () -> ()
   kgen.return
 }
 
@@ -502,17 +502,17 @@ kgen.generator @test<ty: type, p : <x,x>()->()>
 
 // -----
 
-kgen.func @rebind(%a: !meta.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!meta.scalar<f32>' to different concrete output type '!meta.scalar<si32>'}}
-  %0 = kgen.rebind %a : !meta.scalar<f32> to !meta.scalar<si32>
+kgen.func @rebind(%a: !pop.scalar<f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type '!pop.scalar<si32>'}}
+  %0 = kgen.rebind %a : !pop.scalar<f32> to !pop.scalar<si32>
   kgen.return
 }
 
 // -----
 
-kgen.func @rebind(%a: !meta.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!meta.scalar<f32>' to different concrete output type 'i32'}}
-  %0 = kgen.rebind %a : !meta.scalar<f32> to i32
+kgen.func @rebind(%a: !pop.scalar<f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type 'i32'}}
+  %0 = kgen.rebind %a : !pop.scalar<f32> to i32
   kgen.return
 }
 

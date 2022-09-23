@@ -118,6 +118,38 @@ PointerType PointerType::get(Type elementType) {
 }
 
 //===----------------------------------------------------------------------===//
+// ScalarType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+ScalarType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                   TypedAttr dtype) {
+  if (!dtype.getType().isa<DTypeType>())
+    return emitError() << "parameter for scalar type must be a !kgen.dtype";
+  return success();
+}
+
+void ScalarType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkAttrsFn(getDType());
+}
+
+Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                             ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 1 && replTypes.empty());
+  return ScalarType::get(replAttrs[0]);
+}
+
+ScalarType ScalarType::get(TypedAttr dtype) {
+  return get(dtype.getContext(), dtype);
+}
+
+ScalarType ScalarType::get(MLIRContext *ctx, DType dtype) {
+  return get(ctx, DTypeConstantAttr::get(ctx, dtype));
+}
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 

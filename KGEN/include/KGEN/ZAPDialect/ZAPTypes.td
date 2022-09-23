@@ -51,7 +51,7 @@ def ZAP_BufferType : ZAPType<"Buffer", "buffer",
     /// Get the pointer type for the buffer.
     POP::PointerType getPointerType() const;
     /// Get the scalar element type for the buffer.
-    ScalarType getElementType() const;
+    POP::ScalarType getElementType() const;
   }];
 }
 

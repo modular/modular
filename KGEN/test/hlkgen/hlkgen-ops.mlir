@@ -7,14 +7,14 @@ hlkgen.generator @trivial_generator(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
 
-// CHECK-LABEL: kgen.generator.interface @itf<ty: dtype>(!meta.scalar<ty>) -> !meta.scalar<ty>
-kgen.generator.interface @itf<ty : dtype>(!meta.scalar<ty>) -> !meta.scalar<ty>
+// CHECK-LABEL: kgen.generator.interface @itf<ty: dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
+kgen.generator.interface @itf<ty : dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
 
 // One implementation of dynamic_thing
 // CHECK-LABEL: hlkgen.generator @impl1<ty: dtype>
-// CHECK-SAME: %[[ARG0:.*]]: !meta.scalar<ty>
+// CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<ty>
 // CHECK-NEXT: implements @itf {
-hlkgen.generator @impl1<ty : dtype>(%arg0: !meta.scalar<ty>) -> !meta.scalar<ty>
+hlkgen.generator @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
   implements @itf {
-  kgen.return %arg0 : !meta.scalar<ty>
+  kgen.return %arg0 : !pop.scalar<ty>
 }

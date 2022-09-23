@@ -64,7 +64,7 @@ kgen.func @constant_simd() -> !meta.simd<2, f32> {
 // -----
 
 // CHECK-LABEL: @simd_splat
-kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
+kgen.func @simd_splat(%a: !pop.scalar<f32>) -> !meta.simd<2, f32> {
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
   // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<2xf32>
@@ -77,7 +77,7 @@ kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<2, f32> {
 // -----
 
 // CHECK-LABEL: @simd_splat
-kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
+kgen.func @simd_splat(%a: !pop.scalar<f32>) -> !meta.simd<1, f32> {
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
   // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<1xf32>
@@ -89,19 +89,19 @@ kgen.func @simd_splat(%a: !meta.scalar<f32>) -> !meta.simd<1, f32> {
 // -----
 
 // CHECK-LABEL: @simd_extractelement
-kgen.func @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: index) -> !meta.scalar<f32> {
+kgen.func @simd_extractelement(%vec: !meta.simd<4, f32>, %idx: index) -> !pop.scalar<f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[SCALAR]]
   %0 = pop.simd.extractelement %vec[%idx] : !meta.simd<4, f32>
-  kgen.return %0 : !meta.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
 }
 
 // -----
 
 // CHECK-LABEL: @simd_insertelement
-kgen.func @simd_insertelement(%val: !meta.scalar<f32>, %vec: !meta.simd<4, f32>, %idx: index) -> !meta.simd<4, f32> {
+kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !meta.simd<4, f32>, %idx: index) -> !meta.simd<4, f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast

@@ -2,7 +2,7 @@
 
 kgen.include "library.mlir"
 
-kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>(%buffer: !zap.buffer<?, type>, %idx: index, %val: !meta.scalar<type>) -> !meta.scalar<type>
+kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>(%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
 
 //===----------------------------------------------------------------------===//
 // add
@@ -23,14 +23,14 @@ kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(%in1: !zap.buffer<?, type
 
   // Using 0 as a placeholder for undefined value since we do not have optional values.
   // %undef will be eliminated after kernel elaboration and simplification.
-  %undef = pop.constant(0) : !meta.scalar<type>
+  %undef = pop.constant(0) : !pop.scalar<type>
   kgen.param.declare no_bcst: i1 = <not(bcst)>
-  %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef) : (!zap.buffer<?, type>, index, !meta.scalar<type>) -> !meta.scalar<type>
+  %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef) : (!zap.buffer<?, type>, index, !pop.scalar<type>) -> !pop.scalar<type>
 
   scf.for %i = %zero to %size step %one {
-      %src1 = kgen.call @buffer.loadOrValue<isLoad:i1=no_bcst, type:dtype=type>(%in1, %i, %bcst_val) : (!zap.buffer<?, type>, index, !meta.scalar<type>) -> !meta.scalar<type>
+      %src1 = kgen.call @buffer.loadOrValue<isLoad:i1=no_bcst, type:dtype=type>(%in1, %i, %bcst_val) : (!zap.buffer<?, type>, index, !pop.scalar<type>) -> !pop.scalar<type>
       %src2 = zap.buffer.load %in2[%i] : !zap.buffer<?, type>
-      %res = pop.add %src1, %src2 : !meta.scalar<type>
+      %res = pop.add %src1, %src2 : !pop.scalar<type>
       zap.buffer.store %res, %out[%i] : !zap.buffer<?, type>
   }
   kgen.return
