@@ -339,7 +339,7 @@ namespace {
 /// and simplify operations in a func based on those values.  If an error
 /// happens during rewriting, the diagnostic is filled in and failure() is
 /// returned.
-class ParameterRewriter : public ParameterEvaluator {
+class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func, ModuleOp sourceModule,
                     SmallVector<Operation *> opsToRewrite)
@@ -347,12 +347,20 @@ public:
         opsToRewrite(std::move(opsToRewrite)) {
     elaboratedGenerator.func = func;
     nextCallRegionID = 0;
+    evaluators.push_back(ParameterEvaluator());
   }
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
   /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
+
+  /// Return the evaluator currently being used for our rewrite.  This is the
+  /// top of the stack of evaluators we track.
+  ParameterEvaluator &getEvaluator() {
+    assert(!evaluators.empty());
+    return evaluators.back();
+  }
 
   /// Process all the `opsToRewrite`, simplifying this func.  If new variants
   /// of this func are necessary, they are added to rewriterWorklist.
@@ -434,6 +442,12 @@ private:
   /// wrong.
   Optional<ElaborationDiagnostic> diagnostic;
 
+  /// This is a stack of evaluators to use to process parameter expressions. The
+  /// current evaluator is always at the back() of the list.  Having a stack of
+  /// evaluators allows us to maintain scoped parameters when processing
+  /// regions.
+  SmallVector<ParameterEvaluator, 2> evaluators;
+
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
 
@@ -448,9 +462,9 @@ private:
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : ParameterEvaluator(existing), elaborator(existing.elaborator),
-      sourceModule(existing.sourceModule),
+    : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
+      evaluators(existing.evaluators),
       nextCallRegionID(existing.nextCallRegionID) {
   // Remap the func operation.
   elaboratedGenerator.func =
@@ -527,12 +541,12 @@ LogicalResult ParameterRewriter::rewriteOps(
 
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
-  auto errorOrValue = concretizeParameterExpr(op.getValue());
+  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getValue());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
   // Bind it to the parameter declaration it is setting.
-  setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
+  getEvaluator().setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
 
   // The param.bind operation serves no other purpose, so we can remove it.
   op->erase();
@@ -543,7 +557,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // ParamConstantOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
-  auto errorOrValue = concretizeParameterExpr(op.getValue());
+  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getValue());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
@@ -553,7 +567,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
 
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
-  auto errorOrValue = concretizeParameterExpr(op.getCond());
+  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getCond());
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
@@ -612,7 +626,7 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(CallOp call) {
 
     // Otherwise fold the parameter expression in this context to a simple
     // constant.
-    auto value = concretizeParameterExpr(param.getValue());
+    auto value = getEvaluator().concretizeParameterExpr(param.getValue());
     if (value.isError())
       return (void)error(call->getLoc(), value.takeError()), ArrayAttr();
 
@@ -709,7 +723,7 @@ void ParameterRewriter::completeCallOpProcessing(
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (auto result : call.getResultTypes())
-    resultTypes.push_back(getReboundType(result));
+    resultTypes.push_back(getEvaluator().getReboundType(result));
 
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
@@ -727,7 +741,7 @@ void ParameterRewriter::completeCallOpProcessing(
   for (auto [decl, bindValue] :
        llvm::zip(newCall.getParamDecls(),
                  newCalleeFunc.getReturnOp().getParameters()))
-    setParameterValue(decl, bindValue);
+    getEvaluator().setParameterValue(decl, bindValue);
 }
 
 /// Sometimes when we expand a call, we find that there are multiple viable
@@ -760,7 +774,7 @@ void ParameterRewriter::spawnNewFuncClone(
 
 LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // Simplify the callee expression.
-  auto errorOrValue = concretizeParameterExpr(call.getCallee());
+  auto errorOrValue = getEvaluator().concretizeParameterExpr(call.getCallee());
   if (errorOrValue.isError())
     return error(call->getLoc(), errorOrValue.takeError());
 
@@ -855,7 +869,8 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     }
 
     newAttrs.push_back(NamedAttribute(
-        namedAttr.getName(), getReboundAttribute(namedAttr.getValue())));
+        namedAttr.getName(),
+        getEvaluator().getReboundAttribute(namedAttr.getValue())));
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
@@ -865,7 +880,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // types.  We don't have to check operands because they are always checked
   // when being defined.
   for (OpResult result : op->getResults())
-    result.setType(getReboundType(result.getType()));
+    result.setType(getEvaluator().getReboundType(result.getType()));
 
   // Scan the region list if present.  The walker will automatically recurse
   // for us, but we have to check the block arguments.
@@ -873,7 +888,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (auto &region : op->getRegions())
       for (auto &block : region)
         for (Value arg : block.getArguments())
-          arg.setType(getReboundType(arg.getType()));
+          arg.setType(getEvaluator().getReboundType(arg.getType()));
   }
 
   // If the op implements the elaborator interface, indicate it as resolved.
