@@ -133,7 +133,7 @@ void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
 ParamDeclAttr ParamDeclareOp::getParamDecl() {
   assert(getParamDecls().size() == 1 &&
          "ParamDeclareOp only allows a single parameter decl.");
-  return (*getParamDecls().begin()).cast<ParamDeclAttr>();
+  return *getParamDecls().begin();
 }
 
 //===----------------------------------------------------------------------===//

@@ -412,8 +412,8 @@ kgen.generator @takeParametricBinary
   kgen.return
 }
 
-// CHECK-LABEL:  kgen.func @test_region() {
-kgen.generator @test_region() {
+// CHECK-LABEL:  kgen.func @test_symbol() {
+kgen.generator @test_symbol() {
   // CHECK: kgen.call @"takeUnary,dt=si32,fn=@doubleExample"()
   kgen.call @takeUnary<dt: dtype = si32,
      fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = @doubleExample>() : () -> ()
@@ -427,5 +427,50 @@ kgen.generator @test_region() {
       fn : <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
       = @parametricAdd>() : () -> ()
 
+  kgen.return
+}
+
+// This function is instantiated with regions defined below.
+kgen.generator @take_non_parametric_f32<fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>() {
+  %0 = pop.constant(1.0:f32) : !pop.scalar<f32>
+  %1 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%0)
+  %2 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%1)
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_0"() {
+// CHECK:   %cst = pop.constant(1.000000e+00 : f32) : !pop.scalar<f32>
+// CHECK:   %0 = pop.mul %cst, %cst : !pop.scalar<f32>
+// CHECK:   %1 = pop.mul %0, %0 : !pop.scalar<f32>
+// CHECK:   kgen.return
+// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_1"() {
+// CHECK:   %cst = pop.constant(1.000000e+00 : f32) : !pop.scalar<f32>
+// CHECK:   %0 = pop.add %cst, %cst : !pop.scalar<f32>
+// CHECK:   %1 = pop.add %0, %0 : !pop.scalar<f32>
+// CHECK:   kgen.return
+
+// CHECK-LABEL:  kgen.func @test_region() {
+kgen.generator @test_region() {
+  // CHECK:  kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_0"() : () -> ()
+  kgen.call @take_non_parametric_f32<
+    fn : (!pop.scalar<f32>) -> !pop.scalar<f32> = region>() : () -> ()
+    fn(%arg0: !pop.scalar<f32>) {
+      %result = pop.mul %arg0, %arg0 : !pop.scalar<f32>
+      kgen.return %result : !pop.scalar<f32>
+    }
+
+  // CHECK: kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_1"()
+
+  // This is the same as above, but calling through a parameter.  This shows the
+  // kgen.call_param -> kgen.call lowering maintains the region correctly.
+  kgen.param.declare take_non_parametric_f32
+    : <fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>()->() = <@take_non_parametric_f32>
+  kgen.call_param[<fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>()->(): take_non_parametric_f32]
+    <fn : (!pop.scalar<f32>) -> !pop.scalar<f32> = region>()
+    fn(%arg0: !pop.scalar<f32>) {
+      %result = pop.add %arg0, %arg0 : !pop.scalar<f32>
+      kgen.return %result : !pop.scalar<f32>
+    }
+ 
   kgen.return
 }
