@@ -36,12 +36,12 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   // that use case.
 
   // Resolve the dtype.
-  Optional<DType> dtype = resolveDType();
+  Optional<DType> dtype = getResolvedDType();
   if (!dtype)
     return emitError(loc)
            << "Buffers with unbound dtype are not yet supported: " << *this;
 
-  auto sizeOr = resolveSize();
+  auto sizeOr = getResolvedSize();
   int64_t numElements;
   if (!sizeOr.has_value())
     numElements = tag.cast<IntegerAttr>().getValue().getSExtValue();

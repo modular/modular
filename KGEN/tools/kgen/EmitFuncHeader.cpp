@@ -40,19 +40,19 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   std::function<LogicalResult(Type)> printTypeAsC =
       [&](Type t) -> LogicalResult {
     if (auto scalar = t.dyn_cast<POP::ScalarType>())
-      return printDTypeAsC(scalar.resolveDType());
+      return printDTypeAsC(*scalar.getResolvedDType());
 
     if (auto simd = t.dyn_cast<POP::SIMDType>()) {
       // Since the vector_size attribute only works on GNU and CLANG compilers,
       // we pass in an array.
-      if (failed(printDTypeAsC(simd.resolveDType())))
+      if (failed(printDTypeAsC(*simd.getResolvedDType())))
         return failure();
-      os << "[" << simd.resolveSize() << "]";
+      os << "[" << simd.getResolvedSize() << "]";
       return success();
     }
 
     if (auto ptr = t.dyn_cast<POP::PointerType>()) {
-      if (Type type = ptr.resolveElementType()) {
+      if (Type type = ptr.getResolvedElementType()) {
         if (failed(printTypeAsC(type)))
           return failure();
       } else {
@@ -63,9 +63,9 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     }
 
     if (auto array = t.dyn_cast<POP::ArrayType>()) {
-      if (failed(printTypeAsC(array.resolveElementType())))
+      if (failed(printTypeAsC(array.getResolvedElementType())))
         return failure();
-      os << "[" << *array.resolveSize() << "]";
+      os << "[" << *array.getResolvedSize() << "]";
       return success();
     }
 

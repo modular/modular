@@ -45,9 +45,9 @@ def ZAP_BufferType : ZAPType<"Buffer", "buffer",
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the buffer type to an integer.
-    Optional<int64_t> resolveSize() const;
+    Optional<int64_t> getResolvedSize() const;
     /// Try to narrow the dtype expression of the buffer type to a dtype.
-    Optional<DType> resolveDType() const;
+    Optional<DType> getResolvedDType() const;
     /// Get the pointer type for the buffer.
     POP::PointerType getPointerType() const;
     /// Get the scalar element type for the buffer.

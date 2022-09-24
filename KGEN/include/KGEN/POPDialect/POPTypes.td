@@ -57,9 +57,9 @@ def POP_ArrayType : POPType<"Array", "array"> {
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> resolveSize() const;
+    Optional<int64_t> getResolvedSize() const;
     /// Try to narrow the type expression of the pointer type to an MLIR type.
-    Type resolveElementType() const;
+    Type getResolvedElementType() const;
   }];
 }
 
@@ -107,7 +107,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
   let extraClassDeclaration = [{
     /// Try to narrow the type expression of the pointer type to an MLIR type.
-    Type resolveElementType() const;
+    Type getResolvedElementType() const;
   }];
 }
 
@@ -195,7 +195,7 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> resolveSize() const;
+    Optional<int64_t> getResolvedSize() const;
   }];
 }
 

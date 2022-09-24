@@ -112,7 +112,8 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
 
 /// Reify a primitive constant attribute (integer, float, or vector thereof)
 /// to an attribute that fits the given type.
-static ErrorOr<TypedAttr> reifyContant(TypedAttr attr, DType dtype, Type type) {
+static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
+                                        Type type) {
   // If the value is an integer or float attribute, reify it to according to the
   // result dtype.
   if (attr.isa<IntegerAttr, FloatAttr>()) {
@@ -122,10 +123,10 @@ static ErrorOr<TypedAttr> reifyContant(TypedAttr attr, DType dtype, Type type) {
     // If the result is an array or vector, splat the constant.
     ShapedType shapedType;
     if (auto simd = type.dyn_cast<SIMDType>())
-      shapedType = VectorType::get(*simd.resolveSize(), result->getType());
+      shapedType = VectorType::get(*simd.getResolvedSize(), result->getType());
     else if (auto array = type.dyn_cast<ArrayType>())
       shapedType =
-          RankedTensorType::get(*array.resolveSize(), result->getType());
+          RankedTensorType::get(*array.getResolvedSize(), result->getType());
     if (shapedType)
       result = DenseElementsAttr::get(shapedType, result.takeValue());
     return result;
@@ -193,7 +194,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   // Verify array constant.
   if (auto array = type.dyn_cast<ArrayType>()) {
     // If the size is known, require an elements attribute of the same shape.
-    if (Optional<int64_t> size = array.resolveSize()) {
+    if (Optional<int64_t> size = array.getResolvedSize()) {
       auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
       if (!elements)
         return emitError("expected dense elements attribute for array "
@@ -207,7 +208,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                        "constant of unspecified size");
     }
     // Only scalar arrays can be created.
-    auto scalar = array.resolveElementType().dyn_cast_or_null<ScalarType>();
+    auto scalar = array.getResolvedElementType().dyn_cast_or_null<ScalarType>();
     if (!scalar)
       return emitError("array constant must have scalar elements");
     return checkDType(scalar.cast<DTypeInterface>());
@@ -216,7 +217,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   // Verify vector constant.
   auto simd = type.cast<SIMDType>();
   // If the size is specified, require an attribute of the same shape.
-  if (Optional<int64_t> size = simd.resolveSize()) {
+  if (Optional<int64_t> size = simd.getResolvedSize()) {
     auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
     if (!elements)
       return emitError("expected dense elements attribute for vector "
@@ -234,8 +235,9 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
 }
 
 ErrorOrSuccess ConstantOp::finalizeElaboration() {
-  ErrorOr<TypedAttr> value = reifyContant(
-      getValue(), getType().cast<DTypeInterface>().resolveDType(), getType());
+  ErrorOr<TypedAttr> value = reifyConstant(
+      getValue(), *getType().cast<DTypeInterface>().getResolvedDType(),
+      getType());
   if (value.isError())
     return value.takeError();
   setValueAttr(value.takeValue());
@@ -316,22 +318,22 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
     return false;
 
-  DType inputDType = inputType.resolveDType();
-  DType outputDType = outputType.resolveDType();
+  Optional<DType> inputDType = inputType.getResolvedDType();
+  Optional<DType> outputDType = outputType.getResolvedDType();
 
   // If neither dtype could be resolved, allow the cast.
-  if (inputDType.isInvalid() || outputDType.isInvalid())
+  if (!inputDType || !outputDType)
     return true;
 
-  ssize_t inputDTypeWidth = inputDType.getWidthInBits();
-  ssize_t outputDTypeWidth = outputDType.getWidthInBits();
+  ssize_t inputDTypeWidth = inputDType->getWidthInBits();
+  ssize_t outputDTypeWidth = outputDType->getWidthInBits();
 
   // If we have a simd type, then the bitwidths must match.
   Optional<int64_t> inputSize = 1, outputSize = 1;
   if (auto inputSimd = inputType.dyn_cast<SIMDType>()) {
     auto outputSimd = outputType.cast<SIMDType>();
-    inputSize = inputSimd.resolveSize();
-    outputSize = outputSimd.resolveSize();
+    inputSize = inputSimd.getResolvedSize();
+    outputSize = outputSimd.getResolvedSize();
     // If neither size could be resolved, allow the cast.
     if (!inputSize || !outputSize)
       return true;
@@ -381,7 +383,7 @@ LogicalResult CastOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult SIMDShuffleOp::verify() {
-  Optional<int64_t> size = getType().resolveSize();
+  Optional<int64_t> size = getType().getResolvedSize();
   if (!size || static_cast<size_t>(*size) != getMask().size())
     return emitOpError("expected result to be a vector of ")
            << getMask().size() << " elements";
@@ -390,7 +392,7 @@ LogicalResult SIMDShuffleOp::verify() {
   if (lhsType.getDType() != getType().getDType())
     return emitOpError("expected result dtype to match operand dtypes");
 
-  if (Optional<int64_t> size = lhsType.resolveSize()) {
+  if (Optional<int64_t> size = lhsType.getResolvedSize()) {
     for (int32_t index : getMask())
       if (index >= *size * 2)
         return emitOpError("mask element ") << index << " is out of bounds";
@@ -557,14 +559,15 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
-  Type type = getType().resolveElementType();
+  Type type = getType().getResolvedElementType();
   DType dtype;
   if (auto array = type.dyn_cast<ArrayType>())
-    dtype = array.resolveElementType().cast<ScalarType>().resolveDType();
+    dtype =
+        *array.getResolvedElementType().cast<ScalarType>().getResolvedDType();
   else
-    dtype = type.cast<DTypeInterface>().resolveDType();
+    dtype = *type.cast<DTypeInterface>().getResolvedDType();
 
-  ErrorOr<TypedAttr> value = reifyContant(getValue(), dtype, type);
+  ErrorOr<TypedAttr> value = reifyConstant(getValue(), dtype, type);
   if (value.isError())
     return value.takeError();
   setValueAttr(value.takeValue());
