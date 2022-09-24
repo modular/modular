@@ -55,6 +55,8 @@ public:
   ParameterEvaluator() = default;
   ParameterEvaluator(ParameterEvaluator &&) = default;
   ParameterEvaluator(const ParameterEvaluator &) = default;
+  ParameterEvaluator &operator=(ParameterEvaluator &&) = default;
+  ParameterEvaluator &operator=(const ParameterEvaluator &) = default;
 
   /// Given a generator or interface declaration operation, evaluate any
   /// constraints against inputParamValues.  If the constraints are met, return
