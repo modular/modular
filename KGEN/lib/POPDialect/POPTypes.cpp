@@ -55,13 +55,13 @@ Type ArrayType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
              attrs[1].cast<TypedAttr>());
 }
 
-Optional<int64_t> ArrayType::resolveSize() const {
+Optional<int64_t> ArrayType::getResolvedSize() const {
   if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
     return intAttr.getInt();
   return {};
 }
 
-Type ArrayType::resolveElementType() const {
+Type ArrayType::getResolvedElementType() const {
   if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
     return typeCst.getValue();
   return nullptr;
@@ -102,7 +102,7 @@ Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return PointerType::get(replAttrs[0]);
 }
 
-Type PointerType::resolveElementType() const {
+Type PointerType::getResolvedElementType() const {
   if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
     return typeCst.getValue();
   return nullptr;
@@ -175,7 +175,7 @@ Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return SIMDType::get(replAttrs[0], replAttrs[1]);
 }
 
-Optional<int64_t> SIMDType::resolveSize() const {
+Optional<int64_t> SIMDType::getResolvedSize() const {
   if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
     return intAttr.getInt();
   return {};

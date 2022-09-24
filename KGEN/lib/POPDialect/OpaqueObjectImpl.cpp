@@ -16,9 +16,8 @@ using namespace POP;
 /// out the DType and return it. Otherwise, return failure.
 static FailureOr<DType> resolveDTypeWithTag(DTypeInterface itf, Location loc,
                                             Attribute tag) {
-  DType dtype = itf.resolveDType();
-  if (dtype != DType::invalid)
-    return dtype;
+  if (Optional<DType> dtype = itf.getResolvedDType())
+    return *dtype;
 
   if (auto dt = tag.dyn_cast<DTypeConstantAttr>())
     return dt.getDType();
@@ -82,17 +81,17 @@ FailureOr<bool> ScalarType::equals(Location loc, Attribute tag, void *lhsData,
 /// `obj`.
 LogicalResult SIMDType::populate(Location loc, InputGenKind kind, Attribute tag,
                                  void *obj) const {
-  DType dtype = resolveDType();
+  Optional<DType> dtype = getResolvedDType();
   // If the dtype is invalid, we can't do anything. Note that we aren't trying
   // to get anything from the tag here!
-  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+  assert(dtype && "SIMDType must have a valid dtype");
 
-  auto sizeOr = resolveSize();
+  auto sizeOr = getResolvedSize();
   if (!sizeOr.has_value())
     return failure();
   size_t numElements = *sizeOr;
 
-  return fillOpaqueElements(loc, kind, dtype, numElements, obj);
+  return fillOpaqueElements(loc, kind, *dtype, numElements, obj);
 }
 
 /// This implements `OpaqueObjectInterface::destroy`. Nothing to be done for
@@ -103,28 +102,28 @@ void SIMDType::destroy(Attribute tag, void *obj) const {}
 /// has all its elements inline, compute the size of the array needed to hold
 /// tightly-packed elements for this type.
 FailureOr<size_t> SIMDType::getSizeInBytes(Location loc, Attribute tag) const {
-  DType dtype = resolveDType();
+  Optional<DType> dtype = getResolvedDType();
   // If the dtype is invalid, we can't do anything. Note that we aren't trying
   // to get anything from the tag here!
-  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+  assert(dtype && "SIMDType must have a valid dtype");
 
   // Same with the size, if it's unknown (which it should not be) then
   // we can't do anything.
-  auto sizeOr = resolveSize();
+  auto sizeOr = getResolvedSize();
   assert(sizeOr.has_value() && "SIMDType must have a statically-known size");
 
-  return dtype.getSizeInBytes(*sizeOr);
+  return dtype->getSizeInBytes(*sizeOr);
 }
 
 FailureOr<bool> SIMDType::equals(Location loc, Attribute tag, void *lhsData,
                                  void *rhsData) const {
   // Everything in a SIMDType must be static, so we can just directly compare
   // the data.
-  DType dtype = resolveDType();
-  assert(dtype != DType::invalid && "SIMDType must have a valid dtype");
+  Optional<DType> dtype = getResolvedDType();
+  assert(dtype && "SIMDType must have a valid dtype");
 
-  Optional<int64_t> sizeOr = resolveSize();
+  Optional<int64_t> sizeOr = getResolvedSize();
   assert(sizeOr.has_value() && "SIMDType must have a statically-known size");
 
-  return compareOpaqueElements(loc, dtype, *sizeOr, lhsData, rhsData);
+  return compareOpaqueElements(loc, *dtype, *sizeOr, lhsData, rhsData);
 }

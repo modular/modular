@@ -46,8 +46,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert a DType expression to an MLIR type.
   auto convertDType = [&](auto type) -> Optional<Type> {
-    if (DType dtype = type.resolveDType(); !dtype.isInvalid())
-      return getMLIRTypeForDType(type.getContext(), dtype);
+    if (Optional<DType> dtype = type.getResolvedDType())
+      return getMLIRTypeForDType(type.getContext(), *dtype);
     return {};
   };
 
@@ -73,7 +73,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](POP::PointerType pointer) -> Optional<Type> {
-    Type type = pointer.resolveElementType();
+    Type type = pointer.getResolvedElementType();
     if (!type)
       return LLVM::LLVMPointerType::get(pointer.getContext());
     if (Type elementType = convertType(type))
@@ -83,8 +83,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert array types to LLVM array types.
   addConversion([=](POP::ArrayType array) -> Optional<Type> {
-    Optional<int64_t> size = array.resolveSize();
-    Type elementType = array.resolveElementType();
+    Optional<int64_t> size = array.getResolvedSize();
+    Type elementType = array.getResolvedElementType();
     if (!size || !elementType)
       return {};
     elementType = convertType(elementType);

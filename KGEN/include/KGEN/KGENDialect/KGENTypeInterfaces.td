@@ -29,11 +29,11 @@ def DTypeInterface : TypeInterface<"DTypeInterface"> {
       /*desc=*/[{
         Try to resolve the data type from the parameter. Returns
         `DType::invalid` if the type could not be resolved.
-      }], "M::DType", "resolveDType", (ins), [{}], [{
+      }], "Optional<DType>", "getResolvedDType", (ins), [{}], [{
         if (auto constant =
-                $_type.getDType().template dyn_cast_or_null<DTypeConstantAttr>())
+                $_type.getDType().template dyn_cast<DTypeConstantAttr>())
           return constant.getDType();
-        return DType::invalid;
+        return {};
       }]>
   ];
 }
@@ -113,16 +113,16 @@ def OpaqueObjectInterface : TypeInterface<"OpaqueObjectInterface"> {
 
 /// A type whose data type conforms to a constraint.
 class ConstrainedDType<string constraint> : ConfinedType<DTypeInterface,
-    [CPred<!subst("$_self", "$_self.cast<DTypeInterface>().resolveDType()",
+    [CPred<!subst("$_self", "$_self.cast<DTypeInterface>().getResolvedDType()",
                  constraint)>]>;
 
 /// A type whose data type is boolean.
-def BoolDType : ConstrainedDType<"$_self.isBool()">;
+def BoolDType : ConstrainedDType<"$_self && $_self->isBool()">;
 /// A type whose data type is either unbound or integral.
 def IntegerOrUnboundDType :
-    ConstrainedDType<"$_self.isInvalid() || $_self.isInt()">;
+    ConstrainedDType<"!$_self || $_self->isInt()">;
 /// A type whose data type is either unbound or floating point.
 def FloatOrUnboundDType :
-    ConstrainedDType<"$_self.isInvalid() || $_self.isFloat()">;
+    ConstrainedDType<"!$_self || $_self->isFloat()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD

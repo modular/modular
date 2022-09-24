@@ -38,7 +38,8 @@ struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().template cast<DTypeInterface>().resolveDType();
+    DType dtype =
+        *op.getType().template cast<DTypeInterface>().getResolvedDType();
     Type type = this->getTypeConverter()->convertType(op.getType());
 
     if (dtype.isInt()) {
@@ -68,7 +69,7 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
@@ -96,7 +97,7 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
   LogicalResult
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       auto zero = rewriter.create<LLVM::ConstantOp>(
@@ -122,7 +123,7 @@ struct ConvertPOPShr : public mlir::ConvertOpToLLVMPattern<ShrOp> {
   LogicalResult
   matchAndRewrite(ShrOp op, ShrOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     if (dtype.isSInt())
       rewriter.replaceOpWithNewOp<LLVM::AShrOp>(op, adaptor.getLhs(),
                                                 adaptor.getRhs());
@@ -145,7 +146,7 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     if (dtype.isInt()) {
       auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
                                               adaptor.getB());
@@ -168,7 +169,8 @@ public:
   LogicalResult
   matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getLhs().getType().cast<DTypeInterface>().resolveDType();
+    DType dtype =
+        *op.getLhs().getType().cast<DTypeInterface>().getResolvedDType();
     if (dtype.isInt()) {
       rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
           op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
@@ -176,7 +178,7 @@ public:
     } else {
       Type i1Type = rewriter.getI1Type();
       if (auto simd = op.getLhs().getType().dyn_cast<SIMDType>())
-        i1Type = VectorType::get(*simd.resolveSize(), i1Type);
+        i1Type = VectorType::get(*simd.getResolvedSize(), i1Type);
       rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
           op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
           adaptor.getRhs());
@@ -238,9 +240,9 @@ struct ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
   matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     DType inDType =
-        op.getInput().getType().cast<DTypeInterface>().resolveDType();
+        *op.getInput().getType().cast<DTypeInterface>().getResolvedDType();
     DType outDType =
-        op.getOutput().getType().cast<DTypeInterface>().resolveDType();
+        *op.getOutput().getType().cast<DTypeInterface>().getResolvedDType();
 
     // Select the element-wise cast to perform. LLVM integer types are signless,
     // but the signedness semantics of the operation's input and output types
@@ -399,7 +401,7 @@ struct ConvertPOPSIMDReduceAdd
   LogicalResult
   matchAndRewrite(SIMDReduceAddOp op, SIMDReduceAddOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt()) {
@@ -429,7 +431,7 @@ struct ConvertPOPSIMDReduceMul
   LogicalResult
   matchAndRewrite(SIMDReduceMulOp op, SIMDReduceMulOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    DType dtype = op.getType().cast<DTypeInterface>().resolveDType();
+    DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt()) {
