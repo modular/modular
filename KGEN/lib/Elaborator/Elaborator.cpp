@@ -224,6 +224,15 @@ public:
     return firstConcreteFuncForGenerator;
   }
 
+  // These methods provide access to the `regionsReferenced` dictionary.  This
+  // tracks regions on kgen.call operations with unique string names.
+  void addRegionReference(StringAttr attr, OwningOpRef<RegionBodyOp> body) {
+    regionsReferenced[attr] = std::move(body);
+  }
+  RegionBodyOp getRegionReferenced(StringAttr attr) {
+    return regionsReferenced[attr].get();
+  }
+
 private:
   /// Specialize a func body, generating one variant or each viable
   /// instantiation of that body.  Funcs do not have input parameters, but they
@@ -283,6 +292,12 @@ private:
            SmallVector<ElaboratedGeneratorOrCalleeError>>
       generatedFuncs;
 
+  /// This is keeps track of a mapping from named regions (which get pulled out
+  /// of kgen.call's during elaboration) to a Block that provides the body.
+  /// Note that this is an /owning/ reference to the block, it has been removed
+  /// from the IR.
+  DenseMap<StringAttr, OwningOpRef<RegionBodyOp>> regionsReferenced;
+
   /// This map keeps track of the first func that a generator with no parameters
   /// expanded into.  We rename it to have the same symbol as the original
   /// generator in a post-pass.
@@ -331,6 +346,7 @@ public:
       : elaborator(elaborator), sourceModule(sourceModule),
         opsToRewrite(std::move(opsToRewrite)) {
     elaboratedGenerator.func = func;
+    nextCallRegionID = 0;
   }
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
@@ -388,6 +404,8 @@ private:
   LogicalResult processParamDeclareOp(ParamDeclareOp op);
   LogicalResult processParamConstantOp(ParamConstantOp op);
   LogicalResult processParamAssertOp(ParamAssertOp op);
+
+  ArrayAttr resolveCallInputParams(CallOp call);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processCallParamOp(CallParamOp call);
@@ -418,6 +436,10 @@ private:
 
   /// These are the operations we still need to visit to complete our rewrite.
   SmallVector<Operation *> opsToRewrite;
+
+  /// This is a counter that gives each region attached to a kgen.call a unique
+  /// number (and therefore, unique name).
+  unsigned nextCallRegionID;
 };
 } // namespace
 
@@ -428,7 +450,8 @@ ParameterRewriter::ParameterRewriter(
     DenseMap<Operation *, Operation *> &operationMap)
     : ParameterEvaluator(existing), elaborator(existing.elaborator),
       sourceModule(existing.sourceModule),
-      elaboratedGenerator(existing.elaboratedGenerator) {
+      elaboratedGenerator(existing.elaboratedGenerator),
+      nextCallRegionID(existing.nextCallRegionID) {
   // Remap the func operation.
   elaboratedGenerator.func =
       cast<FuncOp>(operationMap[existing.elaboratedGenerator.func]);
@@ -550,15 +573,48 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
 /// Resolve all of input parameters present at the specified call site to
 /// concrete constants.  This reports the error and returns null on failure,
 /// and returns an array of bound input parameters on success.
-static ArrayAttr resolveCallInputParams(CallOp call,
-                                        ParameterRewriter &rewriter) {
+ArrayAttr ParameterRewriter::resolveCallInputParams(CallOp call) {
+  // The region to use for the next "region" input parameter.
+  size_t nextRegionInThisCall = 0;
+
   SmallVector<Attribute> boundInputParams;
-  for (auto param : call.getParamValues()) {
-    auto value = rewriter.concretizeParameterExpr(
-        param.cast<ParamBindAttr>().getValue());
+  for (ParamBindAttr param : call.getParamValues()) {
+    // If this is a region reference, form a binding to the region provided by
+    // the call.
+    if (auto regionRef = param.getValue().dyn_cast<ParamCallRegionRefAttr>()) {
+      auto &region = call->getRegion(nextRegionInThisCall++);
+
+      // Give this reference a unique name, and make a StringAttr attribute with
+      // the name and SignatureType.
+      auto regionRefName =
+          StringAttr::get(elaboratedGenerator.func.getName() + "_region_" +
+                              Twine(nextCallRegionID++),
+                          regionRef.getType());
+
+      // The region in question should only have a single RegionBodyOp
+      // operation.  Take it out and hand ownership to the elaborator so
+      // references to it get correctly resolved.
+      assert(region.hasOneBlock());
+      Block &regionBlock = *region.begin();
+      RegionBodyOp body = cast<RegionBodyOp>(*regionBlock.begin());
+      // Remove the RegionBodyOp from the call's region, and hand ownership of
+      // it to the elaborator.
+      body->remove();
+
+      // TODO: We could do some content hashing to avoid making a new name for
+      // a lexically identical body.  This would reduce some redundant
+      // specialization.
+      elaborator.addRegionReference(regionRefName,
+                                    OwningOpRef<RegionBodyOp>(body));
+      boundInputParams.push_back(regionRefName);
+      continue;
+    }
+
+    // Otherwise fold the parameter expression in this context to a simple
+    // constant.
+    auto value = concretizeParameterExpr(param.getValue());
     if (value.isError())
-      return (void)rewriter.error(call->getLoc(), value.takeError()),
-             ArrayAttr();
+      return (void)error(call->getLoc(), value.takeError()), ArrayAttr();
 
     boundInputParams.push_back(value.takeValue());
   }
@@ -568,7 +624,7 @@ static ArrayAttr resolveCallInputParams(CallOp call,
 LogicalResult ParameterRewriter::processCallOp(
     CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
   // Evaluate any input parameters.
-  auto inputParamKey = resolveCallInputParams(call, *this);
+  auto inputParamKey = resolveCallInputParams(call);
   if (!inputParamKey)
     return failure();
 
@@ -671,7 +727,7 @@ void ParameterRewriter::completeCallOpProcessing(
   for (auto [decl, bindValue] :
        llvm::zip(newCall.getParamDecls(),
                  newCalleeFunc.getReturnOp().getParameters()))
-    setParameterValue(decl.cast<ParamDeclAttr>(), bindValue);
+    setParameterValue(decl, bindValue);
 }
 
 /// Sometimes when we expand a call, we find that there are multiple viable
@@ -708,22 +764,71 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   if (errorOrValue.isError())
     return error(call->getLoc(), errorOrValue.takeError());
 
-  auto symbolCst = errorOrValue.get().dyn_cast<SymbolConstantAttr>();
-  assert(symbolCst && "only concrete region type value is a symbol");
-
-  // Replace the kgen.call_param with a kgen.call to the target.
+  // If the parameter expression is resolved to a symbol, then turn this into
+  // direct call, and add the new call to the "opsToRewrite" list so it is
+  // recursively elaborated.
   OpBuilder b(call);
-  auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
-                                  symbolCst.getSymbol().getLeafReference(),
-                                  call.getParamValues(), call.getParamDecls(),
-                                  call.getOperands());
+  if (auto symbolCst = errorOrValue.get().dyn_cast<SymbolConstantAttr>()) {
+    assert(symbolCst && "only concrete region type value is a symbol");
 
-  // The SSA results of the old call go directly to the new call and remove it.
-  call->getResults().replaceAllUsesWith(newCall);
+    // Replace the kgen.call_param with a kgen.call to the target.
+    auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
+                                    symbolCst.getSymbol().getLeafReference(),
+                                    call.getParamValues(), call.getParamDecls(),
+                                    call.getOperands(), call.getNumRegions());
+
+    auto newRegions = newCall->getRegions(), oldRegions = call->getRegions();
+    for (size_t i = 0, e = call.getNumRegions(); i != e; ++i)
+      newRegions[i].takeBody(oldRegions[i]);
+
+    // The SSA results of the old call go directly to the new call and remove
+    // it.
+    call->getResults().replaceAllUsesWith(newCall);
+    call->erase();
+
+    // The new call may itself cause recursive elaboration.
+    opsToRewrite.push_back(newCall);
+    return success();
+  }
+
+  // Otherwise, the only other case we support is a call to a region, which is
+  // marked with a StringAttr value that has signature type.
+  auto regionName = errorOrValue.get().cast<StringAttr>();
+  assert(regionName.getType().isa<SignatureType>() && "not a region reference");
+  RegionBodyOp region = elaborator.getRegionReferenced(regionName);
+  assert(region && "couldn't resolve region reference");
+
+  // We process the call to the region by cloning its body inline, replacing the
+  // call with the newly substituted operations.  While doing this, we need to
+  // remap the region's arguments to the call formal parameters.
+  BlockAndValueMapping mapper;
+  DenseMap<Operation *, Operation *> operationMap;
+  auto &bodyBlock = *region.getBodyBlock();
+  for (auto [arg, value] :
+       llvm::zip(bodyBlock.getArguments(), call->getOperands()))
+    mapper.map(arg, value);
+
+  // TODO: In addition to cloning in the operations, we also have to bind and
+  // resolve any input parameters and concretize any result parameters.
+  // TODO: Also, check constraints!
+
+  // Clone all of the operations in the block.
+  for (auto &bodyOp : bodyBlock) {
+    if (isa<ReturnOp>(bodyOp))
+      break;
+    b.insert(cloneOperation(&bodyOp, mapper, operationMap));
+  }
+
+  // Now that we've cloned all the operations over, we know what the SSA results
+  // are supposed to be.  Replace all the uses of the call results with them.
+  SmallVector<Value> newResults;
+  for (Value returned : region.getReturnOp().getOperands())
+    newResults.push_back(mapper.lookup(returned));
+
+  // The SSA results of the old call go directly to the new call and remove
+  // it.
+  call->getResults().replaceAllUsesWith(newResults);
   call->erase();
-
-  // The new call may itself cause recursive elaboration.
-  opsToRewrite.push_back(newCall);
   return success();
 }
 
@@ -815,6 +920,8 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       os << typeConstant.getValue();
     } else if (auto symbolConstant = value.dyn_cast<SymbolConstantAttr>()) {
       os << symbolConstant.getSymbol();
+    } else if (auto stringConstant = value.dyn_cast<StringAttr>()) {
+      os << stringConstant.strref();
     } else {
       assert(!isSimpleConstant(value) && "not handling all simple constants");
       os << "??";

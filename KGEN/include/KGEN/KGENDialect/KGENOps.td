@@ -282,6 +282,10 @@ def RegionBodyOp : KGENOp<"region.body",
   let extraClassDeclaration = [{
     /// Get the terminator.
     ReturnOp getReturnOp();
+
+    Block *getBodyBlock() {
+      return &getBody().front();
+    }
   }];
 }
 
