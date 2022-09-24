@@ -25,6 +25,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include <numeric>
@@ -334,6 +335,14 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 // Elaborator Algorithm for one func implementation
 //===----------------------------------------------------------------------===//
 
+/// The worklist in ParameterRewriter contains commands that may either be an
+/// operation to rewrite or a "pop" command that instructs it to pop its
+/// evaluator stack.  We could use a null pointer to signify this, but instead
+/// we use a PointerUnion here to make the sentinel more explicit.
+using PopEvaluatorHashTableType = llvm::PointerEmbeddedInt<uint8_t>;
+using RewriterCommandType =
+    llvm::PointerUnion<Operation *, PopEvaluatorHashTableType>;
+
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify operations in a func based on those values.  If an error
@@ -342,12 +351,13 @@ namespace {
 class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func, ModuleOp sourceModule,
-                    SmallVector<Operation *> opsToRewrite)
-      : elaborator(elaborator), sourceModule(sourceModule),
-        opsToRewrite(std::move(opsToRewrite)) {
+                    ArrayRef<Operation *> opsToRewrite)
+      : elaborator(elaborator), sourceModule(sourceModule) {
     elaboratedGenerator.func = func;
     nextCallRegionID = 0;
     evaluators.push_back(ParameterEvaluator());
+    commandWorklist.reserve(opsToRewrite.size());
+    llvm::append_range(commandWorklist, opsToRewrite);
   }
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
@@ -362,7 +372,7 @@ public:
     return evaluators.back();
   }
 
-  /// Process all the `opsToRewrite`, simplifying this func.  If new variants
+  /// Process all the `commandWorklist`, simplifying this func.  If new variants
   /// of this func are necessary, they are added to rewriterWorklist.
   LogicalResult
   rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
@@ -448,8 +458,10 @@ private:
   /// regions.
   SmallVector<ParameterEvaluator, 2> evaluators;
 
-  /// These are the operations we still need to visit to complete our rewrite.
-  SmallVector<Operation *> opsToRewrite;
+  /// These are the commands that still need to get performed before this func
+  /// has been fully evaluated.  These are mostly operations that need to be
+  /// rewritten.
+  SmallVector<RewriterCommandType> commandWorklist;
 
   /// This is a counter that gives each region attached to a kgen.call a unique
   /// number (and therefore, unique name).
@@ -471,11 +483,16 @@ ParameterRewriter::ParameterRewriter(
       cast<FuncOp>(operationMap[existing.elaboratedGenerator.func]);
   assert(elaboratedGenerator.func && "didn't remap func correctly");
 
-  // Remap the operation worklist.
-  opsToRewrite.reserve(existing.opsToRewrite.size());
-  for (Operation *op : existing.opsToRewrite) {
-    opsToRewrite.push_back(operationMap[op]);
-    assert(opsToRewrite.back() && "didn't clone operation correctly?");
+  // Remap the operation in the command worklist.
+  commandWorklist.reserve(existing.commandWorklist.size());
+  for (RewriterCommandType command : existing.commandWorklist) {
+    if (Operation *op = dyn_cast<Operation *>(command)) {
+      commandWorklist.push_back(operationMap[op]);
+      assert(commandWorklist.back() && "didn't clone operation correctly?");
+    } else {
+      // Pop commands come over unmodified.
+      commandWorklist.push_back(command);
+    }
   }
 }
 
@@ -484,8 +501,18 @@ LogicalResult ParameterRewriter::rewriteOps(
     SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
   /// We use a worklist for this so cloned versions of ParameterRewriter can
   /// be created and known where to pick up from.
-  while (!opsToRewrite.empty()) {
-    Operation *op = opsToRewrite.pop_back_val();
+  while (!commandWorklist.empty()) {
+    RewriterCommandType command = commandWorklist.pop_back_val();
+    Operation *op = dyn_cast<Operation *>(command);
+
+    // Most commands in the worklist are operations that need to be rewritten.
+    // Handle the other things here.
+    if (!op) {
+      // So far, the only other command is to pop the evaluator stack.
+      assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
+      evaluators.pop_back();
+      continue;
+    }
 
     LogicalResult result = success();
     /// Process an operation that needs to be rewritten/lowered based on the
@@ -800,8 +827,9 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
     call->getResults().replaceAllUsesWith(newCall);
     call->erase();
 
-    // The new call may itself cause recursive elaboration.
-    opsToRewrite.push_back(newCall);
+    // The new call may itself cause recursive elaboration, make sure to process
+    // it as a new command.
+    commandWorklist.push_back(newCall.getOperation());
     return success();
   }
 
