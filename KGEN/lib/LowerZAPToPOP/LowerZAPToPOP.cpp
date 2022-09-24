@@ -278,8 +278,8 @@ struct ConvertZAPSIMDLoad : mlir::OpConversionPattern<SIMDLoadOp> {
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(TypeConstantAttr::get(op.getType())),
         ptr);
-    // We set the alignment to 4 to force LLVM to generate unaligned loads.
-    rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr, /*alignment=*/4);
+    // We set the alignment to 1 to force LLVM to generate unaligned loads.
+    rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr, /*alignment=*/1);
     return success();
   }
 };
@@ -300,9 +300,9 @@ struct ConvertZAPSIMDStore : mlir::OpConversionPattern<SIMDStoreOp> {
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(op.getValue().getType()), ptr);
-    // We set the alignment to 4 to force LLVM to generate unaligned stores.
+    // We set the alignment to 1 to force LLVM to generate unaligned stores.
     rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), bitcastPtr,
-                                         /*alignment=*/4);
+                                         /*alignment=*/1);
     return success();
   }
 };
