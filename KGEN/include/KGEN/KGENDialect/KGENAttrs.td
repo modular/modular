@@ -77,25 +77,11 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
 // ArrayOfAttrsAttr
 //===----------------------------------------------------------------------===//
 
-/// An array attribute of another attribute.
+/// An array attribute of other attributes. This one supports sub-element
+/// interface.
 class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
-    : KGENAttr<attrName, attrMnemonic,
-              [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
-  let parameters = (ins ArrayRefParameter<eltName>:$value);
-  let assemblyFormat = "`[` $value `]`";
-
-  let returnType = "ArrayRef<" # eltName # ">";
-  let constBuilderCall = "$_builder.getAttr<" # attrName # "Attr>($0)";
-  let convertFromStorage = "$_self.getValue()";
-
-  let extraClassDeclaration = [{
-    auto begin() const { return getValue().begin(); }
-    auto end() const { return getValue().end(); }
-    bool empty() const { return getValue().empty(); }
-    size_t size() const { return getValue().size(); }
-    auto &front() const { return getValue().front(); }
-  }];
-}
+    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
+                  [DeclareAttrInterfaceMethods<SubElementAttrInterface>]>;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclArrayAttr
