@@ -6,6 +6,7 @@
 
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/POPDialect/POPDialect.h"
 
 using namespace M;
 using namespace M::KGEN;

@@ -31,6 +31,8 @@ def ZAPDialect : Dialect {
   let useDefaultTypePrinterParser = 1;
   let hasConstantMaterializer = 1;
 
+  let dependentDialects = ["POP::POPDialect"];
+
   let extraClassDeclaration = [{
     /// Register all dialect operations.
     void registerOperations();
