@@ -14,7 +14,8 @@ add_modular_dialect_library(ZAPDialect
   MLIRZAPIncGen
 
   LINK_LIBS PUBLIC
-  MLIRSideEffectInterfaces
+  POPDialect
 
+  MLIRSideEffectInterfaces
   MLIRIR
 )
