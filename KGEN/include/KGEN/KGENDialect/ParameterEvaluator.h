@@ -85,6 +85,8 @@ public:
   /// for that use concretizeParameterExpr.
   Attribute getReboundAttribute(Attribute attr);
 
+  void dump() const;
+
 private:
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
