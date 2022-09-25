@@ -25,7 +25,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
-#include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include <numeric>
@@ -336,12 +335,27 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 //===----------------------------------------------------------------------===//
 
 /// The worklist in ParameterRewriter contains commands that may either be an
-/// operation to rewrite or a "pop" command that instructs it to pop its
-/// evaluator stack.  We could use a null pointer to signify this, but instead
-/// we use a PointerUnion here to make the sentinel more explicit.
-using PopEvaluatorStackType = llvm::PointerEmbeddedInt<uint8_t>;
-using RewriterCommandType =
-    llvm::PointerUnion<Operation *, PopEvaluatorStackType>;
+/// operation to rewrite or a "RegionReturn" command that instructs it to
+/// evaluate any returned parameter expressions, pop its evaluator stack, and
+/// bind the returned parameters to a set of paramdecls in the callers context.
+struct RegionReturn {
+  /// This is the location of the return from the region that binds the
+  /// parameters.
+  Location returnLoc;
+
+  /// This is a set of parameter expressions to evaluate as part of the return,
+  /// taken from the ReturnOp's parameters list.
+  ArrayAttr returnedParamExprs;
+
+  /// This is the set of declarations bound by the returned expressions when the
+  /// call is popped off the evaluator stack.
+  ParamDeclArrayAttr callerParamDecls;
+};
+
+/// Commands are either operations to process or RegionReturn commands.  The
+/// RegionReturn commands are heap allocated so they occupy a single word:
+/// this keeps each entry in the worklist one pointer.
+using RewriterCommandType = llvm::PointerUnion<Operation *, RegionReturn *>;
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
@@ -364,6 +378,7 @@ public:
   /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
+  ~ParameterRewriter();
 
   /// Return the evaluator currently being used for our rewrite.  This is the
   /// top of the stack of evaluators we track.
@@ -470,6 +485,15 @@ private:
 };
 } // namespace
 
+ParameterRewriter::~ParameterRewriter() {
+  // If a ParameterRewriter is aborted without completion, we need to make sure
+  // to deallocate any RegionReturn nodes in the commandWorklist.
+  for (RewriterCommandType command : commandWorklist)
+    if (RegionReturn *rr = dyn_cast<RegionReturn *>(command))
+      delete rr;
+  commandWorklist.clear();
+}
+
 /// Create a clone of this rewriter, but refer with a clone of the func.
 /// This uses operationMap to remap our state onto the newly created func.
 ParameterRewriter::ParameterRewriter(
@@ -491,8 +515,9 @@ ParameterRewriter::ParameterRewriter(
       commandWorklist.push_back(operationMap[op]);
       assert(commandWorklist.back() && "didn't clone operation correctly?");
     } else {
-      // Pop commands come over unmodified.
-      commandWorklist.push_back(command);
+      RegionReturn *rr = cast<RegionReturn *>(command);
+      // Copy RegionReturn commands to a unique pointer.
+      commandWorklist.push_back(new RegionReturn(*rr));
     }
   }
 }
@@ -504,37 +529,51 @@ LogicalResult ParameterRewriter::rewriteOps(
   /// be created and known where to pick up from.
   while (!commandWorklist.empty()) {
     RewriterCommandType command = commandWorklist.pop_back_val();
-    Operation *op = dyn_cast<Operation *>(command);
 
     // Most commands in the worklist are operations that need to be rewritten.
-    // Handle the other things here.
-    if (!op) {
-      // So far, the only other command is to pop the evaluator stack.
-      assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
-      evaluators.pop_back();
+    if (Operation *op = dyn_cast<Operation *>(command)) {
+      LogicalResult result = success();
+      /// Process an operation that needs to be rewritten/lowered based on the
+      /// context of the parameter values we know are defined.
+      if (auto bind = dyn_cast<ParamDeclareOp>(op))
+        result = processParamDeclareOp(bind);
+      else if (auto value = dyn_cast<ParamConstantOp>(op))
+        result = processParamConstantOp(value);
+      else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
+        result = processParamAssertOp(assertOp);
+      else if (auto call = dyn_cast<CallOp>(op))
+        result = processCallOp(call, rewriterWorklist);
+      else if (auto call = dyn_cast<CallParamOp>(op))
+        result = processCallParamOp(call);
+      else
+        result = processGenericOp(op);
+
+      // If processing any operation failed, then this entire func elaboration
+      // failed.
+      if (failed(result))
+        return failure();
       continue;
     }
 
-    LogicalResult result = success();
-    /// Process an operation that needs to be rewritten/lowered based on the
-    /// context of the parameter values we know are defined.
-    if (auto bind = dyn_cast<ParamDeclareOp>(op))
-      result = processParamDeclareOp(bind);
-    else if (auto value = dyn_cast<ParamConstantOp>(op))
-      result = processParamConstantOp(value);
-    else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
-      result = processParamAssertOp(assertOp);
-    else if (auto call = dyn_cast<CallOp>(op))
-      result = processCallOp(call, rewriterWorklist);
-    else if (auto call = dyn_cast<CallParamOp>(op))
-      result = processCallParamOp(call);
-    else
-      result = processGenericOp(op);
+    // Otherwise we have a RegionReturn operation.
+    std::unique_ptr<RegionReturn> rr(cast<RegionReturn *>(command));
 
-    // If processing any operation failed, then this entire func elaboration
-    // failed.
-    if (failed(result))
-      return failure();
+    // Evaluate each of the returned parameter expressions in the current scope.
+    SmallVector<Attribute> returnedParams;
+    for (auto expr : rr->returnedParamExprs) {
+      auto value = getEvaluator().concretizeParameterExpr(expr);
+      if (value.isError())
+        return error(rr->returnLoc, value.takeError());
+      returnedParams.push_back(value.takeValue());
+    }
+    // Next, pop the evaluator for the now-returned region.
+    assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
+    evaluators.pop_back();
+
+    // Bind each of the result parameter declarations in the callers context.
+    assert(rr->callerParamDecls.size() == returnedParams.size());
+    for (auto [decl, value] : llvm::zip(rr->callerParamDecls, returnedParams))
+      getEvaluator().setParameterValue(decl, value);
   }
 
   // Check that the thing we just built is correct IR!  We want to catch any
@@ -813,8 +852,6 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // recursively elaborated.
   OpBuilder b(call);
   if (auto symbolCst = errorOrValue.get().dyn_cast<SymbolConstantAttr>()) {
-    assert(symbolCst && "only concrete region type value is a symbol");
-
     // Replace the kgen.call_param with a kgen.call to the target.
     auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
                                     symbolCst.getSymbol().getLeafReference(),
@@ -869,6 +906,8 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   for (auto &bodyOp : bodyBlock)
     b.insert(cloneOperation(&bodyOp, mapper, operationMap));
 
+  auto theRegionReturnOp = region.getReturnOp();
+
   // Now that we have new cloned copy of all the instructions, we need to go
   // clean them up, substituting the formal input parameters into their types
   // and attributes.  One challenge with this is that these operations have a
@@ -876,11 +915,14 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // input parameter declarations in the region instead of the caller context.
   //
   // To handle this, we push a ParameterEvaluator scope that represents the
-  // bindings within the region body, and a pop command in the command queue
-  // that restores back to the previous scope when the operations from the
-  // region have finished their processing.
+  // bindings within the region body, and a RegionReturn command in the command
+  // queue that restores back to the previous scope when the operations from the
+  // region have finished their processing.  That command also handles binding
+  // returned parameters to the declaration in the caller context.
   evaluators.push_back(ParameterEvaluator());
-  commandWorklist.push_back(PopEvaluatorStackType());
+  commandWorklist.push_back(new RegionReturn{theRegionReturnOp.getLoc(),
+                                             theRegionReturnOp.getParameters(),
+                                             call.getParamDeclsAttr()});
 
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing
@@ -896,14 +938,9 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   SmallVector<Operation *> regionOpsToRewrite =
       ParameterDeclsAndUses::calculate(region).getUsingAndDeclaringOps();
 
-  // We don't clone over the region op itself, so we don't need to rewrite it.
-  assert(regionOpsToRewrite.front() == region &&
-         "region op should be the first in the list");
-
   // Add the parameter-using operations we cloned over from the region to the
   // commandWorklist so we rewrite them.
-  auto theRegionReturnOp = region.getReturnOp();
-  for (Operation *op : regionOpsToRewrite) {
+  for (Operation *op : llvm::reverse(regionOpsToRewrite)) {
     // We don't clone over the region op itself, and will be deleting the
     // return soon though so ignore those.
     if (op == region || op == theRegionReturnOp)
