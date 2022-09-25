@@ -220,3 +220,16 @@ ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
   // If we made it this far, then everything folded to true.
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// ParameterEvaluator debugging support.
+//===----------------------------------------------------------------------===//
+
+// Note: this dumps out in non-stable hash table order, only use for debugging
+// purposes!
+void ParameterEvaluator::dump() const {
+  auto &os = llvm::errs();
+  os << "ParameterEvaluator: \n";
+  for (auto [name, value] : paramValues)
+    os << "  " << name << " = " << value << "\n";
+}
