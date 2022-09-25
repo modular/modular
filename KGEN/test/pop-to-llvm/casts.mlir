@@ -59,7 +59,7 @@ kgen.func @pointer_bitcast(
      !pop.pointer<!pop.simd<4, f32>>,
      !pop.pointer<!pop.scalar<si32>>,
      !pop.pointer<!pop.scalar<ui32>>,
-     !pop.pointer<?>
+     !pop.pointer<!pop.scalar<invalid>>
     ) {
   // CHECK: llvm.bitcast %[[UI32]]
   %0 = pop.pointer.bitcast %ui32 : !pop.pointer<!pop.scalar<ui32>> to !pop.pointer<!pop.simd<4, f32>>
@@ -68,12 +68,12 @@ kgen.func @pointer_bitcast(
   // CHECK: llvm.bitcast %[[F64]]
   %2 = pop.pointer.bitcast %simd_f64 : !pop.pointer<!pop.simd<2, f64>> to !pop.pointer<!pop.scalar<ui32>>
   // CHECK: llvm.bitcast %[[UI32]]
-  %3 = pop.pointer.bitcast %ui32 : !pop.pointer<!pop.scalar<ui32>> to !pop.pointer<?>
+  %3 = pop.pointer.bitcast %ui32 : !pop.pointer<!pop.scalar<ui32>> to !pop.pointer<!pop.scalar<invalid>>
   kgen.return %0, %1, %2, %3 :
      !pop.pointer<!pop.simd<4, f32>>,
      !pop.pointer<!pop.scalar<si32>>,
      !pop.pointer<!pop.scalar<ui32>>,
-     !pop.pointer<?>
+     !pop.pointer<!pop.scalar<invalid>>
 }
 
 // CHECK-LABEL: @scalar_cast

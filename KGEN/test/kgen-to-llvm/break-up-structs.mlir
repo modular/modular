@@ -15,8 +15,8 @@
 // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
 // CHECK: llvm.return
 
-kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<?>, !kgen.dtype>) -> !pop.struct<index, !pop.pointer<?>, !kgen.dtype> {
-  kgen.return %a : !pop.struct<index, !pop.pointer<?>, !kgen.dtype>
+kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>) -> !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype> {
+  kgen.return %a : !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>
 }
 
 // -----

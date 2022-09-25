@@ -71,8 +71,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
-    `!kgen.mlirtype` type. The element type is also optional, in which case this
-    represents an opaque pointer.
+    `!kgen.mlirtype` type.
 
     Example:
 
@@ -82,9 +81,6 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
     // A pointer to a SIMD vector.
     !pop.pointer<!pop.simd<4, f32>>
-
-    // An opaque pointer.
-    !pop.pointer<?>
 
     // A parameterized scalar pointer.
     !pop.pointer<!pop.scalar<type>>
@@ -96,7 +92,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
   let parameters = (ins "TypedAttr":$elementType);
   let assemblyFormat = [{
-    `<` custom<OptionalTypeParamValue>($elementType) `>`
+    `<` custom<TypeParamValue>($elementType) `>`
   }];
   let genVerifyDecl = 1;
 

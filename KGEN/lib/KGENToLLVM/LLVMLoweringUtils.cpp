@@ -63,22 +63,15 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   };
 
   // Convert scalar types directly to the dtype.
-  addConversion([=](POP::ScalarType scalar) {
-    Optional<Type> dtype = convertDType(scalar);
-    if (!dtype)
-      emitError("scalar dtype not fully specified: ") << scalar;
-    return dtype;
-  });
+  addConversion([=](POP::ScalarType scalar) { return convertDType(scalar); });
 
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](POP::PointerType pointer) -> Optional<Type> {
-    Type type = pointer.getResolvedElementType();
-    if (!type)
-      return LLVM::LLVMPointerType::get(pointer.getContext());
-    if (Type elementType = convertType(type))
-      return LLVM::LLVMPointerType::get(elementType);
-    return {};
+    if (Type type = pointer.getResolvedElementType())
+      if (Type elementType = convertType(type))
+        return LLVM::LLVMPointerType::get(elementType);
+    return LLVM::LLVMPointerType::get(pointer.getContext());
   });
 
   // Convert array types to LLVM array types.

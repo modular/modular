@@ -290,26 +290,6 @@ ParseResult KGEN::parseOptionalDTypeParamValue(AsmParser &p,
   return parseDTypeParamValue(p, result);
 }
 
-/// Print a parameter value that either has `type` type or is null (which
-/// prints as a `?`).
-void KGEN::printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value) {
-  if (!value)
-    p << '?';
-  else
-    printTypeParamValue(p, value);
-}
-
-/// Parse a parameter value that is known to be a `type` type or a `?` which
-/// results in a null attribute.
-ParseResult KGEN::parseOptionalTypeParamValue(AsmParser &p,
-                                              FailureOr<TypedAttr> &result) {
-  if (succeeded(p.parseOptionalQuestion())) {
-    result = TypedAttr();
-    return success();
-  }
-  return parseTypeParamValue(p, result);
-}
-
 /// We need this for an ODS reason, it doesn't know that ParamDeclAttr is
 /// nullable or something :-/.
 ParseResult KGEN::parseParamDecl(AsmParser &p,
