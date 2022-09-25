@@ -177,51 +177,6 @@ ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterEvaluator::evaluateConstraints implementation.
-//===----------------------------------------------------------------------===//
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues.  If the constraints are met, return
-/// success, otherwise return why they aren't.
-ErrorOrSuccess ParameterEvaluator::evaluateConstraints(
-    DeclAndInputParamsPair declAndInputParams) {
-  KGENDeclInterface decl = declAndInputParams.first;
-
-  // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Otherwise, we have constraints to evaluate.  Bind each of the input
-  // parameter names.
-  ParameterEvaluator evaluator;
-  auto inputParamDecls = getParamDecls(decl);
-  ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
-  assert(inputParamDecls.size() == inputParamValues.size() &&
-         "incorrect number of input parameters");
-  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
-
-  // Each constraint must be foldable, and must fold to true.
-  for (ConstraintAttr constraint : constraints) {
-    auto result = evaluator.concretizeParameterExpr(constraint.getExpr());
-    if (failed(result))
-      return Error("constraint evaluation failure: " +
-                   Twine(result.getError()));
-    auto resultInt = (*result).dyn_cast<IntegerAttr>();
-    if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-      return Error("constraint evaluation didn't return true or false");
-
-    // If this failed, indicate why.
-    if (resultInt.getValue().isZero())
-      return Error("constraint failed: " + constraint.getMessage().getValue());
-  }
-
-  // If we made it this far, then everything folded to true.
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ParameterEvaluator debugging support.
 //===----------------------------------------------------------------------===//
 

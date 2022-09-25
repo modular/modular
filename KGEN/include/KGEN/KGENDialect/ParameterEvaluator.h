@@ -58,12 +58,6 @@ public:
   ParameterEvaluator &operator=(ParameterEvaluator &&) = default;
   ParameterEvaluator &operator=(const ParameterEvaluator &) = default;
 
-  /// Given a generator or interface declaration operation, evaluate any
-  /// constraints against inputParamValues.  If the constraints are met, return
-  /// success, otherwise return why they aren't.
-  static ErrorOrSuccess
-  evaluateConstraints(DeclAndInputParamsPair declAndInputParams);
-
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(ParamDeclAttr decl, Attribute value) {
