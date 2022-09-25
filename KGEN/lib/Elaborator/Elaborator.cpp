@@ -339,9 +339,9 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 /// operation to rewrite or a "pop" command that instructs it to pop its
 /// evaluator stack.  We could use a null pointer to signify this, but instead
 /// we use a PointerUnion here to make the sentinel more explicit.
-using PopEvaluatorHashTableType = llvm::PointerEmbeddedInt<uint8_t>;
+using PopEvaluatorStackType = llvm::PointerEmbeddedInt<uint8_t>;
 using RewriterCommandType =
-    llvm::PointerUnion<Operation *, PopEvaluatorHashTableType>;
+    llvm::PointerUnion<Operation *, PopEvaluatorStackType>;
 
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
@@ -855,17 +855,68 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // TODO: Also, check constraints!
 
   // Clone all of the operations in the block.
-  for (auto &bodyOp : bodyBlock) {
-    if (isa<ReturnOp>(bodyOp))
-      break;
+  for (auto &bodyOp : bodyBlock)
     b.insert(cloneOperation(&bodyOp, mapper, operationMap));
+
+  // Now that we have new cloned copy of all the instructions, we need to go
+  // clean them up, substituting the formal input parameters into their types
+  // and attributes.  One challenge with this is that these operations have a
+  // different parameter namespace than the caller context that refers to the
+  // input parameter declarations in the region instead of the caller context.
+  //
+  // To handle this, we push a ParameterEvaluator scope that represents the
+  // bindings within the region body, and a pop command in the command queue
+  // that restores back to the previous scope when the operations from the
+  // region have finished their processing.
+  evaluators.push_back(ParameterEvaluator());
+  commandWorklist.push_back(PopEvaluatorStackType());
+
+  // Add bindings for each of the input parameters to the new scope we just
+  // pushed, so they are properly bound when the rewriter continues processing
+  // the newly cloned operations.
+  ParameterEvaluator &oldEvaluator = evaluators[evaluators.size() - 2];
+  ParameterEvaluator &newEvaluator = getEvaluator();
+  for (auto [decl, bindValue] :
+       llvm::zip(region.getInputParamDecls(), call.getParamValues())) {
+    // Concretize the value being passed into a simple constant, using the
+    // previous evaluator stack.
+    auto inputParamValue =
+        oldEvaluator.concretizeParameterExpr(bindValue.getValue());
+    if (inputParamValue.isError())
+      return error(call->getLoc(), inputParamValue.takeError());
+
+    newEvaluator.setParameterValue(decl, inputParamValue.get());
+  }
+
+  // Find all the parameter decls and uses in the body of region, we will visit
+  // all of them as the evaluator continues processing the ops we just cloned
+  // over.
+  SmallVector<Operation *> regionOpsToRewrite =
+      ParameterDeclsAndUses::calculate(region).getUsingAndDeclaringOps();
+
+  // We don't clone over the region op itself, so we don't need to rewrite it.
+  assert(regionOpsToRewrite.front() == region &&
+         "region op should be the first in the list");
+
+  // Add the parameter-using operations we cloned over from the region to the
+  // commandWorklist so we rewrite them.
+  auto theRegionReturnOp = region.getReturnOp();
+  for (Operation *op : regionOpsToRewrite) {
+    // We don't clone over the region op itself, and will be deleting the return
+    // soon though so ignore those.
+    if (op == region || op == theRegionReturnOp)
+      continue;
+    commandWorklist.push_back(operationMap[op]);
+    assert(commandWorklist.back() && "operation wasn't cloned over correctly?");
   }
 
   // Now that we've cloned all the operations over, we know what the SSA results
   // are supposed to be.  Replace all the uses of the call results with them.
+  ReturnOp clonedReturn = cast<ReturnOp>(operationMap[theRegionReturnOp]);
   SmallVector<Value> newResults;
-  for (Value returned : region.getReturnOp().getOperands())
-    newResults.push_back(mapper.lookup(returned));
+  llvm::append_range(newResults, clonedReturn.getOperands());
+  // TODO: Handle result parameters.
+  clonedReturn->erase();
 
   // The SSA results of the old call go directly to the new call and remove
   // it.
@@ -885,6 +936,8 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     return error(op->getLoc(),
                  "unknown parameter-defining operator in elaboration");
 
+  ParameterEvaluator &evaluator = getEvaluator();
+
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
@@ -896,9 +949,9 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
       continue;
     }
 
-    newAttrs.push_back(NamedAttribute(
-        namedAttr.getName(),
-        getEvaluator().getReboundAttribute(namedAttr.getValue())));
+    newAttrs.push_back(
+        NamedAttribute(namedAttr.getName(),
+                       evaluator.getReboundAttribute(namedAttr.getValue())));
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
@@ -908,7 +961,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // types.  We don't have to check operands because they are always checked
   // when being defined.
   for (OpResult result : op->getResults())
-    result.setType(getEvaluator().getReboundType(result.getType()));
+    result.setType(evaluator.getReboundType(result.getType()));
 
   // Scan the region list if present.  The walker will automatically recurse
   // for us, but we have to check the block arguments.
@@ -916,7 +969,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (auto &region : op->getRegions())
       for (auto &block : region)
         for (Value arg : block.getArguments())
-          arg.setType(getEvaluator().getReboundType(arg.getType()));
+          arg.setType(evaluator.getReboundType(arg.getType()));
   }
 
   // If the op implements the elaborator interface, indicate it as resolved.
