@@ -495,12 +495,13 @@ kgen.generator @test_region() {
 
 // CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"() {
 // CHECK:    %cst = pop.constant(1.000000e+00 : f64) : !pop.scalar<f64>
+// CHECK:    %0 = kgen.param.constant  = <127>
 // CHECK:    kgen.return
 kgen.generator @just_call_it_pass_it
-  <fn: <subFn:<dt: dtype>()->()>()->(),
-   littleFn: <dt: dtype>()->()>() {
+  <fn: <subFn:<dt: dtype->index>()->()>()->(),
+   littleFn: <dt: dtype->index>()->()>() {
 
-  kgen.call_param[<subFn : <dt: dtype>()->()>()->(): fn]<subFn: <dt: dtype>()->() = littleFn>()
+  kgen.call_param[<subFn : <dt: dtype->index>()->()>()->(): fn]<subFn: <dt: dtype->index>()->() = littleFn>()
   kgen.return
 }
 
@@ -508,14 +509,15 @@ kgen.generator @just_call_it_pass_it
 kgen.generator @test_region_insanity() {
   // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"()  
   kgen.call @just_call_it_pass_it
-          <fn: <subFn:<dt: dtype>()->()>()->() = region, littleFn: <dt: dtype>()->() = region>() : () -> ()
-    fn<subFn:<dt: dtype>()->()>() {
-      kgen.call_param[<dt: dtype>()->(): subFn]<dt: dtype = f64>()
+          <fn: <subFn:<dt: dtype->index>()->()>()->() = region, littleFn: <dt: dtype->index>()->() = region>() : () -> ()
+    fn<subFn:<dt: dtype->index>()->()>() {
+      kgen.call_param[<dt: dtype->index>()->(): subFn]<dt: dtype = f64->resultParam>()
+      %0 = kgen.param.constant = <add(resultParam, 4)>
       kgen.return
     },
-    littleFn<dt: dtype>() {
+    littleFn<dt: dtype->index>() {
       %0 = pop.constant(1) : !pop.scalar<dt>
-      kgen.return
+      kgen.return<123>
     }
   kgen.return
 }

@@ -219,7 +219,6 @@ struct DeclParameterVerifier final : public ParameterCollector {
   void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
 
   // This is the top level declaration that we're analyzing.
-  // TODO: Make this a KGENDeclInterface.
   KGENDeclInterface const topLevelDeclOp;
 
   /// This is the parameter information that we're building.
