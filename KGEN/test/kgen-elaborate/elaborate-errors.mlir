@@ -23,9 +23,9 @@ kgen.generator @local_verif_error() {
 
 kgen.generator.interface @genItf2<x>()
 
+kgen.generator @genItf2_impl0<x>()
 // expected-note @below {{failed to expand this declaration}}
 // expected-note @+1 {{constraint failed: x must be zarooo}}
-kgen.generator @genItf2_impl0<x>()
   constraints <[eq(x, 0), "x must be zarooo"]> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return
@@ -139,7 +139,6 @@ hlkgen.generator @genItf2_impl0<x>() implements @genItf2 {
 
 kgen.generator @call_with_42
   <fn: <value>()->()>() {
-  // expected-note @+1 {{constraint failed: I insist index be twelve}}
   kgen.call_param[<value>()->(): fn]<value = 42>()
   kgen.return
 }
@@ -149,6 +148,7 @@ kgen.generator @test_region_constraints() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @call_with_42<fn: <value>()->() = region>() : () -> ()
     fn<value>
+    // expected-note @+1 {{constraint failed: I insist index be twelve}}
     constraints<[eq(value, 12), "I insist index be twelve"]>() {
       kgen.return
     }

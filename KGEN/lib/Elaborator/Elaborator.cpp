@@ -34,6 +34,58 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// evaluateConstraints implementation.
+//===----------------------------------------------------------------------===//
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+static LogicalResult
+evaluateConstraints(KGENDeclInterface decl, ArrayAttr inputParamValuesAttr,
+                    llvm::function_ref<void(Location, Error)> emitError) {
+  // If there are no constraints, we are trivially done.
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
+  if (constraints.empty())
+    return success();
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ParameterEvaluator evaluator;
+  auto inputParamDecls = getParamDecls(decl);
+  ArrayRef<Attribute> inputParamValues = inputParamValuesAttr.getValue();
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
+
+  // Each constraint must be foldable, and must fold to true.
+  for (ConstraintAttr constraint : constraints) {
+    auto result = evaluator.concretizeParameterExpr(constraint.getExpr());
+    if (failed(result)) {
+      emitError(constraint.getLoc(),
+                "constraint evaluation failure: " + Twine(result.getError()));
+      return failure();
+    }
+    auto resultInt = (*result).dyn_cast<IntegerAttr>();
+    if (!resultInt || resultInt.getValue().getBitWidth() != 1) {
+      emitError(constraint.getLoc(),
+                "constraint evaluation didn't return true or false");
+      return failure();
+    }
+
+    // If this failed, indicate why.
+    if (resultInt.getValue().isZero()) {
+      emitError(constraint.getLoc(),
+                "constraint failed: " + constraint.getMessage().getValue());
+      return failure();
+    }
+  }
+
+  // If we made it this far, then everything folded to true.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ElaborationDiagnostic class definition
 //===----------------------------------------------------------------------===//
 
@@ -885,12 +937,15 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   if (!inputParamKey)
     return failure();
 
+  auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
+    (void)error(loc, std::move(message));
+  };
+
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
-  auto constraintResult =
-      ParameterEvaluator::evaluateConstraints({region, inputParamKey});
-  if (failed(constraintResult))
-    return error(call->getLoc(), constraintResult.takeError());
+  if (failed(evaluateConstraints(region, inputParamKey,
+                                 emitEvaluateConstraintsError)))
+    return failure();
 
   // We process the call to the region by cloning its body inline, replacing
   // the call with the newly substituted operations.  While doing this, we
@@ -1271,18 +1326,16 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
 
   Operation *decl = declAndInputParams.first;
   SmallVector<ElaboratedGeneratorOrCalleeError> newCallees;
-  auto localError = [&](Error err) {
-    auto loc = decl->getLoc();
+  auto localError = [&](Location loc, Error err) {
     newCallees.push_back(
         CalleeExpansionError(loc, ElaborationDiagnostic(loc, std::move(err))));
   };
 
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
-  auto constraintResult =
-      ParameterEvaluator::evaluateConstraints(declAndInputParams);
-  if (failed(constraintResult)) {
-    localError(constraintResult.takeError());
+  if (failed(
+          evaluateConstraints(decl, declAndInputParams.second, localError))) {
+    /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     auto sourceModule = decl->getParentOfType<ModuleOp>();
 
@@ -1306,7 +1359,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   } else if (isa<GeneratorInterfaceOp>(decl)) {
     newCallees = specializeInterface(declAndInputParams, insertionPoint);
   } else {
-    localError("call to an unknown kind of declaration");
+    localError(decl->getLoc(), "call to an unknown kind of declaration");
   }
 
   auto &result = generatedFuncs[declAndInputParams];
