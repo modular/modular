@@ -423,7 +423,8 @@ private:
   LogicalResult processParamConstantOp(ParamConstantOp op);
   LogicalResult processParamAssertOp(ParamAssertOp op);
 
-  ArrayAttr resolveCallInputParams(CallOp call);
+  ArrayAttr resolveCallInputParams(Operation *call,
+                                   ArrayRef<ParamBindAttr> inputValues);
   LogicalResult processCallOp(CallOp call,
                               SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processCallParamOp(CallParamOp call);
@@ -614,12 +615,14 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
 /// Resolve all of input parameters present at the specified call site to
 /// concrete constants.  This reports the error and returns null on failure,
 /// and returns an array of bound input parameters on success.
-ArrayAttr ParameterRewriter::resolveCallInputParams(CallOp call) {
+ArrayAttr
+ParameterRewriter::resolveCallInputParams(Operation *call,
+                                          ArrayRef<ParamBindAttr> inputValues) {
   // The region to use for the next "region" input parameter.
   size_t nextRegionInThisCall = 0;
 
   SmallVector<Attribute> boundInputParams;
-  for (ParamBindAttr param : call.getParamValues()) {
+  for (ParamBindAttr param : inputValues) {
     // If this is a region reference, form a binding to the region provided by
     // the call.
     if (auto regionRef = param.getValue().dyn_cast<ParamCallRegionRefAttr>()) {
@@ -665,7 +668,7 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(CallOp call) {
 LogicalResult ParameterRewriter::processCallOp(
     CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
   // Evaluate any input parameters.
-  auto inputParamKey = resolveCallInputParams(call);
+  auto inputParamKey = resolveCallInputParams(call, call.getParamValues());
   if (!inputParamKey)
     return failure();
 
@@ -840,19 +843,27 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   RegionBodyOp region = elaborator.getRegionReferenced(regionName);
   assert(region && "couldn't resolve region reference");
 
-  // We process the call to the region by cloning its body inline, replacing the
-  // call with the newly substituted operations.  While doing this, we need to
-  // remap the region's arguments to the call formal parameters.
+  // Compute the binding of input parameters to concrete values.
+  auto inputParamKey = resolveCallInputParams(call, call.getParamValues());
+  if (!inputParamKey)
+    return failure();
+
+  // Evaluate any constraints for this declaration to see if this is a viable
+  // expansion.  If not, the expansion fails.
+  auto constraintResult =
+      ParameterEvaluator::evaluateConstraints({region, inputParamKey});
+  if (failed(constraintResult))
+    return error(call->getLoc(), constraintResult.takeError());
+
+  // We process the call to the region by cloning its body inline, replacing
+  // the call with the newly substituted operations.  While doing this, we
+  // need to remap the region's arguments to the call formal parameters.
   BlockAndValueMapping mapper;
   DenseMap<Operation *, Operation *> operationMap;
   auto &bodyBlock = *region.getBodyBlock();
   for (auto [arg, value] :
        llvm::zip(bodyBlock.getArguments(), call->getOperands()))
     mapper.map(arg, value);
-
-  // TODO: In addition to cloning in the operations, we also have to bind and
-  // resolve any input parameters and concretize any result parameters.
-  // TODO: Also, check constraints!
 
   // Clone all of the operations in the block.
   for (auto &bodyOp : bodyBlock)
@@ -874,23 +885,14 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing
   // the newly cloned operations.
-  ParameterEvaluator &oldEvaluator = evaluators[evaluators.size() - 2];
   ParameterEvaluator &newEvaluator = getEvaluator();
-  for (auto [decl, bindValue] :
-       llvm::zip(region.getInputParamDecls(), call.getParamValues())) {
-    // Concretize the value being passed into a simple constant, using the
-    // previous evaluator stack.
-    auto inputParamValue =
-        oldEvaluator.concretizeParameterExpr(bindValue.getValue());
-    if (inputParamValue.isError())
-      return error(call->getLoc(), inputParamValue.takeError());
+  for (auto [decl, value] :
+       llvm::zip(region.getInputParamDecls(), inputParamKey))
+    newEvaluator.setParameterValue(decl, value);
 
-    newEvaluator.setParameterValue(decl, inputParamValue.get());
-  }
-
-  // Find all the parameter decls and uses in the body of region, we will visit
-  // all of them as the evaluator continues processing the ops we just cloned
-  // over.
+  // Find all the parameter decls and uses in the body of region, we will
+  // visit all of them as the evaluator continues processing the ops we just
+  // cloned over.
   SmallVector<Operation *> regionOpsToRewrite =
       ParameterDeclsAndUses::calculate(region).getUsingAndDeclaringOps();
 
@@ -902,16 +904,17 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // commandWorklist so we rewrite them.
   auto theRegionReturnOp = region.getReturnOp();
   for (Operation *op : regionOpsToRewrite) {
-    // We don't clone over the region op itself, and will be deleting the return
-    // soon though so ignore those.
+    // We don't clone over the region op itself, and will be deleting the
+    // return soon though so ignore those.
     if (op == region || op == theRegionReturnOp)
       continue;
     commandWorklist.push_back(operationMap[op]);
     assert(commandWorklist.back() && "operation wasn't cloned over correctly?");
   }
 
-  // Now that we've cloned all the operations over, we know what the SSA results
-  // are supposed to be.  Replace all the uses of the call results with them.
+  // Now that we've cloned all the operations over, we know what the SSA
+  // results are supposed to be.  Replace all the uses of the call results
+  // with them.
   ReturnOp clonedReturn = cast<ReturnOp>(operationMap[theRegionReturnOp]);
   SmallVector<Value> newResults;
   llvm::append_range(newResults, clonedReturn.getOperands());
