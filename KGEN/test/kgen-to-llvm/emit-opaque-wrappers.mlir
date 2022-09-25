@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {opaque_wrapper = @kernel_opaque_wrapper}
-kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<?>, !kgen.dtype>, %i: i32) -> !pop.struct<index, !pop.pointer<?>, !kgen.dtype> {
-  kgen.return %a : !pop.struct<index, !pop.pointer<?>, !kgen.dtype>
+kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>, %i: i32) -> !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype> {
+  kgen.return %a : !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>
 }
 
 // CHECK: llvm.func @kernel_opaque_wrapper

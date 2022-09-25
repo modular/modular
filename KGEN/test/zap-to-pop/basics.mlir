@@ -151,7 +151,7 @@ kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: index) 
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer
 // CHECK-SAME: %[[DTYPE:.*]]:
-kgen.func @buffer_construct(%ptr: !pop.pointer<?>, %dtype: !kgen.dtype) -> !zap.buffer<4, ?> {
+kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<invalid>>, %dtype: !kgen.dtype) -> !zap.buffer<4, ?> {
   // CHECK: %[[SIZE:.*]] = kgen.param.constant = <4>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[SIZE]], %[[PTR]], %[[DTYPE]])
   %0 = zap.buffer.construct %ptr of %dtype : !zap.buffer<4, ?>
@@ -164,7 +164,7 @@ kgen.func @buffer_construct(%ptr: !pop.pointer<?>, %dtype: !kgen.dtype) -> !zap.
 // CHECK-LABEL: @buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer
 // CHECK-SAME: %[[SIZE:.*]]: index, %[[DTYPE:.*]]:
-kgen.func @buffer_construct(%ptr: !pop.pointer<?>, %size: index, %dtype: !kgen.dtype) -> !zap.buffer<?, ?> {
+kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<invalid>>, %size: index, %dtype: !kgen.dtype) -> !zap.buffer<?, ?> {
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[SIZE]], %[[PTR]], %[[DTYPE]])
   %0 = zap.buffer.construct %ptr[%size] of %dtype : !zap.buffer<?, ?>
   // CHECK: return %[[BUF]]

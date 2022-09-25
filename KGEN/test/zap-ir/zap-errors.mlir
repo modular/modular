@@ -16,7 +16,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: ind
 
 // -----
 
-kgen.func @zap_buffer_construct(%ptr: !pop.pointer<?>) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<invalid>>) {
   // expected-error @below {{either a dtype operand or a buffer type with static dtype}}
   %0 = zap.buffer.construct %ptr : !zap.buffer<4, ?>
   kgen.return

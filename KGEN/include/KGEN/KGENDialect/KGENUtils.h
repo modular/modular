@@ -106,14 +106,6 @@ void printOptionalDTypeParamValue(AsmPrinter &p, Attribute value);
 ParseResult parseOptionalDTypeParamValue(AsmParser &p,
                                          FailureOr<TypedAttr> &result);
 
-/// Print a parameter value that either has `type` type or is null (which
-/// prints as a `?`).
-ParseResult parseOptionalTypeParamValue(AsmParser &p,
-                                        FailureOr<TypedAttr> &result);
-/// Parse a parameter value that is known to be a `type` type or a `?` which
-/// results in a null attribute.
-void printOptionalTypeParamValue(AsmPrinter &p, TypedAttr value);
-
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
 ParseResult parseParamDecl(AsmParser &p, FailureOr<ParamDeclAttr> &result);
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);

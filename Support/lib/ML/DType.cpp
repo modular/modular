@@ -128,6 +128,10 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return getComplexChecked(elt.value());
     }
     return failure();
+  case 'i':
+    if (str == "invalid")
+      return DType(invalid);
+    return failure();
   default:
     // TODO: Could handle the eltType<unknown42> syntax if we wanted to.
     return failure();
@@ -165,6 +169,8 @@ std::string DType::getAsString() const {
     return "tf32";
   case kBool:
     return "bool";
+  case invalid:
+    return "invalid";
   default:
     return "eltType<unknown" + llvm::utostr(getValue()) + ">";
   }

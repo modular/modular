@@ -84,8 +84,8 @@ ArrayType ArrayType::get(int64_t size, Type elementType) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr dtype) {
-  if (dtype && !dtype.getType().isa<MLIRTypeType>())
+                                  TypedAttr type) {
+  if (type && !type.getType().isa<MLIRTypeType>())
     return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
   return success();
 }
@@ -103,7 +103,7 @@ Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 Type PointerType::getResolvedElementType() const {
-  if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
+  if (auto typeCst = getElementType().dyn_cast<TypeConstantAttr>())
     return typeCst.getValue();
   return nullptr;
 }

@@ -296,8 +296,8 @@ kgen.generator @pointer_bitcast(%arg0: !pop.pointer<!pop.scalar<f32>>, %arg1: !p
   %0 = pop.pointer.bitcast %arg0 : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.simd<4, si32>>
   // CHECK: %[[V1:.*]] = pop.pointer.bitcast %[[ARG1]] : !pop.pointer<!pop.simd<4, f64>> to !pop.pointer<!pop.scalar<f64>>
   %1 = pop.pointer.bitcast %arg1 : !pop.pointer<!pop.simd<4, f64>> to !pop.pointer<!pop.scalar<f64>>
-  // CHECK: %{{.*}} = pop.pointer.bitcast %[[ARG0]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<?>
-  %2 = pop.pointer.bitcast %arg0 : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<?>
+  // CHECK: %{{.*}} = pop.pointer.bitcast %[[ARG0]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<invalid>>
+  %2 = pop.pointer.bitcast %arg0 : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<invalid>>
   // CHECK: return %[[V0]], %[[V1]]
   kgen.return %0, %1 : !pop.pointer<!pop.simd<4, si32>>, !pop.pointer<!pop.scalar<f64>>
 }
@@ -568,15 +568,15 @@ kgen.generator @global_constant<type: type, dtype: dtype>() -> !pop.pointer<type
 kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
                                              %b: !pop.pointer<!pop.scalar<f32>>,
                                              %c: !pop.pointer<!pop.simd<4, f32>>,
-                                             %d: !pop.pointer<?>) {
+                                             %d: !pop.pointer<!pop.scalar<invalid>>) {
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<type>
   %0 = pop.pointer_to_index %a : !pop.pointer<type>
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<!pop.scalar<f32>>
   %1 = pop.pointer_to_index %b : !pop.pointer<!pop.scalar<f32>>
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<!pop.simd<4, f32>>
   %2 = pop.pointer_to_index %c : !pop.pointer<!pop.simd<4, f32>>
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<?>
-  %3 = pop.pointer_to_index %d : !pop.pointer<?>
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<!pop.scalar<invalid>>
+  %3 = pop.pointer_to_index %d : !pop.pointer<!pop.scalar<invalid>>
   kgen.return
 }
 
@@ -588,8 +588,8 @@ kgen.generator @index_to_pointer<type: type>(%idx: index) {
   %1 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<f32>>
   // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<!pop.simd<4, f32>>
   %2 = pop.index_to_pointer %idx : !pop.pointer<!pop.simd<4, f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<?>
-  %3 = pop.index_to_pointer %idx : !pop.pointer<?>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<!pop.scalar<invalid>>
+  %3 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<invalid>>
   kgen.return
 }
 

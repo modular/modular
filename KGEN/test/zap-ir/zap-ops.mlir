@@ -2,12 +2,12 @@
 
 // CHECK-LABEL: @zap_buffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<?>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<!pop.scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
   %ptr: !pop.pointer<!pop.scalar<f32>>,
-  %opaque: !pop.pointer<?>,
+  %opaque: !pop.pointer<!pop.scalar<invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (
   !zap.buffer<4, f32>,

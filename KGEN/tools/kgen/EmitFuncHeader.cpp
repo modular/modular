@@ -31,9 +31,17 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return func.emitError("unhandled floating point dtype: ")
              << dt.getAsString();
     }
-    if (dt.isInt())
+    if (dt.isInt()) {
       os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
     return success();
+    }
+    if (dt == DType::invalid) {
+      os << "void";
+      return success();
+    }
+
+    return func.emitError("unhandled dtype for header generation ")
+           << dt.getAsString();
   };
 
   // Helper to print a function as a C type.
