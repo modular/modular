@@ -382,6 +382,14 @@ kgen.generator @parametricAdd<ty: type>
 // CHECK:    %0 = kgen.call @"nopExample,dt=f32"(%cst) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
+
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=test_region_concrete_region_2"() {
+// CHECK:    %cst = pop.constant(1 : si32) : !pop.scalar<si32>
+// CHECK:    %0 = pop.add %cst, %cst : !pop.scalar<si32>
+// CHECK:    %1 = pop.mul %0, %cst : !pop.scalar<si32>
+// CHECK:    %2 = pop.add %1, %1 : !pop.scalar<si32>
+// CHECK:    %3 = pop.mul %2, %1 : !pop.scalar<si32>
+
 kgen.generator @takeUnary
   <dt: dtype, fn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
 
@@ -471,6 +479,44 @@ kgen.generator @test_region() {
       %result = pop.add %arg0, %arg0 : !pop.scalar<f32>
       kgen.return %result : !pop.scalar<f32>
     }
- 
+
+  // Check a call to a parametric region. 
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=test_region_concrete_region_2"()
+  kgen.call @takeUnary<dt: dtype = si32,
+     fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = region>() : () -> ()
+    fn<dt:dtype>(%arg0: !pop.scalar<dt>) {
+      %0 = pop.add %arg0, %arg0 : !pop.scalar<dt>
+      %1 = pop.mul %0, %arg0 : !pop.scalar<dt>
+      kgen.return %1 : !pop.scalar<dt>
+    }
+
   kgen.return
 }
+
+// CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"() {
+// CHECK:    %cst = pop.constant(1.000000e+00 : f64) : !pop.scalar<f64>
+// CHECK:    kgen.return
+kgen.generator @just_call_it_pass_it
+  <fn: <subFn:<dt: dtype>()->()>()->(),
+   littleFn: <dt: dtype>()->()>() {
+
+  kgen.call_param[<subFn : <dt: dtype>()->()>()->(): fn]<subFn: <dt: dtype>()->() = littleFn>()
+  kgen.return
+}
+
+// CHECK-LABEL: @test_region_insanity
+kgen.generator @test_region_insanity() {
+  // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"()  
+  kgen.call @just_call_it_pass_it
+          <fn: <subFn:<dt: dtype>()->()>()->() = region, littleFn: <dt: dtype>()->() = region>() : () -> ()
+    fn<subFn:<dt: dtype>()->()>() {
+      kgen.call_param[<dt: dtype>()->(): subFn]<dt: dtype = f64>()
+      kgen.return
+    },
+    littleFn<dt: dtype>() {
+      %0 = pop.constant(1) : !pop.scalar<dt>
+      kgen.return
+    }
+  kgen.return
+}
+
