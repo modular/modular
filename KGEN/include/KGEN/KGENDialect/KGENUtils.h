@@ -142,6 +142,7 @@ enum class GeneratorOrFuncKind {
   func,
   generator,
   interface,
+  precompiled,
 
   // HLKGEN dialect
   hlgenerator,

@@ -962,8 +962,10 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   // Parse the required function body.
   auto *body = result.addRegion();
 
-  // If this is a generator interface, no body block is allowed.
-  if (opKind == GeneratorOrFuncKind::interface)
+  // If this is a generator interface or a precompiled, no body block is
+  // allowed.
+  if (opKind == GeneratorOrFuncKind::interface ||
+      opKind == GeneratorOrFuncKind::precompiled)
     return success();
 
   llvm::SMLoc loc = parser.getCurrentLocation();

@@ -28,7 +28,7 @@ def FuncOp
                     Symbol, IsolatedFromAbove,
                     SingleBlockImplicitTerminator<"ReturnOp">,
                     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                    DeclareOpInterfaceMethods<KGENDeclInterface, ["getConstraints"]>]> {
+                    DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
@@ -454,12 +454,15 @@ def RebindOp : KGENOp<"rebind"> {
 //===----------------------------------------------------------------------===//
 
 class PrecompiledOpBase<string mnemonic, dag additionalArgs>
-  : KGENOp<"precompiled." # mnemonic, [HasParent<"mlir::ModuleOp">,
-                                       FunctionOpInterface, Symbol]> {
+  : KGENOp<"precompiled." # mnemonic,
+    [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
+     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
 
   let arguments = !con((ins SymbolNameAttr:$sym_name,
                             StrAttr:$sym_visibility,
-                            TypeAttrOf<FunctionType>:$function_type), additionalArgs);
+                            TypeAttrOf<FunctionType>:$function_type,
+                            ParamDeclArrayAttr:$paramDecls,
+                            KTypeArrayAttr:$resultParamTypes), additionalArgs);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.
@@ -490,37 +493,29 @@ class PrecompiledOpBase<string mnemonic, dag additionalArgs>
 }
 
 //===----------------------------------------------------------------------===//
-// PrecompiledFuncOp
-//===----------------------------------------------------------------------===//
-
-def PrecompiledFuncOp : PrecompiledOpBase<"func", (ins StrAttr:$func)> {
-  let summary = "declare a precompiled `kgen.func`";
-  let description = [{
-    The `kgen.precompiled.func` operation provides an IR handle for a
-    `kgen.func` that is already compiled/not possible to inline. It maintains
-    all function attributes that were on the original function, but elides the
-    body in favor of storing it as a cache key that can be used for lookups as
-    needed.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // PrecompiledLLVMOp
 //===----------------------------------------------------------------------===//
 
 def PrecompiledLLVMOp : PrecompiledOpBase<"llvm",
-    (ins TargetInfoAttr:$compiledFor, StrAttr:$ir, StrAttr:$llvm)> {
-  let summary = "declare a precompiled `kgen.func`'s LLVM lowering";
+    (ins TargetInfoAttr:$compiledFor, StrAttr:$llvm)> {
+  let summary = "Declare a precompiled `kgen.func`'s LLVM lowering";
   let description = [{
     The `kgen.precompiled.llvm` operation provides an IR handle for a
     `kgen.func` that is already compiled to LLVM. It stores a cache key to
-    the LLVM representation of this function (the `llvm` attr), as well as an
-    optional back pointer to the `kgen.precompiled.func` op (the `ir` attr) for
-    back-tracking up the compilation stack.
+    the LLVM representation of this function (the `llvm` attr). We can back
+    track up the compilation stack by preserving a mapping from a
+    `kgen.precompiled.llvm` back to a serialized `kgen.func`.
 
     `kgen.precompiled.llvm` is target-specific, as the LLVM lowering requires
     a data layout.
   }];
+
+  let builders = [
+    // Build this from a FuncOp.
+    OpBuilder<(ins "M::KGEN::FuncOp":$func,
+                   "M::KGEN::TargetInfoAttr":$compiledFor,
+                   "llvm::StringRef":$llvm)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -528,16 +523,22 @@ def PrecompiledLLVMOp : PrecompiledOpBase<"llvm",
 //===----------------------------------------------------------------------===//
 
 def PrecompiledObjectOp : PrecompiledOpBase<"object",
-    (ins TargetInfoAttr:$compiledFor, StrAttr:$llvm, StrAttr:$object)> {
-  let summary = "declare a precompiled `kgen.func`'s cached object";
+    (ins TargetInfoAttr:$compiledFor, StrAttr:$object)> {
+  let summary = "Declare a precompiled `kgen.func`'s cached object";
   let description = [{
     The `kgen.precompiled.object` operation provides an IR handle for a
     `kgen.func` that is already compiled to an object file. It stores a cache
-    key to the object file (the `object` attr) as well as an optional back
-    pointer to the `kgen.precompiled.llvm` op (the `llvm` attr) for
-    back-tracking up the compilation stack.
+    key to the object file (the `object` attr). We can back track up the
+    compilation stack by preserving a mapping from a `kgen.precompiled.object`
+    back to a serialized `kgen.precompiled.llvm`.
 
     `kgen.precompiled.object` is target-specific, it contains the raw bytes
     of a machine-specific object file.
   }];
+
+  let builders = [
+    // Build this from a PrecompiledLLVMOp.
+    OpBuilder<(ins "M::KGEN::PrecompiledLLVMOp":$func,
+                   "llvm::StringRef":$object)>
+  ];
 }
