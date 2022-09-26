@@ -16,7 +16,7 @@ kgen.func public @someBufferKernel(%a: !pop.struct<index, !pop.pointer<!pop.scal
   %size = pop.get_element %a[0] : !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>
   kgen.return %size : index
 }
-// BUFFER: extern intptr_t someBufferKernel(intptr_t, void *, int8_t);
+// BUFFER: extern intptr_t someBufferKernel(intptr_t, void *, uint8_t);
 
 
 

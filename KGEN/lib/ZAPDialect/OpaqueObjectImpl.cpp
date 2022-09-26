@@ -22,7 +22,7 @@ namespace {
 LLVM_PACKED(struct OpaqueBuffer {
   intptr_t size;
   void *data;
-  int8_t dtype;
+  uint8_t dtype;
 });
 } // namespace
 
@@ -54,7 +54,7 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   OpaqueBuffer *objPtr = ((OpaqueBuffer *)obj);
   objPtr->size = numElements;
   objPtr->data = ptr;
-  objPtr->dtype = (*dtype).getValue();
+  objPtr->dtype = dtype->getValue();
 
   // Do the fill.
   return fillOpaqueElements(loc, kind, *dtype, numElements, ptr);
