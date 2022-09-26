@@ -1,4 +1,4 @@
-//===- KGEN/KGENDialect/KGENDeclInterface.h -------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

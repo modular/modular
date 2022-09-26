@@ -1,4 +1,4 @@
-//===- KGENTypes.td -------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -51,7 +51,7 @@ def MLIRTypeType : KGENType<"MLIRType"> {
   let description = [{
     This kgen type represents an arbitrary MLIR type, used for parameterizing
     type-generic operations.
-    
+
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
   }];
@@ -108,7 +108,7 @@ def SignatureType
       return get(inputParams.getContext(), inputParams, resultParamTypes, values);
     }]>
   ];
-      
+
   let extraClassDeclaration = [{
     /// Verify that this SignatureType is self-contained, all referenced
     /// parameters are defined within the signature.
@@ -117,7 +117,7 @@ def SignatureType
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
     /// bindings affects the type signature of the value input and outputs, and
-    /// also can remap the signature in the parameter list itself. 
+    /// also can remap the signature in the parameter list itself.
     ///
     /// If an error occurs making the substitution, report it with emitErrorFn
     /// and return null.
