@@ -96,9 +96,9 @@ class ElaborationDiagnostic;
 using CalleeExpansionError = std::pair<Location, ElaborationDiagnostic>;
 
 /// This class represents the reason that a  generator could not be elaborated.
-///  It is either a local problem in the generator (e.g. an operator
-/// defining a parameter that is unknown) or it is a call to another set of
-/// generators that had problems expanding.
+/// It is either a local problem in the generator (e.g. an operator defining a
+/// parameter that is unknown) or it is a call to another set of generators that
+/// had problems expanding.
 class ElaborationDiagnostic {
 public:
   ElaborationDiagnostic(Location failureLoc, Error error)
@@ -391,6 +391,9 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 /// evaluate any returned parameter expressions, pop its evaluator stack, and
 /// bind the returned parameters to a set of paramdecls in the callers context.
 struct RegionReturn {
+  /// This is the location of the call to the parameter region.
+  Location callLoc;
+
   /// This is the location of the return from the region that binds the
   /// parameters.
   Location returnLoc;
@@ -452,19 +455,9 @@ public:
   }
 
   /// If elaboration of this func fails, then the client can get the error
-  /// out.  This also deletes the dead husk of the func which may not even
-  /// verify correctly.
-  CalleeExpansionError takeDiagnosticAndEraseFunc() {
-    assert(diagnostic.has_value() &&
-           "cannot get diagnostic when none was generated");
-    // The generator is not viable so we need to delete it.  This op can appear
-    // in various maps though, so instead of actually deleting it, we just
-    // delete its body.  The cleanup pass at the end of elaboration will remove
-    // it.
-    elaboratedGenerator.func.getBodyBlock()->clear();
-    return CalleeExpansionError(elaboratedGenerator.func->getLoc(),
-                                std::move(diagnostic.value()));
-  }
+  /// out.  This also deallocates the body of the dead husk of the func which
+  /// may not even verify correctly, it will be removed later.
+  CalleeExpansionError takeDiagnosticAndEraseFunc();
 
   /// Generate a error expanding this generator.  The location specified is the
   /// operation with the problem, and the message is the problem with it.
@@ -937,6 +930,29 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   if (!inputParamKey)
     return failure();
 
+  auto theRegionReturnOp = region.getReturnOp();
+
+  // The region will have a different parameter namespace than the caller
+  // context: names will mean different things inside the region than they did
+  // in the caller.  To handle this, we push a ParameterEvaluator scope that
+  // represents the bindings within the region body, and a RegionReturn command
+  // in the command queue that restores back to the previous scope when the
+  // operations from the region have finished their processing.  That command
+  // also handles binding returned parameters to the declaration in the caller
+  // context.
+  evaluators.push_back(ParameterEvaluator());
+  commandWorklist.push_back(new RegionReturn{
+      call.getLoc(), theRegionReturnOp.getLoc(),
+      theRegionReturnOp.getParameters(), call.getParamDeclsAttr()});
+
+  // Add bindings for each of the input parameters to the new scope we just
+  // pushed, so they are properly bound when the rewriter continues processing
+  // the newly cloned operations.
+  ParameterEvaluator &newEvaluator = getEvaluator();
+  for (auto [decl, value] :
+       llvm::zip(region.getInputParamDecls(), inputParamKey))
+    newEvaluator.setParameterValue(decl, value);
+
   auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
     (void)error(loc, std::move(message));
   };
@@ -960,32 +976,6 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // Clone all of the operations in the block.
   for (auto &bodyOp : bodyBlock)
     b.insert(cloneOperation(&bodyOp, mapper, operationMap));
-
-  auto theRegionReturnOp = region.getReturnOp();
-
-  // Now that we have new cloned copy of all the instructions, we need to go
-  // clean them up, substituting the formal input parameters into their types
-  // and attributes.  One challenge with this is that these operations have a
-  // different parameter namespace than the caller context that refers to the
-  // input parameter declarations in the region instead of the caller context.
-  //
-  // To handle this, we push a ParameterEvaluator scope that represents the
-  // bindings within the region body, and a RegionReturn command in the command
-  // queue that restores back to the previous scope when the operations from the
-  // region have finished their processing.  That command also handles binding
-  // returned parameters to the declaration in the caller context.
-  evaluators.push_back(ParameterEvaluator());
-  commandWorklist.push_back(new RegionReturn{theRegionReturnOp.getLoc(),
-                                             theRegionReturnOp.getParameters(),
-                                             call.getParamDeclsAttr()});
-
-  // Add bindings for each of the input parameters to the new scope we just
-  // pushed, so they are properly bound when the rewriter continues processing
-  // the newly cloned operations.
-  ParameterEvaluator &newEvaluator = getEvaluator();
-  for (auto [decl, value] :
-       llvm::zip(region.getInputParamDecls(), inputParamKey))
-    newEvaluator.setParameterValue(decl, value);
 
   // Find all the parameter decls and uses in the body of region, we will
   // visit all of them as the evaluator continues processing the ops we just
@@ -1075,6 +1065,33 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   }
 
   return success();
+}
+
+/// If elaboration of this func fails, then the client can get the error
+/// out.  This also deallocates the body of the dead husk of the func which
+/// may not even verify correctly, it will be removed later.
+CalleeExpansionError ParameterRewriter::takeDiagnosticAndEraseFunc() {
+  assert(diagnostic.has_value() &&
+         "cannot get diagnostic when none was generated");
+  // The generator is not viable so we need to delete it.  This op can appear
+  // in various maps though, so instead of actually deleting it, we just
+  // delete its body.  The cleanup pass at the end of elaboration will remove
+  // it.
+  elaboratedGenerator.func.getBodyBlock()->clear();
+  auto error = CalleeExpansionError(elaboratedGenerator.func->getLoc(),
+                                    std::move(diagnostic.value()));
+
+  // Check to see if the error occurs in the scope of a call_param to a region.
+  // If so, make sure to add the nested call to the expansion path.
+  for (auto command : llvm::reverse(commandWorklist)) {
+    RegionReturn *rr = dyn_cast<RegionReturn *>(command);
+    if (!rr)
+      continue;
+    error = CalleeExpansionError(rr->callLoc,
+                                 ElaborationDiagnostic(rr->callLoc, error));
+  }
+
+  return error;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1327,8 +1344,8 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   Operation *decl = declAndInputParams.first;
   SmallVector<ElaboratedGeneratorOrCalleeError> newCallees;
   auto localError = [&](Location loc, Error err) {
-    newCallees.push_back(
-        CalleeExpansionError(loc, ElaborationDiagnostic(loc, std::move(err))));
+    newCallees.push_back(CalleeExpansionError(
+        decl->getLoc(), ElaborationDiagnostic(loc, std::move(err))));
   };
 
   // Evaluate any constraints for this declaration to see if this is a viable

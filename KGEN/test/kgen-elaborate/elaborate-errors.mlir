@@ -23,8 +23,8 @@ kgen.generator @local_verif_error() {
 
 kgen.generator.interface @genItf2<x>()
 
-kgen.generator @genItf2_impl0<x>()
 // expected-note @below {{failed to expand this declaration}}
+kgen.generator @genItf2_impl0<x>()
 // expected-note @+1 {{constraint failed: x must be zarooo}}
   constraints <[eq(x, 0), "x must be zarooo"]> implements @genItf2 {
   "impl0"() : () -> ()
@@ -137,8 +137,8 @@ hlkgen.generator @genItf2_impl0<x>() implements @genItf2 {
 // -----
 
 
-kgen.generator @call_with_42
-  <fn: <value>()->()>() {
+kgen.generator @call_with_42<fn: <value>()->()>() {
+  // expected-note @+1 {{call expansion failed}}
   kgen.call_param[<value>()->(): fn]<value = 42>()
   kgen.return
 }
