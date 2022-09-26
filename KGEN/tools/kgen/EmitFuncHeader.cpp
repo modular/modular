@@ -33,7 +33,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     }
     if (dt.isInt()) {
       os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
-    return success();
+      return success();
     }
     if (dt == DType::invalid) {
       os << "void";
@@ -80,7 +80,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     // FIXME: This pass should run pre-elaboration, but we have no way for user
     // defined typed to specify the functions in OpaqueObjectInterface.
     if (auto buffer = t.dyn_cast<ZAP::BufferType>()) {
-      os << "intptr_t, void *, int8_t";
+      os << "intptr_t, void *, uint8_t";
       return success();
     }
 
@@ -99,7 +99,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     }
 
     if (t.isa<DTypeType>()) {
-      os << "int8_t";
+      os << "uint8_t";
       return success();
     }
 
