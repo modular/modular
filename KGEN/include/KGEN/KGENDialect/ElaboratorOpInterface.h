@@ -1,4 +1,4 @@
-//===- KGEN/KGENDialect/ElaboratorOpInterface.h ---------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

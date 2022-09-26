@@ -1,4 +1,4 @@
-//===- Support/Compiler/MLIRDenseAttrStorage.h ----------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //

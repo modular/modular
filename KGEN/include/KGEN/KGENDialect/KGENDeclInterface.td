@@ -1,4 +1,4 @@
-//===- KGENDeclInterface.td -----------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -40,7 +40,7 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     }], "TypeArrayAttr", "getResultParamTypesAttr">,
     InterfaceMethod<[{
       Return the list of input parameters.
-    }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins), 
+    }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins),
         "return getParamDecls($_op);", "return getParamDecls($_op);">,
     InterfaceMethod<[{
       Return the list of output parameter types.
