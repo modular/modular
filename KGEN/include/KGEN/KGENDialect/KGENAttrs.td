@@ -554,16 +554,20 @@ def EvalConfigurationArrayAttr
 
 def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
   let parameters = (ins StringRefParameter<"">:$triple,
+                        StringRefParameter<"">:$cpu,
+                        StringRefParameter<"">:$features,
                         AttributeSelfTypeParameter<"">:$type);
 
-  let assemblyFormat = "`<` $triple `>`";
+  let assemblyFormat = "`<` $triple `,` $cpu `,` $features `>`";
 
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$triple), [{
-      return $_get(triple.getContext(), triple,
-                   StringType::get(triple.getContext()));
-    }]>
-  ];
+  let extraClassDeclaration = [{
+    /// Provides a stable hash function for use as part of a cache key.
+    llvm::hash_code hash() const {
+      return llvm::hash_combine(getTriple(), getCpu(), getFeatures());
+    }
+
+    static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);
+  }];
 }
 
 

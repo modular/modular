@@ -19,6 +19,8 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/MC/SubtargetFeature.h" //< For TargetInfoAttr
+#include "llvm/Support/Host.h"        //< For TargetInfoAttr
 
 using namespace M;
 using namespace M::KGEN;
@@ -1176,4 +1178,22 @@ Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
 
 Type ParameterizedTypeConstantAttr::getValue() const {
   return getImpl()->value;
+}
+
+TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
+  auto targetTriple = llvm::sys::getDefaultTargetTriple();
+
+  // Get the host CPU and set up to get the features.
+  std::string cpu(llvm::sys::getHostCPUName());
+  llvm::SubtargetFeatures features;
+  llvm::StringMap<bool> hostFeatures;
+
+  // Get the host features.
+  if (llvm::sys::getHostCPUFeatures(hostFeatures))
+    for (auto &f : hostFeatures)
+      features.AddFeature(f.first(), f.second);
+
+  // Return a TargetInfoAttr built for the host.
+  return TargetInfoAttr::get(ctx, targetTriple, cpu, features.getString(),
+                             StringType::get(ctx));
 }
