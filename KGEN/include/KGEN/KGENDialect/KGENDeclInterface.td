@@ -48,14 +48,21 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     /// Constraints.
     InterfaceMethod<[{
       Return the list of constraints.
-    }], "ArrayRef<ConstraintAttr>", "getConstraints">,
+    }], "ArrayRef<ConstraintAttr>", "getConstraints", (ins), "", [{
+      return {};
+    }]>,
     InterfaceMethod<[{
       Return the list of constraints.
-    }], "ConstraintArrayAttr", "getConstraintsAttr">,
+    }], "ConstraintArrayAttr", "getConstraintsAttr", (ins), "", [{
+      return ConstraintArrayAttr();
+    }]>,
     InterfaceMethod<[{
       Set the constraint attribute.
     }], "void", "setConstraintsAttr",
-       (ins "::M::KGEN::ConstraintArrayAttr":$attr)>,
+       (ins "::M::KGEN::ConstraintArrayAttr":$attr), "", [{
+      llvm_unreachable("by default ops don't have input parameters to add "
+                       "constraints to");
+    }]>,
   ];
 }
 

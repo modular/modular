@@ -417,17 +417,6 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-// FuncOp doesn't allow constraints, because it doesn't have any input
-// parameters.
-ArrayRef<ConstraintAttr> FuncOp::getConstraints() { return {}; }
-ConstraintArrayAttr FuncOp::getConstraintsAttr() {
-  return ConstraintArrayAttr();
-}
-
-void FuncOp::setConstraintsAttr(ConstraintArrayAttr attr) {
-  assert(0 && "kgen.func doesn't have input parameters to add constraints to");
-}
-
 //===----------------------------------------------------------------------===//
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
@@ -873,78 +862,40 @@ OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
 /// signatures.
 static ParseResult parsePrecompiledOp(OpAsmParser &parser,
                                       OperationState &result) {
-  using namespace mlir::function_interface_impl;
-
-  SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<DictionaryAttr> resultAttrs;
-  SmallVector<Type> resultTypes;
-  auto &builder = parser.getBuilder();
-
-  // Parse visibility. If none is provided, use private by default.
-  if (failed(mlir::impl::parseOptionalVisibilityKeyword(parser,
-                                                        result.attributes)))
-    result.addAttribute(SymbolTable::getVisibilityAttrName(),
-                        parser.getBuilder().getStringAttr("private"));
-
-  // Parse the name as a symbol.
-  StringAttr nameAttr;
-  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
-                             result.attributes))
-    return failure();
-
-  bool isVariadic = false;
-  if (parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
-                             isVariadic, resultTypes, resultAttrs))
-    return failure();
-
-  // Get the argument types
-  SmallVector<Type> argTypes;
-  argTypes.reserve(entryArgs.size());
-  for (auto &arg : entryArgs)
-    argTypes.push_back(arg.type);
-
-  // Create and store the function type on the op.
-  Type type = builder.getFunctionType(argTypes, resultTypes);
-  result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
-
-  // If function attributes are present, parse them.
-  NamedAttrList parsedAttributes;
-  if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
-    return failure();
-
-  // Add the processed attr list to the OperationState.
-  result.attributes.append(parsedAttributes);
-
-  // Empty body region, always.
-  (void)result.addRegion();
-
-  return success();
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::precompiled);
 }
 
 /// Print a `kgen.precompiled.*` op. They all have almost exactly the same form
 /// so we use a single function to handle them all. See `parsePrecompiledOp` for
 /// an example of the form we want printed.
 static void printPrecompiledOp(OpAsmPrinter &p, Operation *op) {
-  using namespace mlir::function_interface_impl;
-  auto symOp = cast<mlir::SymbolOpInterface>(op);
   auto funcOp = cast<mlir::FunctionOpInterface>(op);
+  printGeneratorOrFunc(p, funcOp);
+}
 
-  // Print the operation and the function name.
-  p << ' ';
+//===----------------------------------------------------------------------===//
+// PrecompiledLLVMOp
+//===----------------------------------------------------------------------===//
 
-  StringRef visibilityAttrName = SymbolTable::getVisibilityAttrName();
-  if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
-    if (visibility.getValue() != "private")
-      p << visibility.getValue() << ' ';
-  p.printSymbolName(symOp.getName());
+void PrecompiledLLVMOp::build(OpBuilder &builder, OperationState &result,
+                              FuncOp func, TargetInfoAttr compiledFor,
+                              StringRef llvm) {
+  build(builder, result, func.getSymNameAttr(), func.getSymVisibilityAttr(),
+        func.getFunctionTypeAttr(), func.getParamDeclsAttr(),
+        func.getResultParamTypesAttr(), compiledFor,
+        builder.getStringAttr(llvm));
+}
 
-  ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
-  ArrayRef<Type> resultTypes = funcOp.getResultTypes();
-  printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
-  printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
-                          {mlir::SymbolTable::getSymbolAttrName(),
-                           mlir::SymbolTable::getVisibilityAttrName(),
-                           mlir::FunctionOpInterface::getTypeAttrName()});
+//===----------------------------------------------------------------------===//
+// PrecompiledObjectOp
+//===----------------------------------------------------------------------===//
+
+void PrecompiledObjectOp::build(OpBuilder &builder, OperationState &result,
+                                PrecompiledLLVMOp func, StringRef object) {
+  build(builder, result, func.getSymNameAttr(), func.getSymVisibilityAttr(),
+        func.getFunctionTypeAttr(), func.getParamDeclsAttr(),
+        func.getResultParamTypesAttr(), func.getCompiledForAttr(),
+        builder.getStringAttr(object));
 }
 
 //===----------------------------------------------------------------------===//
