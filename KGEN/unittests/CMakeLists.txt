@@ -6,14 +6,10 @@
 
 add_modular_unittest(
   SUITE_NAME
-  SupportUnitTests
+  KGENUnitTests
 
   TEST_NAME
-  SupportTests
+  KGENTests
 
-  BlobCacheTest.cpp
-  HMACTest.cpp
-
-  LINK_LIBS PRIVATE
-  MSupport
+  KGENInvokeTest.cpp
 )
