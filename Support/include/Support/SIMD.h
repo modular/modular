@@ -55,16 +55,14 @@ template <typename T, size_t Width>
 class SIMDVector;
 
 //===----------------------------------------------------------------------===//
-// is_simd_vector
+// is_simd_vector_v
 //===----------------------------------------------------------------------===//
 
-template <typename...>
-struct is_simd_vector : std::false_type {};
-template <typename T, size_t Width>
-struct is_simd_vector<SIMDVector<T, Width>> : std::true_type {};
-
 template <typename... T>
-inline constexpr bool is_simd_vector_v = is_simd_vector<T...>::value;
+inline constexpr bool is_simd_vector_v = false;
+
+template <typename T, size_t Width>
+inline constexpr bool is_simd_vector_v<SIMDVector<T, Width>> = true;
 
 //===----------------------------------------------------------------------===//
 // SIMDVector
