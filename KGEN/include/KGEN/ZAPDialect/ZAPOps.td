@@ -39,13 +39,13 @@ def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [NoSideEffect,
     // Construct a buffer with a known size and type.
     %0 = zap.buffer.construct %ptr : !zap.buffer<4, f32>
 
-    // Construct a buffer with an dynamic size.
+    // Construct a buffer with a dynamic size.
     %1 = zap.buffer.construct %ptr[%size] : !zap.buffer<?, f32>
 
-    // Construct a buffer with an dynamic dtype.
+    // Construct a buffer with a dynamic dtype.
     %2 = zap.buffer.construct %ptr of %dtype : !zap.buffer<4, ?>
 
-    // Construct a buffer with an dynamic size and dtype.
+    // Construct a buffer with a dynamic size and dtype.
     %3 = zap.buffer.construct %ptr[%size] of %dtype : !zap.buffer<?, ?>
     ```
   }];

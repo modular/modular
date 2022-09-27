@@ -766,7 +766,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
     ```
   }];
 
-  let arguments = (ins Arg<ConcretePointer, "", [MemRead]>:$ptr,
+  let arguments = (ins Arg<POP_PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
@@ -800,7 +800,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
   }];
 
   let arguments = (ins AnyType:$arg,
-                       Arg<ConcretePointer, "", [MemWrite]>:$ptr,
+                       Arg<POP_PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let assemblyFormat = [{
     $arg `,` $ptr custom<OptionalAlignmentParamValue>($alignment) `` attr-dict
@@ -831,8 +831,8 @@ def POP_OffsetOp : POPOp<"offset",
     ```
   }];
 
-  let arguments = (ins ConcretePointer:$ptr, Index:$index);
-  let results = (outs ConcretePointer:$result);
+  let arguments = (ins POP_PointerType:$ptr, Index:$index);
+  let results = (outs POP_PointerType:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
@@ -1010,7 +1010,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   }];
 
   let arguments = (ins TypedAttrInterface:$size);
-  let results = (outs Res<ConcretePointer, "", [MemAlloc]>:$result);
+  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($size) attr-dict `:`
@@ -1081,7 +1081,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
   }];
 
   let arguments = (ins TypedAttrInterface:$value);
-  let results = (outs ConcretePointer:$result);
+  let results = (outs POP_PointerType:$result);
 
   let assemblyFormat = [{
     `(` $value `)` attr-dict `:` custom<PointerOf>(type($result))
