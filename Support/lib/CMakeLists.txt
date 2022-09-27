@@ -4,15 +4,18 @@
 #
 ##===----------------------------------------------------------------------===##
 
+find_package(Git REQUIRED)
+
 add_subdirectory(Benchmark)
 add_subdirectory(IndexDialect)
 add_subdirectory(IndexToLLVM)
 add_subdirectory(ML)
 add_subdirectory(Compiler)
 
-# Get the commit hash of the current branch and write it as a macro to VCSRevision.h.
+# Get the commit hash of the current branch and write it as a string literal in
+# to VCSRevision.h.
 execute_process(
-  COMMAND git log -1 --format=%H
+  COMMAND ${GIT_EXECUTABLE} log -1 --format=%H
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
   OUTPUT_VARIABLE MODULAR_GIT_HASH
   OUTPUT_STRIP_TRAILING_WHITESPACE
