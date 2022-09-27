@@ -12,9 +12,9 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/LockFreeRingBuffer.h"
+#include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/SpinWaiter.h"
-#include "LLCL/Support/TimeProfiler.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Threading.h"
 

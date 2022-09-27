@@ -13,7 +13,7 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/TimeProfiler.h"
+#include "LLCL/Support/Profiling.h"
 #include "llvm/ADT/ArrayRef.h"
 using namespace M::LLCL;
 
