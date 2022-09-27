@@ -9,10 +9,10 @@
 
 using namespace M;
 
-static void someKGENKernel(intptr_t, void *, uint8_t, intptr_t, void *,
-                           uint8_t) {}
+static void someKGENKernel(ssize_t, void *, uint8_t, ssize_t, void *, uint8_t) {
+}
 
-static float someOtherKernel(int a, intptr_t, void *, uint8_t, float b) {
+static float someOtherKernel(int a, ssize_t, void *, ssize_t, float b) {
   return a + b;
 }
 
