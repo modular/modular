@@ -9,26 +9,52 @@
 
 using namespace M;
 
-static void someKGENKernel(ssize_t, void *, uint8_t, ssize_t, void *, uint8_t) {
-}
-
-static float someOtherKernel(int a, ssize_t, void *, ssize_t, float b) {
-  return a + b;
-}
-
 TEST(KGENInvokeTest, testinvokeKGENFunction) {
+  auto noOp = [](ssize_t, void *, uint8_t, ssize_t, void *, uint8_t) {};
 
   // Test that we can call a function that returns no arguments.
-  KGEN::invoke(someKGENKernel, llvm::makeArrayRef<int32_t>(nullptr, 1),
+  KGEN::invoke(noOp, llvm::makeArrayRef<int32_t>(nullptr, 1),
                llvm::makeArrayRef<int32_t>(nullptr, 1));
 
   // Test that we can call the function with a value.
   auto dummyArray = llvm::makeArrayRef<int32_t>(nullptr, 1);
-  KGEN::invoke(someKGENKernel, std::forward<decltype(dummyArray)>(dummyArray),
+  KGEN::invoke(noOp, std::forward<decltype(dummyArray)>(dummyArray),
                std::forward<decltype(dummyArray)>(dummyArray));
+}
 
-  // Test that we can call the function with a value and get the correct result.
-  EXPECT_EQ(KGEN::invoke(someOtherKernel, 1,
-                         llvm::makeArrayRef<float>(nullptr, 1), 2.0f),
-            3.0f);
+/// Test that we can call the function with a value and get the correct result.
+TEST(KGENInvokeTest, testinvokeInterleavedInput) {
+  auto addKernel = [](int a, ssize_t, void *, uint8_t, float b) {
+    return a + b;
+  };
+  EXPECT_EQ(
+      KGEN::invoke(addKernel, 1, llvm::makeArrayRef<float>(nullptr, 1), 2.0f),
+      3.0f);
+}
+
+/// Can get the correct address for a single input.
+TEST(KGENInvokeTest, testinvokeFirstAddress) {
+  int32_t arry[2] = {1, 2};
+  auto getAddr = [](ssize_t, void *ptr, uint8_t) {
+    return reinterpret_cast<uintptr_t>(ptr);
+  };
+  EXPECT_EQ(KGEN::invoke(getAddr, std::size(arry), arry, DType::si32),
+            reinterpret_cast<uintptr_t>(arry));
+  EXPECT_EQ(
+      KGEN::invoke(getAddr, llvm::makeArrayRef<int32_t>(arry, std::size(arry))),
+      reinterpret_cast<uintptr_t>(arry));
+  EXPECT_EQ(KGEN::invoke(getAddr, llvm::makeMutableArrayRef<int32_t>(
+                                      arry, std::size(arry))),
+            reinterpret_cast<uintptr_t>(arry));
+}
+
+/// Can get the correct address for a multiple inputs.
+TEST(KGENInvokeTest, testinvokeSecondAddress) {
+  int32_t arry0[2] = {1, 2}, arry1[2] = {3, 4};
+  EXPECT_EQ(
+      KGEN::invoke([](ssize_t, void *ptr0, uint8_t, ssize_t, void *ptr1,
+                      uint8_t) { return reinterpret_cast<uintptr_t>(ptr1); },
+                   llvm::makeArrayRef<int32_t>(arry0, std::size(arry0)),
+                   llvm::makeArrayRef<int32_t>(arry1, std::size(arry1))),
+      reinterpret_cast<uintptr_t>(arry1));
 }
