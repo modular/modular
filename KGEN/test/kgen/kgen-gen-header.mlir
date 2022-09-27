@@ -10,13 +10,13 @@
 kgen.func public @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
-// SCALAR: extern float someKernel(float, intptr_t);
+// SCALAR: extern float someKernel(float, ssize_t);
 
 kgen.func public @someBufferKernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>) -> index {
   %size = pop.get_element %a[0] : !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>
   kgen.return %size : index
 }
-// BUFFER: extern intptr_t someBufferKernel(intptr_t, void *, uint8_t);
+// BUFFER: extern ssize_t someBufferKernel(ssize_t, void *, uint8_t);
 
 
 

@@ -29,7 +29,7 @@ template <typename T>
 constexpr auto destructure_kgen_arguments(T &&arg) {
   if constexpr (is_arrayref_v<T>)
     return std::forward_as_tuple(
-        (intptr_t)arg.size(), (void *)arg.data(),
+        (ssize_t)arg.size(), (void *)arg.data(),
         DTypeForCXXType<typename T::value_type>::kind.getValue());
   else
     return std::forward_as_tuple(std::forward<T>(arg));

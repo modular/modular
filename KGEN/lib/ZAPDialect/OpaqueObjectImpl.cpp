@@ -20,7 +20,7 @@ using namespace ZAP;
 
 namespace {
 LLVM_PACKED(struct OpaqueBuffer {
-  intptr_t size;
+  ssize_t size;
   void *data;
   uint8_t dtype;
 });
