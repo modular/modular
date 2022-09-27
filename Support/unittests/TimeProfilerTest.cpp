@@ -1,4 +1,4 @@
-//===- Support/unittests/TimeProfilerTest.cpp -----------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
