@@ -977,7 +977,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // need to remap the region's arguments to the call formal parameters.
   BlockAndValueMapping mapper;
   DenseMap<Operation *, Operation *> operationMap;
-  auto &bodyBlock = *region.getBodyBlock();
+  auto &bodyBlock = *region.getBody();
   for (auto [arg, value] :
        llvm::zip(bodyBlock.getArguments(), call->getOperands()))
     mapper.map(arg, value);
@@ -1086,7 +1086,7 @@ CalleeExpansionError ParameterRewriter::takeDiagnosticAndEraseFunc() {
   // in various maps though, so instead of actually deleting it, we just
   // delete its body.  The cleanup pass at the end of elaboration will remove
   // it.
-  elaboratedGenerator.func.getBodyBlock()->clear();
+  elaboratedGenerator.func.getBody()->clear();
   auto error = CalleeExpansionError(elaboratedGenerator.func->getLoc(),
                                     std::move(diagnostic.value()));
 
@@ -1229,11 +1229,11 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
-  generator.getBody().cloneInto(&newFunc.getBody(), mapper);
+  generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), mapper);
 
   // Provide definitions of the input parameters in the body block as bound
   // constants.
-  b.setInsertionPoint(&newFunc.getBodyBlock()->front());
+  b.setInsertionPoint(&newFunc.getBody()->front());
   for (auto [inputDecl, inputValue] :
        llvm::zip(inputParamDecls, inputParamValues)) {
     b.create<ParamDeclareOp>(generator.getLoc(), inputDecl, inputValue);
@@ -1711,7 +1711,7 @@ M::elaborateGenerators(ModuleOp primary,
     // Rename the (auto-renamed) func to match the generator's name.
     funcsToRename[func.getNameAttr()] = generator.getNameAttr();
     // Make sure this isn't about to be removed below.
-    assert(!func.getBodyBlock()->empty() &&
+    assert(!func.getBody()->empty() &&
            "should only include successful expansions");
   }
 
@@ -1726,7 +1726,7 @@ M::elaborateGenerators(ModuleOp primary,
     /// Non viable funcs will be left with an empty/invalid body.  Remove them
     /// at the end of elaboration.
     if (auto func = dyn_cast<FuncOp>(op))
-      if (func.getBodyBlock()->empty())
+      if (func.getBody()->empty())
         func->erase();
   }
 

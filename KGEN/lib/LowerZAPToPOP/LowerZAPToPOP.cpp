@@ -400,8 +400,8 @@ struct ConvertSignature : public mlir::OpConversionPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    FailureOr<Block *> result =
-        rewriter.convertRegionTypes(&op.getBody(), *this->getTypeConverter());
+    FailureOr<Block *> result = rewriter.convertRegionTypes(
+        &op.getBodyRegion(), *this->getTypeConverter());
     if (failed(result))
       return failure();
 

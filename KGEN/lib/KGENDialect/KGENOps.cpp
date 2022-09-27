@@ -283,7 +283,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 ReturnOp GeneratorOp::getReturnOp() {
-  return cast<ReturnOp>(getBodyBlock()->getTerminator());
+  return cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a KGEN Generator.
@@ -363,7 +363,7 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 }
 
 ReturnOp FuncOp::getReturnOp() {
-  return cast<ReturnOp>(getBodyBlock()->getTerminator());
+  return cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a concrete KGEN func.
@@ -720,7 +720,7 @@ LogicalResult CallParamOp::verify() {
 //===----------------------------------------------------------------------===//
 
 ReturnOp RegionBodyOp::getReturnOp() {
-  return cast<ReturnOp>(getBody().front().getTerminator());
+  return cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parse a single-block isolated from above region.
@@ -744,9 +744,9 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, Region &body) {
 
 /// Derive the region's function type from its arguments and result types.
 FunctionType RegionBodyOp::getFunctionType() {
-  return FunctionType::get(
-      getContext(), getBody().getArgumentTypes(),
-      getBody().front().getTerminator()->getOperandTypes());
+  Block *body = getBody();
+  return FunctionType::get(getContext(), body->getArgumentTypes(),
+                           body->getTerminator()->getOperandTypes());
 }
 
 /// Verify the parameters in the region body.

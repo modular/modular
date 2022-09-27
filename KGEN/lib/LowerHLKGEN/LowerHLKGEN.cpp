@@ -372,7 +372,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // Set up the argument list for the call.
     SmallVector<Value> castedArgs;
     for (auto [bodyArg, genArg] :
-         llvm::zip(body->getArguments(), gen.getBodyBlock()->getArguments())) {
+         llvm::zip(body->getArguments(), gen.getBody()->getArguments())) {
       // The thunk argument locations should be the locations of the generator
       // arguments.
       bodyArg.setLoc(genArg.getLoc());
@@ -443,9 +443,9 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
       gen.getImplementsAttr());
 
   // Move over the body unmodified.
-  auto *bodyBlock = gen.getBodyBlock();
-  gen.getBody().getBlocks().remove(bodyBlock);
-  result.getBody().push_back(bodyBlock);
+  auto *bodyBlock = gen.getBody();
+  gen.getBodyRegion().getBlocks().remove(bodyBlock);
+  result.getBodyRegion().push_back(bodyBlock);
 
   // Move over the symbol.
   symbolTable.erase(gen);
