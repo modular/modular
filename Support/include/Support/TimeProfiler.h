@@ -244,30 +244,39 @@ void timeTraceProfilerEndEntry(TimeTraceProfilerEntry &&Entry);
 /// The TimeTraceScope is a helper class to call the begin and end functions
 /// of the time trace profiler.  When the object is constructed, it begins
 /// the section; and when it is destroyed, it stops it. If the time profiler
-/// is not initialized, the overhead is a single branch.
+/// is not initialized, the overhead is a single branch. However, if the Enabled
+/// template parameter is false, then all methods are trivially no-ops.
+template <bool Enabled = true>
 struct TimeTraceScope {
-
   TimeTraceScope() = delete;
   TimeTraceScope(const TimeTraceScope &) = delete;
   TimeTraceScope &operator=(const TimeTraceScope &) = delete;
   TimeTraceScope(TimeTraceScope &&) = delete;
   TimeTraceScope &operator=(TimeTraceScope &&) = delete;
 
-  TimeTraceScope(StringRef Name) {
-    if (getTimeTraceProfilerInstance() != nullptr)
-      timeTraceProfilerBegin(Name, StringRef(""));
+  explicit TimeTraceScope(StringRef Name) {
+    if constexpr (Enabled) {
+      if (getTimeTraceProfilerInstance() != nullptr)
+        timeTraceProfilerBegin(Name, StringRef(""));
+    }
   }
   TimeTraceScope(StringRef Name, StringRef Detail) {
-    if (getTimeTraceProfilerInstance() != nullptr)
-      timeTraceProfilerBegin(Name, Detail);
+    if constexpr (Enabled) {
+      if (getTimeTraceProfilerInstance() != nullptr)
+        timeTraceProfilerBegin(Name, Detail);
+    }
   }
   TimeTraceScope(StringRef Name, llvm::function_ref<std::string()> Detail) {
-    if (getTimeTraceProfilerInstance() != nullptr)
-      timeTraceProfilerBegin(Name, Detail);
+    if constexpr (Enabled) {
+      if (getTimeTraceProfilerInstance() != nullptr)
+        timeTraceProfilerBegin(Name, Detail);
+    }
   }
   ~TimeTraceScope() {
-    if (getTimeTraceProfilerInstance() != nullptr)
-      timeTraceProfilerEnd();
+    if constexpr (Enabled) {
+      if (getTimeTraceProfilerInstance() != nullptr)
+        timeTraceProfilerEnd();
+    }
   }
 };
 
