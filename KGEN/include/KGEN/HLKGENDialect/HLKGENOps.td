@@ -42,7 +42,6 @@ def HLGeneratorOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<HLGeneratorOp>::getBody;
-    using FunctionOpInterfaceTrait::front;
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.
