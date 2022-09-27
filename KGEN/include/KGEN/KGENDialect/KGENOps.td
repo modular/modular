@@ -40,7 +40,6 @@ def FuncOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
-    using FunctionOpInterfaceTrait::front;
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.
@@ -92,8 +91,6 @@ def GeneratorOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
-    using FunctionOpInterfaceTrait::front;
-
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.
