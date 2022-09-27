@@ -41,23 +41,9 @@ using namespace KGEN;
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
 static LogicalResult
-evaluateConstraints(KGENDeclInterface decl, ArrayAttr inputParamValuesAttr,
+evaluateConstraints(ConstraintArrayAttr constraints,
+                    ParameterEvaluator &evaluator,
                     llvm::function_ref<void(Location, Error)> emitError) {
-  // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Otherwise, we have constraints to evaluate.  Bind each of the input
-  // parameter names.
-  ParameterEvaluator evaluator;
-  auto inputParamDecls = getParamDecls(decl);
-  ArrayRef<Attribute> inputParamValues = inputParamValuesAttr.getValue();
-  assert(inputParamDecls.size() == inputParamValues.size() &&
-         "incorrect number of input parameters");
-  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(paramDecl.cast<ParamDeclAttr>(), value);
-
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
     auto result = evaluator.concretizeParameterExpr(constraint.getExpr());
@@ -83,6 +69,29 @@ evaluateConstraints(KGENDeclInterface decl, ArrayAttr inputParamValuesAttr,
 
   // If we made it this far, then everything folded to true.
   return success();
+}
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+static LogicalResult
+evaluateConstraints(KGENDeclInterface decl, ArrayAttr inputParamValues,
+                    llvm::function_ref<void(Location, Error)> emitError) {
+  // If there are no constraints, we are trivially done.
+  ConstraintArrayAttr constraints = decl.getConstraintsAttr();
+  if (!constraints || constraints.empty())
+    return success();
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ParameterEvaluator evaluator;
+  auto inputParamDecls = getParamDecls(decl);
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl, value);
+
+  return evaluateConstraints(constraints, evaluator, std::move(emitError));
 }
 
 //===----------------------------------------------------------------------===//
@@ -948,10 +957,10 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing
   // the newly cloned operations.
-  ParameterEvaluator &newEvaluator = getEvaluator();
+  ParameterEvaluator &evaluator = getEvaluator();
   for (auto [decl, value] :
        llvm::zip(region.getInputParamDecls(), inputParamKey))
-    newEvaluator.setParameterValue(decl, value);
+    evaluator.setParameterValue(decl, value);
 
   auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
     (void)error(loc, std::move(message));
@@ -959,7 +968,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
 
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
-  if (failed(evaluateConstraints(region, inputParamKey,
+  if (failed(evaluateConstraints(region.getConstraintsAttr(), evaluator,
                                  emitEvaluateConstraintsError)))
     return failure();
 
