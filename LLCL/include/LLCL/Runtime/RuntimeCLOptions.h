@@ -150,6 +150,14 @@ public:
     return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
   }
 
+  /// Explicitly tell runtime to use single threaded workqueue. This is useful
+  /// in situations where computation is performed by some other runtime (for
+  /// eg: ExternalFrameworks in benchmarking)
+  void useSingleThreadedWorkqueue() {
+    numThreads = 1;
+    workQueueType = WorkQueueType::kSingleThread;
+  }
+
   /// Create a Runtime based on the CL argument specifications.
   Runtime createRuntime() const {
     // Create the allocator based on command line settings.
