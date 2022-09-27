@@ -110,10 +110,6 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 //===----------------------------------------------------------------------===//
 // Type Constraints
 
-def ConcretePointer : ConfinedType<POP_PointerType,
-    [CPred<"$_self.cast<POP::PointerType>().getElementType()">],
-    "pointer with concrete element type">;
-
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
     "ParamRefType::get($_self.cast<POP::PointerType>().getElementType())">;

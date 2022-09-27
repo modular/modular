@@ -36,15 +36,11 @@ def FuncOp
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes);
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using FunctionOpInterfaceTrait::getBody;
+    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
     using FunctionOpInterfaceTrait::front;
-    Block *getBodyBlock() {
-      return &getBody().front();
-    }
-
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.
@@ -92,14 +88,11 @@ def GeneratorOp
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using FunctionOpInterfaceTrait::getBody;
+    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
     using FunctionOpInterfaceTrait::front;
-    Block *getBodyBlock() {
-      return &getBody().front();
-    }
 
     ReturnOp getReturnOp();
 
@@ -271,21 +264,17 @@ def RegionBodyOp : KGENOp<"region.body",
   let arguments = (ins ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints);
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
     `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
-    `` custom<OptionalConstraints>($constraints) `` custom<RegionBody>($body)
-    attr-dict
+    `` custom<OptionalConstraints>($constraints)
+    `` custom<RegionBody>($bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
     /// Get the terminator.
     ReturnOp getReturnOp();
-
-    Block *getBodyBlock() {
-      return &getBody().front();
-    }
   }];
 }
 

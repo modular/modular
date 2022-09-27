@@ -23,7 +23,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ReturnOp HLGeneratorOp::getReturnOp() {
-  return cast<ReturnOp>(getBodyBlock()->getTerminator());
+  return cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a HLKGEN Generator.

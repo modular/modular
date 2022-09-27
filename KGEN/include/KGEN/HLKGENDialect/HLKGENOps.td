@@ -38,15 +38,11 @@ def HLGeneratorOp
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
-  let regions = (region SizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using FunctionOpInterfaceTrait::getBody;
+    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<HLGeneratorOp>::getBody;
     using FunctionOpInterfaceTrait::front;
-    Block *getBodyBlock() {
-      return &getBody().front();
-    }
-
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.

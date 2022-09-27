@@ -47,7 +47,7 @@ public:
             : LLVM::Linkage::Private);
 
     // And move the func's body into the new function.
-    rewriter.inlineRegionBefore(func.getBodyRegion(0), funcOp.getBody(),
+    rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
                                 funcOp.end());
     (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
 
