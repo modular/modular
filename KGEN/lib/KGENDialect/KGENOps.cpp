@@ -847,6 +847,103 @@ OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// StructDeclOp
+//===----------------------------------------------------------------------===//
+
+/// Struct declarations aren't functions.
+FunctionType StructDeclOp::getFunctionType() {
+  llvm_unreachable("structs don't have function types");
+}
+
+/// Verify that the body has no arguments and that the declaration has no result
+/// types.
+LogicalResult StructDeclOp::verify() {
+  if (getFields().getNumArguments())
+    return emitOpError("expected declaration body to have no arguments");
+
+  if (!getResultParamTypes().empty())
+    return emitOpError("unexpected result parameters");
+
+  return success();
+}
+
+/// The single region is only allowed to contain `struct.field` ops. Verify that
+/// there are no duplicate field names.
+LogicalResult StructDeclOp::verifyRegions() {
+  SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
+  for (Operation &op : getFields().front()) {
+    auto field = dyn_cast<StructFieldOp>(&op);
+    if (!field) {
+      return emitOpError("expected only `kgen.struct.field` ops in its body")
+                 .attachNote(op.getLoc())
+             << "invalid child op here";
+    }
+    auto [it, inserted] = seenFields.try_emplace(field.getNameAttr(), field);
+    if (!inserted) {
+      return (field.emitError("duplicate struct field ") << field.getNameAttr())
+                 .attachNote(it->second.getLoc())
+             << "see previous declaration here";
+    }
+  }
+  return success();
+}
+
+/// Verify parameter uses.
+LogicalResult
+StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+}
+
+/// Parse a special syntax for the struct fields.
+/// field ::= identifier `:` type
+static ParseResult parseStructFields(OpAsmParser &p, Region &fields) {
+  if (p.parseLBrace())
+    return failure();
+  Block *body = new Block;
+  fields.push_back(body);
+  OpBuilder b(p.getContext());
+  b.setInsertionPointToStart(body);
+  while (p.parseOptionalRBrace()) {
+    OperationState field(p.getEncodedSourceLoc(p.getCurrentLocation()),
+                         StructFieldOp::getOperationName());
+    if (StructFieldOp::parse(p, field))
+      return failure();
+    b.create(field);
+  }
+  return success();
+}
+
+static void printStructFields(OpAsmPrinter &p, Operation *op, Region &fields) {
+  p << '{';
+  p.printNewline();
+  for (Operation &field : fields.front()) {
+    p << "  ";
+    cast<StructFieldOp>(field).print(p);
+    p.printNewline();
+  }
+  p << '}';
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOp
+//===----------------------------------------------------------------------===//
+
+/// Parse the struct field name as a keyword literal.
+static ParseResult parseKeywordAsString(OpAsmParser &p, StringAttr &name) {
+  StringRef value;
+  if (p.parseKeyword(&value))
+    return failure();
+  name = p.getBuilder().getStringAttr(value);
+  return success();
+}
+
+/// Print the struct field name as a keyword literal.
+static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
+                                 StringAttr name) {
+  p << name.getValue();
+}
+
+//===----------------------------------------------------------------------===//
 // Precompiled*Op
 //===----------------------------------------------------------------------===//
 
