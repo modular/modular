@@ -84,6 +84,13 @@ class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
                   [DeclareAttrInterfaceMethods<SubElementAttrInterface>]>;
 
 //===----------------------------------------------------------------------===//
+// KStringArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KStringArrayAttr : ArrayOfAttr<KGENDialect, "StringArray", "strings",
+                                   "StringAttr">;
+
+//===----------------------------------------------------------------------===//
 // ParamDeclArrayAttr
 //===----------------------------------------------------------------------===//
 

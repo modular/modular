@@ -1022,6 +1022,45 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   }
 }
 
+ParseResult
+KGEN::parseOptionalParamBinds(AsmParser &p,
+                              FailureOr<ParamBindArrayAttr> &paramValues) {
+  if (p.parseOptionalLess()) {
+    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+
+  SmallVector<ParamBindAttr> paramBinds;
+  auto parseParamBind = [&]() -> ParseResult {
+    ParamDeclAttr decl;
+    TypedAttr value;
+
+    if (parseParamDecl(p, decl) || p.parseEqual() ||
+        parseParamValue(p, value, decl.getType()))
+      return failure();
+    paramBinds.push_back(ParamBindAttr::get(decl, value));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::None, parseParamBind))
+    return failure();
+
+  paramValues = ParamBindArrayAttr::get(p.getContext(), paramBinds);
+  return p.parseGreater();
+}
+
+void KGEN::printOptionalParamBinds(AsmPrinter &p,
+                                   ParamBindArrayAttr paramValues) {
+  if (paramValues.empty())
+    return;
+  p << '<';
+  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
+    printParamDecl(p, bind.getDecl());
+    p << " = ";
+    printParamValue(p, bind.getValue());
+  });
+  p << '>';
+}
+
 /// Compare a range of values from an "originator" to a corresponding range of
 /// values from a "target".  If the two mismatch, emit an error that tries to
 /// explain the issue in a nice way.

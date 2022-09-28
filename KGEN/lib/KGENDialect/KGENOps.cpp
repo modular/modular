@@ -20,6 +20,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 using namespace M;
 using namespace KGEN;
@@ -941,6 +942,163 @@ static ParseResult parseKeywordAsString(OpAsmParser &p, StringAttr &name) {
 static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
                                  StringAttr name) {
   p << name.getValue();
+}
+
+//===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+/// Verify that the number of operands matches the number of field names and
+/// that there are no duplicate names.
+LogicalResult StructCreateOp::verify() {
+  if (getOperands().size() != getFields().size())
+    return emitOpError("has ") << getOperands().size() << " operands but "
+                               << getFields().size() << " field names";
+
+  SmallPtrSet<StringAttr, 8> fieldNames;
+  for (StringAttr fieldName : getFields())
+    if (auto [it, inserted] = fieldNames.insert(fieldName); !inserted)
+      return emitOpError("has duplicate field specifier ") << fieldName;
+
+  return success();
+}
+
+/// Lookup the declaration for the struct. When checking field types, we can't
+/// directly compare operation types to the struct field types because they are
+/// parameterized under different domains. We have to rebind them.
+static std::pair<StructDeclOp, ParameterEvaluator>
+lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
+                 TypeDefType ref) {
+  FlatSymbolRefAttr name = ref.getName();
+  auto structDecl =
+      symbolTable.lookupNearestSymbolFrom<StructDeclOp>(user, name.getAttr());
+  // Currently, this is impossible to fail because the symbol use was verified
+  // by the parameter verifier.
+  assert(structDecl && "expected a struct declaration");
+
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : ref.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+  return std::make_pair(structDecl, std::move(evaluator));
+}
+
+/// Verify the reference struct type.
+LogicalResult
+StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  auto [structDecl, evaluator] =
+      lookupStructDecl(symbolTable, *this, getType());
+
+  // Verify the types of the fields in the operands match those in the
+  // struct declaration.
+  SmallDenseMap<StringAttr, Type, 8> fieldTypes;
+  fieldTypes.reserve(getNumOperands());
+  for (auto [name, value] : llvm::zip(getFields(), getOperands()))
+    fieldTypes.try_emplace(name, value.getType());
+
+  for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
+    auto it = fieldTypes.find(fieldDecl.getNameAttr());
+    if (it == fieldTypes.end())
+      continue;
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != it->second) {
+      return emitOpError("struct field ")
+             << fieldDecl.getNameAttr() << " expected " << reboundType
+             << " but got " << it->second;
+    }
+    fieldTypes.erase(it);
+  }
+
+  // If there any fields left, they refer to unknown parameters.
+  if (!fieldTypes.empty()) {
+    return emitOpError("struct ")
+           << getType().getName() << " has no field named "
+           << fieldTypes.begin()->first;
+  }
+
+  return success();
+}
+
+ParseResult StructCreateOp::parse(OpAsmParser &p, OperationState &state) {
+  TypeDefType type;
+  if (p.parseType(type) || p.parseLBrace())
+    return failure();
+
+  SmallVector<StringAttr> names;
+  while (p.parseOptionalRBrace()) {
+    StringRef name;
+    OpAsmParser::UnresolvedOperand operand;
+    Type type;
+    if (p.parseKeyword(&name) || p.parseEqual() || p.parseOperand(operand) ||
+        p.parseColonType(type) ||
+        p.resolveOperand(operand, type, state.operands))
+      return failure();
+    names.push_back(p.getBuilder().getStringAttr(name));
+  }
+
+  OpBuilder b(p.getContext());
+  build(b, state, type, ValueRange(), names);
+  return success();
+}
+
+void StructCreateOp::print(OpAsmPrinter &p) {
+  p << ' ' << getType();
+  p << " {";
+  if (getNumOperands())
+    p.printNewline();
+  for (auto [value, name] : llvm::zip(getOperands(), getFields())) {
+    p << "  " << name.getValue() << " = " << value << " : " << value.getType();
+    p.printNewline();
+  }
+  p << '}';
+}
+
+//===----------------------------------------------------------------------===//
+// StructInsertOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  auto [structDecl, evaluator] =
+      lookupStructDecl(symbolTable, *this, getType());
+
+  for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
+    if (fieldDecl.getName() != getFieldAttr())
+      continue;
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != getValue().getType())
+      return emitOpError("cannot insert value of type ")
+             << getValue().getType() << " into struct field " << getFieldAttr()
+             << " which expected " << reboundType;
+    return success();
+  }
+
+  return emitOpError("struct ")
+         << getType().getName() << " has no field named " << getFieldAttr();
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  TypeDefType type = getContainer().getType();
+  auto [structDecl, evaluator] = lookupStructDecl(symbolTable, *this, type);
+
+  for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
+    if (fieldDecl.getName() != getFieldAttr())
+      continue;
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != getValue().getType())
+      return emitOpError("cannot extract value of type ")
+             << getValue().getType() << " from struct field " << getFieldAttr()
+             << " which has type " << reboundType;
+    return success();
+  }
+
+  return emitOpError("struct ")
+         << type.getName() << " has no field named " << getFieldAttr();
 }
 
 //===----------------------------------------------------------------------===//
