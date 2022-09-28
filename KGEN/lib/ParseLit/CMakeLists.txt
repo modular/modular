@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(ParseLit
+  LitLexer.cpp
   ParseLit.cpp
 
   DEPENDS
