@@ -712,7 +712,10 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
   // We only support signed arithmetic so far.
   assert(operands[0].getType().isIndex());
 
-  if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+  auto rhs = operands[1].dyn_cast<IntegerAttr>();
+  auto lhs = operands[0].dyn_cast<IntegerAttr>();
+
+  if (rhs && !lhs) {
     // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
     if (opcode == POC::LE) {
       if (rhs.getValue().isMaxSignedValue()) // x <=s 127 --> TRUE.
@@ -726,7 +729,7 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
       return ParamOperatorAttr::getNE(operands[0], rhs);
   }
 
-  if (auto lhs = operands[0].dyn_cast<IntegerAttr>()) {
+  if (lhs && !rhs) {
     // (le cst, x) -> !(lt x, cst)
     if (opcode == POC::LE)
       return ParamOperatorAttr::getNot(

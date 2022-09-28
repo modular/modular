@@ -90,6 +90,9 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   // CHECK: = kgen.param.constant : dtype = <f32>
   %24 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<f32>)>
 
+  // CHECK: = kgen.param.constant : i1 = <1>
+  %25 = kgen.param.constant: i1 = <le(5, 9)>
+
   kgen.return
 }
 
