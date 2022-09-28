@@ -565,3 +565,20 @@ kgen.struct.decl @StructDuplicate {
   // expected-error @below {{duplicate struct field "x"}}
   x : i32
 }
+
+// -----
+
+kgen.struct.decl @SomeType<v, b> {}
+
+// expected-error @below {{invalid use of parameter with no declaration "c"}}
+kgen.generator.interface @InvalidTypeParamValue<a>() ->
+    !kgen.typedef<@SomeType<v = a, b = c>>
+
+// -----
+
+// expected-note @below {{@SomeType declared here}}
+kgen.struct.decl @SomeType<v, d> {}
+
+// expected-error @below {{typedef symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
+kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
+    !kgen.typedef<@SomeType<v = a, b = c>>

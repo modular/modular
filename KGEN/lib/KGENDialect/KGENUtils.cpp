@@ -1076,10 +1076,6 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                                               const char *targetName,
                                               SignatureType targetSignature,
                                               Location targetLoc) {
-  using llvm::map_range;
-  auto getType = [](auto attr) -> Type { return attr.getType(); };
-  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
-
   FunctionType originatorType = originatorSignature.getValues();
   FunctionType targetType = targetSignature.getValues();
   ParamDeclArrayAttr originatorParamDecls =
@@ -1090,14 +1086,9 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
   /// matches those of an interface.  This produces an error diagnostic and
   /// returns failure when a problem is detected, or returns true if everything
   /// is ok.
-  if (verifyMatchingLists(map_range(originatorParamDecls, getName),
-                          map_range(targetParamDecls, getName), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "input parameter", "name") ||
-      verifyMatchingLists(map_range(originatorParamDecls, getType),
-                          map_range(targetParamDecls, getType), originatorName,
-                          originatorLoc, targetName, targetLoc,
-                          "input parameter", "type") ||
+  if (failed(verifyParamDeclsMatch(
+          originatorName, originatorParamDecls.getValue(), originatorLoc,
+          targetName, targetParamDecls, targetLoc)) ||
       verifyMatchingLists(originatorSignature.getResultParamTypes(),
                           targetSignature.getResultParamTypes(), originatorName,
                           originatorLoc, targetName, targetLoc,
@@ -1108,6 +1099,26 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
       verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
                           originatorName, originatorLoc, targetName, targetLoc,
                           "result", "type"))
+    return failure();
+  return success();
+}
+
+LogicalResult KGEN::verifyParamDeclsMatch(
+    const char *originatorName, ArrayRef<ParamDeclAttr> originatorParamDecls,
+    Location originatorLoc, const char *targetName,
+    ParamDeclArrayAttr targetParamDecls, Location targetLoc) {
+  using llvm::map_range;
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
+
+  if (verifyMatchingLists(map_range(originatorParamDecls, getName),
+                          map_range(targetParamDecls, getName), originatorName,
+                          originatorLoc, targetName, targetLoc,
+                          "input parameter", "name") ||
+      verifyMatchingLists(map_range(originatorParamDecls, getType),
+                          map_range(targetParamDecls, getType), originatorName,
+                          originatorLoc, targetName, targetLoc,
+                          "input parameter", "type"))
     return failure();
   return success();
 }

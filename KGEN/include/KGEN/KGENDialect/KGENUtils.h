@@ -23,6 +23,7 @@ namespace M::KGEN {
 class ConstraintArrayAttr;
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
+class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
 class KGENDeclInterface;
 class TypeArrayAttr;
@@ -169,6 +170,13 @@ LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
                                         const char *interfaceName,
                                         SignatureType targetSignature,
                                         Location targetLoc);
+
+/// Check that the parameter declarations match.
+LogicalResult
+verifyParamDeclsMatch(const char *originatorName,
+                      ArrayRef<ParamDeclAttr> originatorParamDecls,
+                      Location originatorLoc, const char *targetName,
+                      ParamDeclArrayAttr targetParamDecls, Location targetLoc);
 
 } // namespace M::KGEN
 

@@ -25,10 +25,6 @@ using namespace KGEN;
 // Dialect Types
 //===----------------------------------------------------------------------===//
 
-// Pull in the dialect definition.
-#define GET_TYPEDEF_CLASSES
-#include "KGEN/KGENDialect/KGENTypes.cpp.inc"
-
 //===----------------------------------------------------------------------===//
 // ParamRefType
 
@@ -151,11 +147,72 @@ SignatureType SignatureType::getSpecializedSignature(
 }
 
 //===----------------------------------------------------------------------===//
+// TypeDefType
+
+void TypeDefType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrs,
+    function_ref<void(Type)> walkTypes) const {
+  walkAttrs(getName());
+  walkAttrs(getParamValues());
+}
+
+Type TypeDefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                              ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.empty());
+  return get(replAttrs[0].cast<FlatSymbolRefAttr>(),
+             replAttrs[1].cast<ParamBindArrayAttr>());
+}
+
+TypeDefType TypeDefType::get(FlatSymbolRefAttr name,
+                             ParamBindArrayAttr paramValues) {
+  return get(name.getContext(), name, paramValues);
+}
+
+TypeDefType TypeDefType::get(FlatSymbolRefAttr name) {
+  return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
+}
+
+/// Parse an optional list of parameter bindings.
+static ParseResult
+parseOptionalParamBinds(AsmParser &p,
+                        FailureOr<ParamBindArrayAttr> &paramValues) {
+  if (p.parseOptionalLess())
+    return success();
+
+  SmallVector<ParamBindAttr> paramBinds;
+  auto parseParamBind = [&]() -> ParseResult {
+    ParamDeclAttr decl;
+    TypedAttr value;
+
+    if (parseParamDecl(p, decl) || p.parseEqual() ||
+        parseParamValue(p, value, decl.getType()))
+      return failure();
+    paramBinds.push_back(ParamBindAttr::get(decl, value));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::None, parseParamBind))
+    return failure();
+
+  paramValues = p.getBuilder().getAttr<ParamBindArrayAttr>(paramBinds);
+  return p.parseGreater();
+}
+
+static void printOptionalParamBinds(AsmPrinter &p,
+                                    ParamBindArrayAttr paramValues) {
+  if (paramValues.empty())
+    return;
+  p << '<';
+  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
+    printParamDecl(p, bind.getDecl());
+    p << " = ";
+    printParamValue(p, bind.getValue());
+  });
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//
-
-// Pull in the dialect definition.
-#include "KGEN/KGENDialect/KGENDialect.cpp.inc"
 
 void KGENDialect::initialize() {
   registerAttributes();
@@ -172,3 +229,14 @@ void KGENDialect::initialize() {
 #include "KGEN/KGENDialect/KGEN.cpp.inc"
       >();
 }
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+// Pull in the dialect definition.
+#include "KGEN/KGENDialect/KGENDialect.cpp.inc"
+
+// Pull in the dialect definition.
+#define GET_TYPEDEF_CLASSES
+#include "KGEN/KGENDialect/KGENTypes.cpp.inc"

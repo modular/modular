@@ -140,7 +140,7 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
     // Return the name of the declaration being initialized.
     StringAttr getName() const;
     // Return the type of the value being bound.
-    Type getType() { return getValue().getType(); }
+    Type getType() const { return getValue().getType(); }
   }];
   let extraClassDefinition = [{
     StringAttr ParamBindAttr::getName() const { return getDecl().getName(); }

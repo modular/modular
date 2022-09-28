@@ -16,11 +16,17 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
-class KGENType<string name, list<Trait> traits = []>
-  : TypeDef<KGENDialect, name, traits> { }
+class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
+  : TypeDef<KGENDialect, name, traits> {
+  let mnemonic = typeMnemonic;
+}
+
+//===----------------------------------------------------------------------===//
+// ParamRefType
+//===----------------------------------------------------------------------===//
 
 def ParamRefType
-  : KGENType<"ParamRef",
+  : KGENType<"ParamRef", "paramref",
              [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Type specified by a parameter expression";
   let description = [{
@@ -29,7 +35,6 @@ def ParamRefType
     type disappears.
   }];
 
-  let mnemonic = "paramref";
   let parameters = (ins "mlir::TypedAttr":$param);
   let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
 
@@ -46,7 +51,11 @@ def ParamRefType
   ];
 }
 
-def MLIRTypeType : KGENType<"MLIRType"> {
+//===----------------------------------------------------------------------===//
+// MLIRTypeType
+//===----------------------------------------------------------------------===//
+
+def MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
   let summary = "Arbitrary MLIR type";
   let description = [{
     This kgen type represents an arbitrary MLIR type, used for parameterizing
@@ -55,23 +64,25 @@ def MLIRTypeType : KGENType<"MLIRType"> {
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
   }];
-
-  let mnemonic = "mlirtype";
-  let parameters = (ins);
 }
 
-def DTypeType : KGENType<"DType"> {
+//===----------------------------------------------------------------------===//
+// DTypeType
+//===----------------------------------------------------------------------===//
+
+def DTypeType : KGENType<"DType", "dtype"> {
   let summary = "8-bit integer DType type";
   let description = [{
     This type corresponds to the DType runtime class, representing an
     element type (aka "dtype") specifier for a data storage types.
   }];
-
-  let mnemonic = "dtype";
-  let parameters = (ins);
 }
 
-def StringType : KGENType<"String"> {
+//===----------------------------------------------------------------------===//
+// StringType
+//===----------------------------------------------------------------------===//
+
+def StringType : KGENType<"String", "string"> {
   let summary = "String type for parameters";
   let description = [{
     This kgen type represents an string value, used for parameterizing
@@ -80,13 +91,14 @@ def StringType : KGENType<"String"> {
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
   }];
-
-  let mnemonic = "string";
-  let parameters = (ins);
 }
 
+//===----------------------------------------------------------------------===//
+// SignatureType
+//===----------------------------------------------------------------------===//
+
 def SignatureType
-  : KGENType<"Signature",
+  : KGENType<"Signature", "signature",
              [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
@@ -95,7 +107,6 @@ def SignatureType
     and results.  This is used for region parameters, among other things.
   }];
 
-  let mnemonic = "signature";
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "TypeArrayAttr":$resultParamTypes,
                         "mlir::FunctionType":$values);
@@ -125,6 +136,35 @@ def SignatureType
     getSpecializedSignature(ParamBindArrayAttr inputParams,
       llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeDefType
+//===----------------------------------------------------------------------===//
+
+def TypeDefType : KGENType<"TypeDef", "typedef",
+    [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "Reference to a type declaration.";
+  let description = [{
+    A `!kgen.typedecl` type references a type declaration and binds parameter
+    values to the type.
+
+    Example:
+
+    ```mlir
+    !kgen.typedef<@MyStruct<size = 1, T:dtype = fooType>>
+    ```
+  }];
+
+  let parameters = (ins "FlatSymbolRefAttr":$name,
+                        "ParamBindArrayAttr":$paramValues);
+  let assemblyFormat = "`<` $name custom<OptionalParamBinds>($paramValues) `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name,
+                                        "ParamBindArrayAttr":$paramValues)>,
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name)>
+  ];
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
