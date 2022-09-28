@@ -8,12 +8,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/KGENDialect/KGENDeclInterface.td"
+include "KGEN/KGENDialect/KGENDialect.td"
 include "mlir/IR/FunctionInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "KGEN/KGENDialect/KGENDeclInterface.td"
 
 // Base class for the operation in this dialect.
 class KGENOp<string mnemonic, list<Trait> traits = []> :
@@ -433,6 +436,78 @@ def RebindOp : KGENOp<"rebind"> {
 
   let hasVerifier = 1;
   let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructDeclOp
+//===----------------------------------------------------------------------===//
+
+def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclareOpInterfaceMethods<KGENDeclInterface>, NoTerminator]> {
+  let summary = "Struct declaration.";
+  let description = [{
+    The `kgen.struct.decl` operation is a top-level operation used to declare
+    parametric KGEN struct types. Struct declarations are named with a symbol
+    and have a parameter declaration list. The body contains only
+    `kgen.struct.field` operations that declare the contents of the struct.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @Buffer<size, dtype: dtype> {
+      size : index
+      ptr : !pop.pointer<!pop.scalar<dtype>>
+      dtype : !kgen.dtype
+    }
+    ```
+
+    The parameters of the declaration can be constraints with optional
+    constraints.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @SmallString<size>
+        constraints [<le(size, 8), "string must be small">] {
+      data : !pop.array<size, !pop.scalar<si8>>
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
+                       KTypeArrayAttr:$resultParamTypes,
+                       ConstraintArrayAttr:$constraints);
+  let regions = (region SizedRegion<1>:$fields);
+  let assemblyFormat = [{
+    $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    `` custom<OptionalConstraints>($constraints) custom<StructFields>($fields)
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOp
+//===----------------------------------------------------------------------===//
+
+def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
+  let summary = "Struct field declaration.";
+  let description = [{
+    The `kgen.struct.field` operations declares a named struct field and type.
+
+    Example:
+
+    ```mlir
+    // Declare a field named "foo".
+    kgen.struct.field foo : !pop.scalar<f32>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$name, TypeAttr:$type);
+  let assemblyFormat = "`` custom<KeywordAsString>($name) attr-dict `:` $type";
 }
 
 //===----------------------------------------------------------------------===//

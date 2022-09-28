@@ -531,3 +531,37 @@ kgen.generator @call_region() {
   }
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{unexpected result parameters}}
+kgen.struct.decl @StructReturns<() -> dtype> {
+}
+
+// -----
+
+// expected-error @below {{expected declaration body to have no arguments}}
+"kgen.struct.decl"() ({
+^bb0(%arg0: i32):
+}) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
+    paramDecls = #kgen<param.decls[]>, resultParamTypes = #kgen<type.array[]>} : () -> ()
+
+// -----
+
+// expected-error @below {{expected only `kgen.struct.field` ops in its body}}
+"kgen.struct.decl"() ({
+^bb0:
+  // expected-note @below {{invalid child op here}}
+  "not_struct_field"() : () -> ()
+}) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
+    paramDecls = #kgen<param.decls[]>, resultParamTypes = #kgen<type.array[]>} : () -> ()
+
+// -----
+
+kgen.struct.decl @StructDuplicate {
+  // expected-note @below {{see previous declaration here}}
+  x : i32
+  y : i32
+  // expected-error @below {{duplicate struct field "x"}}
+  x : i32
+}

@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "mlir/IR/FunctionInterfaces.h"
+#include "mlir/IR/OpImplementation.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
