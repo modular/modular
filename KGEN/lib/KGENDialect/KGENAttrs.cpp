@@ -19,8 +19,8 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/MC/SubtargetFeature.h" //< For TargetInfoAttr
-#include "llvm/Support/Host.h"        //< For TargetInfoAttr
+#include "llvm/MC/SubtargetFeature.h"
+#include "llvm/Support/Host.h"
 
 using namespace M;
 using namespace M::KGEN;
