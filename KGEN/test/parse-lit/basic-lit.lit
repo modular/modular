@@ -1,0 +1,13 @@
+# RUN: kgen-translate -import-lit %s | FileCheck %s
+
+# CHECK: module {
+# CHECK-NEXT: }
+
+def noop:  
+  pass
+
+def do_math<dt: dtype, size: Int>
+  (x: SIMD<size, dt>, exp: SIMD<size, dt>) -> SIMD<size, dt>:
+  """This is a test for basic arithmetic and arguments"""
+  return x*4 + x + 1
+
