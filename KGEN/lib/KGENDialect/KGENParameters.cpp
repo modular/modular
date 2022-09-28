@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -48,6 +49,10 @@ private:
   /// declaration it refers to agrees with the value and parameter
   /// specification.
   virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) = 0;
+
+  /// When we encounter a TypeDefType, check that its parameter bindings match
+  /// the parameter declarations on the type declaration.
+  virtual void verifyTypeDefType(TypeDefType typeDef) {}
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
@@ -105,6 +110,10 @@ void ParameterCollector::collectParameterUsesFromType(
   // Ignore types we have already scanned.
   if (!type || parameterLessTypes.count(type))
     return;
+
+  // Check any TypeDefType's we encounter.
+  if (auto typeDef = type.dyn_cast<TypeDefType>())
+    verifyTypeDefType(typeDef);
 
   // Signature types are effectively "isolated from above" in that they may have
   // their own local parameter declarations that are used in their type
@@ -217,6 +226,8 @@ struct DeclParameterVerifier final : public ParameterCollector {
   }
 
   void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
+
+  void verifyTypeDefType(TypeDefType typeDef) override;
 
   // This is the top level declaration that we're analyzing.
   KGENDeclInterface const topLevelDeclOp;
@@ -388,6 +399,35 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
   if (failed(verifyDeclSignaturesMatch(
           "symbol use", signatureType, curLocationCollecting.value(),
           paramName.c_str(), decl.getSignature(), decl->getLoc())))
+    hadError = true;
+}
+
+/// The first time we encounter a TypeDefType, check to see if its parameter
+/// bindings agrees with the parameter declarations of the referred type
+/// dedclaration.
+void DeclParameterVerifier::verifyTypeDefType(TypeDefType typeDef) {
+  // We only check this during the op verification phase.
+  if (!symbolTables)
+    return;
+
+  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+      symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, typeDef.getName()));
+  if (!decl || !isa<StructDeclOp>(decl)) {
+    hadError = true;
+    emitError(curLocationCollecting.value())
+        << typeDef.getName() << " does not reference a KGEN type declaration";
+    return;
+  }
+
+  SmallString<32> paramName("@");
+  paramName.append(typeDef.getName().getLeafReference());
+  if (failed(verifyParamDeclsMatch(
+          "typedef symbol use",
+          llvm::to_vector(llvm::map_range(
+              typeDef.getParamValues(),
+              [](ParamBindAttr value) { return value.getDecl(); })),
+          curLocationCollecting.value(), paramName.c_str(),
+          decl.getParamDeclsAttr(), decl.getLoc())))
     hadError = true;
 }
 
