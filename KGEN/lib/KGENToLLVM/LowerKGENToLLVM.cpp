@@ -7,6 +7,8 @@
 #include "KGEN/KGENPasses.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
@@ -159,6 +161,113 @@ public:
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructOp
+//===----------------------------------------------------------------------===//
+
+/// Information about a struct declaration.
+using StructDeclaration = SmallVector<std::pair<StringAttr, Type>>;
+using StructDeclarations = DenseMap<StringAttr, StructDeclaration>;
+
+/// Struct operations need to refer to the struct declaration symbol.
+template <typename StructOp>
+class ConvertKGENStructOp : public mlir::ConvertOpToLLVMPattern<StructOp> {
+public:
+  explicit ConvertKGENStructOp(mlir::LLVMTypeConverter &typeConverter,
+                               StructDeclarations &structDecls)
+      : mlir::ConvertOpToLLVMPattern<StructOp>(typeConverter),
+        structDecls(structDecls) {}
+
+  /// Get the index of the struct field. Returns None if the struct declaration
+  /// was not found.
+  Optional<int64_t> getFieldIndex(StringAttr name, TypeDefType typeDef) const {
+    auto it = structDecls.find(typeDef.getName().getAttr());
+    if (it == structDecls.end())
+      return {};
+
+    auto fieldIt = llvm::find_if(
+        it->second, [&](auto &field) { return field.first == name; });
+    return std::distance(it->second.begin(), fieldIt);
+  }
+
+protected:
+  StructDeclarations &structDecls;
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructCreate
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructCreate : public ConvertKGENStructOp<StructCreateOp> {
+  using ConvertKGENStructOp::ConvertKGENStructOp;
+
+  LogicalResult
+  matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto type = getTypeConverter()
+                    ->convertType(op.getType())
+                    .dyn_cast_or_null<LLVM::LLVMStructType>();
+    if (!type)
+      return failure();
+    auto it = structDecls.find(op.getType().getName().getAttr());
+    if (it == structDecls.end())
+      return failure();
+
+    Value container = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    SmallDenseMap<StringAttr, int64_t> nameToIndex;
+    nameToIndex.reserve(type.getBody().size());
+    for (auto &field : llvm::enumerate(it->second))
+      nameToIndex.try_emplace(field.value().first, field.index());
+
+    for (auto [name, value] : llvm::zip(op.getFields(), adaptor.getOperands()))
+      container = rewriter.create<LLVM::InsertValueOp>(
+          op.getLoc(), container, value, nameToIndex.find(name)->second);
+
+    rewriter.replaceOp(op, container);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructInsert
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructInsert : public ConvertKGENStructOp<StructInsertOp> {
+  using ConvertKGENStructOp::ConvertKGENStructOp;
+
+  LogicalResult
+  matchAndRewrite(StructInsertOp op, StructInsertOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Optional<int64_t> index =
+        getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
+    if (!index)
+      return failure();
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+        op, adaptor.getContainer(), adaptor.getValue(), *index);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructExtract
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructExtract : public ConvertKGENStructOp<StructExtractOp> {
+  using ConvertKGENStructOp::ConvertKGENStructOp;
+
+  LogicalResult
+  matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Optional<int64_t> index =
+        getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
+    if (!index)
+      return failure();
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getContainer(), *index);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -166,7 +275,8 @@ public:
 //===----------------------------------------------------------------------===//
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                       mlir::RewritePatternSet &patterns) {
+                                       mlir::RewritePatternSet &patterns,
+                                       StructDeclarations &structDecls) {
   patterns.insert<
       // clang-format off
       ConvertKGENCall,
@@ -175,6 +285,47 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENReturn
       // clang-format on
       >(typeConverter);
+  patterns.insert<
+      // clang-format off
+      ConvertKGENStructCreate,
+      ConvertKGENStructExtract,
+      ConvertKGENStructInsert
+      // clang-format on
+      >(typeConverter, structDecls);
+}
+
+//===----------------------------------------------------------------------===//
+// Type Lowering
+//===----------------------------------------------------------------------===//
+
+/// Lower a concrete struct declaration to an LLVM struct. Struct types should
+/// only appear in KGEN dialect operations.
+static void configureTypeConverter(POPToLLVMTypeConverter &typeConverter,
+                                   StructDeclarations &structDecls) {
+  typeConverter.addConversion([&](TypeDefType typeDef) -> Optional<Type> {
+    auto it = structDecls.find(typeDef.getName().getAttr());
+    if (it == structDecls.end()) {
+      typeConverter.emitError("could not find struct declaration ")
+          << typeDef.getName();
+      return {};
+    }
+    // Substitute parameters into the field types.
+    ParameterEvaluator evaluator;
+    for (ParamBindAttr bind : typeDef.getParamValues())
+      evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+    SmallVector<Type> elementTypes;
+    for (auto [name, type] : it->second) {
+      Type elementType =
+          typeConverter.convertType(evaluator.getReboundType(type));
+      if (!elementType) {
+        typeConverter.emitError("failed to convert element type ") << type;
+        return {};
+      }
+      elementTypes.push_back(elementType);
+    }
+    return LLVM::LLVMStructType::getLiteral(typeDef.getContext(), elementTypes);
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -463,9 +614,9 @@ static LogicalResult emitWrappers(ModuleOp theModule,
         callsites.try_emplace(*callee, call);
 
   // Break up structs in-place in the specific top-level funcs.
-  SymbolTable symtab(theModule);
   auto opaqueWrapperAttrName =
       StringAttr::get(theModule.getContext(), "opaque_wrapper");
+  SymbolTable symtab(theModule);
   for (StringRef funcName : breakUpStructs) {
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
@@ -555,11 +706,25 @@ void LowerKGENToLLVMPass::runOnOperation() {
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
+
+  // Collect all struct declarations and erase them.
+  StructDeclarations structDecls;
+  for (auto decl :
+       llvm::make_early_inc_range(theModule.getOps<StructDeclOp>())) {
+    StructDeclaration structDecl;
+    for (StructFieldOp field : decl.getFieldDecls())
+      structDecl.emplace_back(field.getNameAttr(), field.getType());
+    structDecls.try_emplace(decl.getNameAttr(), std::move(structDecl));
+    decl->erase();
+  }
+
+  // Configure the type converter.
   POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  configureTypeConverter(typeConverter, structDecls);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  populateKGENToLLVMPatterns(typeConverter, patterns);
+  populateKGENToLLVMPatterns(typeConverter, patterns, structDecls);
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
