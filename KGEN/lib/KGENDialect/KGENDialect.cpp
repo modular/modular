@@ -172,44 +172,6 @@ TypeDefType TypeDefType::get(FlatSymbolRefAttr name) {
   return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
 }
 
-/// Parse an optional list of parameter bindings.
-static ParseResult
-parseOptionalParamBinds(AsmParser &p,
-                        FailureOr<ParamBindArrayAttr> &paramValues) {
-  if (p.parseOptionalLess())
-    return success();
-
-  SmallVector<ParamBindAttr> paramBinds;
-  auto parseParamBind = [&]() -> ParseResult {
-    ParamDeclAttr decl;
-    TypedAttr value;
-
-    if (parseParamDecl(p, decl) || p.parseEqual() ||
-        parseParamValue(p, value, decl.getType()))
-      return failure();
-    paramBinds.push_back(ParamBindAttr::get(decl, value));
-    return success();
-  };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::None, parseParamBind))
-    return failure();
-
-  paramValues = p.getBuilder().getAttr<ParamBindArrayAttr>(paramBinds);
-  return p.parseGreater();
-}
-
-static void printOptionalParamBinds(AsmPrinter &p,
-                                    ParamBindArrayAttr paramValues) {
-  if (paramValues.empty())
-    return;
-  p << '<';
-  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
-    printParamDecl(p, bind.getDecl());
-    p << " = ";
-    printParamValue(p, bind.getValue());
-  });
-  p << '>';
-}
-
 //===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//

@@ -582,3 +582,74 @@ kgen.struct.decl @SomeType<v, d> {}
 // expected-error @below {{typedef symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
 kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
     !kgen.typedef<@SomeType<v = a, b = c>>
+
+// -----
+
+kgen.generator @duplicate_field(%a: index) {
+  // expected-error @below {{has duplicate field specifier "x"}}
+  %0 = kgen.struct.create !kgen.typedef<@Bar> {
+    x = %a : index
+    x = %a : index
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.struct.decl @Bar {
+  x : index
+}
+
+kgen.generator @struct_not_found(%a: index) {
+  // expected-error @below {{struct @Bar has no field named "b"}}
+  %0 = kgen.struct.create !kgen.typedef<@Bar> {
+    b = %a : index
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.struct.decl @Bar<a: type> {
+  x : !pop.array<32, a>
+}
+
+kgen.generator @invalid_field_namae<c: type>(%a: !kgen.paramref<c>) {
+  // expected-error @below {{struct field "x" expected '!pop.array<32, index>' but got '!kgen.paramref<c>}}
+  %0 = kgen.struct.create !kgen.typedef<@Bar<a: type = index>> {
+    x = %a : !kgen.paramref<c>
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.struct.decl @Bar {}
+
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+  // expected-error @below {{struct @Bar has no field named "a"}}
+  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.typedef<@Bar>
+  kgen.return
+}
+
+// -----
+
+kgen.struct.decl @Bar {
+  a : i32
+}
+
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+  // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
+  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.typedef<@Bar>
+  kgen.return
+}
+
+// -----
+
+kgen.struct.decl @Bar {}
+
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+  // expected-error @below {{struct @Bar has no field named "a"}}
+  %0 = kgen.struct.extract %container[a] : index from !kgen.typedef<@Bar>
+  kgen.return
+}

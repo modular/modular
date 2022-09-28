@@ -135,6 +135,11 @@ ParseResult parseOptionalConstraints(OpAsmParser &p,
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ConstraintArrayAttr constraints);
 
+/// Parse and print an optional parameter binding list.
+ParseResult parseOptionalParamBinds(AsmParser &p,
+                                    FailureOr<ParamBindArrayAttr> &paramValues);
+void printOptionalParamBinds(AsmPrinter &p, ParamBindArrayAttr paramValues);
+
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//

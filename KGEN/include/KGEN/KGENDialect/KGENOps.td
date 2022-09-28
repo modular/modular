@@ -11,6 +11,7 @@
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENDialect.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -485,6 +486,11 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
     attr-dict
   }];
 
+  let extraClassDeclaration = [{
+    /// Get the field declarations.
+    auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
+  }];
+
   let hasVerifier = 1;
   let hasRegionVerifier = 1;
 }
@@ -508,6 +514,105 @@ def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
 
   let arguments = (ins StrAttr:$name, TypeAttr:$type);
   let assemblyFormat = "`` custom<KeywordAsString>($name) attr-dict `:` $type";
+}
+
+//===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Create a parametric struct.";
+  let description = [{
+    The `kgen.struct.create` operation creates a struct of the referred type
+    with the provided values as fields. The fields can be specified in any order
+    and any subset of the fields may be specified.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @MyStruct<T: dtype> {
+      a : !pop.scalar<T>
+      b : !pop.scalar<f32>
+      c : !pop.simd<2, T>
+    }
+
+    %0 = kgen.struct.create !kgen.typedef<@MyStruct<T: dtype = type>> {
+      a = %arg0 : !pop.scalar<type>
+      c = %arg1 : !pop.simd<2, type>
+    }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands, KStringArrayAttr:$fields);
+  let results = (outs TypeDefType:$result);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructInsertOp
+//===----------------------------------------------------------------------===//
+
+def StructInsertOp : KGENOp<"struct.insert", [NoSideEffect,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    AllTypesMatch<["container", "result"]>]> {
+  let summary = "Insert a value into a struct.";
+  let description = [{
+    The `kgen.struct.insert` operation inserts a value into a parametric struct.
+    The original struct is immutable, so a new copy with the inserted value is
+    returned.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @MyStruct<T: dtype> {
+      a : !pop.scalar<T>
+    }
+
+    %0 = kgen.struct.insert %arg0, %arg1[a]
+      : !pop.scalar<f64> into !kgen.typedef<@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, AnyType:$value, TypeDefType:$container);
+  let results = (outs TypeDefType:$result);
+  let assemblyFormat = [{
+    $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($value) `into` qualified(type($container))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+def StructExtractOp : KGENOp<"struct.extract", [NoSideEffect,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Extract a value from a struct.";
+  let description = [{
+    The `kgen.struct.extract` operation extracts the value of a field by name
+    from a parametric struct.o
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @MyStruct<T: dtype> {
+      a : !pop.scalar<T>
+    }
+
+    %0 = kgen.struct.extract %arg0[a]
+      : !pop.scalar<f64> from !kgen.typedef<@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, TypeDefType:$container);
+  let results = (outs AnyType:$value);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($value) `from` qualified(type($container))
+  }];
 }
 
 //===----------------------------------------------------------------------===//
