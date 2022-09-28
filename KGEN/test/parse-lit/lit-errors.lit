@@ -1,0 +1,4 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s
+
+# expected-error @+1 {{unexpected character}}
+`
