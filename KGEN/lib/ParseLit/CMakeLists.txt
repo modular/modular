@@ -4,12 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen-translate
-  kgen-translate.cpp
+add_modular_conversion_library(ParseLit
+  ParseLit.cpp
 
-  LINK_LIBS PRIVATE
-  ParseLit
+  DEPENDS
+  MLIRKGENPasses
+
+  LINK_LIBS PUBLIC
+  KGENDialect
+  POPDialect
+
   MLIRTranslateLib
-  MLIRTargetLLVMIRExport
-  MLIRLLVMToLLVMIRTranslation
 )
