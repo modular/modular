@@ -255,29 +255,25 @@ struct TimeTraceScope {
   TimeTraceScope &operator=(TimeTraceScope &&) = delete;
 
   explicit TimeTraceScope(StringRef Name) {
-    if constexpr (Enabled) {
-      if (getTimeTraceProfilerInstance() != nullptr)
-        timeTraceProfilerBegin(Name, StringRef(""));
-    }
+    if (isEnabled())
+      timeTraceProfilerBegin(Name, StringRef(""));
   }
   TimeTraceScope(StringRef Name, StringRef Detail) {
-    if constexpr (Enabled) {
-      if (getTimeTraceProfilerInstance() != nullptr)
-        timeTraceProfilerBegin(Name, Detail);
-    }
+    if (isEnabled())
+      timeTraceProfilerBegin(Name, Detail);
   }
   TimeTraceScope(StringRef Name, llvm::function_ref<std::string()> Detail) {
-    if constexpr (Enabled) {
-      if (getTimeTraceProfilerInstance() != nullptr)
-        timeTraceProfilerBegin(Name, Detail);
-    }
+    if (isEnabled())
+      timeTraceProfilerBegin(Name, Detail);
   }
   ~TimeTraceScope() {
-    if constexpr (Enabled) {
-      if (getTimeTraceProfilerInstance() != nullptr)
-        timeTraceProfilerEnd();
-    }
+    if (isEnabled())
+      timeTraceProfilerEnd();
   }
+
+private:
+  /// This is a helper function that returns true if the profiler is enabled.
+  bool isEnabled() { return Enabled && timeTraceProfilerEnabled(); }
 };
 
 } // namespace M
