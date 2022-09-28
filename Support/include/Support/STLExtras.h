@@ -19,7 +19,7 @@ namespace M {
 /// iteration aborts and the function as a whole fails.
 template <typename ForwardIterator, typename UnaryFunctor,
           typename NullaryFunctor>
-inline auto failableInterleave(ForwardIterator begin, ForwardIterator end,
+auto failableInterleave(ForwardIterator begin, ForwardIterator end,
                                UnaryFunctor eachFn, NullaryFunctor betweenFn)
     -> decltype(betweenFn()) {
   if (begin == end)
@@ -35,7 +35,7 @@ inline auto failableInterleave(ForwardIterator begin, ForwardIterator end,
 }
 
 template <typename Container, typename UnaryFunctor, typename NullaryFunctor>
-inline auto failableInterleave(const Container &c, UnaryFunctor eachFn,
+auto failableInterleave(const Container &c, UnaryFunctor eachFn,
                                NullaryFunctor betweenFn) {
   return failableInterleave(c.begin(), c.end(), eachFn, betweenFn);
 }
