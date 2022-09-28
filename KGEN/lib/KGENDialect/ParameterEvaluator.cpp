@@ -67,7 +67,8 @@ KGEN::collectParameterReferences(Type type,
         // Skip ConcreteTypeConstantAttr's since we know they can never have
         // parameters.
         if (succeeded(result) && attr && !attr.isa<ConcreteTypeConstantAttr>())
-          result = collectParameterReferences(attr, results);
+          if (auto expr = attr.dyn_cast<TypedAttr>())
+            result = collectParameterReferences(expr, results);
       },
       [&](Type type) {
         if (succeeded(result))
