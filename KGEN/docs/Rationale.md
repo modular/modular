@@ -208,3 +208,29 @@ lowered to the `pop` dialect before elaboration.
 
 For example, `zap.buffer` is a substitute for a user-defined/library type.
 Operations on buffers reside in the `zap` dialect.
+
+## Why `DType`?
+
+KGEN uses `DType` to represent fundamental primitive types: integers and floats.
+But `DType` is from the ML domain and can represent other data types as well:
+complex, strings, ragged tensors, tables, etc. This presents KGEN with a
+problem: `DType` can represent data types that are beyond the understanding of
+the compiler. It is not clear what `scalar<string>` would mean, for example.
+
+We could replace `DType` with MLIR builtin types, but this makes a mess out of
+the parameter system, because then everything would have to be parameterized
+with `!kgen.mlirtype`, which can be any MLIR type! We can introduce a new enum
+that consists only of supported element types for scalars and vectors, but this
+adds unnecessary friction with an enum conversion.
+
+More fundamentally, it's not clear that KGEN should prescribe a set of
+"supported" data types. `TF32` and `TF64` are not supported on all systems (e.g.
+CPUs), for example, so even a more restricted enum would not solve this problem;
+there will always be unsupported data types.
+
+This means that no IR can guarantee that it is valid on all platforms. Some
+functions will only discover this during lowering, and that's OK. The elaborator
+can handle lowering failures, for example, when compiling an interface
+implementation that uses AVX instructions, and reject the candidate. In that
+sense, `scalar<invalid>` or `simd<8, invalid>` make sense, in that these are
+types that are unsupported on all platforms.
