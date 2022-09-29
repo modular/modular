@@ -370,20 +370,20 @@ struct ConvertCallSignature : public mlir::OpConversionPattern<CallOp> {
   }
 };
 
-struct ConvertInterfaceSignature
-    : public mlir::OpConversionPattern<GeneratorInterfaceOp> {
-  using OpConversionPattern::OpConversionPattern;
+template <typename OpT>
+struct ConvertInterfaceSignature : public mlir::OpConversionPattern<OpT> {
+  using mlir::OpConversionPattern<OpT>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(GeneratorInterfaceOp op, GeneratorInterfaceOpAdaptor adaptor,
+  matchAndRewrite(OpT op, typename OpT::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     FunctionType type = op.getFunctionType();
     TypeConverter::SignatureConversion inputs(type.getNumInputs()),
         results(type.getNumResults());
-    if (failed(getTypeConverter()->convertSignatureArgs(type.getInputs(),
-                                                        inputs)) ||
-        failed(getTypeConverter()->convertSignatureArgs(type.getResults(),
-                                                        results)))
+    if (failed(this->getTypeConverter()->convertSignatureArgs(type.getInputs(),
+                                                              inputs)) ||
+        failed(this->getTypeConverter()->convertSignatureArgs(type.getResults(),
+                                                              results)))
       return failure();
     rewriter.updateRootInPlace(op, [&] {
       op.setType(rewriter.getFunctionType(inputs.getConvertedTypes(),
@@ -455,7 +455,9 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
 
       // Signature type conversions.
       ConvertCallSignature,
-      ConvertInterfaceSignature,
+      ConvertInterfaceSignature<GeneratorInterfaceOp>,
+      ConvertInterfaceSignature<PrecompiledLLVMOp>,
+      ConvertInterfaceSignature<PrecompiledObjectOp>,
       ConvertSignature<GeneratorOp>,
       ConvertSignature<FuncOp>,
       ConvertResultSignature,
@@ -513,7 +515,8 @@ void LowerZAPToPOPPass::runOnOperation() {
 
   // Dynamically legalize KGEN operations that can interact with any parametric
   // type, including ZAP types.
-  target.addDynamicallyLegalOp<GeneratorInterfaceOp, GeneratorOp, FuncOp>(
+  target.addDynamicallyLegalOp<GeneratorInterfaceOp, GeneratorOp, FuncOp,
+                               PrecompiledLLVMOp, PrecompiledObjectOp>(
       [&](Operation *op) {
         FunctionType type = cast<KGENDeclInterface>(op).getFunctionType();
         return llvm::none_of(type.getInputs(), isZAPType) &&
