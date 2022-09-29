@@ -31,12 +31,12 @@ class WorkQueue;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, and a way of reporting errors.  This is
-/// also the natural unit for cancelation.
+/// also the natural unit for cancellation.
 ///
 class Runtime final {
 public:
   Runtime(std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue);
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename);
   ~Runtime();
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.
@@ -129,6 +129,10 @@ private:
   /// for this Runtime.
   std::unique_ptr<Allocator> allocator;
   std::unique_ptr<WorkQueue> workQueue;
+
+  /// Filename into which time profiling should be written, or the empty
+  /// string if disabled.
+  std::string profileFilename;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.

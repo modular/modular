@@ -45,7 +45,10 @@ struct SharedThreadState {
   static_assert(std::atomic<uint64_t>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
   /// This is the time to spin wait before falling asleep.
-  std::chrono::nanoseconds busyWaitNs;
+  const std::chrono::nanoseconds busyWaitNs;
+
+  /// True if each thread should establish and teardown time profiling.
+  const bool profilingEnabled;
 
   /// This flag indicates when a thread should quit working and get ready to be
   /// joined.
@@ -166,7 +169,9 @@ struct WorkQueueThread {
 } // namespace
 
 void WorkQueueThread::runOnThread() {
-  TIME_PROFILER_WORKER_INIT;
+  if (sharedState.profilingEnabled) {
+    TIME_PROFILER_WORKER_INIT;
+  }
 
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
@@ -190,7 +195,10 @@ void WorkQueueThread::runOnThread() {
            });
 
   TIME_PROFILER_END(4);
-  TIME_PROFILER_WORKER_WRAPUP;
+
+  if (sharedState.profilingEnabled) {
+    TIME_PROFILER_WORKER_WRAPUP;
+  }
 }
 
 /// This method iteratively runs work items until either of the specified
@@ -280,8 +288,9 @@ public:
   /// Initialize the thread pool and start up the worker threads. By the time
   /// the constructor finishes, all the worker threads have started and shall
   /// only be cancelled by the destructor.
-  explicit ThreadPoolWorkQueue(size_t numWorkerThreads,
-                               std::chrono::nanoseconds busyWaitNs);
+  ThreadPoolWorkQueue(size_t numWorkerThreads,
+                      std::chrono::nanoseconds busyWaitNs,
+                      bool profilingEnabled);
 
   void shutdown() override;
   ~ThreadPoolWorkQueue() override {}
@@ -315,9 +324,11 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
-                                         std::chrono::nanoseconds busyWaitNs)
-    : numWorkers(numWorkers), sharedState{busyWaitNs, false,
-                                          /*suspendedThreads*/ 0} {
+                                         std::chrono::nanoseconds busyWaitNs,
+                                         bool profilingEnabled)
+    : numWorkers(numWorkers), sharedState{busyWaitNs, profilingEnabled,
+                                          /*doneFlag=*/false,
+                                          /*suspendedThreads=*/0} {
   workers.reserve(numWorkers);
   // Initialize each thread with its required state.  Note that  thread #0
   // does not start itself: that index is reserved for foreign threads.
@@ -444,7 +455,8 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 
 std::unique_ptr<WorkQueue>
 M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
-                                   std::chrono::nanoseconds busyWait) {
+                                   std::chrono::nanoseconds busyWait,
+                                   bool profilingEnabled) {
   // We expect `numThreads` to be the total numbers of threads that are
   // accessing the work queue. As there will be an external thread that will
   // access the work queue and take items from it by calling `await`, we create
@@ -454,5 +466,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
   // We use a 64-bit value "thread suspended" value currently so we cap at 64
   // threads.  This algorithm isn't going to scale beyond 64 threads anyway.
   numThreads = std::min(numThreads, size_t(64));
-  return std::make_unique<ThreadPoolWorkQueue>(numThreads, busyWait);
+  return std::make_unique<ThreadPoolWorkQueue>(numThreads, busyWait,
+                                               profilingEnabled);
 }
