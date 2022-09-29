@@ -10,6 +10,10 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/ForwardDecls.h"
 
+namespace M {
+class Error;
+} // namespace M
+
 namespace M::KGEN {
 class KGENDeclInterface;
 
@@ -91,6 +95,31 @@ private:
   DenseMap<Attribute, Attribute> rewrittenAttrs;
   DenseMap<Type, Type> rewrittenTypes;
 };
+
+//===----------------------------------------------------------------------===//
+// evaluateConstraints implementation.
+//===----------------------------------------------------------------------===//
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues. If the constraints are met, return
+/// success, otherwise return why they aren't.
+LogicalResult
+evaluateConstraints(ConstraintArrayAttr constraints,
+                    ParameterEvaluator &evaluator,
+                    llvm::function_ref<void(Location, Error)> emitError,
+                    bool allowUnresolved = false);
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues. If the constraints are met, return
+/// success, otherwise return why they aren't. If `allowUnresolved` is set,
+/// constraints are only evaluated if they could be fully simplified. This
+/// allows checking constraints pre-elaboration.
+LogicalResult
+evaluateConstraints(KGENDeclInterface decl,
+                    ArrayRef<Attribute> inputParamValues,
+                    llvm::function_ref<void(Location, Error)> emitError,
+                    bool allowUnresolved = false);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_PARAMETEREVALUATOR_H

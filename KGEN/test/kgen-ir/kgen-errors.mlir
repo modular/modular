@@ -653,3 +653,25 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
   %0 = kgen.struct.extract %container[a] : index from !kgen.typedef<@Bar>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{see constraint defined here}}
+kgen.struct.decl @BadStruct constraints <[0, "always bad"]> {}
+
+kgen.generator @use_bad_struct() {
+  // expected-error @below {{error in type specialization: constraint failed: always bad}}
+  "a"() {a = !kgen.typedef<@BadStruct>} : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{see constraint defined here}}
+kgen.struct.decl @SometimesBad<N> constraints <[lt(N, 4), "less than 4"]> {}
+
+kgen.generator @use_sometimes_bad_struct() {
+  // expected-error @below {{error in type specialization: constraint failed: less than 4}}
+  "a"() {a = !kgen.typedef<@SometimesBad<N = 8>>} : () -> ()
+  kgen.return
+}

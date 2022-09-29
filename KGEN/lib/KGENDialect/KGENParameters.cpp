@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -429,6 +430,24 @@ void DeclParameterVerifier::verifyTypeDefType(TypeDefType typeDef) {
           curLocationCollecting.value(), paramName.c_str(),
           decl.getParamDeclsAttr(), decl.getLoc())))
     hadError = true;
+
+  // Check the constraints.
+  if (!decl.getConstraints().empty()) {
+    SmallVector<Attribute> values;
+    for (ParamBindAttr bind : typeDef.getParamValues())
+      values.push_back(bind.getValue());
+    auto emitErrorFn = [&](Location loc, Error err) {
+      InFlightDiagnostic diag = emitError(curLocationCollecting.value(),
+                                          "error in type specialization: ")
+                                << err;
+      diag.attachNote(loc) << "see constraint defined here";
+    };
+
+    // Evaluate the potentially partial constraints.
+    if (failed(evaluateConstraints(decl, values, emitErrorFn,
+                                   /*allowUnresolved=*/true)))
+      hadError = true;
+  }
 }
 
 //===----------------------------------------------------------------------===//
