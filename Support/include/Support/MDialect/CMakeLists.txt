@@ -4,14 +4,5 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
-
-  LINK_LIBS PRIVATE
-  IndexDialect
-  IndexToLLVM
-  MDialect
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-)
+add_mlir_dialect(M M -dialect=M)
+add_modular_doc(M -gen-dialect-doc MDialect Support/docs -dialect=M)
