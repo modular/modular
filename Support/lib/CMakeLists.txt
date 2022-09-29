@@ -9,6 +9,7 @@ find_package(Git REQUIRED)
 add_subdirectory(Benchmark)
 add_subdirectory(IndexDialect)
 add_subdirectory(IndexToLLVM)
+add_subdirectory(MDialect)
 add_subdirectory(ML)
 add_subdirectory(Compiler)
 
