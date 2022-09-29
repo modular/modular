@@ -41,12 +41,13 @@ public:
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
-    // Create the LLVM function.
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
         func.getLoc(), func.getNameAttr(), funcType,
-        func.getVisibility() == mlir::SymbolTable::Visibility::Public
-            ? LLVM::Linkage::External
-            : LLVM::Linkage::Private);
+        func.isPublic() ? LLVM::Linkage::External : LLVM::Linkage::Private);
+    // Set an attr to indicate that this thing is private. This is temporary -
+    // we will end up removing the opaque wrappers.
+    if (func.isPrivate())
+      funcOp->setAttr("kgen_private", rewriter.getAttr<mlir::UnitAttr>());
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
@@ -55,6 +56,36 @@ public:
 
     // Remove the function.
     rewriter.eraseOp(func);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENPrecompiled
+//===----------------------------------------------------------------------===//
+
+/// Convert `kgen.precompiled.*` to an extern `llvm.func`.
+template <typename PrecompiledOpT>
+class ConvertKGENPrecompiled
+    : public mlir::ConvertOpToLLVMPattern<PrecompiledOpT> {
+public:
+  using mlir::ConvertOpToLLVMPattern<PrecompiledOpT>::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PrecompiledOpT op, typename PrecompiledOpT::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Convert the func signature.
+    TypeConverter::SignatureConversion result(op.getNumArguments());
+    Type funcType = this->getTypeConverter()->convertFunctionSignature(
+        op.getFunctionType(),
+        /*isVariadic=*/false, result);
+    if (!funcType)
+      return emitError(op.getLoc(), "failed to convert func signature");
+
+    // Replace it with an LLVM function that has no body.
+    rewriter.template replaceOpWithNewOp<LLVM::LLVMFuncOp>(
+        op, op.getNameAttr(), funcType, LLVM::Linkage::External);
+
     return success();
   }
 };
@@ -281,6 +312,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENFunc,
+      ConvertKGENPrecompiled<PrecompiledLLVMOp>,
+      ConvertKGENPrecompiled<PrecompiledObjectOp>,
       ConvertKGENParamConstant,
       ConvertKGENReturn
       // clang-format on
@@ -622,7 +655,7 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
-    if (func.getLinkage() == LLVM::Linkage::Private) {
+    if (func->getAttr("kgen_private")) {
       mlir::emitWarning(
           func.getLoc(),
           "will not emit wrappers for this function marked private");
