@@ -189,3 +189,80 @@ void ParameterEvaluator::dump() const {
   for (auto [name, value] : paramValues)
     os << "  " << name << " = " << value << "\n";
 }
+
+//===----------------------------------------------------------------------===//
+// evaluateConstraints implementation.
+//===----------------------------------------------------------------------===//
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+LogicalResult KGEN::evaluateConstraints(
+    ConstraintArrayAttr constraints, ParameterEvaluator &evaluator,
+    llvm::function_ref<void(Location, Error)> emitError, bool allowUnresolved) {
+  // Each constraint must be foldable, and must fold to true.
+  for (ConstraintAttr constraint : constraints) {
+    Attribute value;
+
+    // If the constraint must evaluate, concretize the expression.
+    if (!allowUnresolved) {
+      ErrorOr<Attribute> result =
+          evaluator.concretizeParameterExpr(constraint.getExpr());
+      if (failed(result)) {
+        emitError(constraint.getLoc(),
+                  "constraint evaluation failure: " + Twine(result.getError()));
+        return failure();
+      }
+      value = result.takeValue();
+
+      // Otherwise, rebind and simplify it as much as possible.
+    } else {
+      value = evaluator.getReboundAttribute(constraint.getExpr());
+    }
+
+    auto resultInt = value.dyn_cast<IntegerAttr>();
+    // If the expression was not fully simplified, skip it.
+    if (!resultInt && allowUnresolved)
+      continue;
+
+    if (!resultInt || resultInt.getValue().getBitWidth() != 1) {
+      emitError(constraint.getLoc(),
+                "constraint evaluation didn't return true or false");
+      return failure();
+    }
+
+    // If this failed, indicate why.
+    if (resultInt.getValue().isZero()) {
+      emitError(constraint.getLoc(),
+                "constraint failed: " + constraint.getMessage().getValue());
+      return failure();
+    }
+  }
+
+  // If we made it this far, then everything folded to true.
+  return success();
+}
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+LogicalResult KGEN::evaluateConstraints(
+    KGENDeclInterface decl, ArrayRef<Attribute> inputParamValues,
+    llvm::function_ref<void(Location, Error)> emitError, bool allowUnresolved) {
+  // If there are no constraints, we are trivially done.
+  ConstraintArrayAttr constraints = decl.getConstraintsAttr();
+  if (!constraints || constraints.empty())
+    return success();
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ParameterEvaluator evaluator;
+  auto inputParamDecls = decl.getParamDeclsAttr();
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl, value);
+
+  return evaluateConstraints(constraints, evaluator, std::move(emitError),
+                             allowUnresolved);
+}
