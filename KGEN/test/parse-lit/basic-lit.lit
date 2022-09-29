@@ -6,7 +6,7 @@
 def noop:  
   pass
 
-def do_math<dt: dtype, size: Int>
-  (x: SIMD<size, dt>, exp: SIMD<size, dt>) -> SIMD<size, dt>:
+def do_math[dt: dtype, size: Int]
+  (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
   return x*4 + x + 1
 
