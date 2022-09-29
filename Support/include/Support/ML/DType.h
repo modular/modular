@@ -144,6 +144,7 @@ public:
   bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
   bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }
   bool isFloat() const { return !isInt() & ((value & mIsFloat) != 0); }
+  bool isArithmetic() const { return isInt() || isFloat(); }
   bool isOther() const { return !isInt() & ((value & mIsFloat) == 0); }
 
   // Complex number handling.
