@@ -14,6 +14,7 @@
 #include "KGEN/KGENPasses.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/IndexDialect/IndexDialect.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Parser/Parser.h"
@@ -92,13 +93,19 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
 
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
-  // TODO: change this to `true` when we emit the module in its binary format.
-  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false);
+  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)
     return mlir::failure();
 
-  theModule->print(outFile->os());
+  mlir::writeBytecodeToFile(theModule, outFile->os());
   outFile->keep();
+
+  // Try to save the textual IR as an intermediate file.
+  if (auto irFile = opts.getIntermediateFile(opts.outputFilename, ".mlir")) {
+    theModule.print(irFile->os());
+    irFile->keep();
+  }
+
   return mlir::success();
 }
 

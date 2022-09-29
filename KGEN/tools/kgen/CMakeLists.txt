@@ -20,5 +20,6 @@ add_modular_tool(kgen
   LowerZAPToPOP
   POPDialect
 
+  MLIRBytecodeWriter
   MLIRParser
 )
