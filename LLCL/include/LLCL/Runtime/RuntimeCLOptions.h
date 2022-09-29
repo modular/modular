@@ -13,6 +13,7 @@
 #define LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/Profiling.h"
 #include "Support/CommandLine.h"
 #include <chrono>
 #include <thread>
@@ -93,6 +94,20 @@ private:
       // For now we default to 1ms = 1000000ns.
       llvm::cl::Hidden, llvm::cl::init(1000000)};
 
+  // Filename to hold the time profiling output (as JSON text).
+  llvm::cl::opt<std::string> profileFilename{
+      "time-profile",
+      llvm::cl::desc(
+          kIsProfilingEnabled
+              ? "Specify the filename into which time profiling data should be"
+                " written. This will be JSON text in the standard profiling"
+                " format. An empty filename disabled profiling (the default)."
+              : "Specify the filename into which time profiling data should be"
+                " written. WARNING: This option is ignored in this build."
+                " Rebuild with MAX_PROFILING_LEVEL greater than 0 to enable"
+                " it."),
+      llvm::cl::init("")};
+
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
   WorkQueueType getWorkQueueType() const {
     // The default behavior picks a thread count based on the -num-threads
@@ -101,6 +116,34 @@ private:
       return numThreads == 1 ? WorkQueueType::kSingleThread
                              : WorkQueueType::kThreadPool;
     return workQueueType;
+  }
+
+  // Returns the filename to hold the time profiling output (as JSON text).
+  // Returns empty string if profiling is disabled.
+  StringRef getProfileFilename() const {
+    if constexpr (!kIsProfilingEnabled) {
+      if (!profileFilename.empty())
+        llvm::errs()
+            << "WARNING: The --profile option was given but this build"
+               " does not support profiling. Rebuild with MAX_PROFILE_LEVEL"
+               " greater than 0 to enable it.\n";
+      return "";
+    }
+#ifdef MODULAR_DEBUG
+    if (!profileFilename.empty())
+      llvm::errs() << "WARNING: Using the --profile option in debug mode is"
+                      " not recommended due to increased overhead. Please use"
+                      " a release build.\n";
+#endif
+    return profileFilename;
+  }
+
+  // Returns true if profiling is enabled by command line flag.
+  bool getProfilingEnabled() const {
+    if constexpr (!kIsProfilingEnabled) {
+      return false;
+    }
+    return !profileFilename.empty();
   }
 
 public:
@@ -183,14 +226,17 @@ public:
       break;
     case WorkQueueType::kThreadPool:
       workQueue = createThreadPoolWorkQueue(
-          getNumThreads(), std::chrono::nanoseconds{busyWaitNs});
+          getNumThreads(), std::chrono::nanoseconds{busyWaitNs},
+          getProfilingEnabled());
       break;
     case WorkQueueType::kShardedSemaphore:
       workQueue = createShardedSemaphoreWorkQueue(
-          getNumThreads(), std::chrono::nanoseconds{busyWaitNs});
+          getNumThreads(), std::chrono::nanoseconds{busyWaitNs},
+          getProfilingEnabled());
       break;
     }
-    return Runtime(std::move(allocator), std::move(workQueue));
+    return Runtime(std::move(allocator), std::move(workQueue),
+                   getProfileFilename());
   }
 
   //===--------------------------------------------------------------------===//

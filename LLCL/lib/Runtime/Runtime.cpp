@@ -15,6 +15,8 @@
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/Profiling.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
+
 using namespace M::LLCL;
 
 void WorkQueue::vtableAnchor() {}
@@ -55,8 +57,10 @@ Runtime *CompactRuntimePtr::get() const {
 //===----------------------------------------------------------------------===//
 
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
-                 std::unique_ptr<WorkQueue> workQueue)
+                 std::unique_ptr<WorkQueue> workQueue,
+                 StringRef profileFilename)
     : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
+      profileFilename(profileFilename),
       runtimeIndex(nextRuntimeIndex.fetch_add(1)),
       readyChain(createReadyChain(*this)) {
   // We provide a dense numbering of runtime instances right now, but we could
@@ -69,8 +73,10 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
                             uint32_t, int64_t, uint64_t, float, double>();
 
-  // Establish the time profiler.
-  TIME_PROFILER_MAIN_INIT;
+  // Establish the time profiler if requested.
+  if (!this->profileFilename.empty()) {
+    TIME_PROFILER_MAIN_INIT;
+  }
 }
 
 Runtime::~Runtime() {
@@ -90,7 +96,9 @@ Runtime::~Runtime() {
   (void)nextRuntimeIndex.compare_exchange_strong(expected, runtimeIndex);
 
   // We're done with profiling.
-  TIME_PROFILER_MAIN_WRAPUP;
+  if (!profileFilename.empty()) {
+    TIME_PROFILER_MAIN_WRAPUP(profileFilename);
+  }
 }
 
 /// Cancel the current BEF Execution. This transitions this Runtime to the

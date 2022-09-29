@@ -69,12 +69,14 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// to std::thread::hardware_concurrency().
 std::unique_ptr<WorkQueue>
 createThreadPoolWorkQueue(size_t numThreads = 0,
-                          std::chrono::nanoseconds busyWait = {});
+                          std::chrono::nanoseconds busyWait = {},
+                          bool profilingEnabled = false);
 
 /// Create a thread pool work queue that uses sharded semaphore.
 std::unique_ptr<WorkQueue>
 createShardedSemaphoreWorkQueue(size_t numThreads,
-                                std::chrono::nanoseconds busyWait = {});
+                                std::chrono::nanoseconds busyWait = {},
+                                bool profilingEnabled = false);
 
 } // namespace M::LLCL
 
