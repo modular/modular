@@ -43,3 +43,30 @@ CommonCLOptions::getOutputFile(bool hasBinaryOutput) const {
 
   return result;
 }
+
+std::unique_ptr<llvm::ToolOutputFile>
+CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
+  if (!saveTemps)
+    return nullptr;
+  std::string outFile = (inputName + ext).str();
+
+  // If a directory has been provided, use it.
+  if (!tempsDir.empty()) {
+    // Unconditionally create the dir, this simply returns a bool if the
+    // directory already exists.
+    std::error_code errorCode;
+    std::filesystem::create_directories(tempsDir.getValue(), errorCode);
+    outFile = (std::filesystem::path(tempsDir.getValue()) /
+               std::filesystem::path(inputName.str()).filename())
+                  .replace_extension(ext.str())
+                  .string();
+  }
+
+  llvm::outs() << "Emitting intermediate file to " << outFile << ".\n";
+
+  std::string errorMessage;
+  auto result = mlir::openOutputFile(outFile, &errorMessage);
+  if (!result)
+    exit(reportError(errorMessage));
+  return result;
+}

@@ -50,7 +50,7 @@ endmacro()
 # by other kgen files.
 #
 #  add_kgen_library(lib
-#    OUTPUT library.mlir
+#    OUTPUT library.mlirbc
 #    source_file_1.lib.mlir
 #    source_file_2.lib.mlir
 #    LINK_LIBS someother-lib)
@@ -64,12 +64,14 @@ function(add_kgen_library target)
   _setup_libs()
 
   if (NOT KGEN_OUTPUT)
-    set(KGEN_OUTPUT ${target}.lib.mlir)
+    set(KGEN_OUTPUT ${target}.lib.mlirbc)
   endif ()
 
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
-    COMMAND $<TARGET_FILE:kgen> -gen-lib ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_INCLUDE_FLAGS} -o ${KGEN_OUTPUT}
+    COMMAND $<TARGET_FILE:kgen>
+      $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
+      -gen-lib ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_INCLUDE_FLAGS} -o ${KGEN_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
   )
