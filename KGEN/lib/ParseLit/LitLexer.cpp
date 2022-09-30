@@ -149,42 +149,116 @@ LitToken LitLexer::lexTokenImpl() {
     case '_':
       // Handle identifiers.
       return lexIdentifierOrKeyword(tokStart);
-    case '+':
-      return formToken(LitToken::plus, tokStart);
-    case '-':
-      return formToken(LitToken::minus, tokStart);
-    case '*':
-      return formToken(LitToken::times, tokStart);
-    case '.':
-      return formToken(LitToken::period, tokStart);
-    case ',':
-      return formToken(LitToken::comma, tokStart);
-    case ':':
-      return formToken(LitToken::colon, tokStart);
-      // TODO: Python keeps track of nesting level in the lexer to report
-      // mismatched tokens here.  How does that affect error recovery?
+    case '%':
+      if (*curPtr == '=')
+        return formToken(LitToken::percent_equal, tokStart, 1);
+      return formToken(LitToken::percent, tokStart);
+    case '&':
+      if (*curPtr == '=')
+        return formToken(LitToken::amp_equal, tokStart, 1);
+      return formToken(LitToken::amp, tokStart);
     case '(':
       return formToken(LitToken::l_paren, tokStart);
     case ')':
       return formToken(LitToken::r_paren, tokStart);
-    case '{':
-      return formToken(LitToken::l_brace, tokStart);
-    case '}':
-      return formToken(LitToken::r_brace, tokStart);
+    case '*':
+      switch (*curPtr) {
+      case '*':
+        if (curPtr[1] == '=')
+          return formToken(LitToken::star_star_equal, tokStart, 2);
+        return formToken(LitToken::star_star, tokStart, 1);
+      case '=':
+        return formToken(LitToken::star_equal, tokStart, 1);
+      }
+      return formToken(LitToken::star, tokStart);
+    case '+':
+      if (*curPtr == '=')
+        return formToken(LitToken::plus_equal, tokStart, 1);
+      return formToken(LitToken::plus, tokStart);
+    case ',':
+      return formToken(LitToken::comma, tokStart);
+    case '-':
+      switch (*curPtr) {
+      case '=':
+        return formToken(LitToken::minus_equal, tokStart, 1);
+      case '>':
+        return formToken(LitToken::minus_greater, tokStart, 1);
+      }
+      return formToken(LitToken::minus, tokStart);
+    case '.':
+      if (*curPtr == '.' && curPtr[1] == '.')
+        return formToken(LitToken::dot_dot_dot, tokStart, 2);
+      return formToken(LitToken::dot, tokStart);
+    case '/':
+      switch (*curPtr) {
+      case '/':
+        if (curPtr[1] == '=')
+          return formToken(LitToken::slash_slash_equal, tokStart, 2);
+        return formToken(LitToken::slash_slash, tokStart, 1);
+      case '=':
+        return formToken(LitToken::slash_equal, tokStart, 1);
+      }
+      return formToken(LitToken::slash, tokStart);
+    case ':':
+      // TODO: Python keeps track of nesting level in the lexer to report
+      // mismatched tokens here.  How does that affect error recovery?
+      if (*curPtr == '=')
+        return formToken(LitToken::colon_equal, tokStart, 1);
+      return formToken(LitToken::colon, tokStart);
+    case ';':
+      return formToken(LitToken::semi, tokStart);
+    case '<':
+      switch (*curPtr) {
+      case '<':
+        if (curPtr[1] == '=')
+          return formToken(LitToken::less_less_equal, tokStart, 2);
+        return formToken(LitToken::less_less, tokStart, 1);
+      case '=':
+        return formToken(LitToken::less_equal, tokStart, 1);
+      case '>':
+        return formToken(LitToken::less_greater, tokStart, 1);
+      }
+      return formToken(LitToken::less, tokStart);
+    case '=':
+      if (*curPtr == '=')
+        return formToken(LitToken::equal_equal, tokStart, 1);
+      return formToken(LitToken::equal, tokStart);
+    case '>':
+      switch (*curPtr) {
+      case '=':
+        return formToken(LitToken::greater_equal, tokStart, 1);
+      case '>':
+        if (curPtr[1] == '=')
+          return formToken(LitToken::right_right_equal, tokStart, 2);
+        return formToken(LitToken::right_right, tokStart, 1);
+      }
+      return formToken(LitToken::greater, tokStart);
+    case '@':
+      if (*curPtr == '=')
+        return formToken(LitToken::at_equal, tokStart, 1);
+      return formToken(LitToken::at, tokStart);
     case '[':
       return formToken(LitToken::l_square, tokStart);
     case ']':
       return formToken(LitToken::r_square, tokStart);
-    case '<':
+    case '^':
       if (*curPtr == '=')
-        return ++curPtr, formToken(LitToken::less_equal, tokStart);
-      return formToken(LitToken::less, tokStart);
-    case '>':
-      return formToken(LitToken::greater, tokStart);
-    case '=':
-      if (*curPtr == '>')
-        return ++curPtr, formToken(LitToken::equal_greater, tokStart);
-      return formToken(LitToken::equal, tokStart);
+        return formToken(LitToken::circumflex_equal, tokStart, 1);
+      return formToken(LitToken::circumflex, tokStart);
+    case '{':
+      return formToken(LitToken::l_brace, tokStart);
+    case '|':
+      if (*curPtr == '=')
+        return formToken(LitToken::pipe_equal, tokStart, 1);
+      return formToken(LitToken::pipe, tokStart);
+    case '}':
+      return formToken(LitToken::r_brace, tokStart);
+    case '~':
+      return formToken(LitToken::tilde, tokStart);
+    case '!':
+      if (*curPtr == '=')
+        return formToken(LitToken::exclaim_equal, tokStart, 1);
+      return emitError(tokStart, "unexpected character");
 
     case '0':
     case '1':

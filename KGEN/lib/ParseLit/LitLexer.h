@@ -100,6 +100,11 @@ private:
     return LitToken(kind, StringRef(tokStart, curPtr - tokStart));
   }
 
+  LitToken formToken(LitToken::Kind kind, const char *tokStart, size_t incr) {
+    curPtr += incr;
+    return LitToken(kind, StringRef(tokStart, curPtr - tokStart));
+  }
+
   LitToken emitError(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
