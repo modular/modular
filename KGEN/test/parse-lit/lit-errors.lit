@@ -2,3 +2,5 @@
 
 # expected-error @+1 {{unexpected character}}
 `
+# expected-error @+1 {{unexpected character}}
+!
