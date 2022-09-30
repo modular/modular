@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef SUPPORT_MATHEXTRAS_H
+#define SUPPORT_MATHEXTRAS_H
+
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
@@ -37,3 +40,5 @@ static bool isClose(T a, T b, double absoluteTolerance = 1.0E-5,
   }
 }
 } // namespace M
+
+#endif // SUPPORT_MATHEXTRAS_H
