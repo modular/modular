@@ -14,7 +14,14 @@ namespace M {
 /// sufficiently large that out-of-line storage should be used. This indicates
 /// to the caller that the data is big enough to treat specially, e.g. that it
 /// shouldn't be stored in the MLIRContext, folded unconditionally, etc.
-bool shouldUseOutOfLineAttrStorage(size_t numElements);
+inline bool shouldUseOutOfLineAttrStorage(size_t numElements) {
+  // A sufficiently large element threshold is used to avoid treating large
+  // arrays as "free". The storage, constant folding, etc. of large arrays
+  // should be treated specially to ensure we don't bloat generated code, memory
+  // use, and more.
+  static constexpr size_t kLargeDataThreshold = 512;
+  return numElements > kLargeDataThreshold;
+}
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDENSEATTRSTORAGE_H
