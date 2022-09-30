@@ -30,9 +30,7 @@ config.suffixes = [".mlir", ".test"]
 config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(
-    config.modular_obj_root, "Support", "test"
-)
+config.test_exec_root = os.path.join(config.modular_obj_root, "Support", "test")
 
 config.substitutions.append(("%PATH%", config.environment["PATH"]))
 config.substitutions.append(("%shlibext", config.llvm_shlib_ext))
