@@ -1022,15 +1022,21 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   }
 }
 
-ParseResult
-KGEN::parseOptionalParamBinds(AsmParser &p,
-                              FailureOr<ParamBindArrayAttr> &paramValues) {
-  if (p.parseOptionalLess()) {
-    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
+/// Parse a parameter binding list if present.
+///
+///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
+///   parameter-bind-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
+ParseResult KGEN::parseParamBinds(AsmParser &p,
+                                  ParamBindArrayAttr &paramBinds) {
+  // Check to see if we have the () syntax instead of arguments.
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseRParen())
+      return failure();
+    paramBinds = ParamBindArrayAttr::get(p.getContext(), {});
     return success();
   }
 
-  SmallVector<ParamBindAttr> paramBinds;
+  SmallVector<ParamBindAttr> values;
   auto parseParamBind = [&]() -> ParseResult {
     ParamDeclAttr decl;
     TypedAttr value;
@@ -1038,27 +1044,27 @@ KGEN::parseOptionalParamBinds(AsmParser &p,
     if (parseParamDecl(p, decl) || p.parseEqual() ||
         parseParamValue(p, value, decl.getType()))
       return failure();
-    paramBinds.push_back(ParamBindAttr::get(decl, value));
+    values.push_back(ParamBindAttr::get(decl, value));
     return success();
   };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::None, parseParamBind))
+
+  if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, parseParamBind))
     return failure();
 
-  paramValues = ParamBindArrayAttr::get(p.getContext(), paramBinds);
-  return p.parseGreater();
+  paramBinds = ParamBindArrayAttr::get(p.getContext(), values);
+  return success();
 }
 
-void KGEN::printOptionalParamBinds(AsmPrinter &p,
-                                   ParamBindArrayAttr paramValues) {
-  if (paramValues.empty())
-    return;
-  p << '<';
-  llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
-    printParamDecl(p, bind.getDecl());
-    p << " = ";
-    printParamValue(p, bind.getValue());
-  });
-  p << '>';
+void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
+  if (paramBinds.empty()) {
+    p << "()";
+  } else {
+    llvm::interleaveComma(paramBinds, p, [&](ParamBindAttr bind) {
+      printParamDecl(p, bind.getDecl());
+      p << " = ";
+      printParamValue(p, bind.getValue());
+    });
+  }
 }
 
 /// Compare a range of values from an "originator" to a corresponding range of

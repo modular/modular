@@ -21,6 +21,7 @@ class FunctionOpInterface;
 
 namespace M::KGEN {
 class ConstraintArrayAttr;
+class ParamBindArrayAttr;
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 class ParamBindArrayAttr;
@@ -135,10 +136,9 @@ ParseResult parseOptionalConstraints(OpAsmParser &p,
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ConstraintArrayAttr constraints);
 
-/// Parse and print an optional parameter binding list.
-ParseResult parseOptionalParamBinds(AsmParser &p,
-                                    FailureOr<ParamBindArrayAttr> &paramValues);
-void printOptionalParamBinds(AsmPrinter &p, ParamBindArrayAttr paramValues);
+/// Parse and print a parameter binding list if present.
+ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
+void printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds);
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces

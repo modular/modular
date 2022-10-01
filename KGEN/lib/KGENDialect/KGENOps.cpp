@@ -187,37 +187,6 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 // custom<CallOpParams>
 //===----------------------------------------------------------------------===//
 
-/// Parse a parameter binding list if present.
-///
-///   parameter-bind   ::= identifier (`:` type)? `=` attribute-value
-///   parameter-bind-list ::= parameter-bind (`,` parameter-bind)* | `(` `)`
-static ParseResult parseParamBinds(AsmParser &p,
-                                   SmallVectorImpl<ParamBindAttr> &paramBinds) {
-  // Check to see if we have the () syntax instead of arguments.
-  if (succeeded(p.parseOptionalLParen())) {
-    if (p.parseRParen())
-      return failure();
-    return success();
-  }
-
-  // Handle the parameter-decl/parameter-result productions.
-  auto parseParamBind = [&]() -> ParseResult {
-    ParamDeclAttr decl;
-    TypedAttr value;
-
-    if (parseParamDecl(p, decl) || p.parseEqual() ||
-        parseParamValue(p, value, decl.getType()))
-      return failure();
-    paramBinds.push_back(ParamBindAttr::get(decl, value));
-    return success();
-  };
-
-  if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, parseParamBind))
-    return failure();
-
-  return success();
-}
-
 /// Parse the parameter spec for a call op.
 /// parameter-decl   ::= identifier (`:` type)?
 /// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
@@ -238,11 +207,9 @@ static ParseResult parseCallOpParams(OpAsmParser &p,
     return success();
   }
 
-  SmallVector<ParamBindAttr> vals;
   // Parse the input list
-  if (parseParamBinds(p, vals))
+  if (parseParamBinds(p, paramValues))
     return failure();
-  paramValues = ParamBindArrayAttr::get(p.getContext(), vals);
 
   // Check to see if we have results and parse them if so.
   if (succeeded(p.parseOptionalArrow())) {
@@ -262,16 +229,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
   if (paramValues.empty() && paramDecls.empty())
     return;
   p << "<";
-  if (paramValues.empty())
-    p << "()";
-  else {
-    llvm::interleaveComma(paramValues, p, [&](ParamBindAttr bind) {
-      printParamDecl(p, bind.getDecl());
-      p << " = ";
-      printParamValue(p, bind.getValue());
-    });
-  }
-
+  printParamBinds(p, paramValues);
   if (!paramDecls.empty()) {
     p << " -> ";
     printParamDecls(p.getStream(), paramDecls);
@@ -512,9 +470,12 @@ parseCallRegions(OpAsmParser &p,
     // Parse the region body operation in-line.
     OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
                               RegionBodyOp::getOperationName());
+    Optional<Location> bodyLoc = regionBody.location;
     if (p.parseKeyword(bind.getName(), " region name") ||
-        RegionBodyOp::parse(p, regionBody))
+        RegionBodyOp::parse(p, regionBody) ||
+        p.parseOptionalLocationSpecifier(bodyLoc))
       return failure();
+    regionBody.location = *bodyLoc;
 
     // Create a single-block body with only the region body operation.
     auto *body = new Block;
@@ -537,7 +498,9 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
   auto printFn = [&](auto &bind) {
     p.printNewline();
     p << bind.value().getName().strref();
-    cast<RegionBodyOp>(regions[bind.index()]->front().getTerminator()).print(p);
+    Operation *body = regions[bind.index()]->front().getTerminator();
+    cast<RegionBodyOp>(body).print(p);
+    p.printOptionalLocationSpecifier(body->getLoc());
   };
   llvm::interleave(llvm::enumerate(binds), p, printFn, ",");
 }
@@ -909,6 +872,12 @@ static ParseResult parseStructFields(OpAsmParser &p, Region &fields) {
                          StructFieldOp::getOperationName());
     if (StructFieldOp::parse(p, field))
       return failure();
+
+    Optional<Location> fieldLoc = field.location;
+    if (p.parseOptionalLocationSpecifier(fieldLoc))
+      return failure();
+    field.location = *fieldLoc;
+
     b.create(field);
   }
   return success();
@@ -920,6 +889,7 @@ static void printStructFields(OpAsmPrinter &p, Operation *op, Region &fields) {
   for (Operation &field : fields.front()) {
     p << "  ";
     cast<StructFieldOp>(field).print(p);
+    p.printOptionalLocationSpecifier(field.getLoc());
     p.printNewline();
   }
   p << '}';
