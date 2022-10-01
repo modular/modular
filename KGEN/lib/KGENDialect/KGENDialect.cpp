@@ -172,6 +172,31 @@ TypeDefType TypeDefType::get(FlatSymbolRefAttr name) {
   return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
 }
 
+static ParseResult
+parseOptionalParamBinds(AsmParser &p,
+                        FailureOr<ParamBindArrayAttr> &paramValues) {
+  // If there are no parameter declarations, return an empty array.
+  if (p.parseOptionalLess()) {
+    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+
+  ParamBindArrayAttr result;
+  if (parseParamBinds(p, result))
+    return failure();
+  paramValues = result;
+  return p.parseGreater();
+}
+
+static void printOptionalParamBinds(AsmPrinter &p,
+                                    ParamBindArrayAttr paramValues) {
+  if (paramValues.empty())
+    return;
+  p << '<';
+  printParamBinds(p, paramValues);
+  p << '>';
+}
+
 //===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//

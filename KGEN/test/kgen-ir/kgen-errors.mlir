@@ -675,3 +675,14 @@ kgen.generator @use_sometimes_bad_struct() {
   "a"() {a = !kgen.typedef<@SometimesBad<N = 8>>} : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{@ParamNamedA declared here}}
+kgen.struct.decl @ParamNamedA<A> {}
+
+kgen.generator @give_it_B<C>() {
+  // expected-error @below {{typedef symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
+  %0 = "a"() : () -> !kgen.typedef<@ParamNamedA<B = C>>
+  kgen.return
+}

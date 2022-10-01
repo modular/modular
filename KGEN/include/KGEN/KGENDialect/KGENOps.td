@@ -477,6 +477,7 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
+                       // Needed for KGENDeclInterface. Always empty.
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints);
   let regions = (region SizedRegion<1>:$fields);
@@ -593,7 +594,7 @@ def StructExtractOp : KGENOp<"struct.extract", [NoSideEffect,
   let summary = "Extract a value from a struct.";
   let description = [{
     The `kgen.struct.extract` operation extracts the value of a field by name
-    from a parametric struct.o
+    from a parametric struct.
 
     Example:
 
