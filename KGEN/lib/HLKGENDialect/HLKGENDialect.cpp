@@ -25,13 +25,13 @@ using namespace KGEN;
 // Pull in the dialect definition.
 #include "KGEN/HLKGENDialect/HLKGENDialect.cpp.inc"
 
-void HLKGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &p) const {
+void HLKGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
   llvm_unreachable("no hlkgen dialect attrs");
 }
 Attribute HLKGENDialect::parseAttribute(DialectAsmParser &p, Type type) const {
   llvm_unreachable("no hlkgen dialect attrs");
 }
-void HLKGENDialect::printType(Type type, DialectAsmPrinter &p) const {
+void HLKGENDialect::printType(Type type, DialectAsmPrinter &os) const {
   llvm_unreachable("no hlkgen dialect types");
 }
 Type HLKGENDialect::parseType(DialectAsmParser &p) const {
