@@ -902,7 +902,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
     evaluator.setParameterValue(decl, value);
 
   auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
-    (void)error(loc, std::move(message));
+    return error(loc, std::move(message));
   };
 
   // Evaluate any constraints for this declaration to see if this is a viable
@@ -1294,6 +1294,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   auto localError = [&](Location loc, Error err) {
     newCallees.push_back(CalleeExpansionError(
         decl->getLoc(), ElaborationDiagnostic(loc, std::move(err))));
+    return failure();
   };
 
   // Evaluate any constraints for this declaration to see if this is a viable
@@ -1324,7 +1325,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   } else if (isa<GeneratorInterfaceOp>(decl)) {
     newCallees = specializeInterface(declAndInputParams, insertionPoint);
   } else {
-    localError(decl->getLoc(), "call to an unknown kind of declaration");
+    (void)localError(decl->getLoc(), "call to an unknown kind of declaration");
   }
 
   auto &result = generatedFuncs[declAndInputParams];

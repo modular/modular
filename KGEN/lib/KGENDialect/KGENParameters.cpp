@@ -436,11 +436,11 @@ void DeclParameterVerifier::verifyTypeDefType(TypeDefType typeDef) {
     SmallVector<Attribute> values;
     for (ParamBindAttr bind : typeDef.getParamValues())
       values.push_back(bind.getValue());
-    auto emitErrorFn = [&](Location loc, Error err) {
+    auto emitErrorFn = [&](Location loc, Error err) -> LogicalResult {
       InFlightDiagnostic diag = emitError(curLocationCollecting.value(),
                                           "error in type specialization: ")
                                 << err;
-      diag.attachNote(loc) << "see constraint defined here";
+      return diag.attachNote(loc) << "see constraint defined here";
     };
 
     // Evaluate the potentially partial constraints.
