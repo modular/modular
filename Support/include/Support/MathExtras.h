@@ -7,6 +7,7 @@
 #ifndef SUPPORT_MATHEXTRAS_H
 #define SUPPORT_MATHEXTRAS_H
 
+#include "llvm/Support/Compiler.h"
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
@@ -27,12 +28,10 @@ static bool isClose(T a, T b, double absoluteTolerance = 1.0E-5,
   if constexpr (std::is_integral_v<T>) {
     return a == b;
   } else {
-    if constexpr (IsNanSensitive) {
-      if (std::isnan(a) || std::isnan(b))
-        return false;
-    } else if (std::isnan(a) && std::isnan(b)) {
+    if (LLVM_UNLIKELY(!IsNanSensitive && std::isnan(a) && std::isnan(b)))
       return true;
-    }
+    if (LLVM_UNLIKELY(std::isnan(a) || std::isnan(b)))
+      return false;
     return std::fabs(a - b) <=
            std::max(static_cast<T>(relativeTolerance) *
                         std::max(std::fabs(a), std::fabs(b)),
