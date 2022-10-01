@@ -106,7 +106,7 @@ private:
 LogicalResult
 evaluateConstraints(ConstraintArrayAttr constraints,
                     ParameterEvaluator &evaluator,
-                    llvm::function_ref<void(Location, Error)> emitError,
+                    function_ref<LogicalResult(Location, Error)> emitError,
                     bool allowUnresolved = false);
 
 /// Given a generator or interface declaration operation, evaluate any
@@ -117,7 +117,7 @@ evaluateConstraints(ConstraintArrayAttr constraints,
 LogicalResult
 evaluateConstraints(KGENDeclInterface decl,
                     ArrayRef<Attribute> inputParamValues,
-                    llvm::function_ref<void(Location, Error)> emitError,
+                    function_ref<LogicalResult(Location, Error)> emitError,
                     bool allowUnresolved = false);
 
 } // namespace M::KGEN

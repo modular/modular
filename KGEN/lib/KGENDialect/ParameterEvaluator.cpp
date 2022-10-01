@@ -199,7 +199,8 @@ void ParameterEvaluator::dump() const {
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
     ConstraintArrayAttr constraints, ParameterEvaluator &evaluator,
-    llvm::function_ref<void(Location, Error)> emitError, bool allowUnresolved) {
+    function_ref<LogicalResult(Location, Error)> emitError,
+    bool allowUnresolved) {
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
     Attribute value;
@@ -209,9 +210,9 @@ LogicalResult KGEN::evaluateConstraints(
       ErrorOr<Attribute> result =
           evaluator.concretizeParameterExpr(constraint.getExpr());
       if (failed(result)) {
-        emitError(constraint.getLoc(),
-                  "constraint evaluation failure: " + Twine(result.getError()));
-        return failure();
+        return emitError(constraint.getLoc(),
+                         "constraint evaluation failure: " +
+                             Twine(result.getError()));
       }
       value = result.takeValue();
 
@@ -226,16 +227,15 @@ LogicalResult KGEN::evaluateConstraints(
       continue;
 
     if (!resultInt || resultInt.getValue().getBitWidth() != 1) {
-      emitError(constraint.getLoc(),
-                "constraint evaluation didn't return true or false");
-      return failure();
+      return emitError(constraint.getLoc(),
+                       "constraint evaluation didn't return true or false");
     }
 
     // If this failed, indicate why.
     if (resultInt.getValue().isZero()) {
-      emitError(constraint.getLoc(),
-                "constraint failed: " + constraint.getMessage().getValue());
-      return failure();
+      return emitError(constraint.getLoc(),
+                       "constraint failed: " +
+                           constraint.getMessage().getValue());
     }
   }
 
@@ -248,7 +248,8 @@ LogicalResult KGEN::evaluateConstraints(
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
     KGENDeclInterface decl, ArrayRef<Attribute> inputParamValues,
-    llvm::function_ref<void(Location, Error)> emitError, bool allowUnresolved) {
+    function_ref<LogicalResult(Location, Error)> emitError,
+    bool allowUnresolved) {
   // If there are no constraints, we are trivially done.
   ConstraintArrayAttr constraints = decl.getConstraintsAttr();
   if (!constraints || constraints.empty())
