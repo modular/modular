@@ -7,3 +7,10 @@
 
 # expected-error @+1 {{unexpected character}}
 !
+
+
+# // -----
+
+def foo():
+# expected-error @+1 {{unexpected token in expression}}
+  return pass

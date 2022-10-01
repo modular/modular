@@ -235,6 +235,10 @@ struct LitParser : public LitParserBase {
   // Simple statements.
   ParseResult parseReturnStmt();
 
+  // Expressions.
+  ParseResult parseExpressionList();
+  ParseResult parseExpression();
+
 private:
   // TODO: Current context to parse into (mutable).
   const ModuleOp module;
@@ -245,6 +249,10 @@ ParseResult LitParser::parseFile() {
   // TODO: Build IR.
   return parseStmts(/*indent=*/0);
 }
+
+//===----------------------------------------------------------------------===//
+// Statements
+//===----------------------------------------------------------------------===//
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on
 /// one line, or an indented block of statements. curIndent is the containing
@@ -315,9 +323,9 @@ ParseResult LitParser::parseStmt(size_t curIndent) {
   }
 }
 
-/// simple_stmt ::= expression_stmt [TODO]
+/// simple_stmt ::= expression_stmt
 ///               | assert_stmt [TODO]
-///               | assignment_stmt [TODO]
+///               | assignment_stmt
 ///               | augmented_assignment_stmt [TODO]
 ///               | annotated_assignment_stmt [TODO]
 ///               | pass_stmt
@@ -340,8 +348,30 @@ ParseResult LitParser::parseSimpleStmt() {
   case LitToken::kw_return:
     return parseReturnStmt();
   default:
-    return emitError("unexpected statement kind");
+    break;
   }
+
+  // Otherwise, we must have a statement that starts with the expression
+  // grammar.
+
+  // expression_stmt ::=  starred_expression
+  // assignment_stmt ::=
+  //                 (target_list "=")+ (starred_expression | yield_expression)
+  //  target_list     ::=  target ("," target)* [","]
+  // target ::= identifier
+  //          | "(" [target_list] ")" | "[" [target_list] "]"
+  //          | attributeref | subscription | slicing | "*" target
+  if (parseExpression())
+    return failure();
+
+  // If the expression was followed by a `=` then we have an assignment.
+  if (!consumeIf(LitToken::equal))
+    return success(); // expression_stmt.
+
+  // Must be assignment_stmt
+
+  // TODO: Check the LHS expression is a `target_list` to reject "x+4=7"
+  return parseExpression();
 }
 
 /// funcdef ::=  [decorators] "def" funcname generic_signature?
@@ -378,28 +408,62 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     if (eatUntil(LitToken::colon))
       return failure();
   }
-
   if (parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
+  // FIXME: We generally need to defer parsing the body of a function until
+  // everything else at the function's scope has already been parsed.  We should
+  // put this onto a worklist and skip it.  This will allow us to parse mutually
+  // recursive functions as well as things like:
+  //   def foo():
+  //     def bar():
+  //       print(x)
+  //     x = 42
+  //     bar()
+  //   foo()
   if (parseSuite(curIndent))
     return failure();
 
   // Build something.
   (void)funcName;
-
   return success();
 }
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitParser::parseReturnStmt() {
   consumeToken(LitToken::kw_return);
+  return parseExpressionList();
+}
 
-  // TODO: Parse expression_list correctly.
-  while (getToken().isNot(LitToken::eof) && !getIndentation().has_value())
-    consumeToken();
+//===----------------------------------------------------------------------===//
+// Expressions
+//===----------------------------------------------------------------------===//
 
-  return success();
+/// expression_list ::= expression ("," expression)* [","]
+ParseResult LitParser::parseExpressionList() {
+  // TODO: Support trailing comma for singleton tuple.
+  return parseCommaSeparatedList(
+      [&]() -> ParseResult { return parseExpression(); });
+}
+
+/// expression ::= atom
+///
+/// atom    ::= identifier | literal | enclosure [TODO]
+///
+/// literal ::= [TODO]
+///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
+///
+ParseResult LitParser::parseExpression() {
+  switch (getToken().getKind()) {
+  case LitToken::identifier: // expression -> atom -> identifier
+    consumeToken(LitToken::identifier);
+    return success();
+  case LitToken::integer: // expression -> literal -> integer
+    consumeToken(LitToken::integer);
+    return success();
+  default:
+    return emitError("unexpected token in expression");
+  }
 }
 
 //===----------------------------------------------------------------------===//
