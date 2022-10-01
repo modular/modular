@@ -49,6 +49,14 @@ public:
     return isAny(k2, k3, others...);
   }
 
+  /// Return true if this token is any one of the specified token kinds.
+  bool isAny(ArrayRef<LitToken::Kind> kinds) const {
+    for (auto k : kinds)
+      if (kind == k)
+        return true;
+    return false;
+  }
+
   bool isNot(Kind k) const { return kind != k; }
 
   /// Return true if this token isn't one of the specified kinds.
@@ -57,7 +65,7 @@ public:
     return !isAny(k1, k2, others...);
   }
 
-  /// Return true if this is one of the keyword token kinds (e.g. kw_wire).
+  /// Return true if this is one of the keyword token kinds (e.g. kw_pass).
   bool isKeyword() const;
 
   // Location processing.
@@ -90,7 +98,7 @@ public:
 
   /// Return the indentation level of the specified token or None if this token
   /// is preceded by another token on the same line.
-  Optional<unsigned> getIndentation(const LitToken &tok) const;
+  Optional<size_t> getIndentation(const LitToken &tok) const;
 
 private:
   LitToken lexTokenImpl();
