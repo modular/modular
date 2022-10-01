@@ -3,9 +3,10 @@
 # CHECK: module {
 # CHECK-NEXT: }
 
-def noop:  
+def noop:
   pass
 
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
-  return x*4 + x + 1
+  z = 42
+  return z #x*4 + x + 1

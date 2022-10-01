@@ -3,7 +3,7 @@
 # CHECK: module {
 # CHECK-NEXT: }
 
-# expected-error @+1 {{unexpected statement kind}}
+# expected-error @+1 {{unexpected token in expression}}
 %
 &
 (
