@@ -1,8 +1,9 @@
-# RUN: kgen-translate -import-lit %s | FileCheck %s
+# RUN: kgen-translate -import-lit %s -verify-diagnostics
 
 # CHECK: module {
 # CHECK-NEXT: }
 
+# expected-error @+1 {{unexpected statement kind}}
 %
 &
 (

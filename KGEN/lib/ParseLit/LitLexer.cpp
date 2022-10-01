@@ -92,7 +92,7 @@ LitToken LitLexer::emitError(const char *loc, const Twine &message) {
 /// Return the indentation level of the specified token.
 /// TODO: Evaluate tracking this inline as part of the lexing loop.  We should
 /// eval how commonly this is queried to figure out the tradeoff.
-Optional<unsigned> LitLexer::getIndentation(const LitToken &tok) const {
+Optional<size_t> LitLexer::getIndentation(const LitToken &tok) const {
   // Count the number of horizontal whitespace characters before the token.
   auto *bufStart = curBuffer.begin();
 
@@ -103,7 +103,7 @@ Optional<unsigned> LitLexer::getIndentation(const LitToken &tok) const {
     return c == '\n' || c == '\r' || c == '\f' || c == '\v';
   };
 
-  unsigned indent = 0;
+  size_t indent = 0;
   const auto *ptr = (const char *)tok.getSpelling().data();
   while (ptr != bufStart && isHorizontalWS(ptr[-1]))
     --ptr, ++indent;
