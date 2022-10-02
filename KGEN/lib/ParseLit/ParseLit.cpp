@@ -165,6 +165,15 @@ struct LitParserBase {
     return parseSeparatedList(LitToken::comma, parseElement);
   }
 
+  /// Consume tokens until we get to the end of the current line, used for error
+  /// recovery.
+  /// TODO: we should know the indentation of the current statement so we can
+  /// eat trailing components that lack a \.
+  void eatToEndOfLine() {
+    while (!getIndentation().has_value() && getToken().isNot(LitToken::eof))
+      consumeToken();
+  }
+
   /// Consume tokens until one of the specified set of token, leaving the
   /// stopToken in the stream.  This produces an error if EOF is encountered.
   ///
@@ -656,7 +665,7 @@ ParseResult LitParser::parseSimpleStmt() {
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
-  //  target_list     ::=  target ("," target)* [","]
+  // target_list     ::=  target ("," target)* [","]
   // target ::= identifier
   //          | "(" [target_list] ")" | "[" [target_list] "]"
   //          | attributeref | subscription | slicing | "*" target
@@ -670,9 +679,16 @@ ParseResult LitParser::parseSimpleStmt() {
     return success();
   }
 
-  // Must be assignment_stmt
+  // Must be assignment_stmt.  Check the LHS expression is a `target_list` to
+  // reject "x+4=7".
+  // TODO: implement support for generalized lvalues.
+  if (!isa<DeclRefNode>(expr)) {
+    if (!expr->containsError())
+      emitError(expr->getLoc(), "cannot assign to expression");
+    eatToEndOfLine();
+    return success();
+  }
 
-  // TODO: Check the LHS expression is a `target_list` to reject "x+4=7"
   ExprNode *rhs = exprParser.parseExpression();
   (void)rhs;
   return success();

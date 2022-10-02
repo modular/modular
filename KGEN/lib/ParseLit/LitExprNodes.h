@@ -43,7 +43,11 @@ struct ExprNode {
   ExprNode(Kind kind) : kind(kind) {}
   virtual ~ExprNode() { assert(0 && "never called"); }
 
+  /// Return the primary location for this node for error reporting purposes.
   virtual SMLoc getLoc() const = 0;
+
+  /// Return true if this expression tree contains an already-reported error.
+  virtual bool containsError() const = 0;
 };
 
 /// This node is created to represent erroneous parses, but the diagnostic has
@@ -51,38 +55,54 @@ struct ExprNode {
 struct ErrorNode : public ExprNode {
   ErrorNode(SMLoc loc) : ExprNode(error), loc(loc) {}
 
-  SMLoc getLoc() const override { return loc; }
   SMLoc loc;
+
+  SMLoc getLoc() const override { return loc; }
+  bool containsError() const override { return true; }
+  static bool classof(const ExprNode *node) { return node->kind == error; }
 };
 
 struct IntLiteralNode : public ExprNode {
   IntLiteralNode(StringRef spelling)
       : ExprNode(intLiteral), spelling(spelling) {}
 
+  StringRef spelling;
+
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  StringRef spelling;
+  bool containsError() const override { return false; }
+  static bool classof(const ExprNode *node) { return node->kind == intLiteral; }
 };
 
 struct DeclRefNode : public ExprNode {
   DeclRefNode(StringRef spelling) : ExprNode(declRef), spelling(spelling) {}
 
+  StringRef spelling;
+
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  StringRef spelling;
+  bool containsError() const override { return false; }
+  static bool classof(const ExprNode *node) { return node->kind == declRef; }
 };
 
 struct CallNode : public ExprNode {
   CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<ExprNode *> args)
       : ExprNode(call), callee(callee), lparenLoc(lparenLoc), args(args) {}
 
-  SMLoc getLoc() const override { return lparenLoc; }
-
   ExprNode *callee;
   SMLoc lparenLoc;
   ArrayRef<ExprNode *> args;
+
+  SMLoc getLoc() const override { return lparenLoc; }
+
+  bool containsError() const override {
+    return callee->containsError() || llvm::any_of(args, [&](ExprNode *exp) {
+             return exp->containsError();
+           });
+  }
+  static bool classof(const ExprNode *node) { return node->kind == call; }
 };
 
 } // namespace M::KGEN::LIT

@@ -31,3 +31,8 @@ def redecl():
 def fn():
   foo() # xpected-error {{use of unknown declaration "foo"}}
   pass
+
+
+# // -----
+
+42 = 17 # expected-error {{cannot assign to expression}}
