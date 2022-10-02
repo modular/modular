@@ -163,15 +163,15 @@ struct LitParserBase {
     return emitError("expected end token");
   }
 
+protected:
+  LitLexer &lexer;
+  MLIRContext *const context;
+
 private:
-  LitParserBase(const LitParserBase &) = delete;
-  void operator=(const LitParserBase &) = delete;
   bool errorOccurred = false;
 
-  LitLexer &lexer;
-
-protected:
-  MLIRContext *const context;
+  LitParserBase(const LitParserBase &) = delete;
+  void operator=(const LitParserBase &) = delete;
 };
 
 } // end anonymous namespace
@@ -249,6 +249,7 @@ public:
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
   Operation *getDecl() const { return decl; }
+  const RCRef<Scope> &getParentScope() const { return parentScope; }
 
   OpBuilder getBuilder() {
     return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
@@ -269,8 +270,8 @@ public:
   Operation *lookup(StringRef name) {
     Scope *curScope = this;
     while (curScope) {
-      auto it = decls.find(name);
-      if (it != decls.end())
+      auto it = curScope->decls.find(name);
+      if (it != curScope->decls.end())
         return it->second;
       curScope = curScope->parentScope.getPointer();
     }
@@ -293,13 +294,30 @@ private:
 // LitParser
 //===----------------------------------------------------------------------===//
 
+/// Declaration bodies are parsed after all the signatures at the current level
+/// of the file are parsed.  This keeps track of
+struct DeferredDeclBodyToParse {
+  /// This is the scope for the declaration, which also contains the declaration
+  /// itself.
+  RCRef<Scope> declScope;
+
+  /// This is where to start lexing the body from.
+  LitLexerCursor lexerCursor;
+
+  /// This is the indentation level of the decl.
+  size_t indentLevel;
+};
+
 /// This class provides the implementation details of the concrete Lit Grammar.
 struct LitParser : public LitParserBase {
   LitParser(LitLexer &lexer, ModuleOp module)
       : LitParserBase(lexer, module.getContext()), module(module) {}
 
-  // Statements.
   ParseResult parseFile();
+  void finalizeScopeDecl();
+
+private:
+  // Statements.
   ParseResult parseSuite(size_t curIndent);
   ParseResult parseStmts(size_t minIndent);
   ParseResult parseStmt(size_t curIndent);
@@ -307,6 +325,7 @@ struct LitParser : public LitParserBase {
 
   // Compound statements.
   ParseResult parseDefStmt(size_t curIndent);
+  void parseDefBody(size_t defIndent, HLGeneratorOp defDecl);
 
   // Simple statements.
   ParseResult parseReturnStmt();
@@ -320,6 +339,10 @@ private:
 
   /// This is the current context that we're parsing into.
   RCRef<Scope> currentScope;
+
+  /// These are deferred declarations that need parsing, which are processed
+  /// after other things in a scope have been resolved.
+  std::vector<DeferredDeclBodyToParse> deferredDecls;
 };
 
 /// file ::= statements
@@ -337,10 +360,50 @@ ParseResult LitParser::parseFile() {
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
-  if (parseStmts(/*indent=*/0) || hadError())
+  if (parseStmts(/*indent=*/0))
+    return failure();
+
+  // Finalize the current scope, parsing any deferred declarations in it.
+  finalizeScopeDecl();
+
+  if (hadError())
     return failure();
 
   return success();
+}
+
+/// Finalize parsing of a scoped declaration (e.g. module, class, function).
+///
+/// Once its body is fully parsed, we loop back around to parse the bodies of
+/// any nested scopes (e.g. nested functions) that are encountered while parsing
+/// this scope.  This ensures that the forward references between peer
+/// declarations are handled correctly, for example in mutually recursive
+/// functions and code like this:
+///
+///   def foo():
+///     def bar():
+///       print(x)
+///     x = 42
+///     bar()
+///   foo()
+void LitParser::finalizeScopeDecl() {
+  // We're done with the current scope and the declaration we're parsing into.
+  currentScope.reset();
+  if (deferredDecls.empty())
+    return;
+
+  // If we have deferred declarations, process each of them.
+  std::vector<DeferredDeclBodyToParse> decls;
+  std::swap(deferredDecls, decls);
+
+  for (DeferredDeclBodyToParse &decl : decls) {
+    currentScope = std::move(decl.declScope);
+    decl.lexerCursor.restore(lexer);
+
+    // Only support def's right now.
+    parseDefBody(decl.indentLevel,
+                 cast<HLGeneratorOp>(currentScope->getDecl()));
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -528,25 +591,35 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     // cascading errors.
   }
 
-  // HACK: Add kgen.return so the IR verifies.
-  auto returnParams = builder.getArrayAttr({});
-  OpBuilder::atBlockEnd(newFunc.getBody())
-      .create<ReturnOp>(loc, returnParams, ArrayRef<Value>());
+  // We cannot parse the current body without having parsed other declarations
+  // at the current level, so we defer parsing it.  Remember that we need to
+  // do so.
+  deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
+                           lexer.getCursor(), curIndent});
 
-  // FIXME: We generally need to defer parsing the body of a function until
-  // everything else at the function's scope has already been parsed.  We should
-  // put this onto a worklist and skip it.  This will allow us to parse mutually
-  // recursive functions as well as things like:
-  //   def foo():
-  //     def bar():
-  //       print(x)
-  //     x = 42
-  //     bar()
-  //   foo()
-  if (parseSuite(curIndent))
-    return failure();
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the function definition.
+  while (getToken().isNot(LitToken::eof)) {
+    auto indent = getIndentation();
+    if (indent.has_value() && indent.value() <= curIndent)
+      break;
+    consumeToken();
+  }
 
   return success();
+}
+
+/// Parse a deferred 'def' body.
+void LitParser::parseDefBody(size_t defIndent, HLGeneratorOp defDecl) {
+  (void)parseSuite(defIndent);
+
+  // Add kgen.return so the IR verifies.
+  // TODO: Generalize hlkgen.generator.
+  auto returnParams = ArrayAttr::get(context, {});
+  OpBuilder::atBlockEnd(defDecl.getBody())
+      .create<ReturnOp>(defDecl->getLoc(), returnParams, ArrayRef<Value>());
+
+  finalizeScopeDecl();
 }
 
 /// return_stmt ::= "return" [expression_list]
@@ -579,7 +652,8 @@ ParseResult LitParser::parseExpression() {
   switch (getToken().getKind()) {
   case LitToken::identifier: // expression -> atom -> identifier
     if (!currentScope->lookup(getToken().getSpelling())) {
-      emitError("use of unknown declaration ") << getToken().getSpelling();
+      emitError("use of unknown declaration \"")
+          << getToken().getSpelling() << '"';
       // TODO: return an error expression.
     }
     consumeToken(LitToken::identifier);
