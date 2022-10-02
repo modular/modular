@@ -24,3 +24,10 @@ def redecl():
 # expected-error @+1 {{invalid redefinition of function "redecl"}}
 def redecl():
   pass
+
+
+# // -----
+
+def fn():
+  foo() # expected-error {{use of unknown declaration foo}}
+  pass

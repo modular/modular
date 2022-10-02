@@ -12,6 +12,7 @@ add_modular_conversion_library(ParseLit
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  HLKGENDialect
   KGENDialect
   POPDialect
 
