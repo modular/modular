@@ -17,6 +17,7 @@
 #include "llvm/Support/SourceMgr.h"
 
 namespace M::KGEN::LIT {
+class LitLexerCursor;
 
 /// This represents a specific token for .lit files.
 class LitToken {
@@ -100,6 +101,9 @@ public:
   /// is preceded by another token on the same line.
   Optional<size_t> getIndentation(const LitToken &tok) const;
 
+  /// Get an opaque pointer into the lexer state that can be restored later.
+  LitLexerCursor getCursor() const;
+
 private:
   LitToken lexTokenImpl();
 
@@ -131,7 +135,28 @@ private:
 
   LitLexer(const LitLexer &) = delete;
   void operator=(const LitLexer &) = delete;
+  friend class LitLexerCursor;
 };
+
+/// This is the state captured for a lexer cursor.
+class LitLexerCursor {
+public:
+  LitLexerCursor(const LitLexer &lexer)
+      : state(lexer.curPtr), curToken(lexer.getToken()) {}
+
+  void restore(LitLexer &lexer) {
+    lexer.curPtr = state;
+    lexer.curToken = curToken;
+  }
+
+private:
+  const char *state;
+  LitToken curToken;
+};
+
+inline LitLexerCursor LitLexer::getCursor() const {
+  return LitLexerCursor(*this);
+}
 
 } // namespace M::KGEN::LIT
 
