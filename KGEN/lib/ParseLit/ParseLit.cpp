@@ -11,15 +11,19 @@
 #include "KGEN/ParseLit.h"
 #include "LitLexer.h"
 
-#include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "LLCL/Support/RCRef.h"
+#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
 
 using namespace M;
+using namespace M::LLCL;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
@@ -68,6 +72,9 @@ struct LitParserBase {
   Location translateLocation(llvm::SMLoc loc) {
     return lexer.translateLocation(loc);
   }
+
+  /// Return the location for the current token.
+  Location getTokenLocation() { return translateLocation(getToken().getLoc()); }
 
   //===--------------------------------------------------------------------===//
   // Token Parsing
@@ -154,10 +161,6 @@ private:
 
 } // end anonymous namespace
 
-//===----------------------------------------------------------------------===//
-// Error Handling
-//===----------------------------------------------------------------------===//
-
 InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
   auto diag = mlir::emitError(translateLocation(loc), message);
 
@@ -167,10 +170,6 @@ InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
     diag.abandon();
   return diag;
 }
-
-//===----------------------------------------------------------------------===//
-// Token Parsing
-//===----------------------------------------------------------------------===//
 
 /// Consume the specified token if present and return success.  On failure,
 /// output a diagnostic and return failure.
@@ -214,6 +213,55 @@ ParseResult LitParserBase::parseSeparatedList(
 }
 
 //===----------------------------------------------------------------------===//
+// Scope handling
+//===----------------------------------------------------------------------===//
+
+/// Scopes in Lightning work the same way as in Python: scopes are nested and
+/// are defined when a builtin, module, class/struct, or function definition is
+/// introduced.  Because Lightning (like Python) allows forward references to
+/// values before they are defined, the body of declarations is parsed after the
+/// signature of its peer declarations are all parsed.
+///
+/// This means that we can't just use a ScopedHashTable or similar - we need to
+/// maintain our scopes until all bodies that refer to them are resolved.  As
+/// such, we heap allocate and reference count these.
+namespace {
+class Scope : public NonAtomicallyReferenceCounted<Scope> {
+public:
+  Scope(Operation *context, RCRef<Scope> parentScope)
+      : context(context), parentScope(std::move(parentScope)) {}
+
+  /// Return the Module, StructDecl, Func/Generator that this scope corresponds
+  /// to.
+  Operation *getContext() const { return context; }
+
+  OpBuilder getBuilder() {
+    return OpBuilder::atBlockEnd(&context->getRegion(0).front());
+  }
+
+  /// Add the specified declaration to the current scope, returning non-null if
+  /// a previous operation is already in this scope.
+  Operation *addToScope(StringRef name, Operation *decl) {
+    Operation *&entry = decls[name];
+    if (entry)
+      return entry;
+    entry = decl;
+    return nullptr;
+  }
+
+private:
+  /// This is the Module, StructDecl, Func/Generator that this scope corresponds
+  /// to.
+  Operation *context;
+  RCRef<Scope> parentScope;
+
+  // Note: we could unique the identifiers and use a DenseMap.
+  llvm::StringMap<Operation *> decls;
+};
+
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // LitParser
 //===----------------------------------------------------------------------===//
 
@@ -240,12 +288,24 @@ struct LitParser : public LitParserBase {
   ParseResult parseExpression();
 
 private:
-  // TODO: Current context to parse into (mutable).
   const ModuleOp module;
+
+  /// This is the current context that we're parsing into.
+  RCRef<Scope> currentScope;
 };
 
 /// file ::= statements
 ParseResult LitParser::parseFile() {
+  // The outermost scope contains the __builtins__ function definitions.
+  // TODO: Add these:
+  // https://docs.python.org/3/library/functions.html#built-in-funcs
+  // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
+  auto builtinsScope = RCRef<Scope>::create(module, RCRef<Scope>());
+
+  // Create the module scope which will contain all things we parse.  These
+  // shadow the builtins module during name lookup.
+  currentScope = RCRef<Scope>::create(module, std::move(builtinsScope));
+
   // TODO: Build IR.
   return parseStmts(/*indent=*/0);
 }
@@ -354,7 +414,7 @@ ParseResult LitParser::parseSimpleStmt() {
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
 
-  // expression_stmt ::=  starred_expression
+  // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
   //  target_list     ::=  target ("," target)* [","]
@@ -378,6 +438,8 @@ ParseResult LitParser::parseSimpleStmt() {
 ///              "(" [parameter_list] ")"
 ///              ["->" expression] ":" suite
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
+  auto loc = getTokenLocation();
+
   // TODO: Add support for decorators.
   consumeToken(LitToken::kw_def);
 
@@ -411,6 +473,32 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   if (parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
+  auto builder = currentScope->getBuilder();
+  auto nameAttr = builder.getStringAttr(funcName);
+  auto functionType = builder.getFunctionType({}, {});
+  auto symVisibility = builder.getStringAttr("public");
+  auto newFunc =
+      builder.create<FuncOp>(loc, nameAttr, symVisibility, functionType,
+                             /*inputParamTypes*/ ArrayRef<Type>(),
+                             /*argLocs*/ ArrayRef<Location>());
+
+  auto prevDecl = currentScope->addToScope(funcName, newFunc);
+  if (prevDecl) {
+    auto diag = mlir::emitError(loc, "invalid redefinition of function ")
+                << nameAttr;
+    diag.attachNote(prevDecl->getLoc()) << "previous definition here";
+    // Keep parsing even though we failed to add to the scope.  Note that this
+    // can cause type errors downstream.
+    // TODO: We should mark both declarations erroneous in the symbol table so
+    // reference to them get squashed as errors during name lookup, avoiding
+    // cascading errors.
+  }
+
+  // HACK: Add kgen.return so the IR verifies.
+  auto returnParams = builder.getArrayAttr({});
+  OpBuilder::atBlockEnd(newFunc.getBody())
+      .create<ReturnOp>(loc, returnParams, ArrayRef<Value>());
+
   // FIXME: We generally need to defer parsing the body of a function until
   // everything else at the function's scope has already been parsed.  We should
   // put this onto a worklist and skip it.  This will allow us to parse mutually
@@ -424,8 +512,6 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   if (parseSuite(curIndent))
     return failure();
 
-  // Build something.
-  (void)funcName;
   return success();
 }
 
@@ -446,24 +532,43 @@ ParseResult LitParser::parseExpressionList() {
       [&]() -> ParseResult { return parseExpression(); });
 }
 
-/// expression ::= atom
+/// expression ::= atom | call
 ///
 /// atom    ::= identifier | literal | enclosure [TODO]
+/// call    ::=  primary "(" [argument_list [","] | comprehension] ")"
 ///
 /// literal ::= [TODO]
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
 ParseResult LitParser::parseExpression() {
+  // TODO: Handle precedence.
   switch (getToken().getKind()) {
   case LitToken::identifier: // expression -> atom -> identifier
     consumeToken(LitToken::identifier);
-    return success();
+    break;
   case LitToken::integer: // expression -> literal -> integer
     consumeToken(LitToken::integer);
-    return success();
+    break;
   default:
     return emitError("unexpected token in expression");
   }
+
+  // Parse postfix productions.
+  while (1) {
+    // Handle calls.
+    if (consumeIf(LitToken::l_paren)) {
+      // TODO: Handle comprehension arguments.
+      if (!consumeIf(LitToken::r_paren)) {
+        if (parseExpressionList() ||
+            parseToken(LitToken::r_paren, "expected ')' in call argument list"))
+          return failure();
+      }
+      continue;
+    }
+    break;
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
