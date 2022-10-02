@@ -20,6 +20,10 @@
 
 namespace M::KGEN {
 class ReturnOp;
+
+namespace POP {
+class PointerType;
+}
 }
 
 #define GET_OP_CLASSES
