@@ -564,8 +564,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, StringAttr callee,
                    ArrayRef<ParamBindAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams,
-                   OperandRange operands) {
+                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands) {
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
@@ -656,6 +655,17 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   }
 
   return failure();
+}
+
+void CallParamOp::build(OpBuilder &builder, OperationState &state,
+                        TypeRange resultTypes, TypedAttr callee,
+                        ArrayRef<ParamBindAttr> inputParams,
+                        ArrayRef<ParamDeclAttr> resultParams,
+                        ValueRange operands) {
+  build(builder, state, resultTypes, callee,
+        builder.getAttr<ParamBindArrayAttr>(inputParams),
+        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
+        /*numRegions=*/0);
 }
 
 LogicalResult CallParamOp::verify() {

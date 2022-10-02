@@ -193,7 +193,7 @@ def CallOp
     OpBuilder<(ins "TypeRange":$resultTypes, "StringAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "OperandRange":$operands)>,
+                   "ValueRange":$operands)>,
   ];
 
   let hasVerifier = 1;
@@ -244,7 +244,7 @@ def CallParamOp : KGENOp<"call_param"> {
     OpBuilder<(ins "TypeRange":$resultTypes, "TypedAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "OperandRange":$operands)>,
+                   "ValueRange":$operands)>,
   ];
 
   let hasCanonicalizeMethod = 1;
