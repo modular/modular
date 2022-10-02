@@ -334,3 +334,13 @@ LitToken LitLexer::lexNumber(const char *tokStart) {
 
   return formToken(LitToken::integer, tokStart);
 }
+
+/// Return the a value for the specifed string, which is known to have been
+/// lexed as an integer literal token.
+APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
+  APInt result;
+  bool failed = spelling.getAsInteger(10, result);
+  assert(!failed && "we know this should always work because we lexed it");
+  (void)failed;
+  return result;
+}

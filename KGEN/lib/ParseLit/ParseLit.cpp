@@ -11,14 +11,13 @@
 #include "KGEN/ParseLit.h"
 #include "LitExprNodes.h"
 #include "LitLexer.h"
+#include "LitScope.h"
 
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
+#include "Support/IndexDialect/IndexDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -295,14 +294,47 @@ public:
   void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
   ExprNode *parseExpression();
 
+  /// Emit the specified expression tree to MLIR in the current context.
+  MLIRValueRep emit(ExprNode *node, Scope *scope);
+
 private:
+  /// Allocate an expression node into the expression bump pointer allocator.
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
     void *node = sharedParserState->exprAllocator.Allocate(
         sizeof(T), llvm::Align::Of<T>());
     return new (node) T(std::forward<Args>(args)...);
   }
+
+  /// memcpy the specified ArrayRef into the expression allocator and return a
+  /// pointer to the new data.  This cannot be used with things that have
+  /// non-trivial copyctors/dtors because the expression allocator does run
+  /// destructors.
+  template <typename T>
+  ArrayRef<T> copyArrayRef(ArrayRef<T> elements) {
+    if (elements.empty())
+      return elements;
+
+    size_t dataSize = sizeof(T) * elements.size();
+    T *result = static_cast<T *>(sharedParserState->exprAllocator.Allocate(
+        dataSize, llvm::Align::Of<T>()));
+    memcpy(result, elements.data(), dataSize);
+    return ArrayRef<T>(result, elements.size());
+  }
 };
+
+/// Emit the specified expression tree to MLIR in the current context.
+MLIRValueRep ExprParser::emit(ExprNode *node, Scope *scope) {
+  // TODO: Need a notion of a current builder that isn't just end of decl.
+  auto builder = scope->getBuilder();
+  EmitterState state{
+      builder, scope,
+      [&](SMLoc loc) -> Location { return translateLocation(loc); },
+      [&](SMLoc loc, const Twine &twine) -> InFlightDiagnostic {
+        return emitError(loc, twine);
+      }};
+  return node->emit(state);
+}
 
 //===----------------------------------------------------------------------===//
 // Expressions
@@ -326,7 +358,6 @@ void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
 ExprNode *ExprParser::parseExpression() {
-
   auto getErrorAtToken = [&]() -> ExprNode * {
     return alloc<ErrorNode>(getToken().getLoc());
   };
@@ -336,13 +367,6 @@ ExprNode *ExprParser::parseExpression() {
   switch (getToken().getKind()) {
   case LitToken::identifier: // expression -> atom -> identifier
     result = alloc<DeclRefNode>(getToken().getSpelling());
-#if 0
-    if (!currentScope->lookup(getToken().getSpelling())) {
-      emitError("use of unknown declaration \"")
-          << getToken().getSpelling() << '"';
-      // TODO: return an error expression.
-    }
-#endif
     consumeToken(LitToken::identifier);
     break;
   case LitToken::integer: // expression -> literal -> integer
@@ -373,7 +397,7 @@ ExprNode *ExprParser::parseExpression() {
           return getErrorAtToken();
       }
 
-      result = alloc<CallNode>(result, loc, argExprs);
+      result = alloc<CallNode>(result, loc, copyArrayRef<ExprNode *>(argExprs));
       continue;
     }
     break;
@@ -381,69 +405,6 @@ ExprNode *ExprParser::parseExpression() {
 
   return result;
 }
-
-//===----------------------------------------------------------------------===//
-// Scope handling
-//===----------------------------------------------------------------------===//
-
-/// Scopes in Lightning work the same way as in Python: scopes are nested and
-/// are defined when a builtin, module, class/struct, or function definition is
-/// introduced.  Because Lightning (like Python) allows forward references to
-/// values before they are defined, the body of declarations is parsed after the
-/// signature of its peer declarations are all parsed.
-///
-/// This means that we can't just use a ScopedHashTable or similar - we need to
-/// maintain our scopes until all bodies that refer to them are resolved.  As
-/// such, we heap allocate and reference count these.
-namespace {
-class Scope : public NonAtomicallyReferenceCounted<Scope> {
-public:
-  Scope(Operation *decl, RCRef<Scope> parentScope)
-      : decl(decl), parentScope(std::move(parentScope)) {}
-
-  /// Return the Module, StructDecl, Func/Generator that this scope corresponds
-  /// to.
-  Operation *getDecl() const { return decl; }
-  const RCRef<Scope> &getParentScope() const { return parentScope; }
-
-  OpBuilder getBuilder() {
-    return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
-  }
-
-  /// Add the specified declaration to the current scope, returning non-null if
-  /// a previous operation is already in this scope.
-  Operation *addToScope(StringRef name, Operation *newDecl) {
-    Operation *&entry = decls[name];
-    if (entry)
-      return entry;
-    entry = newDecl;
-    return nullptr;
-  }
-
-  /// Perform a lookup in this scope tree, returning the nearest target or null
-  /// if nothing is found.
-  Operation *lookup(StringRef name) {
-    Scope *curScope = this;
-    while (curScope) {
-      auto it = curScope->decls.find(name);
-      if (it != curScope->decls.end())
-        return it->second;
-      curScope = curScope->parentScope.getPointer();
-    }
-    return nullptr;
-  }
-
-private:
-  /// This is the Module, StructDecl, Func/Generator that this scope corresponds
-  /// to.
-  Operation *decl;
-  RCRef<Scope> parentScope;
-
-  // Note: we could unique the identifiers and use a DenseMap.
-  llvm::StringMap<Operation *> decls;
-};
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // LitParser
@@ -672,10 +633,11 @@ ParseResult LitParser::parseSimpleStmt() {
   ExprParser exprParser(*this);
   ExprNode *expr = exprParser.parseExpression();
 
-  // If the expression was followed by a `=` then we have an assignment.
+  // If the expression was followed by a `=` then we have an assignment.  If not
+  // then we have an expression_stmt.
   if (!consumeIf(LitToken::equal)) {
-    // TODO: materialize this as an expression_stmt.
-    (void)expr;
+    // Materialize the expression statement in our current scope.
+    (void)exprParser.emit(expr, currentScope.getPointer());
     return success();
   }
 
@@ -690,7 +652,11 @@ ParseResult LitParser::parseSimpleStmt() {
   }
 
   ExprNode *rhs = exprParser.parseExpression();
-  (void)rhs;
+
+  // Materialize the expression statement in our current scope.
+  (void)exprParser.emit(rhs, currentScope.getPointer());
+
+  // TODO: Store into var decl, and unify types.
   return success();
 }
 
@@ -813,7 +779,8 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              mlir::TimingScope &ts) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-  context->loadDialect<POP::POPDialect, HLKGENDialect, KGENDialect>();
+  context->loadDialect<POP::POPDialect, HLKGENDialect, index::IndexDialect,
+                       KGENDialect>();
 
   // This is the result module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(

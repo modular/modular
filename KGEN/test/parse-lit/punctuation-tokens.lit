@@ -26,7 +26,7 @@
 |     # expected-error {{unexpected token in expression}}
 }     # expected-error {{unexpected token in expression}}
 ~     # expected-error {{unexpected token in expression}}
-_
+_     # expected-error {{use of unknown declaration "_"}}
 !=    # expected-error {{unexpected token in expression}}
 %=    # expected-error {{unexpected token in expression}}
 &=    # expected-error {{unexpected token in expression}}
