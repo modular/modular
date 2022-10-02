@@ -12,6 +12,7 @@ include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "KGEN/HLKGENDialect/HLKGENDialect.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
+include "KGEN/POPDialect/POPTypes.td"
 
 // Base class for the operation in this dialect.
 class HLKGENOp<string mnemonic, list<Trait> traits = []> :
@@ -52,4 +53,16 @@ def HLGeneratorOp
   }];
 
   let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VarDeclOp
+//===----------------------------------------------------------------------===//
+
+def VarDeclOp : HLKGENOp<"var.decl", []> {
+  let summary = "Local variable declaration for Lightning";
+
+  let arguments = (ins StrAttr:$name);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = "$name `` `:` type($result) attr-dict";
 }

@@ -18,3 +18,11 @@ hlkgen.generator @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
   implements @itf {
   kgen.return %arg0 : !pop.scalar<ty>
 }
+
+// One implementation of dynamic_thing
+// CHECK-LABEL: hlkgen.generator @vardecl
+// CHECK-NEXT: %0 = hlkgen.var.decl "x": <!pop.scalar<ty>>
+hlkgen.generator @vardecl<ty : dtype>() {
+  %0 = hlkgen.var.decl "x": !pop.pointer<!pop.scalar<ty>>
+  kgen.return
+}

@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 
