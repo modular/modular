@@ -16,6 +16,8 @@
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/IndexDialect/IndexDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -110,10 +112,13 @@ struct LitParserBase {
   //===--------------------------------------------------------------------===//
 
   /// If the current token has the specified kind, consume it and return true.
-  /// If not, return false.
-  bool consumeIf(LitToken::Kind kind) {
+  /// If not, return false.  If 'tokLoc' is non-null, it is filled in with the
+  /// location of the consumed token (on success).
+  bool consumeIf(LitToken::Kind kind, SMLoc *tokLoc = nullptr) {
     if (getToken().isNot(kind))
       return false;
+    if (tokLoc)
+      *tokLoc = getToken().getLoc();
     consumeToken(kind);
     return true;
   }
@@ -446,6 +451,8 @@ private:
 
   // Simple statements.
   ParseResult parseReturnStmt();
+  ParseResult parseAssignmentStmt(ExprParser &exprParser, ExprNode *lhs,
+                                  SMLoc equalsLoc);
 
 private:
   const ModuleOp module;
@@ -626,37 +633,95 @@ ParseResult LitParser::parseSimpleStmt() {
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
-  // target_list     ::=  target ("," target)* [","]
-  // target ::= identifier
-  //          | "(" [target_list] ")" | "[" [target_list] "]"
-  //          | attributeref | subscription | slicing | "*" target
   ExprParser exprParser(*this);
   ExprNode *expr = exprParser.parseExpression();
 
   // If the expression was followed by a `=` then we have an assignment.  If not
   // then we have an expression_stmt.
-  if (!consumeIf(LitToken::equal)) {
-    // Materialize the expression statement in our current scope.
-    (void)exprParser.emit(expr, currentScope.getPointer());
+  SMLoc equalsLoc;
+  if (consumeIf(LitToken::equal, &equalsLoc))
+    return parseAssignmentStmt(exprParser, expr, equalsLoc);
+
+  // Materialize the expression statement in our current scope but discard the
+  // result on the floor.
+  (void)exprParser.emit(expr, currentScope.getPointer());
+  return success();
+}
+
+/// Parse an assignment_stmt after having parsed a leading expression (which
+/// we need to resolve into a target_list) and an `=` sign.
+///
+/// assignment_stmt ::=
+///                 (target_list "=")+ (starred_expression | yield_expression)
+/// target_list     ::=  target ("," target)* [","]
+/// target ::= identifier
+///          | "(" [target_list] ")" | "[" [target_list] "]"
+///          | attributeref | subscription | slicing | "*" target
+///
+ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
+                                           ExprNode *lhs, SMLoc equalsLoc) {
+  // Resolve the parse expression on the LHS into an lvalue that we can store
+  // into.
+  // TODO: implement support for generalized lvalues / target_list.
+  auto dre = dyn_cast<DeclRefNode>(lhs);
+  if (!dre) {
+    if (!lhs->containsError())
+      emitError(lhs->getLoc(), "cannot assign to expression");
+    eatToEndOfLine();
     return success();
   }
 
-  // Must be assignment_stmt.  Check the LHS expression is a `target_list` to
-  // reject "x+4=7".
-  // TODO: implement support for generalized lvalues.
-  if (!isa<DeclRefNode>(expr)) {
-    if (!expr->containsError())
-      emitError(expr->getLoc(), "cannot assign to expression");
-    eatToEndOfLine();
-    return success();
+  auto builder = currentScope->getBuilder();
+
+  // Look up the name being assigned to if it already exists.
+  Value lvalue;
+  if (Operation *decl = currentScope->lookupInCurrentScope(dre->spelling)) {
+    // Don't allow reassigning to functions and other declarations.
+    // TODO: We actually just need type consistency.  If there were a reason to
+    // need this, we could support reassignment.
+    if (auto varDecl = dyn_cast<VarDeclOp>(decl))
+      lvalue = varDecl;
+    else
+      emitError(lhs->getLoc(), "this declaration isn't reassignable");
+  } else {
+    // Otherwise, introduce a new hlkgen.var.decl node.
+
+    // TODO: Add types instead of hard coding to index type!
+    auto declType = POP::PointerType::get(builder.getIndexType());
+
+    // TODO: This will emit it on first use, which can be in weird places (e.g.
+    // inside of the branch of an if statement).  We want to use dataflow
+    // analysis to do definitive analysis of the accesses to the declaration. We
+    // could just emit all these in the entry to the enclosing function/module
+    // to maintain SSA.
+    auto varDecl =
+        builder.create<VarDeclOp>(translateLocation(lhs->getLoc()), declType,
+                                  builder.getStringAttr(dre->spelling));
+    (void)currentScope->addToScope(dre->spelling, varDecl);
+    lvalue = varDecl;
   }
 
   ExprNode *rhs = exprParser.parseExpression();
 
   // Materialize the expression statement in our current scope.
-  (void)exprParser.emit(rhs, currentScope.getPointer());
+  // TODO: Should pass in contextual type if known from previous declaration.
+  auto rhsValue = exprParser.emit(rhs, currentScope.getPointer());
 
-  // TODO: Store into var decl, and unify types.
+  // If everything worked out, store the resultant value into the lvalue for the
+  // destination.  If things didn't work, just drop this on the floor.
+  if (lvalue && rhsValue) {
+    if (Value rhsValueValue = dyn_cast<Value>(rhsValue)) {
+      if (!rhsValueValue.getType().isIndex())
+        emitError(rhs->getLoc(), "TODO: don't support non-index types yet");
+      else
+        builder.create<POP::StoreOp>(translateLocation(equalsLoc),
+                                     rhsValueValue, lvalue, /*alignment*/ None);
+    } else {
+      emitError(rhs->getLoc(),
+                "TODO: don't support referring to parameters yet");
+    }
+  }
+
   return success();
 }
 

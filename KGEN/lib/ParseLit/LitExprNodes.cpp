@@ -15,6 +15,7 @@
 
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/IndexDialect/IndexOps.h"
 #include "llvm/ADT/PointerUnion.h"
 
@@ -49,15 +50,20 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
     return {};
   }
 
-  // So far we only support function references.
-  auto ref = dyn_cast<HLGeneratorOp>(decl);
-  if (!ref) {
-    state.emitError(getLoc(), "cannot emit reference to decl yet");
-    return {};
-  }
+  // Function references resolve to attributes.
+  if (auto ref = dyn_cast<HLGeneratorOp>(decl))
+    return (TypedAttr)SymbolConstantAttr::get(
+        FlatSymbolRefAttr::get(ref.getSymNameAttr()), ref.getSignature());
 
-  return (TypedAttr)SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(ref.getSymNameAttr()), ref.getSignature());
+  // Variable references resolve to load from the variable.
+  if (auto var = dyn_cast<VarDeclOp>(decl))
+    return state.builder
+        .create<POP::LoadOp>(state.mapLocation(getLoc()), var,
+                             /*alignment*/ None)
+        .getResult();
+
+  state.emitError(getLoc(), "cannot emit reference to decl yet");
+  return {};
 }
 
 MLIRValueRep CallNode::emit(EmitterState &state) const {
