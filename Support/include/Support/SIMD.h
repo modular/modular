@@ -13,9 +13,10 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/Compiler.h" // for __has_builtin
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/TypeName.h"
 #include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <cassert>
 #include <climits>
@@ -476,6 +477,23 @@ public:
                          [](auto a, auto b) { return std::min(a, b); });
     else
       return __builtin_reduce_min(value());
+  }
+
+  /// Shuffles the vector elements using the indices provided. The number of
+  /// input indicies must match the width of the vector. For example, for a
+  /// 4-wide SIMDVector a vector.shuffle(3,2,1,0) will reverse the elements of
+  /// the vector while a vector.shuffle(3,3,3,3) will splat the last element.
+  vector_type shuffle(std::initializer_list<element_type> indices) const {
+    static_assert(indices.size() == size(),
+                  "the number of indices must be equal to the vector width");
+    if constexpr (isEmulated || !__has_builtin(__builtin_shufflevector)) {
+      SIMDVector result;
+      std::transform(indices.begin(), indices.end(), result.data(),
+                     [this](auto index) { return data()[index]; });
+      return result.value();
+    } else {
+      return __builtin_shufflevector(value(), value(), indices);
+    }
   }
 
   /// Gets the underlying vector value.
