@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(ParseLit
+  LitExprNodes.cpp
   LitLexer.cpp
   ParseLit.cpp
 
@@ -13,6 +14,7 @@ add_modular_conversion_library(ParseLit
 
   LINK_LIBS PUBLIC
   HLKGENDialect
+  IndexDialect
   KGENDialect
   POPDialect
 

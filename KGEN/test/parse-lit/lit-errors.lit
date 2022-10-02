@@ -29,7 +29,7 @@ def redecl():
 # // -----
 
 def fn():
-  foo() # xpected-error {{use of unknown declaration "foo"}}
+  foo() # expected-error {{use of unknown declaration "foo"}}
   pass
 
 

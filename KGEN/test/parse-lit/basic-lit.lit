@@ -5,7 +5,11 @@
 # CHECK-LABEL: hlkgen.generator public @do_math() {
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
-  # z = 42
+
+  # CHECK-NEXT: %0 = index.constant 42
+  42   # TODO: z = 42
+
+  # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
   noop()
   # return z #x*4 + x + 1
 # CHECK-NEXT: kgen.return

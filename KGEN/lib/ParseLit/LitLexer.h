@@ -104,6 +104,10 @@ public:
   /// Get an opaque pointer into the lexer state that can be restored later.
   LitLexerCursor getCursor() const;
 
+  /// Return the a value for the specifed string, which is known to have been
+  /// lexed as an integer literal token.
+  static APInt getIntegerLiteralValue(StringRef spelling);
+
 private:
   LitToken lexTokenImpl();
 
