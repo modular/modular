@@ -29,5 +29,5 @@ def redecl():
 # // -----
 
 def fn():
-  foo() # expected-error {{use of unknown declaration "foo"}}
+  foo() # xpected-error {{use of unknown declaration "foo"}}
   pass
