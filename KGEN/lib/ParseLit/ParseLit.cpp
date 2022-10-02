@@ -11,6 +11,7 @@
 #include "KGEN/ParseLit.h"
 #include "LitLexer.h"
 
+#include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "LLCL/Support/RCRef.h"
@@ -165,11 +166,12 @@ struct LitParserBase {
 private:
   LitParserBase(const LitParserBase &) = delete;
   void operator=(const LitParserBase &) = delete;
+  bool errorOccurred = false;
 
   LitLexer &lexer;
-  MLIRContext *const context;
 
-  bool errorOccurred = false;
+protected:
+  MLIRContext *const context;
 };
 
 } // end anonymous namespace
@@ -241,31 +243,44 @@ ParseResult LitParserBase::parseSeparatedList(
 namespace {
 class Scope : public NonAtomicallyReferenceCounted<Scope> {
 public:
-  Scope(Operation *context, RCRef<Scope> parentScope)
-      : context(context), parentScope(std::move(parentScope)) {}
+  Scope(Operation *decl, RCRef<Scope> parentScope)
+      : decl(decl), parentScope(std::move(parentScope)) {}
 
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
-  Operation *getContext() const { return context; }
+  Operation *getDecl() const { return decl; }
 
   OpBuilder getBuilder() {
-    return OpBuilder::atBlockEnd(&context->getRegion(0).front());
+    return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
   }
 
   /// Add the specified declaration to the current scope, returning non-null if
   /// a previous operation is already in this scope.
-  Operation *addToScope(StringRef name, Operation *decl) {
+  Operation *addToScope(StringRef name, Operation *newDecl) {
     Operation *&entry = decls[name];
     if (entry)
       return entry;
-    entry = decl;
+    entry = newDecl;
+    return nullptr;
+  }
+
+  /// Perform a lookup in this scope tree, returning the nearest target or null
+  /// if nothing is found.
+  Operation *lookup(StringRef name) {
+    Scope *curScope = this;
+    while (curScope) {
+      auto it = decls.find(name);
+      if (it != decls.end())
+        return it->second;
+      curScope = curScope->parentScope.getPointer();
+    }
     return nullptr;
   }
 
 private:
   /// This is the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
-  Operation *context;
+  Operation *decl;
   RCRef<Scope> parentScope;
 
   // Note: we could unique the identifiers and use a DenseMap.
@@ -495,10 +510,12 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto nameAttr = builder.getStringAttr(funcName);
   auto functionType = builder.getFunctionType({}, {});
   auto symVisibility = builder.getStringAttr("public");
-  auto newFunc =
-      builder.create<FuncOp>(loc, nameAttr, symVisibility, functionType,
-                             /*inputParamTypes*/ ArrayRef<Type>(),
-                             /*argLocs*/ ArrayRef<Location>());
+  // TODO: Should have nicer builder.
+  auto newFunc = builder.create<HLGeneratorOp>(
+      loc, nameAttr, symVisibility, TypeAttr::get(functionType),
+      ParamDeclArrayAttr::get(context, {}), TypeArrayAttr::get(context, {}),
+      ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());
+  newFunc.getRegion().push_back(new Block());
 
   auto prevDecl = currentScope->addToScope(funcName, newFunc);
   if (prevDecl) {
@@ -561,6 +578,10 @@ ParseResult LitParser::parseExpression() {
   // TODO: Handle precedence.
   switch (getToken().getKind()) {
   case LitToken::identifier: // expression -> atom -> identifier
+    if (!currentScope->lookup(getToken().getSpelling())) {
+      emitError("use of unknown declaration ") << getToken().getSpelling();
+      // TODO: return an error expression.
+    }
     consumeToken(LitToken::identifier);
     break;
   case LitToken::integer: // expression -> literal -> integer
@@ -598,7 +619,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              mlir::TimingScope &ts) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-  context->loadDialect<POP::POPDialect, KGENDialect>();
+  context->loadDialect<POP::POPDialect, HLKGENDialect, KGENDialect>();
 
   // This is the result module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(
