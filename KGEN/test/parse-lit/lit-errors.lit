@@ -14,3 +14,15 @@
 def foo():
 # expected-error @+1 {{unexpected token in expression}}
   return pass
+
+# // -----
+
+# expected-note @+2 {{see existing symbol definition here}}
+# expected-note @+1 {{previous definition here}}
+def redecl():
+  pass
+
+# expected-error @+2 {{redefinition of symbol named 'redecl'}}
+# expected-error @+1 {{invalid redefinition of function "redecl"}}
+def redecl():
+  pass

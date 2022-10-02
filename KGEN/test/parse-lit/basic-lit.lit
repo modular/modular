@@ -1,12 +1,18 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
 # CHECK: module {
-# CHECK-NEXT: }
 
-def noop:
-  pass
-
+# CHECK-LABEL: kgen.func public @do_math() {
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
   z = 42
+  noop()(42)
   return z #x*4 + x + 1
+# CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: kgen.func public @noop() {
+
+def noop():
+  pass
+
+# CHECK-NEXT : kgen.return
