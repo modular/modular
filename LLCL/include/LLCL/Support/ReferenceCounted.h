@@ -105,6 +105,61 @@ inline ReferenceCounted<SubClass>::~ReferenceCounted() {
 #endif // MODULAR_DEBUG
 }
 
+/// This class is a convenience base class for things that need non-atomic
+/// intrusive reference count for ownership management.  It is implemented with
+/// a CRTP pattern where the subclass is specified as a template argument.  It
+/// implicitly makes any derived classes non-copyable and non-assignable.
+///
+/// Subclasses of this are allowed to implement a destroy() instance method,
+/// which allows custom allocation/deallocation logic.  By default, the object
+/// is deallocated with `delete` when the refcount drops to zero.
+///
+/// This class intentionally doesn't have a virtual destructor or anything that
+/// would require a vtable, but subclasses can have one if they choose.
+///
+template <typename SubClass>
+class NonAtomicallyReferenceCounted {
+public:
+  explicit NonAtomicallyReferenceCounted() : refCount(1) {}
+  ~NonAtomicallyReferenceCounted() {
+    assert(refCount == 0 &&
+           "Shouldn't destroy a reference counted object with references!");
+  }
+
+  // Return reference count. This should be used for testing and debugging only.
+  uint32_t getNumReferences() const { return refCount; }
+
+  /// Return true if reference count is 1.
+  bool isUnique() const { return refCount == 1; }
+
+private:
+  // Reference counting, only accessible to RCRef<>.
+  template <typename T>
+  friend class RCRef;
+
+  // Add a new reference to this object.
+  void addRef() const { ++refCount; }
+
+  // Drop a reference to this object, potentially deallocating it.
+  void dropRef() const {
+    if (--refCount == 0)
+      static_cast<const SubClass *>(this)->destroy();
+  }
+
+protected:
+  // Subclasses are allowed to customize this, but the default implementation of
+  // destroy() just deletes the pointer.
+  void destroy() const { delete static_cast<const SubClass *>(this); }
+
+private:
+  // Not copyable or movable.
+  NonAtomicallyReferenceCounted(const NonAtomicallyReferenceCounted &) = delete;
+  NonAtomicallyReferenceCounted &
+  operator=(const NonAtomicallyReferenceCounted &) = delete;
+
+  mutable uint32_t refCount;
+};
+
 } // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_REFERENCE_COUNTED_H
