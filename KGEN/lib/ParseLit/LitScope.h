@@ -51,14 +51,21 @@ public:
     return nullptr;
   }
 
+  /// Look up a name in the current scope only.
+  Operation *lookupInCurrentScope(StringRef name) {
+    auto it = decls.find(name);
+    if (it != decls.end())
+      return it->second;
+    return nullptr;
+  }
+
   /// Perform a lookup in this scope tree, returning the nearest target or null
   /// if nothing is found.
   Operation *lookup(StringRef name) {
     Scope *curScope = this;
     while (curScope) {
-      auto it = curScope->decls.find(name);
-      if (it != curScope->decls.end())
-        return it->second;
+      if (Operation *result = curScope->lookupInCurrentScope(name))
+        return result;
       curScope = curScope->parentScope.getPointer();
     }
     return nullptr;

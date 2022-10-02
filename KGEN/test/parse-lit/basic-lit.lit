@@ -6,8 +6,15 @@
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
 
-  # CHECK-NEXT: %0 = index.constant 42
-  42   # TODO: z = 42
+  # CHECK-NEXT: %0 = hlkgen.var.decl "z": <index>
+  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
+  # CHECK-NEXT: pop.store %[[I42]], %0 : !pop.pointer<index>
+  z = 42
+
+  # CHECK-NEXT: %2 = hlkgen.var.decl "a": <index>
+  # CHECK-NEXT: %[[TMP:.*]] = pop.load %0 : !pop.pointer<index>
+  # CHECK-NEXT: pop.store %[[TMP]], %2 : !pop.pointer<index>
+  a = z
 
   # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
   noop()
