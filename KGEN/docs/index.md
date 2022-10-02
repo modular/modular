@@ -13,3 +13,5 @@ See these breakout docs:
 - [Generative Kernel Compiler Task List](TaskList.md)
 - [Design Rationale](Rationale.md) for details.
 
+For more on Lightning ⚡️ see:
+- [Lightning⚡️ Notes](LitNotes.md)
