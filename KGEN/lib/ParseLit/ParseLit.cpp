@@ -57,11 +57,22 @@ struct LitParserBase {
   // Error Handling
   //===--------------------------------------------------------------------===//
 
-  /// Emit an error and return failure.
+  /// Emit an error and notice that so we don't verify the IR at the end of
+  /// compilation.
+  InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
+    errorOccurred = true;
+    return mlir::emitError(loc, message);
+  }
+
+  /// Emit an error at the current token.
   InFlightDiagnostic emitError(const Twine &message = {}) {
     return emitError(getToken().getLoc(), message);
   }
+  /// Emit an error at a specific lexer location.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &message = {});
+
+  /// Return true if we encountered an error during compilation.
+  bool hadError() const { return errorOccurred; }
 
   //===--------------------------------------------------------------------===//
   // Location Handling
@@ -157,12 +168,14 @@ private:
 
   LitLexer &lexer;
   MLIRContext *const context;
+
+  bool errorOccurred = false;
 };
 
 } // end anonymous namespace
 
 InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
-  auto diag = mlir::emitError(translateLocation(loc), message);
+  auto diag = emitError(translateLocation(loc), message);
 
   // If we hit a parse error in response to a lexer error, then the lexer
   // already reported the error.
@@ -306,8 +319,13 @@ ParseResult LitParser::parseFile() {
   // shadow the builtins module during name lookup.
   currentScope = RCRef<Scope>::create(module, std::move(builtinsScope));
 
-  // TODO: Build IR.
-  return parseStmts(/*indent=*/0);
+  // We fail either if we have a non-recoverable parse error, or if we emitted
+  // an error and then recovered.  In either case, the IR will not be valid and
+  // the caller should not verify it.
+  if (parseStmts(/*indent=*/0) || hadError())
+    return failure();
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -484,8 +502,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
   auto prevDecl = currentScope->addToScope(funcName, newFunc);
   if (prevDecl) {
-    auto diag = mlir::emitError(loc, "invalid redefinition of function ")
-                << nameAttr;
+    auto diag = emitError(loc, "invalid redefinition of function ") << nameAttr;
     diag.attachNote(prevDecl->getLoc()) << "previous definition here";
     // Keep parsing even though we failed to add to the scope.  Note that this
     // can cause type errors downstream.
@@ -592,9 +609,6 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   LitLexer lexer(sourceMgr, context);
   if (LitParser(lexer, *module).parseFile())
     return nullptr;
-
-  // TODO: Need to decide on an error recovery policy.  Should probably return
-  // failure here when parsing does not succeed.
 
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
