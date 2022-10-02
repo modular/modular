@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ParseLit.h"
+#include "LitExprNodes.h"
 #include "LitLexer.h"
 
 #include "KGEN/HLKGENDialect/HLKGENOps.h"
@@ -28,8 +29,25 @@ using namespace M::LLCL;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-using llvm::SMLoc;
 using llvm::SourceMgr;
+
+//===----------------------------------------------------------------------===//
+// SharedParserState
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This is state shared across multiple different instances of LitParserBase
+/// which are always shared across them.
+struct SharedParserState {
+  MLIRContext *const context;
+  llvm::BumpPtrAllocator exprAllocator;
+  bool hasExprParser = false;
+  bool errorOccurred = false;
+
+  SharedParserState(MLIRContext *context) : context(context) {}
+};
+
+} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // LitParserBase
@@ -39,10 +57,10 @@ namespace {
 /// This class implements logic that is common to many parts of the parser, but
 /// which is independent of the concrete grammar.
 struct LitParserBase {
-  LitParserBase(LitLexer &lexer, MLIRContext *context)
-      : lexer(lexer), context(context) {}
+  LitParserBase(LitLexer &lexer, SharedParserState *sharedParserState)
+      : lexer(lexer), sharedParserState(sharedParserState) {}
 
-  MLIRContext *getContext() const { return context; }
+  MLIRContext *getContext() const { return sharedParserState->context; }
   LitLexer &getLexer() { return lexer; }
 
   /// Return the indentation level of the specified token.
@@ -61,7 +79,7 @@ struct LitParserBase {
   /// Emit an error and notice that so we don't verify the IR at the end of
   /// compilation.
   InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
-    errorOccurred = true;
+    sharedParserState->errorOccurred = true;
     return mlir::emitError(loc, message);
   }
 
@@ -73,7 +91,7 @@ struct LitParserBase {
   InFlightDiagnostic emitError(SMLoc loc, const Twine &message = {});
 
   /// Return true if we encountered an error during compilation.
-  bool hadError() const { return errorOccurred; }
+  bool hadError() const { return sharedParserState->errorOccurred; }
 
   //===--------------------------------------------------------------------===//
   // Location Handling
@@ -163,12 +181,9 @@ struct LitParserBase {
     return emitError("expected end token");
   }
 
-protected:
+public:
   LitLexer &lexer;
-  MLIRContext *const context;
-
-private:
-  bool errorOccurred = false;
+  SharedParserState *const sharedParserState;
 
   LitParserBase(const LitParserBase &) = delete;
   void operator=(const LitParserBase &) = delete;
@@ -225,6 +240,137 @@ ParseResult LitParserBase::parseSeparatedList(
       return failure();
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Expression Parsing
+//===----------------------------------------------------------------------===//
+
+/// Expression parsing in Lightning is done in with a 2-phase approach where we
+/// parse one or more expressions into an AST-like representation in a first
+/// pass, then type check and generate IR for it in a second pass.  This enables
+/// a number of features:
+///
+///   1) Non-lexical variable references: `[x.strip().upper() for x in flags]`
+///   2) Weird order of evaluations: `foo() if cond() else bar()`
+///   3) Parser ambiguity of the LHS of an assignment, which we don't know if it
+///      is a target until we see the equals: `x[foo()] = bar()`
+///   4) Contextually sensitive type checking, e.g. x = 42 where x is known to
+///      be Int8 instead of Int.
+///
+/// We handle this by having an expression parser distinct from the main parser
+/// that builds this tree and manages the lifetime of the nodes.  Only one
+/// expression parser may be active at a time, which allows us to bump pointer
+/// allocate the notes we create for the expression tree.
+///
+class ExprParser : public LitParserBase {
+public:
+  ExprParser(LitParserBase &existing)
+      : LitParserBase(existing.lexer, existing.sharedParserState) {
+    // Only a single expression parser can be active at a time, because we clear
+    // the bump pointer allocator when done.
+    assert(!sharedParserState->hasExprParser &&
+           "Cannot create multiple expr parsers at once");
+    sharedParserState->hasExprParser = true;
+  }
+
+  ~ExprParser() {
+    assert(sharedParserState->hasExprParser);
+    sharedParserState->hasExprParser = false;
+    /// Free all the expression nodes.
+    sharedParserState->exprAllocator.Reset();
+  }
+
+  // Expressions.  These methods always return a non-null ExprNode, but it may
+  // be (or include) an Error node if parsing failed.
+  void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
+  ExprNode *parseExpression();
+
+private:
+  template <typename T, typename... Args>
+  T *alloc(Args &&...args) {
+    void *node = sharedParserState->exprAllocator.Allocate(
+        sizeof(T), llvm::Align::Of<T>());
+    return new (node) T(std::forward<Args>(args)...);
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// Expressions
+//===----------------------------------------------------------------------===//
+
+/// expression_list ::= expression ("," expression)* [","]
+void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
+  // TODO: Support trailing comma for singleton tuple.
+  (void)parseCommaSeparatedList([&]() -> ParseResult {
+    results.push_back(parseExpression());
+    return success();
+  });
+}
+
+/// expression ::= atom | call
+///
+/// atom    ::= identifier | literal | enclosure [TODO]
+/// call    ::=  primary "(" [argument_list [","] | comprehension] ")"
+///
+/// literal ::= [TODO]
+///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
+///
+ExprNode *ExprParser::parseExpression() {
+
+  auto getErrorAtToken = [&]() -> ExprNode * {
+    return alloc<ErrorNode>(getToken().getLoc());
+  };
+
+  // TODO: Handle precedence.
+  ExprNode *result;
+  switch (getToken().getKind()) {
+  case LitToken::identifier: // expression -> atom -> identifier
+    result = alloc<DeclRefNode>(getToken().getSpelling());
+#if 0
+    if (!currentScope->lookup(getToken().getSpelling())) {
+      emitError("use of unknown declaration \"")
+          << getToken().getSpelling() << '"';
+      // TODO: return an error expression.
+    }
+#endif
+    consumeToken(LitToken::identifier);
+    break;
+  case LitToken::integer: // expression -> literal -> integer
+    result = alloc<IntLiteralNode>(getToken().getSpelling());
+    consumeToken(LitToken::integer);
+    break;
+  default:
+    emitError("unexpected token in expression");
+    result = getErrorAtToken();
+
+    // TODO: Probably shouldn't consume this token in all cases, this could be
+    // the introducer of another statement etc.  We should check to see what it
+    // looks like and be smarter about this.
+    consumeToken();
+    break;
+  }
+
+  // Parse postfix productions.
+  while (1) {
+    // Handle calls.
+    auto loc = getToken().getLoc();
+    if (consumeIf(LitToken::l_paren)) {
+      SmallVector<ExprNode *> argExprs;
+      // TODO: Handle comprehension arguments.
+      if (!consumeIf(LitToken::r_paren)) {
+        parseExpressionList(argExprs);
+        if (parseToken(LitToken::r_paren, "expected ')' in call argument list"))
+          return getErrorAtToken();
+      }
+
+      result = alloc<CallNode>(result, loc, argExprs);
+      continue;
+    }
+    break;
+  }
+
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -310,8 +456,9 @@ struct DeferredDeclBodyToParse {
 
 /// This class provides the implementation details of the concrete Lit Grammar.
 struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, ModuleOp module)
-      : LitParserBase(lexer, module.getContext()), module(module) {}
+  LitParser(LitLexer &lexer, SharedParserState *sharedParserState,
+            ModuleOp module)
+      : LitParserBase(lexer, sharedParserState), module(module) {}
 
   ParseResult parseFile();
   void finalizeScopeDecl();
@@ -329,10 +476,6 @@ private:
 
   // Simple statements.
   ParseResult parseReturnStmt();
-
-  // Expressions.
-  ParseResult parseExpressionList();
-  ParseResult parseExpression();
 
 private:
   const ModuleOp module;
@@ -517,17 +660,22 @@ ParseResult LitParser::parseSimpleStmt() {
   // target ::= identifier
   //          | "(" [target_list] ")" | "[" [target_list] "]"
   //          | attributeref | subscription | slicing | "*" target
-  if (parseExpression())
-    return failure();
+  ExprParser exprParser(*this);
+  ExprNode *expr = exprParser.parseExpression();
 
   // If the expression was followed by a `=` then we have an assignment.
-  if (!consumeIf(LitToken::equal))
-    return success(); // expression_stmt.
+  if (!consumeIf(LitToken::equal)) {
+    // TODO: materialize this as an expression_stmt.
+    (void)expr;
+    return success();
+  }
 
   // Must be assignment_stmt
 
   // TODO: Check the LHS expression is a `target_list` to reject "x+4=7"
-  return parseExpression();
+  ExprNode *rhs = exprParser.parseExpression();
+  (void)rhs;
+  return success();
 }
 
 /// funcdef ::=  [decorators] "def" funcname generic_signature?
@@ -576,8 +724,9 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // TODO: Should have nicer builder.
   auto newFunc = builder.create<HLGeneratorOp>(
       loc, nameAttr, symVisibility, TypeAttr::get(functionType),
-      ParamDeclArrayAttr::get(context, {}), TypeArrayAttr::get(context, {}),
-      ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());
+      ParamDeclArrayAttr::get(getContext(), {}),
+      TypeArrayAttr::get(getContext(), {}),
+      ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   newFunc.getRegion().push_back(new Block());
 
   auto prevDecl = currentScope->addToScope(funcName, newFunc);
@@ -615,7 +764,7 @@ void LitParser::parseDefBody(size_t defIndent, HLGeneratorOp defDecl) {
 
   // Add kgen.return so the IR verifies.
   // TODO: Generalize hlkgen.generator.
-  auto returnParams = ArrayAttr::get(context, {});
+  auto returnParams = ArrayAttr::get(getContext(), {});
   OpBuilder::atBlockEnd(defDecl.getBody())
       .create<ReturnOp>(defDecl->getLoc(), returnParams, ArrayRef<Value>());
 
@@ -625,59 +774,14 @@ void LitParser::parseDefBody(size_t defIndent, HLGeneratorOp defDecl) {
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitParser::parseReturnStmt() {
   consumeToken(LitToken::kw_return);
-  return parseExpressionList();
-}
 
-//===----------------------------------------------------------------------===//
-// Expressions
-//===----------------------------------------------------------------------===//
+  SmallVector<ExprNode *> operands;
 
-/// expression_list ::= expression ("," expression)* [","]
-ParseResult LitParser::parseExpressionList() {
-  // TODO: Support trailing comma for singleton tuple.
-  return parseCommaSeparatedList(
-      [&]() -> ParseResult { return parseExpression(); });
-}
-
-/// expression ::= atom | call
-///
-/// atom    ::= identifier | literal | enclosure [TODO]
-/// call    ::=  primary "(" [argument_list [","] | comprehension] ")"
-///
-/// literal ::= [TODO]
-///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
-///
-ParseResult LitParser::parseExpression() {
-  // TODO: Handle precedence.
-  switch (getToken().getKind()) {
-  case LitToken::identifier: // expression -> atom -> identifier
-    if (!currentScope->lookup(getToken().getSpelling())) {
-      emitError("use of unknown declaration \"")
-          << getToken().getSpelling() << '"';
-      // TODO: return an error expression.
-    }
-    consumeToken(LitToken::identifier);
-    break;
-  case LitToken::integer: // expression -> literal -> integer
-    consumeToken(LitToken::integer);
-    break;
-  default:
-    return emitError("unexpected token in expression");
-  }
-
-  // Parse postfix productions.
-  while (1) {
-    // Handle calls.
-    if (consumeIf(LitToken::l_paren)) {
-      // TODO: Handle comprehension arguments.
-      if (!consumeIf(LitToken::r_paren)) {
-        if (parseExpressionList() ||
-            parseToken(LitToken::r_paren, "expected ')' in call argument list"))
-          return failure();
-      }
-      continue;
-    }
-    break;
+  // If there is an expression list present, parse it.
+  if (!getIndentation().has_value()) {
+    ExprParser exprParser(*this);
+    exprParser.parseExpressionList(operands);
+    // TODO: Resolve expressions.
   }
 
   return success();
@@ -700,9 +804,11 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
       FileLineColLoc::get(context, sourceBuf->getBufferIdentifier(), /*line=*/0,
                           /*column=*/0)));
 
+  SharedParserState sharedState(context);
+
   // Parse the file.
   LitLexer lexer(sourceMgr, context);
-  if (LitParser(lexer, *module).parseFile())
+  if (LitParser(lexer, &sharedState, *module).parseFile())
     return nullptr;
 
   // Make sure the parse module has no other structural problems detected by

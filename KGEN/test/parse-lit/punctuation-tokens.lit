@@ -3,53 +3,52 @@
 # CHECK: module {
 # CHECK-NEXT: }
 
-# expected-error @+1 {{unexpected token in expression}}
-%
-&
+%     # expected-error {{unexpected token in expression}}
+&     # expected-error {{unexpected token in expression}}
 (
 )
-*
-+
-,
--
-.
-/
-:
-;
-<
+*     # expected-error {{unexpected token in expression}}
++     # expected-error {{unexpected token in expression}}
+,     # expected-error {{unexpected token in expression}}
+-     # expected-error {{unexpected token in expression}}
+.     # expected-error {{unexpected token in expression}}
+/     # expected-error {{unexpected token in expression}}
+:     # expected-error {{unexpected token in expression}}
+;     # expected-error {{unexpected token in expression}}
+<     # expected-error {{unexpected token in expression}}
 =
->
-@
-[
-]
-^
-{
-|
-}
-~
+>     # expected-error {{unexpected token in expression}}
+@     # expected-error {{unexpected token in expression}}
+[     # expected-error {{unexpected token in expression}}
+]     # expected-error {{unexpected token in expression}}
+^     # expected-error {{unexpected token in expression}}
+{     # expected-error {{unexpected token in expression}}
+|     # expected-error {{unexpected token in expression}}
+}     # expected-error {{unexpected token in expression}}
+~     # expected-error {{unexpected token in expression}}
 _
-!=
-%=
-&=
-**
-*=
-+=
--=
-->
-//
-/=
-:=
-<<
-<=
-<>
-==
->=
->>
-@=
-^=
-|=
-**=
-...
-//=
-<<=
->>=
+!=    # expected-error {{unexpected token in expression}}
+%=    # expected-error {{unexpected token in expression}}
+&=    # expected-error {{unexpected token in expression}}
+**    # expected-error {{unexpected token in expression}}
+*=    # expected-error {{unexpected token in expression}}
++=    # expected-error {{unexpected token in expression}}
+-=    # expected-error {{unexpected token in expression}}
+->    # expected-error {{unexpected token in expression}}
+//    # expected-error {{unexpected token in expression}}
+/=    # expected-error {{unexpected token in expression}}
+:=    # expected-error {{unexpected token in expression}}
+<<    # expected-error {{unexpected token in expression}}
+<=    # expected-error {{unexpected token in expression}}
+<>    # expected-error {{unexpected token in expression}}
+==    # expected-error {{unexpected token in expression}}
+>=    # expected-error {{unexpected token in expression}}
+>>    # expected-error {{unexpected token in expression}}
+@=    # expected-error {{unexpected token in expression}}
+^=    # expected-error {{unexpected token in expression}}
+|=    # expected-error {{unexpected token in expression}}
+**=   # expected-error {{unexpected token in expression}}
+...   # expected-error {{unexpected token in expression}}
+//=   # expected-error {{unexpected token in expression}}
+<<=   # expected-error {{unexpected token in expression}}
+>>=   # expected-error {{unexpected token in expression}}
