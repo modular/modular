@@ -8,11 +8,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "mlir/IR/FunctionInterfaces.td"
-include "mlir/IR/SymbolInterfaces.td"
 include "KGEN/HLKGENDialect/HLKGENDialect.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/POPDialect/POPTypes.td"
+include "mlir/IR/FunctionInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
 
 // Base class for the operation in this dialect.
 class HLKGENOp<string mnemonic, list<Trait> traits = []> :
@@ -59,7 +60,8 @@ def HLGeneratorOp
 // VarDeclOp
 //===----------------------------------------------------------------------===//
 
-def VarDeclOp : HLKGENOp<"var.decl", []> {
+def VarDeclOp : HLKGENOp<"var.decl",
+         [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Local variable declaration for Lightning";
 
   let arguments = (ins StrAttr:$name);
