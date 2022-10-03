@@ -8,7 +8,7 @@ kgen.generator.interface @exp<type: dtype>(!pop.scalar<type>) -> !pop.scalar<typ
 
 kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>
 
-lit.generator @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+lit.func @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
   // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
   // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
@@ -50,7 +50,7 @@ kgen.generator @erf_scalar_f64(%arg0: f64) -> f64 {
 
 kgen.generator.interface @erf<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
 
-lit.generator @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
+lit.func @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
   implements @erf {
   %zero = index.constant 0
   %one = index.constant 1

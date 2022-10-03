@@ -2,7 +2,7 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.generator public @do_math() {
+# CHECK-LABEL: lit.func public @do_math() {
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
 
@@ -22,7 +22,7 @@ z
   # return z #x*4 + x + 1
 # CHECK-NEXT: kgen.return
 
-# CHECK-LABEL: lit.generator public @noop() {
+# CHECK-LABEL: lit.func public @noop() {
 def noop():
   pass
 # CHECK-NEXT : kgen.return

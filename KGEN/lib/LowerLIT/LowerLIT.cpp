@@ -76,7 +76,7 @@ LogicalResult SignatureUnifier::checkExistingConstraints() {
 /// parameters.  Check to see that whatever we have is a complete covering of
 /// the interface's expectations.
 LogicalResult SignatureUnifier::verifyInputParameters() {
-  // The lit.generator may have additional input parameters that are
+  // The lit.func may have additional input parameters that are
   // disallowed, and may be missing parameters.  We may have inferred some or
   // all of the missing parameters, but if not, we need to reject.
   ArrayRef<ParamDeclAttr> inputParamDecls = generatorOp.getParamDecls();
@@ -430,9 +430,8 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   return success();
 }
 
-/// Lower an lit.generator to kgen.generator.
-static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
-                                      SymbolTable &symbolTable) {
+/// Lower an lit.func to kgen.generator.
+static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   OpBuilder b(gen);
 
   // Directly lower since these operations are exactly identical right now.
@@ -449,7 +448,7 @@ static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
 
   // Move over the symbol.
   symbolTable.erase(gen);
-  gen = HLGeneratorOp(); // The line above also erases 'gen'.
+  gen = LITFuncOp(); // The line above also erases 'gen'.
   symbolTable.insert(result);
 
   // If the generator implemented an interface, infer additional constraints and
@@ -484,9 +483,9 @@ public:
     // module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
     SymbolTable symbolTable(module);
-    for (auto hlGenerator :
-         llvm::make_early_inc_range(module.getOps<KGEN::HLGeneratorOp>())) {
-      if (failed(lowerHLGenerator(hlGenerator, symbolTable)))
+    for (auto func :
+         llvm::make_early_inc_range(module.getOps<KGEN::LITFuncOp>())) {
+      if (failed(lowerLITFunc(func, symbolTable)))
         signalPassFailure();
     }
   }

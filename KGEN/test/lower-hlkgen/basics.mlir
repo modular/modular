@@ -4,7 +4,7 @@
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT:  }
-lit.generator @trivial_generator(%arg0: si32) -> si32 {
+lit.func @trivial_generator(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
 
@@ -33,7 +33,7 @@ kgen.generator @add_f32<ty: dtype>(%arg0 : !pop.scalar<ty>, %arg1 : !pop.scalar<
   kgen.return %3 : !pop.scalar<ty>
 }
 
-lit.generator @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
+lit.func @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
     -> !pop.scalar<ty> implements @add {
   %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f64> to f64
   %1 = pop.cast_to_builtin %arg1 : !pop.scalar<f64> to f64
@@ -57,7 +57,7 @@ lit.generator @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f
 kgen.generator.interface @bufitf<size, ty: dtype -> index>(!zap.buffer<size, ty>) -> index
 
 // This implementation infers that the ty argument must be f32.
-lit.generator @arg_inf<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
+lit.func @arg_inf<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
   implements @bufitf {
   %0 = zap.buffer.size %arg0 : !zap.buffer<size, f32>
   kgen.return<add(size, 2)> %0 : index
@@ -86,7 +86,7 @@ lit.generator @arg_inf<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) 
 kgen.generator.interface @returnbufItf<size, ty: dtype>(!zap.buffer<123, f32>) -> !zap.buffer<size, ty>
 
 // This implementation infers that the ty argument must be f32 and size must be 123
-lit.generator @returnbufItf_impl(%a : !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
+lit.func @returnbufItf_impl(%a : !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
   implements @returnbufItf {
   kgen.return %a : !zap.buffer<123, f32>
 }
@@ -113,7 +113,7 @@ lit.generator @returnbufItf_impl(%a : !zap.buffer<123, f32>) -> !zap.buffer<123,
 //===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: kgen.generator @SetIntersect<
-lit.generator @SetIntersect<a, b>()
+lit.func @SetIntersect<a, b>()
 // CHECK-NEXT: constraints <
 // CHECK-NEXT: [in(a, [8, 57]), "a is prime, and a is even", #
 // CHECK-NEXT: [in(b, [7, 8]), "thing Y", #

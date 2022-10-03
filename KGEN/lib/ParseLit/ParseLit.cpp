@@ -443,7 +443,7 @@ private:
 
   // Compound statements.
   ParseResult parseDefStmt(size_t curIndent);
-  void parseDefBody(size_t defIndent, HLGeneratorOp defDecl);
+  void parseDefBody(size_t defIndent, LITFuncOp defDecl);
 
   // Simple statements.
   ParseResult parseReturnStmt();
@@ -517,8 +517,7 @@ void LitParser::finalizeScopeDecl() {
     decl.lexerCursor.restore(lexer);
 
     // Only support def's right now.
-    parseDefBody(decl.indentLevel,
-                 cast<HLGeneratorOp>(currentScope->getDecl()));
+    parseDefBody(decl.indentLevel, cast<LITFuncOp>(currentScope->getDecl()));
   }
 }
 
@@ -766,7 +765,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto functionType = builder.getFunctionType({}, {});
   auto symVisibility = builder.getStringAttr("public");
   // TODO: Should have nicer builder.
-  auto newFunc = builder.create<HLGeneratorOp>(
+  auto newFunc = builder.create<LITFuncOp>(
       loc, nameAttr, symVisibility, TypeAttr::get(functionType),
       ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), {}),
@@ -803,11 +802,11 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 }
 
 /// Parse a deferred 'def' body.
-void LitParser::parseDefBody(size_t defIndent, HLGeneratorOp defDecl) {
+void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
   (void)parseSuite(defIndent);
 
   // Add kgen.return so the IR verifies.
-  // TODO: Generalize lit.generator.
+  // TODO: Generalize lit.func.
   auto returnParams = ArrayAttr::get(getContext(), {});
   OpBuilder::atBlockEnd(defDecl.getBody())
       .create<ReturnOp>(defDecl->getLoc(), returnParams, ArrayRef<Value>());

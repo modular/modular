@@ -15,7 +15,7 @@ kgen.generator.interface @matmul<type: dtype>(
     %K: index)
 
 // Implements a naive matrix multiplication kernel.
-lit.generator @matmaul_naive<type: dtype>(
+lit.func @matmaul_naive<type: dtype>(
     %A: !zap.buffer<?, type>,
     %B: !zap.buffer<?, type>,
     %C: !zap.buffer<?, type>,

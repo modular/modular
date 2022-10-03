@@ -9,7 +9,7 @@ kgen.generator.interface @ptr_itf<eltype: type, rettype: type>
 // CHECK-NEXT: eq(:type eltype, !pop.scalar<f32>)
 
 // Implementation specifies that `eltype` must be `!pop.scalar<f32>`
-lit.generator @eltype_inf<rettype: type>
+lit.func @eltype_inf<rettype: type>
     (%arg0: !pop.pointer<!pop.scalar<f32>>) -> !kgen.paramref<rettype>
     implements @ptr_itf {
   %0 = "a"() : () -> !kgen.paramref<rettype>
@@ -20,7 +20,7 @@ lit.generator @eltype_inf<rettype: type>
 // CHECK-NEXT: eq(:type rettype, index)
 
 // Implementation specifies that `rettype` must be `index`.
-lit.generator @rettype_inf<eltype: type>
+lit.func @rettype_inf<eltype: type>
     (%arg0: !pop.pointer<eltype>) -> index
     implements @ptr_itf {
   %0 = "a"() : () -> index
@@ -38,7 +38,7 @@ kgen.generator.interface @struct_itf<eltype: type, dtype: dtype>
 // CHECK-NEXT: eq(:type eltype, index)
 // CHECK-NEXT: eq(:dtype dtype, f32)
 
-lit.generator @struct_inf
+lit.func @struct_inf
     (%arg0: !pop.struct<index, !pop.scalar<f32>>) -> ()
     implements @struct_itf {
   kgen.return

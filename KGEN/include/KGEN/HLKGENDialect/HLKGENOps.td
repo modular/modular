@@ -20,15 +20,15 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
     Op<LITDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// HLGeneratorOp
+// LITFuncOp
 //===----------------------------------------------------------------------===//
 
-def HLGeneratorOp
-  : LITOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
-                           Symbol, IsolatedFromAbove,
-                           SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
-                           DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                           DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+def LITFuncOp
+  : LITOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
+                   Symbol, IsolatedFromAbove,
+                   SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
+                   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                   DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "High level generator definition";
 
   /// If the `implements` attribute is present then this generator is an
@@ -43,7 +43,7 @@ def HLGeneratorOp
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<HLGeneratorOp>::getBody;
+    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<LITFuncOp>::getBody;
     ReturnOp getReturnOp();
 
     /// Returns the argument types of this invokable.

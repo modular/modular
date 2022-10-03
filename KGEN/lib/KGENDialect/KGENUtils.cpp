@@ -935,7 +935,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   // If this is a generator, see if it is an implementation of a generator
   // interface.
   if ((opKind == GeneratorOrFuncKind::generator ||
-       opKind == GeneratorOrFuncKind::hlgenerator) &&
+       opKind == GeneratorOrFuncKind::litfunc) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
     ::mlir::FlatSymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,

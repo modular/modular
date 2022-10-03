@@ -4,7 +4,7 @@
 kgen.generator.interface @itf(%arg0: si32)
 
 // expected-error @+1 {{'kgen.generator' op generator has 2 arguments but interface expects 1}}
-lit.generator @impl(%arg0 : f64, %arg1 : f64) implements @itf {
+lit.func @impl(%arg0 : f64, %arg1 : f64) implements @itf {
   kgen.return
 }
 
@@ -14,7 +14,7 @@ lit.generator @impl(%arg0 : f64, %arg1 : f64) implements @itf {
 kgen.generator.interface @itf(%arg0: i32)
 
 // expected-error @+1 {{argument #0 has type 'f32' but interface expected type 'i32'}}
-lit.generator @impl(%arg0 : f32) implements @itf {
+lit.func @impl(%arg0 : f32) implements @itf {
   kgen.return
 }
 
@@ -23,7 +23,7 @@ lit.generator @impl(%arg0 : f32) implements @itf {
 kgen.generator.interface @itf(%arg0: i32)
 
 // expected-error @+1 {{argument #0 has type 'i12' not equal to interface type 'i32' but does not implement SubElementTypeInterface}}
-lit.generator @impl(%arg0 : i12) implements @itf {
+lit.func @impl(%arg0 : i12) implements @itf {
   kgen.return
 }
 
@@ -33,7 +33,7 @@ lit.generator @impl(%arg0 : i12) implements @itf {
 kgen.generator.interface @itf(%arg0: !zap.buffer<?, f32>)
 
 // expected-error @+1 {{argument #0: dynamic `?` value cannot have static constraint: '4 : index'}}
-lit.generator @impl(%arg0 : !zap.buffer<4, f32>) implements @itf {
+lit.func @impl(%arg0 : !zap.buffer<4, f32>) implements @itf {
   kgen.return
 }
 
@@ -46,7 +46,7 @@ kgen.generator.interface @bufitf<size, ty: dtype -> index>(!zap.buffer<size, ty>
 
 // expected-error @+2 {{constraint contradiction detected: "argument #0 specifies 'ty' = f32"}}
 // expected-note @+1 {{generator declared here}}
-lit.generator @impl<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
+lit.func @impl<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> index
   // This has an explicit constraint saying it must be f64.
   // expected-note @below {{previously constrained "someone told us 'ty' should be f64 dontcha know"}}
   constraints <[eq(:dtype ty, f64), "someone told us 'ty' should be f64 dontcha know"]>
@@ -59,7 +59,7 @@ lit.generator @impl<size, ty: dtype -> index>(%arg0: !zap.buffer<size, f32>) -> 
 // -----
 
 // expected-note @below {{generator declared here}}
-lit.generator @impl<size>()
+lit.func @impl<size>()
   // This has an explicit constraint saying it must be f64.
   // expected-note @below {{previously constrained "someone told us size smells like 3"}}
   constraints <[eq(size, 3), "someone told us size smells like 3"],
@@ -71,7 +71,7 @@ lit.generator @impl<size>()
 // -----
 
 // expected-note @below {{generator declared here}}
-lit.generator @impl<size>()
+lit.func @impl<size>()
   constraints <
     // expected-note @below {{previously constrained "three'or'fore"}}
     [in(size, [3, 4]), "three'or'fore"],
@@ -84,7 +84,7 @@ lit.generator @impl<size>()
 // -----
 
 // expected-note @below {{generator declared here}}
-lit.generator @impl<size>()
+lit.func @impl<size>()
   constraints <
     // expected-note @below {{previously constrained "someone told us size smells like 3 but can we believe them?"}}
     [eq(size, 5), "someone told us size smells like 3 but can we believe them?"],
@@ -97,7 +97,7 @@ lit.generator @impl<size>()
 // -----
 
 // expected-note @+1 {{generator declared here}}
-lit.generator @impl<size>()
+lit.func @impl<size>()
   constraints <
     // expected-note @below {{previously constrained "seven ate 9"}}
     [in(size, [7, 8]), "seven ate 9"],
@@ -110,7 +110,7 @@ lit.generator @impl<size>()
 // -----
 
 // expected-note @+1 {{generator declared here}}
-lit.generator @equality<a, b>()
+lit.func @equality<a, b>()
   constraints <
     // expected-error @+1 {{constraint contradiction detected: "a is one, and a and b are same"}}
     [eq(a, 1), "a is one"],
@@ -129,7 +129,7 @@ kgen.generator.interface @itf<ty: dtype>(!pop.scalar<f64>) -> !pop.scalar<ty>
 // This implementation infers that the ty argument must be f32.
 
 // expected-note @+1 {{generator declared here}}
-lit.generator @impl<ty: dtype>(%arg0: !pop.scalar<f64>) -> !pop.scalar<f64>
+lit.func @impl<ty: dtype>(%arg0: !pop.scalar<f64>) -> !pop.scalar<f64>
   // This has an explicit constraint saying it must be si32.
   // expected-note @below {{previously constrained "'ty' looks lovely as si32"}}
   constraints <[eq(:dtype ty, si32), "'ty' looks lovely as si32"]>
@@ -147,16 +147,16 @@ kgen.generator.interface @itf<ty: dtype>()
 // This implementation infers that the ty argument must be f32.
 
 // expected-error @+1 {{input parameter "ty" has type 'i32' but interface expects '!kgen.dtype'}}
-lit.generator @impl<ty: i32>() implements @itf {
+lit.func @impl<ty: i32>() implements @itf {
   kgen.return
 }
 
 // expected-error @+1 {{input parameter "size" is unexpected by interface}}
-lit.generator @impl2<ty: dtype, size>() implements @itf {
+lit.func @impl2<ty: dtype, size>() implements @itf {
   kgen.return
 }
 
 // expected-error @+1 {{missing interface input parameter "ty" of type '!kgen.dtype'}}
-lit.generator @impl3() implements @itf {
+lit.func @impl3() implements @itf {
   kgen.return
 }
