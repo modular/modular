@@ -18,6 +18,8 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 
+#include <atomic>
+
 namespace M::LLCL {
 class Runtime;
 class WaiterListNode;

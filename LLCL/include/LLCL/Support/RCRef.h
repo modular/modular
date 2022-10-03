@@ -7,7 +7,6 @@
 #ifndef LLCL_SUPPORT_RCREF_H
 #define LLCL_SUPPORT_RCREF_H
 
-#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <utility>
