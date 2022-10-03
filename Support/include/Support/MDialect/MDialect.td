@@ -26,10 +26,13 @@ def MDialect : Dialect {
   let cppNamespace = "::M";
 
   let extraClassDeclaration = [{
+    /// Register all dialect attributes.
+    void registerAttributes();
     /// Register all dialect types.
     void registerTypes();
   }];
 
+  let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
 }
 

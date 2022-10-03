@@ -12,7 +12,10 @@ using namespace M;
 // MDialect
 //===----------------------------------------------------------------------===//
 
-void MDialect::initialize() { registerTypes(); }
+void MDialect::initialize() {
+  registerAttributes();
+  registerTypes();
+}
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

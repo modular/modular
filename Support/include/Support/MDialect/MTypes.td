@@ -7,7 +7,7 @@
 #ifndef MTYPES_TD
 #define MTYPES_TD
 
-include "Support/MDialect/M.td"
+include "Support/MDialect/MDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 

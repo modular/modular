@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(MDialect
+  MAttrs.cpp
   MDialect.cpp
   MTypes.cpp
 
