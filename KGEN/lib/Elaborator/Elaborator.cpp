@@ -1371,9 +1371,8 @@ ParseResult Elaborator::collectInterfaces() {
           interfaceImpls[interface.getAttr()].push_back(generator);
 
       // Detect common errors cleanly, and report it.
-      if (op.getName().getStringRef() == "lit.generator")
-        return op.emitError(
-            "unlowered lit.generator discovered in KGEN elaborator");
+      if (op.getName().getStringRef() == "lit.func")
+        return op.emitError("unlowered lit.func discovered in KGEN elaborator");
     }
     return success();
   };

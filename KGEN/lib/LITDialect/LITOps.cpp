@@ -20,23 +20,22 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// HLGeneratorOp
+// LITFuncOp
 //===----------------------------------------------------------------------===//
 
-ReturnOp HLGeneratorOp::getReturnOp() {
+ReturnOp LITFuncOp::getReturnOp() {
   return cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a LIT Generator.
-ParseResult HLGeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::hlgenerator);
+ParseResult LITFuncOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::litfunc);
 }
 
-// Print the HLGeneratorOp using the shared printing logic.
-void HLGeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
+// Print the LITFuncOp using the shared printing logic.
+void LITFuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult
-HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check result types match the ReturnOp.
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
                                               {getResultTypes()})) ||
@@ -60,7 +59,7 @@ HLGeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Result parameters need to match, but input parameters may be inferred.
   if (getResultParamTypesAttr() != interface.getResultParamTypesAttr())
-    return emitError() << "lit.generator result parameter types must match "
+    return emitError() << "lit.func result parameter types must match "
                           "interface types";
 
   return success();

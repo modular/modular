@@ -151,7 +151,7 @@ enum class GeneratorOrFuncKind {
   precompiled,
 
   // LIT dialect
-  hlgenerator,
+  litfunc,
 };
 
 /// Parse the MLIR syntax for a kgen.generator, kgen.func and related

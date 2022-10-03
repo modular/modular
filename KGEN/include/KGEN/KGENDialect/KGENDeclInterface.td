@@ -12,7 +12,7 @@ include "mlir/IR/OpBase.td"
 def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
   let description = [{
     This is an interface common to kgen.func, kgen.generator,
-    kgen.generator.interface, as well as lit.generator.
+    kgen.generator.interface, as well as lit.func.
   }];
   let cppNamespace = "::M::KGEN";
 

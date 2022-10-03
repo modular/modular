@@ -51,7 +51,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   }
 
   // Function references resolve to attributes.
-  if (auto ref = dyn_cast<HLGeneratorOp>(decl))
+  if (auto ref = dyn_cast<LITFuncOp>(decl))
     return (TypedAttr)SymbolConstantAttr::get(
         FlatSymbolRefAttr::get(ref.getSymNameAttr()), ref.getSignature());
 
