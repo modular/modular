@@ -14,7 +14,8 @@ def do_math[dt: DType, size: Int]
   # CHECK-NEXT: %a = hlkgen.var.decl "a": <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT: pop.store %[[TMP]], %a : !pop.pointer<index>
-  a = z
+  a = \
+z
 
   # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
   noop()
