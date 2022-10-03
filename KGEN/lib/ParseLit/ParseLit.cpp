@@ -64,11 +64,6 @@ struct LitParserBase {
   MLIRContext *getContext() const { return sharedParserState->context; }
   LitLexer &getLexer() { return lexer; }
 
-  /// Return the indentation level of the specified token.
-  Optional<size_t> getIndentation() const {
-    return lexer.getIndentation(getToken());
-  }
-
   /// Return the current token the parser is inspecting.
   const LitToken &getToken() const { return lexer.getToken(); }
   StringRef getTokenSpelling() const { return getToken().getSpelling(); }
@@ -174,7 +169,8 @@ struct LitParserBase {
   /// TODO: we should know the indentation of the current statement so we can
   /// eat trailing components that lack a \.
   void eatToEndOfLine() {
-    while (!getIndentation().has_value() && getToken().isNot(LitToken::eof))
+    while (!getToken().getIndentation().has_value() &&
+           getToken().isNot(LitToken::eof))
       consumeToken();
   }
 
@@ -537,7 +533,7 @@ void LitParser::finalizeScopeDecl() {
 /// suite     ::=  stmt_list NEWLINE | NEWLINE INDENT statement+ DEDENT
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
 ParseResult LitParser::parseSuite(size_t curIndent) {
-  auto indent = getIndentation();
+  auto indent = getToken().getIndentation();
   // If there is a newline, then parse a list of statements.
   if (indent.has_value()) {
     if (indent.value() <= curIndent)
@@ -550,7 +546,8 @@ ParseResult LitParser::parseSuite(size_t curIndent) {
     if (parseSimpleStmt())
       return failure();
     // Stop if we see a semicolon at the end of line or a missing semicolon.
-  } while (consumeIf(LitToken::semi) && !getIndentation().has_value());
+  } while (consumeIf(LitToken::semi) &&
+           !getToken().getIndentation().has_value());
 
   return success();
 }
@@ -561,7 +558,7 @@ ParseResult LitParser::parseSuite(size_t curIndent) {
 /// refuses to parse things at lower indentation level.
 ParseResult LitParser::parseStmts(size_t minIndent) {
   while (getToken().isNot(LitToken::eof)) {
-    auto indent = getIndentation();
+    auto indent = getToken().getIndentation();
     if (!indent.has_value())
       return emitError("statements must start at the beginning of a line");
     if (indent.value() < minIndent)
@@ -796,7 +793,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the function definition.
   while (getToken().isNot(LitToken::eof)) {
-    auto indent = getIndentation();
+    auto indent = getToken().getIndentation();
     if (indent.has_value() && indent.value() <= curIndent)
       break;
     consumeToken();
@@ -825,7 +822,7 @@ ParseResult LitParser::parseReturnStmt() {
   SmallVector<ExprNode *> operands;
 
   // If there is an expression list present, parse it.
-  if (!getIndentation().has_value()) {
+  if (!getToken().getIndentation().has_value()) {
     ExprParser exprParser(*this);
     exprParser.parseExpressionList(operands);
     // TODO: Resolve expressions.
