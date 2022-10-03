@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-hlkgen -elaborate-generators="search-path=%S" | FileCheck %s
+// RUN: kgen-opt %s -lower-lit -elaborate-generators="search-path=%S" | FileCheck %s
 
 kgen.include "library.mlir"
 
@@ -15,7 +15,7 @@ kgen.generator.interface @matmul<type: dtype>(
     %K: index)
 
 // Implements a naive matrix multiplication kernel.
-hlkgen.generator @matmaul_naive<type: dtype>(
+lit.generator @matmaul_naive<type: dtype>(
     %A: !zap.buffer<?, type>,
     %B: !zap.buffer<?, type>,
     %C: !zap.buffer<?, type>,

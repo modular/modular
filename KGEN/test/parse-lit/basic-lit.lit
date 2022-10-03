@@ -2,16 +2,16 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: hlkgen.generator public @do_math() {
+# CHECK-LABEL: lit.generator public @do_math() {
 def do_math[dt: DType, size: Int]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
 
-  # CHECK-NEXT: %z = hlkgen.var.decl "z": <index>
+  # CHECK-NEXT: %z = lit.var.decl "z": <index>
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42
   # CHECK-NEXT: pop.store %[[I42]], %z : !pop.pointer<index>
   z = 42
 
-  # CHECK-NEXT: %a = hlkgen.var.decl "a": <index>
+  # CHECK-NEXT: %a = lit.var.decl "a": <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT: pop.store %[[TMP]], %a : !pop.pointer<index>
   a = \
@@ -22,7 +22,7 @@ z
   # return z #x*4 + x + 1
 # CHECK-NEXT: kgen.return
 
-# CHECK-LABEL: hlkgen.generator public @noop() {
+# CHECK-LABEL: lit.generator public @noop() {
 def noop():
   pass
 # CHECK-NEXT : kgen.return

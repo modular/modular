@@ -13,8 +13,8 @@
 #include "LitLexer.h"
 #include "LitScope.h"
 
-#include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -681,7 +681,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     else
       emitError(lhs->getLoc(), "this declaration isn't reassignable");
   } else {
-    // Otherwise, introduce a new hlkgen.var.decl node.
+    // Otherwise, introduce a new lit.var.decl node.
 
     // TODO: Add types instead of hard coding to index type!
     auto declType = POP::PointerType::get(builder.getIndexType());
@@ -807,7 +807,7 @@ void LitParser::parseDefBody(size_t defIndent, HLGeneratorOp defDecl) {
   (void)parseSuite(defIndent);
 
   // Add kgen.return so the IR verifies.
-  // TODO: Generalize hlkgen.generator.
+  // TODO: Generalize lit.generator.
   auto returnParams = ArrayAttr::get(getContext(), {});
   OpBuilder::atBlockEnd(defDecl.getBody())
       .create<ReturnOp>(defDecl->getLoc(), returnParams, ArrayRef<Value>());
@@ -841,7 +841,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              mlir::TimingScope &ts) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-  context->loadDialect<POP::POPDialect, HLKGENDialect, index::IndexDialect,
+  context->loadDialect<POP::POPDialect, LITDialect, index::IndexDialect,
                        KGENDialect>();
 
   // This is the result module we are parsing into.

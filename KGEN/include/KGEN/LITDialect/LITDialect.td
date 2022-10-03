@@ -4,21 +4,21 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This contains the HLKGENDialect definition to be included in other files.
+// This contains the LITDialect definition to be included in other files.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_HLKGENDIALECT_HLKGENDIALECT_TD
-#define KGEN_HLKGENDIALECT_HLKGENDIALECT_TD
+#ifndef KGEN_LITDIALECT_LITDIALECT_TD
+#define KGEN_LITDIALECT_LITDIALECT_TD
 
 include "mlir/IR/DialectBase.td"
 
-def HLKGENDialect : Dialect {
-  let name = "hlkgen";
+def LITDialect : Dialect {
+  let name = "lit";
 
-  let summary = "The 'hlkgen' dialect";
+  let summary = "The 'lit' dialect for Lightning";
   let description = [{
-    This dialect defines the `hlkgen` dialect, a set of higher level
+    This dialect defines the `lit` dialect, a set of language-level
     abstractions that lower to the `kgen` dialect.
   }];
 
@@ -28,4 +28,4 @@ def HLKGENDialect : Dialect {
   let useDefaultAttributePrinterParser = 1;
 }
 
-#endif // KGEN_HLKGENDIALECT_HLKGENDIALECT_TD
+#endif // KGEN_LITDIALECT_LITDIALECT_TD

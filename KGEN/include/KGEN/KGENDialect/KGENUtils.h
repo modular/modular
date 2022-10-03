@@ -150,7 +150,7 @@ enum class GeneratorOrFuncKind {
   interface,
   precompiled,
 
-  // HLKGEN dialect
+  // LIT dialect
   hlgenerator,
 };
 

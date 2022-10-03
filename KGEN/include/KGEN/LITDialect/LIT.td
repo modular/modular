@@ -4,14 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This is the top level file for the HLKGEN dialect.
+// This is the top level file for the LIT dialect.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef HLKGEN_TD
-#define HLKGEN_TD
+#ifndef LIT_TD
+#define LIT_TD
 
 include "KGEN/KGENDialect/KGENAttrs.td"
-include "KGEN/HLKGENDialect/HLKGENOps.td"
+include "KGEN/LITDialect/LITOps.td"
 
 #endif // KGEN_TD

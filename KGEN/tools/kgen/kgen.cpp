@@ -137,7 +137,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
-  pm.addPass(createLowerHLKGENPass());
+  pm.addPass(createLowerLITPass());
 
   // FIXME: This has to be disabled to avoid lowering buffer types before
   // elaboration.

@@ -4,16 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the operation classes for the HLKGEN dialect.
+// This file declares the operation classes for the LIT dialect.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_HLKGENOPS_H
-#define KGEN_KGENDIALECT_HLKGENOPS_H
+#ifndef KGEN_KGENDIALECT_LITOPS_H
+#define KGEN_KGENDIALECT_LITOPS_H
 
-#include "KGEN/HLKGENDialect/HLKGENDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/LITDialect/LITDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
@@ -24,9 +24,9 @@ class ReturnOp;
 namespace POP {
 class PointerType;
 }
-}
+} // namespace M::KGEN
 
 #define GET_OP_CLASSES
-#include "KGEN/HLKGENDialect/HLKGEN.h.inc"
+#include "KGEN/LITDialect/LIT.h.inc"
 
 #endif // KGEN_KGENDIALECT_NLKGENOPS_H

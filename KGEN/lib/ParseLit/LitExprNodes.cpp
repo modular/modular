@@ -13,8 +13,8 @@
 #include "LitLexer.h"
 #include "LitScope.h"
 
-#include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/IndexDialect/IndexOps.h"
 #include "llvm/ADT/PointerUnion.h"

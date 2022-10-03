@@ -252,13 +252,13 @@ Building on top of the LLVM dialect is convenient because we can talk to target 
 
 Pounding this out shouldn’t be too hard given our narrow kernel goals for the first milestone, but this is effectively “defining the standard library” which will take some discussion.  As a trivial example, do we separate fadd and iadd given that we’re working with signful dtypes?
 
-## ✅ Add higher level “hlkgen” Dialect
+## ✅ Add higher level “lit” Dialect
 
 As we start writing more kernels, doing so at a high level will become painful for a variety of reasons.  We want the kgen level to be simple to analyze and transform - it should support things like the elaborator and static analysis tools that work on a type checked metaprogram.  Achieving this means defining a higher level dialect that gets desugared down to kgen.
 
-✅[Issue #1410](https://github.com/modularml/modular/issues/1410) When a generator implements an interface, it should be able do so with a more specialized signature than the interface has, and use that to infer constraints.  This requires defining a new “`hlkgen.generator`” operation.
+✅[Issue #1410](https://github.com/modularml/modular/issues/1410) When a generator implements an interface, it should be able do so with a more specialized signature than the interface has, and use that to infer constraints.  This requires defining a new “`lit.generator`” operation.
 
-✅We need some sort of module system and an “`kgen.include`” operation.  This will raise questions like “how does separate compilation work”, “is the imported thing kgen or hlkgen level of abstraction, etc.
+✅We need some sort of module system and an “`kgen.include`” operation.  This will raise questions like “how does separate compilation work”, “is the imported thing kgen or lit level of abstraction, etc.
 
 ## ✅ Add a “parametric operations” Dialect “pop”
 

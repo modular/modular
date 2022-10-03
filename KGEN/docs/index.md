@@ -10,10 +10,10 @@ written kernels and "ML compilers".
 
 ## Dialect Layering
 
-KGEN has several dialects: `hlkgen`, `kgen`, `pop`, and `zap`. KGEN IR also
+KGEN has several dialects: `lit`, `kgen`, `pop`, and `zap`. KGEN IR also
 uses the `index`, `scf`, and `llvm` dialects.
 
-`hlkgen` is a high-level dialect for building kernel libraries. It is lowered
+`lit` is a high-level dialect for building kernel libraries. It is lowered
 to `kgen` before elaboration. The `kgen` dialect is the canonical dialect for
 describing parametric IR. The dialect defines the parameter system and the
 types, attributes, and operations for interacting with parameters.
@@ -28,7 +28,7 @@ build parametric kernels. The `zap` dialect only exists pre-elaboration.
 
 In summary:
 
-- `zap` and `hlkgen` exist pre-elaboration. They are lowered to `kgen` and `pop`
+- `zap` and `lit` exist pre-elaboration. They are lowered to `kgen` and `pop`
 before elaboration.
 - `pop` exists pre and post elaboration. Operations in the dialect
 become non-parametric post-elaboration. They are lowered to `llvm` when

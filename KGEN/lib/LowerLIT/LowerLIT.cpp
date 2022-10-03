@@ -7,10 +7,10 @@
 #include "KGEN/KGENPasses.h"
 
 #include "ConstraintSet.h"
-#include "KGEN/HLKGENDialect/HLKGENOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
@@ -76,7 +76,7 @@ LogicalResult SignatureUnifier::checkExistingConstraints() {
 /// parameters.  Check to see that whatever we have is a complete covering of
 /// the interface's expectations.
 LogicalResult SignatureUnifier::verifyInputParameters() {
-  // The hlkgen.generator may have additional input parameters that are
+  // The lit.generator may have additional input parameters that are
   // disallowed, and may be missing parameters.  We may have inferred some or
   // all of the missing parameters, but if not, we need to reject.
   ArrayRef<ParamDeclAttr> inputParamDecls = generatorOp.getParamDecls();
@@ -430,7 +430,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   return success();
 }
 
-/// Lower an hlkgen.generator to kgen.generator.
+/// Lower an lit.generator to kgen.generator.
 static LogicalResult lowerHLGenerator(HLGeneratorOp gen,
                                       SymbolTable &symbolTable) {
   OpBuilder b(gen);
@@ -477,7 +477,7 @@ namespace {
 #define GEN_PASS_CLASSES
 #include "KGEN/KGENPasses.h.inc"
 
-class LowerHLKGENPass : public LowerHLKGENBase<LowerHLKGENPass> {
+class LowerLITPass : public LowerLITBase<LowerLITPass> {
 public:
   void runOnOperation() override {
     // TODO: This has to be a module pass because this mutates the body of the
@@ -493,6 +493,6 @@ public:
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerHLKGENPass() {
-  return std::make_unique<LowerHLKGENPass>();
+std::unique_ptr<mlir::Pass> M::KGEN::createLowerLITPass() {
+  return std::make_unique<LowerLITPass>();
 }

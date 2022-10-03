@@ -4,15 +4,23 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(LowerHLKGEN
-  ConstraintSet.cpp
-  LowerHLKGEN.cpp
+add_modular_dialect_library(LITDialect
+  LITDialect.cpp
+  LITOps.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${MODULAR_MAIN_INCLUDE_DIR}/LIT/LITDialect
 
   DEPENDS
-  MLIRKGENPasses
+  KGENDialect
+  MLIRKGENIncGen
+  MLIRLITIncGen
+
+  LINK_COMPONENTS
+  Support
 
   LINK_LIBS PUBLIC
-  KGENDialect
-  HLKGENDialect
+  MSupport
+  MSupportML
   MLIRIR
-  )
+)
