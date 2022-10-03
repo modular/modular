@@ -4,19 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(ParseLit
-  LitExprNodes.cpp
-  LitLexer.cpp
-  ParseLit.cpp
+add_modular_conversion_library(LowerLIT
+  ConstraintSet.cpp
+  LowerLIT.cpp
 
   DEPENDS
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
-  LITDialect
-  IndexDialect
   KGENDialect
-  POPDialect
-
-  MLIRTranslateLib
-)
+  LITDialect
+  MLIRIR
+  )

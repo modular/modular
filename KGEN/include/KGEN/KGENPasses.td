@@ -7,19 +7,19 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
-// LowerHLKGEN
+// LowerLIT
 //===----------------------------------------------------------------------===//
 
-def LowerHLKGEN : Pass<"lower-hlkgen", "mlir::ModuleOp"> {
-  let summary = "Lower the `hlkgen` dialects to the `kgen` dialect.";
+def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
+  let summary = "Lower the `lit` dialects to the `kgen` dialect.";
   let description = [{
-    This pass performs lowers high level abstractions from "hlkgen" to "kgen"
+    This pass performs lowers high level abstractions from "lit" to "kgen"
     and diagnoses any errors that are found along the way.
   }];
 
   let dependentDialects = ["KGENDialect"];
 
-  let constructor = "::M::KGEN::createLowerHLKGENPass()";
+  let constructor = "::M::KGEN::createLowerLITPass()";
 }
 
 //===----------------------------------------------------------------------===//

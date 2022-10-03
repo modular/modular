@@ -7,7 +7,7 @@
 add_modular_tool(kgen-opt
   kgen-opt.cpp
   LINK_LIBS PRIVATE
-  HLKGENDialect
+  LITDialect
   IndexDialect
   IndexToLLVM
   KGENDialect
@@ -16,7 +16,7 @@ add_modular_tool(kgen-opt
   POPDialect
   KGENToLLVM
   KGENElaborator
-  LowerHLKGEN
+  LowerLIT
   LowerZAPToPOP
 
   MLIRIR

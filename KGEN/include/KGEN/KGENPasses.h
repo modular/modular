@@ -37,7 +37,7 @@ class POPDialect;
 // Pass creation
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<mlir::Pass> createLowerHLKGENPass();
+std::unique_ptr<mlir::Pass> createLowerLITPass();
 std::unique_ptr<mlir::Pass>
 createLowerKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
                           ArrayRef<StringRef> emitCWrappers = {},

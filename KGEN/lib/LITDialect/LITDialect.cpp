@@ -4,14 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the HLKGEN dialect.
+// This file implements the LIT dialect.
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/HLKGENDialect/HLKGENDialect.h"
-#include "KGEN/HLKGENDialect/HLKGENOps.h"
+#include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 
@@ -23,26 +23,26 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 // Pull in the dialect definition.
-#include "KGEN/HLKGENDialect/HLKGENDialect.cpp.inc"
+#include "KGEN/LITDialect/LITDialect.cpp.inc"
 
-void HLKGENDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
-  llvm_unreachable("no hlkgen dialect attrs");
+void LITDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
+  llvm_unreachable("no lit dialect attrs");
 }
-Attribute HLKGENDialect::parseAttribute(DialectAsmParser &p, Type type) const {
-  llvm_unreachable("no hlkgen dialect attrs");
+Attribute LITDialect::parseAttribute(DialectAsmParser &p, Type type) const {
+  llvm_unreachable("no lit dialect attrs");
 }
-void HLKGENDialect::printType(Type type, DialectAsmPrinter &os) const {
-  llvm_unreachable("no hlkgen dialect types");
+void LITDialect::printType(Type type, DialectAsmPrinter &os) const {
+  llvm_unreachable("no lit dialect types");
 }
-Type HLKGENDialect::parseType(DialectAsmParser &p) const {
-  llvm_unreachable("no hlkgen dialect types");
+Type LITDialect::parseType(DialectAsmParser &p) const {
+  llvm_unreachable("no lit dialect types");
 }
 
-void HLKGENDialect::initialize() {
+void LITDialect::initialize() {
 
   // Register operations.
   addOperations<
 #define GET_OP_LIST
-#include "KGEN/HLKGENDialect/HLKGEN.cpp.inc"
+#include "KGEN/LITDialect/LIT.cpp.inc"
       >();
 }

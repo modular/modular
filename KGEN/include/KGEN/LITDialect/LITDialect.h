@@ -4,16 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines an HLKGEN MLIR dialect.
+// This file defines an LIT MLIR dialect.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_HLKGENDIALECT_H
-#define KGEN_HLKGENDIALECT_H
+#ifndef KGEN_LITDIALECT_H
+#define KGEN_LITDIALECT_H
 
 #include "mlir/IR/Dialect.h"
 
 // Pull in the dialect definition.
-#include "KGEN/HLKGENDialect/HLKGENDialect.h.inc"
+#include "KGEN/LITDialect/LITDialect.h.inc"
 
-#endif // KGEN_HLKGENDIALECT_H
+#endif // KGEN_LITDIALECT_H

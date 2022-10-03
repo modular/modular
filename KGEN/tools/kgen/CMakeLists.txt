@@ -11,12 +11,12 @@ add_modular_tool(kgen
 
   LINK_LIBS PRIVATE
   KGENCLOptions
-  HLKGENDialect
+  LITDialect
   IndexDialect
   KGENElaborator
   KGENDialect
   ZAPDialect
-  LowerHLKGEN
+  LowerLIT
   LowerZAPToPOP
   POPDialect
   KGENCompilerRT
