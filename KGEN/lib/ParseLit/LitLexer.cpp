@@ -86,33 +86,7 @@ Location LitLexer::translateLocation(llvm::SMLoc loc) {
 /// Emit an error message and return a LitToken::error token.
 LitToken LitLexer::emitError(const char *loc, const Twine &message) {
   mlir::emitError(translateLocation(SMLoc::getFromPointer(loc)), message);
-  return formToken(LitToken::error, loc);
-}
-
-/// Return the indentation level of the specified token.
-/// TODO: Evaluate tracking this inline as part of the lexing loop.  We should
-/// eval how commonly this is queried to figure out the tradeoff.
-Optional<size_t> LitLexer::getIndentation(const LitToken &tok) const {
-  // Count the number of horizontal whitespace characters before the token.
-  auto *bufStart = curBuffer.begin();
-
-  auto isHorizontalWS = [](char c) -> bool {
-    return c == ' ' || c == '\t' || c == ',';
-  };
-  auto isVerticalWS = [](char c) -> bool {
-    return c == '\n' || c == '\r' || c == '\f' || c == '\v';
-  };
-
-  size_t indent = 0;
-  const auto *ptr = (const char *)tok.getSpelling().data();
-  while (ptr != bufStart && isHorizontalWS(ptr[-1]))
-    --ptr, ++indent;
-
-  // If the character we stopped at isn't the start of line, then return none.
-  if (ptr != bufStart && !isVerticalWS(ptr[-1]))
-    return None;
-
-  return indent;
+  return formToken(LitToken::error, loc, -1);
 }
 
 //===----------------------------------------------------------------------===//
@@ -120,146 +94,168 @@ Optional<size_t> LitLexer::getIndentation(const LitToken &tok) const {
 //===----------------------------------------------------------------------===//
 
 LitToken LitLexer::lexTokenImpl() {
+  // This keeps track of the indentation of the current token from the start of
+  // the line.  The first byte of the file starts with an indentation of zero,
+  // but subsequent tokens always start out by following an existing token, so
+  // they aren't at the start of line.
+  ssize_t indentation = curPtr == curBuffer.begin() ? 0 : -1;
+  const char *tokStart;
+  // This is a helper lambda for forming tokens with tokStart and indentation,
+  // and optionally incrementing `curPtr` to make some of the conditionals below
+  // ergonomic.
+  auto formToken = [&](LitToken::Kind kind, size_t incr = 0) -> LitToken {
+    curPtr += incr;
+    return this->formToken(kind, tokStart, indentation);
+  };
+
   while (true) {
-    const char *tokStart = curPtr;
+    // This loop is set up so a "continue" can be used to ignore a whitespace
+    // character.  Always reset 'tokStart'.
+    tokStart = curPtr;
     switch (*curPtr++) {
     case 0:
       // This may either be a nul character in the source file or may be the EOF
       // marker that MemoryBuffer guarantees will be there.
       if (curPtr - 1 == curBuffer.end())
-        return formToken(LitToken::eof, tokStart);
+        return formToken(LitToken::eof);
 
       [[fallthrough]]; // Treat as whitespace.
 
+      // Horizontal whitespace increases the indentation if current token is at
+      // start of line.
     case ' ':
     case '\t':
+      if (indentation != -1)
+        ++indentation;
+      continue;
+
+      // Vertical whitespace resets the indentation to zero since anything that
+      // comes after it is at the start of the line.
     case '\n':
     case '\r':
-      // Handle whitespace.
+    case '\f':
+    case '\v':
+      indentation = 0;
       continue;
 
     default:
       // Handle identifiers.
       if (llvm::isAlpha(curPtr[-1]))
-        return lexIdentifierOrKeyword(tokStart);
+        return lexIdentifierOrKeyword(tokStart, indentation);
 
       // Unknown character, emit an error.
       return emitError(tokStart, "unexpected character");
 
     case '_':
       // Handle identifiers.
-      return lexIdentifierOrKeyword(tokStart);
+      return lexIdentifierOrKeyword(tokStart, indentation);
     case '%':
       if (*curPtr == '=')
-        return formToken(LitToken::percent_equal, tokStart, 1);
-      return formToken(LitToken::percent, tokStart);
+        return formToken(LitToken::percent_equal, 1);
+      return formToken(LitToken::percent);
     case '&':
       if (*curPtr == '=')
-        return formToken(LitToken::amp_equal, tokStart, 1);
-      return formToken(LitToken::amp, tokStart);
+        return formToken(LitToken::amp_equal, 1);
+      return formToken(LitToken::amp);
     case '(':
-      return formToken(LitToken::l_paren, tokStart);
+      return formToken(LitToken::l_paren);
     case ')':
-      return formToken(LitToken::r_paren, tokStart);
+      return formToken(LitToken::r_paren);
     case '*':
-      switch (*curPtr) {
-      case '*':
+      if (*curPtr == '=')
+        return formToken(LitToken::star_equal, 1);
+      if (*curPtr == '*') {
         if (curPtr[1] == '=')
-          return formToken(LitToken::star_star_equal, tokStart, 2);
-        return formToken(LitToken::star_star, tokStart, 1);
-      case '=':
-        return formToken(LitToken::star_equal, tokStart, 1);
+          return formToken(LitToken::star_star_equal, 2);
+        return formToken(LitToken::star_star, 1);
       }
-      return formToken(LitToken::star, tokStart);
+      return formToken(LitToken::star);
     case '+':
       if (*curPtr == '=')
-        return formToken(LitToken::plus_equal, tokStart, 1);
-      return formToken(LitToken::plus, tokStart);
+        return formToken(LitToken::plus_equal, 1);
+      return formToken(LitToken::plus);
     case ',':
-      return formToken(LitToken::comma, tokStart);
+      return formToken(LitToken::comma);
     case '-':
-      switch (*curPtr) {
-      case '=':
-        return formToken(LitToken::minus_equal, tokStart, 1);
-      case '>':
-        return formToken(LitToken::minus_greater, tokStart, 1);
-      }
-      return formToken(LitToken::minus, tokStart);
+      if (*curPtr == '=')
+        return formToken(LitToken::minus_equal, 1);
+      if (*curPtr == '>')
+        return formToken(LitToken::minus_greater, 1);
+      return formToken(LitToken::minus);
     case '.':
       if (llvm::isDigit(*curPtr))
-        return lexFloat(tokStart);
+        return lexFloat(tokStart, indentation);
       if (*curPtr == '.' && curPtr[1] == '.')
-        return formToken(LitToken::dot_dot_dot, tokStart, 2);
-      return formToken(LitToken::dot, tokStart);
+        return formToken(LitToken::dot_dot_dot, 2);
+      return formToken(LitToken::dot);
     case '/':
-      switch (*curPtr) {
-      case '/':
+      if (*curPtr == '=')
+        return formToken(LitToken::slash_equal, 1);
+      if (*curPtr == '/') {
         if (curPtr[1] == '=')
-          return formToken(LitToken::slash_slash_equal, tokStart, 2);
-        return formToken(LitToken::slash_slash, tokStart, 1);
-      case '=':
-        return formToken(LitToken::slash_equal, tokStart, 1);
+          return formToken(LitToken::slash_slash_equal, 2);
+        return formToken(LitToken::slash_slash, 1);
       }
-      return formToken(LitToken::slash, tokStart);
+      return formToken(LitToken::slash);
     case ':':
       // TODO: Python keeps track of nesting level in the lexer to report
       // mismatched tokens here.  How does that affect error recovery?
       if (*curPtr == '=')
-        return formToken(LitToken::colon_equal, tokStart, 1);
-      return formToken(LitToken::colon, tokStart);
+        return formToken(LitToken::colon_equal, 1);
+      return formToken(LitToken::colon);
     case ';':
-      return formToken(LitToken::semi, tokStart);
+      return formToken(LitToken::semi);
     case '<':
       switch (*curPtr) {
       case '<':
         if (curPtr[1] == '=')
-          return formToken(LitToken::less_less_equal, tokStart, 2);
-        return formToken(LitToken::less_less, tokStart, 1);
+          return formToken(LitToken::less_less_equal, 2);
+        return formToken(LitToken::less_less, 1);
       case '=':
-        return formToken(LitToken::less_equal, tokStart, 1);
+        return formToken(LitToken::less_equal, 1);
       case '>':
-        return formToken(LitToken::less_greater, tokStart, 1);
+        return formToken(LitToken::less_greater, 1);
       }
-      return formToken(LitToken::less, tokStart);
+      return formToken(LitToken::less);
     case '=':
       if (*curPtr == '=')
-        return formToken(LitToken::equal_equal, tokStart, 1);
-      return formToken(LitToken::equal, tokStart);
+        return formToken(LitToken::equal_equal, 1);
+      return formToken(LitToken::equal);
     case '>':
       switch (*curPtr) {
       case '=':
-        return formToken(LitToken::greater_equal, tokStart, 1);
+        return formToken(LitToken::greater_equal, 1);
       case '>':
         if (curPtr[1] == '=')
-          return formToken(LitToken::right_right_equal, tokStart, 2);
-        return formToken(LitToken::right_right, tokStart, 1);
+          return formToken(LitToken::right_right_equal, 2);
+        return formToken(LitToken::right_right, 1);
       }
-      return formToken(LitToken::greater, tokStart);
+      return formToken(LitToken::greater);
     case '@':
       if (*curPtr == '=')
-        return formToken(LitToken::at_equal, tokStart, 1);
-      return formToken(LitToken::at, tokStart);
+        return formToken(LitToken::at_equal, 1);
+      return formToken(LitToken::at);
     case '[':
-      return formToken(LitToken::l_square, tokStart);
+      return formToken(LitToken::l_square);
     case ']':
-      return formToken(LitToken::r_square, tokStart);
+      return formToken(LitToken::r_square);
     case '^':
       if (*curPtr == '=')
-        return formToken(LitToken::circumflex_equal, tokStart, 1);
-      return formToken(LitToken::circumflex, tokStart);
+        return formToken(LitToken::circumflex_equal, 1);
+      return formToken(LitToken::circumflex);
     case '{':
-      return formToken(LitToken::l_brace, tokStart);
+      return formToken(LitToken::l_brace);
     case '|':
       if (*curPtr == '=')
-        return formToken(LitToken::pipe_equal, tokStart, 1);
-      return formToken(LitToken::pipe, tokStart);
+        return formToken(LitToken::pipe_equal, 1);
+      return formToken(LitToken::pipe);
     case '}':
-      return formToken(LitToken::r_brace, tokStart);
+      return formToken(LitToken::r_brace);
     case '~':
-      return formToken(LitToken::tilde, tokStart);
+      return formToken(LitToken::tilde);
     case '!':
       if (*curPtr == '=')
-        return formToken(LitToken::exclaim_equal, tokStart, 1);
+        return formToken(LitToken::exclaim_equal, 1);
       return emitError(tokStart, "unexpected character");
 
     case '0':
@@ -272,10 +268,11 @@ LitToken LitLexer::lexTokenImpl() {
     case '7':
     case '8':
     case '9':
-      return lexInteger(tokStart);
+      return lexInteger(tokStart, indentation);
 
     case '#':
       skipComment();
+      indentation = 0; // skipComment eats the \n.
       continue;
     }
   }
@@ -285,7 +282,8 @@ LitToken LitLexer::lexTokenImpl() {
 ///
 /// TODO: Python supports unicode in is_potential_identifier_start etc.
 ///
-LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart) {
+LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart,
+                                          ssize_t indentation) {
   // Match the rest of the identifier regex: [0-9a-zA-Z_$-]*
   while (llvm::isAlpha(*curPtr) || llvm::isDigit(*curPtr) || *curPtr == '_' ||
          *curPtr == '$' || *curPtr == '-')
@@ -299,7 +297,7 @@ LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart) {
 #include "LitTokenKinds.def"
                             .Default(LitToken::identifier);
 
-  return LitToken(kind, spelling);
+  return LitToken(kind, spelling, indentation);
 }
 
 /// Skip a comment line, starting with a '#' and going to end of line.
@@ -308,7 +306,9 @@ void LitLexer::skipComment() {
     switch (*curPtr++) {
     case '\n':
     case '\r':
-      // Newline is end of comment.
+    case '\v':
+    case '\f':
+      // Vertical whitespaces is the end of the comment.
       return;
     case 0:
       // If this is the end of the buffer, end the comment.
@@ -348,7 +348,7 @@ inline bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 /// - Python warns if the numeric literal is immediately followed by
 //    other keyword or identifier.
 
-LitToken LitLexer::lexInteger(const char *tokStart) {
+LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
   assert(llvm::isDigit(curPtr[-1]));
 
   if (curPtr[-1] == '0') {
@@ -381,7 +381,7 @@ LitToken LitLexer::lexInteger(const char *tokStart) {
         return emitError(curPtr, "no digits specified for hex literal");
     } else if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' ||
                *curPtr == 'j' || *curPtr == 'J') {
-      return lexFloat(tokStart);
+      return lexFloat(tokStart, indentation);
     } else if (*curPtr == '0' || *curPtr == '_') {
       // Literal zero, ex. 00, 00_0, 0_0_0__0
       // Superset of Python's grammar, we allow consecutive and trailing `_`
@@ -403,11 +403,11 @@ LitToken LitLexer::lexInteger(const char *tokStart) {
   }
   if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' || *curPtr == 'j' ||
       *curPtr == 'J')
-    return lexFloat(tokStart);
-  return formToken(LitToken::integer, tokStart);
+    return lexFloat(tokStart, indentation);
+  return formToken(LitToken::integer, tokStart, indentation);
 }
 
-LitToken LitLexer::lexFloat(const char *tokStart) {
+LitToken LitLexer::lexFloat(const char *tokStart, ssize_t indentation) {
   return emitError(curPtr, "lexFloat: TODO");
 }
 

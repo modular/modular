@@ -31,10 +31,18 @@ public:
 #include "LitTokenKinds.def"
   };
 
-  LitToken(Kind kind, StringRef spelling) : kind(kind), spelling(spelling) {}
+  LitToken(Kind kind, StringRef spelling, ssize_t indentation)
+      : kind(kind), spelling(spelling), indentation(indentation) {}
 
-  // Return the bytes that make up this token.
+  /// Return the bytes that make up this token in the original source buffer.
   StringRef getSpelling() const { return spelling; }
+
+  /// Return the indentation of this token.
+  Optional<size_t> getIndentation() const {
+    if (indentation == -1)
+      return None;
+    return size_t(indentation);
+  }
 
   // Token classification.
   Kind getKind() const { return kind; }
@@ -81,6 +89,12 @@ private:
   /// A reference to the entire token contents; this is always a pointer into
   /// a memory buffer owned by the source manager.
   StringRef spelling;
+
+  /// If this token is at the start of a logical source line, then this
+  /// specifies the number of bytes the character is indented by.  If the token
+  /// is not at the start of line (or follows a \ on the previous line), then
+  /// this contains -1.
+  ssize_t indentation;
 };
 
 /// This implements a lexer for .lit files.
@@ -97,10 +111,6 @@ public:
 
   mlir::Location translateLocation(llvm::SMLoc loc);
 
-  /// Return the indentation level of the specified token or None if this token
-  /// is preceded by another token on the same line.
-  Optional<size_t> getIndentation(const LitToken &tok) const;
-
   /// Get an opaque pointer into the lexer state that can be restored later.
   LitLexerCursor getCursor() const;
 
@@ -112,21 +122,17 @@ private:
   LitToken lexTokenImpl();
 
   // Helpers.
-  LitToken formToken(LitToken::Kind kind, const char *tokStart) {
-    return LitToken(kind, StringRef(tokStart, curPtr - tokStart));
-  }
-
-  LitToken formToken(LitToken::Kind kind, const char *tokStart, size_t incr) {
-    curPtr += incr;
-    return LitToken(kind, StringRef(tokStart, curPtr - tokStart));
+  LitToken formToken(LitToken::Kind kind, const char *tokStart,
+                     ssize_t indentation) {
+    return LitToken(kind, StringRef(tokStart, curPtr - tokStart), indentation);
   }
 
   LitToken emitError(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
-  LitToken lexIdentifierOrKeyword(const char *tokStart);
-  LitToken lexInteger(const char *tokStart);
-  LitToken lexFloat(const char *tokStart);
+  LitToken lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
+  LitToken lexInteger(const char *tokStart, ssize_t indentation);
+  LitToken lexFloat(const char *tokStart, ssize_t indentation);
   void skipComment();
 
   const llvm::SourceMgr &sourceMgr;
