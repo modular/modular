@@ -28,23 +28,23 @@ hlkgen.generator @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.
 
 // CHECK-LABEL: kgen.func @erf_scalar_f32
 // CHECK-SAME: %[[ARG0:.*]]: f32
-// CHECK: %[[V0:.*]] = pop.type_raise %[[ARG0]]
+// CHECK: %[[V0:.*]] = pop.cast_from_builtin %[[ARG0]]
 // CHECK: kgen.call @"erf_scalar_taylor,type=f32"(%[[V0]]) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 kgen.generator @erf_scalar_f32(%arg0: f32) -> f32 {
-  %0 = pop.type_raise %arg0 : f32 to !pop.scalar<f32>
+  %0 = pop.cast_from_builtin %arg0 : f32 to !pop.scalar<f32>
   %1 = kgen.call @erf_scalar<type: dtype = f32>(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
-  %2 = pop.type_lower %1 : !pop.scalar<f32> to f32
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<f32> to f32
   kgen.return %2 : f32
 }
 
 // CHECK-LABEL: kgen.func @erf_scalar_f64
 // CHECK-SAME: %[[ARG0:.*]]: f64
-// CHECK: %[[V0:.*]] = pop.type_raise %[[ARG0]]
+// CHECK: %[[V0:.*]] = pop.cast_from_builtin %[[ARG0]]
 // CHECK: kgen.call @"erf_scalar_taylor,type=f64"(%[[V0]]) : (!pop.scalar<f64>) -> !pop.scalar<f64>
 kgen.generator @erf_scalar_f64(%arg0: f64) -> f64 {
-  %0 = pop.type_raise %arg0 : f64 to !pop.scalar<f64>
+  %0 = pop.cast_from_builtin %arg0 : f64 to !pop.scalar<f64>
   %1 = kgen.call @erf_scalar<type: dtype = f64>(%0) : (!pop.scalar<f64>) -> !pop.scalar<f64>
-  %2 = pop.type_lower %1 : !pop.scalar<f64> to f64
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<f64> to f64
   kgen.return %2 : f64
 }
 

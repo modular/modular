@@ -17,7 +17,7 @@ kgen.generator @badAddOne(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> implement
   %zero = index.constant 0
   %one = index.constant 1
   %numIters = index.constant 10000
-  %acc = pop.type_lower %arg0: !pop.scalar<f32> to f32
+  %acc = pop.cast_to_builtin %arg0: !pop.scalar<f32> to f32
   %tenThousand = scf.for %i = %zero to %numIters step %one iter_args(%a = %acc) -> (f32) {
     %1 = llvm.fadd %a, %0 : f32
     scf.yield %1 : f32
@@ -26,7 +26,7 @@ kgen.generator @badAddOne(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> implement
     %1 = llvm.fsub %a, %0 : f32
     scf.yield %1 : f32
   }
-  %3 = pop.type_raise %out: f32 to !pop.scalar<f32>
+  %3 = pop.cast_from_builtin %out: f32 to !pop.scalar<f32>
   %4 = pop.constant (1.0 : f32) : !pop.scalar<f32>
   %5 = pop.add %3, %4 : !pop.scalar<f32>
   kgen.return %5 : !pop.scalar<f32>

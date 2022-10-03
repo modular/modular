@@ -14,8 +14,8 @@ kgen.generator @local_verif_error() {
   kgen.param.declare ty : dtype = <f32>
   %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
 
-  // expected-note @+1 {{verification error: 'pop.type_lower' op cannot convert from scalar dtype f32 to 'i8'}}
-  %1 = pop.type_lower %0: !pop.scalar<ty> to i8
+  // expected-note @+1 {{verification error: 'pop.cast_to_builtin' op cannot convert from scalar dtype f32 to 'i8'}}
+  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
   kgen.return
 }
 
@@ -154,5 +154,3 @@ kgen.generator @test_region_constraints() {
     }
   kgen.return
 }
-
-

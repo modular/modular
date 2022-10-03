@@ -646,28 +646,28 @@ LogicalResult GlobalConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeLowerOp
+// CastToBuiltinOp
 //===----------------------------------------------------------------------===//
 
 /// Verify the conversion between the higher-level type and lower-level type.
 static LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     Type high, Type low) {
+                     Type popType, Type builtinType) {
   // Verify the scalar dtype matches the MLIR type.
-  if (auto scalar = high.dyn_cast<ScalarType>()) {
-    if (!low.isa<IntegerType, FloatType>())
+  if (auto scalar = popType.dyn_cast<ScalarType>()) {
+    if (!builtinType.isa<IntegerType, FloatType>())
       return emitError("expected an integer or float type");
 
     if (auto dtype = scalar.getDType().dyn_cast<DTypeConstantAttr>();
-        dtype && !dtype.isConvertibleTo(low))
+        dtype && !dtype.isConvertibleTo(builtinType))
       return emitError("cannot convert from scalar dtype ")
-             << dtype.getDType().getAsString() << " to " << low;
+             << dtype.getDType().getAsString() << " to " << builtinType;
     return success();
   }
 
   // Verify the SIMD size matches the vector size and the dtypes match.
-  if (auto simd = high.dyn_cast<SIMDType>()) {
-    auto vector = low.dyn_cast<VectorType>();
+  if (auto simd = popType.dyn_cast<SIMDType>()) {
+    auto vector = builtinType.dyn_cast<VectorType>();
     if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
       return emitError("expected a rank 1 non-scalable vector");
 
@@ -683,37 +683,36 @@ verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
     return success();
   }
 
-  // TODO: Verify other types through an interface.
-  return success();
+  return emitError("cannot convert type ") << popType;
 }
 
-LogicalResult TypeLowerOp::verify() {
+LogicalResult CastToBuiltinOp::verify() {
   return verifyConversionCast(
       [this](StringRef msg) { return emitOpError(msg); }, getInput().getType(),
       getType());
 }
 
-OpFoldResult TypeLowerOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
   // Fold A->B->A cast.
-  if (auto parent = getInput().getDefiningOp<TypeRaiseOp>();
+  if (auto parent = getInput().getDefiningOp<CastFromBuiltinOp>();
       parent && parent.getInput().getType() == getType())
     return parent.getInput();
   return {};
 }
 
 //===----------------------------------------------------------------------===//
-// TypeRaiseOp
+// CastFromBuiltinOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TypeRaiseOp::verify() {
+LogicalResult CastFromBuiltinOp::verify() {
   return verifyConversionCast(
       [this](StringRef msg) { return emitOpError(msg); }, getType(),
       getInput().getType());
 }
 
-OpFoldResult TypeRaiseOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
   // Fold A->B->A cast.
-  if (auto parent = getInput().getDefiningOp<TypeLowerOp>();
+  if (auto parent = getInput().getDefiningOp<CastToBuiltinOp>();
       parent && parent.getInput().getType() == getType())
     return parent.getInput();
   return {};
