@@ -286,9 +286,177 @@ void ArrayElementsAttr::print(AsmPrinter &p) const {
   p << '>';
 }
 
-ArrayElementsAttr ArrayElementsAttr::get(PrimitiveArrayAttr data,
+ArrayElementsAttr ArrayElementsAttr::get(ArrayRef<uint8_t> data,
                                          ShapedType type) {
-  return get(data.getContext(), data, type);
+  return get(type.getContext(),
+             PrimitiveArrayAttr::get(data, type.getElementType()), type);
+}
+
+ArrayRef<uint8_t> ArrayElementsAttr::getRawData() const {
+  return getData().getData();
+}
+
+//===----------------------------------------------------------------------===//
+// Shared Logic
+//===----------------------------------------------------------------------===//
+
+/// Pack the integer values into a byte array;
+static std::vector<uint8_t> packIntegerValues(unsigned width,
+                                              ArrayRef<APInt> values) {
+  unsigned byteSize = llvm::divideCeil(width, CHAR_BIT);
+  std::vector<uint8_t> data(values.size() * byteSize, 0);
+  for (auto &it : llvm::enumerate(values))
+    llvm::StoreIntToMemory(it.value(), data.data() + (it.index() * byteSize),
+                           byteSize);
+  return data;
+}
+
+//===----------------------------------------------------------------------===//
+// IntArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
+                                               ArrayRef<APInt> values) {
+  std::vector<uint8_t> data =
+      packIntegerValues(type.getElementTypeBitWidth(), values);
+  return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
+}
+
+APInt IntArrayElementsAttr::Iterator::operator*() const {
+  unsigned byteWidth = llvm::divideCeil(type.getWidth(), CHAR_BIT);
+  APInt value(type.getWidth(), 0, !type.isUnsigned());
+  llvm::LoadIntFromMemory(value, (const uint8_t *)base + index * byteWidth,
+                          byteWidth);
+  return value;
+}
+
+auto IntArrayElementsAttr::begin() const -> Iterator {
+  return Iterator(getElementType().cast<IntegerType>(), getRawData().data(), 0);
+}
+
+auto IntArrayElementsAttr::end() const -> Iterator {
+  return Iterator(getElementType().cast<IntegerType>(), getRawData().data(),
+                  size());
+}
+
+bool IntArrayElementsAttr::classof(Attribute attr) {
+  if (auto arr = attr.dyn_cast<ArrayElementsAttr>())
+    return arr.getElementType().isa<IntegerType>();
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// custom<DenseIntArray>
+//===----------------------------------------------------------------------===//
+
+ParseResult M::parseDenseIntArray(AsmParser &p, IntArrayElementsAttr &result,
+                                  unsigned width,
+                                  IntegerType::SignednessSemantics signedness) {
+  auto elementType = IntegerType::get(p.getContext(), width, signedness);
+  APInt value;
+  mlir::OptionalParseResult maybeEmpty = p.parseOptionalInteger(value);
+  // Check for an empty array.
+  if (!maybeEmpty.has_value()) {
+    result = IntArrayElementsAttr::get(ArrayType::get(0, elementType), {});
+    return success();
+  }
+  if (maybeEmpty.value())
+    return failure();
+
+  SmallVector<APInt> values;
+  auto addValue = [&](const APInt &value) {
+    values.push_back(value.sextOrTrunc(elementType.getWidth()));
+  };
+  addValue(value);
+
+  while (succeeded(p.parseOptionalComma())) {
+    if (p.parseInteger(value))
+      return failure();
+    addValue(value);
+  }
+  result = IntArrayElementsAttr::get(ArrayType::get(values.size(), elementType),
+                                     values);
+  return success();
+}
+
+void M::printDenseIntArray(AsmPrinter &p, Operation *op,
+                           IntArrayElementsAttr result, unsigned width,
+                           IntegerType::SignednessSemantics) {
+  llvm::interleaveComma(result, p);
+}
+
+//===----------------------------------------------------------------------===//
+// FloatArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
+                                                   ArrayRef<APFloat> values) {
+  SmallVector<APInt> intVals;
+  intVals.reserve(values.size());
+  for (const APFloat &value : values)
+    intVals.push_back(value.bitcastToAPInt());
+  std::vector<uint8_t> rawData =
+      packIntegerValues(type.getElementTypeBitWidth(), intVals);
+  return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();
+}
+
+APFloat FloatArrayElementsAttr::Iterator::operator*() const {
+  FloatType type = this->type;
+  unsigned byteWidth = llvm::divideCeil(type.getWidth(), CHAR_BIT);
+  APInt intVal(type.getWidth(), 0);
+  llvm::LoadIntFromMemory(intVal, (const uint8_t *)base + index * byteWidth,
+                          byteWidth);
+  return APFloat(type.getFloatSemantics(), intVal);
+}
+
+auto FloatArrayElementsAttr::begin() const -> Iterator {
+  return Iterator(getElementType().cast<FloatType>(), getRawData().data(), 0);
+}
+
+auto FloatArrayElementsAttr::end() const -> Iterator {
+  return Iterator(getElementType().cast<FloatType>(), getRawData().data(),
+                  size());
+}
+
+bool FloatArrayElementsAttr::classof(Attribute attr) {
+  if (auto arr = attr.dyn_cast<ArrayElementsAttr>())
+    return arr.getElementType().isa<FloatType>();
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// Attribute Conversion
+//===----------------------------------------------------------------------===//
+
+/// Convert a `DenseElementsAttr` to an `ArrayElementsAttr`. Pass through any
+/// other kind of attribute. This should be the only place where the splatness
+/// and bitpacked-ness of the attribute are handled.
+Attribute M::convertDenseElements(Attribute attr) {
+  auto denseElements = attr.dyn_cast<DenseElementsAttr>();
+  if (!denseElements || !denseElements.getElementType().isIntOrFloat())
+    return attr;
+  if (denseElements.getType().getElementTypeBitWidth() % 8 == 0) {
+    ArrayRef<char> charData = denseElements.getRawData();
+    ArrayRef<uint8_t> data(reinterpret_cast<const uint8_t *>(charData.data()),
+                           charData.size());
+    // If the data is byte-aligned and is not splat, just pass it along.
+    if (!denseElements.isSplat())
+      return ArrayElementsAttr::get(data, denseElements.getType());
+
+    // Replicate the splat.
+    std::vector<uint8_t> replicated(data.size() * denseElements.size(), 0);
+    for (unsigned i = 0; i < denseElements.size(); ++i)
+      memcpy(replicated.data() + i * data.size(), data.data(), data.size());
+    return ArrayElementsAttr::get(replicated, denseElements.getType());
+  }
+
+  // Unpack the data.
+  if (denseElements.getElementType().isa<FloatType>()) {
+    auto values = llvm::to_vector(denseElements.getValues<APFloat>());
+    return FloatArrayElementsAttr::get(denseElements.getType(), values);
+  }
+  auto values = llvm::to_vector(denseElements.getValues<APInt>());
+  return IntArrayElementsAttr::get(denseElements.getType(), values);
 }
 
 //===----------------------------------------------------------------------===//

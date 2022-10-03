@@ -8,8 +8,10 @@
 #define SUPPORT_MDIALECT_MATTRS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
@@ -17,5 +19,133 @@
 
 #define GET_ATTRDEF_CLASSES
 #include "Support/MDialect/MAttrs.h.inc"
+
+namespace M {
+
+//===----------------------------------------------------------------------===//
+// IntArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+/// This class represents a dense array of integers. Integer elements that do
+/// not fit evenly into bytes are rounded up to the nearest byte.
+class IntArrayElementsAttr : public ArrayElementsAttr {
+public:
+  using ArrayElementsAttr::ArrayElementsAttr;
+
+  /// Create an integer array. All `APInt`s must have the same width.
+  static IntArrayElementsAttr get(ShapedType type, ArrayRef<APInt> values);
+
+  /// Create an integer from an array of C++ values.
+  template <typename IntT>
+  static IntArrayElementsAttr get(MLIRContext *ctx, ArrayRef<IntT> values,
+                                  IntegerType::SignednessSemantics signedness) {
+    auto type = IntegerType::get(ctx, sizeof(IntT) * CHAR_BIT, signedness);
+    return ArrayElementsAttr::get(
+               {reinterpret_cast<const uint8_t *>(values.data()),
+                values.size() * sizeof(IntT)},
+               ArrayType::get(values.size(), type))
+        .template cast<IntArrayElementsAttr>();
+  }
+
+  /// Iterate over the integer elements as `APInt`s.
+  class Iterator
+      : public llvm::indexed_accessor_iterator<Iterator, const uint8_t *, APInt,
+                                               APInt, APInt> {
+  public:
+    APInt operator*() const;
+
+  private:
+    Iterator(IntegerType type, const uint8_t *base, size_t index)
+        : indexed_accessor_iterator(base, index), type(type) {}
+
+    friend class IntArrayElementsAttr;
+
+    /// The element type.
+    IntegerType type;
+  };
+
+  Iterator begin() const;
+  Iterator end() const;
+  auto getValues() { return llvm::make_range(begin(), end()); }
+
+  template <typename IntT>
+  ArrayRef<IntT> asArrayRef() {
+    assert(sizeof(IntT) * CHAR_BIT == getElementType().getIntOrFloatBitWidth());
+    return {reinterpret_cast<const IntT *>(getRawData().data()),
+            static_cast<size_t>(size())};
+  }
+
+  /// Support type inquiry.
+  static bool classof(Attribute attr);
+};
+
+//===----------------------------------------------------------------------===//
+// custom<DenseIntArray>
+//===----------------------------------------------------------------------===//
+
+/// Parse or print an array of dense integers without the surrounding braces.
+ParseResult parseDenseIntArray(
+    AsmParser &p, IntArrayElementsAttr &result, unsigned width,
+    IntegerType::SignednessSemantics signedness = IntegerType::Signed);
+void printDenseIntArray(
+    AsmPrinter &p, Operation *op, IntArrayElementsAttr result, unsigned width,
+    IntegerType::SignednessSemantics signedness = IntegerType::Signed);
+
+//===----------------------------------------------------------------------===//
+// FloatArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+/// This class represents a dense array of floats. Float elements that do not
+/// fit evenly into bytes are rounded up to the nearest byte.
+class FloatArrayElementsAttr : public ArrayElementsAttr {
+public:
+  using ArrayElementsAttr::ArrayElementsAttr;
+
+  /// Create a float array. All `APFloat`s must have the same width.
+  static FloatArrayElementsAttr get(ShapedType type, ArrayRef<APFloat> values);
+
+  /// Iterate over the float elements as `APFloat`s.
+  class Iterator
+      : public llvm::indexed_accessor_iterator<Iterator, const uint8_t *,
+                                               APFloat, APFloat, APFloat> {
+  public:
+    APFloat operator*() const;
+
+  private:
+    Iterator(FloatType type, const uint8_t *base, size_t index)
+        : indexed_accessor_iterator(base, index), type(type) {}
+
+    friend class FloatArrayElementsAttr;
+
+    /// The element type.
+    FloatType type;
+  };
+
+  Iterator begin() const;
+  Iterator end() const;
+  auto getValues() { return llvm::make_range(begin(), end()); }
+
+  template <typename FloatT>
+  ArrayRef<FloatT> asArrayRef() {
+    assert(sizeof(FloatT) * CHAR_BIT ==
+           getElementType().getIntOrFloatBitWidth());
+    return {reinterpret_cast<const FloatT *>(getRawData().data()),
+            static_cast<size_t>(size())};
+  }
+
+  /// Support type inquiry.
+  static bool classof(Attribute attr);
+};
+
+//===----------------------------------------------------------------------===//
+// Attribute Conversion
+//===----------------------------------------------------------------------===//
+
+/// Convert a `DenseElementsAttr` to an `ArrayElementsAttr`. Pass through any
+/// other kind of attribute. This should be the only place where the splatness
+/// and bitpacked-ness of the attribute are handled.
+Attribute convertDenseElements(Attribute attr);
+
+} // namespace M
 
 #endif // SUPPORT_MDIALECT_MATTRS_H
