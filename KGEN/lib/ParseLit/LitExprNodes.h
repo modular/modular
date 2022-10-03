@@ -129,10 +129,10 @@ struct EmitterState {
   Scope *scope;
 
   /// This maps SMLoc's into Location's.
-  llvm::function_ref<Location(SMLoc)> mapLocation;
+  std::function<Location(SMLoc)> mapLocation;
 
   /// This is the error handler to emit new diagnostics into.
-  llvm::function_ref<InFlightDiagnostic(SMLoc, const Twine &)> emitError;
+  std::function<InFlightDiagnostic(SMLoc, const Twine &)> emitError;
 };
 
 } // namespace M::KGEN::LIT
