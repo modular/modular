@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CLOptions.h"
+#include "KGEN/CompilerRT.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
@@ -114,6 +115,9 @@ struct ProcessBuffer {
 
 int main(int argc, char **argv) {
   KGENCLOptions clOptions(argc, argv);
+
+  // Initialize the compiler runtime.
+  KGEN_CompilerRT_Initialize();
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
