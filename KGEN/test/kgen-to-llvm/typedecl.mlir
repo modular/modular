@@ -5,8 +5,8 @@ kgen.struct.decl @SmallVector<N, T: type> {
   data: !pop.array<N, T>
 }
 
-!size2 = !kgen.typedef<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
-!size4 = !kgen.typedef<@SmallVector<N = 4, T:type = !pop.scalar<f64>>>
+!size2 = !kgen.ref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
+!size4 = !kgen.ref<@SmallVector<N = 4, T:type = !pop.scalar<f64>>>
 
 // CHECK-LABEL: @two_vectors
 kgen.func @two_vectors(
@@ -32,14 +32,14 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 }
 
 // CHECK-LABEL: @make_box
-kgen.func @make_box(%v: f32) -> !kgen.typedef<@Box<T:type = f32>> {
+kgen.func @make_box(%v: f32) -> !kgen.ref<@Box<T:type = f32>> {
   // CHECK: %[[BOX:.*]] = llvm.mlir.undef
   // CHECK: llvm.insertvalue %{{.*}}, %[[BOX]][0]
-  %0 = kgen.struct.create(%v) : (f32) -> !kgen.typedef<@Box<T:type = f32>>
-  kgen.return %0 : !kgen.typedef<@Box<T:type = f32>>
+  %0 = kgen.struct.create(%v) : (f32) -> !kgen.ref<@Box<T:type = f32>>
+  kgen.return %0 : !kgen.ref<@Box<T:type = f32>>
 }
 
-!i8Pair = !kgen.typedef<@Pair<T1:type = i8, T2:type = i8>>
+!i8Pair = !kgen.ref<@Pair<T1:type = i8, T2:type = i8>>
 
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
@@ -69,20 +69,20 @@ kgen.struct.decl @NestedA<T: type> {
   v: !kgen.paramref<T>
 }
 kgen.struct.decl @NestedB<t: dtype> {
-  a: !kgen.typedef<@NestedA<T:type = !pop.scalar<t>>>
+  a: !kgen.ref<@NestedA<T:type = !pop.scalar<t>>>
 }
 kgen.struct.decl @NestedC {
-  b: !kgen.typedef<@NestedB<t:dtype = f32>>
+  b: !kgen.ref<@NestedB<t:dtype = f32>>
 }
 
 // CHECK-LABEL: @use_nested
 // CHECK-SAME: !llvm.struct<(struct<(struct<(f32)>)>)>
-kgen.func @use_nested(%a: !kgen.typedef<@NestedC>) {
+kgen.func @use_nested(%a: !kgen.ref<@NestedC>) {
   kgen.return
 }
 
 // CHECK-LABEL: @struct_element
 // CHECK-SAME: !llvm.ptr<struct<(vector<2xf32>)>>
-kgen.func @struct_element(%a: !pop.pointer<!kgen.typedef<@NestedA<T:type = !pop.simd<2, f32>>>>) {
+kgen.func @struct_element(%a: !pop.pointer<!kgen.ref<@NestedA<T:type = !pop.simd<2, f32>>>>) {
   kgen.return
 }

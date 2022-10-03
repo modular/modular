@@ -933,7 +933,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 /// parameterized under different domains. We have to rebind them.
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 TypeDefType ref) {
+                 RefType ref) {
   FlatSymbolRefAttr name = ref.getName();
   auto structDecl =
       symbolTable.lookupNearestSymbolFrom<StructDeclOp>(user, name.getAttr());
@@ -999,7 +999,7 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 LogicalResult
 StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  TypeDefType type = getContainer().getType();
+  RefType type = getContainer().getType();
   auto [structDecl, evaluator] = lookupStructDecl(symbolTable, *this, type);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {

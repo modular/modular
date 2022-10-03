@@ -539,12 +539,12 @@ def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
 
     %0 = kgen.struct.create(%a, %b, %c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !kgen.typedef<@MyStruct<T: dtype = type>>
+      -> !kgen.ref<@MyStruct<T: dtype = type>>
     ```
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs TypeDefType:$result);
+  let results = (outs RefType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` functional-type(operands, results)
   }];
@@ -571,12 +571,12 @@ def StructInsertOp : KGENOp<"struct.insert", [NoSideEffect,
     }
 
     %0 = kgen.struct.insert %fieldVal, %struct[a]
-      : !pop.scalar<f64> into !kgen.typedef<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> into !kgen.ref<@MyStruct<T: dtype = f64>>
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, AnyType:$value, TypeDefType:$container);
-  let results = (outs TypeDefType:$result);
+  let arguments = (ins StrAttr:$field, AnyType:$value, RefType:$container);
+  let results = (outs RefType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
@@ -602,11 +602,11 @@ def StructExtractOp : KGENOp<"struct.extract", [NoSideEffect,
     }
 
     %0 = kgen.struct.extract %struct[a]
-      : !pop.scalar<f64> from !kgen.typedef<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> from !kgen.ref<@MyStruct<T: dtype = f64>>
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, TypeDefType:$container);
+  let arguments = (ins StrAttr:$field, RefType:$container);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
