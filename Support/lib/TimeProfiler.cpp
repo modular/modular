@@ -51,6 +51,15 @@ using std::chrono::system_clock;
 using std::chrono::time_point;
 using std::chrono::time_point_cast;
 
+using ClockType = TimeTraceProfilerEntry<true>::ClockType;
+using TimePointType = TimeTraceProfilerEntry<true>::TimePointType;
+using DurationType = duration<ClockType::rep, ClockType::period>;
+using CountAndDurationType = std::pair<size_t, DurationType>;
+using NameAndCountAndDurationType =
+    std::pair<std::string, CountAndDurationType>;
+
+struct TimeTraceProfiler;
+
 struct TimeTraceProfilerInstances {
   std::mutex Lock;
   std::vector<TimeTraceProfiler *> List;
@@ -61,24 +70,9 @@ TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
   return Instances;
 }
 
-} // anonymous namespace
-
-// Per Thread instance
-static LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance = nullptr;
-
-TimeTraceProfiler *M::getTimeTraceProfilerInstance() {
-  return TimeTraceProfilerInstance;
-}
-
-using ClockType = TimeTraceProfilerEntry::ClockType;
-using TimePointType = TimeTraceProfilerEntry::TimePointType;
-using DurationType = duration<ClockType::rep, ClockType::period>;
-using CountAndDurationType = std::pair<size_t, DurationType>;
-using NameAndCountAndDurationType =
-    std::pair<std::string, CountAndDurationType>;
-
-struct M::TimeTraceProfiler {
-  TimeTraceProfiler(unsigned TimeTraceGranularity = 0, StringRef ProcName = "")
+struct TimeTraceProfiler {
+  explicit TimeTraceProfiler(unsigned TimeTraceGranularity = 0,
+                             StringRef ProcName = "")
       : BeginningOfTime(system_clock::now()), StartTime(ClockType::now()),
         ProcName(ProcName), Pid(llvm::sys::Process::getProcessId()),
         Tid(llvm::get_threadid()), TimeTraceGranularity(TimeTraceGranularity) {
@@ -96,7 +90,7 @@ struct M::TimeTraceProfiler {
     Stack.pop_back();
   }
 
-  void end(TimeTraceProfilerEntry &&E) {
+  void end(TimeTraceProfilerEntry<true> &&E) {
     E.End = ClockType::now();
 
     // Check that end times monotonically increase.
@@ -119,7 +113,7 @@ struct M::TimeTraceProfiler {
     // happens to be the ones that don't have any currently open entries above
     // itself.
     if (llvm::none_of(llvm::drop_begin(llvm::reverse(Stack)),
-                      [&](const TimeTraceProfilerEntry &Val) {
+                      [&](const TimeTraceProfilerEntry<true> &Val) {
                         return Val.Name == E.Name;
                       })) {
       auto &CountAndTotal = CountAndTotalPerName[E.Name];
@@ -162,10 +156,10 @@ struct M::TimeTraceProfiler {
         }
       });
     };
-    for (const TimeTraceProfilerEntry &E : Entries)
+    for (const TimeTraceProfilerEntry<true> &E : Entries)
       writeEvent(E, this->Tid);
     for (const TimeTraceProfiler *TTP : Instances.List)
-      for (const TimeTraceProfilerEntry &E : TTP->Entries)
+      for (const TimeTraceProfilerEntry<true> &E : TTP->Entries)
         writeEvent(E, TTP->Tid);
 
     // Emit totals by section name as additional "thread" events, sorted from
@@ -254,8 +248,8 @@ struct M::TimeTraceProfiler {
     J.objectEnd();
   }
 
-  SmallVector<TimeTraceProfilerEntry, 16> Stack;
-  SmallVector<TimeTraceProfilerEntry, 128> Entries;
+  SmallVector<TimeTraceProfilerEntry<true>, 16> Stack;
+  SmallVector<TimeTraceProfilerEntry<true>, 128> Entries;
   llvm::StringMap<CountAndDurationType> CountAndTotalPerName;
   // System clock time when the session was begun.
   const time_point<system_clock> BeginningOfTime;
@@ -270,6 +264,11 @@ struct M::TimeTraceProfiler {
   const unsigned TimeTraceGranularity;
 };
 
+} // anonymous namespace
+
+// Per Thread instance
+static LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance = nullptr;
+
 void M::timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
                                     StringRef ProcName) {
   assert(TimeTraceProfilerInstance == nullptr &&
@@ -281,6 +280,8 @@ void M::timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
 // Removes all TimeTraceProfilerInstances.
 // Called from main thread.
 void M::timeTraceProfilerCleanup() {
+  assert(TimeTraceProfilerInstance != nullptr &&
+         "Profiler should be initialized");
   delete TimeTraceProfilerInstance;
   TimeTraceProfilerInstance = nullptr;
 
@@ -294,6 +295,8 @@ void M::timeTraceProfilerCleanup() {
 // Finish TimeTraceProfilerInstance on a worker thread.
 // This doesn't remove the instance, just moves the pointer to global vector.
 void M::timeTraceProfilerFinishThread() {
+  assert(TimeTraceProfilerInstance != nullptr &&
+         "Profiler should be initialized");
   auto &Instances = getTimeTraceProfilerInstances();
   std::lock_guard<std::mutex> Lock(Instances.Lock);
   Instances.List.push_back(TimeTraceProfilerInstance);
@@ -302,14 +305,14 @@ void M::timeTraceProfilerFinishThread() {
 
 void M::timeTraceProfilerWrite(llvm::raw_pwrite_stream &OS) {
   assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler object can't be null");
+         "Profiler should be initialized");
   TimeTraceProfilerInstance->write(OS);
 }
 
 llvm::Error M::timeTraceProfilerWrite(StringRef PreferredFileName,
                                       StringRef FallbackFileName) {
   assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler object can't be null");
+         "Profiler should be initialized");
 
   std::string Path = PreferredFileName.str();
   if (Path.empty()) {
@@ -326,47 +329,35 @@ llvm::Error M::timeTraceProfilerWrite(StringRef PreferredFileName,
   return llvm::Error::success();
 }
 
-void M::timeTraceProfilerBegin(StringRef Name, StringRef Detail) {
+void M::Detail::timeTraceProfilerBeginImpl(
+    std::string &&Name, llvm::function_ref<std::string()> Detail) {
   if (TimeTraceProfilerInstance != nullptr)
-    TimeTraceProfilerInstance->begin(std::string(Name),
-                                     [&]() { return std::string(Detail); });
+    TimeTraceProfilerInstance->begin(std::move(Name), Detail);
 }
 
-void M::timeTraceProfilerBegin(StringRef Name,
-                               llvm::function_ref<std::string()> Detail) {
-  if (TimeTraceProfilerInstance != nullptr)
-    TimeTraceProfilerInstance->begin(std::string(Name), Detail);
-}
-
-void M::timeTraceProfilerEnd() {
+void M::Detail::timeTraceProfilerEndImpl() {
   if (TimeTraceProfilerInstance != nullptr)
     TimeTraceProfilerInstance->end();
 }
 
-void M::TimeTraceProfilerEntry::begin() {
+M::TimeTraceProfilerEntry<true> M::Detail::timeTraceProfilerBeginEntryImpl(
+    std::string &&Name, llvm::function_ref<std::string()> Detail) {
   if (TimeTraceProfilerInstance != nullptr)
-    Start = ClockType::now();
+    return {TimeTraceProfilerEntry<true>::ClockType::now(),
+            TimeTraceProfilerEntry<true>::TimePointType(), std::string(Name),
+            Detail()};
+  else
+    return {};
 }
 
-TimeTraceProfilerEntry M::timeTraceProfilerBeginEntry(StringRef Name,
-                                                      StringRef Detail) {
-  if (TimeTraceProfilerInstance != nullptr)
-    return {ClockType::now(), TimePointType(), std::string(Name),
-            std::string(Detail)};
-  // The default constructor does not invoke now().
-  return {};
-}
-
-TimeTraceProfilerEntry
-M::timeTraceProfilerBeginEntry(StringRef Name,
-                               llvm::function_ref<std::string()> Detail) {
-  if (TimeTraceProfilerInstance != nullptr)
-    return {ClockType::now(), TimePointType(), std::string(Name), Detail()};
-  // The default constructor does not invoke now().
-  return {};
-}
-
-void M::timeTraceProfilerEndEntry(TimeTraceProfilerEntry &&Entry) {
+void M::Detail::timeTraceProfilerEndEntryImpl(
+    TimeTraceProfilerEntry<true> &&Entry) {
   if (TimeTraceProfilerInstance != nullptr)
     TimeTraceProfilerInstance->end(std::move(Entry));
+}
+
+void M::Detail::timeTraceProfilerStartEntryImpl(
+    TimeTraceProfilerEntry<true> &Entry) {
+  if (TimeTraceProfilerInstance != nullptr)
+    Entry.Start = TimeTraceProfilerEntry<true>::ClockType::now();
 }
