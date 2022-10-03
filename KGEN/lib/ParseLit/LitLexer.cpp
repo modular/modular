@@ -186,6 +186,8 @@ LitToken LitLexer::lexTokenImpl() {
       }
       return formToken(LitToken::minus, tokStart);
     case '.':
+      if (llvm::isDigit(*curPtr))
+        return lexFloat(tokStart);
       if (*curPtr == '.' && curPtr[1] == '.')
         return formToken(LitToken::dot_dot_dot, tokStart, 2);
       return formToken(LitToken::dot, tokStart);
@@ -270,7 +272,7 @@ LitToken LitLexer::lexTokenImpl() {
     case '7':
     case '8':
     case '9':
-      return lexNumber(tokStart);
+      return lexInteger(tokStart);
 
     case '#':
       skipComment();
@@ -322,24 +324,123 @@ void LitLexer::skipComment() {
   }
 }
 
-/// Lex a number literal.
-///
-/// TODO: Check this against python, it supports _'s in tok_decimal_tail for
-/// example.
-///
-LitToken LitLexer::lexNumber(const char *tokStart) {
-  assert(llvm::isDigit(curPtr[-1]));
-  while (llvm::isDigit(*curPtr))
-    ++curPtr;
+/// Checks if character \p C is one of the 8 octal digits.
+inline bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
+/// Lex a integer number literal.
+///
+/// integer      ::=  decinteger | bininteger | octinteger | hexinteger
+/// decinteger   ::=  nonzerodigit ("_" | digit)* | "0"+ ("_" | "0")*
+/// bininteger   ::=  "0" ("b" | "B") (["_"] bindigit)+
+/// octinteger   ::=  "0" ("o" | "O") (["_"] octdigit)+
+/// hexinteger   ::=  "0" ("x" | "X") (["_"] hexdigit)+
+/// nonzerodigit ::=  "1"..."9"
+/// digit        ::=  "0"..."9"
+/// bindigit     ::=  "0" | "1"
+/// octdigit     ::=  "0"..."7"
+/// hexdigit     ::=  digit | "a"..."f" | "A"..."F"
+///
+/// DIFFERENCES with Python:
+/// - Python uses the following more restrictive productions, which
+///   disallows `1__9_` for example:
+///   decinteger   ::=  nonzerodigit (["_"] digit)* | "0"+ (["_"] "0")*
+//    same thing for  bininteger, octinteger and hexinteger
+/// - Python warns if the numeric literal is immediately followed by
+//    other keyword or identifier.
+
+LitToken LitLexer::lexInteger(const char *tokStart) {
+  assert(llvm::isDigit(curPtr[-1]));
+
+  if (curPtr[-1] == '0') {
+    if (*curPtr == 'b' || *curPtr == 'B') {
+      ++curPtr;
+      bool hasDigits = false;
+      while (*curPtr == '0' || *curPtr == '1' || *curPtr == '_') {
+        hasDigits |= *curPtr != '_';
+        ++curPtr;
+      }
+      if (!hasDigits)
+        return emitError(curPtr, "no digits specified for binary literal");
+    } else if (*curPtr == 'o' || *curPtr == 'O') {
+      ++curPtr;
+      bool hasDigits = false;
+      while (isOctalDigit(*curPtr) || *curPtr == '_') {
+        hasDigits |= *curPtr != '_';
+        ++curPtr;
+      }
+      if (!hasDigits)
+        return emitError(curPtr, "no digits specified for octal literal");
+    } else if (*curPtr == 'x' || *curPtr == 'X') {
+      ++curPtr;
+      bool hasDigits = false;
+      while (llvm::isHexDigit(*curPtr) || *curPtr == '_') {
+        hasDigits |= *curPtr != '_';
+        ++curPtr;
+      }
+      if (!hasDigits)
+        return emitError(curPtr, "no digits specified for hex literal");
+    } else if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' ||
+               *curPtr == 'j' || *curPtr == 'J') {
+      return lexFloat(tokStart);
+    } else if (*curPtr == '0' || *curPtr == '_') {
+      // Literal zero, ex. 00, 00_0, 0_0_0__0
+      // Superset of Python's grammar, we allow consecutive and trailing `_`
+      // ex. 0__0_
+      do
+        ++curPtr;
+      while (*curPtr == '0' || *curPtr == '_');
+    } else if (llvm::isDigit(*curPtr))
+      // ex. 0123
+      return emitError(curPtr,
+                       "leading zeros in decimal integer literals are not "
+                       "permitted; use an 0o prefix for octal integers");
+  } else {
+    // nonzerodigit
+    // Superset of Python's grammar, we allow consecutive and trailing `_`
+    // ex. 1__9_
+    while (llvm::isDigit(*curPtr) || *curPtr == '_')
+      ++curPtr;
+  }
+  if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' || *curPtr == 'j' ||
+      *curPtr == 'J')
+    return lexFloat(tokStart);
   return formToken(LitToken::integer, tokStart);
+}
+
+LitToken LitLexer::lexFloat(const char *tokStart) {
+  return emitError(curPtr, "lexFloat: TODO");
 }
 
 /// Return the a value for the specifed string, which is known to have been
 /// lexed as an integer literal token.
 APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
   APInt result;
-  bool failed = spelling.getAsInteger(10, result);
+  unsigned base = 10;
+  if (spelling[0] == '0' && spelling.size() > 2) {
+    switch (spelling[1]) {
+    case 'b':
+    case 'B':
+      base = 2;
+      break;
+    case 'o':
+    case 'O':
+      base = 8;
+      break;
+    case 'x':
+    case 'X':
+      base = 16;
+      break;
+    }
+    spelling = spelling.drop_front(2);
+  }
+  std::string digits;
+  digits.reserve(spelling.size());
+  for (auto c : spelling) {
+    if (c != '_')
+      digits.push_back(c);
+  }
+  spelling = StringRef(digits);
+  bool failed = spelling.getAsInteger(base, result);
   assert(!failed && "we know this should always work because we lexed it");
   (void)failed;
   return result;

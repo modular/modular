@@ -1,0 +1,35 @@
+# RUN: kgen-translate -import-lit %s -verify-diagnostics
+
+# CHECK: module {
+# CHECK-NEXT: %[[CST:.*]] = index.constant 5
+# CHECK-NEXT: %[[CST:.*]] = index.constant 55
+# CHECK-NEXT: %[[CST:.*]] = index.constant 10500
+# CHECK-NEXT: %[[CST:.*]] = index.constant 12500
+# CHECK-NEXT: %[[CST:.*]] = index.constant 0
+# CHECK-NEXT: %[[CST:.*]] = index.constant 0
+# CHECK-NEXT: %[[CST:.*]] = index.constant 0
+# CHECK-NEXT: %[[CST:.*]] = index.constant 0
+# CHECK-NEXT: %[[CST:.*]] = index.constant 19
+# CHECK-NEXT: %[[CST:.*]] = index.constant 291
+# CHECK-NEXT: %[[CST:.*]]  = index.constant 291
+# CHECK-NEXT: %[[CST:.*]]  = index.constant 21
+# CHECK-NEXT: %[[CST:.*]]  = index.constant 21
+# CHECK-NEXT: %[[CST:.*]]  = index.constant 457
+# CHECK-NEXT: %[[CST:.*]]  = index.constant 457
+# CHECK-NEXT: }
+
+5
+55
+10500
+12_500
+0
+00
+0____0__0_0
+00__0_0
+1__9_
+0x123
+0X123
+0b10101
+0B10101
+0o711
+0O711
