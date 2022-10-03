@@ -208,3 +208,21 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
                "Search path for imported modules.">,
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// EmitLLVM
+//===----------------------------------------------------------------------===//
+
+def EmitLLVM : Pass<"emit-llvm", "mlir::ModuleOp"> {
+  let summary = "emit LLVM IR";
+  let description = [{
+    This pass emits the LLVM IR for the concrete KGEN. If no file is provided
+    then the IR will be printed to stdout.
+  }];
+
+  let dependentDialects = ["::M::KGEN::KGENDialect"];
+
+  let options = [
+    Option<"output", "output", "std::string", "", "Output file path.">,
+  ];
+}
