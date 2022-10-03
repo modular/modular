@@ -572,7 +572,7 @@ kgen.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{invalid use of parameter with no declaration "c"}}
 kgen.generator.interface @InvalidTypeParamValue<a>() ->
-    !kgen.typedef<@SomeType<v = a, b = c>>
+    !kgen.ref<@SomeType<v = a, b = c>>
 
 // -----
 
@@ -581,7 +581,7 @@ kgen.struct.decl @SomeType<v, d> {}
 
 // expected-error @below {{typedef symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
 kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
-    !kgen.typedef<@SomeType<v = a, b = c>>
+    !kgen.ref<@SomeType<v = a, b = c>>
 
 // -----
 
@@ -591,7 +591,7 @@ kgen.struct.decl @Bar<a: type> {
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, a>'}}
-  %0 = kgen.struct.create(%a) : (!kgen.paramref<c>) -> !kgen.typedef<@Bar<a: type = index>>
+  %0 = kgen.struct.create(%a) : (!kgen.paramref<c>) -> !kgen.ref<@Bar<a: type = index>>
   kgen.return
 }
 
@@ -599,9 +599,9 @@ kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
 
 kgen.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.ref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.typedef<@Bar>
+  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.ref<@Bar>
   kgen.return
 }
 
@@ -611,9 +611,9 @@ kgen.struct.decl @Bar {
   a : i32
 }
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.ref<@Bar>) {
   // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
-  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.typedef<@Bar>
+  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.ref<@Bar>
   kgen.return
 }
 
@@ -621,9 +621,9 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
 
 kgen.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.typedef<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !kgen.ref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = kgen.struct.extract %container[a] : index from !kgen.typedef<@Bar>
+  %0 = kgen.struct.extract %container[a] : index from !kgen.ref<@Bar>
   kgen.return
 }
 
@@ -634,7 +634,7 @@ kgen.struct.decl @BadStruct constraints <[0, "always bad"]> {}
 
 kgen.generator @use_bad_struct() {
   // expected-error @below {{error in type specialization: constraint failed: always bad}}
-  "a"() {a = !kgen.typedef<@BadStruct>} : () -> ()
+  "a"() {a = !kgen.ref<@BadStruct>} : () -> ()
   kgen.return
 }
 
@@ -645,7 +645,7 @@ kgen.struct.decl @SometimesBad<N> constraints <[lt(N, 4), "less than 4"]> {}
 
 kgen.generator @use_sometimes_bad_struct() {
   // expected-error @below {{error in type specialization: constraint failed: less than 4}}
-  "a"() {a = !kgen.typedef<@SometimesBad<N = 8>>} : () -> ()
+  "a"() {a = !kgen.ref<@SometimesBad<N = 8>>} : () -> ()
   kgen.return
 }
 
@@ -656,6 +656,6 @@ kgen.struct.decl @ParamNamedA<A> {}
 
 kgen.generator @give_it_B<C>() {
   // expected-error @below {{typedef symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
-  %0 = "a"() : () -> !kgen.typedef<@ParamNamedA<B = C>>
+  %0 = "a"() : () -> !kgen.ref<@ParamNamedA<B = C>>
   kgen.return
 }

@@ -147,28 +147,27 @@ SignatureType SignatureType::getSpecializedSignature(
 }
 
 //===----------------------------------------------------------------------===//
-// TypeDefType
+// RefType
 
-void TypeDefType::walkImmediateSubElements(
+void RefType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrs,
     function_ref<void(Type)> walkTypes) const {
   walkAttrs(getName());
   walkAttrs(getParamValues());
 }
 
-Type TypeDefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                              ArrayRef<Type> replTypes) const {
+Type RefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                          ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 2 && replTypes.empty());
   return get(replAttrs[0].cast<FlatSymbolRefAttr>(),
              replAttrs[1].cast<ParamBindArrayAttr>());
 }
 
-TypeDefType TypeDefType::get(FlatSymbolRefAttr name,
-                             ParamBindArrayAttr paramValues) {
+RefType RefType::get(FlatSymbolRefAttr name, ParamBindArrayAttr paramValues) {
   return get(name.getContext(), name, paramValues);
 }
 
-TypeDefType TypeDefType::get(FlatSymbolRefAttr name) {
+RefType RefType::get(FlatSymbolRefAttr name) {
   return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
 }
 

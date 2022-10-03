@@ -139,20 +139,20 @@ def SignatureType
 }
 
 //===----------------------------------------------------------------------===//
-// TypeDefType
+// RefType
 //===----------------------------------------------------------------------===//
 
-def TypeDefType : KGENType<"TypeDef", "typedef",
+def RefType : KGENType<"Ref", "ref",
     [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
-    A `!kgen.typedecl` type references a type declaration and binds parameter
-    values to the type.
+    A `!kgen.ref` type references a type declaration and binds parameter values
+    to the type.
 
     Example:
 
     ```mlir
-    !kgen.typedef<@MyStruct<size = 1, T:dtype = fooType>>
+    !kgen.ref<@MyStruct<size = 1, T:dtype = fooType>>
     ```
   }];
 

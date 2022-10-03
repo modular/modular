@@ -213,7 +213,7 @@ public:
       : structDecls(structDecls) {}
 
   /// Get the index of the struct field.
-  Optional<int64_t> getFieldIndex(StringAttr name, TypeDefType typeDef) const {
+  Optional<int64_t> getFieldIndex(StringAttr name, RefType typeDef) const {
     auto it =
         structDecls.fieldIndices.find({typeDef.getName().getAttr(), name});
     if (it == structDecls.fieldIndices.end())
@@ -335,7 +335,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 /// only appear in KGEN dialect operations.
 static void configureTypeConverter(POPToLLVMTypeConverter &typeConverter,
                                    StructDeclarations &structDecls) {
-  typeConverter.addConversion([&](TypeDefType typeDef) -> Optional<Type> {
+  typeConverter.addConversion([&](RefType typeDef) -> Optional<Type> {
     auto it = structDecls.fieldTypes.find(typeDef.getName().getAttr());
     if (it == structDecls.fieldTypes.end()) {
       typeConverter.emitError("could not find struct declaration ")
