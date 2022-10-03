@@ -4,11 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen-execute
-  kgen-execute.cpp
+set(CMAKE_CXX_VISIBILITY_PRESET default)
 
-  LINK_LIBS PRIVATE
-  KGENCLOptions
-  MLIRParser
-  KGENExecutionEngine
-  KGENCompilerRT)
+add_modular_mlir_library(KGENCompilerRT SHARED
+  Initialize.cpp
+)

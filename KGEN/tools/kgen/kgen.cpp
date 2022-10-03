@@ -7,6 +7,7 @@
 #include "EmitFuncHeader.h"
 #include "EmitFuncObject.h"
 #include "KGEN/CLOptions.h"
+#include "KGEN/CompilerRT.h"
 #include "KGEN/Elaborator.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
@@ -236,6 +237,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
 int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
+
+  // Initialize the compiler runtime.
+  KGEN_CompilerRT_Initialize();
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
