@@ -82,11 +82,11 @@ TEST(TimeProfiler, Begin_End_Disabled) {
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
   auto entry = timeTraceProfilerBeginEntry("event", "detail");
-  entry.begin();
+  timeTraceProfilerStartEntry(entry);
   ASSERT_TRUE(entry.Name.empty());
   ASSERT_TRUE(entry.Detail.empty());
-  ASSERT_EQ(entry.Start, TimeTraceProfilerEntry::TimePointType());
-  ASSERT_EQ(entry.End, TimeTraceProfilerEntry::TimePointType());
+  ASSERT_EQ(entry.Start, TimeTraceProfilerEntry<true>::TimePointType());
+  ASSERT_EQ(entry.End, TimeTraceProfilerEntry<true>::TimePointType());
   timeTraceProfilerEndEntry(std::move(entry));
 }
 
