@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import itertools
-import logging
 import subprocess
 from pathlib import Path
 
+from modular.utils import logging
 from modular.utils.typing import Any, Iterable, Iterator, TypeVar, Union
 
 ShellCommand = Iterable[Union[str, Path]]
