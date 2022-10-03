@@ -525,8 +525,8 @@ def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
   let summary = "Create a parametric struct.";
   let description = [{
     The `kgen.struct.create` operation creates a struct of the referred type
-    with the provided values as fields. The fields can be specified in any order
-    and any subset of the fields may be specified.
+    with the provided values as fields. The operands must match the fields in
+    the order they are declared.
 
     Example:
 
@@ -537,18 +537,17 @@ def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
       c : !pop.simd<2, T>
     }
 
-    %0 = kgen.struct.create !kgen.typedef<@MyStruct<T: dtype = type>> {
-      a = %arg0 : !pop.scalar<type>
-      c = %arg1 : !pop.simd<2, type>
-    }
+    %0 = kgen.struct.create(%a, %b, %c) :
+      (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
+      -> !kgen.typedef<@MyStruct<T: dtype = type>>
     ```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands, KStringArrayAttr:$fields);
+  let arguments = (ins Variadic<AnyType>:$operands);
   let results = (outs TypeDefType:$result);
-
-  let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -571,7 +570,7 @@ def StructInsertOp : KGENOp<"struct.insert", [NoSideEffect,
       a : !pop.scalar<T>
     }
 
-    %0 = kgen.struct.insert %arg0, %arg1[a]
+    %0 = kgen.struct.insert %fieldVal, %struct[a]
       : !pop.scalar<f64> into !kgen.typedef<@MyStruct<T: dtype = f64>>
     ```
   }];
@@ -602,7 +601,7 @@ def StructExtractOp : KGENOp<"struct.extract", [NoSideEffect,
       a : !pop.scalar<T>
     }
 
-    %0 = kgen.struct.extract %arg0[a]
+    %0 = kgen.struct.extract %struct[a]
       : !pop.scalar<f64> from !kgen.typedef<@MyStruct<T: dtype = f64>>
     ```
   }];
