@@ -4,12 +4,26 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import logging
 from pathlib import Path
 
 from _pytest.logging import LogCaptureFixture
 
-from modular.utils.logging import LoggingContext
+from modular.utils import logging
+
+
+def test_LoggingContext_logger(caplog: LogCaptureFixture):
+    logging.getLogger().setLevel(logging.DEBUG)
+
+    levels = ["debug", "info", "warning", "error", "critical"]
+    for level in levels:
+        getattr(logging, level)(f"Some {level}")
+
+    assert len(caplog.records) == 5
+    for rec, level in zip(caplog.records, levels):
+        assert rec.msg == f"Some {level}"
+        assert rec.levelname == level.upper()
+        assert rec.name == "modular.utils.logging"
+    assert True
 
 
 def test_LoggingContext_level(caplog: LogCaptureFixture):
@@ -17,7 +31,7 @@ def test_LoggingContext_level(caplog: LogCaptureFixture):
 
     logging.info("Some info")
     logging.debug("Some debug")
-    with LoggingContext(level=logging.DEBUG):
+    with logging.LoggingContext(level=logging.DEBUG):
         logging.debug("Some other debug")
 
     assert len(caplog.records) == 2
@@ -30,7 +44,7 @@ def test_LoggingContext_handler(caplog: LogCaptureFixture):
     log_file.unlink(missing_ok=True)
 
     logging.getLogger().setLevel(logging.INFO)
-    with LoggingContext(handler=logging.FileHandler(log_file)):
+    with logging.LoggingContext(handler=logging.FileHandler(log_file)):
         logging.info("Some info")
     logging.info("Some other info")
 

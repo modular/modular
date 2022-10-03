@@ -4,10 +4,36 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import logging
+from logging import *  # noqa: F403
+from logging import getLogger as _getLogger
 from types import TracebackType
 
-from modular.utils.typing import Optional, Type
+from modular.utils.typing import Any, Optional, Type
+
+
+def getLogger(name: Optional[str] = None) -> Logger:
+    name = name or __name__
+    return _getLogger(name)
+
+
+def info(message: Any, *args: Any, **kwargs: Any) -> None:
+    getLogger().info(f"{message}", *args, **kwargs)
+
+
+def error(message: Any, *args: Any, **kwargs: Any) -> None:
+    getLogger().error(f"{message}", *args, **kwargs)
+
+
+def critical(message: Any, *args: Any, **kwargs: Any) -> None:
+    getLogger().critical(f"{message}", *args, **kwargs)
+
+
+def debug(message: Any, *args: Any, **kwargs: Any) -> None:
+    getLogger().debug(f"{message}", *args, **kwargs)
+
+
+def warning(message: Any, *args: Any, **kwargs: Any) -> None:
+    getLogger().warning(f"{message}", *args, **kwargs)
 
 
 class LoggingContext:
@@ -18,12 +44,12 @@ class LoggingContext:
 
     def __init__(
         self,
-        logger: Optional[logging.Logger] = None,
+        logger: Optional[Logger] = None,
         level: Optional[int] = None,
-        handler: Optional[logging.Handler] = None,
+        handler: Optional[Handler] = None,
         close: bool = True,
     ) -> None:
-        self.logger = logger or logging.getLogger()
+        self.logger = logger or getLogger()
         self.level = level
         self.handler = handler
         self.close = close
@@ -47,3 +73,6 @@ class LoggingContext:
             self.logger.removeHandler(self.handler)
         if self.handler and self.close:
             self.handler.close()
+
+
+del Any, Optional, TracebackType, Type
