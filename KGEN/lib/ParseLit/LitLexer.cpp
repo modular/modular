@@ -138,6 +138,22 @@ LitToken LitLexer::lexTokenImpl() {
       indentation = 0;
       continue;
 
+      // Handle \ at end of line by treating it as whitespace instead of
+      // tracking the next token as start of line.
+    case '\\': {
+      // Check that there is only horizontal whitespace before the \n.
+      while (*curPtr == ' ' || *curPtr == '\t')
+        ++curPtr;
+      if (*curPtr == '\n' || *curPtr == '\r' || *curPtr == '\f' ||
+          *curPtr == '\v') {
+        ++curPtr;
+        indentation = -1;
+        continue;
+      }
+      return emitError(tokStart,
+                       "unexpected '\\' character, isn't at end of line");
+    }
+
     default:
       // Handle identifiers.
       if (llvm::isAlpha(curPtr[-1]))
