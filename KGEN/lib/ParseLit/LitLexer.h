@@ -125,7 +125,8 @@ private:
 
   // Lexer implementation methods.
   LitToken lexIdentifierOrKeyword(const char *tokStart);
-  LitToken lexNumber(const char *tokStart);
+  LitToken lexInteger(const char *tokStart);
+  LitToken lexFloat(const char *tokStart);
   void skipComment();
 
   const llvm::SourceMgr &sourceMgr;

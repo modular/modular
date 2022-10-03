@@ -8,6 +8,16 @@
 # expected-error @+1 {{unexpected character}}
 !
 
+# // -----
+
+# expected-error @+1 {{leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers}}
+0123
+
+# // -----
+
+# expected-error @+1 {{no digits specified for octal literal}}
+0o_
+
 
 # // -----
 
