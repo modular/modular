@@ -25,6 +25,9 @@ bool areEquivalentFloatTypes(DType dtype, FloatType fpType);
 /// for `dtype:bf16`, this function returns an instance of `mlir::BFloat16Type`.
 FloatType getEquivalentFloatType(MLIRContext *ctx, DType dtype);
 
+/// Given an integer dtype, return the equivalent MLIR integer type.
+IntegerType getEquivalentIntegerType(MLIRContext *ctx, DType dtype);
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDTYPE_H

@@ -47,3 +47,9 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
     return FloatType::getF128(ctx);
   }
 }
+
+IntegerType M::getEquivalentIntegerType(MLIRContext *ctx, DType dtype) {
+  return IntegerType::get(ctx, dtype.getWidthInBits(),
+                          dtype.isSInt() ? IntegerType::Signed
+                                         : IntegerType::Unsigned);
+}

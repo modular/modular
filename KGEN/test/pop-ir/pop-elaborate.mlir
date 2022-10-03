@@ -114,8 +114,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"int_vec
 kgen.generator @int_vec<type: dtype>() -> !pop.simd<4, type> {
-  // CHECK: pop.constant(dense<[1, 2, 3, 4]> : vector<4xsi8>)
-  %0 = pop.constant(dense<[1., 2., 3., 4.]> : vector<4xf32>) : !pop.simd<4, type>
+  // CHECK: pop.constant(#M.dense_array<1, 2, 3, 4> : vector<4xsi8>)
+  %0 = pop.constant(#M.dense_array<1., 2., 3., 4.> : vector<4xf32>) : !pop.simd<4, type>
   kgen.return %0 : !pop.simd<4, type>
 }
 
@@ -128,8 +128,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"flt_vec
 kgen.generator @flt_vec<type: dtype>() -> !pop.simd<4, type> {
-  // CHECK: pop.constant(dense<[1.{{.*}}, 2.{{.*}}, 3.{{.*}}, 4.{{.*}}]> : vector<4xbf16>)
-  %0 = pop.constant(dense<[1, 2, 3, 4]> : vector<4xi64>) : !pop.simd<4, type>
+  // CHECK: pop.constant(#M.dense_array<1.{{.*}}, 2.{{.*}}, 3.{{.*}}, 4.{{.*}}> : vector<4xbf16>)
+  %0 = pop.constant(#M.dense_array<1, 2, 3, 4> : vector<4xi64>) : !pop.simd<4, type>
   kgen.return %0 : !pop.simd<4, type>
 }
 
@@ -142,7 +142,7 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"splat_constant
 kgen.generator @splat_constant<size>() -> !pop.simd<size, f32> {
-  // CHECK: pop.constant(dense<0.{{0+}}e+00> : vector<8xf32>)
+  // CHECK: pop.constant(#M.dense_array<{{.*}}> : vector<8xf32>)
   %0 = pop.constant(0.0 : f32) : !pop.simd<size, f32>
   kgen.return %0 : !pop.simd<size, f32>
 }
@@ -161,7 +161,7 @@ kgen.generator @impl() {
 // CHECK: pop.constant(1.{{0+}}e+00 : f32) : !pop.scalar<f32>
 
 // CHECK-LABEL: @"splat_constant,type=!pop.simd<4, si32>"
-// CHECK: pop.constant(dense<1> : vector<4xsi32>) : !pop.simd<4, si32>
+// CHECK: pop.constant(#M.dense_array<1, 1, 1, 1> : vector<4xsi32>) : !pop.simd<4, si32>
 
 kgen.generator @splat_constant<type: type>() -> !kgen.paramref<type> {
   %0 = pop.constant(1) : !kgen.paramref<type>
@@ -179,8 +179,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<dtype: dtype>() {
-  // CHECK: pop.global_constant(dense<[1.{{0+}}e+00, 2.{{0+}}e+00]> : tensor<2xf32>) : !pop.array<2, !pop.scalar<f32>>
-  %0 = pop.global_constant(dense<[1, 2]> : tensor<2xi32>) : !pop.array<2, !pop.scalar<dtype>>
+  // CHECK: pop.global_constant(#M.dense_array<1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<2xf32>) : !pop.array<2, !pop.scalar<f32>>
+  %0 = pop.global_constant(#M.dense_array<1, 2> : !M.array<2xi32>) : !pop.array<2, !pop.scalar<dtype>>
   kgen.return
 }
 
@@ -193,7 +193,7 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<size>() {
-  // CHECK: pop.global_constant(dense<1> : tensor<2xui64>) : !pop.array<2, !pop.scalar<ui64>>
+  // CHECK: pop.global_constant(#M.dense_array<1, 1> : !M.array<2xui64>) : !pop.array<2, !pop.scalar<ui64>>
   %0 = pop.global_constant(1 : ui64) : !pop.array<size, !pop.scalar<ui64>>
   kgen.return
 }

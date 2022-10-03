@@ -211,7 +211,8 @@ struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
     BufferType type = op.getType();
     auto elType = ScalarType::get(type.getDType());
     Value global = rewriter.create<GlobalConstantOp>(
-        op.getLoc(), PointerType::get(ArrayType::get(type.getSize(), elType)),
+        op.getLoc(),
+        PointerType::get(POP::ArrayType::get(type.getSize(), elType)),
         op.getValues());
     Value ptr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(elType), global);
@@ -322,13 +323,12 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
     fmtStr.reserve(op.getFmt().size() + 1);
     llvm::append_range(fmtStr, op.getFmt());
     fmtStr.push_back('\0');
-    auto values = DenseIntElementsAttr::get(
-        RankedTensorType::get(fmtStr.size(), rewriter.getIntegerType(8, true)),
-        ArrayRef<char>(fmtStr.data(), fmtStr.size()));
+    auto values = IntArrayElementsAttr::get(
+        op.getContext(), ArrayRef<char>(fmtStr), IntegerType::Signed);
     auto charType = rewriter.getType<ScalarType>(DType::si8);
     Value fmtData = rewriter.create<GlobalConstantOp>(
-        op.getLoc(), PointerType::get(ArrayType::get(fmtStr.size(), charType)),
-        values);
+        op.getLoc(),
+        PointerType::get(POP::ArrayType::get(fmtStr.size(), charType)), values);
     Value fmt = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(charType), fmtData);
 

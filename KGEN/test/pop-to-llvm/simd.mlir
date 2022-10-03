@@ -47,8 +47,8 @@ kgen.func @int_neg_simd(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
 
 // CHECK-LABEL: @constant_simd
 kgen.func @constant_simd() -> !pop.simd<2, si32> {
-  // CHECK: llvm.mlir.constant(dense<0>
-  %0 = pop.constant(dense<0> : vector<2xsi32>) : !pop.simd<2, si32>
+  // CHECK: llvm.mlir.constant(#M.dense_array<0, 0>
+  %0 = pop.constant(#M.dense_array<0, 0> : vector<2xsi32>) : !pop.simd<2, si32>
   kgen.return %0 : !pop.simd<2, si32>
 }
 
@@ -56,8 +56,8 @@ kgen.func @constant_simd() -> !pop.simd<2, si32> {
 
 // CHECK-LABEL: @constant_simd
 kgen.func @constant_simd() -> !pop.simd<2, f32> {
-  // CHECK: llvm.mlir.constant(dense<[1.{{0*}}e+00, 2.{{0*}}e+00]>
-  %0 = pop.constant(dense<[1., 2.]> : vector<2xf32>) : !pop.simd<2, f32>
+  // CHECK: llvm.mlir.constant(#M.dense_array<1.{{0*}}e+00, 2.{{0*}}e+00>
+  %0 = pop.constant(#M.dense_array<1., 2.> : vector<2xf32>) : !pop.simd<2, f32>
   kgen.return %0 : !pop.simd<2, f32>
 }
 
