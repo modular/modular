@@ -14,17 +14,37 @@
 #include "mlir/IR/BuiltinTypes.h"
 
 //===----------------------------------------------------------------------===//
+// ArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+namespace M::detail {
+class AttrIterator
+    : public llvm::indexed_accessor_iterator<AttrIterator, const uint8_t *,
+                                             Attribute, Attribute, Attribute> {
+public:
+  AttrIterator(const uint8_t *data, size_t index, Type elementType)
+      : indexed_accessor_iterator(data, index), elementType(elementType) {}
+
+  Attribute operator*() const;
+
+private:
+  /// The element type.
+  Type elementType;
+};
+} // namespace M::detail
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
 #include "Support/MDialect/MAttrs.h.inc"
 
-namespace M {
-
 //===----------------------------------------------------------------------===//
 // IntArrayElementsAttr
 //===----------------------------------------------------------------------===//
+
+namespace M {
 
 /// This class represents a dense array of integers. Integer elements that do
 /// not fit evenly into bytes are rounded up to the nearest byte.
@@ -34,6 +54,7 @@ public:
 
   /// Create an integer array. All `APInt`s must have the same width.
   static IntArrayElementsAttr get(ShapedType type, ArrayRef<APInt> values);
+  static IntArrayElementsAttr get(ShapedType type, ArrayRef<APSInt> values);
 
   /// Create an integer from an array of C++ values.
   template <typename IntT>

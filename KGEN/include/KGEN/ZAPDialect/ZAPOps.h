@@ -8,6 +8,7 @@
 #define KGEN_ZAPDIALECT_ZAPOPS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"

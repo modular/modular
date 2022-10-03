@@ -8,6 +8,7 @@
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -171,7 +172,6 @@ public:
     }
   }
 
-private:
   /// Load a single element.
   APInt getValue(unsigned i) {
     APInt value(type.getWidth(), 0, !type.isUnsignedInteger());
@@ -179,6 +179,7 @@ private:
     return value;
   }
 
+private:
   IntOrFPType type;
   unsigned byteSize;
   ArrayRef<uint8_t> data;
@@ -296,6 +297,22 @@ ArrayRef<uint8_t> ArrayElementsAttr::getRawData() const {
   return getData().getData();
 }
 
+FailureOr<detail::AttrIterator>
+ArrayElementsAttr::try_value_begin_impl(OverloadToken<Attribute>) const {
+  return detail::AttrIterator(getRawData().data(), 0, getElementType());
+}
+
+Attribute detail::AttrIterator::operator*() const {
+  auto type = elementType.cast<IntOrFPType>();
+  APInt val(type.getWidth(), 0);
+  unsigned byteSize = type.getNearestByteSize();
+  llvm::LoadIntFromMemory(val, getBase() + getIndex() * byteSize, byteSize);
+  if (type.isa<IntegerType>())
+    return IntegerAttr::get(type, val);
+  APFloat fpVal(type.cast<FloatType>().getFloatSemantics(), val);
+  return FloatAttr::get(type.cast<FloatType>(), fpVal);
+}
+
 //===----------------------------------------------------------------------===//
 // Shared Logic
 //===----------------------------------------------------------------------===//
@@ -319,6 +336,16 @@ IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
                                                ArrayRef<APInt> values) {
   std::vector<uint8_t> data =
       packIntegerValues(type.getElementTypeBitWidth(), values);
+  return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
+}
+
+IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
+                                               ArrayRef<APSInt> values) {
+  static_assert(sizeof(APSInt) == sizeof(APInt),
+                "cannot bitcast from APSInt to APInt");
+  std::vector<uint8_t> data = packIntegerValues(
+      type.getElementTypeBitWidth(),
+      {reinterpret_cast<const APInt *>(values.data()), values.size()});
   return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
 }
 
@@ -357,7 +384,8 @@ ParseResult M::parseDenseIntArray(AsmParser &p, IntArrayElementsAttr &result,
   mlir::OptionalParseResult maybeEmpty = p.parseOptionalInteger(value);
   // Check for an empty array.
   if (!maybeEmpty.has_value()) {
-    result = IntArrayElementsAttr::get(ArrayType::get(0, elementType), {});
+    result = IntArrayElementsAttr::get(ArrayType::get(0, elementType),
+                                       ArrayRef<APInt>());
     return success();
   }
   if (maybeEmpty.value())

@@ -25,7 +25,7 @@ kgen.func @pop_constant() {
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{expected dense elements attribute for vector constant with known size}}
+  // expected-error @below {{expected array elements attribute for vector constant with known size}}
   %0 = pop.constant(0 : i32) : !pop.simd<2, si32>
   kgen.return
 }
@@ -34,7 +34,7 @@ kgen.func @pop_constant() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{expected attribute type to be vector<2xT>}}
-  %0 = pop.constant(dense<0.0> : tensor<2xf32>) : !pop.simd<2, f32>
+  %0 = pop.constant(#M.dense_array<0.0, 0.0> : tensor<2xf32>) : !pop.simd<2, f32>
   kgen.return
 }
 
@@ -42,7 +42,7 @@ kgen.func @pop_constant() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{expected attribute type to be vector<2xT>}}
-  %0 = pop.constant(dense<0> : vector<2x2xsi32>) : !pop.simd<2, si32>
+  %0 = pop.constant(#M.dense_array<0, 0, 0, 0> : vector<2x2xsi32>) : !pop.simd<2, si32>
   kgen.return
 }
 
@@ -50,7 +50,7 @@ kgen.func @pop_constant() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{expected attribute type to be vector<2xT>}}
-  %0 = pop.constant(dense<0> : vector<1xsi32>) : !pop.simd<2, si32>
+  %0 = pop.constant(#M.dense_array<0> : vector<1xsi32>) : !pop.simd<2, si32>
   kgen.return
 }
 
@@ -58,7 +58,7 @@ kgen.func @pop_constant() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{cannot convert from attribute type 'i32' to dtype si32}}
-  %0 = pop.constant(dense<0> : vector<2xi32>) : !pop.simd<2, si32>
+  %0 = pop.constant(#M.dense_array<0, 0> : vector<2xi32>) : !pop.simd<2, si32>
   kgen.return
 }
 
@@ -66,7 +66,7 @@ kgen.func @pop_constant() {
 
 kgen.generator @pop_constant<size>() {
   // expected-error @below {{expected integer or float attribute for vector constant of unspecified size}}
-  %0 = pop.constant(dense<0> : vector<2xsi32>) : !pop.simd<size, si32>
+  %0 = pop.constant(#M.dense_array<0, 0> : vector<2xsi32>) : !pop.simd<size, si32>
   kgen.return
 }
 
@@ -215,7 +215,7 @@ kgen.func @global_constant() {
 // -----
 
 kgen.func @global_constant() {
-  // expected-error @below {{expected dense elements attribute for array constant with known size}}
+  // expected-error @below {{expected array elements attribute for array constant with known size}}
   %0 = pop.global_constant(0.0 : f32) : !pop.array<4, !pop.scalar<f32>>
   kgen.return
 }
@@ -223,24 +223,24 @@ kgen.func @global_constant() {
 // -----
 
 kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : vector<2xf32>) : !pop.array<2, !pop.scalar<f32>>
+  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
+  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : vector<2xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
 // -----
 
 kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : tensor<2x2xf32>) : !pop.array<2, !pop.scalar<f32>>
+  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
+  %0 = pop.global_constant(#M.dense_array<0.0, 0.0, 0.0, 0.0> : tensor<2x2xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
 // -----
 
 kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be tensor<2xT>}}
-  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<2, !pop.scalar<f32>>
+  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
+  %0 = pop.global_constant(#M.dense_array<0.0> : tensor<1xf32>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -248,7 +248,7 @@ kgen.func @global_constant() {
 
 kgen.generator @global_constant<size>() {
   // expected-error @below {{expected integer or float attribute for array constant of unspecified size}}
-  %0 = pop.global_constant(dense<0.0> : tensor<1xf32>) : !pop.array<size, !pop.scalar<f32>>
+  %0 = pop.global_constant(#M.dense_array<0.0> : !M.array<1xf32>) : !pop.array<size, !pop.scalar<f32>>
   kgen.return
 }
 
@@ -256,7 +256,7 @@ kgen.generator @global_constant<size>() {
 
 kgen.func @global_constant() {
   // expected-error @below {{array constant must have scalar elements}}
-  %0 = pop.global_constant(dense<0.0> : tensor<2xf32>) : !pop.array<2, !pop.simd<1, f32>>
+  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : !M.array<2xf32>) : !pop.array<2, !pop.simd<1, f32>>
   kgen.return
 }
 
@@ -264,7 +264,7 @@ kgen.func @global_constant() {
 
 kgen.func @global_constant() {
   // expected-error @below {{convert from attribute type 'f64' to dtype f32}}
-  %0 = pop.global_constant(dense<0.0> : tensor<2xf64>) : !pop.array<2, !pop.scalar<f32>>
+  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : !M.array<2xf64>) : !pop.array<2, !pop.scalar<f32>>
   kgen.return
 }
 

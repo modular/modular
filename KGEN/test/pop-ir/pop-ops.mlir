@@ -13,12 +13,12 @@ kgen.func @pop_constant() {
 
 // CHECK-LABEL: @pop_constant_simd
 kgen.func @pop_constant_simd() {
-  // CHECK: pop.constant(dense<[32, 64]>
-  %0 = pop.constant(dense<[32, 64]> : vector<2xsi64>) : !pop.simd<2, si64>
-  // CHECK: pop.constant(dense<[3.2{{.*}}, 6.4{{.*}}]>
-  %1 = pop.constant(dense<[32., 64.]> : vector<2xf64>) : !pop.simd<2, f64>
-  // CHECK: pop.constant(dense<[32, 64]>
-  %2 = pop.constant(dense<[32, 64]> : vector<2xui32>) : !pop.simd<2, ui32>
+  // CHECK: pop.constant(#M.dense_array<32, 64>
+  %0 = pop.constant(#M.dense_array<32, 64> : vector<2xsi64>) : !pop.simd<2, si64>
+  // CHECK: pop.constant(#M.dense_array<3.2{{.*}}, 6.4{{.*}}>
+  %1 = pop.constant(#M.dense_array<32., 64.> : vector<2xf64>) : !pop.simd<2, f64>
+  // CHECK: pop.constant(#M.dense_array<32, 64>
+  %2 = pop.constant(#M.dense_array<32, 64> : vector<2xui32>) : !pop.simd<2, ui32>
   kgen.return
 }
 
@@ -557,10 +557,10 @@ kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>
 kgen.generator @global_constant<type: type, dtype: dtype>() -> !pop.pointer<type> {
   // CHECK: pop.global_constant(5 : i32) : type
   %0 = pop.global_constant(5 : i32) : type
-  // CHECK: pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
-  %1 = pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
-  // CHECK: pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !pop.scalar<dtype>>
-  %2 = pop.global_constant(dense<0> : tensor<4xi32>) : !pop.array<4, !pop.scalar<dtype>>
+  // CHECK: pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
+  %1 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
+  // CHECK: pop.global_constant(#M.dense_array<0, 0, 0, 0> : !M.array<4xi32>) : !pop.array<4, !pop.scalar<dtype>>
+  %2 = pop.global_constant(#M.dense_array<0, 0, 0, 0> : !M.array<4xi32>) : !pop.array<4, !pop.scalar<dtype>>
   kgen.return %0 : !pop.pointer<type>
 }
 

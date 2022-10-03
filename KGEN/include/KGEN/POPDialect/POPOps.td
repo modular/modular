@@ -49,7 +49,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
     // Explicitly signed or unsigned integers can form only integers of the
     // same bitwidth and signedness.
 
-    %1 = pop.constant(dense<[42, 24]> : vector<2xui64>) : !pop.simd<2, ui64>
+    %1 = pop.constant(#M.dense_array<42, 24> : vector<2xui64>) : !pop.simd<2, ui64>
     // Floats can only form equivalent floating point.
     %2 = pop.constant(12.3 : f80) : !pop.scalar<f80>
     ```
@@ -60,8 +60,8 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
     ```mlir
     %0 = pop.constant(42) : !pop.scalar<type>
     %1 = pop.constant(12.3 : f32) : !pop.scalar<type>
-    %2 = pop.constant(dense<[1, 2]> : vector<2xi64>) : !pop.simd<2, type>
-    %3 = pop.constant(dense<[0.1]> : vector<4xbf16>) : !pop.simd<4, type>
+    %2 = pop.constant(#M.dense_array<1, 2> : vector<2xi64>) : !pop.simd<2, type>
+    %3 = pop.constant(#M.dense_array<0.1> : vector<4xbf16>) : !pop.simd<4, type>
     ```
 
     When the operation is elaborated, the constant is reified according to the
@@ -1076,7 +1076,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
     ```mlir
     %0 = pop.global_constant(5 : i32) : !pop.scalar<ui32>
     %1 = pop.global_constant(12.0) : type
-    %2 = pop.global_constant(dense<[4, 2]>) : !pop.simd<2, dtype>
+    %2 = pop.global_constant(#M.dense_array<4, 2>) : !pop.simd<2, dtype>
     ```
   }];
 

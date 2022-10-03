@@ -16,6 +16,8 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MTypes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
@@ -31,6 +33,68 @@ using namespace POP;
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
+/// Reify an integer to another integer.
+static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
+                                     DType dtype) {
+  // Integer to integer conversion. Check that this isn't converting between
+  // signed or unsigned integers.
+  if (!type.isSignlessInteger() && type.isSignedInteger() != dtype.isSInt()) {
+    std::string errorMessage;
+    llvm::raw_string_ostream os(errorMessage);
+    os << "cannot change signfulness when converting from " << type << " to "
+       << dtype.getAsString();
+    return Error(std::move(os.str()));
+  }
+
+  // Truncate or extend the value depending on the result width.
+  APSInt origInt(value, dtype.isUInt());
+  APSInt intValue = origInt.extOrTrunc(dtype.getWidthInBits());
+  if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
+    return Error("integer constant does not fit into " + dtype.getAsString());
+
+  return intValue;
+}
+
+/// Reify an integer to a float.
+static ErrorOr<APFloat> reifyIntToFloat(const APInt &value, IntegerType type,
+                                        FloatType fpType, DType dtype) {
+  // Roundtrip the integer value through float.
+  APFloat apFp(fpType.getFloatSemantics());
+  apFp.convertFromAPInt(value, !type.isUnsigned(),
+                        APFloat::rmNearestTiesToEven);
+  APSInt apInt(type.getIntOrFloatBitWidth(), type.isUnsigned());
+  bool exact;
+  apFp.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
+
+  // Fail if the roundtrip was lossy.
+  if (!exact || !APInt::isSameValue(apInt, value))
+    return Error("integer constant could not be exactly converted to " +
+                 dtype.getAsString());
+  return apFp;
+}
+
+/// Reify a float to an integer.
+static ErrorOr<APSInt> reifyFloatToInt(const APFloat &value, DType dtype) {
+  // Float to integer conversion. Only exact integers can be converted.
+  if (!value.isInteger())
+    return Error("only exact integer floats can be converted to integers");
+
+  // Convert the float to an integer.
+  APSInt apInt(dtype.getWidthInBits(), dtype.isUInt());
+  bool exact;
+  value.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
+  assert(exact && "expected an exact integer");
+  return apInt;
+}
+
+/// Reify a float to a float.
+static ErrorOr<APFloat> reifyFloatToFloat(APFloat apFp, FloatType fpType) {
+  // Coerce the floating point type, regardless of lossiness.
+  bool lossy;
+  apFp.convert(fpType.getFloatSemantics(), APFloat::rmTowardZero, &lossy);
+  return apFp;
+}
+
 /// Reify a single integer or float attribute to an attribute that fits the
 /// given dtype.
 static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
@@ -41,61 +105,29 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
       return Error("cannot coerce constant value to " + dtype.getAsString());
 
     if (dtype.isInt()) {
-      // Integer to integer conversion. Check that this isn't converting between
-      // signed or unsigned integers.
-      if (!type.isSignlessInteger() &&
-          type.isSignedInteger() != dtype.isSInt()) {
-        std::string errorMessage;
-        llvm::raw_string_ostream os(errorMessage);
-        os << "cannot change signfulness when converting from " << type
-           << " to " << dtype.getAsString();
-        return Error(std::move(os.str()));
-      }
-
-      // Truncate or extend the value depending on the result width.
-      APSInt origInt(value.getValue(), dtype.isUInt());
-      APSInt intValue = origInt.extOrTrunc(dtype.getWidthInBits());
-      if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
-        return Error("integer constant does not fit into " +
-                     dtype.getAsString());
-
-      // Update the integer type and replace the value.
-      return IntegerAttr::get(attr.getContext(), intValue);
+      ErrorOr<APSInt> intValue = reifyIntToInt(value.getValue(), type, dtype);
+      if (intValue.isError())
+        return intValue.takeError();
+      return IntegerAttr::get(attr.getContext(), intValue.takeValue());
     }
 
     // Integer to float conversion. Check for a valid floating point type.
-    FloatType fpType = getEquivalentFloatType(attr.getContext(), dtype);
+    FloatType fpType = getEquivalentFloatType(type.getContext(), dtype);
     if (!fpType)
       return Error("unsupported floating point type: " + dtype.getAsString());
-
-    // Roundtrip the integer value through float.
-    APFloat apFp(fpType.getFloatSemantics());
-    apFp.convertFromAPInt(value.getValue(), !type.isUnsigned(),
-                          APFloat::rmNearestTiesToEven);
-    APSInt apInt(type.getIntOrFloatBitWidth(), type.isUnsigned());
-    bool exact;
-    apFp.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
-
-    // Fail if the roundtrip was lossy.
-    if (!exact || !APInt::isSameValue(apInt, value.getValue()))
-      return Error("integer constant could not be exactly converted to " +
-                   dtype.getAsString());
-    return FloatAttr::get(fpType, apFp);
+    ErrorOr<APFloat> apFp =
+        reifyIntToFloat(value.getValue(), type, fpType, dtype);
+    if (apFp.isError())
+      return apFp.takeError();
+    return FloatAttr::get(fpType, apFp.takeValue());
   }
 
   auto value = attr.cast<FloatAttr>();
   if (dtype.isInt()) {
-    // Float to integer conversion. Only exact integers can be converted.
-    if (!value.getValue().isInteger())
-      return Error("only exact integer floats can be converted to integers");
-
-    // Convert the float to an integer.
-    APSInt apInt(dtype.getWidthInBits(), dtype.isUInt());
-    bool exact;
-    value.getValue().convertToInteger(apInt, APFloat::rmTowardZero, &exact);
-    assert(exact && "expected an exact integer");
-
-    return IntegerAttr::get(attr.getContext(), apInt);
+    ErrorOr<APSInt> apInt = reifyFloatToInt(value.getValue(), dtype);
+    if (apInt.isError())
+      return apInt.takeError();
+    return IntegerAttr::get(attr.getContext(), apInt.takeValue());
   }
 
   // Float to float conversion. Check for a valid floating point type.
@@ -103,11 +135,25 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
   if (!fpType)
     return Error("unsupported floating point type: " + dtype.getAsString());
 
-  // Coerce the floating point type, regardless of lossiness.
-  APFloat apFp = value.getValue();
-  bool lossy;
-  apFp.convert(fpType.getFloatSemantics(), APFloat::rmTowardZero, &lossy);
-  return FloatAttr::get(fpType, apFp);
+  return FloatAttr::get(
+      fpType, reifyFloatToFloat(value.getValue(), fpType).takeValue());
+}
+
+/// Reify a range of floats or integers.
+template <typename OutAttrT, typename InAttrT, typename ConvertValueFn>
+static ErrorOr<TypedAttr> reifyArray(InAttrT attr, ConvertValueFn &&convert,
+                                     Type newElementType) {
+  using T = decltype(*attr.getValues().begin());
+  SmallVector<decltype(convert(std::declval<T>()).takeValue())> values;
+  values.reserve(attr.size());
+  for (T value : attr.getValues()) {
+    auto newValue = convert(value);
+    if (newValue.isError())
+      return newValue.takeError();
+    values.push_back(newValue.takeValue());
+  }
+  ShapedType newShapedType = attr.getType().cloneWith({}, newElementType);
+  return OutAttrT::get(newShapedType, values);
 }
 
 /// Reify a primitive constant attribute (integer, float, or vector thereof)
@@ -124,41 +170,60 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
     ShapedType shapedType;
     if (auto simd = type.dyn_cast<SIMDType>())
       shapedType = VectorType::get(*simd.getResolvedSize(), result->getType());
-    else if (auto array = type.dyn_cast<ArrayType>())
+    else if (auto array = type.dyn_cast<POP::ArrayType>())
       shapedType =
-          RankedTensorType::get(*array.getResolvedSize(), result->getType());
-    if (shapedType)
-      result = DenseElementsAttr::get(shapedType, result.takeValue());
+          M::ArrayType::get(*array.getResolvedSize(), result->getType());
+    if (shapedType) {
+      if (auto fpVal = result->dyn_cast<FloatAttr>()) {
+        SmallVector<APFloat> values(shapedType.getNumElements(),
+                                    fpVal.getValue());
+        result = FloatArrayElementsAttr::get(shapedType, values);
+      } else {
+        SmallVector<APInt> values(shapedType.getNumElements(),
+                                  result->cast<IntegerAttr>().getValue());
+        result = IntArrayElementsAttr::get(shapedType, values);
+      }
+    }
     return result;
   }
 
   // If the value is an elements attribute, reify each element according to the
   // result dtype.
-  auto value = attr.cast<mlir::DenseIntOrFPElementsAttr>();
-  SmallVector<Attribute> values;
-  values.reserve(value.size());
-  for (Attribute attr : value.getValues<Attribute>()) {
-    ErrorOr<TypedAttr> result = reifyOneAttribute(attr, dtype);
-    if (result.isError())
-      return result.takeError();
-    values.push_back(result.takeValue());
+  if (auto fpValues = attr.dyn_cast<FloatArrayElementsAttr>()) {
+    if (dtype.isInt()) {
+      return reifyArray<IntArrayElementsAttr>(
+          fpValues,
+          [&](const APFloat &val) { return reifyFloatToInt(val, dtype); },
+          getEquivalentIntegerType(attr.getContext(), dtype));
+    }
+
+    FloatType fpType = getEquivalentFloatType(attr.getContext(), dtype);
+    if (!fpType)
+      return Error("unsupported floating point type: " + dtype.getAsString());
+    return reifyArray<FloatArrayElementsAttr>(
+        fpValues,
+        [&](const APFloat &val) { return reifyFloatToFloat(val, fpType); },
+        fpType);
   }
 
-  // Convert the dtype to an element type.
-  Type elType;
+  auto intValues = attr.cast<IntArrayElementsAttr>();
+  IntegerType intType = intValues.getElementType().cast<IntegerType>();
   if (dtype.isInt()) {
-    elType = IntegerType::get(attr.getContext(), dtype.getWidthInBits(),
-                              dtype.isSInt()
-                                  ? IntegerType::SignednessSemantics::Signed
-                                  : IntegerType::SignednessSemantics::Unsigned);
-  } else {
-    elType = getEquivalentFloatType(attr.getContext(), dtype);
+    return reifyArray<IntArrayElementsAttr>(
+        intValues,
+        [&](const APInt &val) { return reifyIntToInt(val, intType, dtype); },
+        getEquivalentIntegerType(attr.getContext(), dtype));
   }
-  return DenseElementsAttr::get(value.getType()
-                                    .cast<mlir::SubElementTypeInterface>()
-                                    .replaceImmediateSubElements({}, {elType})
-                                    .cast<ShapedType>(),
-                                values);
+
+  FloatType fpType = getEquivalentFloatType(attr.getContext(), dtype);
+  if (!fpType)
+    return Error("unsupported floating point type: " + dtype.getAsString());
+  return reifyArray<FloatArrayElementsAttr>(
+      intValues,
+      [&](const APInt &val) {
+        return reifyIntToFloat(val, intType, fpType, dtype);
+      },
+      fpType);
 }
 
 /// Verify a scalar or SIMD constant value.
@@ -192,16 +257,16 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   }
 
   // Verify array constant.
-  if (auto array = type.dyn_cast<ArrayType>()) {
+  if (auto array = type.dyn_cast<POP::ArrayType>()) {
     // If the size is known, require an elements attribute of the same shape.
     if (Optional<int64_t> size = array.getResolvedSize()) {
-      auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
+      auto elements = value.dyn_cast<ArrayElementsAttr>();
       if (!elements)
-        return emitError("expected dense elements attribute for array "
+        return emitError("expected array elements attribute for array "
                          "constant with known size");
-      auto type = elements.getType().dyn_cast<RankedTensorType>();
-      if (!type || type.getRank() != 1 || type.getShape().front() != *size)
-        return emitError("expected attribute type to be tensor<")
+      auto type = elements.getType().dyn_cast<M::ArrayType>();
+      if (!type || type.getSize() != *size)
+        return emitError("expected attribute type to be !M.array<")
                << *size << "xT>";
     } else if (!value.isa<IntegerAttr, FloatAttr>()) {
       return emitError("expected integer or float attribute for array "
@@ -218,9 +283,9 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   auto simd = type.cast<SIMDType>();
   // If the size is specified, require an attribute of the same shape.
   if (Optional<int64_t> size = simd.getResolvedSize()) {
-    auto elements = value.dyn_cast<mlir::DenseIntOrFPElementsAttr>();
+    auto elements = value.dyn_cast<ArrayElementsAttr>();
     if (!elements)
-      return emitError("expected dense elements attribute for vector "
+      return emitError("expected array elements attribute for vector "
                        "constant with known size");
     auto type = elements.getType().dyn_cast<VectorType>();
     if (!type || type.getRank() != 1 || type.getShape().front() != *size)

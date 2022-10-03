@@ -10,6 +10,7 @@
 include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
 include "KGEN/ZAPDialect/ZAPTypes.td"
+include "Support/MDialect/MAttrs.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -222,14 +223,6 @@ def ZAP_BufferStackAllocationOp : ZAPOp<"buffer.stack_allocation"> {
 // BufferConstant
 //===----------------------------------------------------------------------===//
 
-def IntOrFPElementsAttr
-  : ElementsAttrBase<CPred<"$_self.isa<mlir::DenseIntOrFPElementsAttr>()">,
-                     "and int or float elements attribute"> {
-  let storageType = "mlir::DenseIntOrFPElementsAttr";
-  let returnType = "mlir::DenseIntOrFPElementsAttr";
-  let convertFromStorage = "$_self";
-}
-
 def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
   let summary = "fill a buffer with constant values";
   let description = [{
@@ -241,16 +234,17 @@ def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
     Example:
 
     ```mlir
-    %0 = zap.buffer.constant(dense<[10.0, 12.0, -2.0]> : tensor<3xf32>) : f32
-    %1 = zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+    %0 = zap.buffer.constant(
+        #M.dense_array<10.0, 12.0, -2.0> : !M.array<3xf32>) : f32
+    %1 = zap.buffer.constant(#M.dense_array<2, 3> : !M.array<2xui8>) : type
     ```
   }];
 
-  let arguments = (ins IntOrFPElementsAttr:$values);
+  let arguments = (ins M_ArrayElementsAttr:$values);
   let results = (outs Res<ConcreteBuffer, "", [MemAlloc, MemWrite]>:$result);
 
   let assemblyFormat = [{
-    `(` $values `)` attr-dict `:`
+    `(` qualified($values) `)` attr-dict `:`
     custom<ConstantBufferDType>(ref($values), type($result))
   }];
 

@@ -11,6 +11,7 @@
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/ForwardDecls.h"
+#include "Support/MDialect/MTypes.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
@@ -126,8 +127,7 @@ LogicalResult BufferStackAllocationOp::verify() {
 
 /// Parse the dtype of a constant buffer.
 static ParseResult
-parseConstantBufferDType(AsmParser &p, mlir::DenseIntOrFPElementsAttr values,
-                         Type &result) {
+parseConstantBufferDType(AsmParser &p, ArrayElementsAttr values, Type &result) {
   TypedAttr dtype;
   if (parseParamValue(p, dtype, DTypeType::get(p.getContext())))
     return failure();
@@ -137,16 +137,14 @@ parseConstantBufferDType(AsmParser &p, mlir::DenseIntOrFPElementsAttr values,
 
 /// Print the dtype of a constant buffer.
 static void printConstantBufferDType(AsmPrinter &p, Operation *op,
-                                     mlir::DenseIntOrFPElementsAttr values,
-                                     Type result) {
+                                     ArrayElementsAttr values, Type result) {
   printParamValue(p, result.cast<BufferType>().getDType());
 }
 
 LogicalResult BufferConstantOp::verify() {
-  auto type = getValues().getType().dyn_cast<RankedTensorType>();
-  // TODO: We need an "#M.array" attribute and type.
-  if (!type || type.getRank() != 1)
-    return emitOpError("expected a rank 1 tensor type");
+  auto type = getValues().getType().dyn_cast<ArrayType>();
+  if (!type)
+    return emitOpError("expected an '!M.array' type");
   return success();
 }
 

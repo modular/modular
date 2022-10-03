@@ -40,8 +40,8 @@ kgen.func @global_constant() {
 // CHECK-LABEL: @global_array_constant
 kgen.func @global_array_constant() {
   // CHECK: llvm.mlir.addressof @global_constant
-  %0 = pop.global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
+  %0 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
   kgen.return
 }
 
-// CHECK: llvm.mlir.global internal constant @global_constant(dense<[0, 1, 2, 3]> : tensor<4xui32>) {{.*}} : !llvm.array<4 x i32>
+// CHECK: llvm.mlir.global internal constant @global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) {{.*}} : !llvm.array<4 x i32>

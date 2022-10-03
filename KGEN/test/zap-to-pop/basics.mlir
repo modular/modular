@@ -198,14 +198,14 @@ kgen.generator @buffer_stack_allocation<size, type: dtype>(%i: index) -> (
 kgen.generator @zap_buffer_constant<type: dtype>(%i: index) -> (
   !zap.buffer<3, f32>, !zap.buffer<2, type>
 ) {
-  // CHECK: %[[ARR0:.*]] = pop.global_constant(dense<[1.{{0+}}e+01, 1.2{{0+}}e+01, -2.{{0+}}e+00]>
+  // CHECK: %[[ARR0:.*]] = pop.global_constant(#M.dense_array<1.{{0+}}e+01, 1.2{{0+}}e+01, -2.{{0+}}e+00>
   // CHECK: %[[PTR0:.*]] = pop.pointer.bitcast %[[ARR0]] : !pop.pointer<!pop.array<3, !pop.scalar<f32>>> to !pop.pointer<!pop.scalar<f32>>
   // CHECK: %[[BUF0:.*]] = pop.struct.construct(%{{.*}}, %[[PTR0]],
-  // CHECK: %[[ARR1:.*]] = pop.global_constant(dense<[2, 3]>
+  // CHECK: %[[ARR1:.*]] = pop.global_constant(#M.dense_array<2, 3>
   // CHECK: %[[PTR1:.*]] = pop.pointer.bitcast %[[ARR1]] : !pop.pointer<!pop.array<2, !pop.scalar<type>>> to !pop.pointer<!pop.scalar<type>>
   // CHECK: %[[BUF1:.*]] = pop.struct.construct(%{{.*}}, %[[PTR1]],
-  %0 = zap.buffer.constant(dense<[10.0, 12.0, -2.0]> : tensor<3xf32>) : f32
-  %1 = zap.buffer.constant(dense<[2, 3]> : tensor<2xui8>) : type
+  %0 = zap.buffer.constant(#M.dense_array<10.0, 12.0, -2.0> : !M.array<3xf32>) : f32
+  %1 = zap.buffer.constant(#M.dense_array<2, 3> : !M.array<2xui8>) : type
 
   kgen.return %0, %1 : !zap.buffer<3, f32>, !zap.buffer<2, type>
 }
@@ -271,7 +271,7 @@ kgen.generator @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, 
 
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: %[[FMT:.*]] = pop.global_constant(dense<[102, 111, 111{{.*}}]> : tensor<7xsi8>)
+  // CHECK: %[[FMT:.*]] = pop.global_constant(#M.dense_array<102, 111, 111{{.*}}> : !M.array<7xsi8>)
   // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<!pop.array{{.*}}> to !pop.pointer<!pop.scalar<si8>>
   // CHECK: pop.external_call @printf(%[[C_STR]], %{{.*}}) (!pop.pointer<!pop.scalar<si8>>) -> ()
   zap.print "foo %f"(%a) : !pop.scalar<f32>

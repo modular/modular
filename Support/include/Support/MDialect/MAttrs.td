@@ -111,6 +111,12 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
   let extraClassDeclaration = [{
     /// Get the raw underlying data.
     ArrayRef<uint8_t> getRawData() const;
+
+    /// `ElementsAttr` implementation. Support iteration with `Attribute` to be
+    /// compatible with upstream dialects.
+    using NonContiguousIterableTypesT = std::tuple<Attribute>;
+    FailureOr<detail::AttrIterator>
+    try_value_begin_impl(OverloadToken<Attribute>) const;
   }];
 }
 
