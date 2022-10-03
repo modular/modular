@@ -11,6 +11,7 @@ add_modular_tool(kgen-opt
   IndexDialect
   IndexToLLVM
   KGENDialect
+  KGENEmitObject
   ZAPDialect
   POPDialect
   KGENToLLVM
