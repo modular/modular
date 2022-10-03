@@ -197,32 +197,41 @@ public:
 //===----------------------------------------------------------------------===//
 
 /// Information about a struct declaration.
-using StructDeclaration = SmallVector<std::pair<StringAttr, Type>>;
-using StructDeclarations = DenseMap<StringAttr, StructDeclaration>;
+struct StructDeclarations {
+  /// A map from struct name and field name to index. Used for lowering `insert`
+  /// and `extract` ops.
+  DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fieldIndices;
+
+  /// A map from struct name to field types. Used for type conversions.
+  DenseMap<StringAttr, SmallVector<Type>> fieldTypes;
+};
 
 /// Struct operations need to refer to the struct declaration symbol.
-template <typename StructOp>
-class ConvertKGENStructOp : public mlir::ConvertOpToLLVMPattern<StructOp> {
+class ConvertKGENStructOpBase {
 public:
-  explicit ConvertKGENStructOp(mlir::LLVMTypeConverter &typeConverter,
-                               StructDeclarations &structDecls)
-      : mlir::ConvertOpToLLVMPattern<StructOp>(typeConverter),
-        structDecls(structDecls) {}
+  explicit ConvertKGENStructOpBase(StructDeclarations &structDecls)
+      : structDecls(structDecls) {}
 
-  /// Get the index of the struct field. Returns None if the struct declaration
-  /// was not found.
+  /// Get the index of the struct field.
   Optional<int64_t> getFieldIndex(StringAttr name, TypeDefType typeDef) const {
-    auto it = structDecls.find(typeDef.getName().getAttr());
-    if (it == structDecls.end())
+    auto it =
+        structDecls.fieldIndices.find({typeDef.getName().getAttr(), name});
+    if (it == structDecls.fieldIndices.end())
       return {};
-
-    auto fieldIt = llvm::find_if(
-        it->second, [&](auto &field) { return field.first == name; });
-    return std::distance(it->second.begin(), fieldIt);
+    return it->second;
   }
 
-protected:
+private:
   StructDeclarations &structDecls;
+};
+
+template <typename StructOp>
+struct ConvertKGENStructOp : public mlir::ConvertOpToLLVMPattern<StructOp>,
+                             public ConvertKGENStructOpBase {
+  ConvertKGENStructOp(mlir::LLVMTypeConverter &typeConverter,
+                      StructDeclarations &structDecls)
+      : mlir::ConvertOpToLLVMPattern<StructOp>(typeConverter),
+        ConvertKGENStructOpBase(structDecls) {}
 };
 
 //===----------------------------------------------------------------------===//
@@ -240,20 +249,11 @@ struct ConvertKGENStructCreate : public ConvertKGENStructOp<StructCreateOp> {
                     .dyn_cast_or_null<LLVM::LLVMStructType>();
     if (!type)
       return failure();
-    auto it = structDecls.find(op.getType().getName().getAttr());
-    if (it == structDecls.end())
-      return failure();
 
     Value container = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
-    SmallDenseMap<StringAttr, int64_t> nameToIndex;
-    nameToIndex.reserve(type.getBody().size());
-    for (auto &field : llvm::enumerate(it->second))
-      nameToIndex.try_emplace(field.value().first, field.index());
-
-    for (auto [name, value] : llvm::zip(op.getFields(), adaptor.getOperands()))
+    for (auto &operand : llvm::enumerate(adaptor.getOperands()))
       container = rewriter.create<LLVM::InsertValueOp>(
-          op.getLoc(), container, value, nameToIndex.find(name)->second);
-
+          op.getLoc(), container, operand.value(), operand.index());
     rewriter.replaceOp(op, container);
     return success();
   }
@@ -272,7 +272,7 @@ struct ConvertKGENStructInsert : public ConvertKGENStructOp<StructInsertOp> {
     Optional<int64_t> index =
         getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
     if (!index)
-      return failure();
+      return op.emitError("could not find struct declaration");
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
         op, adaptor.getContainer(), adaptor.getValue(), *index);
     return success();
@@ -292,7 +292,7 @@ struct ConvertKGENStructExtract : public ConvertKGENStructOp<StructExtractOp> {
     Optional<int64_t> index =
         getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
     if (!index)
-      return failure();
+      return op.emitError("could not find struct declaration");
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, adaptor.getContainer(), *index);
     return success();
@@ -336,8 +336,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 static void configureTypeConverter(POPToLLVMTypeConverter &typeConverter,
                                    StructDeclarations &structDecls) {
   typeConverter.addConversion([&](TypeDefType typeDef) -> Optional<Type> {
-    auto it = structDecls.find(typeDef.getName().getAttr());
-    if (it == structDecls.end()) {
+    auto it = structDecls.fieldTypes.find(typeDef.getName().getAttr());
+    if (it == structDecls.fieldTypes.end()) {
       typeConverter.emitError("could not find struct declaration ")
           << typeDef.getName();
       return {};
@@ -348,7 +348,7 @@ static void configureTypeConverter(POPToLLVMTypeConverter &typeConverter,
       evaluator.setParameterValue(bind.getDecl(), bind.getValue());
 
     SmallVector<Type> elementTypes;
-    for (auto [name, type] : it->second) {
+    for (Type type : it->second) {
       Type elementType =
           typeConverter.convertType(evaluator.getReboundType(type));
       if (!elementType) {
@@ -744,10 +744,14 @@ void LowerKGENToLLVMPass::runOnOperation() {
   StructDeclarations structDecls;
   for (auto decl :
        llvm::make_early_inc_range(theModule.getOps<StructDeclOp>())) {
-    StructDeclaration structDecl;
-    for (StructFieldOp field : decl.getFieldDecls())
-      structDecl.emplace_back(field.getNameAttr(), field.getType());
-    structDecls.try_emplace(decl.getNameAttr(), std::move(structDecl));
+    SmallVector<Type> fieldTypes;
+    for (auto &field : llvm::enumerate(decl.getFieldDecls())) {
+      fieldTypes.push_back(field.value().getType());
+      structDecls.fieldIndices.try_emplace(
+          {decl.getNameAttr(), field.value().getNameAttr()}, field.index());
+    }
+    structDecls.fieldTypes.try_emplace(decl.getNameAttr(),
+                                       std::move(fieldTypes));
     decl->erase();
   }
 

@@ -9,11 +9,14 @@ kgen.struct.decl @SmallVector<N, T: type> {
 !size4 = !kgen.typedef<@SmallVector<N = 4, T:type = !pop.scalar<f64>>>
 
 // CHECK-LABEL: @two_vectors
-kgen.func @two_vectors() -> (!size2, !size4) {
+kgen.func @two_vectors(
+  %arg0: !pop.array<2, !pop.simd<4, f32>>,
+  %arg1: !pop.array<4, !pop.scalar<f64>>
+) -> (!size2, !size4) {
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<2 x vector<4xf32>>)>
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<4 x f64>)>
-  %0 = kgen.struct.create !size2 {}
-  %1 = kgen.struct.create !size4 {}
+  %0 = kgen.struct.create(%arg0) : (!pop.array<2, !pop.simd<4, f32>>) -> !size2
+  %1 = kgen.struct.create(%arg1) : (!pop.array<4, !pop.scalar<f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
 
@@ -32,32 +35,18 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 kgen.func @make_box(%v: f32) -> !kgen.typedef<@Box<T:type = f32>> {
   // CHECK: %[[BOX:.*]] = llvm.mlir.undef
   // CHECK: llvm.insertvalue %{{.*}}, %[[BOX]][0]
-  %0 = kgen.struct.create !kgen.typedef<@Box<T:type = f32>> {
-    value = %v : f32
-  }
+  %0 = kgen.struct.create(%v) : (f32) -> !kgen.typedef<@Box<T:type = f32>>
   kgen.return %0 : !kgen.typedef<@Box<T:type = f32>>
 }
 
 !i8Pair = !kgen.typedef<@Pair<T1:type = i8, T2:type = i8>>
 
-// CHECK-LABEL: @make_half_pair
-kgen.func @make_half_pair(%a: i8) -> !i8Pair {
-  // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[1]
-  %0 = kgen.struct.create !i8Pair {
-    second = %a : i8
-  }
-  kgen.return %0 : !i8Pair
-}
-
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
 kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
-  // CHECK: llvm.insertvalue %[[A]], %{{.*}}[1]
   // CHECK: llvm.insertvalue %[[B]], %{{.*}}[0]
-  %0 = kgen.struct.create !i8Pair {
-    second = %a : i8
-    first = %b : i8
-  }
+  // CHECK: llvm.insertvalue %[[A]], %{{.*}}[1]
+  %0 = kgen.struct.create(%b, %a) : (i8, i8) -> !i8Pair
   kgen.return %0 : !i8Pair
 }
 
