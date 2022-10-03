@@ -233,7 +233,7 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
   %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
-  %1 = pop.type_lower %0: !pop.scalar<ty> to i8
+  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
   kgen.return
 }
 
@@ -285,24 +285,24 @@ kgen.generator @track_expansions(%arg0: si32) {
 // CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !pop.scalar<f32> {
 // ...
 // CHECK:    %[[V1:.*]] = llvm.fptrunc
-// CHECK:    %[[V2:.*]] = pop.type_raise %[[V1]] : f32 to !pop.scalar<f32>
+// CHECK:    %[[V2:.*]] = pop.cast_from_builtin %[[V1]] : f32 to !pop.scalar<f32>
 // CHECK:    kgen.return %[[V2]] : !pop.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !pop.scalar<type>
   constraints <[eq(:dtype type, f32), "float please"]>  {
   %0 = kgen.param.constant : f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
-  %2 = pop.type_raise %1: f32 to !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1: f32 to !pop.scalar<type>
   kgen.return %2 : !pop.scalar<type>
 }
 
 // CHECK-LABEL: kgen.func @test_f32() -> f32 {
 // CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !pop.scalar<f32>
-// CHECK:    %[[V1:.*]] = pop.type_lower %[[V0]] : !pop.scalar<f32> to f32
+// CHECK:    %[[V1:.*]] = pop.cast_to_builtin %[[V0]] : !pop.scalar<f32> to f32
 kgen.generator @test_f32() -> f32 {
   kgen.param.declare type : dtype = <f32>
   %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !pop.scalar<type>
-  %2 = pop.type_lower %1 : !pop.scalar<type> to f32
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<type> to f32
   kgen.return %2 : f32
 }
 
@@ -480,7 +480,7 @@ kgen.generator @test_region() {
       kgen.return %result : !pop.scalar<f32>
     }
 
-  // Check a call to a parametric region. 
+  // Check a call to a parametric region.
   // CHECK: kgen.call @"takeUnary,dt=si32,fn=test_region_concrete_region_2"()
   kgen.call @takeUnary<dt: dtype = si32,
      fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = region>() : () -> ()
@@ -507,7 +507,7 @@ kgen.generator @just_call_it_pass_it
 
 // CHECK-LABEL: @test_region_insanity
 kgen.generator @test_region_insanity() {
-  // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"()  
+  // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"()
   kgen.call @just_call_it_pass_it
           <fn: <subFn:<dt: dtype->index>()->()>()->() = region, littleFn: <dt: dtype->index>()->() = region>() : () -> ()
     fn<subFn:<dt: dtype->index>()->()>() {
@@ -521,4 +521,3 @@ kgen.generator @test_region_insanity() {
     }
   kgen.return
 }
-

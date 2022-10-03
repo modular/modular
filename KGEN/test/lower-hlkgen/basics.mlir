@@ -19,26 +19,26 @@ kgen.generator.interface @add<ty: dtype>(%arg0: !pop.scalar<ty>, %arg1: !pop.sca
 kgen.generator @add_f32<ty: dtype>(%arg0 : !pop.scalar<ty>, %arg1 : !pop.scalar<ty>) -> !pop.scalar<ty>
   constraints <[eq(:dtype ty, f32), "f32 feels great"]> implements @add {
 
-  // CHECK: %[[V0:.*]] = pop.type_lower %[[ARG0]] : !pop.scalar<ty> to f32
-  %0 = pop.type_lower %arg0 : !pop.scalar<ty> to f32
-  // CHECK: %[[V1:.*]] = pop.type_lower %[[ARG1]] : !pop.scalar<ty> to f32
-  %1 = pop.type_lower %arg1 : !pop.scalar<ty> to f32
+  // CHECK: %[[V0:.*]] = pop.cast_to_builtin %[[ARG0]] : !pop.scalar<ty> to f32
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<ty> to f32
+  // CHECK: %[[V1:.*]] = pop.cast_to_builtin %[[ARG1]] : !pop.scalar<ty> to f32
+  %1 = pop.cast_to_builtin %arg1 : !pop.scalar<ty> to f32
 
   // CHECK: %[[V2:.*]] = llvm.fadd %[[V0]], %[[V1]] : f32
   %2 = llvm.fadd %0, %1 : f32
 
-  // CHECK: %[[V3:.*]] = pop.type_raise %[[V2]] : f32 to !pop.scalar<ty>
-  %3 = pop.type_raise %2 : f32 to !pop.scalar<ty>
+  // CHECK: %[[V3:.*]] = pop.cast_from_builtin %[[V2]] : f32 to !pop.scalar<ty>
+  %3 = pop.cast_from_builtin %2 : f32 to !pop.scalar<ty>
   // CHECK: kgen.return %[[V3]]
   kgen.return %3 : !pop.scalar<ty>
 }
 
 hlkgen.generator @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
     -> !pop.scalar<ty> implements @add {
-  %0 = pop.type_lower %arg0 : !pop.scalar<f64> to f64
-  %1 = pop.type_lower %arg1 : !pop.scalar<f64> to f64
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f64> to f64
+  %1 = pop.cast_to_builtin %arg1 : !pop.scalar<f64> to f64
   %2 = llvm.fadd %0, %1 : f64
-  %3 = pop.type_raise %2 : f64 to !pop.scalar<ty>
+  %3 = pop.cast_from_builtin %2 : f64 to !pop.scalar<ty>
   kgen.return %3 : !pop.scalar<ty>
 }
 

@@ -422,10 +422,10 @@ kgen.func @index_to_pointer(%idx: index) -> (
 // CHECK-LABEL: @lower_raise_cast
 kgen.func @lower_raise_cast(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: builtin.unrealized_conversion_cast %arg0 : !pop.scalar<f32> to f32
-  %0 = pop.type_lower %arg0 : !pop.scalar<f32> to f32
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
   // CHECK: %[[R:.*]] = llvm.fmul
   %1 = llvm.fmul %0, %0 : f32
   // CHECK: builtin.unrealized_conversion_cast %[[R]] : f32 to !pop.scalar<f32>
-  %2 = pop.type_raise %1 : f32 to !pop.scalar<f32>
+  %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
   kgen.return %2 : !pop.scalar<f32>
 }

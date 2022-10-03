@@ -59,17 +59,17 @@ kgen.generator.interface @exp<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar
 // Compute exp using the llvm intrinsics.
 kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
   constraints <[eq(:dtype type, f32), "incorrect element type"]> implements @exp {
-  %0 = pop.type_lower %x: !pop.scalar<type> to f32
+  %0 = pop.cast_to_builtin %x: !pop.scalar<type> to f32
   %1 = "llvm.intr.exp"(%0) : (f32) -> f32
-  %2 = pop.type_raise %1 : f32 to !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<type>
   kgen.return %2 : !pop.scalar<type>
 }
 
 kgen.generator public @exp_intrinsic_f64<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
   constraints <[eq(:dtype type, f64), "incorrect element type"]> implements @exp {
-  %0 = pop.type_lower %x: !pop.scalar<type> to f64
+  %0 = pop.cast_to_builtin %x: !pop.scalar<type> to f64
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64
-  %2 = pop.type_raise %1 : f64 to !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1 : f64 to !pop.scalar<type>
   kgen.return %2 : !pop.scalar<type>
 }
 

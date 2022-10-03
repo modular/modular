@@ -1137,29 +1137,25 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeLowerOp
+// CastToBuiltinOp
 //===----------------------------------------------------------------------===//
 
-def POP_TypeLowerOp : POPOp<"type_lower", [NoSideEffect]> {
+def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [NoSideEffect]> {
   let summary = "Unmaterialized type lowering conversion.";
   let description = [{
-    The `pop.type_lower` operation represents an as-of-yet unmaterialized
-    target type conversion from a high-level type to a low-level type. This
-    could be, for instance, lowering from `!pop.scalar` types to their
-    corresponding MLIR builtin types, or lowering from `!pop.struct` to
-    `!llvm.struct` types. The operation is expected to fold away as the IR is
-    lowered.
-
-    The operation acts as an adaptor for mixing low-level, target-specific code
-    in KGEN IR.
+    The `pop.cast_to_builtin` operation casts a POP type to an MLIR builtin
+    type. If the types have the same underlying implementation, then this
+    operation is a no-op adaptor between two type systems. It can, for example,
+    cast a `!pop.scalar` to an MLIR builtin integer or float type, or a
+    `pop.simd` to a `vector.
 
     Example:
 
     ```mlir
     kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-      %0 = pop.type_lower %arg0 : !pop.scalar<f32> to f32
+      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
-      %2 = pop.type_raise %1 : f32 to !pop.scalar<f32>
+      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
       kgen.return %2 : !pop.scalar<f32>
     }
     ```
@@ -1174,29 +1170,25 @@ def POP_TypeLowerOp : POPOp<"type_lower", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeRaiseOp
+// CastFromBuiltinOp
 //===----------------------------------------------------------------------===//
 
-def POP_TypeRaiseOp : POPOp<"type_raise", [NoSideEffect]> {
+def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [NoSideEffect]> {
   let summary = "Unmaterialized type raising conversion.";
   let description = [{
-    The `pop.type_raise` operation represents an as-of-yet unmaterialized
-    source type conversion from a low-level type to a high-level type. This
-    could be, for instance, lowering from MLIR builtin types to their
-    corresponding `!pop.scalar` types, or lowering from `!llvm.struct` to
-    `!pop.struct` types. The operation is expected to fold away as the IR is
-    lowered.
-
-    The operation acts as an adaptor for mixing low-level, target-specific code
-    in KGEN IR.
+    The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
+    type. If the types have the same underlying implementation, then this
+    operation is a no-op adaptor between two type systems. It can, for example,
+    cast an MLIR builtin integer or float type to a `!pop.scalar`, or a 1-D
+    vector to `!pop.simd`.
 
     Example:
 
     ```mlir
     kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-      %0 = pop.type_lower %arg0 : !pop.scalar<f32> to f32
+      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
-      %2 = pop.type_raise %1 : f32 to !pop.scalar<f32>
+      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
       kgen.return %2 : !pop.scalar<f32>
     }
     ```
@@ -1210,7 +1202,7 @@ def POP_TypeRaiseOp : POPOp<"type_raise", [NoSideEffect]> {
     kgen.generator @addN<N: si32>(%arg0: !pop.scalar<si32>)
         -> !pop.scalar<si32> {
       %N = kgen.param.constant : si32 = <N>
-      %rhs = pop.type_raise %N : si32 to !pop.scalar<si32>
+      %rhs = pop.cast_from_builtin %N : si32 to !pop.scalar<si32>
       %result = pop.add %arg0, %rhs : !pop.scalar<f32>
       kgen.return %result : !pop.scalar<f32>
     }

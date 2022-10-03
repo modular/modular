@@ -563,14 +563,14 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPTypeLowerCast
+// ConvertPOPCastToBuiltin
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPTypeLowerCast : mlir::ConvertOpToLLVMPattern<TypeLowerOp> {
+struct ConvertPOPCastToBuiltin : mlir::ConvertOpToLLVMPattern<CastToBuiltinOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(TypeLowerOp op, TypeLowerOpAdaptor adaptor,
+  matchAndRewrite(CastToBuiltinOp op, CastToBuiltinOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOp(op, adaptor.getInput());
     return success();
@@ -578,14 +578,15 @@ struct ConvertPOPTypeLowerCast : mlir::ConvertOpToLLVMPattern<TypeLowerOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPTypeRaiseCast
+// ConvertPOPCastFromBuiltin
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPTypeRaiseCast : mlir::ConvertOpToLLVMPattern<TypeRaiseOp> {
+struct ConvertPOPCastFromBuiltin
+    : mlir::ConvertOpToLLVMPattern<CastFromBuiltinOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(TypeRaiseOp op, TypeRaiseOpAdaptor adaptor,
+  matchAndRewrite(CastFromBuiltinOp op, CastFromBuiltinOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOp(op, adaptor.getInput());
     return success();
@@ -654,6 +655,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPAdd,
       ConvertPOPBitcast,
       ConvertPOPCast,
+      ConvertPOPCastToBuiltin,
+      ConvertPOPCastFromBuiltin,
       ConvertPOPCmp,
       ConvertPOPConstant,
       ConvertPOPCopySign,
@@ -683,9 +686,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPStructConstruct,
-      ConvertPOPSub,
-      ConvertPOPTypeLowerCast,
-      ConvertPOPTypeRaiseCast
+      ConvertPOPSub
       // clang-format on
       >(typeConverter);
 }

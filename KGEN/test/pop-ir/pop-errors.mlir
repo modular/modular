@@ -272,7 +272,7 @@ kgen.func @global_constant() {
 
 kgen.func @cast_from_builtin_type(%arg0: !pop.scalar<si32>) {
   // expected-error @below {{expected an integer or float type}}
-  %0 = pop.type_lower %arg0: !pop.scalar<si32> to vector<1xsi32>
+  %0 = pop.cast_to_builtin %arg0: !pop.scalar<si32> to vector<1xsi32>
   kgen.return
 }
 
@@ -280,7 +280,7 @@ kgen.func @cast_from_builtin_type(%arg0: !pop.scalar<si32>) {
 
 kgen.func @cast_from_builtin_type(%arg0: si32) {
   // expected-error @below {{cannot convert from scalar dtype ui32 to 'si32'}}
-  %0 = pop.type_raise %arg0 : si32 to !pop.scalar<ui32>
+  %0 = pop.cast_from_builtin %arg0 : si32 to !pop.scalar<ui32>
   kgen.return
 }
 
@@ -288,7 +288,7 @@ kgen.func @cast_from_builtin_type(%arg0: si32) {
 
 kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
   // expected-error @below {{expected a rank 1 non-scalable vector}}
-  %0 = pop.type_lower %arg0 : !pop.simd<4, f32> to f32
+  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to f32
   kgen.return
 }
 
@@ -296,7 +296,7 @@ kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
 
 kgen.generator @cast_simd_to_vector<size>(%arg0: !pop.simd<size, f32>) {
   // expected-error @below {{cannot convert from SIMD dtype f32 to vector element 'i32'}}
-  %0 = pop.type_lower %arg0 : !pop.simd<size, f32> to vector<4xi32>
+  %0 = pop.cast_to_builtin %arg0 : !pop.simd<size, f32> to vector<4xi32>
   kgen.return
 }
 
@@ -304,6 +304,20 @@ kgen.generator @cast_simd_to_vector<size>(%arg0: !pop.simd<size, f32>) {
 
 kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
   // expected-error @below {{expected vector<4xT>}}
-  %0 = pop.type_lower %arg0 : !pop.simd<4, f32> to vector<8xf32>
+  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to vector<8xf32>
   kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{expected attribute value}}
+kgen.func @unknown_size_simd(%arg0: !pop.simd<?, f32>) -> !pop.simd<?, f32> {
+  kgen.return %arg0 : !pop.simd<?, f32>
+}
+
+// -----
+
+// expected-error @+1 {{expected attribute value}}
+kgen.func @unknown_type_simd(%arg0: !pop.simd<4, ?>) -> !pop.simd<4, ?> {
+  kgen.return %arg0 : !pop.simd<4, ?>
 }

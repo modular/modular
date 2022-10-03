@@ -12,7 +12,7 @@ kgen.func public @for_loop() -> f32 {
     %n = pop.add %c10, %v : !pop.scalar<f32>
     scf.yield %n : !pop.scalar<f32>
   }
-  %r = pop.type_lower %rv : !pop.scalar<f32> to f32
+  %r = pop.cast_to_builtin %rv : !pop.scalar<f32> to f32
   kgen.return %r : f32
 }
 
@@ -21,14 +21,14 @@ kgen.func public @while_loop() -> f32 {
   %limit = pop.constant(10. : f32) : !pop.scalar<f32>
   %result = scf.while (%v = %init) : (!pop.scalar<f32>) -> !pop.scalar<f32> {
     %cmp = pop.cmp lt(%v, %limit) : !pop.scalar<f32>
-    %cond = pop.type_lower %cmp : !pop.scalar<bool> to i1
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
     scf.condition(%cond) %v : !pop.scalar<f32>
   } do {
   ^bb0(%u : !pop.scalar<f32>):
     %next = pop.mul %u, %u : !pop.scalar<f32>
     scf.yield %next : !pop.scalar<f32>
   }
-  %res = pop.type_lower %result : !pop.scalar<f32> to f32
+  %res = pop.cast_to_builtin %result : !pop.scalar<f32> to f32
   kgen.return %res : f32
 }
 
@@ -80,7 +80,7 @@ kgen.func public @while_accum_loop() -> f32 {
     } do {
     ^bb1(%ii: index, %accum2: !pop.scalar<f32>):
       %iiInt32 = index.casts %ii : index to i32
-      %iiMetaInt32 = pop.type_raise %iiInt32 : i32 to !pop.scalar<si32>
+      %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.scalar<si32>
       %iiFloat32 = pop.cast %iiMetaInt32 : !pop.scalar<si32> to !pop.scalar<f32>
       %accum3 = pop.add %accum2, %iiFloat32 : !pop.scalar<f32>
       %next_index = index.add %ii, %one
@@ -98,13 +98,13 @@ kgen.func public @while_accum_loop() -> f32 {
   } do {
   ^bb1(%ii: index, %accum2: !pop.scalar<f32>):
     %iiInt32 = index.casts %ii : index to i32
-    %iiMetaInt32 = pop.type_raise %iiInt32 : i32 to !pop.scalar<si32>
+    %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.scalar<si32>
     %iiFloat32 = pop.cast %iiMetaInt32 : !pop.scalar<si32> to !pop.scalar<f32>
     %accum3 = pop.add %accum2, %iiFloat32 : !pop.scalar<f32>
     %next_index = index.add %ii, %one
     scf.yield %next_index, %accum3 : index, !pop.scalar<f32>
   }
-  %res = pop.type_lower %accum : !pop.scalar<f32> to f32
+  %res = pop.cast_to_builtin %accum : !pop.scalar<f32> to f32
   kgen.return %res : f32
 }
 
