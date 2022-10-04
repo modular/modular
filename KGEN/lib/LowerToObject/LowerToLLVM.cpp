@@ -182,7 +182,7 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   mlir::PassManager pm(module.getContext());
   LowerToLLVMOptions options;
 
-  pm.addPass(createLowerZAPToPOPPass());
+  pm.addPass(createLowerZAPToPOP());
 
   if (!name.empty())
     options.topLevelKernel = name;

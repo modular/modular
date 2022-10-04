@@ -18,6 +18,11 @@
 using namespace M;
 using namespace KGEN;
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERLIT
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
 class SignatureUnifier {
 public:
@@ -473,11 +478,8 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-#define GEN_PASS_CLASSES
-#include "KGEN/KGENPasses.h.inc"
 
-class LowerLITPass : public LowerLITBase<LowerLITPass> {
-public:
+struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
   void runOnOperation() override {
     // TODO: This has to be a module pass because this mutates the body of the
     // module, but we could trivially parallelize this within the pass.
@@ -490,8 +492,5 @@ public:
     }
   }
 };
-} // namespace
 
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerLITPass() {
-  return std::make_unique<LowerLITPass>();
-}
+} // namespace

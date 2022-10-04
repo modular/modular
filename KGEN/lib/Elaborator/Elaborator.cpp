@@ -1697,12 +1697,18 @@ M::elaborateGenerators(ModuleOp primary,
 // ElaborateGeneratorsPass
 //===----------------------------------------------------------------------===//
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_ELABORATEGENERATORS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
 /// Run the elaborator as a pass. The elaborator requires imports to be
 /// resolved, so first resolve imports and then elaborate.
-class ElaborateGeneratorsPass
-    : public ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
-public:
+struct ElaborateGeneratorsPass
+    : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
+  using ElaborateGeneratorsBase::ElaborateGeneratorsBase;
+
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
 
@@ -1717,7 +1723,3 @@ public:
   }
 };
 } // namespace
-
-std::unique_ptr<mlir::Pass> M::KGEN::createElaborateGeneratorsPass() {
-  return std::make_unique<ElaborateGeneratorsPass>();
-}

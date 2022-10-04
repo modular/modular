@@ -22,6 +22,12 @@ using namespace KGEN;
 using namespace POP;
 namespace LLVM = mlir::LLVM;
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERGLOBALPOPTOLLVM
+#define GEN_PASS_DEF_LOWERPOPTOLLVM
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -696,7 +702,10 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerPOPToLLVMPass : public LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
+struct LowerPOPToLLVMPass
+    : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
+  using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
+
   void runOnOperation() override;
 
   /// Verify that the operation is a function and has no nested CFGs.
@@ -758,10 +767,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerPOPToLLVMPass() {
-  return std::make_unique<LowerPOPToLLVMPass>();
 }
 
 namespace {
@@ -862,9 +867,10 @@ private:
 // LowerGlobalPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
-class LowerGlobalPOPToLLVMPass
-    : public LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
-public:
+struct LowerGlobalPOPToLLVMPass
+    : public KGEN::impl::LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
+  using LowerGlobalPOPToLLVMBase::LowerGlobalPOPToLLVMBase;
+
   void runOnOperation() override;
 };
 
@@ -898,8 +904,4 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerGlobalPOPToLLVM() {
-  return std::make_unique<LowerGlobalPOPToLLVMPass>();
 }

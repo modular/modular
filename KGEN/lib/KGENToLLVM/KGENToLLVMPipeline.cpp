@@ -23,16 +23,20 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
   //        code up better because there's 2 semi-separate compilation models
   //        here.
-  SmallVector<StringRef> breakUpStructs;
+  SmallVector<std::string> breakUpStructs;
   if (options.topLevelKernel.hasValue())
-    breakUpStructs.push_back(options.topLevelKernel);
-  pm.addPass(createLowerKGENToLLVMPass(breakUpStructs, {},
-                                       options.emitOpaqueWrappers));
+    breakUpStructs.push_back(std::string(options.topLevelKernel.data(),
+                                         options.topLevelKernel.size()));
+
+  LowerKGENToLLVMOptions kgenToLLVMOptions{/*indexBitwidth=*/0, breakUpStructs,
+                                           options.emitOpaqueWrappers,
+                                           /*emitCWrappers=*/{}};
+  pm.addPass(createLowerKGENToLLVM(kgenToLLVMOptions));
 
   // Run all LLVM lowering passes.
   pm.addPass(createLowerGlobalPOPToLLVM());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerPOPToLLVMPass());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVMPass());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerPOPToLLVM());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(index::createIndexToLLVM());
 
   // And finally canonicalize again.

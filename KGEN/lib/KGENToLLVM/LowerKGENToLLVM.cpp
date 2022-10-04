@@ -713,8 +713,16 @@ static void setStringListOption(Pass::ListOption<std::string> &opt,
     opt.push_back(value.str());
 }
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERKGENTOLLVM
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
-struct LowerKGENToLLVMPass : public LowerKGENToLLVMBase<LowerKGENToLLVMPass> {
+struct LowerKGENToLLVMPass
+    : public KGEN::impl::LowerKGENToLLVMBase<LowerKGENToLLVMPass> {
+  using LowerKGENToLLVMBase::LowerKGENToLLVMBase;
+
   explicit LowerKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
                                ArrayRef<StringRef> emitCWrappers,
                                bool emitOpaqueWrappers) {
@@ -771,12 +779,4 @@ void LowerKGENToLLVMPass::runOnOperation() {
   if (failed(emitWrappers(theModule, breakUpStructs, emitCWrappers,
                           emitOpaqueWrappers)))
     signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass>
-M::KGEN::createLowerKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs,
-                                   ArrayRef<StringRef> emitCWrappers,
-                                   bool emitOpaqueWrappers) {
-  return std::make_unique<LowerKGENToLLVMPass>(breakUpStructs, emitCWrappers,
-                                               emitOpaqueWrappers);
 }
