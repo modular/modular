@@ -485,8 +485,16 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERZAPTOPOP
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
-struct LowerZAPToPOPPass : public LowerZAPToPOPBase<LowerZAPToPOPPass> {
+struct LowerZAPToPOPPass
+    : public KGEN::impl::LowerZAPToPOPBase<LowerZAPToPOPPass> {
+  using LowerZAPToPOPBase::LowerZAPToPOPBase;
+
   void runOnOperation() override;
 };
 } // namespace
@@ -535,8 +543,4 @@ void LowerZAPToPOPPass::runOnOperation() {
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerZAPToPOPPass() {
-  return std::make_unique<LowerZAPToPOPPass>();
 }

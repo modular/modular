@@ -80,7 +80,7 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 /// This function creates the elaborator pass and forwards the correct
 /// arguments. If it fails, it fails with a fatal error.
 static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
-  auto elaborate = createElaborateGeneratorsPass();
+  auto elaborate = createElaborateGenerators();
   std::string includes;
   llvm::raw_string_ostream includeStr(includes);
   for (StringRef include : clOptions.searchPaths)
@@ -137,7 +137,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
-  pm.addPass(createLowerLITPass());
+  pm.addPass(createLowerLIT());
 
   // FIXME: This has to be disabled to avoid lowering buffer types before
   // elaboration.

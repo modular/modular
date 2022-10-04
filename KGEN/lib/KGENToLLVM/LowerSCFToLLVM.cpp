@@ -277,9 +277,16 @@ static void populateSCFToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERSCFTOLLVM
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
 namespace {
-struct LowerSCFToLLVMPass : public LowerSCFToLLVMBase<LowerSCFToLLVMPass> {
-public:
+struct LowerSCFToLLVMPass
+    : public KGEN::impl::LowerSCFToLLVMBase<LowerSCFToLLVMPass> {
+  using LowerSCFToLLVMBase::LowerSCFToLLVMBase;
+
   void runOnOperation() override;
 };
 } // namespace
@@ -304,8 +311,4 @@ void LowerSCFToLLVMPass::runOnOperation() {
   if (failed(mlir::applyPartialConversion(getOperation(), target,
                                           std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass> M::KGEN::createLowerSCFToLLVMPass() {
-  return std::make_unique<LowerSCFToLLVMPass>();
 }

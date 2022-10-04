@@ -11,7 +11,6 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassOptions.h"
-#include "mlir/Pass/PassRegistry.h"
 
 //===----------------------------------------------------------------------===//
 // Forward Declarations
@@ -32,21 +31,6 @@ class FuncOp;
 namespace POP {
 class POPDialect;
 } // namespace POP
-
-//===----------------------------------------------------------------------===//
-// Pass creation
-//===----------------------------------------------------------------------===//
-
-std::unique_ptr<mlir::Pass> createLowerLITPass();
-std::unique_ptr<mlir::Pass>
-createLowerKGENToLLVMPass(ArrayRef<StringRef> breakUpStructs = {},
-                          ArrayRef<StringRef> emitCWrappers = {},
-                          bool emitOpaqueWrappers = false);
-std::unique_ptr<mlir::Pass> createLowerPOPToLLVMPass();
-std::unique_ptr<mlir::Pass> createLowerSCFToLLVMPass();
-std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM();
-std::unique_ptr<mlir::Pass> createElaborateGeneratorsPass();
-std::unique_ptr<mlir::Pass> createLowerZAPToPOPPass();
 
 //===----------------------------------------------------------------------===//
 // Pass Pipelines
@@ -79,7 +63,7 @@ void registerLowerToLLVMPipeline();
 // Generated Pass Classes and Registration
 //===----------------------------------------------------------------------===//
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
 #define GEN_PASS_DECL_EMITLLVM
 #include "KGEN/KGENPasses.h.inc"

@@ -333,7 +333,7 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
 
   // FIXME: This pass should run pre-elaboration, but we have no way for user
   // defined typed to specify the functions in OpaqueObjectInterface.
-  pm.addPass(createLowerZAPToPOPPass());
+  pm.addPass(createLowerZAPToPOP());
 
   options.topLevelKernel = name;
   options.emitOpaqueWrappers = true;

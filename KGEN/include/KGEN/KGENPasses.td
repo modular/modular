@@ -18,8 +18,6 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["KGENDialect"];
-
-  let constructor = "::M::KGEN::createLowerLITPass()";
 }
 
 //===----------------------------------------------------------------------===//
@@ -34,8 +32,6 @@ def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["POP::POPDialect"];
-
-  let constructor = "createLowerZAPToPOPPass()";
 }
 
 //===----------------------------------------------------------------------===//
@@ -108,7 +104,6 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 
   // We generate the LLVM dialect.
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createLowerKGENToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -135,7 +130,6 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createLowerPOPToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -157,7 +151,6 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createLowerGlobalPOPToLLVM()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -179,7 +172,6 @@ def LowerSCFToLLVM : Pass<"lower-scf-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "::M::KGEN::createLowerSCFToLLVMPass()";
 
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
@@ -201,7 +193,6 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::M::KGEN::KGENDialect"];
-  let constructor = "::M::KGEN::createElaborateGeneratorsPass()";
 
   let options = [
     ListOption<"searchPaths", "search-path", "std::string",
