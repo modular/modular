@@ -7,7 +7,7 @@
 &     # expected-error {{unexpected token in expression}}
 (
 )
-*     # expected-error {{unexpected token in expression}}
+*
 +     # expected-error {{unexpected token in expression}}
 ,     # expected-error {{unexpected token in expression}}
 -     # expected-error {{unexpected token in expression}}
