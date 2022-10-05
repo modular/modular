@@ -37,6 +37,9 @@ MLIRValueRep IntLiteralNode::emit(EmitterState &state) const {
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
 
+  // FIXME: Should actually lower these as attributes so they can be used as
+  // parameter expressions, not as SSA values, they should be converted to value
+  // when used in that context.
   Value result = state.builder.create<index::ConstantOp>(
       state.mapLocation(getLoc()), value.getZExtValue());
   return result;
@@ -94,4 +97,43 @@ MLIRValueRep CallNode::emit(EmitterState &state) const {
 
   // FIXME: Need a correct representation for a non-error void return.
   return {};
+}
+
+MLIRValueRep ParenExprNode::emit(EmitterState &state) const {
+  return subExpr->emit(state);
+}
+
+MLIRValueRep BinOpNode::emit(EmitterState &state) const {
+  auto lhsRep = lhs->emit(state);
+  auto rhsRep = rhs->emit(state);
+  if (!lhsRep || !rhsRep)
+    return {};
+
+  // TODO: Add support for parameters exprs.
+  auto lhsVal = dyn_cast<Value>(lhsRep);
+  auto rhsVal = dyn_cast<Value>(rhsRep);
+  if (!lhsVal || !rhsVal) {
+    state.emitError(getLoc(),
+                    "binary operator with parameters not implemented yet");
+    return {};
+  }
+
+  auto lhsType = lhsVal.getType();
+  if (lhsType != rhsVal.getType() || !lhsType.isIndex()) {
+    state.emitError(getLoc(),
+                    "binary operator with interesting types not implemented");
+    return {};
+  }
+
+  switch (kind) {
+  default:
+    assert(0 && "unknown binary operator");
+  case kAdd:
+    return (Value)state.builder.create<index::AddOp>(
+        state.mapLocation(getLoc()), lhsType, lhsVal, rhsVal);
+
+  case kMul:
+    return (Value)state.builder.create<index::MulOp>(
+        state.mapLocation(getLoc()), lhsType, lhsVal, rhsVal);
+  }
 }

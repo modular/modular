@@ -40,10 +40,18 @@ using MLIRValueRep = PointerUnion<Attribute, Value>;
 struct ExprNode {
   // This indicates the subclass.
   enum Kind {
-    error,      // `
-    intLiteral, // 42
-    declRef,    // x
-    call,       // thing(a, b)
+    kError,         // `
+    kIntLiteral,    // 42
+    kDeclRef,       // x
+    kCall,          // thing(a, b)
+    kParenExprNode, // (x+y)
+
+    // Binary expressions.
+    kAdd,
+    kMul,
+    kFirstBinOp = kAdd,
+    kLastBinOp = kMul,
+
   } const kind;
 
   ExprNode(Kind kind) : kind(kind) {}
@@ -62,11 +70,11 @@ struct ExprNode {
 /// This node is created to represent erroneous parses, but the diagnostic has
 /// already been emitted.
 struct ErrorNode final : public ExprNode {
-  ErrorNode(SMLoc loc) : ExprNode(error), loc(loc) {}
+  ErrorNode(SMLoc loc) : ExprNode(kError), loc(loc) {}
 
   const SMLoc loc;
 
-  static bool classof(const ExprNode *node) { return node->kind == error; }
+  static bool classof(const ExprNode *node) { return node->kind == kError; }
   SMLoc getLoc() const override { return loc; }
   bool containsError() const override { return true; }
   MLIRValueRep emit(EmitterState &state) const override;
@@ -74,11 +82,13 @@ struct ErrorNode final : public ExprNode {
 
 struct IntLiteralNode final : public ExprNode {
   IntLiteralNode(StringRef spelling)
-      : ExprNode(intLiteral), spelling(spelling) {}
+      : ExprNode(kIntLiteral), spelling(spelling) {}
 
   const StringRef spelling;
 
-  static bool classof(const ExprNode *node) { return node->kind == intLiteral; }
+  static bool classof(const ExprNode *node) {
+    return node->kind == kIntLiteral;
+  }
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
@@ -87,11 +97,11 @@ struct IntLiteralNode final : public ExprNode {
 };
 
 struct DeclRefNode final : public ExprNode {
-  DeclRefNode(StringRef spelling) : ExprNode(declRef), spelling(spelling) {}
+  DeclRefNode(StringRef spelling) : ExprNode(kDeclRef), spelling(spelling) {}
 
   const StringRef spelling;
 
-  static bool classof(const ExprNode *node) { return node->kind == declRef; }
+  static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
@@ -101,18 +111,53 @@ struct DeclRefNode final : public ExprNode {
 
 struct CallNode final : public ExprNode {
   CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<ExprNode *> args)
-      : ExprNode(call), callee(callee), lparenLoc(lparenLoc), args(args) {}
+      : ExprNode(kCall), callee(callee), lparenLoc(lparenLoc), args(args) {}
 
   ExprNode *const callee;
   const SMLoc lparenLoc;
   const ArrayRef<ExprNode *> args;
 
-  static bool classof(const ExprNode *node) { return node->kind == call; }
+  static bool classof(const ExprNode *node) { return node->kind == kCall; }
   SMLoc getLoc() const override { return lparenLoc; }
   bool containsError() const override {
     return callee->containsError() || llvm::any_of(args, [&](ExprNode *exp) {
              return exp->containsError();
            });
+  }
+  MLIRValueRep emit(EmitterState &state) const override;
+};
+
+struct ParenExprNode final : public ExprNode {
+  ParenExprNode(SMLoc lparenLoc, ExprNode *subExpr, SMLoc rparenLoc)
+      : ExprNode(kParenExprNode), lparenLoc(lparenLoc), subExpr(subExpr),
+        rparenLoc(rparenLoc) {}
+
+  const SMLoc lparenLoc;
+  ExprNode *const subExpr;
+  const SMLoc rparenLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kParenExprNode;
+  }
+  SMLoc getLoc() const override { return lparenLoc; }
+  bool containsError() const override { return subExpr->containsError(); }
+  MLIRValueRep emit(EmitterState &state) const override;
+};
+
+struct BinOpNode final : public ExprNode {
+  BinOpNode(Kind kind, ExprNode *lhs, SMLoc opLoc, ExprNode *rhs)
+      : ExprNode(kind), lhs(lhs), opLoc(opLoc), rhs(rhs) {}
+
+  ExprNode *const lhs;
+  const SMLoc opLoc;
+  ExprNode *const rhs;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind >= kFirstBinOp && node->kind <= kLastBinOp;
+  }
+  SMLoc getLoc() const override { return opLoc; }
+  bool containsError() const override {
+    return lhs->containsError() || rhs->containsError();
   }
   MLIRValueRep emit(EmitterState &state) const override;
 };

@@ -8,8 +8,28 @@ def do_math[dt: DType, size: Int]
 
   # CHECK-NEXT: %z = lit.var.decl "z": <index>
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42
-  # CHECK-NEXT: pop.store %[[I42]], %z : !pop.pointer<index>
-  z = 42
+  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
+  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[I6]]
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
+  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = 42 + 5*6
+
+  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
+  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I42]], %[[I5]]
+  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %[[I6]]
+  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = 42 * 5 + 6
+
+  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
+  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
+  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I5]], %[[I6]]
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I42]], %[[ADD]]
+  # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
+  z = 42 * (5 + 6)
 
   # CHECK-NEXT: %a = lit.var.decl "a": <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>

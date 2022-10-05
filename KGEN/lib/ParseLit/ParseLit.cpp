@@ -294,6 +294,17 @@ public:
   // be (or include) an Error node if parsing failed.
   void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
   ExprNode *parseExpression();
+  ExprNode *parsePrimary();
+
+  enum class Precedence {
+    kInvalid, // Not a binary operator token.
+    kLowest,  // Lowest precedence (most loosely bound).
+    kAdd,
+    kMul, // Highest precedence (most tightly bound).
+  };
+  std::pair<Precedence, ExprNode::Kind> getBinOpTokenPrecedenceAndKind() const;
+
+  ExprNode *parseBinOpRHS(ExprNode *lhs, Precedence minPrec);
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emit(ExprNode *node, Scope *scope);
@@ -306,6 +317,9 @@ private:
         sizeof(T), llvm::Align::Of<T>());
     return new (node) T(std::forward<Args>(args)...);
   }
+
+  /// Return an error node at the specified location.
+  ExprNode *getErrorAtToken() { return alloc<ErrorNode>(getToken().getLoc()); };
 
   /// memcpy the specified ArrayRef into the expression allocator and return a
   /// pointer to the new data.  This cannot be used with things that have
@@ -350,45 +364,78 @@ void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
   });
 }
 
-/// expression ::= atom | call
+/// expression ::=
+///
+///
+ExprNode *ExprParser::parseExpression() {
+  return parseBinOpRHS(parsePrimary(), Precedence::kLowest);
+}
+
+/// Return the operator precedence for the specified token or
+std::pair<ExprParser::Precedence, ExprNode::Kind>
+ExprParser::getBinOpTokenPrecedenceAndKind() const {
+  switch (getToken().getKind()) {
+  default:
+    return {Precedence::kInvalid, ExprNode::kError};
+  case LitToken::plus:
+    return {Precedence::kAdd, ExprNode::kAdd};
+  case LitToken::star:
+    return {Precedence::kMul, ExprNode::kMul};
+  }
+}
+
+/// primary ::=  atom | attributeref | subscription | slicing | call
 ///
 /// atom    ::= identifier | literal | enclosure [TODO]
 /// call    ::=  primary "(" [argument_list [","] | comprehension] ")"
 ///
+/// enclosure ::= parenth_form | list_display | dict_display | set_display
+///             | generator_expression | yield_atom
+/// parenth_form ::= "(" [starred_expression] ")"
+///
 /// literal ::= [TODO]
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
-ExprNode *ExprParser::parseExpression() {
-  auto getErrorAtToken = [&]() -> ExprNode * {
-    return alloc<ErrorNode>(getToken().getLoc());
-  };
-
-  // TODO: Handle precedence.
+ExprNode *ExprParser::parsePrimary() {
   ExprNode *result;
   switch (getToken().getKind()) {
-  case LitToken::identifier: // expression -> atom -> identifier
+  case LitToken::identifier: // primary -> atom -> identifier
     result = alloc<DeclRefNode>(getToken().getSpelling());
     consumeToken(LitToken::identifier);
     break;
-  case LitToken::integer: // expression -> literal -> integer
+  case LitToken::integer: // primary -> literal -> integer
     result = alloc<IntLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::integer);
     break;
+  case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
+    auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
+    ExprNode *subExpr = parseExpression();
+    auto rpLoc = getToken().getLoc();
+    // FIXME: This is terrible error recovery.
+    if (parseToken(LitToken::r_paren,
+                   "expected ')' in parenthesized expression"))
+      return getErrorAtToken();
+    result = alloc<ParenExprNode>(lpLoc, subExpr, rpLoc);
+    break;
+  }
+
   default:
     emitError("unexpected token in expression");
     result = getErrorAtToken();
 
     // TODO: Probably shouldn't consume this token in all cases, this could be
     // the introducer of another statement etc.  We should check to see what it
-    // looks like and be smarter about this.
+    // looks like and be smarter about this: consuming to end of paren, or to
+    // introducer keyword.
     consumeToken();
     break;
   }
 
   // Parse postfix productions.
   while (1) {
-    // Handle calls.
     auto loc = getToken().getLoc();
+
+    // Handle calls.
     if (consumeIf(LitToken::l_paren)) {
       SmallVector<ExprNode *> argExprs;
       // TODO: Handle comprehension arguments.
@@ -405,6 +452,38 @@ ExprNode *ExprParser::parseExpression() {
   }
 
   return result;
+}
+
+/// Parse any binary operators that have precedence of at least `minPrec`.  This
+/// stop if the current token isn't a binary operator or if it binds more
+/// loosely than the specified precedence level.
+ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
+  while (true) {
+    auto [tokPrec, binOpKind] = getBinOpTokenPrecedenceAndKind();
+
+    // If the next token is lower precedence than we are allowed to eat, return
+    // successfully with what we ate already.  This also handles invalid tokens,
+    // since they are treated as lower precedence than we ever allow.
+    if (unsigned(tokPrec) < unsigned(minPrec))
+      return lhs;
+
+    SMLoc opLoc = getToken().getLoc();
+    consumeToken();
+
+    // Eat the next primary expression.
+    // TODO: Need to decide how to handle syntactic errors, should propagate up
+    // to the caller?
+    ExprNode *rhs = parsePrimary();
+
+    // If the operator we parse bind looser with the RHS than the operator after
+    // the RHS, then give the RHS primary to the RHS.
+    auto [nextTokPrec, nextBinOpKind] = getBinOpTokenPrecedenceAndKind();
+    if (unsigned(tokPrec) < unsigned(nextTokPrec))
+      rhs = parseBinOpRHS(rhs, Precedence(unsigned(tokPrec) + 1));
+
+    // Merge LHS and RHS according to operator.
+    lhs = alloc<BinOpNode>(binOpKind, lhs, opLoc, rhs);
+  }
 }
 
 //===----------------------------------------------------------------------===//
