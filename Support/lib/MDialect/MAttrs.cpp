@@ -10,6 +10,7 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <type_traits>
 
 using namespace M;
 
@@ -317,9 +318,13 @@ Attribute detail::AttrIterator::operator*() const {
 // Shared Logic
 //===----------------------------------------------------------------------===//
 
-/// Pack the integer values into a byte array;
+/// Pack the integer values into a byte array; The input template argument is
+/// expected to be either an APInt or an APSInt.
+template <typename Int>
 static std::vector<uint8_t> packIntegerValues(unsigned width,
-                                              ArrayRef<APInt> values) {
+                                              ArrayRef<Int> values) {
+  static_assert(std::is_same_v<Int, APInt> || std::is_same_v<Int, APSInt>,
+                "unexpected integer type");
   unsigned byteSize = llvm::divideCeil(width, CHAR_BIT);
   std::vector<uint8_t> data(values.size() * byteSize, 0);
   for (auto &it : llvm::enumerate(values))
@@ -341,11 +346,8 @@ IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
 
 IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
                                                ArrayRef<APSInt> values) {
-  static_assert(sizeof(APSInt) == sizeof(APInt),
-                "cannot bitcast from APSInt to APInt");
-  std::vector<uint8_t> data = packIntegerValues(
-      type.getElementTypeBitWidth(),
-      {reinterpret_cast<const APInt *>(values.data()), values.size()});
+  std::vector<uint8_t> data =
+      packIntegerValues(type.getElementTypeBitWidth(), values);
   return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
 }
 
@@ -423,8 +425,8 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
   intVals.reserve(values.size());
   for (const APFloat &value : values)
     intVals.push_back(value.bitcastToAPInt());
-  std::vector<uint8_t> rawData =
-      packIntegerValues(type.getElementTypeBitWidth(), intVals);
+  std::vector<uint8_t> rawData = packIntegerValues(
+      type.getElementTypeBitWidth(), llvm::makeArrayRef(intVals));
   return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();
 }
 
