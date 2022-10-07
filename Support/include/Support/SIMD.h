@@ -502,7 +502,7 @@ public:
     if constexpr (isEmulated || !__has_builtin(__builtin_shufflevector)) {
       SIMDVector result;
       std::transform(indices.begin(), indices.end(), result.data(),
-                     [this](auto index) { return data()[index]; });
+                     [data = data()](auto index) { return data[index]; });
       return result.value();
     } else {
       return __builtin_shufflevector(value(), value(), indices);
@@ -551,23 +551,31 @@ template <typename T, size_t Width>
 class SIMDVector;
 
 //===----------------------------------------------------------------------===//
+// SIMDMatrixLayout
+//===----------------------------------------------------------------------===//
+
+enum class SIMDMatrixLayout { kColumnMajor, kRowMajor };
+
+//===----------------------------------------------------------------------===//
 // is_simd_matrix_v
 //===----------------------------------------------------------------------===//
 
-template <typename ElemTy, size_t Height, size_t Width>
+template <typename ElemTy, size_t Height, size_t Width, SIMDMatrixLayout Layout>
 class SIMDMatrix;
 
 template <typename... T>
 inline constexpr bool is_simd_matrix_v = false;
 
-template <typename T, size_t Height, size_t Width>
-inline constexpr bool is_simd_matrix_v<SIMDMatrix<T, Height, Width>> = true;
+template <typename ElemTy, size_t Height, size_t Width, SIMDMatrixLayout Layout>
+inline constexpr bool
+    is_simd_matrix_v<SIMDMatrix<ElemTy, Height, Width, Layout>> = true;
 
 //===----------------------------------------------------------------------===//
 // SIMDMatrix
 //===----------------------------------------------------------------------===//
 
-template <typename ElemTy, size_t Height, size_t Width = Height>
+template <typename ElemTy, size_t Height, size_t Width = Height,
+          SIMDMatrixLayout Layout = SIMDMatrixLayout::kColumnMajor>
 class SIMDMatrix {
   static_assert(std::is_arithmetic_v<ElemTy>,
                 "SIMD matrix element type must be arithmetic");
@@ -577,6 +585,8 @@ class SIMDMatrix {
   static_assert(Height == Width, "SIMD matrix size must be square");
   static_assert(llvm::isPowerOf2_64(Height) && llvm::isPowerOf2_64(Width),
                 "SIMD matrix size must be a power of 2");
+  static_assert(Layout == SIMDMatrixLayout::kColumnMajor,
+                "SIMD matrix layout must be in column major layout");
 
 public:
   using element_type = ElemTy;
@@ -584,6 +594,7 @@ public:
   static constexpr size_t bit_count = CHAR_BIT * byte_count;
   static constexpr size_t height = Height;
   static constexpr size_t width = Width;
+  static constexpr SIMDMatrixLayout layout = Layout;
 
   /// If the isEmulated flag is true, then we are not actually explicitly using
   /// SIMD matrix intrinsics. Instead, we are emulating the matrix by stacking
@@ -642,16 +653,26 @@ public:
   static constexpr size_t getSizeInBytes() { return byte_count; }
 
   /// Returns the element at the given index.
+  const element_type &at(size_t i, size_t j) const {
+    assert(i < height && j < width && "index out of bounds");
+    return matrixData[i][j];
+  }
+  element_type &at(size_t i, size_t j) {
+    assert(i < height && j < width && "index out of bounds");
+    auto ptr = data() + i * width + j;
+    return *ptr;
+  }
+
+  /// Returns the element at the given index.
   const element_type &operator[](std::pair<size_t, size_t> position) const {
     auto [i, j] = position;
     assert(i < height && j < width && "index out of bounds");
-    return matrixData[i][j];
+    return at(i, j);
   }
   element_type &operator[](std::pair<size_t, size_t> position) {
     auto [i, j] = position;
     assert(i < height && j < width && "index out of bounds");
-    auto ptr = data() + i * width + j;
-    return *ptr;
+    return at(i, j);
   }
 
   /// Returns the row at the given index.
@@ -721,6 +742,41 @@ public:
       resultMatrix.matrixData = matrixData / other;
     }
     return resultMatrix;
+  }
+
+  /// Transpose the matrix.
+  SIMDMatrix<element_type, width, height> tr() {
+    if constexpr (isEmulated) {
+      // TODO: Use the shuffle instructions to transpose the matrix.
+      SIMDMatrix<element_type, width, height> resultMatrix;
+      for (size_t i = 0; i < height; ++i)
+        for (size_t j = 0; j < width; ++j)
+          resultMatrix.at(j, i) = at(i, j);
+    } else {
+      return __builtin_matrix_transpose(matrixData);
+    }
+  }
+
+  /// Performs Matrix multiplication.
+  template <size_t OtherHeight, size_t OtherWidth>
+  SIMDMatrix<element_type, height, OtherWidth>
+  dot(SIMDMatrix<element_type, OtherHeight, OtherWidth> other) {
+    static_assert(OtherHeight == width, "matrix dimensions mismatch");
+    if constexpr (isEmulated) {
+      // TODO: Use the SIMD operations to implement matrix multiplication.
+      SIMDMatrix<element_type, height, OtherWidth> resultMatrix;
+      for (size_t i = 0; i < height; ++i) {
+        for (size_t j = 0; j < OtherWidth; ++j) {
+          element_type accum(0);
+          for (size_t k = 0; k < width; ++k) {
+            accum += at(i, k) * other.at(k, j);
+          }
+          resultMatrix.at(i, j) = accum;
+        }
+      }
+    } else {
+      return value() * other.value();
+    }
   }
 
   /// Gets the underlying matrix value.
