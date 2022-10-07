@@ -314,30 +314,30 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   // on the right. We handle all simple constants consistently here: they can
   // never occur in the same expression since they have different types.
   if (isSimpleConstant(rhs)) {
-    if (auto intRhs = rhs.dyn_cast<IntegerAttr>()) {
-      auto intLhs = lhs.dyn_cast<IntegerAttr>();
+    if (auto intRhs = dyn_cast<IntegerAttr>(rhs)) {
+      auto intLhs = dyn_cast<IntegerAttr>(lhs);
       return !intLhs || intLhs.getValue().slt(intRhs.getValue());
     }
-    if (auto dtypeRhs = rhs.dyn_cast<DTypeConstantAttr>()) {
-      auto dtypeLhs = lhs.dyn_cast<DTypeConstantAttr>();
+    if (auto dtypeRhs = dyn_cast<DTypeConstantAttr>(rhs)) {
+      auto dtypeLhs = dyn_cast<DTypeConstantAttr>(lhs);
       return !dtypeLhs ||
              dtypeLhs.getDType().getValue() < dtypeRhs.getDType().getValue();
     }
-    if (auto strRhs = rhs.dyn_cast<StringAttr>()) {
-      auto strLhs = lhs.dyn_cast<StringAttr>();
+    if (auto strRhs = dyn_cast<StringAttr>(rhs)) {
+      auto strLhs = dyn_cast<StringAttr>(lhs);
       return !strLhs || strLhs.getValue() < strRhs.getValue();
     }
-    auto fltRhs = rhs.cast<FloatAttr>();
-    auto fltLhs = lhs.dyn_cast<FloatAttr>();
+    auto fltRhs = cast<FloatAttr>(rhs);
+    auto fltLhs = dyn_cast<FloatAttr>(lhs);
     return !fltLhs || fltLhs.getValue() < fltRhs.getValue();
   }
   if (isSimpleConstant(lhs))
     return false;
 
   // Next up are named parameters.
-  if (auto rhsParam = rhs.dyn_cast<ParamDeclRefAttr>()) {
+  if (auto rhsParam = dyn_cast<ParamDeclRefAttr>(rhs)) {
     // Parameters are sorted lexically w.r.t. each other.
-    if (auto lhsParam = lhs.dyn_cast<ParamDeclRefAttr>())
+    if (auto lhsParam = dyn_cast<ParamDeclRefAttr>(lhs))
       return lhsParam.getName().getValue() < rhsParam.getName().getValue();
     // They otherwise appear on the right of other things.
     return true;
@@ -484,7 +484,7 @@ static Attribute simplifyAssocOp(
 /// null as the second (standin for "multiplication by 1").
 static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
   if (auto mul = dyn_castPE(POC::Mul, operand))
-    if (auto cst = mul.getOperands().back().dyn_cast<IntegerAttr>()) {
+    if (auto cst = dyn_cast<IntegerAttr>(mul.getOperands().back())) {
       auto nonCst =
           ParamOperatorAttr::get(POC::Mul, mul.getOperands().drop_back());
       return {nonCst, cst};
@@ -603,8 +603,8 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
              llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedfn,
              llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn) {
   assert(operands.size() == 2 && "binary operator always has two operands");
-  if (auto lhs = operands[0].dyn_cast<IntegerAttr>())
-    if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+  if (auto lhs = dyn_cast<IntegerAttr>(operands[0]))
+    if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
       const auto &fn =
           (lhs.getType().isSignedInteger() ? signedFn : unsignedfn);
       if (auto resultConstant = foldBinaryValues(fn, lhs.getValue(),
@@ -619,8 +619,8 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
 static IntegerAttr foldCompareOp(
     TypedAttr lhs, TypedAttr rhs,
     llvm::function_ref<bool(const APInt &, const APInt &)> compareFn) {
-  if (auto lhsInt = lhs.dyn_cast<IntegerAttr>())
-    if (auto rhsInt = rhs.dyn_cast<IntegerAttr>()) {
+  if (auto lhsInt = dyn_cast<IntegerAttr>(lhs))
+    if (auto rhsInt = dyn_cast<IntegerAttr>(rhs)) {
       if (auto resultConstant = foldBinaryValues(
               compareFn, lhsInt.getValue(), rhsInt.getValue(), lhsInt.getType(),
               IntegerType::get(rhs.getContext(), 1)))
@@ -651,7 +651,7 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
 static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
-  if (auto rhs = operands[1].dyn_cast<IntegerAttr>()) {
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
     // NOTE: This is correct even for index types because an overlong shift will
     // turn the result to zero.
     // FIXME: getOneBitSet asserts the shift amount should be in-range.  We need
@@ -665,7 +665,7 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
-  if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isZero())
       return operands[0]; // `x >> 0 = x`.
   // TODO: 0 >> x, -1 >>> x
