@@ -631,7 +631,7 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
-  auto resultInt = (*errorOrValue).dyn_cast<IntegerAttr>();
+  auto resultInt = dyn_cast<IntegerAttr>(errorOrValue.get());
   if (!resultInt || resultInt.getValue().getBitWidth() != 1)
     return error(op->getLoc(),
                  "constraint evaluation didn't return true or false");
@@ -657,7 +657,7 @@ ParameterRewriter::resolveCallInputParams(Operation *call,
   for (ParamBindAttr param : inputValues) {
     // If this is a region reference, form a binding to the region provided by
     // the call.
-    if (auto regionRef = param.getValue().dyn_cast<ParamCallRegionRefAttr>()) {
+    if (auto regionRef = dyn_cast<ParamCallRegionRefAttr>(param.getValue())) {
       auto &region = call->getRegion(nextRegionInThisCall++);
 
       // Give this reference a unique name, and make a StringAttr attribute with
@@ -844,7 +844,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // direct call, and add the new call to the "opsToRewrite" list so it is
   // recursively elaborated.
   OpBuilder b(call);
-  if (auto symbolCst = errorOrValue.get().dyn_cast<SymbolConstantAttr>()) {
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(errorOrValue.get())) {
     // Replace the kgen.call_param with a kgen.call to the target.
     auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
                                     symbolCst.getSymbol().getLeafReference(),
@@ -1062,21 +1062,21 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
 
-    if (auto intAttr = value.dyn_cast<IntegerAttr>()) {
+    if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
       os << intAttr.getValue();
-    } else if (auto floatAttr = value.dyn_cast<FloatAttr>()) {
+    } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
       SmallString<32> str;
       floatAttr.getValue().toString(str);
       os << str;
-    } else if (auto dtypeAttr = value.dyn_cast<DTypeConstantAttr>()) {
+    } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
       os << dtypeAttr.getDType();
-    } else if (auto typeConstant = value.dyn_cast<ConcreteTypeConstantAttr>()) {
+    } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
       // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
       // something if these get too verbose.
       os << typeConstant.getValue();
-    } else if (auto symbolConstant = value.dyn_cast<SymbolConstantAttr>()) {
+    } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
       os << symbolConstant.getSymbol();
-    } else if (auto stringConstant = value.dyn_cast<StringAttr>()) {
+    } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
       os << stringConstant.strref();
     } else {
       assert(!isSimpleConstant(value) && "not handling all simple constants");
