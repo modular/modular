@@ -13,6 +13,7 @@ add_modular_unittest(
 
   BlobCacheTest.cpp
   HMACTest.cpp
+  SIMDTest.cpp
   TimeProfilerTest.cpp
 
   LINK_LIBS PRIVATE

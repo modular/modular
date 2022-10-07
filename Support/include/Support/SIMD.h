@@ -12,8 +12,10 @@
 #define SUPPORT_SIMD_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TypeName.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -23,6 +25,7 @@
 #include <cstddef>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
 #include <numeric>
 #include <type_traits>
 
@@ -37,13 +40,22 @@ static constexpr size_t kPreferredSIMDBitWidth = 128;
 static constexpr size_t kPreferredSIMDBitWidth = 128;
 #endif
 
-/// For our optimized representation of SIMDVector, we use Clang's extended
-/// vector type.  For compatibility, we use std::array.
+/// For our optimized representation of SIMDVector, we use vector_type. For
+/// other compilers we use emulate the SIMDVector with a std::array.
 #ifdef __GNUC__
-#define LLCL_SIMD_EMULATED 0
-#else
-#define LLCL_SIMD_EMULATED 1
-#endif
+#define M_SIMD_VECTOR_EMULATED 0
+#else // __GNUC__
+#define M_SIMD_VECTOR_EMULATED 1
+#endif // __GNUC__
+
+/// For our optimized representation of SIMDTile, we use Clang's matrix_type.
+/// For other compilers, we emulate the SIMDTile by having a sequence of
+/// SIMDVectors.
+#ifdef __clang__
+#define M_SIMD_MATRIX_EMULATED 0
+#else // __clang__
+#define M_SIMD_MATRIX_EMULATED 1
+#endif // __clang__
 
 /// Ignore warnings about using vector registers that are wider than what the
 /// hardware supports.
@@ -78,7 +90,8 @@ template <typename ElemTy,
 class SIMDVector {
 
   static_assert(Width != 0, "Width must be positive");
-  static_assert(std::is_arithmetic_v<ElemTy>, "ElemTy must be arithmetic");
+  static_assert(std::is_arithmetic_v<ElemTy>,
+                "SIMD vector element type must be arithmetic");
 
 public:
   using element_type = ElemTy;
@@ -89,14 +102,14 @@ public:
   /// If the isEmulated flag is true, then we are not actually explicitly using
   /// SIMD instructions. Instead, we are looping over the elements of the vector
   /// and performing the operation.
-  static constexpr bool isEmulated = LLCL_SIMD_EMULATED == 1;
+  static constexpr bool isEmulated = M_SIMD_VECTOR_EMULATED == 1;
 
-#if LLCL_SIMD_EMULATED
-  // We are just going to emulate the SIMD type using an array.
+#if M_SIMD_VECTOR_EMULATED
+  // We are just going to emulate the SIMD vector type using an array.
   using vector_type = std::array<element_type, width>;
-#else  // LLCL_SIMD_EMULATED
+#else  // M_SIMD_VECTOR_EMULATED
   using vector_type __attribute__((vector_size(byte_count))) = element_type;
-#endif // LLCL_SIMD_EMULATED
+#endif // M_SIMD_VECTOR_EMULATED
 
   SIMDVector() = default;
 
@@ -483,7 +496,7 @@ public:
   /// input indicies must match the width of the vector. For example, for a
   /// 4-wide SIMDVector a vector.shuffle(3,2,1,0) will reverse the elements of
   /// the vector while a vector.shuffle(3,3,3,3) will splat the last element.
-  vector_type shuffle(std::initializer_list<element_type> indices) const {
+  vector_type shuffle(std::initializer_list<int32_t> indices) const {
     static_assert(indices.size() == size(),
                   "the number of indices must be equal to the vector width");
     if constexpr (isEmulated || !__has_builtin(__builtin_shufflevector)) {
@@ -534,6 +547,230 @@ inline raw_ostream &operator<<(raw_ostream &os,
   return os;
 }
 
+template <typename T, size_t Width>
+class SIMDVector;
+
+//===----------------------------------------------------------------------===//
+// is_simd_matrix_v
+//===----------------------------------------------------------------------===//
+
+template <typename ElemTy, size_t Height, size_t Width>
+class SIMDMatrix;
+
+template <typename... T>
+inline constexpr bool is_simd_matrix_v = false;
+
+template <typename T, size_t Height, size_t Width>
+inline constexpr bool is_simd_matrix_v<SIMDMatrix<T, Height, Width>> = true;
+
+//===----------------------------------------------------------------------===//
+// SIMDMatrix
+//===----------------------------------------------------------------------===//
+
+template <typename ElemTy, size_t Height, size_t Width = Height>
+class SIMDMatrix {
+  static_assert(std::is_arithmetic_v<ElemTy>,
+                "SIMD matrix element type must be arithmetic");
+  static_assert(Height > 0 && Width > 0,
+                "SIMD matrix must have a positive size");
+  // TODO: Generalize later to support non-square matrices.
+  static_assert(Height == Width, "SIMD matrix size must be square");
+  static_assert(llvm::isPowerOf2_64(Height) && llvm::isPowerOf2_64(Width),
+                "SIMD matrix size must be a power of 2");
+
+public:
+  using element_type = ElemTy;
+  static constexpr size_t byte_count = Width * Height * sizeof(ElemTy);
+  static constexpr size_t bit_count = CHAR_BIT * byte_count;
+  static constexpr size_t height = Height;
+  static constexpr size_t width = Width;
+
+  /// If the isEmulated flag is true, then we are not actually explicitly using
+  /// SIMD matrix intrinsics. Instead, we are emulating the matrix by stacking
+  /// SIMD vectors.
+  static constexpr bool isEmulated = M_SIMD_MATRIX_EMULATED == 1;
+
+#if M_SIMD_MATRIX_EMULATED
+  // We are just going to emulate the SIMD matrix type using an array of SIMD
+  // vectors.
+  using matrix_type = std::array<SIMDVector<ElemTy, Width>, Height>;
+#else  // M_SIMD_VECTOR_EMULATED
+  using matrix_type __attribute__((matrix_type(Height, Width))) = element_type;
+#endif // M_SIMD_MATRIX_EMULATED
+
+  /// Default constructor.
+  SIMDMatrix() = default;
+
+  /// Initialize the vector with the vector_type.
+  SIMDMatrix(matrix_type mat) {
+    if constexpr (isEmulated)
+      std::copy(mat.data(), mat.data() + height, matrixData.begin());
+    else
+      matrixData = mat;
+  }
+
+  /// Initializes the vector with the given values. If a single scalar is
+  /// provided, then the value is broadcasted.
+  template <typename Arg>
+  SIMDMatrix(Arg arg) {
+    // If the input is a simd matrix, then copy the data.
+    if constexpr (is_simd_matrix_v<Arg>) {
+      static_assert(Arg::height == height, "height mismatch");
+      static_assert(Arg::width == width, "width mismatch");
+      static_assert(std::is_same_v<typename Arg::element_type, element_type>,
+                    "element type mismatch");
+      *this = SIMDMatrix(arg.value());
+    } else {
+      // Otherwise, we are going to splat the arithmetic value into the vector.
+      static_assert(std::is_arithmetic_v<Arg>,
+                    "broadcasted value must be an arithmetic type.");
+      if constexpr (isEmulated) {
+        std::fill(matrixData.begin(), matrixData.end(),
+                  SIMDVector<element_type, width>(arg));
+      } else {
+        // TODO: Figure out how to splat a value into a matrix. The compiler
+        // will generate the right code for this however (see
+        // https://godbolt.org/z/hqcnfx4sP).
+        for (size_t i = 0; i < height; ++i)
+          for (size_t j = 0; j < width; ++j)
+            matrixData[i][j] = (element_type)arg;
+      }
+    }
+  }
+
+  /// Gets the size of the vector in bytes.
+  static constexpr size_t getSizeInBytes() { return byte_count; }
+
+  /// Returns the element at the given index.
+  const element_type &operator[](std::pair<size_t, size_t> position) const {
+    auto [i, j] = position;
+    assert(i < height && j < width && "index out of bounds");
+    return matrixData[i][j];
+  }
+  element_type &operator[](std::pair<size_t, size_t> position) {
+    auto [i, j] = position;
+    assert(i < height && j < width && "index out of bounds");
+    auto ptr = data() + i * width + j;
+    return *ptr;
+  }
+
+  /// Returns the row at the given index.
+  const SIMDVector<element_type, width> &row(size_t idx) const {
+    assert(idx < width && "index out of bounds");
+    if constexpr (isEmulated) {
+      return matrixData[idx];
+    } else {
+      SIMDVector<element_type, width> vec;
+      memcpy(vec.data(), data() + idx * width, sizeof(element_type) * width);
+      return vec;
+    }
+  }
+
+  /// Returns the simd matrix where each element is added to the input scalar
+  /// value.
+  SIMDMatrix operator+(element_type other) {
+    SIMDMatrix resultMatrix;
+    if constexpr (isEmulated)
+      std::transform(matrixData.begin(), matrixData.end(),
+                     resultMatrix.value().begin(),
+                     [other](auto elem) { return elem + other; });
+    else
+      resultMatrix.matrixData = matrixData + other;
+    return resultMatrix;
+  }
+
+  /// Returns the simd matrix where each element is subtracted from the input
+  /// scalar value.
+  SIMDMatrix operator-(element_type other) {
+    SIMDMatrix resultMatrix;
+    if constexpr (isEmulated)
+      std::transform(matrixData.begin(), matrixData.end(),
+                     resultMatrix.value().begin(),
+                     [other](auto elem) { return elem - other; });
+    else
+      resultMatrix.matrixData = matrixData - other;
+    return resultMatrix;
+  }
+
+  /// Returns the simd matrix where each element is multiplied with the input
+  /// scalar value.
+  SIMDMatrix operator*(element_type other) {
+    SIMDMatrix resultMatrix;
+    if constexpr (isEmulated)
+      std::transform(matrixData.begin(), matrixData.end(),
+                     resultMatrix.value().begin(),
+                     [other](auto elem) { return elem * other; });
+    else
+      resultMatrix.matrixData = matrixData * other;
+    return resultMatrix;
+  }
+
+  /// Returns the simd matrix where each element is divided with the input
+  /// scalar value.
+  SIMDMatrix operator/(element_type other) {
+    SIMDMatrix resultMatrix;
+    if constexpr (isEmulated) {
+      std::transform(matrixData.begin(), matrixData.end(),
+                     resultMatrix.value().begin(),
+                     [other](auto elem) { return elem / other; });
+    } else if constexpr (!__has_extension(matrix_types_scalar_division)) {
+      for (size_t i = 0; i < height; ++i)
+        for (size_t j = 0; j < width; ++j)
+          resultMatrix[{i, j}] = matrixData[i][j] / other;
+    } else {
+      resultMatrix.matrixData = matrixData / other;
+    }
+    return resultMatrix;
+  }
+
+  /// Gets the underlying matrix value.
+  const matrix_type &value() const { return matrixData; }
+  matrix_type &value() { return matrixData; }
+
+  /// Get the underlying data of the simd matrix as a const pointer.
+  const element_type *data() const {
+    if constexpr (std::is_array_v<matrix_type>)
+      return matrixData.data();
+    return (const element_type *)&matrixData;
+  }
+
+  element_type *data() {
+    if constexpr (std::is_array_v<matrix_type>)
+      return matrixData.data();
+    return (element_type *)&matrixData;
+  }
+
+  void print(raw_ostream &os) const {
+    mlir::raw_indented_ostream indentOs(os);
+    auto *data = this->data();
+    indentOs << "SIMDMatrix([\n";
+    indentOs.indent();
+    indentOs << "[";
+    llvm::interleaveComma(llvm::makeArrayRef(data(), width), os);
+    for (size_t i = 1; i < height; i++) {
+      indentOs << "],\n[";
+      llvm::interleaveComma(llvm::makeArrayRef(data() + i * width, width), os);
+      indentOs << "]";
+    }
+    indentOs.unindent();
+    indentOs << "], dtype=" << llvm::getTypeName<element_type>()
+             << ", height=" << height << ", width=" << width << ")";
+  }
+  void dump() const { print(llvm::errs()); }
+
+private:
+  // The underlying simd tile data.
+  matrix_type matrixData;
+};
+
+template <typename ElementType, size_t Height, size_t Width>
+inline raw_ostream &
+operator<<(raw_ostream &os,
+           const SIMDMatrix<ElementType, Height, Width> &value) {
+  value.print(os);
+  return os;
+}
+
 //===----------------------------------------------------------------------===//
 // simd_transform
 //===----------------------------------------------------------------------===//
@@ -555,7 +792,7 @@ OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
                              UnaryScalarFunctionTy scalarFunc) {
   // If we are emulating the SIMD vector, then there is no point of using
   // simd_transform. So, fallback to std::transform.
-#if LLCL_SIMD_EMULATED == 0
+#if M_SIMD_VECTOR_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
   constexpr size_t SimdSize = InputSIMDType::size();
@@ -576,7 +813,7 @@ OutputElemTy *simd_transform(const InputElemTy *first, const InputElemTy *last,
   }
   // Handle the remaining elements when the buffer is not a multiple of simd
   // size.
-#endif // LLCL_SIMD_EMULATED
+#endif // M_SIMD_VECTOR_EMULATED
   return std::transform(first, last, result, scalarFunc);
 }
 
@@ -593,7 +830,7 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
                              BinaryScalarFunctionTy scalarFunc) {
   // If we are emulating the SIMD vector, then there is no point of using
   // simd_transform. So, fallback to std::transform.
-#if LLCL_SIMD_EMULATED == 0
+#if M_SIMD_VECTOR_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   using OutputSIMDType = SIMDVector<OutputElemTy, Width>;
   constexpr size_t SimdSize = InputSIMDType::size();
@@ -618,7 +855,7 @@ OutputElemTy *simd_transform(const InputElemTy *first1,
   }
   // Handle the remaining elements when the buffer is not a multiple of simd
   // size.
-#endif // LLCL_SIMD_EMULATED
+#endif // M_SIMD_VECTOR_EMULATED
   return std::transform(first1, last1, first2, result, scalarFunc);
 }
 
@@ -644,7 +881,7 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
   T result(init);
   // If we are emulating the SIMD vector, then there is no point of using
   // simd_transform. So, fallback to std::transform.
-#if LLCL_SIMD_EMULATED == 0
+#if M_SIMD_VECTOR_EMULATED == 0
   using InputSIMDType = SIMDVector<InputElemTy, Width>;
   constexpr size_t SimdSize = InputSIMDType::size();
   for (; first <= last - UnrollFactor * SimdSize;
@@ -660,7 +897,7 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
   }
   // Handle the remaining elements when the buffer is not a multiple of simd
   // size.
-#endif // LLCL_SIMD_EMULATED
+#endif // M_SIMD_VECTOR_EMULATED
   return std::reduce(first, last, result, scalarFunc);
 }
 #ifdef __GNUC__
