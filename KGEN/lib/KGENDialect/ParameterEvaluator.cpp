@@ -29,13 +29,13 @@ KGEN::collectParameterReferences(TypedAttr expr,
 
   // We can directly substitute declaration references given our known table of
   // bindings.
-  if (auto declRef = expr.dyn_cast<ParamDeclRefAttr>()) {
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(expr)) {
     results.push_back(declRef);
     return success();
   }
 
   // Dig references out of expressions.
-  if (auto oper = expr.dyn_cast<ParamOperatorAttr>()) {
+  if (auto oper = dyn_cast<ParamOperatorAttr>(expr)) {
     for (auto value : oper.getOperands()) {
       if (failed(collectParameterReferences(value, results)))
         return failure();
@@ -44,7 +44,7 @@ KGEN::collectParameterReferences(TypedAttr expr,
   }
 
   // Dig parameters out of parameterized types.
-  if (auto typeConstant = expr.dyn_cast<ParameterizedTypeConstantAttr>())
+  if (auto typeConstant = dyn_cast<ParameterizedTypeConstantAttr>(expr))
     return collectParameterReferences(typeConstant.getValue(), results);
 
   // Otherwise, we don't know how to walk this attribute.
@@ -57,7 +57,7 @@ KGEN::collectParameterReferences(TypedAttr expr,
 LogicalResult
 KGEN::collectParameterReferences(Type type,
                                  SmallVector<ParamDeclRefAttr> &results) {
-  auto itf = type.dyn_cast<mlir::SubElementTypeInterface>();
+  auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
   if (!itf)
     return success();
 
@@ -67,7 +67,7 @@ KGEN::collectParameterReferences(Type type,
         // Skip ConcreteTypeConstantAttr's since we know they can never have
         // parameters.
         if (succeeded(result) && attr && !attr.isa<ConcreteTypeConstantAttr>())
-          if (auto expr = attr.dyn_cast<TypedAttr>())
+          if (auto expr = dyn_cast<TypedAttr>(attr))
             result = collectParameterReferences(expr, results);
       },
       [&](Type type) {
@@ -115,10 +115,10 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
-  if (auto declRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     result = paramValues[declRef.getName()];
     assert(result && "Verifier should check that all parameters are defined");
-  } else if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
+  } else if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
@@ -143,7 +143,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
   // Signature types are special because they are "isolated from above" with
   // respect to their contexts, so we don't rebind within them.
   if (!type.isa<SignatureType>()) {
-    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
       SmallVector<Attribute> newAttrs;
       SmallVector<Type> newTypes;
 
@@ -170,7 +170,7 @@ ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
 
   // If this was an unfoldable operator expression, error.  This can happen for
   // things like 'index' arithmetic that has target-specific results.
-  if (auto oper = result.dyn_cast<ParamOperatorAttr>())
+  if (auto oper = dyn_cast<ParamOperatorAttr>(result))
     return Error("could not simplify operator " + getParamAsString(result));
 
   // Otherwise, we don't know how to simplify this attribute, it's an error.
@@ -221,7 +221,7 @@ LogicalResult KGEN::evaluateConstraints(
       value = evaluator.getReboundAttribute(constraint.getExpr());
     }
 
-    auto resultInt = value.dyn_cast<IntegerAttr>();
+    auto resultInt = dyn_cast<IntegerAttr>(value);
     // If the expression was not fully simplified, skip it.
     if (!resultInt && allowUnresolved)
       continue;

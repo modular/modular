@@ -79,7 +79,7 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
-      if (auto vec = type.dyn_cast<VectorType>())
+      if (auto vec = dyn_cast<VectorType>(type))
         zero = rewriter.create<LLVM::ConstantOp>(
             op.getLoc(), DenseIntElementsAttr::get(vec, 0));
       else
@@ -183,7 +183,7 @@ public:
           adaptor.getRhs());
     } else {
       Type i1Type = rewriter.getI1Type();
-      if (auto simd = op.getLhs().getType().dyn_cast<SIMDType>())
+      if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType()))
         i1Type = VectorType::get(*simd.getResolvedSize(), i1Type);
       rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
           op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
