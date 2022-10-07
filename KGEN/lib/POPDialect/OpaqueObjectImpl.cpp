@@ -19,7 +19,7 @@ static FailureOr<DType> resolveDTypeWithTag(DTypeInterface itf, Location loc,
   if (Optional<DType> dtype = itf.getResolvedDType())
     return *dtype;
 
-  if (auto dt = tag.dyn_cast<DTypeConstantAttr>())
+  if (auto dt = dyn_cast<DTypeConstantAttr>(tag))
     return dt.getDType();
 
   return emitError(loc) << "could not resolve dtype";

@@ -182,7 +182,7 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
 
   // If one of these is a parameter, and one is concrete, then that infers a
   // value for the parameter.
-  if (auto decl = itfParam.dyn_cast<ParamDeclRefAttr>())
+  if (auto decl = dyn_cast<ParamDeclRefAttr>(itfParam))
     if (isSimpleConstant(genParam))
       return addEqualityConstraintFn(decl, genParam);
 
@@ -191,8 +191,8 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   // like "x+1" and "y+1" --> "x == y".
 
   // If both parameters are type expressions, try to unify the contained types.
-  if (auto itfType = itfParam.dyn_cast<TypeConstantAttr>())
-    if (auto genType = genParam.dyn_cast<TypeConstantAttr>())
+  if (auto itfType = dyn_cast<TypeConstantAttr>(itfParam))
+    if (auto genType = dyn_cast<TypeConstantAttr>(genParam))
       return tryUnifyingTypes(itfType.getValue(), genType.getValue());
 
   // TODO: It is possible to add inferred dynamic constraints when we have an
@@ -213,7 +213,7 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
     return success();
 
   // If the interface type is a parameter reference, try to unify them.
-  if (auto itfParamRef = itfArgTy.dyn_cast<ParamRefType>())
+  if (auto itfParamRef = dyn_cast<ParamRefType>(itfArgTy))
     return tryUnifyingTypeParameters(itfParamRef.getParam(),
                                      TypeConstantAttr::get(genArgTy));
 
@@ -227,7 +227,7 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   }
 
   // Try to unify their nested parameter expressions.
-  auto itfElems = itfArgTy.dyn_cast<mlir::SubElementTypeInterface>();
+  auto itfElems = dyn_cast<mlir::SubElementTypeInterface>(itfArgTy);
   if (!itfElems) {
     return emitError(inferenceLoc, inferenceContext)
            << " has type " << genArgTy << " not equal to interface type "

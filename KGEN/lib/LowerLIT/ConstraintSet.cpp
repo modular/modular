@@ -19,9 +19,9 @@ using namespace KGEN;
 /// returns failure if a contradiction is detected.
 LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
   // If this is an equality constraint, handle it specially.
-  if (auto oper = constraint.getExpr().dyn_cast<ParamOperatorAttr>()) {
+  if (auto oper = dyn_cast<ParamOperatorAttr>(constraint.getExpr())) {
     if (oper.getOpcode() == POC::EQ) {
-      if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
+      if (auto param = dyn_cast<ParamDeclRefAttr>(oper.getOperand(0))) {
         // 'param == 42' is equality comparable.
         if (isSimpleConstant(oper.getOperand(1))) {
           auto value = PointwiseValue::getSingleValue(
@@ -30,7 +30,7 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
         }
 
         // 'param1 = param2' merges anything known about param1 and param2.
-        if (auto param2 = oper.getOperand(1).dyn_cast<ParamDeclRefAttr>())
+        if (auto param2 = dyn_cast<ParamDeclRefAttr>(oper.getOperand(1)))
           return addParamEquivalenceConstraint(
               param, param2, constraint.getMessage(), constraint.getLoc());
 
@@ -38,7 +38,7 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
       }
     } else if (oper.getOpcode() == POC::IN) {
       // 'param in {1,2,3}' is equality comparable.
-      if (auto param = oper.getOperand(0).dyn_cast<ParamDeclRefAttr>()) {
+      if (auto param = dyn_cast<ParamDeclRefAttr>(oper.getOperand(0))) {
         if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
           auto value = PointwiseValue::getInSetValue(
               oper.getOperands().drop_front(), constraint.getMessage(),
@@ -170,7 +170,7 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
   // a value on the LHS and a typed set on the RHS.  This would make everything
   // smoother and more efficient.
   TypedAttr expr;
-  if (auto valueArray = value.dyn_cast<ArrayAttr>()) {
+  if (auto valueArray = dyn_cast<ArrayAttr>(value)) {
     SmallVector<TypedAttr> operands;
     operands.push_back(param);
     llvm::append_range(operands, valueArray);
@@ -192,9 +192,9 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
          "equivalence constraints should be resolved");
 
   // Handle the case when this is merging a set into us.
-  if (auto otherSet = other.value.dyn_cast<ArrayAttr>()) {
+  if (auto otherSet = dyn_cast<ArrayAttr>(other.value)) {
     // Simplify `x = [5,6,7,8]; x = [7,8,9]` to `x = [7,8]`.
-    if (auto valueSet = value.dyn_cast<ArrayAttr>()) {
+    if (auto valueSet = dyn_cast<ArrayAttr>(value)) {
       SmallPtrSet<Attribute, 4> elements(otherSet.begin(), otherSet.end());
       SmallVector<TypedAttr> result;
       for (auto value : valueSet)
@@ -232,7 +232,7 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
       return success();
 
     // If it is a set, check for set membership.
-    if (auto valueSet = value.dyn_cast<ArrayAttr>()) {
+    if (auto valueSet = dyn_cast<ArrayAttr>(value)) {
       for (auto elt : valueSet) {
         // If we are saying something like `x = [5,6,7]; x = 7` simplify to x=7.
         if (elt == other.value) {
