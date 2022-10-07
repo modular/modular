@@ -53,7 +53,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert a size expression to a C++ unsigned integer.
   auto convertSize = [&](auto type) -> Optional<uint64_t> {
-    auto size = type.getSize().template dyn_cast_or_null<IntegerAttr>();
+    auto size = dyn_cast_or_null<IntegerAttr>(type.getSize());
     if (!size)
       return {};
     const APInt &value = size.getValue();
@@ -91,7 +91,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     SmallVector<Type> elementTypes;
     elementTypes.reserve(structType.getNumElements());
     for (TypedAttr elementType : structType.getElementTypes()) {
-      auto typeCst = elementType.dyn_cast<ConcreteTypeConstantAttr>();
+      auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(elementType);
       if (!typeCst)
         return {};
       Type converted = convertType(typeCst.getValue());

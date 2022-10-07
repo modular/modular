@@ -74,25 +74,25 @@ void ParameterCollector::collectParameterUsesFromAttr(
     return;
 
   // Collect parameter references.
-  if (auto paramRef = attr.dyn_cast<ParamDeclRefAttr>()) {
+  if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     uses.push_back(paramRef);
     return;
   }
 
   // Check any SymbolConstantAttr's we encounter.
-  if (auto symbolConstant = attr.dyn_cast<SymbolConstantAttr>())
+  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr))
     verifySymbolConstantAttr(symbolConstant);
 
   size_t oldSize = uses.size();
 
   // Otherwise we haven't processed this, check the attribute's type if it has
   // one.
-  if (auto typedAttr = attr.dyn_cast<TypedAttr>())
+  if (auto typedAttr = dyn_cast<TypedAttr>(attr))
     collectParameterUsesFromType(typedAttr.getType(), uses);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
-  if (auto itf = attr.dyn_cast<mlir::SubElementAttrInterface>()) {
+  if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
     itf.walkImmediateSubElements(
         [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
         [&](Type type) { collectParameterUsesFromType(type, uses); });
@@ -113,19 +113,19 @@ void ParameterCollector::collectParameterUsesFromType(
     return;
 
   // Check any RefType's we encounter.
-  if (auto typeDef = type.dyn_cast<RefType>())
+  if (auto typeDef = dyn_cast<RefType>(type))
     verifyRefType(typeDef);
 
   // Signature types are effectively "isolated from above" in that they may have
   // their own local parameter declarations that are used in their type
   // signature, but they cannot "capture" parameters from the enclosing context.
   // As such, they are always considered "parameterless".
-  bool skipScan = type.isa<SignatureType>();
+  bool skipScan = isa<SignatureType>(type);
 
   if (!skipScan) {
     // Recursively check for any nested types, e.g. the input/outputs of a
     // function type, types like !pop.scalar<ty> etc.
-    if (auto itf = type.dyn_cast<mlir::SubElementTypeInterface>()) {
+    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
       size_t oldSize = uses.size();
       itf.walkImmediateSubElements(
           [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
@@ -279,7 +279,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       // We handle the `paramDecls` attribute specially, remember it for
       // below.
       if (namedAttr.getName().strref() == "paramDecls") {
-        paramDeclsAttr = namedAttr.getValue().dyn_cast<ParamDeclArrayAttr>();
+        paramDeclsAttr = dyn_cast<ParamDeclArrayAttr>(namedAttr.getValue());
         if (!paramDeclsAttr) {
           bodyOp->emitError("paramDecls attribute should be an array ")
               << namedAttr.getValue();

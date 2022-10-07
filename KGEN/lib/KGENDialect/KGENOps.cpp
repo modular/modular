@@ -145,7 +145,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
                                           PatternRewriter &rewriter) {
   // If the condition is statically true then we can just remove this op.
   auto cond = op.getCond();
-  if (auto intCond = cond.dyn_cast<IntegerAttr>()) {
+  if (auto intCond = dyn_cast<IntegerAttr>(cond)) {
     // Leave failing conditions, they must be diagnosed at elaboration time.
     if (intCond.getValue().isZero())
       return failure();
@@ -592,7 +592,7 @@ static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
       parseCallOpParams(p, paramValues, paramResultDecls))
     return failure();
 
-  auto signature = value.getType().dyn_cast<SignatureType>();
+  auto signature = dyn_cast<SignatureType>(value.getType());
   if (!signature)
     return p.emitError(loc, "callee parameter type must be a signature type");
 
@@ -647,7 +647,7 @@ SignatureType CallParamOp::getSignature() {
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {
   // If the condition is a known symbol, then replace this with a kgen.call.
-  if (auto calleeSymbol = op.getCallee().dyn_cast<SymbolConstantAttr>()) {
+  if (auto calleeSymbol = dyn_cast<SymbolConstantAttr>(op.getCallee())) {
     rewriter.replaceOpWithNewOp<CallOp>(
         op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
         op.getParamValues(), op.getParamDecls(), op.getOperands());
@@ -675,7 +675,7 @@ LogicalResult CallParamOp::verify() {
     return emitError(
         "kgen.call_param is only allowed in generators pre-elaboration");
 
-  auto calleeSignature = getCallee().getType().dyn_cast<SignatureType>();
+  auto calleeSignature = dyn_cast<SignatureType>(getCallee().getType());
   if (!calleeSignature)
     return emitError("kgen.call_param requires callee of signature type");
 

@@ -27,7 +27,7 @@ std::string KGEN::getParamAsString(Attribute value) {
   SmallVector<char, 128> result;
   {
     llvm::raw_svector_ostream os(result);
-    if (auto ta = value.dyn_cast<TypedAttr>())
+    if (auto ta = dyn_cast<TypedAttr>(value))
       printParamValue(ta, os);
     else
       os << value;
@@ -114,7 +114,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
 
   // We accept function type syntax as sugar for a SignatureType without
   // parameters.
-  if (auto valuesType = type.dyn_cast<FunctionType>()) {
+  if (auto valuesType = dyn_cast<FunctionType>(type)) {
     // Default to empty input/result parameters.
     auto noInputParams = ParamDeclArrayAttr::get(parser.getContext(), {});
     auto noResultParams = TypeArrayAttr::get(parser.getContext(), {});
@@ -133,7 +133,7 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     os << "dtype";
   else if (type.isa<StringType>())
     os << "string";
-  else if (auto signature = type.dyn_cast<SignatureType>()) {
+  else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters, print a SignatureType as a function type to
     // keep things concise.
     if (signature.getInputParams().empty() &&
@@ -685,7 +685,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
   // If this is a SignatureType, we expect a symbol name.  We need special
   // parsing logic here because FlatSymbolRefAttr isn't a TypedAttr.
-  if (auto signatureType = type.dyn_cast<SignatureType>()) {
+  if (auto signatureType = dyn_cast<SignatureType>(type)) {
     FlatSymbolRefAttr symbol;
     if (p.parseAttribute(symbol, Type()))
       return failure();
@@ -736,20 +736,20 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
 /// dealing with a parameter specifically.  This utilize syntactic shortcuts to
 /// make the printed syntax easier to grok.
 void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
-  if (auto declRef = value.dyn_cast<ParamDeclRefAttr>()) {
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(declRef.getName(), os);
     return;
   }
 
   // If this is a type constant, print it as a bare type.
-  if (auto typeConstant = value.dyn_cast<TypeConstantAttr>()) {
+  if (auto typeConstant = dyn_cast<TypeConstantAttr>(value)) {
     os << typeConstant.getValue();
     return;
   }
 
   // If this is a dtype constant with simple syntax, we can print it as a
   // keyword.
-  if (auto dtypeConstant = value.dyn_cast<DTypeConstantAttr>()) {
+  if (auto dtypeConstant = dyn_cast<DTypeConstantAttr>(value)) {
     auto eltType = dtypeConstant.getDType();
     std::string stringRep = eltType.getAsString();
     // Don't allow things like complex<f64>.  We can extend this in the future
@@ -761,7 +761,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   }
 
   // Symbol constants print as just the symbol.
-  if (auto symbolConstant = value.dyn_cast<SymbolConstantAttr>()) {
+  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
     os << symbolConstant.getSymbol();
     return;
   }
@@ -773,7 +773,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   }
 
   // Handle expressions.
-  if (auto expr = value.dyn_cast<ParamOperatorAttr>()) {
+  if (auto expr = dyn_cast<ParamOperatorAttr>(value)) {
     auto printExpr = [&](StringRef opcode, ArrayRef<TypedAttr> operands) {
       os << opcode << '(';
       printOperatorOperands(os, expr.getOpcode(), operands);
@@ -783,8 +783,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
     // If this is a inverted boolean sugar, handle it.
     if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
         expr.getNumOperands() == 2 && expr.getOperand(1).isa<IntegerAttr>()) {
-      if (auto invertedExpr =
-              expr.getOperand(0).dyn_cast<ParamOperatorAttr>()) {
+      if (auto invertedExpr = dyn_cast<ParamOperatorAttr>(expr.getOperand(0))) {
         if (invertedExpr.getOpcode() == POC::EQ) {
           expr = invertedExpr;
           return printExpr("ne", expr.getOperands());
@@ -808,7 +807,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // If this is an i1 integer attr, print it as zero or one; not true/false
   // keywords.  This simplifies the keyword processing logic.
-  if (auto intAttr = value.dyn_cast<IntegerAttr>())
+  if (auto intAttr = dyn_cast<IntegerAttr>(value))
     if (intAttr.getType().isSignlessInteger(1)) {
       os << (intAttr.getValue().isZero() ? 0 : 1);
       return;
