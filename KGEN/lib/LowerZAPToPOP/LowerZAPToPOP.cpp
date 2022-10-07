@@ -505,7 +505,7 @@ void LowerZAPToPOPPass::runOnOperation() {
   // Configure the type converter.
   TypeConverter typeConverter;
   typeConverter.addConversion([=](Type type) -> Optional<Type> {
-    auto buf = type.dyn_cast<BufferType>();
+    auto buf = dyn_cast<BufferType>(type);
     if (!buf)
       return type;
     // Convert buffer types to a struct of (index, pointer, dtype).

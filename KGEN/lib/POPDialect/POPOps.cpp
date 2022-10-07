@@ -98,7 +98,7 @@ static ErrorOr<APFloat> reifyFloatToFloat(APFloat apFp, FloatType fpType) {
 /// Reify a single integer or float attribute to an attribute that fits the
 /// given dtype.
 static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
-  if (auto value = attr.dyn_cast<IntegerAttr>()) {
+  if (auto value = dyn_cast<IntegerAttr>(attr)) {
     auto type = value.getType().cast<IntegerType>();
 
     if (!dtype.isInt() && !dtype.isFloat())
@@ -168,13 +168,13 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
       return result.takeError();
     // If the result is an array or vector, splat the constant.
     ShapedType shapedType;
-    if (auto simd = type.dyn_cast<SIMDType>())
+    if (auto simd = dyn_cast<SIMDType>(type))
       shapedType = VectorType::get(*simd.getResolvedSize(), result->getType());
     else if (auto array = type.dyn_cast<POP::ArrayType>())
       shapedType =
           M::ArrayType::get(*array.getResolvedSize(), result->getType());
     if (shapedType) {
-      if (auto fpVal = result->dyn_cast<FloatAttr>()) {
+      if (auto fpVal = dyn_cast<FloatAttr>(result.get())) {
         SmallVector<APFloat> values(shapedType.getNumElements(),
                                     fpVal.getValue());
         result = FloatArrayElementsAttr::get(shapedType, values);
@@ -189,7 +189,7 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
 
   // If the value is an elements attribute, reify each element according to the
   // result dtype.
-  if (auto fpValues = attr.dyn_cast<FloatArrayElementsAttr>()) {
+  if (auto fpValues = dyn_cast<FloatArrayElementsAttr>(attr)) {
     if (dtype.isInt()) {
       return reifyArray<IntArrayElementsAttr>(
           fpValues,
@@ -240,7 +240,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
 
   auto checkDType = [&](DTypeInterface type) -> LogicalResult {
     Type valueType = mlir::getElementTypeOrSelf(value);
-    if (auto dtype = type.getDType().dyn_cast<DTypeConstantAttr>())
+    if (auto dtype = dyn_cast<DTypeConstantAttr>(type.getDType()))
       if (!dtype.isConvertibleFrom(valueType))
         return emitError("cannot convert from attribute type ")
                << valueType << " to dtype " << dtype.getDType().getAsString();
@@ -248,7 +248,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   };
 
   // If the type is a scalar, allow only scalar constant attributes.
-  if (auto scalar = type.dyn_cast<ScalarType>()) {
+  if (auto scalar = dyn_cast<ScalarType>(type)) {
     if (!value.isa<IntegerAttr, FloatAttr>())
       return emitError("scalar constant expected integer or float "
                        "attribute for constant value");
@@ -257,14 +257,14 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   }
 
   // Verify array constant.
-  if (auto array = type.dyn_cast<POP::ArrayType>()) {
+  if (auto array = dyn_cast<POP::ArrayType>(type)) {
     // If the size is known, require an elements attribute of the same shape.
     if (Optional<int64_t> size = array.getResolvedSize()) {
-      auto elements = value.dyn_cast<ArrayElementsAttr>();
+      auto elements = dyn_cast<ArrayElementsAttr>(value);
       if (!elements)
         return emitError("expected array elements attribute for array "
                          "constant with known size");
-      auto type = elements.getType().dyn_cast<M::ArrayType>();
+      auto type = dyn_cast<M::ArrayType>(elements.getType());
       if (!type || type.getSize() != *size)
         return emitError("expected attribute type to be !M.array<")
                << *size << "xT>";
@@ -273,7 +273,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                        "constant of unspecified size");
     }
     // Only scalar arrays can be created.
-    auto scalar = array.getResolvedElementType().dyn_cast_or_null<ScalarType>();
+    auto scalar = dyn_cast_or_null<ScalarType>(array.getResolvedElementType());
     if (!scalar)
       return emitError("array constant must have scalar elements");
     return checkDType(scalar.cast<DTypeInterface>());
@@ -283,11 +283,11 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   auto simd = type.cast<SIMDType>();
   // If the size is specified, require an attribute of the same shape.
   if (Optional<int64_t> size = simd.getResolvedSize()) {
-    auto elements = value.dyn_cast<ArrayElementsAttr>();
+    auto elements = dyn_cast<ArrayElementsAttr>(value);
     if (!elements)
       return emitError("expected array elements attribute for vector "
                        "constant with known size");
-    auto type = elements.getType().dyn_cast<VectorType>();
+    auto type = dyn_cast<VectorType>(elements.getType());
     if (!type || type.getRank() != 1 || type.getShape().front() != *size)
       return emitError("expected attribute type to be vector<")
              << *size << "xT>";
@@ -320,7 +320,7 @@ LogicalResult ConstantOp::verify() {
 }
 
 bool ConstantOp::isBuildableWith(Attribute value, Type type) {
-  auto attr = value.dyn_cast<TypedAttr>();
+  auto attr = dyn_cast<TypedAttr>(value);
   if (!attr)
     return false;
   // Call the verify function without emitting any errors.
@@ -346,7 +346,7 @@ static Type getBoolOfSameParentType(Type type) {
   auto boolType = DTypeConstantAttr::get(type.getContext(), DType::kBool);
   if (type.isa<ScalarType>())
     return ScalarType::get(boolType);
-  if (auto simd = type.dyn_cast<SIMDType>())
+  if (auto simd = dyn_cast<SIMDType>(type))
     return SIMDType::get(simd.getSize(), boolType);
   return nullptr;
 }
@@ -395,7 +395,7 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 
   // If we have a simd type, then the bitwidths must match.
   Optional<int64_t> inputSize = 1, outputSize = 1;
-  if (auto inputSimd = inputType.dyn_cast<SIMDType>()) {
+  if (auto inputSimd = dyn_cast<SIMDType>(inputType)) {
     auto outputSimd = outputType.cast<SIMDType>();
     inputSize = inputSimd.getResolvedSize();
     outputSize = outputSimd.getResolvedSize();
@@ -436,7 +436,7 @@ LogicalResult CastOp::verify() {
   if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
     return emitOpError("cannot cast between a scalar type and SIMD type");
 
-  if (auto inputSimd = inputType.dyn_cast<SIMDType>();
+  if (auto inputSimd = dyn_cast<SIMDType>(inputType);
       inputSimd && inputSimd.getSize() != outputType.cast<SIMDType>().getSize())
     return emitOpError("cannot cast between SIMD types of different sizes");
 
@@ -557,12 +557,12 @@ LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
   };
   if (operands.size() != 1)
     return emitError("expected 1 operand");
-  auto structType = operands.front().getType().dyn_cast<StructType>();
+  auto structType = dyn_cast<StructType>(operands.front().getType());
   if (!structType)
     return emitError("expected struct operand");
   mlir::OperationName name(getOperationName(), context);
   auto indexAttr =
-      attrs.get(getIndexAttrName(name)).dyn_cast_or_null<IntegerAttr>();
+      dyn_cast_or_null<IntegerAttr>(attrs.get(getIndexAttrName(name)));
   if (!indexAttr)
     return emitError("expected an integer index attribute");
   size_t index = indexAttr.getInt();
@@ -626,7 +626,7 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
 ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
   Type type = getType().getResolvedElementType();
   DType dtype;
-  if (auto array = type.dyn_cast<ArrayType>())
+  if (auto array = dyn_cast<ArrayType>(type))
     dtype =
         *array.getResolvedElementType().cast<ScalarType>().getResolvedDType();
   else
@@ -654,11 +654,11 @@ static LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      Type popType, Type builtinType) {
   // Verify the scalar dtype matches the MLIR type.
-  if (auto scalar = popType.dyn_cast<ScalarType>()) {
+  if (auto scalar = dyn_cast<ScalarType>(popType)) {
     if (!builtinType.isa<IntegerType, FloatType>())
       return emitError("expected an integer or float type");
 
-    if (auto dtype = scalar.getDType().dyn_cast<DTypeConstantAttr>();
+    if (auto dtype = dyn_cast<DTypeConstantAttr>(scalar.getDType());
         dtype && !dtype.isConvertibleTo(builtinType))
       return emitError("cannot convert from scalar dtype ")
              << dtype.getDType().getAsString() << " to " << builtinType;
@@ -666,16 +666,16 @@ verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
   }
 
   // Verify the SIMD size matches the vector size and the dtypes match.
-  if (auto simd = popType.dyn_cast<SIMDType>()) {
-    auto vector = builtinType.dyn_cast<VectorType>();
+  if (auto simd = dyn_cast<SIMDType>(popType)) {
+    auto vector = dyn_cast<VectorType>(builtinType);
     if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
       return emitError("expected a rank 1 non-scalable vector");
 
-    auto size = simd.getSize().dyn_cast<IntegerAttr>();
+    auto size = dyn_cast<IntegerAttr>(simd.getSize());
     if (size && size.getInt() != vector.getShape().front())
       return emitError("expected vector<") << size.getInt() << "xT>";
 
-    if (auto dtype = simd.getDType().dyn_cast<DTypeConstantAttr>();
+    if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
         dtype && !dtype.isConvertibleTo(vector.getElementType()))
       return emitError("cannot convert from SIMD dtype ")
              << dtype.getDType().getAsString() << " to vector element "
