@@ -67,8 +67,7 @@ kgen.generator @foo() {
 
 // -----
 
-// expected-error @+2 {{reference to parameter "n" with incorrect type '!kgen.dtype'}}
-//expected-note @+1 {{parameter defined with type 'index'}}
+// expected-error @+2 {{attribute type different than expected: expected '!kgen.dtype', but got 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
            !pop.scalar<#kgen.param.decl.ref<"n", index>>) {
   kgen.return

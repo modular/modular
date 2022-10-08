@@ -744,7 +744,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // If the function body is empty, return.
-  if (func->getBody().empty())
+  if (func->getFunctionBody().empty())
     return;
 
   // Configure dialect conversion.
@@ -763,7 +763,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation>(typeConverter,
-                                             &func->getBody().front());
+                                             &func->getFunctionBody().front());
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();

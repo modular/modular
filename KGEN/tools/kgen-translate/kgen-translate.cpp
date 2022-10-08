@@ -18,14 +18,15 @@ using namespace M;
 int main(int argc, char *argv[]) {
   // Register the lit parser.
   mlir::TranslateToMLIRRegistration fromLit(
-      "import-lit", [](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
+      "import-lit", "Import 'lit' from source",
+      [](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
         mlir::TimingScope ts;
         return importLitFile(sourceMgr, context, ts);
       });
 
   // Register LLVM IR generation.
   mlir::TranslateFromMLIRRegistration(
-      "mlir-to-llvmir",
+      "mlir-to-llvmir", "Translate MLIR to LLVMIR",
       [](ModuleOp module, llvm::raw_ostream &os) -> LogicalResult {
         llvm::LLVMContext llvmContext;
         auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
