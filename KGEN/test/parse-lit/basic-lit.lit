@@ -2,9 +2,10 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.func public @do_math() {
+# CHECK-LABEL: lit.func public @do_math(%x: index, %exp: index) {
 def do_math[dt: DType, size: Int]
-  (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
+  # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
+  (x: SIMD, exp: SIMD) -> SIMD:
 
   # CHECK-NEXT: %z = lit.var.decl "z": <index>
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42

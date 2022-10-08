@@ -1,18 +1,16 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: lit.func @trivial_generator
-// CHECK-SAME: %[[ARG0:.*]]: si32
-lit.func @trivial_generator(%arg0: si32) -> si32 {
-  // CHECK-NEXT: kgen.return %[[ARG0]] : si32
-  kgen.return %arg0 : si32
+// CHECK-LABEL: lit.func @trivial_generator(%name: si32)
+lit.func @trivial_generator(%name: si32) -> si32 {
+  // CHECK-NEXT: kgen.return %name : si32
+  kgen.return %name : si32
 }
 
 // CHECK-LABEL: kgen.generator.interface @itf<ty: dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
 kgen.generator.interface @itf<ty : dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
 
 // One implementation of dynamic_thing
-// CHECK-LABEL: lit.func @impl1<ty: dtype>
-// CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<ty>
+// CHECK-LABEL: lit.func @impl1<ty: dtype>(%arg0: !pop.scalar<ty>
 // CHECK-NEXT: implements @itf {
 lit.func @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
   implements @itf {

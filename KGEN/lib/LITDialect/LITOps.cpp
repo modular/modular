@@ -35,7 +35,24 @@ ParseResult LITFuncOp::parse(OpAsmParser &parser, OperationState &result) {
 // Print the LITFuncOp using the shared printing logic.
 void LITFuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
+// Name the arguments of the region with the valueParamNames.
+void LITFuncOp::getAsmBlockArgumentNames(
+    Region &body, llvm::function_ref<void(Value, StringRef)> setNameFn) {
+  // Set a name for each argument.
+  if (body.empty())
+    return;
+  Block *bodyBlock = getBody();
+  for (auto [arg, name] :
+       llvm::zip(bodyBlock->getArguments(), getValueParamNames()))
+    setNameFn(arg, name);
+}
+
 LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Check that the number of argument labels matches the number of argument
+  // types.
+  if (getValueParamNames().size() != getFunctionType().getNumInputs())
+    return emitOpError("incorrect number of value parameter labels");
+
   // Check result types match the ReturnOp.
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
                                               {getResultTypes()})) ||
