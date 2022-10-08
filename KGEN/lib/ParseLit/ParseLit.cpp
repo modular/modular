@@ -144,6 +144,10 @@ struct LitParserBase {
   /// output a diagnostic and return failure.
   ParseResult parseToken(LitToken::Kind expectedToken, const Twine &message);
 
+  /// Consume an identifier token, binding its name into the specified result
+  /// string attribute.
+  ParseResult parseIdentifier(StringAttr &result, const Twine &message);
+
   /// Parse a list of elements, terminated with an arbitrary token.  This does
   /// not consume the stop token.
   ///
@@ -217,6 +221,14 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
   if (consumeIf(expectedToken))
     return success();
   return emitError(message);
+}
+
+/// Consume an identifier token, binding its name into the specified result
+/// string attribute.
+ParseResult LitParserBase::parseIdentifier(StringAttr &result,
+                                           const Twine &message) {
+  result = StringAttr::get(getContext(), getToken().getSpelling());
+  return parseToken(LitToken::identifier, message);
 }
 
 /// Parse a list of elements, terminated with an arbitrary token.  This does
@@ -807,15 +819,55 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
 /// funcdef ::=  [decorators] "def" funcname generic_signature?
 ///              "(" [parameter_list] ")"
 ///              ["->" expression] ":" suite
+///
+/// parameter_list ::= parameter ("," parameter)*
+/// parameter      ::= parammarker identifier [":" expression] ["=" expression]
+/// parammarker    ::= "/" | "*" | "**"
+///
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto loc = getTokenLocation();
 
   // TODO: Add support for decorators.
   consumeToken(LitToken::kw_def);
 
+  // TODO: Implement support for variadic parameter markers:
+  // Python's parameter grammar embeds checking for `/` and `*` and `**` into
+  // the grammar, we can just check for it using ad-hoc logic for simplicity,
+  // according to the following rules:
+  //   1) Only one /, *, and ** parameter may exist in the parameter list.
+  //   2) They are specified in that order.
+  //   3) These do not permit default arguments.
+  SmallVector<StringAttr> valueParamNames;
+  SmallVector<Location> valueParamLocs;
+  SmallVector<Type> valueParamTypes;
+  // TODO: Default values.
+
   auto parseParameter = [&]() -> ParseResult {
-    // TODO: implement this correctly.
-    return eatUntil({LitToken::comma, LitToken::r_paren});
+    auto loc = getTokenLocation();
+    if (parseIdentifier(valueParamNames.emplace_back(StringAttr()),
+                        "expected parameter name"))
+      // TODO: Scan ahead for better recovery.
+      return failure();
+
+    Type paramType = IndexType::get(getContext());
+    if (consumeIf(LitToken::colon)) {
+      ExprParser exprParser(*this);
+      ExprNode *typeExpr = exprParser.parseExpression();
+      // TODO (types): translate typeExpr into a type.
+      (void)typeExpr;
+    }
+    valueParamLocs.push_back(loc);
+    valueParamTypes.push_back(paramType);
+
+    if (consumeIf(LitToken::equal)) {
+      ExprParser exprParser(*this);
+      ExprNode *defaultExpr = exprParser.parseExpression();
+      // TODO: add support for default parameter expressions.
+      if (!defaultExpr->containsError())
+        emitError(defaultExpr->getLoc(),
+                  "default parameters not supported yet");
+    }
+    return success();
   };
 
   auto parseGenericSignature = [&]() -> ParseResult {
@@ -823,8 +875,8 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     return eatUntil(LitToken::l_paren);
   };
 
-  StringRef funcName = getToken().getSpelling();
-  if (parseToken(LitToken::identifier, "expected function name") ||
+  StringAttr funcNameAttr;
+  if (parseIdentifier(funcNameAttr, "expected function name") ||
       parseGenericSignature() ||
       parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
@@ -835,29 +887,42 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
       return failure();
   }
 
+  // Parse the result type if present.
+  SmallVector<Type> resultTypes;
+  // TODO: This will be one difference between a def and fn: no result type on
+  // a def should default to returning a (default initialized) Object, whereas
+  // a fn can return void.  We can provide a guaranteed optimization to remove
+  // it though.
   if (consumeIf(LitToken::minus_greater)) {
-    // TODO: Parse return type.
-    if (eatUntil(LitToken::colon))
-      return failure();
+    ExprParser exprParser(*this);
+    ExprNode *typeExpr = exprParser.parseExpression();
+    // TODO (types): translate typeExpr into a type.
+    (void)typeExpr;
+    // TODO(result types): resultTypes.push_back(IndexType::get(getContext()));
   }
+
   if (parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
   auto builder = currentScope->getBuilder();
-  auto nameAttr = builder.getStringAttr(funcName);
-  auto functionType = builder.getFunctionType({}, {});
+  auto functionType = builder.getFunctionType(valueParamTypes, resultTypes);
   auto symVisibility = builder.getStringAttr("public");
+
   // TODO: Should have nicer builder.
   auto newFunc = builder.create<LITFuncOp>(
-      loc, nameAttr, symVisibility, TypeAttr::get(functionType),
-      ParamDeclArrayAttr::get(getContext(), {}),
+      loc, funcNameAttr, symVisibility,
+      StringArrayAttr::get(getContext(), valueParamNames),
+      TypeAttr::get(functionType), ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
-  newFunc.getRegion().push_back(new Block());
+  auto bodyBlock = new Block();
+  bodyBlock->addArguments(valueParamTypes, valueParamLocs);
+  newFunc.getRegion().push_back(bodyBlock);
 
-  auto prevDecl = currentScope->addToScope(funcName, newFunc);
+  auto prevDecl = currentScope->addToScope(funcNameAttr, newFunc);
   if (prevDecl) {
-    auto diag = emitError(loc, "invalid redefinition of function ") << nameAttr;
+    auto diag = emitError(loc, "invalid redefinition of function ")
+                << funcNameAttr;
     diag.attachNote(prevDecl->getLoc()) << "previous definition here";
     // Keep parsing even though we failed to add to the scope.  Note that this
     // can cause type errors downstream.

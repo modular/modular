@@ -925,6 +925,23 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   Type type = builder.getFunctionType(argTypes, resultTypes);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
 
+  // If this is a litfunc, handle keyword argument names.
+  if (opKind == GeneratorOrFuncKind::litfunc) {
+    SmallVector<StringAttr> names;
+    for (auto &arg : entryArgs) {
+      StringRef spelling;
+      assert(arg.ssaName.name.size() >= 2 && "Should have % and one letter");
+      if (isdigit(arg.ssaName.name[1])) // %42 -> no name.
+        spelling = "";
+      else
+        spelling = arg.ssaName.name.drop_front();
+      names.push_back(builder.getStringAttr(spelling));
+    }
+
+    result.addAttribute("valueParamNames",
+                        StringArrayAttr::get(builder.getContext(), names));
+  }
+
   // If function attributes are present, parse them.
   NamedAttrList parsedAttributes;
   llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
@@ -1002,8 +1019,15 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
   printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
+
+  SmallVector<StringRef> ignoredAttrNames(
+      GeneratorOp::getAttributeNames().begin(),
+      GeneratorOp::getAttributeNames().end());
+  // Don't print valueParamNames in lit.func.
+  ignoredAttrNames.push_back(StringRef("valueParamNames"));
+
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
-                          GeneratorOp::getAttributeNames());
+                          ignoredAttrNames);
   printOptionalConstraints(p, opDecl, opDecl.getConstraintsAttr());
 
   // If this is a generator implementing a generator.interface, include the

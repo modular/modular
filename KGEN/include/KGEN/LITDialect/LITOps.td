@@ -28,13 +28,15 @@ def LITFuncOp
                    Symbol, IsolatedFromAbove,
                    SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                   DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+                   DeclareOpInterfaceMethods<KGENDeclInterface>,
+                   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "High level generator definition";
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
                        StrAttr:$sym_visibility,
+                       KStringArrayAttr:$valueParamNames,
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
