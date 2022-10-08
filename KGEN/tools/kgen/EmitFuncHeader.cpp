@@ -47,10 +47,10 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   // Helper to print a function as a C type.
   std::function<LogicalResult(Type)> printTypeAsC =
       [&](Type t) -> LogicalResult {
-    if (auto scalar = t.dyn_cast<POP::ScalarType>())
+    if (auto scalar = dyn_cast<POP::ScalarType>(t))
       return printDTypeAsC(*scalar.getResolvedDType());
 
-    if (auto simd = t.dyn_cast<POP::SIMDType>()) {
+    if (auto simd = dyn_cast<POP::SIMDType>(t)) {
       // Since the vector_size attribute only works on GNU and CLANG compilers,
       // we pass in an array.
       if (failed(printDTypeAsC(*simd.getResolvedDType())))
@@ -59,7 +59,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return success();
     }
 
-    if (auto ptr = t.dyn_cast<POP::PointerType>()) {
+    if (auto ptr = dyn_cast<POP::PointerType>(t)) {
       if (Type type = ptr.getResolvedElementType()) {
         if (failed(printTypeAsC(type)))
           return failure();
@@ -70,7 +70,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return success();
     }
 
-    if (auto array = t.dyn_cast<POP::ArrayType>()) {
+    if (auto array = dyn_cast<POP::ArrayType>(t)) {
       if (failed(printTypeAsC(array.getResolvedElementType())))
         return failure();
       os << "[" << *array.getResolvedSize() << "]";
@@ -79,12 +79,12 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
 
     // FIXME: This pass should run pre-elaboration, but we have no way for user
     // defined typed to specify the functions in OpaqueObjectInterface.
-    if (auto buffer = t.dyn_cast<ZAP::BufferType>()) {
+    if (auto buffer = dyn_cast<ZAP::BufferType>(t)) {
       os << "void *, ssize_t, uint8_t";
       return success();
     }
 
-    if (auto structType = t.dyn_cast<POP::StructType>()) {
+    if (auto structType = dyn_cast<POP::StructType>(t)) {
       SmallVector<Type> elementTypes;
       elementTypes.reserve(structType.getElementTypes().size());
       if (failed(structType.resolveElementTypes(elementTypes)))

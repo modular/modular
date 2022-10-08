@@ -27,14 +27,14 @@ void IndexDialect::registerOperations() {
 Operation *IndexDialect::materializeConstant(OpBuilder &b, Attribute value,
                                              Type type, Location loc) {
   // Materialize bool constants as `i1`.
-  if (auto boolValue = value.dyn_cast<BoolAttr>()) {
+  if (auto boolValue = dyn_cast<BoolAttr>(value)) {
     if (!type.isSignlessInteger(1))
       return nullptr;
     return b.create<BoolConstantOp>(loc, type, boolValue);
   }
 
   // Materialize integer attributes as `index`.
-  if (auto indexValue = value.dyn_cast<IntegerAttr>()) {
+  if (auto indexValue = dyn_cast<IntegerAttr>(value)) {
     if (!indexValue.getType().isa<IndexType>() || !type.isa<IndexType>())
       return nullptr;
     assert(indexValue.getValue().getBitWidth() ==
@@ -62,8 +62,8 @@ static OpFoldResult foldBinaryOpUnchecked(
     ArrayRef<Attribute> operands,
     function_ref<APInt(const APInt &, const APInt &)> calculate) {
   assert(operands.size() == 2 && "binary operation expected 2 operands");
-  auto lhs = operands[0].dyn_cast_or_null<IntegerAttr>();
-  auto rhs = operands[1].dyn_cast_or_null<IntegerAttr>();
+  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!lhs || !rhs)
     return {};
 
@@ -85,8 +85,8 @@ static OpFoldResult foldBinaryOpChecked(
     ArrayRef<Attribute> operands,
     function_ref<Optional<APInt>(const APInt &, const APInt &lhs)> calculate) {
   assert(operands.size() == 2 && "binary operation expected 2 operands");
-  auto lhs = operands[0].dyn_cast_or_null<IntegerAttr>();
-  auto rhs = operands[1].dyn_cast_or_null<IntegerAttr>();
+  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
   // Only fold index operands.
   if (!lhs || !rhs)
     return {};
@@ -332,8 +332,8 @@ bool compareIndices(const APInt &lhs, const APInt &rhs,
 
 OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 2 && "compare expected 2 operands");
-  auto lhs = operands[0].dyn_cast_or_null<IntegerAttr>();
-  auto rhs = operands[1].dyn_cast_or_null<IntegerAttr>();
+  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!lhs || !rhs)
     return {};
 
