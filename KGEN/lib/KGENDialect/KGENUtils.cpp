@@ -1015,8 +1015,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   }
 
   p << ' ';
-  if (!op.getBody().empty()) {
-    p.printRegion(op.getBody(), /*printEntryBlockArgs=*/false,
+  if (!op.getFunctionBody().empty()) {
+    p.printRegion(op.getFunctionBody(), /*printEntryBlockArgs=*/false,
                   /*printBlockTerminators=*/true);
   }
 }
