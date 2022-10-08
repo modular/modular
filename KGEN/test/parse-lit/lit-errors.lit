@@ -55,3 +55,22 @@ def fn():
 # // -----
 
 42 = 17 # expected-error {{cannot assign to expression}}
+
+# // -----
+
+return 32 # expected-error {{cannot know how to return out of this scope}}
+
+# // -----
+
+def a():
+  return 32, 17 # expected-error {{tuple return not supported yet}}
+
+# // -----
+
+def a() -> Int:
+  return # expected-error {{expected a return value from 'def' with return type 'index'}}
+
+# // -----
+
+def a() -> Int:
+  return 4.0 # expected-error {{don't support non-index types yet}}
