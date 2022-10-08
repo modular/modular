@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics
+# RUN: kgen-translate -import-lit %s | FileCheck %s
 
 # CHECK: module {
 5             # CHECK-NEXT: %[[CST:.*]] = index.constant 5
@@ -37,4 +37,5 @@
 0.e-2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
 12.31e+11     # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.231000e+12 : f64) : !pop.scalar<f64>
 1_2.3__1e+1_1 # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.231000e+12 : f64) : !pop.scalar<f64>
+12.31E-3      # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.231000e-02 : f64) : !pop.scalar<f64>
 # CHECK-NEXT: }
