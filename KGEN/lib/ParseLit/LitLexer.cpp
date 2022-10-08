@@ -11,6 +11,7 @@
 #include "LitLexer.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Error.h"
 
 using namespace M;
 using namespace M::KGEN::LIT;
@@ -423,11 +424,75 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
   return formToken(LitToken::integer, tokStart, indentation);
 }
 
+/// Lex a float number literal.
+/// When the function is called tokStart points to "." or a digit.
+/// floatnumber   ::=  pointfloat | exponentfloat
+/// pointfloat    ::=  [digitpart] fraction | digitpart "."
+/// exponentfloat ::=  (digitpart | pointfloat) exponent
+/// digitpart     ::=  digit ("_" | digit)*
+/// fraction      ::=  "." digitpart
+/// exponent      ::=  ("e" | "E") ["+" | "-"] digitpart
+///
+/// DIFFERENCES with Python:
+/// - Python uses the following more restrictive productions, which
+///   disallows `1__9_` for example:
+///   digitpart     ::=  digit (["_"] digit)*
 LitToken LitLexer::lexFloat(const char *tokStart, ssize_t indentation) {
-  return emitError(curPtr, "lexFloat: TODO");
+  assert(*tokStart == '.' || llvm::isDigit(*tokStart));
+  // lexFloat could have been called from lexInteger so reset curPtr to undo
+  // previous increments done by lexInteger
+  curPtr = tokStart;
+  if (llvm::isDigit(*curPtr)) {
+    do
+      ++curPtr;
+    while (llvm::isDigit(*curPtr) || *curPtr == '_');
+  }
+  if (*curPtr == '.')
+    ++curPtr;
+  if (llvm::isDigit(*curPtr)) {
+    do
+      ++curPtr;
+    while (llvm::isDigit(*curPtr) || *curPtr == '_');
+  }
+  if (*curPtr == 'e' || *curPtr == 'E') {
+    ++curPtr;
+    if (*curPtr == '+' || *curPtr == '-')
+      ++curPtr;
+    if (!llvm::isDigit(*curPtr))
+      return emitError(curPtr, "expecting a digit after the exponent");
+    while (llvm::isDigit(*curPtr) || *curPtr == '_')
+      ++curPtr;
+  }
+  return formToken(LitToken::float_num, tokStart, indentation);
 }
 
-/// Return the a value for the specifed string, which is known to have been
+static std::string filterUnderscores(StringRef spelling) {
+  std::string digits;
+  digits.reserve(spelling.size());
+  for (auto c : spelling) {
+    if (c != '_')
+      digits.push_back(c);
+  }
+  return digits;
+}
+
+/// Return the a value for the specified string, which is known to have been
+/// lexed as a float literal token.
+APFloat LitLexer::getFloatLiteralValue(StringRef spelling) {
+  std::string digits = filterUnderscores(spelling);
+  spelling = StringRef(digits);
+  APFloat num(0.0);
+  auto StatusOrErr =
+      num.convertFromString(spelling, APFloat::rmNearestTiesToEven);
+  assert(!errorToBool(StatusOrErr.takeError()) &&
+         "Invalid floating point literal");
+  APFloat::opStatus Status = *StatusOrErr;
+  assert(Status == APFloat::opOK ||
+         Status & APFloat::opInexact && "Invalid floating point literal");
+  return num;
+}
+
+/// Return the a value for the specified string, which is known to have been
 /// lexed as an integer literal token.
 APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
   APInt result;
@@ -449,12 +514,7 @@ APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
     }
     spelling = spelling.drop_front(2);
   }
-  std::string digits;
-  digits.reserve(spelling.size());
-  for (auto c : spelling) {
-    if (c != '_')
-      digits.push_back(c);
-  }
+  std::string digits = filterUnderscores(spelling);
   spelling = StringRef(digits);
   bool failed = spelling.getAsInteger(base, result);
   assert(!failed && "we know this should always work because we lexed it");

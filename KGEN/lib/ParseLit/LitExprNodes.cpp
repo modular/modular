@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/IndexDialect/IndexOps.h"
 #include "llvm/ADT/PointerUnion.h"
 
@@ -42,6 +43,17 @@ MLIRValueRep IntLiteralNode::emit(EmitterState &state) const {
   // when used in that context.
   Value result = state.builder.create<index::ConstantOp>(
       state.mapLocation(getLoc()), value.getZExtValue());
+  return result;
+}
+
+MLIRValueRep FloatLiteralNode::emit(EmitterState &state) const {
+  // TODO: this assumes float literal are always doubles
+  APFloat value = LitLexer::getFloatLiteralValue(spelling);
+  OpBuilder &builder = state.builder;
+  auto type = state.builder.getType<POP::ScalarType>(DType::f64);
+  FloatAttr floatAttr = builder.getF64FloatAttr(value.convertToDouble());
+  Value result = builder.create<POP::ConstantOp>(state.mapLocation(getLoc()),
+                                                 type, floatAttr);
   return result;
 }
 

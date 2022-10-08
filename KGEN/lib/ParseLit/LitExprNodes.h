@@ -42,6 +42,7 @@ struct ExprNode {
   enum Kind {
     kError,         // `
     kIntLiteral,    // 42
+    kFloatLiteral,  // 1.1
     kDeclRef,       // x
     kCall,          // thing(a, b)
     kParenExprNode, // (x+y)
@@ -88,6 +89,22 @@ struct IntLiteralNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) {
     return node->kind == kIntLiteral;
+  }
+  SMLoc getLoc() const override {
+    return SMLoc::getFromPointer(spelling.data());
+  }
+  bool containsError() const override { return false; }
+  MLIRValueRep emit(EmitterState &state) const override;
+};
+
+struct FloatLiteralNode final : public ExprNode {
+  FloatLiteralNode(StringRef spelling)
+      : ExprNode(kFloatLiteral), spelling(spelling) {}
+
+  const StringRef spelling;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kFloatLiteral;
   }
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());

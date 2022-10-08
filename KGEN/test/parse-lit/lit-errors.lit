@@ -18,6 +18,15 @@
 # expected-error @+1 {{no digits specified for octal literal}}
 0o_
 
+# // -----
+
+# expected-error @+1 {{expecting a digit after the exponent}}
+1e+*
+
+# // -----
+
+# expected-error @+1 {{expecting a digit after the exponent}}
+1e*
 
 # // -----
 
