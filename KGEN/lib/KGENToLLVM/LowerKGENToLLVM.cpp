@@ -179,10 +179,10 @@ public:
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (auto dtype = op.getValue().dyn_cast<DTypeConstantAttr>()) {
+    if (auto dtype = dyn_cast<DTypeConstantAttr>(op.getValue())) {
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
           op, rewriter.getI8Type(), dtype.getDType().getValue());
-    } else if (auto attr = op.getValue().dyn_cast<TypedAttr>()) {
+    } else if (auto attr = dyn_cast<TypedAttr>(op.getValue())) {
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
           op, getTypeConverter()->convertType(attr.getType()), attr);
     } else {
@@ -372,7 +372,7 @@ static Value flattenArgumentStruct(ImplicitLocOpBuilder &b,
   Value result = b.create<LLVM::UndefOp>(structTy);
   for (auto &type : llvm::enumerate(structTy.getBody())) {
     Value value;
-    if (auto nestedStruct = type.value().dyn_cast<LLVM::LLVMStructType>())
+    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type.value()))
       value = flattenArgumentStruct(b, nestedStruct, body);
     else
       value = body->addArgument(type.value(), b.getLoc());
@@ -386,7 +386,7 @@ static unsigned flattenResultStruct(Location loc, LLVM::LLVMStructType structTy,
                                     Block *body) {
   unsigned numAdded = 0;
   for (Type type : structTy.getBody()) {
-    if (auto nestedStruct = type.dyn_cast<LLVM::LLVMStructType>()) {
+    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type)) {
       numAdded += flattenResultStruct(loc, nestedStruct, body);
     } else {
       body->addArgument(LLVM::LLVMPointerType::get(type), loc);
@@ -404,7 +404,7 @@ static void flattenResultStruct(ImplicitLocOpBuilder &b,
                                 unsigned &idx) {
   for (auto &type : llvm::enumerate(structTy.getBody())) {
     Value value = b.create<LLVM::ExtractValueOp>(result, type.index());
-    if (auto nestedStruct = type.value().dyn_cast<LLVM::LLVMStructType>())
+    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type.value()))
       flattenResultStruct(b, nestedStruct, value, results, idx);
     else
       b.create<LLVM::StoreOp>(value, results[idx++]);
@@ -424,7 +424,7 @@ static ArrayRef<BlockArgument> breakUpStructs(Location loc, Block *body,
   b.setInsertionPointToStart(body);
   for (Value arg : args) {
     b.setLoc(arg.getLoc());
-    if (auto structTy = arg.getType().dyn_cast<LLVM::LLVMStructType>())
+    if (auto structTy = dyn_cast<LLVM::LLVMStructType>(arg.getType()))
       newArgs.push_back(flattenArgumentStruct(b, structTy, body));
     else
       newArgs.push_back(body->addArgument(arg.getType(), arg.getLoc()));
@@ -432,7 +432,7 @@ static ArrayRef<BlockArgument> breakUpStructs(Location loc, Block *body,
 
   // Flatten the results if necessary at all the return points.
   ArrayRef<BlockArgument> results;
-  if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
     unsigned numAdded = flattenResultStruct(loc, structTy, body);
     results = body->getArguments().take_back(numAdded);
   }
@@ -457,7 +457,7 @@ static void breakUpStructsInPlace(LLVM::LLVMFuncOp func) {
                      resultTy, newArgs);
 
   // Flatten the results if necessary at all the return points.
-  if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
     resultTy = LLVM::LLVMVoidType::get(func.getContext());
     for (auto ret : llvm::make_early_inc_range(func.getOps<LLVM::ReturnOp>())) {
       ImplicitLocOpBuilder b(ret.getLoc(), ret);
@@ -487,7 +487,7 @@ walkFlattenedStruct(LLVM::LLVMStructType structTy,
   pos.emplace_back(nullptr);
   for (auto &type : llvm::enumerate(structTy.getBody())) {
     pos.back() = LLVM::GEPArg(type.index());
-    if (auto nested = type.value().dyn_cast<LLVM::LLVMStructType>())
+    if (auto nested = dyn_cast<LLVM::LLVMStructType>(type.value()))
       walkFlattenedStruct(nested, eachFn, pos);
     else
       eachFn(type.value(), pos);
@@ -513,7 +513,7 @@ static LLVM::LLVMStructType recursivelyPack(LLVM::LLVMStructType structTy) {
   SmallVector<Type> body;
   body.reserve(structTy.getBody().size());
   for (Type type : structTy.getBody()) {
-    if (auto structTy = type.dyn_cast<LLVM::LLVMStructType>())
+    if (auto structTy = dyn_cast<LLVM::LLVMStructType>(type))
       body.push_back(recursivelyPack(structTy));
     else
       body.push_back(type);
@@ -536,7 +536,7 @@ static LLVM::LLVMFuncOp emitOpaqueWrapper(LLVM::LLVMFuncOp func,
   SmallVector<Value> callArgs;
   callArgs.reserve(func.getNumArguments());
   for (Type argTy : funcTy.getParams()) {
-    auto structTy = argTy.dyn_cast<LLVM::LLVMStructType>();
+    auto structTy = dyn_cast<LLVM::LLVMStructType>(argTy);
     // Add a non-struct arg to the parameter pack.
     if (!structTy) {
       flattenedTypes.push_back(argTy);
@@ -567,7 +567,7 @@ static LLVM::LLVMFuncOp emitOpaqueWrapper(LLVM::LLVMFuncOp func,
   }
 
   // The results are already flattened so just index into the provided pointer.
-  if (auto structTy = funcTy.getReturnType().dyn_cast<LLVM::LLVMStructType>()) {
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(funcTy.getReturnType())) {
     Value ptr = entry->addArgument(
         LLVM::LLVMPointerType::get(recursivelyPack(structTy)), func.getLoc());
     walkFlattenedPtrToStruct(structTy,
@@ -614,7 +614,7 @@ static LLVM::LLVMFuncOp emitCWrapper(LLVM::LLVMFuncOp func) {
 
   // Unpack and store the results.
   SmallVector<Value> newResults;
-  if (auto structTy = resultTy.dyn_cast<LLVM::LLVMStructType>()) {
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
     resultTy = LLVM::LLVMVoidType::get(func.getContext());
     unsigned idx = 0;
     flattenResultStruct(b, structTy, call.getResult(), results, idx);
