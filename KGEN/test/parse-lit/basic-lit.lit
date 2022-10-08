@@ -2,46 +2,63 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.func public @do_math(%x: index, %exp: index) {
-def do_math[dt: DType, size: Int]
-  # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
-  (x: SIMD, exp: SIMD) -> SIMD:
+# CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) {
+def do_math(a: Int, b: Int, c: Int) -> Int:
+  # CHECK-NEXT: %a_0 = lit.var.decl "a"
+  # CHECK-NEXT: pop.store %a, %a_0
+  # CHECK-NEXT: %b_1 = lit.var.decl "b"
+  # CHECK-NEXT: pop.store %b, %b_1
+  # CHECK-NEXT:  %c_2 = lit.var.decl "c"
+  # CHECK-NEXT: pop.store %c, %c_2
+
+  # CHECK-NEXT: %[[TMP:.*]] = pop.load %b_1
+  # CHECK-NEXT: pop.store %[[TMP]], %c_2
+  c = b # Parameters are mutable!
 
   # CHECK-NEXT: %z = lit.var.decl "z": <index>
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
-  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[I6]]
+  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[A]]
   # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
   # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = 42 + 5*6
+  z = 42 + 5*a
 
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I42]], %[[I5]]
-  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
-  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %[[I6]]
+  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %[[C]]
   # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = 42 * 5 + 6
+  z = 42 * 5 + c
 
-  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
+  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[I6:.*]] = index.constant 6
   # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I5]], %[[I6]]
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I42]], %[[ADD]]
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[A]], %[[ADD]]
   # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
-  z = 42 * (5 + 6)
+  z = a * (5 + 6)
 
-  # CHECK-NEXT: %a = lit.var.decl "a": <index>
+  # CHECK-NEXT: %x = lit.var.decl "x": <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT: pop.store %[[TMP]], %a : !pop.pointer<index>
-  a = \
+  # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
+  # This is checking the lexer handles \ at end of line correctly.
+  x = \
 z
 
   # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
   noop()
   # return z #x*4 + x + 1
 # CHECK-NEXT: kgen.return
+
+
+# CHECK-LABEL: lit.func public @fancy_signature(%x: index, %exp: index) {
+def fancy_signature[dt: DType, size: Int]
+  # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
+  (x: SIMD, exp: SIMD) -> SIMD:
+  pass
+
 
 # CHECK-LABEL: lit.func public @noop() {
 def noop():

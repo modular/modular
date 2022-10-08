@@ -951,6 +951,21 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
 /// Parse a deferred 'def' body.
 void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
+  // Set up the body of the def, creating declarations for the parameters and
+  // adding them to the symbol table.
+  auto builder = currentScope->getBuilder();
+  for (auto [arg, name] : llvm::zip(defDecl.getBody()->getArguments(),
+                                    defDecl.getValueParamNames())) {
+    // Create a mutable var.decl that references to the name can load from.
+    // TODO: This is the wrong default, reconsider this for 'fn's when we have
+    // a notion of immutability.
+    auto type = POP::PointerType::get(arg.getType());
+    auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
+    (void)currentScope->addToScope(name, varDecl);
+    builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
+                                 /*alignment*/ None);
+  }
+
   (void)parseSuite(defIndent);
 
   // Add kgen.return so the IR verifies.
