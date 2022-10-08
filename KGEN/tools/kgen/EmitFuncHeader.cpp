@@ -80,7 +80,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
     // FIXME: This pass should run pre-elaboration, but we have no way for user
     // defined typed to specify the functions in OpaqueObjectInterface.
     if (auto buffer = t.dyn_cast<ZAP::BufferType>()) {
-      os << "ssize_t, void *, uint8_t";
+      os << "void *, ssize_t, uint8_t";
       return success();
     }
 

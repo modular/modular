@@ -20,8 +20,8 @@ using namespace ZAP;
 
 namespace {
 LLVM_PACKED(struct OpaqueBuffer {
-  ssize_t size;
   void *data;
+  ssize_t size;
   uint8_t dtype;
 });
 } // namespace
@@ -52,8 +52,8 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
                            dtype->getSizeInBytes(numElements));
 
   OpaqueBuffer *objPtr = ((OpaqueBuffer *)obj);
-  objPtr->size = numElements;
   objPtr->data = ptr;
+  objPtr->size = numElements;
   objPtr->dtype = dtype->getValue();
 
   // Do the fill.
