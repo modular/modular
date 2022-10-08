@@ -898,7 +898,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     ExprNode *typeExpr = exprParser.parseExpression();
     // TODO (types): translate typeExpr into a type.
     (void)typeExpr;
-    // TODO(result types): resultTypes.push_back(IndexType::get(getContext()));
+    resultTypes.push_back(IndexType::get(getContext()));
   }
 
   if (parseToken(LitToken::colon, "expected ':' in function definition"))
@@ -968,28 +968,94 @@ void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
 
   (void)parseSuite(defIndent);
 
-  // Add kgen.return so the IR verifies.
-  // TODO: Generalize lit.func.
-  auto returnParams = ArrayAttr::get(getContext(), {});
-  OpBuilder::atBlockEnd(defDecl.getBody())
-      .create<ReturnOp>(defDecl->getLoc(), returnParams, ArrayRef<Value>());
+  // Check to see if we have a kgen.return at the end of function.  If not,
+  // complain or add one implicitly if we have no results.
+  Block *bodyBlock = defDecl.getBody();
+  if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
+    if (defDecl.getResultTypes().empty() &&
+        defDecl.getResultParamTypes().empty()) {
+      // TODO: Generalize lit.func.
+      auto returnParams = ArrayAttr::get(getContext(), {});
+      OpBuilder::atBlockEnd(bodyBlock).create<ReturnOp>(
+          defDecl->getLoc(), returnParams, ArrayRef<Value>());
+    } else if (!sharedParserState->errorOccurred) {
+      Location endLoc =
+          bodyBlock->empty() ? defDecl.getLoc() : bodyBlock->back().getLoc();
+      emitError(endLoc, "return expected at end of 'def' with results");
+    }
+  }
 
   finalizeScopeDecl();
 }
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitParser::parseReturnStmt() {
-  consumeToken(LitToken::kw_return);
+  auto loc = consumeToken(LitToken::kw_return).getLoc();
 
-  SmallVector<ExprNode *> operands;
+  SmallVector<Value> operandValues;
 
   // If there is an expression list present, parse it.
   if (!getToken().getIndentation().has_value()) {
     ExprParser exprParser(*this);
-    exprParser.parseExpressionList(operands);
-    // TODO: Resolve expressions.
+    SmallVector<ExprNode *> operandExprs;
+    exprParser.parseExpressionList(operandExprs);
+
+    // Materialize the expression values into our current scope.
+    // TODO: Should pass in contextual type from return value.
+    for (auto expr : operandExprs) {
+      auto value = exprParser.emit(expr, currentScope.getPointer());
+      if (!value)
+        return failure();
+
+      if (Value valueValue = dyn_cast<Value>(value)) {
+        if (!valueValue.getType().isIndex()) {
+          emitError(expr->getLoc(), "TODO: don't support non-index types yet");
+          return failure();
+        }
+        operandValues.push_back(valueValue);
+      } else {
+        emitError(expr->getLoc(),
+                  "TODO: don't support referring to parameters yet");
+        return failure();
+      }
+    }
   }
 
+  // We don't support formation of tuples / multiple result values yet.
+  if (operandValues.size() > 1) {
+    emitError(loc, "tuple return not supported yet");
+    return success();
+  }
+
+  // Check the result values match expected types.
+  LITFuncOp decl = dyn_cast<LITFuncOp>(currentScope->getDecl());
+  if (!decl) {
+    emitError(loc, "cannot know how to return out of this scope");
+    return success();
+  }
+
+  if (operandValues.empty() && !decl.getResultTypes().empty()) {
+    emitError(loc, "expected a return value from 'def' with return type ")
+        << decl.getResultTypes()[0];
+    return success();
+  }
+
+  if (operandValues.size() == 1 && decl.getResultTypes().empty()) {
+    emitError(loc, "extraneous return value from 'def'");
+    return success();
+  }
+
+  if (operandValues[0].getType() != decl.getResultTypes()[0]) {
+    emitError(loc, "returned value has type ")
+        << operandValues[0].getType() << " but 'def' expected "
+        << decl.getResultTypes()[0];
+    return success();
+  }
+
+  // TODO: Support result parameters.
+  auto returnParams = ArrayAttr::get(getContext(), {});
+  currentScope->getBuilder().create<ReturnOp>(translateLocation(loc),
+                                              returnParams, operandValues);
   return success();
 }
 

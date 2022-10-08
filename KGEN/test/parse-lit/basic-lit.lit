@@ -2,7 +2,7 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) {
+# CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %a_0 = lit.var.decl "a"
   # CHECK-NEXT: pop.store %a, %a_0
@@ -49,18 +49,23 @@ z
 
   # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
   noop()
-  # return z #x*4 + x + 1
-# CHECK-NEXT: kgen.return
+
+  # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
+  # CHECK-NEXT: kgen.return %[[TMP]]
+  return x
 
 
-# CHECK-LABEL: lit.func public @fancy_signature(%x: index, %exp: index) {
+# CHECK-LABEL: lit.func public @fancy_signature(%x: index, %exp: index) -> index {
 def fancy_signature[dt: DType, size: Int]
   # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
   (x: SIMD, exp: SIMD) -> SIMD:
   pass
+  # CHECK: %[[TMP:.*]] = index.constant 42
+  # CHECK: kgen.return %[[TMP]] : index
+  return 42
 
 
 # CHECK-LABEL: lit.func public @noop() {
 def noop():
   pass
-# CHECK-NEXT : kgen.return
+  # CHECK-NEXT : kgen.return
