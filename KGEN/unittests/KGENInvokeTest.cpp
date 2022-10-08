@@ -10,7 +10,7 @@
 using namespace M;
 
 TEST(KGENInvokeTest, testinvokeKGENFunction) {
-  auto noOp = [](ssize_t, void *, uint8_t, ssize_t, void *, uint8_t) {};
+  auto noOp = [](void *, ssize_t, uint8_t, void *, ssize_t, uint8_t) {};
 
   // Test that we can call a function that returns no arguments.
   KGEN::invoke(noOp, llvm::makeArrayRef<int32_t>(nullptr, 1),
@@ -24,7 +24,7 @@ TEST(KGENInvokeTest, testinvokeKGENFunction) {
 
 /// Test that we can call the function with a value and get the correct result.
 TEST(KGENInvokeTest, testinvokeInterleavedInput) {
-  auto addKernel = [](int a, ssize_t, void *, uint8_t, float b) {
+  auto addKernel = [](int a, void *, ssize_t, uint8_t, float b) {
     return a + b;
   };
   EXPECT_EQ(
@@ -35,10 +35,10 @@ TEST(KGENInvokeTest, testinvokeInterleavedInput) {
 /// Can get the correct address for a single input.
 TEST(KGENInvokeTest, testinvokeFirstAddress) {
   int32_t arry[2] = {1, 2};
-  auto getAddr = [](ssize_t, void *ptr, uint8_t) {
+  auto getAddr = [](void *ptr, ssize_t, uint8_t) {
     return reinterpret_cast<uintptr_t>(ptr);
   };
-  EXPECT_EQ(KGEN::invoke(getAddr, std::size(arry), arry, DType::si32),
+  EXPECT_EQ(KGEN::invoke(getAddr, arry, std::size(arry), DType::si32),
             reinterpret_cast<uintptr_t>(arry));
   EXPECT_EQ(
       KGEN::invoke(getAddr, llvm::makeArrayRef<int32_t>(arry, std::size(arry))),
@@ -52,7 +52,7 @@ TEST(KGENInvokeTest, testinvokeFirstAddress) {
 TEST(KGENInvokeTest, testinvokeSecondAddress) {
   int32_t arry0[2] = {1, 2}, arry1[2] = {3, 4};
   EXPECT_EQ(
-      KGEN::invoke([](ssize_t, void *ptr0, uint8_t, ssize_t, void *ptr1,
+      KGEN::invoke([](void *ptr0, ssize_t, uint8_t, void *ptr1, ssize_t,
                       uint8_t) { return reinterpret_cast<uintptr_t>(ptr1); },
                    llvm::makeArrayRef<int32_t>(arry0, std::size(arry0)),
                    llvm::makeArrayRef<int32_t>(arry1, std::size(arry1))),

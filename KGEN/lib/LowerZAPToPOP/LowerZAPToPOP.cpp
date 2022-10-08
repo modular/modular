@@ -20,10 +20,10 @@ using namespace KGEN;
 using namespace POP;
 using namespace ZAP;
 
-/// The position of the buffer size in its struct representation.
-static constexpr int kBufferSizePosition = 0;
 /// The position of the buffer address in its struct representation.
-static constexpr int kBufferAddressPosition = 1;
+static constexpr int kBufferAddressPosition = 0;
+/// The position of the buffer size in its struct representation.
+static constexpr int kBufferSizePosition = 1;
 /// The position of the buffer dtype in its struct representation.
 static constexpr int kBufferDTypePosition = 2;
 
@@ -44,7 +44,7 @@ static Value constructBuffer(PatternRewriter &rewriter,
   if (!dtype)
     dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
   return rewriter.create<StructConstructOp>(
-      loc, typeConverter.convertType(type), ArrayRef<Value>{size, ptr, dtype});
+      loc, typeConverter.convertType(type), ArrayRef<Value>{ptr, size, dtype});
 }
 
 /// Convert the construction of a buffer to building the underlying struct.
@@ -171,7 +171,7 @@ struct ConvertZAPBufferConvert
 
     rewriter.replaceOpWithNewOp<StructConstructOp>(
         op, getTypeConverter()->convertType(type),
-        ArrayRef<Value>{size, ptr, dtype});
+        ArrayRef<Value>{ptr, size, dtype});
     return success();
   }
 };
@@ -508,9 +508,9 @@ void LowerZAPToPOPPass::runOnOperation() {
     auto buf = dyn_cast<BufferType>(type);
     if (!buf)
       return type;
-    // Convert buffer types to a struct of (index, pointer, dtype).
-    return StructType::get({IndexType::get(buf.getContext()),
-                            buf.getPointerType(),
+    // Convert buffer types to a struct of (pointer, index, dtype).
+    return StructType::get({buf.getPointerType(),
+                            IndexType::get(buf.getContext()),
                             DTypeType::get(buf.getContext())});
   });
 

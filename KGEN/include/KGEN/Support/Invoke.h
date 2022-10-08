@@ -28,7 +28,7 @@ inline constexpr bool is_arrayref_v<MutableArrayRef<T>> = true;
 template <typename T>
 constexpr auto destructure_kgen_arguments(T &&arg) {
   if constexpr (is_arrayref_v<T>)
-    return std::tuple{(ssize_t)arg.size(), (void *)arg.data(),
+    return std::tuple{(void *)arg.data(), (ssize_t)arg.size(),
                       DTypeForCXXType<typename T::value_type>::kind.getValue()};
   else
     return std::tuple{std::forward<T>(arg)};
