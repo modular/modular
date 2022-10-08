@@ -407,6 +407,10 @@ ExprNode *ExprParser::parsePrimary() {
     result = alloc<IntLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::integer);
     break;
+  case LitToken::float_num: // primary -> literal -> floatnumber
+    result = alloc<FloatLiteralNode>(getToken().getSpelling());
+    consumeToken(LitToken::float_num);
+    break;
   case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
     auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
     ExprNode *subExpr = parseExpression();

@@ -1,35 +1,40 @@
 # RUN: kgen-translate -import-lit %s -verify-diagnostics
 
 # CHECK: module {
-# CHECK-NEXT: %[[CST:.*]] = index.constant 5
-# CHECK-NEXT: %[[CST:.*]] = index.constant 55
-# CHECK-NEXT: %[[CST:.*]] = index.constant 10500
-# CHECK-NEXT: %[[CST:.*]] = index.constant 12500
-# CHECK-NEXT: %[[CST:.*]] = index.constant 0
-# CHECK-NEXT: %[[CST:.*]] = index.constant 0
-# CHECK-NEXT: %[[CST:.*]] = index.constant 0
-# CHECK-NEXT: %[[CST:.*]] = index.constant 0
-# CHECK-NEXT: %[[CST:.*]] = index.constant 19
-# CHECK-NEXT: %[[CST:.*]] = index.constant 291
-# CHECK-NEXT: %[[CST:.*]]  = index.constant 291
-# CHECK-NEXT: %[[CST:.*]]  = index.constant 21
-# CHECK-NEXT: %[[CST:.*]]  = index.constant 21
-# CHECK-NEXT: %[[CST:.*]]  = index.constant 457
-# CHECK-NEXT: %[[CST:.*]]  = index.constant 457
+5             # CHECK-NEXT: %[[CST:.*]] = index.constant 5
+55            # CHECK-NEXT: %[[CST:.*]] = index.constant 55
+10500         # CHECK-NEXT: %[[CST:.*]] = index.constant 10500
+12_500        # CHECK-NEXT: %[[CST:.*]] = index.constant 12500
+0             # CHECK-NEXT: %[[CST:.*]] = index.constant 0
+00            # CHECK-NEXT: %[[CST:.*]] = index.constant 0
+0____0__0_0   # CHECK-NEXT: %[[CST:.*]] = index.constant 0
+00__0_0       # CHECK-NEXT: %[[CST:.*]] = index.constant 0
+1__9_         # CHECK-NEXT: %[[CST:.*]] = index.constant 19
+0x123         # CHECK-NEXT: %[[CST:.*]] = index.constant 291
+0X123         # CHECK-NEXT: %[[CST:.*]] = index.constant 291
+0b10101       # CHECK-NEXT: %[[CST:.*]] = index.constant 21
+0B10101       # CHECK-NEXT: %[[CST:.*]] = index.constant 21
+0o711         # CHECK-NEXT: %[[CST:.*]] = index.constant 457
+0O711         # CHECK-NEXT: %[[CST:.*]] = index.constant 457
+1.1           # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.100000e+00 : f64) : !pop.scalar<f64>
+.1            # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e-01 : f64) : !pop.scalar<f64>
+1.            # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+00 : f64) : !pop.scalar<f64>
+1e2           # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+02 : f64) : !pop.scalar<f64>
+1.1e2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.100000e+02 : f64) : !pop.scalar<f64>
+.1e2          # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+01 : f64) : !pop.scalar<f64>
+1.e2          # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+02 : f64) : !pop.scalar<f64>
+1e+2          # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+02 : f64) : !pop.scalar<f64>
+1.1e-2        # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.100000e-02 : f64) : !pop.scalar<f64>
+.1e+2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+01 : f64) : !pop.scalar<f64>
+1.e-2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e-02 : f64) : !pop.scalar<f64>
+0.1           # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e-01 : f64) : !pop.scalar<f64>
+0.            # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
+0e2           # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
+0.1e2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e+01 : f64) : !pop.scalar<f64>
+0.e2          # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
+0e+2          # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
+0.1e-2        # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.000000e-03 : f64) : !pop.scalar<f64>
+0.e-2         # CHECK-NEXT: %[[CST:.*]] = pop.constant(0.000000e+00 : f64) : !pop.scalar<f64>
+12.31e+11     # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.231000e+12 : f64) : !pop.scalar<f64>
+1_2.3__1e+1_1 # CHECK-NEXT: %[[CST:.*]] = pop.constant(1.231000e+12 : f64) : !pop.scalar<f64>
 # CHECK-NEXT: }
-
-5
-55
-10500
-12_500
-0
-00
-0____0__0_0
-00__0_0
-1__9_
-0x123
-0X123
-0b10101
-0B10101
-0o711
-0O711
