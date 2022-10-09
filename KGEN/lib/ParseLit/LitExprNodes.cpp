@@ -18,10 +18,76 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/IndexDialect/IndexOps.h"
-#include "llvm/ADT/PointerUnion.h"
 
 using namespace M;
 using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// MLIRValueRep Implementation
+//===----------------------------------------------------------------------===//
+
+/// If this contains an Attribute, it is known to be a TypedAttr.  This helper
+/// performs the conversion.  This returns null if this contains a value.
+TypedAttr MLIRValueRep::dyn_castTypedAttr() const {
+  if (auto attr = (*this).dyn_cast<Attribute>())
+    return attr.cast<TypedAttr>();
+  return {};
+}
+
+Type MLIRValueRep::getType() const {
+  if (!*this)
+    return Type();
+  if (TypedAttr attr = dyn_castTypedAttr())
+    return attr.getType();
+  return cast<Value>(*this).getType();
+}
+
+/// This helper emits this MLIRValueRep as an SSA value, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+Value MLIRValueRep::getAsValue(Location loc, OpBuilder &builder) const {
+  if (!*this)
+    return {};
+
+  // If this is a parameter, we need to materialize it, either as an
+  // index.constant or as a parameter expression.
+  if (auto attr = this->dyn_castTypedAttr()) {
+    // Materialize index integer constants as a special case.
+    if (auto intAttr = attr.dyn_cast<IntegerAttr>())
+      if (intAttr.getType().isIndex())
+        // TODO: This shouldn't require passing in the type.
+        return builder.create<index::ConstantOp>(loc, intAttr.getType(),
+                                                 intAttr);
+
+    // Otherwise, emit a generalized parameter constant.
+    return builder.create<ParamConstantOp>(loc, attr);
+  }
+
+  return cast<Value>(*this);
+}
+
+//===----------------------------------------------------------------------===//
+// EmitterState Implementation
+//===----------------------------------------------------------------------===//
+
+/// This helper emits the specified value rep as an SSA value, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+Value EmitterState::emitAsValue(MLIRValueRep rep, SMLoc loc) {
+  return rep.getAsValue(mapLocation(loc), builder);
+}
+
+/// This helper emits the specified value rep as an SSA value, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+Value EmitterState::emitAsValue(const ExprNode *node) {
+  assert(node && "cannot emit a null node");
+  return emitAsValue(node->emit(*this), node->getLoc());
+}
+
+//===----------------------------------------------------------------------===//
+// ExprNode implementations
+//===----------------------------------------------------------------------===//
 
 ExprNode::~ExprNode() { assert(0 && "never called"); }
 
@@ -37,24 +103,13 @@ MLIRValueRep IntLiteralNode::emit(EmitterState &state) const {
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
-
-  // FIXME: Should actually lower these as attributes so they can be used as
-  // parameter expressions, not as SSA values, they should be converted to value
-  // when used in that context.
-  Value result = state.builder.create<index::ConstantOp>(
-      state.mapLocation(getLoc()), value.getZExtValue());
-  return result;
+  return IntegerAttr::get(state.builder.getIndexType(), value);
 }
 
 MLIRValueRep FloatLiteralNode::emit(EmitterState &state) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
-  OpBuilder &builder = state.builder;
-  auto type = state.builder.getType<POP::ScalarType>(DType::f64);
-  FloatAttr floatAttr = builder.getF64FloatAttr(value.convertToDouble());
-  Value result = builder.create<POP::ConstantOp>(state.mapLocation(getLoc()),
-                                                 type, floatAttr);
-  return result;
+  return state.builder.getF64FloatAttr(value.convertToDouble());
 }
 
 MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
@@ -94,15 +149,15 @@ MLIRValueRep CallNode::emit(EmitterState &state) const {
   }
   // TODO: Pass arguments.
 
-  auto calleeParam = dyn_cast<Attribute>(calleeVal);
+  auto calleeParam = calleeVal.dyn_castTypedAttr();
   if (!calleeParam || !args.empty()) {
-    state.emitError(getLoc(), "call not supported yet");
+    state.emitError(getLoc(), "TODO: value call not supported yet");
     return {};
   }
 
   state.builder.create<CallParamOp>(state.mapLocation(getLoc()),
                                     /*resultTypes*/ ArrayRef<Type>(),
-                                    cast<TypedAttr>(calleeParam),
+                                    calleeParam,
                                     /*inputParams*/ ArrayRef<ParamBindAttr>(),
                                     /*resultParams*/ ArrayRef<ParamDeclAttr>(),
                                     /*operands*/ ArrayRef<Value>());
@@ -121,21 +176,34 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
   if (!lhsRep || !rhsRep)
     return {};
 
-  // TODO: Add support for parameters exprs.
-  auto lhsVal = dyn_cast<Value>(lhsRep);
-  auto rhsVal = dyn_cast<Value>(rhsRep);
-  if (!lhsVal || !rhsVal) {
-    state.emitError(getLoc(),
-                    "binary operator with parameters not implemented yet");
-    return {};
-  }
-
-  auto lhsType = lhsVal.getType();
-  if (lhsType != rhsVal.getType() || !lhsType.isIndex()) {
+  auto lhsType = lhsRep.getType();
+  if (lhsType != rhsRep.getType() || !lhsType.isIndex()) {
     state.emitError(getLoc(),
                     "binary operator with interesting types not implemented");
     return {};
   }
+
+  // If these are both parameter values, we can fold them using parameter
+  // expressions.
+  if (auto lhsParam = lhsRep.dyn_castTypedAttr()) {
+    if (auto rhsParam = rhsRep.dyn_castTypedAttr()) {
+      POC opcode;
+      switch (kind) {
+      default:
+        assert(0 && "unknown binary operator");
+      case kAdd:
+        opcode = POC::Add;
+        break;
+      case kMul:
+        opcode = POC::Mul;
+        break;
+      }
+      return ParamOperatorAttr::get(opcode, lhsParam, rhsParam);
+    }
+  }
+
+  auto lhsVal = state.emitAsValue(lhsRep, lhs->getLoc());
+  auto rhsVal = state.emitAsValue(rhsRep, rhs->getLoc());
 
   switch (kind) {
   default:

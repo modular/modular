@@ -22,6 +22,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SMLoc.h"
 
@@ -31,8 +32,26 @@ struct EmitterState;
 class Scope;
 
 /// When emitting an expression to MLIR as an rvalue, we get a value back that
-/// is either an attribute (for parameter expressions) or an SSA value.
-using MLIRValueRep = PointerUnion<Attribute, Value>;
+/// is either an attribute (for parameter expressions) or an SSA value.  The
+/// stored attribute is always actually a TypedAttr.
+class MLIRValueRep : public PointerUnion<Attribute, Value> {
+public:
+  using Base = PointerUnion<Attribute, Value>;
+  using Base::PointerUnion;
+
+  /// If this contains an Attribute, it is known to be a TypedAttr.  This helper
+  /// performs the conversion.  This returns null if this contains a value.
+  TypedAttr dyn_castTypedAttr() const;
+
+  /// Return the type for the contained TypedAttr or Value, or null if they are
+  /// both null.
+  Type getType() const;
+
+  /// This helper emits this MLIRValueRep as an SSA value, materializing
+  /// it as a parameter constant if it is a parameter.  This returns null if
+  /// emission fails.
+  Value getAsValue(Location loc, OpBuilder &builder) const;
+};
 
 /// Base class for all expression nodes.  Note that these nodes are not allowed
 /// to own memory since they are bump pointer allocated and their destructors
@@ -195,8 +214,29 @@ struct EmitterState {
 
   /// This is the error handler to emit new diagnostics into.
   std::function<InFlightDiagnostic(SMLoc, const Twine &)> emitError;
+
+  /// This helper emits the specified value rep as an SSA value, materializing
+  /// it as a parameter constant if it is a parameter.  This returns null if
+  /// emission fails.
+  Value emitAsValue(MLIRValueRep rep, SMLoc loc);
+
+  /// This helper emits the specified value rep as an SSA value, materializing
+  /// it as a parameter constant if it is a parameter.  This returns null if
+  /// emission fails.
+  Value emitAsValue(const ExprNode *node);
 };
 
 } // namespace M::KGEN::LIT
+
+namespace llvm {
+
+template <typename To>
+struct CastInfo<To, const M::KGEN::LIT::MLIRValueRep>
+    : public CastInfo<To, const M::KGEN::LIT::MLIRValueRep::Base> {};
+template <typename To>
+struct CastInfo<To, M::KGEN::LIT::MLIRValueRep>
+    : public CastInfo<To, M::KGEN::LIT::MLIRValueRep::Base> {};
+
+} // namespace llvm
 
 #endif // LIT_EXPR_NODES_H
