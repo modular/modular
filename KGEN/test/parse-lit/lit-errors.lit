@@ -73,4 +73,4 @@ def a() -> Int:
 # // -----
 
 def a() -> Int:
-  return 4.0 # expected-error {{don't support non-index types yet}}
+  return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}

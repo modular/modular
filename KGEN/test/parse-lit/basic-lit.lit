@@ -16,26 +16,22 @@ def do_math(a: Int, b: Int, c: Int) -> Int:
   c = b # Parameters are mutable!
 
   # CHECK-NEXT: %z = lit.var.decl "z": <index>
-  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
-  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
+  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[A]]
+  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
   # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
   # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
   z = 42 + 5*a
 
-  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
-  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I42]], %[[I5]]
   # CHECK-NEXT: %[[C:.*]] = pop.load %c_2
+  # CHECK-NEXT: %[[MUL:.*]] = index.constant 210
   # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %[[C]]
   # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
   z = 42 * 5 + c
 
   # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
-  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
-  # CHECK-NEXT: %[[I6:.*]] = index.constant 6
-  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I5]], %[[I6]]
+  # CHECK-NEXT: %[[ADD:.*]] = index.constant 11
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[A]], %[[ADD]]
   # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
   z = a * (5 + 6)

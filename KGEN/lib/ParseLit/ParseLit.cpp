@@ -322,6 +322,11 @@ public:
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emit(ExprNode *node);
 
+  Value emitAsValue(ExprNode *node) {
+    auto builder = currentScope->getBuilder();
+    return emit(node).getAsValue(translateLocation(node->getLoc()), builder);
+  }
+
 private:
   /// Allocate an expression node into the expression bump pointer allocator.
   template <typename T, typename... Args>
@@ -799,22 +804,21 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
 
   // Materialize the expression statement in our current scope.
   // TODO: Should pass in contextual type if known from previous declaration.
-  auto rhsValue = exprParser.emit(rhs);
+  auto rhsValue = exprParser.emitAsValue(rhs);
+
+  // If IR generation failed, return success since we have a fine parse.
+  if (!lvalue || !rhsValue)
+    return success();
+
+  if (!rhsValue.getType().isIndex()) {
+    // emitError(rhs->getLoc(), "TODO: don't support non-index types yet");
+    return success();
+  }
 
   // If everything worked out, store the resultant value into the lvalue for the
   // destination.  If things didn't work, just drop this on the floor.
-  if (lvalue && rhsValue) {
-    if (Value rhsValueValue = dyn_cast<Value>(rhsValue)) {
-      if (!rhsValueValue.getType().isIndex())
-        emitError(rhs->getLoc(), "TODO: don't support non-index types yet");
-      else
-        builder.create<POP::StoreOp>(translateLocation(equalsLoc),
-                                     rhsValueValue, lvalue, /*alignment*/ None);
-    } else {
-      emitError(rhs->getLoc(),
-                "TODO: don't support referring to parameters yet");
-    }
-  }
+  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue, lvalue,
+                               /*alignment*/ None);
 
   return success();
 }
@@ -1006,21 +1010,10 @@ ParseResult LitParser::parseReturnStmt() {
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.
     for (auto expr : operandExprs) {
-      auto value = exprParser.emit(expr);
+      auto value = exprParser.emitAsValue(expr);
       if (!value)
         return failure();
-
-      if (Value valueValue = dyn_cast<Value>(value)) {
-        if (!valueValue.getType().isIndex()) {
-          emitError(expr->getLoc(), "TODO: don't support non-index types yet");
-          return failure();
-        }
-        operandValues.push_back(valueValue);
-      } else {
-        emitError(expr->getLoc(),
-                  "TODO: don't support referring to parameters yet");
-        return failure();
-      }
+      operandValues.push_back(value);
     }
   }
 
