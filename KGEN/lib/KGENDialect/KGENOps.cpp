@@ -271,7 +271,7 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
 
   // Check that the callee attribute was specified.
-  GeneratorInterfaceOp interface = dyn_cast_or_null<GeneratorInterfaceOp>(
+  GeneratorInterfaceOp interface = dyn_cast_if_present<GeneratorInterfaceOp>(
       symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
   if (!interface)
     return emitError() << "'" << interfaceSym
@@ -532,7 +532,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto calleeAttr = getCalleeAttr();
   if (!calleeAttr)
     return emitOpError("requires a 'callee' symbol reference attribute");
-  auto callee = dyn_cast_or_null<KGENDeclInterface>(
+  auto callee = dyn_cast_if_present<KGENDeclInterface>(
       symbolTable.lookupNearestSymbolFrom(*this, calleeAttr));
   if (!callee)
     return emitError() << "'" << calleeAttr.getValue()

@@ -43,6 +43,7 @@ class SmallDenseMap;
 // classes here should be imported from the `mlir` namespace, not the `llvm`
 // namespace.
 namespace M {
+using llvm::dyn_cast_if_present;
 using llvm::SmallDenseMap;
 using mlir::APFloat;
 using mlir::APInt;

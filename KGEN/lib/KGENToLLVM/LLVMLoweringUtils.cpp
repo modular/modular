@@ -53,7 +53,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert a size expression to a C++ unsigned integer.
   auto convertSize = [&](auto type) -> Optional<uint64_t> {
-    auto size = dyn_cast_or_null<IntegerAttr>(type.getSize());
+    auto size = dyn_cast_if_present<IntegerAttr>(type.getSize());
     if (!size)
       return {};
     const APInt &value = size.getValue();

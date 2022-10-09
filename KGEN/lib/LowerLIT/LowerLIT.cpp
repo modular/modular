@@ -464,7 +464,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
       return success();
 
     // Check that the callee attribute was specified.
-    itf = dyn_cast_or_null<GeneratorInterfaceOp>(
+    itf = dyn_cast_if_present<GeneratorInterfaceOp>(
         symbolTable.lookup(interfaceName.value()));
     if (!itf)
       return gen.emitError("could not find implemented interface");

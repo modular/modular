@@ -273,7 +273,8 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                        "constant of unspecified size");
     }
     // Only scalar arrays can be created.
-    auto scalar = dyn_cast_or_null<ScalarType>(array.getResolvedElementType());
+    auto scalar =
+        dyn_cast_if_present<ScalarType>(array.getResolvedElementType());
     if (!scalar)
       return emitError("array constant must have scalar elements");
     return checkDType(scalar.cast<DTypeInterface>());
@@ -562,7 +563,7 @@ LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
     return emitError("expected struct operand");
   mlir::OperationName name(getOperationName(), context);
   auto indexAttr =
-      dyn_cast_or_null<IntegerAttr>(attrs.get(getIndexAttrName(name)));
+      dyn_cast_if_present<IntegerAttr>(attrs.get(getIndexAttrName(name)));
   if (!indexAttr)
     return emitError("expected an integer index attribute");
   size_t index = indexAttr.getInt();

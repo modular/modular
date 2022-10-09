@@ -706,7 +706,7 @@ LogicalResult ParameterRewriter::processCallOp(
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
-  auto callee = dyn_cast_or_null<KGENDeclInterface>(
+  auto callee = dyn_cast_if_present<KGENDeclInterface>(
       elaborator.lookupCallee(call.getCalleeAttr()));
   if (!callee)
     return error(call->getLoc(),

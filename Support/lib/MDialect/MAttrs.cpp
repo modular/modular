@@ -249,7 +249,7 @@ ArrayElementsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// Parse the elements of an array elements attribute.
 Attribute ArrayElementsAttr::parse(AsmParser &p, Type attrType) {
   // Validate the self type.
-  auto type = attrType.dyn_cast_or_null<ShapedType>();
+  auto type = dyn_cast_if_present<ShapedType>(attrType);
   if (!type) {
     p.emitError(p.getCurrentLocation(), "expected a shaped type");
     return {};

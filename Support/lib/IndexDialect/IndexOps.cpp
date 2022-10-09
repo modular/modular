@@ -62,8 +62,8 @@ static OpFoldResult foldBinaryOpUnchecked(
     ArrayRef<Attribute> operands,
     function_ref<APInt(const APInt &, const APInt &)> calculate) {
   assert(operands.size() == 2 && "binary operation expected 2 operands");
-  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
-  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  auto lhs = dyn_cast_if_present<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!lhs || !rhs)
     return {};
 
@@ -85,8 +85,8 @@ static OpFoldResult foldBinaryOpChecked(
     ArrayRef<Attribute> operands,
     function_ref<Optional<APInt>(const APInt &, const APInt &lhs)> calculate) {
   assert(operands.size() == 2 && "binary operation expected 2 operands");
-  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
-  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  auto lhs = dyn_cast_if_present<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_if_present<IntegerAttr>(operands[1]);
   // Only fold index operands.
   if (!lhs || !rhs)
     return {};
@@ -332,8 +332,8 @@ bool compareIndices(const APInt &lhs, const APInt &rhs,
 
 OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 2 && "compare expected 2 operands");
-  auto lhs = dyn_cast_or_null<IntegerAttr>(operands[0]);
-  auto rhs = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  auto lhs = dyn_cast_if_present<IntegerAttr>(operands[0]);
+  auto rhs = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!lhs || !rhs)
     return {};
 

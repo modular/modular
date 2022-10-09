@@ -244,9 +244,8 @@ struct ConvertKGENStructCreate : public ConvertKGENStructOp<StructCreateOp> {
   LogicalResult
   matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto type = getTypeConverter()
-                    ->convertType(op.getType())
-                    .dyn_cast_or_null<LLVM::LLVMStructType>();
+    auto type = dyn_cast_if_present<LLVM::LLVMStructType>(
+        getTypeConverter()->convertType(op.getType()));
     if (!type)
       return failure();
 
