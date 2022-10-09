@@ -286,8 +286,9 @@ ParseResult LitParserBase::parseSeparatedList(
 ///
 class ExprParser : public LitParserBase {
 public:
-  ExprParser(LitParserBase &existing)
-      : LitParserBase(existing.lexer, existing.sharedParserState) {
+  ExprParser(LitParserBase &existing, const RCRef<Scope> &currentScope)
+      : LitParserBase(existing.lexer, existing.sharedParserState),
+        currentScope(currentScope.getPointer()) {
     // Only a single expression parser can be active at a time, because we clear
     // the bump pointer allocator when done.
     assert(!sharedParserState->hasExprParser &&
@@ -319,7 +320,7 @@ public:
   ExprNode *parseBinOpRHS(ExprNode *lhs, Precedence minPrec);
 
   /// Emit the specified expression tree to MLIR in the current context.
-  MLIRValueRep emit(ExprNode *node, Scope *scope);
+  MLIRValueRep emit(ExprNode *node);
 
 private:
   /// Allocate an expression node into the expression bump pointer allocator.
@@ -348,14 +349,16 @@ private:
     memcpy(result, elements.data(), dataSize);
     return ArrayRef<T>(result, elements.size());
   }
+
+  Scope *currentScope;
 };
 
 /// Emit the specified expression tree to MLIR in the current context.
-MLIRValueRep ExprParser::emit(ExprNode *node, Scope *scope) {
+MLIRValueRep ExprParser::emit(ExprNode *node) {
   // TODO: Need a notion of a current builder that isn't just end of decl.
-  auto builder = scope->getBuilder();
+  auto builder = currentScope->getBuilder();
   EmitterState state{
-      builder, scope,
+      builder, currentScope,
       [&](SMLoc loc) -> Location { return translateLocation(loc); },
       [&](SMLoc loc, const Twine &twine) -> InFlightDiagnostic {
         return emitError(loc, twine);
@@ -724,7 +727,7 @@ ParseResult LitParser::parseSimpleStmt() {
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
-  ExprParser exprParser(*this);
+  ExprParser exprParser(*this, currentScope);
   ExprNode *expr = exprParser.parseExpression();
 
   // If the expression was followed by a `=` then we have an assignment.  If not
@@ -735,7 +738,7 @@ ParseResult LitParser::parseSimpleStmt() {
 
   // Materialize the expression statement in our current scope but discard the
   // result on the floor.
-  (void)exprParser.emit(expr, currentScope.getPointer());
+  (void)exprParser.emit(expr);
   return success();
 }
 
@@ -796,7 +799,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
 
   // Materialize the expression statement in our current scope.
   // TODO: Should pass in contextual type if known from previous declaration.
-  auto rhsValue = exprParser.emit(rhs, currentScope.getPointer());
+  auto rhsValue = exprParser.emit(rhs);
 
   // If everything worked out, store the resultant value into the lvalue for the
   // destination.  If things didn't work, just drop this on the floor.
@@ -851,7 +854,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
     Type paramType = IndexType::get(getContext());
     if (consumeIf(LitToken::colon)) {
-      ExprParser exprParser(*this);
+      ExprParser exprParser(*this, currentScope);
       ExprNode *typeExpr = exprParser.parseExpression();
       // TODO (types): translate typeExpr into a type.
       (void)typeExpr;
@@ -860,7 +863,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     valueParamTypes.push_back(paramType);
 
     if (consumeIf(LitToken::equal)) {
-      ExprParser exprParser(*this);
+      ExprParser exprParser(*this, currentScope);
       ExprNode *defaultExpr = exprParser.parseExpression();
       // TODO: add support for default parameter expressions.
       if (!defaultExpr->containsError())
@@ -894,7 +897,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   if (consumeIf(LitToken::minus_greater)) {
-    ExprParser exprParser(*this);
+    ExprParser exprParser(*this, currentScope);
     ExprNode *typeExpr = exprParser.parseExpression();
     // TODO (types): translate typeExpr into a type.
     (void)typeExpr;
@@ -996,14 +999,14 @@ ParseResult LitParser::parseReturnStmt() {
 
   // If there is an expression list present, parse it.
   if (!getToken().getIndentation().has_value()) {
-    ExprParser exprParser(*this);
+    ExprParser exprParser(*this, currentScope);
     SmallVector<ExprNode *> operandExprs;
     exprParser.parseExpressionList(operandExprs);
 
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.
     for (auto expr : operandExprs) {
-      auto value = exprParser.emit(expr, currentScope.getPointer());
+      auto value = exprParser.emit(expr);
       if (!value)
         return failure();
 
