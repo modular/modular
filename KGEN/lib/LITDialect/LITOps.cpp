@@ -68,7 +68,7 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
 
   // Check that the callee attribute was specified.
-  GeneratorInterfaceOp interface = dyn_cast_or_null<GeneratorInterfaceOp>(
+  GeneratorInterfaceOp interface = dyn_cast_if_present<GeneratorInterfaceOp>(
       symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
   if (!interface)
     return emitError() << "'" << interfaceSym.getValue()

@@ -62,7 +62,7 @@ Optional<int64_t> ArrayType::getResolvedSize() const {
 }
 
 Type ArrayType::getResolvedElementType() const {
-  if (auto typeCst = getElementType().dyn_cast_or_null<TypeConstantAttr>())
+  if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(getElementType()))
     return typeCst.getValue();
   return nullptr;
 }

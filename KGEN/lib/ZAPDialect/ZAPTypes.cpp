@@ -59,13 +59,13 @@ Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 Optional<int64_t> BufferType::getResolvedSize() const {
-  if (auto intAttr = getSize().dyn_cast_or_null<IntegerAttr>())
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
 }
 
 Optional<DType> BufferType::getResolvedDType() const {
-  if (auto dtype = getDType().dyn_cast_or_null<DTypeConstantAttr>())
+  if (auto dtype = dyn_cast_if_present<DTypeConstantAttr>(getDType()))
     return dtype.getDType();
   return {};
 }

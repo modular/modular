@@ -381,7 +381,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
 
   auto symbol = symbolConstant.getSymbol();
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+  auto decl = dyn_cast_if_present<KGENDeclInterface>(
       symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, symbol));
 
   if (!decl) {
@@ -411,7 +411,7 @@ void DeclParameterVerifier::verifyRefType(RefType typeDef) {
   if (!symbolTables)
     return;
 
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+  auto decl = dyn_cast_if_present<KGENDeclInterface>(
       symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, typeDef.getName()));
   if (!decl || !isa<StructDeclOp>(decl)) {
     hadError = true;
