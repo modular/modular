@@ -609,7 +609,7 @@ LogicalResult ReplaceElementOp::verify() {
 /// Verify that the type is one of the variant types.
 static LogicalResult verifyVariantElementType(Operation *op, Type type,
                                               VariantType variantType) {
-  if (!variantType.isVariantType(type))
+  if (!variantType.getTypeIndex(type))
     return op->emitOpError("operand type ")
            << type << " is not a variant type of " << variantType;
   return success();

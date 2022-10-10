@@ -569,6 +569,139 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPVariantCreate
+//===----------------------------------------------------------------------===//
+
+/// Insert an alloca at the top of the function body.
+static Value createAllocaAtEntry(Operation *op, Type type,
+                                 PatternRewriter &rewriter) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(
+      &op->getParentOfType<mlir::FunctionOpInterface>()
+           .getFunctionBody()
+           .front());
+  Value one = rewriter.create<LLVM::ConstantOp>(op->getLoc(),
+                                                rewriter.getI64IntegerAttr(1));
+  return rewriter.create<LLVM::AllocaOp>(op->getLoc(),
+                                         LLVM::LLVMPointerType::get(type), one);
+}
+
+/// Lower `pop.variant.create` into a series of bitcasts, loads, and stores.
+/// LLVM's `bitcast` doesn't work on aggregate types, so we need to allocate
+/// memory to play around with. The `alloca` should always be optimized away by
+/// LLVM's SROA, but we have to be careful with it (place it in the entry block
+/// and add lifetime markers) in case it does not.
+struct ConvertPOPVariantCreate
+    : public mlir::ConvertOpToLLVMPattern<VariantCreateOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(VariantCreateOp op, VariantCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto variantType = getTypeConverter()
+                           ->convertType(op.getType())
+                           .dyn_cast_or_null<LLVM::LLVMStructType>();
+    if (!variantType)
+      return failure();
+
+    // We need to alloca the content type to bitcast it. Put it in the entry
+    // block in case it isn't optimized away.
+    Value contentPtr =
+        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
+
+    // Bitcast the content element pointer.
+    Value valuePtr = rewriter.create<LLVM::BitcastOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getOperand().getType()),
+        contentPtr);
+
+    // Add lifetime markers in case the alloca doesn't get optimized away.
+    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), 1, contentPtr);
+
+    // Store the variant value and then load the result.
+    rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getOperand(), valuePtr);
+    Value content = rewriter.create<LLVM::LoadOp>(op.getLoc(), contentPtr);
+    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
+
+    // Build the result struct.
+    Value variant = rewriter.create<LLVM::UndefOp>(op.getLoc(), variantType);
+    variant =
+        rewriter.create<LLVM::InsertValueOp>(op.getLoc(), variant, content, 0);
+    Value discrVal = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), variantType.getBody().back().cast<IntegerType>(),
+        *op.getType().getTypeIndex(op.getOperand().getType()));
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(op, variant, discrVal, 1);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPVariantIs
+//===----------------------------------------------------------------------===//
+
+/// Lower `pop.variant.is` to an extract and integer compare.
+struct ConvertPOPVariantIs : public mlir::ConvertOpToLLVMPattern<VariantIsOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(VariantIsOp op, VariantIsOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value discr = rewriter.create<LLVM::ExtractValueOp>(
+        op.getLoc(), adaptor.getVariant(), 1);
+    auto variantType =
+        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
+    Value discrVal = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), variantType.getBody().back(),
+        *op.getVariant().getType().getTypeIndex(op.getTestType()));
+    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq,
+                                              discr, discrVal);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPVariantGet
+//===----------------------------------------------------------------------===//
+
+/// Lower `pop.variant.get` into a series of bitcasts, loads, and stores.
+/// LLVM's `bitcast` doesn't work on aggregate types, so we need to allocate
+/// memory to play around with. The `alloca` should always be optimized away by
+/// LLVM's SROA, but we have to be careful with it (place it in the entry block
+/// and add lifetime markers) in case it does not.
+struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(VariantGetOp op, VariantGetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type valueType = getTypeConverter()->convertType(op.getType());
+    if (!valueType)
+      return failure();
+    auto variantType =
+        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
+
+    // We need to alloca the content type to bitcast it. Put it in the entry
+    // block in case it isn't optimized away.
+    Value contentPtr =
+        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
+
+    // Extract the content and put it in the block of memory.
+    Value content = rewriter.create<LLVM::ExtractValueOp>(
+        op.getLoc(), adaptor.getVariant(), 0);
+
+    // Add lifetime markers in case the alloca doesn't get optimized away.
+    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), 1, contentPtr);
+    rewriter.create<LLVM::StoreOp>(op.getLoc(), content, contentPtr);
+
+    // Bitcast and read the value.
+    Value valuePtr = rewriter.create<LLVM::BitcastOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(valueType), contentPtr);
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, valuePtr);
+    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPCastToBuiltin
 //===----------------------------------------------------------------------===//
 
@@ -692,7 +825,10 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPStructConstruct,
-      ConvertPOPSub
+      ConvertPOPSub,
+      ConvertPOPVariantCreate,
+      ConvertPOPVariantGet,
+      ConvertPOPVariantIs
       // clang-format on
       >(typeConverter);
 }
