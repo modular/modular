@@ -1090,6 +1090,26 @@ void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
   }
 }
 
+/// Parse a comma-separated list of type parameter values.
+ParseResult
+KGEN::parseArrayOfTypeExprs(AsmParser &p,
+                            FailureOr<SmallVector<TypedAttr>> &values) {
+  values.emplace();
+  return p.parseCommaSeparatedList([&]() -> ParseResult {
+    FailureOr<TypedAttr> value;
+    if (failed(parseTypeParamValue(p, value)))
+      return failure();
+    values->push_back(*value);
+    return success();
+  });
+}
+
+/// Print a comma-separated list of type parameter values.
+void KGEN::printArrayOfTypeExprs(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  llvm::interleaveComma(
+      values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });
+}
+
 /// Compare a range of values from an "originator" to a corresponding range of
 /// values from a "target".  If the two mismatch, emit an error that tries to
 /// explain the issue in a nice way.

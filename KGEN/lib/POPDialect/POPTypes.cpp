@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -245,23 +246,49 @@ StructType StructType::get(ArrayRef<Type> elementTypes) {
   return get(elementTypes.front().getContext(), elementTypeExprs);
 }
 
-/// Parse a comma-separated list of type parameter values.
-static ParseResult
-parseArrayOfTypeExprs(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values) {
-  values.emplace();
-  return p.parseCommaSeparatedList([&]() -> ParseResult {
-    FailureOr<TypedAttr> value;
-    if (failed(parseTypeParamValue(p, value)))
-      return failure();
-    values->push_back(*value);
-    return success();
-  });
+//===----------------------------------------------------------------------===//
+// VariantType
+//===----------------------------------------------------------------------===//
+
+/// Canonicalize the possible types of a variant. Deduplicate the types.
+static SmallVector<TypedAttr>
+canonicalizeVariantTypes(ArrayRef<TypedAttr> types) {
+  SmallVector<TypedAttr> deduplicatedTypes;
+  SmallPtrSet<Attribute, 4> seenTypes;
+  deduplicatedTypes.reserve(types.size());
+  for (TypedAttr type : types)
+    if (seenTypes.insert(type).second)
+      deduplicatedTypes.push_back(type);
+  return deduplicatedTypes;
 }
 
-/// Print a comma-separated list of type parameter values.
-static void printArrayOfTypeExprs(AsmPrinter &p, ArrayRef<TypedAttr> values) {
-  llvm::interleaveComma(
-      values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });
+VariantType VariantType::get(MLIRContext *ctx, ArrayRef<TypedAttr> types) {
+  return Base::get(ctx, canonicalizeVariantTypes(types));
+}
+
+void VariantType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrs,
+    function_ref<void(Type)> walkTypes) const {
+  for (TypedAttr type : getTypes())
+    walkAttrs(type);
+}
+
+Type VariantType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                              ArrayRef<Type> replTypes) const {
+  assert(replTypes.empty() && replAttrs.size() == getTypes().size() &&
+         "expected same number of sub-attributes as variant types");
+  SmallVector<TypedAttr> variantTypes;
+  variantTypes.reserve(replAttrs.size());
+  for (Attribute attr : replAttrs)
+    variantTypes.push_back(attr.cast<TypedAttr>());
+  return get(getContext(), variantTypes);
+}
+
+bool VariantType::isVariantType(Type type) const {
+  for (TypedAttr variantType : getTypes())
+    if (ParamRefType::get(variantType) == type)
+      return true;
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

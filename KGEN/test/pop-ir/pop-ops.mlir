@@ -649,3 +649,18 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !pop.simd<1, f32> {
   // CHECK: kgen.return  %[[V0:.*]] : !pop.simd<1, f32>
   kgen.return %0 : !pop.simd<1, f32>
 }
+
+// CHECK-LABEL: @variant_type
+kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramref<T> {
+  // CHECK: pop.variant.create %arg0 : !pop.simd<N, f32> -> !pop.variant<T, !pop.simd<N, f32>>
+  %0 = pop.variant.create %a : !pop.simd<N, f32> -> !pop.variant<T, !pop.simd<N, f32>>
+  // CHECK: pop.variant.is !kgen.paramref<T>, %0 : !pop.variant<T, !pop.simd<N, f32>>
+  %1 = pop.variant.is !kgen.paramref<T>, %0 : !pop.variant<T, !pop.simd<N, f32>>
+  // CHECK: pop.variant.get %0 : !pop.variant<T, !pop.simd<N, f32>> as !kgen.paramref<T>
+  %2 = pop.variant.get %0 : !pop.variant<T, !pop.simd<N, f32>> as !kgen.paramref<T>
+  kgen.return %2 : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: @variant_canonicalize
+// CHECK-SAME: !pop.variant<i32, f32>
+kgen.generator.interface @variant_canonicalize(!pop.variant<i32, i32, f32, f32>)

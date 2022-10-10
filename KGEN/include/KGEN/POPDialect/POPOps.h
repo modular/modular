@@ -25,6 +25,7 @@ class PointerType;
 class ScalarType;
 class SIMDType;
 class StructType;
+class VariantType;
 } // namespace M::KGEN::POP
 
 #define GET_OP_CLASSES
