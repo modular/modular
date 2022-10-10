@@ -152,7 +152,7 @@ LogicalResult BufferConstantOp::verify() {
 // SIMDLoadOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult SIMDLoadOp::verify() {
+LogicalResult BufferSIMDLoadOp::verify() {
   if (hasSameUnderlyingDType(getBuffer(), getResult()))
     return success();
   return emitOpError("the buffer type (")
@@ -165,7 +165,7 @@ LogicalResult SIMDLoadOp::verify() {
 // SIMDStoreOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult SIMDStoreOp::verify() {
+LogicalResult BufferSIMDStoreOp::verify() {
   if (hasSameUnderlyingDType(getBuffer(), getValue()))
     return success();
   return emitOpError("the buffer type (")

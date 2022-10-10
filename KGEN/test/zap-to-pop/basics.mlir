@@ -248,7 +248,7 @@ kgen.generator @simd_load(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.simd<4
   // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
   // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.simd<4, f32>>
   // CHECK: %[[VAL:.*]] = pop.load %[[BPTR]]
-  %0 = zap.simd.load %buf[%idx] : !zap.buffer<4, f32>, !pop.simd<4, f32>
+  %0 = zap.buffer.simd_load %buf[%idx] : !zap.buffer<4, f32>, !pop.simd<4, f32>
   kgen.return %0 : !pop.simd<4, f32>
 }
 
@@ -263,7 +263,7 @@ kgen.generator @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, 
   // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
   // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.simd<4, f32>>
   // CHECK: pop.store %[[VAL]], %[[BPTR]]
-  zap.simd.store %val, %buf[%idx] : !pop.simd<4, f32>, !zap.buffer<4, f32>
+  zap.buffer.simd_store %val, %buf[%idx] : !pop.simd<4, f32>, !zap.buffer<4, f32>
   kgen.return
 }
 
