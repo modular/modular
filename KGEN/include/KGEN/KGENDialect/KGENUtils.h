@@ -13,6 +13,7 @@
 #define KGEN_KGENDIALECT_KGENUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/Types.h"
 
 namespace mlir {
@@ -139,6 +140,13 @@ void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 /// Parse and print a parameter binding list if present.
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds);
+
+/// Parse a comma-separated list of type parameter values.
+ParseResult parseArrayOfTypeExprs(AsmParser &p,
+                                  FailureOr<SmallVector<TypedAttr>> &values);
+
+/// Print a comma-separated list of type parameter values.
+void printArrayOfTypeExprs(AsmPrinter &p, ArrayRef<TypedAttr> values);
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces

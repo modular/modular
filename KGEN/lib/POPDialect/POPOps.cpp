@@ -603,6 +603,39 @@ LogicalResult ReplaceElementOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// VariantCreateOp
+//===----------------------------------------------------------------------===//
+
+/// Verify that the type is one of the variant types.
+static LogicalResult verifyVariantElementType(Operation *op, Type type,
+                                              VariantType variantType) {
+  if (!variantType.isVariantType(type))
+    return op->emitOpError("operand type ")
+           << type << " is not a variant type of " << variantType;
+  return success();
+}
+
+LogicalResult VariantCreateOp::verify() {
+  return verifyVariantElementType(*this, getOperand().getType(), getType());
+}
+
+//===----------------------------------------------------------------------===//
+// VariantIsOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantIsOp::verify() {
+  return verifyVariantElementType(*this, getTestType(), getVariant().getType());
+}
+
+//===----------------------------------------------------------------------===//
+// VariantGetOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantGetOp::verify() {
+  return verifyVariantElementType(*this, getType(), getVariant().getType());
+}
+
+//===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 

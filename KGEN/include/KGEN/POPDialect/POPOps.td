@@ -513,7 +513,7 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerBitCastOp
+// PointerBitcastOp
 //===----------------------------------------------------------------------===//
 
 def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [NoSideEffect,
@@ -935,6 +935,98 @@ def POP_ReplaceElementOp : POPOp<"replace_element", [NoSideEffect,
     $value `,` $container `[` $index `]` attr-dict `:`
     qualified(type($container)) ``
     custom<StructValueType>(type($value), ref(type($container)), ref($index))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantCreateOp
+//===----------------------------------------------------------------------===//
+
+def VariantCreateOp : POPOp<"variant.create", [NoSideEffect]> {
+  let summary = "Create a parametric variant.";
+  let description = [{
+    The `pop.variant.create` operation creates a variant of the referred type
+    with a value provided for one of its possible types.
+
+    Example:
+
+    ```mlir
+    // Create an `Optional<T>` variant.
+    %none = pop.struct.construct() : !pop.struct<>
+    %0 = pop.variant.create %none : !pop.struct<>
+        -> !pop.variant<!pop.struct<>, T>
+
+    // Create a variant of either a scalar float or integer.
+    %1 = pop.constant(0.0) : !pop.scalar<f64>
+    %2 = pop.variant.create %1 : !pop.scalar<f64>
+        -> !pop.variant<!pop.scalar<i64>, !pop.scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$operand);
+  let results = (outs POP_VariantType:$result);
+  let assemblyFormat = [{
+    $operand attr-dict `:` type($operand) `->` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantIsOp
+//===----------------------------------------------------------------------===//
+
+def VariantIsOp : POPOp<"variant.is", [NoSideEffect]> {
+  let summary = "Check the field contained by a variant.";
+  let description = [{
+    The `pop.variant.is` operation checks whether the given variant contains
+    a particular type. Returns an `i1` that indicates whether the variant is the
+    particular type.
+
+    Example:
+
+    ```mlir
+    %optional = ...
+    %isNone = pop.variant.is !pop.struct<>, %optional
+        : !pop.variant<!pop.struct<>, T>
+    ```
+  }];
+
+  let arguments = (ins POP_VariantType:$variant, TypeAttr:$testType);
+  let results = (outs I1:$result);
+  let assemblyFormat = [{
+    $testType `,` $variant attr-dict `:` qualified(type($variant))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantGetOp
+//===----------------------------------------------------------------------===//
+
+def VariantGetOp : POPOp<"variant.get", [NoSideEffect]> {
+  let summary = "Get a variant as one of its possible types.";
+  let description = [{
+    The `pop.variant.get` operation interprets the given variant as one of its
+    possible types and gets it as that type. This operation does NOT check
+    whether the variant is that type.
+
+    Example:
+
+    ```mlir
+    %optional = ...
+    %intVal = pop.variant.get %optional
+        : !pop.variant<!pop.struct<>, i32> as i32
+    ```
+  }];
+
+  let arguments = (ins POP_VariantType:$variant);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $variant attr-dict `:` qualified(type($variant)) `as` type($result)
   }];
 
   let hasVerifier = 1;

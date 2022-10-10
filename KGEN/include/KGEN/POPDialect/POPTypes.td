@@ -265,4 +265,39 @@ def POP_StructType : POPType<"Struct", "struct"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// VariantType
+//===----------------------------------------------------------------------===//
+
+def POP_VariantType : POPType<"Variant", "variant",
+    [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "A parametric variant type.";
+  let description = [{
+    A `!pop.variant` type is a structural variant type that represents a value
+    that is one of a list of types (discriminated union).
+
+    The type is always canonicalized to remove duplicate possible variant types.
+    A variant of one type is allowed, e.g. `!pop.variant<i32>`, and all
+    variant operations are defined on it even though it isn't a particularly
+    useful type.
+
+    Example:
+
+    ```mlir
+    !pop.variant<i32, !pop.scalar<dtype>, T>
+    ```
+  }];
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
+  let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($types) `>`";
+  let skipDefaultBuilders = 1;
+
+  let builders = [TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>];
+
+  let extraClassDeclaration = [{
+    /// Returns true if the given type is one of the variant types.
+    bool isVariantType(Type type) const;
+  }];
+}
+
 #endif // POPTYPES_TD
