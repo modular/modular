@@ -42,6 +42,9 @@ public:
 private:
   /// A location used to report conversion failures.
   mlir::Location loc;
+  /// TODO: We don't have a model for target-specific data layout. Use MLIR's
+  /// default data layout.
+  mlir::DataLayout dl;
 };
 
 } // namespace M::KGEN

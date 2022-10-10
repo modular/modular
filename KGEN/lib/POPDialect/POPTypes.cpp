@@ -284,11 +284,11 @@ Type VariantType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return get(getContext(), variantTypes);
 }
 
-bool VariantType::isVariantType(Type type) const {
-  for (TypedAttr variantType : getTypes())
-    if (ParamRefType::get(variantType) == type)
-      return true;
-  return false;
+Optional<int64_t> VariantType::getTypeIndex(Type type) const {
+  for (auto &variantType : llvm::enumerate(getTypes()))
+    if (ParamRefType::get(variantType.value()) == type)
+      return variantType.index();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

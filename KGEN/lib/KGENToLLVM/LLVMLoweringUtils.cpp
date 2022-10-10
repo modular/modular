@@ -121,4 +121,29 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   addConversion([=](DTypeType dtype) -> Optional<Type> {
     return Builder(&getContext()).getI8Type();
   });
+
+  // Convert variant types to a struct with enough space to contain the largest
+  // variant type plus a discriminator.
+  addConversion([=](POP::VariantType variant) -> Optional<Type> {
+    // TODO: The generated assembly is sensitive to the content type of the
+    // variant type. This needs to be optimized. For now, use an array of
+    // word-size integers.
+    uint64_t maxSize = 0;
+    for (TypedAttr typeExpr : variant.getTypes()) {
+      Type variantType = typeExpr.cast<ConcreteTypeConstantAttr>().getValue();
+      Type type = convertType(variantType);
+      if (!type)
+        return {};
+      maxSize = std::max(maxSize, llvm::alignTo(dl.getTypeSize(type),
+                                                dl.getTypeABIAlignment(type)));
+    }
+    auto contentType = LLVM::LLVMArrayType::get(
+        getIndexType(),
+        llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
+    // Compute the smallest integer to contain the discriminator.
+    auto discrType = IntegerType::get(
+        &getContext(), llvm::Log2_32_Ceil(variant.getTypes().size()));
+    return LLVM::LLVMStructType::getLiteral(&getContext(),
+                                            {contentType, discrType});
+  });
 }

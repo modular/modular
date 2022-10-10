@@ -295,8 +295,9 @@ def POP_VariantType : POPType<"Variant", "variant",
   let builders = [TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>];
 
   let extraClassDeclaration = [{
-    /// Returns true if the given type is one of the variant types.
-    bool isVariantType(Type type) const;
+    /// Returns the index of the type in the variant type list. If the type is
+    /// not in the list, returns None.
+    Optional<int64_t> getTypeIndex(Type type) const;
   }];
 }
 
