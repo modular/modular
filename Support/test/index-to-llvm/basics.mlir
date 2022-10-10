@@ -148,6 +148,15 @@ func.func @index_cast_to(%a: i32, %b: i64) -> (index, index, index, index) {
   return %0, %1, %2, %3 : index, index, index, index
 }
 
+// INDEX32-LABEL: @index_sizeof
+// INDEX64-LABEL: @index_sizeof
+func.func @index_sizeof() {
+  // INDEX32-NEXT: llvm.mlir.constant(32 : i32)
+  // INDEX64-NEXT: llvm.mlir.constant(64 : i64)
+  %0 = index.sizeof
+  return
+}
+
 // INDEX32-LABEL: @index_constant
 // INDEX64-LABEL: @index_constant
 func.func @index_constant() {

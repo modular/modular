@@ -212,6 +212,24 @@ struct ConvertIndexCmp : public mlir::ConvertOpToLLVMPattern<CmpOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertIndexSizeOf
+//===----------------------------------------------------------------------===//
+
+/// Lower `index.sizeof` to a constant with the value of the index bitwidth.
+struct ConvertIndexSizeOf : public mlir::ConvertOpToLLVMPattern<SizeOfOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SizeOfOp op, SizeOfOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+        op, getTypeConverter()->getIndexType(),
+        getTypeConverter()->getIndexTypeBitwidth());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertIndexConstant
 //===----------------------------------------------------------------------===//
 
@@ -277,6 +295,7 @@ static void populateIndexToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertIndexCastS,
       ConvertIndexCastU,
       ConvertIndexCmp,
+      ConvertIndexSizeOf,
       ConvertIndexConstant,
       ConvertIndexBoolConstant
       // clang-format on

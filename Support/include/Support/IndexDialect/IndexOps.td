@@ -375,6 +375,28 @@ def Index_CmpOp : IndexOp<"cmp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SizeOfOp
+//===----------------------------------------------------------------------===//
+
+def Index_SizeOfOp : IndexOp<"sizeof"> {
+  let summary = "size in bits of the index type";
+  let description = [{
+    The `sizeof` operation produces an index-typed SSA value equal to the sizes
+    in bits of the `index` type. For example, on 32-bit systems, the result is
+    `32 : index`, and on 64-bit systems, the result is `64 : index`.
+
+    Example:
+
+    ```mlir
+    %0 = index.sizeof
+    ```
+  }];
+
+  let results = (outs Index:$result);
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 

@@ -56,6 +56,13 @@ func.func @cmp_op(%a: index, %b: index) {
   return
 }
 
+// CHECK-LABEL: @sizeof_op
+func.func @sizeof_op() {
+  // CHECK: index.sizeof
+  %0 = index.sizeof
+  return
+}
+
 // CHECK-LABEL: @constant_op
 func.func @constant_op() {
   // CHECK-NEXT: index.constant 0
