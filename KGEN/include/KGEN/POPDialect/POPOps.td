@@ -493,9 +493,9 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
   let summary = "scalar and simd bitcast";
   let description = [{
     Bitcast an integer or floating point value to an integer or floating point
-    value of equal bit width. The bitcast operation is also used to cast between
-    pointer types. When casting between pointer types, both the source and the
-    target types must be pointer types.
+    value of equal bit width. The bitcast operation should not be used to cast
+    between pointer types. For conversion between pointer types one should use
+    `pop.pointer.bitcast`.
 
     Example:
 
@@ -504,7 +504,6 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
     %1 = pop.bitcast %b : !pop.scalar<ui64> to !pop.scalar<si64>
     %2 = pop.bitcast %c : !pop.simd<4, f64> to !pop.simd<4, si64>
     %3 = pop.bitcast %d : !pop.simd<2, f64> to !pop.simd<4, f32>
-    %4 = pop.bitcast %d : !pop.pointer<f64> to !pop.pointer<!pop.simd<4, f32>>
     ```
   }];
 
