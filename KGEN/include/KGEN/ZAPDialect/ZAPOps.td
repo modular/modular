@@ -310,17 +310,17 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store",
 // SIMDLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
+def ZAP_BufferSIMDLoadOp : ZAPOp<"buffer.simd_load"> {
   let summary = "simd load operation";
   let description = [{
-    The `zap.simd.load` operation takes a buffer and an index position and
-    extracts the `!pop.simd` value from the specified position. The
+    The `zap.buffer.simd_load` operation takes a buffer and an index position
+    and extracts the `!pop.simd` value from the specified position. The
     position must be of type index.
 
     Example:
 
     ```mlir
-    %1 = zap.buffer.load %0[%idx]: !zap.buffer<size, dtype>, !pop.simd<4, f32>
+    %val = zap.buffer.simd_load %buf[%idx]: !zap.buffer<size,dtype>, !pop.simd<4,f32>
     ```
   }];
 
@@ -339,17 +339,17 @@ def ZAP_SIMDLoadOp : ZAPOp<"simd.load"> {
 // SIMDStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_SIMDStoreOp : ZAPOp<"simd.store"> {
+def ZAP_BufferSIMDStoreOp : ZAPOp<"buffer.simd_store"> {
   let summary = "buffer store operation";
   let description = [{
-    The `zap.simd.store` operation takes a source value, a buffer, and an index
-    position and copies the eleemnt of simd value into the buffer starting at
-    the specified position. The position must be of type index.
+    The `zap.buffer.simd_store` operation takes a source value, a buffer, and
+    an index position and copies the eleemnt of simd value into the buffer
+    starting at the specified position. The position must be of type index.
 
     Example:
 
     ```mlir
-    zap.simd.store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
+    zap.buffer.simd_store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
     ```
   }];
 

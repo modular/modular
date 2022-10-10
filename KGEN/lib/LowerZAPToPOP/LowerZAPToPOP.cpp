@@ -263,14 +263,14 @@ struct ConvertZAPBufferStore : mlir::OpConversionPattern<BufferStoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPSIMDLoad
+// ConvertZAPBufferSIMDLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPSIMDLoad : mlir::OpConversionPattern<SIMDLoadOp> {
+struct ConvertZAPBufferSIMDLoad : mlir::OpConversionPattern<BufferSIMDLoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(SIMDLoadOp op, SIMDLoadOpAdaptor adaptor,
+  matchAndRewrite(BufferSIMDLoadOp op, BufferSIMDLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
                                                kBufferAddressPosition);
@@ -286,14 +286,15 @@ struct ConvertZAPSIMDLoad : mlir::OpConversionPattern<SIMDLoadOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPSIMDStore
+// ConvertZAPBufferSIMDStore
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPSIMDStore : mlir::OpConversionPattern<SIMDStoreOp> {
+struct ConvertZAPBufferSIMDStore
+    : mlir::OpConversionPattern<BufferSIMDStoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(SIMDStoreOp op, SIMDStoreOpAdaptor adaptor,
+  matchAndRewrite(BufferSIMDStoreOp op, BufferSIMDStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
                                                kBufferAddressPosition);
@@ -470,12 +471,12 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferConvert,
       ConvertZAPBufferDType,
       ConvertZAPBufferLoad,
+      ConvertZAPBufferSIMDLoad,
+      ConvertZAPBufferSIMDStore,
       ConvertZAPBufferSize,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,
-      ConvertZAPPrint,
-      ConvertZAPSIMDLoad,
-      ConvertZAPSIMDStore
+      ConvertZAPPrint
 
       // clang-format on
       >(converter, patterns.getContext());
