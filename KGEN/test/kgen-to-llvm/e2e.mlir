@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-to-llvm %s | FileCheck %s
 
-// CHECK-LABEL: llvm.func private @e2e_lower
+// CHECK-LABEL: llvm.func internal @e2e_lower
 // CHECK-NOT: unrealized_conversion_cast
 kgen.func @e2e_lower(%a: !pop.scalar<f32>, %b: !pop.scalar<f32>, %cond: i1) -> !pop.scalar<f32> {
   pop.external_call @foo() : () -> ()

@@ -913,13 +913,13 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
   auto builder = currentScope->getBuilder();
   auto functionType = builder.getFunctionType(valueParamTypes, resultTypes);
-  auto symVisibility = builder.getStringAttr("public");
+  auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
   // TODO: Should have nicer builder.
   auto newFunc = builder.create<LITFuncOp>(
-      loc, funcNameAttr, symVisibility,
-      StringArrayAttr::get(getContext(), valueParamNames),
-      TypeAttr::get(functionType), ParamDeclArrayAttr::get(getContext(), {}),
+      loc, funcNameAttr, StringArrayAttr::get(getContext(), valueParamNames),
+      TypeAttr::get(functionType), linkage,
+      ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();

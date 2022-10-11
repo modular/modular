@@ -313,10 +313,16 @@ static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
       return WalkResult::interrupt();
     }
 
-    // Mark copied dependencies as private.
     Operation *dependency = callee.clone();
-    SymbolTable::setSymbolVisibility(dependency,
-                                     SymbolTable::Visibility::Private);
+    // Set the linkage to module private if it's currently public. Otherwise,
+    // don't change anything.
+    if (auto linkage = dependency->getAttrOfType<LinkageAttr>("linkage")) {
+      if (linkage.getValue() == Linkage::Public) {
+        dependency->setAttr(
+            "linkage",
+            LinkageAttr::get(dependency->getContext(), Linkage::ModulePrivate));
+      }
+    }
     sliceSymtab.insert(dependency);
     return WalkResult::advance();
   };
@@ -354,10 +360,6 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     // If we've added a filter and this func isn't one we want, don't deal
     // with it.
     if (!only.empty() && !llvm::is_contained(only, func))
-      continue;
-
-    // Don't compile private functions.
-    if (!func.isPublic())
       continue;
 
     // Create a new module for this single func. This will go away at the end
