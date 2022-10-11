@@ -17,6 +17,7 @@
 #include "Support/AlignedAlloc.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
+#include "llvm/Support/Casting.h"
 
 #include <atomic>
 
@@ -209,20 +210,6 @@ public:
   template <typename T>
   bool isType() const {
     return getTypeID<T>() == typeID;
-  }
-
-  /// If this AsyncValue is constructed with the specified C++ type, return a
-  /// pointer to the value, otherwise return null.
-  template <typename T>
-  const T *dyn_cast() const {
-    return isType<T>() ? &get<T>() : nullptr;
-  }
-
-  /// If this AsyncValue is constructed with the specified C++ type, return a
-  /// pointer to the value, otherwise return null.
-  template <typename T>
-  T *dyn_cast() {
-    return isType<T>() ? &get<T>() : nullptr;
   }
 
   //===--------------------------------------------------------------------===//
@@ -814,5 +801,30 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
 }
 
 } // namespace M::LLCL
+
+namespace llvm {
+
+template <typename To>
+struct CastIsPossible<To, const ::M::LLCL::AnyAsyncValueRef> {
+  using From = ::M::LLCL::AnyAsyncValueRef;
+
+  static inline bool isPossible(const From &f) { return f->isType<To>(); }
+};
+
+template <typename To>
+struct CastInfo<To *, const ::M::LLCL::AnyAsyncValueRef> {
+  using From = ::M::LLCL::AnyAsyncValueRef;
+
+  static inline To *doCast(const From &t) { return &t->get<To>(); }
+  static inline To *castFailed() { return nullptr; }
+
+  static inline To *doCastIfPossible(const From &f) {
+    if (isa<To>(f))
+      return doCast(f);
+    return castFailed();
+  }
+};
+
+} // namespace llvm
 
 #endif // LLCL_RUNTIME_ASYNCVALUE_H
