@@ -1012,7 +1012,8 @@ def VariantGetOp : POPOp<"variant.get", [NoSideEffect]> {
   let description = [{
     The `pop.variant.get` operation interprets the given variant as one of its
     possible types and gets it as that type. This operation does NOT check
-    whether the variant is that type.
+    whether the variant is that type. If the result type does not match the
+    actual type of the variant, the operation's result is undefined.
 
     Example:
 

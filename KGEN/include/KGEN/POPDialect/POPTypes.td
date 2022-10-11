@@ -277,9 +277,9 @@ def POP_VariantType : POPType<"Variant", "variant",
     that is one of a list of types (discriminated union).
 
     The type is always canonicalized to remove duplicate possible variant types.
-    A variant of one type is allowed, e.g. `!pop.variant<i32>`, and all
-    variant operations are defined on it even though it isn't a particularly
-    useful type.
+    Variants of zero types or one type are allowed, e.g. `!pop.variant<i32>`,
+    and all variant operations are defined on the even though they aren't
+    particularly useful types.
 
     Example:
 
