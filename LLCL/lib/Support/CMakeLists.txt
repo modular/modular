@@ -18,19 +18,11 @@ if (APPLE)
   list(APPEND LIBS System)
 endif ()
 
-add_modular_mlir_library(LLCLSupport
+add_modular_library(LLCLSupport
   FileLocationDecoder.cpp
   Location.cpp
   ReferenceCounted.cpp
   Semaphore.cpp
   SpinWaiter.cpp
-
-  ADDITIONAL_HEADER_DIRS
-
-  DEPENDS
-
-  LINK_COMPONENTS
-
-  LINK_LIBS PUBLIC
   )
 target_link_libraries(LLCLSupport PUBLIC ${LIBS})
