@@ -1,0 +1,61 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support/MicroBenchmark.h"
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+
+#include <chrono>
+
+using namespace M;
+using namespace std::chrono_literals;
+using ::testing::HasSubstr;
+
+TEST(MicroBenchmarkTest, BenchmarkAllocation) {
+  MicroBenchmark::RunOptions runOpts;
+  runOpts.maxRuntime = 10ms; // Set to 10ms to avoid long running tests.
+
+  MicroBenchmark bench("vector allocation", [&](MicroBenchmark::State &st) {
+    for (auto _ : st) {
+      // Allocate a 1M bytes. This is a slightly expensive operation.
+      std::vector<std::byte> vec;
+      vec.reserve(1'000'000);
+      // Tell the compiler to not optimize the unused variable away.
+      MicroBenchmark::doNotOptimizeAway(vec);
+    }
+  });
+
+  ErrorOrSuccess err = bench.run(runOpts);
+  EXPECT_FALSE(failed(err)) << err.takeError();
+
+  double minLatency =
+      bench.measurement(MicroBenchmark::ReportMetric::kMinLatency,
+                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
+  EXPECT_GT(minLatency, 0) << "the min latency must be positive";
+
+  double maxLatency =
+      bench.measurement(MicroBenchmark::ReportMetric::kMaxLatency,
+                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
+  EXPECT_GT(maxLatency, 0) << "the max latency must be positive";
+
+  double meanLatency =
+      bench.measurement(MicroBenchmark::ReportMetric::kMeanLatency,
+                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
+  EXPECT_GT(meanLatency, 0) << "the mean latency must be positive";
+
+  // Generate the benchmark report.
+  MicroBenchmark::ReportOptions reportOpts;
+  std::string reportStr;
+  llvm::raw_string_ostream os(reportStr);
+  bench.report(os, reportOpts);
+
+  // We should expect that the report contains the name of the benchmark.
+  EXPECT_THAT(reportStr, HasSubstr("\"vector allocation\""));
+
+  // We should not expect the report to contain some other benchmark name.
+  EXPECT_THAT(reportStr, Not(HasSubstr("string creation")));
+}

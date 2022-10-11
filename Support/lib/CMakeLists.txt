@@ -27,10 +27,11 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/VCSRevision.h.in
 add_modular_library(MSupport
   AlignedAlloc.cpp
   BlobCache.cpp
-  ConcatenationTree.cpp
   CommonCLOptions.cpp
+  ConcatenationTree.cpp
   Error.cpp
   HMAC.cpp
+  MicroBenchmark.cpp
   TimeProfiler.cpp
 
   LINK_LIBS PUBLIC

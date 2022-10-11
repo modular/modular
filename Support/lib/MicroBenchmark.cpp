@@ -1,0 +1,365 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support/MicroBenchmark.h"
+#include "Support/MathExtras.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cassert>
+#include <iomanip>
+#include <mutex>
+#include <numeric>
+#include <sstream>
+
+using namespace M;
+
+MicroBenchmark::MicroBenchmark(StringRef name, std::function<void(State &)> fn)
+    : name(name), benchmarkFunction(std::move(fn)) {
+#ifdef MODULAR_DEBUG
+  // Show a warning when benchmarking in debug mode. We make sure that we only
+  // show the warning a single time per run (this reduces noise).
+  static std::once_flag showDebugWarningOnceFlag;
+  std::call_once(showDebugWarningOnceFlag, [&]() {
+    llvm::errs()
+        << "WARNING: Benchmarking in debug mode is not recommended due to "
+           "increased overhead. Please use a release build.\n";
+    llvm::errs().flush();
+  });
+#endif // MODULAR_DEBUG
+}
+
+/// Get the name of the benchmark. The name is a description of what is being
+/// benchmarked.
+StringRef MicroBenchmark::getName() const { return name; }
+
+/// The main benchmark loop which calls the function to be benchmarked and
+/// stores the results in the measurements field.
+ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
+  assert(measurements.empty() &&
+         "Measurements should be empty before running. This usually means that "
+         "you have invoked the run function twice for the same MicroBenchmark "
+         "object.");
+  runOptions = options;
+
+  size_t totalIterations = 0;
+  uint64_t batchSize = options.warmupIterations;
+  bool isWarmupPhase = batchSize > 0;
+  std::chrono::milliseconds totalTime(0);
+  std::chrono::milliseconds minRuntime = options.minRuntime;
+
+  // Run the benchmark until the time elapsed is greater than the minimum time,
+  // the maximum number of iterations is reached, or the total runtime exceeds
+  // the maximum runtime.
+  while (true) {
+    if (totalIterations >= options.maxBenchmarkIterations ||
+        totalTime >= std::chrono::duration_cast<std::chrono::milliseconds>(
+                         options.maxRuntime) ||
+        totalTime >= minRuntime)
+      break;
+
+    std::chrono::nanoseconds duration(0);
+    std::chrono::nanoseconds batchDuration(0);
+
+    // Run the batched loop. A zero value for batchSize can occur when the
+    // user sets the warmupCount to 0.
+    if (batchSize > 0) {
+      // Create the state for the current benchmark run.
+      State st(batchSize);
+
+      // Run the prologue function if it exists.
+      if (options.prologueFunction)
+        std::invoke(options.prologueFunction, st);
+
+      // Start the timers and execute the body.
+      auto tic = clock_type::now();
+
+      // Run the benchmark function.
+      std::invoke(benchmarkFunction, st);
+
+      // Stop the timers.
+      auto toc = clock_type::now();
+
+      // Run the epilogue function if it exists.
+      if (options.epilogueFunction)
+        std::invoke(options.epilogueFunction, st);
+
+      // Check if the benchmark function returned an error. If so, return the
+      // error.
+      if (st.hasError())
+        return st.takeError();
+
+      // Compute the duration of the batch along with the time it takes to
+      // perform a single run of the function to measure.
+      batchDuration =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
+      duration = batchDuration / batchSize;
+
+      if (isWarmupPhase) {
+        // We only run the warmup phase once, so we toggle the flag so that
+        // subsequent iterations collect the time information.
+        isWarmupPhase = false;
+      } else {
+        // When we are not in a warmup phase, we need to record the
+        // measurements.
+        measurements.push_back({batchSize, batchDuration});
+
+        // We also need to keep track of the total runtime and number of
+        // iterations.
+        totalTime += std::chrono::duration_cast<std::chrono::milliseconds>(
+            batchDuration);
+        totalIterations += batchSize;
+      }
+    }
+
+    // We now count the next batchSize. A user might run the benchmark with no
+    // warmup phase, so we need to make sure the divisor is not zero.
+    if (batchDuration.count() == 0)
+      batchDuration = std::chrono::nanoseconds(1);
+    // Compute the next batch size.
+    double nextBatchSize = (minRuntime * (double)batchSize) / batchDuration;
+    // We increase the iteration count by 1.2x from the previous loop iteration.
+    nextBatchSize *= 1.2;
+    // We should not grow too fast, so we cap it to only 10x the growth from
+    // the prior iteration. Fast growth can happen when the function is too
+    // fast.
+    nextBatchSize = std::min(nextBatchSize, 10.0 * batchSize);
+    // We have to increase the batchSize each time. So, we make sure we advance
+    // the number of iterations regardless of the prior logic.
+    nextBatchSize = std::max(nextBatchSize, batchSize + 1.0);
+    // The batch size should not be larger than 1.0e9.
+    nextBatchSize = std::min(nextBatchSize, 1.0e9);
+
+    // Update the batch size based on the above compute logic.
+    batchSize = std::lround(nextBatchSize);
+  }
+
+  return success();
+}
+
+/// Formats the time based on the time unit specified.
+static double formatTime(MicroBenchmark::TimeUnit timeUnit,
+                         std::chrono::nanoseconds time) {
+  switch (timeUnit) {
+  case MicroBenchmark::TimeUnit::kNanoseconds:
+    return std::chrono::duration<double, std::nano>(time).count();
+  case MicroBenchmark::TimeUnit::kMicroseconds:
+    return std::chrono::duration<double, std::micro>(time).count();
+  case MicroBenchmark::TimeUnit::kMilliseconds:
+    return std::chrono::duration<double, std::milli>(time).count();
+  case MicroBenchmark::TimeUnit::kSeconds:
+    return std::chrono::duration<double>(time).count();
+  }
+  llvm_unreachable("Invalid time unit");
+  return -1;
+}
+
+/// Gets the time unit name as a string.
+static StringRef toString(MicroBenchmark::TimeUnit timeUnit) {
+  switch (timeUnit) {
+  case MicroBenchmark::TimeUnit::kNanoseconds:
+    return "ns";
+  case MicroBenchmark::TimeUnit::kMicroseconds:
+    return "us";
+  case MicroBenchmark::TimeUnit::kMilliseconds:
+    return "ms";
+  case MicroBenchmark::TimeUnit::kSeconds:
+    return "s";
+  }
+  llvm_unreachable("Invalid time unit");
+  return "<unkown time unit>";
+}
+
+/// Gets the report metric name as a string.
+static StringRef toString(MicroBenchmark::ReportMetric metric) {
+  switch (metric) {
+  case MicroBenchmark::ReportMetric::kName:
+    return "name";
+  case MicroBenchmark::ReportMetric::kTimeUnit:
+    return "time_unit";
+  case MicroBenchmark::ReportMetric::kRaw:
+    return "raw";
+  case MicroBenchmark::ReportMetric::kMinLatency:
+    return "min_latency";
+  case MicroBenchmark::ReportMetric::kMaxLatency:
+    return "max_latency";
+  case MicroBenchmark::ReportMetric::kMeanLatency:
+    return "mean_latency";
+  case MicroBenchmark::ReportMetric::kMedianLatency:
+    return "median_latency";
+  case MicroBenchmark::ReportMetric::k95PercentileLatency:
+    return "95_percentile_latency";
+  case MicroBenchmark::ReportMetric::k99PercentileLatency:
+    return "99_percentile_latency";
+  case MicroBenchmark::ReportMetric::kWarmupCount:
+    return "warmup_count";
+  case MicroBenchmark::ReportMetric::kIterationCount:
+    return "iteration_count";
+  case MicroBenchmark::ReportMetric::kBatchCount:
+    return "batch_count";
+  }
+  return "<uknown report metric>";
+}
+
+/// Print the report header in CSV format.
+static void printCSVHeader(raw_ostream &os,
+                           ArrayRef<MicroBenchmark::ReportMetric> metrics) {
+  static std::once_flag showHeaderOnceFlag;
+  std::call_once(showHeaderOnceFlag, [&]() {
+    // Note: We do not use llvm::interleaveComma here because we do not want
+    // spaces between the comma values.
+    llvm::interleave(
+        metrics, os,
+        [&](MicroBenchmark::ReportMetric metric) { os << toString(metric); },
+        ",");
+    os << "\n";
+    os.flush();
+  });
+}
+
+/// Gets the timing information from the measurements.
+static SmallVector<std::chrono::nanoseconds>
+getTimings(ArrayRef<MicroBenchmark::Measurement> measurements) {
+  return llvm::to_vector(llvm::map_range(
+      measurements, [](auto &measurement) -> std::chrono::nanoseconds {
+        return measurement.duration / measurement.iterations;
+      }));
+}
+
+/// Computes the min latency and returns the value as a double in the
+/// specified time unit.
+static double getMinLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                            MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  auto minLatency = *std::min_element(timings.begin(), timings.end());
+  return formatTime(timeUnit, minLatency);
+}
+
+/// Computes the max latency and returns the value as a double in the
+/// specified time unit.
+static double getMaxLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                            MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  auto minLatency = *std::max_element(timings.begin(), timings.end());
+  return formatTime(timeUnit, minLatency);
+}
+
+/// Computes the mean latency and returns the value as a double in the
+/// specified time unit.
+static double getMeanLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                             MicroBenchmark::TimeUnit timeUnit) {
+  return formatTime(timeUnit, mean(getTimings(measurements)));
+}
+
+/// Computes the median latency and returns the value as a double in the
+/// specified time unit.
+static double
+getMedianLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                 MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  llvm::sort(timings);
+  return formatTime(timeUnit, median(timings));
+}
+
+/// Computes the 95th percentile latency and returns the value as a double in
+/// the specified time unit.
+static double
+get95PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                       MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  llvm::sort(timings);
+  return formatTime(timeUnit, percentile(0.95, timings));
+}
+
+/// Computes the 99th percentile latency and returns the value as a double in
+/// the specified time unit.
+static double
+get99PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                       MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  llvm::sort(timings);
+  return formatTime(timeUnit, percentile(0.99, timings));
+}
+
+/// Gets the measurements for the given metric as a double value in the
+/// specified time unit.
+double MicroBenchmark::measurement(MicroBenchmark::ReportMetric metric,
+                                   MicroBenchmark::TimeUnit timeUnit) const {
+  assert(!measurements.empty() && "no measurements to report");
+  switch (metric) {
+  case ReportMetric::kName:
+  case ReportMetric::kRaw:
+  case ReportMetric::kTimeUnit:
+    llvm_unreachable("invalid report metric. Only metrics which have a value "
+                     "coercible to a double are supported.");
+    return 0;
+  case ReportMetric::kMinLatency:
+    return getMinLatency(measurements, timeUnit);
+  case ReportMetric::kMaxLatency:
+    return getMaxLatency(measurements, timeUnit);
+  case ReportMetric::kMeanLatency:
+    return getMeanLatency(measurements, timeUnit);
+  case ReportMetric::kMedianLatency:
+    return getMedianLatency(measurements, timeUnit);
+  case ReportMetric::k95PercentileLatency:
+    return get95PercentileLatency(measurements, timeUnit);
+  case ReportMetric::k99PercentileLatency:
+    return get99PercentileLatency(measurements, timeUnit);
+  case ReportMetric::kWarmupCount:
+    return runOptions.warmupIterations;
+  case ReportMetric::kIterationCount:
+    return std::accumulate(measurements.begin(), measurements.end(), 0,
+                           [](size_t acc, auto &measurement) {
+                             return acc + measurement.iterations;
+                           });
+  case ReportMetric::kBatchCount:
+    return measurements.size();
+  }
+  return 0;
+}
+
+/// Prints the benchmark results to the given output stream.
+void MicroBenchmark::report(raw_ostream &os, const ReportOptions &options) {
+  assert(options.format == ReportFormat::kCSV &&
+         "only CSV format is supported");
+  assert(!measurements.empty() && "no measurements to report");
+  printCSVHeader(os, options.metrics);
+  // Note: We do not use llvm::interleaveComma here because we do not want
+  // spaces between the comma values.
+  llvm::interleave(
+      options.metrics, os,
+      [&](auto metric) {
+        switch (metric) {
+        case ReportMetric::kName: {
+          std::stringstream str;
+          str << std::quoted(getName().str());
+          os << str.str();
+          return;
+        }
+        case ReportMetric::kRaw: {
+          // We print the raw measurements as semi-colon separated values.
+          llvm::interleave(
+              getTimings(measurements), os,
+              [&](auto &measurement) {
+                os << formatTime(options.timeUnit, measurement);
+              },
+              ";");
+          return;
+        }
+        case ReportMetric::kTimeUnit: {
+          os << toString(options.timeUnit);
+          return;
+        }
+        default:
+          os << measurement(metric, options.timeUnit);
+        }
+      },
+      ",");
+}
