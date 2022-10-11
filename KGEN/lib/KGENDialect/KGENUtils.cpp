@@ -893,11 +893,16 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   SmallVector<Type> resultTypes;
   auto &builder = parser.getBuilder();
 
-  // Parse visibility. If none is provided, use private by default.
-  if (failed(mlir::impl::parseOptionalVisibilityKeyword(parser,
-                                                        result.attributes)))
-    result.addAttribute(SymbolTable::getVisibilityAttrName(),
-                        parser.getBuilder().getStringAttr("private"));
+  // Parse linkage. If none is provided, use module_private by default.
+  StringRef linkage;
+  if (succeeded(parser.parseOptionalKeyword(
+          &linkage, {"public", "module_private", "library_private"}))) {
+    result.addAttribute("linkage", parser.getBuilder().getAttr<LinkageAttr>(
+                                       *symbolizeLinkage(linkage)));
+  } else {
+    result.addAttribute("linkage", parser.getBuilder().getAttr<LinkageAttr>(
+                                       Linkage::ModulePrivate));
+  }
 
   // Parse the name as a symbol.
   StringAttr nameAttr;
@@ -1008,10 +1013,9 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
           .getValue();
   p << ' ';
 
-  StringRef visibilityAttrName = SymbolTable::getVisibilityAttrName();
-  if (auto visibility = op->getAttrOfType<StringAttr>(visibilityAttrName))
-    if (visibility.getValue() != "private")
-      p << visibility.getValue() << ' ';
+  if (auto linkage = op->getAttrOfType<LinkageAttr>("linkage"))
+    if (linkage.getValue() != Linkage::ModulePrivate)
+      p << stringifyLinkage(linkage.getValue()) << ' ';
   p.printSymbolName(funcName);
   printOptionalParameterSpec(p.getStream(), opDecl.getParamDeclsAttr(),
                              opDecl.getResultParamTypesAttr());

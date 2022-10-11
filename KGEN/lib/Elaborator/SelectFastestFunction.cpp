@@ -58,10 +58,10 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
   };
 
   // Make all the specializations public for now.
-  SmallVector<StringAttr> visibility;
+  SmallVector<LinkageAttr> linkage;
   for (auto s : specializations) {
-    visibility.push_back(s.getSymVisibilityAttr());
-    s.setSymVisibilityAttr(StringAttr::get(itf.getContext(), "public"));
+    linkage.push_back(s.getLinkageAttr());
+    s.setLinkageAttr(LinkageAttr::get(itf.getContext(), Linkage::Public));
   }
 
   // We only want the funcs passed-in to be code-generated.
@@ -70,9 +70,9 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
 
   // And now reset them. We have to be explicit cause otherwise zip adds a const
   // we don't want here.
-  for (std::tuple<FuncOp, StringAttr> symAndVis :
-       llvm::zip(specializations, visibility))
-    std::get<0>(symAndVis).setSymVisibilityAttr(std::get<1>(symAndVis));
+  for (std::tuple<FuncOp, LinkageAttr> symAndLink :
+       llvm::zip(specializations, linkage))
+    std::get<0>(symAndLink).setLinkageAttr(std::get<1>(symAndLink));
 
   // TODO: We should be caching these so we don't always recompute everything.
   SmallVector<EvaluatedFunc> bestPerConfig;

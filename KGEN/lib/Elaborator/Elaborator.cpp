@@ -1159,7 +1159,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   OpBuilder b(insertionPoint);
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
-      generator.getSymVisibilityAttr(), generator.getFunctionType(),
+      generator.getFunctionType(), generator.getLinkageAttr(),
       generator.getResultParamTypes());
 
   // Insert the newFunc into the symbol table which will then know about it,

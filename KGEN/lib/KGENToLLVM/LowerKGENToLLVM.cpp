@@ -41,13 +41,21 @@ public:
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
+    LLVM::Linkage llvmLinkage;
+    switch (func.getLinkage()) {
+    case Linkage::Public:
+      llvmLinkage = LLVM::Linkage::External;
+      break;
+    case Linkage::ModulePrivate:
+      llvmLinkage = LLVM::Linkage::Internal;
+      break;
+    case Linkage::LibraryPrivate:
+      llvmLinkage = LLVM::Linkage::Linkonce;
+      break;
+    }
+
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType,
-        func.isPublic() ? LLVM::Linkage::External : LLVM::Linkage::Private);
-    // Set an attr to indicate that this thing is private. This is temporary -
-    // we will end up removing the opaque wrappers.
-    if (func.isPrivate())
-      funcOp->setAttr("kgen_private", rewriter.getAttr<mlir::UnitAttr>());
+        func.getLoc(), func.getNameAttr(), funcType, llvmLinkage);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
@@ -654,7 +662,7 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
-    if (func->getAttr("kgen_private")) {
+    if (func.getLinkage() == LLVM::Linkage::Internal) {
       mlir::emitWarning(
           func.getLoc(),
           "will not emit wrappers for this function marked private");
@@ -685,7 +693,7 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
-    if (func.getLinkage() == LLVM::Linkage::Private) {
+    if (func.getLinkage() == LLVM::Linkage::Internal) {
       mlir::emitWarning(
           func.getLoc(),
           "will not emit wrappers for this function marked private");
