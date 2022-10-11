@@ -81,11 +81,11 @@ inline auto median(const Container &values)
 
 /// Computes the percentile of the input array assuming it is sorted.
 template <typename Container>
-inline auto percentile(double p, const Container &values)
+inline auto percentile(const Container &values, double percent)
     -> std::remove_reference_t<decltype(*llvm::adl_begin(values))> {
   assert(llvm::is_sorted(values) && "values are assumed to be sorted");
-  assert(p >= 0.0 && p <= 1.0 && "percentile must be in [0, 1]");
-  return values[static_cast<size_t>(values.size() * p)];
+  assert(percent >= 0.0 && percent < 1.0 && "percentile must be in [0, 1)");
+  return values[static_cast<size_t>(values.size() * percent)];
 }
 
 } // namespace M
