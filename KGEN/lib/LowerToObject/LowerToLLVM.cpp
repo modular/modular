@@ -217,8 +217,9 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   sliceSymtab.insert(func.clone());
 
   // Only generate wrappers for the func if it's public.
-  if (failed(convertToLLVM(*singleModule,
-                           /*name=*/func.isPublic() ? func.getName() : "")))
+  if (failed(convertToLLVM(
+          *singleModule,
+          /*name=*/func.getLinkage() == Linkage::Public ? func.getName() : "")))
     return failure();
 
   // Turn the thing into an LLVM module.
