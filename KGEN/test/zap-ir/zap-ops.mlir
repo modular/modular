@@ -213,6 +213,46 @@ kgen.generator @zap_simd_store<size, type: dtype>(
   kgen.return
 }
 
+// CHECK-LABEL: @zap_tensor
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[4, 5], ?>
+// CHECK-SAME: %[[TENSOR3:.*]]: !zap.tensor<[?, ?, ?], ?>
+kgen.func @zap_tensor(
+  %arg0 : !zap.tensor<[4, 5, 3], f32>,
+  %arg1 : !zap.tensor<[?, 4], f32>,
+  %arg2: !zap.tensor<[4, 5], ?>,
+  %arg3 : !zap.tensor<[?, ?, ?], ?>) -> (!zap.tensor<[4, 5, 3], f32>,
+                                         !zap.tensor<[?, 4], f32>,
+                                         !zap.tensor<[4, 5], ?>,
+                                         !zap.tensor<[?, ?, ?], ?>) {
+  kgen.return %arg0, %arg1, %arg2, %arg3 : !zap.tensor<[4, 5, 3], f32>,
+                                           !zap.tensor<[?, 4], f32>,
+                                           !zap.tensor<[4, 5], ?>,
+                                           !zap.tensor<[?, ?, ?], ?>
+}
+
+// CHECK-LABEL: @zap_tensor_with_params
+// CHECK-SAME: !zap.tensor<[size, 5, 3], type>
+// CHECK-SAME: !zap.tensor<[size, 5, 3], f32>
+// CHECK-SAME: !zap.tensor<[size, size], f32>
+// CHECK-SAME: !zap.tensor<[?, 4, size], f32>
+kgen.generator @zap_tensor_with_params<type:dtype, size>(
+    %arg0 : !zap.tensor<[size, 5, 3], type>,
+    %arg1 : !zap.tensor<[size, 5, 3], f32>,
+    %arg2 : !zap.tensor<[size, size], f32>,
+    %arg3 : !zap.tensor<[?, 4, size], f32>
+) -> (!zap.tensor<[size, 5, 3], type>,
+      !zap.tensor<[size, 5, 3], f32>,
+      !zap.tensor<[size, size], f32>,
+      !zap.tensor<[?, 4, size], f32>) {
+  kgen.return %arg0, %arg1, %arg2, %arg3 :
+    !zap.tensor<[size, 5, 3], type>,
+    !zap.tensor<[size, 5, 3], f32>,
+    !zap.tensor<[size, size], f32>,
+    !zap.tensor<[?, 4, size], f32>
+}
+
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>

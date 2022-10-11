@@ -61,3 +61,29 @@ kgen.generator @buffer_stack_allocation<size>() {
   %0 = zap.buffer.stack_allocation : !zap.buffer<size, ?>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{shape parameter for tensor must not be empty}}
+kgen.generator @zap_tensor(%arg0 : !zap.tensor<[], f32>) {
+  kgen.return
+}
+// -----
+
+// expected-error @below {{size parameter for tensor must be positive}}
+kgen.generator @zap_tensor(%arg0 : !zap.tensor<[0], f32>) {
+  kgen.return
+}
+// -----
+
+// expected-error @below {{size parameter for tensor must be positive}}
+kgen.generator @zap_tensor(%arg0 : !zap.tensor<[-1], f32>) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{shape parameter exceeds the maximum rank of the tensor type}}
+kgen.generator @zap_tensor(%arg0 : !zap.tensor<[1,2,3,4,5,6], f32>) {
+  kgen.return
+}
