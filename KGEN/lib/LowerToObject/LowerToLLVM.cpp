@@ -108,12 +108,7 @@ std::string LLVMCacheKeyInfo::hashKey(LLVMCacheKeyInfo::KeyTy key) {
 std::string RaisingCacheKeyInfo::hashKey(RaisingCacheKeyInfo::KeyTy key) {
   return std::visit(
       [](auto &&key) -> std::string {
-        using T = std::decay_t<decltype(key)>;
-        if constexpr (std::is_same_v<T, PrecompiledLLVMOp>) {
-          return std::to_string(size_t(hashNoRegionOperation(key)));
-        } else {
-          return std::to_string(size_t(hashNoRegionOperation(key)));
-        }
+        return std::to_string(size_t(hashNoRegionOperation(key)));
       },
       key);
 }
