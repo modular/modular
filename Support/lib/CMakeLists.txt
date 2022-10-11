@@ -24,7 +24,7 @@ execute_process(
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/VCSRevision.h.in
   ${CMAKE_BINARY_DIR}/Support/include/Support/VCSRevision.h @ONLY)
 
-add_modular_mlir_library(MSupport
+add_modular_library(MSupport
   AlignedAlloc.cpp
   BlobCache.cpp
   ConcatenationTree.cpp
@@ -32,12 +32,6 @@ add_modular_mlir_library(MSupport
   Error.cpp
   HMAC.cpp
   TimeProfiler.cpp
-
-  ADDITIONAL_HEADER_DIRS
-
-  DEPENDS
-
-  LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
   LLVMSupport

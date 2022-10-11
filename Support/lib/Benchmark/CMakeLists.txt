@@ -4,15 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(MSupportBenchmark
+add_modular_library(MSupportBenchmark
   QuerySampleLibrary.cpp
   SystemUnderTest.cpp
-
-  ADDITIONAL_HEADER_DIRS
-
-  DEPENDS
-
-  LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
   mlperf-loadgen
