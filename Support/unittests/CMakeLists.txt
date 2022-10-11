@@ -13,6 +13,7 @@ add_modular_unittest(
 
   BlobCacheTest.cpp
   HMACTest.cpp
+  MicroBenchmarkTest.cpp
   SIMDTest.cpp
   TimeProfilerTest.cpp
 
