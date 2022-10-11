@@ -332,7 +332,7 @@ ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
     if (p.parseRParen())
       return failure();
   } else {
-    if (p.parseCommaSeparatedList(OpAsmParser::Delimiter::None, [&]() {
+    if (p.parseCommaSeparatedList([&]() {
           return parseParamDecl(p, decls.emplace_back(ParamDeclAttr()));
         }))
       return failure();
