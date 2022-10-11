@@ -259,3 +259,11 @@ kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   zap.print "foo %f"(%a) : !pop.scalar<f32>
   kgen.return
 }
+
+// CHECK-LABEL: @zap_assert
+// CHECK-SAME: %[[V0:[a-z0-9]+]]:
+kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
+  // CHECK: zap.debug_assert %[[V0]], "my message"
+  zap.debug_assert %a, "my message" : !pop.scalar<bool>
+  kgen.return
+}

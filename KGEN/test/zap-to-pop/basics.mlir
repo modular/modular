@@ -280,6 +280,18 @@ kgen.generator @zap_print(%a: !pop.scalar<f32>) {
 
 // -----
 
+// CHECK-LABEL: @zap_debug_assert
+kgen.generator @zap_debug_assert(%cond: !pop.scalar<bool>) {
+  // CHECK: pop.global_constant(#M.dense_array
+  // CHECK: pop.global_constant(#M.dense_array
+  // CHECK: pop.global_constant(#M.dense_array
+  // CHECK: pop.external_call @KGEN_CompilerRT_DebugAssert
+  zap.debug_assert %cond, "my message" : !pop.scalar<bool>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @simd_store
 // CHECK-SAME: !pop.simd
 // CHECK-SAME: !pop.struct

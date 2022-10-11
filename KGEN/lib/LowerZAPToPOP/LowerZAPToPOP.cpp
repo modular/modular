@@ -13,6 +13,7 @@
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/IndexDialect/IndexOps.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 using namespace M;
@@ -313,26 +314,31 @@ struct ConvertZAPBufferSIMDStore
 // ConvertZAPPrint
 //===----------------------------------------------------------------------===//
 
+/// Lower the string into the a global constant. Null-terminate the string.
+static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
+                                         ConversionPatternRewriter &rewriter) {
+  SmallVector<char> nullTerminatedStr(str.begin(), str.end());
+  nullTerminatedStr.push_back('\0');
+  auto values = IntArrayElementsAttr::get(rewriter.getContext(),
+                                          ArrayRef<char>(nullTerminatedStr),
+                                          IntegerType::Signed);
+  auto charType = rewriter.getType<ScalarType>(DType::si8);
+  Value nullTerminatedStrData = rewriter.create<GlobalConstantOp>(
+      op->getLoc(),
+      PointerType::get(POP::ArrayType::get(nullTerminatedStr.size(), charType)),
+      values);
+  return rewriter.create<PointerBitcastOp>(
+      op->getLoc(), PointerType::get(charType), nullTerminatedStrData);
+}
+
 struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(PrintOp op, PrintOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // Lower the string into the a global constant. Null-terminate the string.
-    SmallVector<char> fmtStr;
-    fmtStr.reserve(op.getFmt().size() + 1);
-    llvm::append_range(fmtStr, op.getFmt());
-    fmtStr.push_back('\0');
-    auto values = IntArrayElementsAttr::get(
-        op.getContext(), ArrayRef<char>(fmtStr), IntegerType::Signed);
-    auto charType = rewriter.getType<ScalarType>(DType::si8);
-    Value fmtData = rewriter.create<GlobalConstantOp>(
-        op.getLoc(),
-        PointerType::get(POP::ArrayType::get(fmtStr.size(), charType)), values);
-    Value fmt = rewriter.create<PointerBitcastOp>(
-        op.getLoc(), PointerType::get(charType), fmtData);
-
+    // Lower the format into the a global constant.
+    Value fmt = lowerStringToGlobalConstant(op, op.getFmt(), rewriter);
     // Create the invocation to `printf`.
     SmallVector<Value> operands;
     operands.reserve(op.getNumOperands() + 1);
@@ -341,6 +347,47 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
     rewriter.replaceOpWithNewOp<ExternalCallOp>(
         op, TypeRange(), "printf", operands,
         TypeAttr::get(rewriter.getFunctionType(fmt.getType(), {})));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPAssert
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPDebugAssert : mlir::OpConversionPattern<DebugAssertOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(DebugAssertOp op, DebugAssertOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Get the function Name.
+    auto functionNameStr = op->getParentOfType<mlir::FunctionOpInterface>()
+                               ->getName()
+                               .getStringRef();
+
+    // Get the file/line information if available.
+    std::string locationStr;
+    if (auto fileLineCol = op->getLoc().dyn_cast<mlir::FileLineColLoc>()) {
+      locationStr = (Twine(fileLineCol.getFilename()) + ":" +
+                     Twine(fileLineCol.getLine()))
+                        .str();
+    } else {
+      llvm::raw_string_ostream os(locationStr);
+      op->getLoc().print(os);
+    }
+
+    // Convert into MLIR Values.
+    Value functionName =
+        lowerStringToGlobalConstant(op, functionNameStr, rewriter);
+    Value filenameVal = lowerStringToGlobalConstant(op, locationStr, rewriter);
+    Value message = lowerStringToGlobalConstant(op, op.getMsg(), rewriter);
+
+    // Call into the CompilerRT assert function.
+    rewriter.replaceOpWithNewOp<ExternalCallOp>(
+        op, TypeRange(), "KGEN_CompilerRT_DebugAssert",
+        ValueRange{op.getCond(), functionName, filenameVal, message}, nullptr);
+
     return success();
   }
 };
@@ -472,10 +519,13 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferDType,
       ConvertZAPBufferLoad,
       ConvertZAPBufferSIMDLoad,
+      ConvertZAPBufferSIMDLoad,
+      ConvertZAPBufferSIMDStore,
       ConvertZAPBufferSIMDStore,
       ConvertZAPBufferSize,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,
+      ConvertZAPDebugAssert,
       ConvertZAPPrint
 
       // clang-format on

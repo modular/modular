@@ -391,4 +391,34 @@ def ZAP_PrintOp : ZAPOp<"print"> {
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// DebugAssertOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_DebugAssertOp : ZAPOp<"debug_assert"> {
+  let summary = "asserts that the boolean value is true";
+  let description = [{
+    Asserts that the boolean value is true. If the value is false, the
+    optional message is printed to `stderr` and the program aborts.
+
+    Note: Unlike the `assert` operation in C, this operation is fully
+    removed if assertions are disabled. Therefore, production code should
+    not use this operation. This operation is meant for debugging and
+    verification purposes only.
+
+    Example:
+
+    ```mlir
+    zap.debug_assert %cond, "a description of the condition"
+    ```
+
+    TODO: This Op should be removed in production builds.
+  }];
+
+  let arguments = (ins BoolScalar:$cond, StrAttr:$msg);
+
+  let assemblyFormat = "$cond `,` $msg attr-dict `:` type($cond)";
+}
+
 #endif // ZAPOPS_TD
