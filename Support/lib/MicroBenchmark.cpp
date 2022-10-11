@@ -275,7 +275,7 @@ get95PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
                        MicroBenchmark::TimeUnit timeUnit) {
   auto timings = getTimings(measurements);
   llvm::sort(timings);
-  return formatTime(timeUnit, percentile(0.95, timings));
+  return formatTime(timeUnit, percentile(timings, 0.95));
 }
 
 /// Computes the 99th percentile latency and returns the value as a double in
@@ -285,7 +285,7 @@ get99PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
                        MicroBenchmark::TimeUnit timeUnit) {
   auto timings = getTimings(measurements);
   llvm::sort(timings);
-  return formatTime(timeUnit, percentile(0.99, timings));
+  return formatTime(timeUnit, percentile(timings, 0.99));
 }
 
 /// Gets the measurements for the given metric as a double value in the
@@ -362,4 +362,6 @@ void MicroBenchmark::report(raw_ostream &os, const ReportOptions &options) {
         }
       },
       ",");
+  os << "\n";
+  os.flush();
 }
