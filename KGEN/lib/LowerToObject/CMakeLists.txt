@@ -26,8 +26,4 @@ add_modular_mlir_library(KGENEmitObject
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter
   MLIRBytecodeReader
-
-  lldELF
-  lldMachO
-  lldCommon
   )
