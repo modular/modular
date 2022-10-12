@@ -11,7 +11,7 @@
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include <cstddef>
-#include <string>
+#include <filesystem>
 
 namespace M {
 /// This class provides a tempfile implementation. The llvm::sys version has
@@ -19,9 +19,9 @@ namespace M {
 /// implementation.
 class TempFile {
 public:
-  /// Create a TempFile and emit errors at `loc`. The model is something like
-  /// `myString-%%%%%.ext` - the `%` characters are filled in with random
-  /// numbers/letters.
+  /// Create a TempFile and return any errors during creation. The model is
+  /// something like `myString-%%%%%.ext` - the `%` characters are filled in
+  /// with random numbers/letters.
   static ErrorOr<TempFile> create(StringRef model);
   /// TempFiles are move-able.
   TempFile(TempFile &&other);
@@ -36,17 +36,17 @@ public:
   /// completion of the `create` call.
   int getFD() { return fd; }
   /// Return the path to the temp file. This path is absolute.
-  StringRef getPath() { return path; }
+  StringRef getPath() { return path.c_str(); }
   /// Get the size of the temp file in bytes.
-  size_t getSize();
+  ErrorOr<size_t> getSize();
 
 private:
   TempFile(int fd, std::string path) : fd(fd), path(std::move(path)) {}
   /// These are not copy-able.
   TempFile(const TempFile &other) = delete;
 
-  int fd;
-  std::string path;
+  int fd = -1;
+  std::filesystem::path path;
   bool keepFile = false;
 };
 } // namespace M
