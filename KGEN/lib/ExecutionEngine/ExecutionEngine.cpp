@@ -338,8 +338,9 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
 /// files.
 // TODO: The slicing -> convert to LLVM -> createJITDylib + compile has natural
 //       parallelism that we aren't taking advantage of.
-M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
-                                       ArrayRef<FuncOp> only) {
+M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module) {
+  SymbolTable symtab(module);
+
   // Loop over all the funcs in the module and perform non-destructive
   // slicing, then push them to LLVM IR and compile them to objects.
   for (auto func : module.getOps<KGEN::FuncOp>()) {
@@ -347,76 +348,77 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     if (func.getLinkage() != Linkage::Public)
       continue;
 
-    // If we've added a filter and this func isn't one we want, don't deal
-    // with it.
-    if (!only.empty() && !llvm::is_contained(only, func))
-      continue;
+    if (ErrorOrSuccess err = add(symtab, func))
+      return err.takeError();
+  }
 
-    // Create a new module for this single func. This will go away at the end
-    // of this function.
-    mlir::OwningOpRef<mlir::ModuleOp> singleModule =
-        mlir::ModuleOp::create(func->getLoc());
+  return success();
+}
 
-    // Clone any symbols used by this func into the module as well.
-    mlir::SymbolTable symtab(func->getParentOp());
-    mlir::SymbolTable sliceSymtab(*singleModule);
+ErrorOrSuccess ExecutionEngine::add(SymbolTable &symtab, FuncOp func) {
+  // Create a new module for this single func. This will go away at the end
+  // of this function.
+  mlir::OwningOpRef<mlir::ModuleOp> singleModule =
+      mlir::ModuleOp::create(func->getLoc());
+
+  // Clone any symbols used by this func into the module as well.
+  mlir::SymbolTable sliceSymtab(*singleModule);
 
     // Traverse the call graph and clone all the dependencies into this module.
     sliceDependencies(func, sliceSymtab, symtab);
 
-    // Clone the func into this new module. We don't want to remove it from
-    // the current module.
-    sliceSymtab.insert(func.clone());
+  // Clone the func into this new module. We don't want to remove it from
+  // the current module.
+  sliceSymtab.insert(func.clone());
 
-    if (failed(convertToLLVM(*singleModule, func.getName())))
-      return Error("could not convert func '@" + func.getName() + "' to LLVM");
+  if (failed(convertToLLVM(*singleModule, func.getName())))
+    return Error("could not convert func '@" + func.getName() + "' to LLVM");
 
-    auto llvmModule = mlir::translateModuleToLLVMIR(
-        *singleModule, *ctx.getContext(), func.getName());
+  auto llvmModule = mlir::translateModuleToLLVMIR(
+      *singleModule, *ctx.getContext(), func.getName());
 
-    // Map this func to the llvm::Module pointer we just got. This will allow
-    // us to look up objects in the cache with the FuncOp as the key.
-    cache->mapFuncToModule(func, llvmModule.get());
+  // Map this func to the llvm::Module pointer we just got. This will allow
+  // us to look up objects in the cache with the FuncOp as the key.
+  cache->mapFuncToModule(func, llvmModule.get());
 
-    // Create a new dylib so that we don't have ODR violations.
-    auto dylibOr = jit->createJITDylib(func.getName().str());
-    if (!dylibOr)
-      return M::Error(toString(dylibOr.takeError()));
+  // Create a new dylib so that we don't have ODR violations.
+  auto dylibOr = jit->createJITDylib(func.getName().str());
+  if (!dylibOr)
+    return M::Error(toString(dylibOr.takeError()));
 
-    // Short-circuit if we already have this func. We have to do this here
-    // because we key off the module contents, which aren't known until here.
-    if (auto mbuf = cache->getObject(func)) {
-      // Add the object file to the JIT so it can be looked-up later.
-      if (auto err = jit->addObjectFile(*dylibOr, std::move(mbuf)))
-        return Error(toString(std::move(err)));
+  // Short-circuit if we already have this func. We have to do this here
+  // because we key off the module contents, which aren't known until here.
+  if (auto mbuf = cache->getObject(func)) {
+    // Add the object file to the JIT so it can be looked-up later.
+    if (auto err = jit->addObjectFile(*dylibOr, std::move(mbuf)))
+      return Error(toString(std::move(err)));
 
-      // And hold onto the module in our vector of modules.
-      compiledModules.emplace_back(std::move(llvmModule), ctx);
-      continue;
-    }
-
-    llvmModule->setDataLayout(jit->getDataLayout());
-    llvmModule->setTargetTriple(jit->getTargetTriple().normalize());
-
-    // Resolve symbols that are statically linked in the current process.
-    dylibOr->addGenerator(
-        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            jit->getDataLayout().getGlobalPrefix())));
-
-    llvm::orc::ThreadSafeModule tsm(std::move(llvmModule), ctx);
-
-    jit->getIRCompileLayer().setNotifyCompiled(
-        [=](auto &&r, llvm::orc::ThreadSafeModule tsm) {
-          compiledModules.push_back(std::move(tsm));
-        });
-
-    // Map the func to the module we just created. This pointer should be
-    // stable; the JIT just takes ownership of the pointer.
-    cache->mapFuncToModule(func, tsm.getModuleUnlocked());
-
-    if (auto err = jit->addIRModule(*dylibOr, std::move(tsm)))
-      return M::Error(toString(std::move(err)));
+    // And hold onto the module in our vector of modules.
+    compiledModules.emplace_back(std::move(llvmModule), ctx);
+    return success();
   }
+
+  llvmModule->setDataLayout(jit->getDataLayout());
+  llvmModule->setTargetTriple(jit->getTargetTriple().normalize());
+
+  // Resolve symbols that are statically linked in the current process.
+  dylibOr->addGenerator(
+      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          jit->getDataLayout().getGlobalPrefix())));
+
+  llvm::orc::ThreadSafeModule tsm(std::move(llvmModule), ctx);
+
+  jit->getIRCompileLayer().setNotifyCompiled(
+      [=](auto &&r, llvm::orc::ThreadSafeModule tsm) {
+        compiledModules.push_back(std::move(tsm));
+      });
+
+  // Map the func to the module we just created. This pointer should be
+  // stable; the JIT just takes ownership of the pointer.
+  cache->mapFuncToModule(func, tsm.getModuleUnlocked());
+
+  if (auto err = jit->addIRModule(*dylibOr, std::move(tsm)))
+    return M::Error(toString(std::move(err)));
 
   return success();
 }

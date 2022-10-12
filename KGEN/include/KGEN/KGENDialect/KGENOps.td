@@ -491,6 +491,8 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
   let extraClassDeclaration = [{
     /// Get the field declarations.
     auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
+    auto field_begin() { return getFieldDecls().begin(); }
+    auto field_end() { return getFieldDecls().end(); }
   }];
 
   let hasVerifier = 1;

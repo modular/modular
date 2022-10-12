@@ -2,8 +2,17 @@
 
 kgen.include "library-test.mlir"
 
-// expected-error @+1 {{interface argument #0 has type 'f32' but library interface expected type 'si32'}}
+// expected-error @below {{interface redeclaration argument #0 has type 'f32' but previous interface declaration expected type 'si32'}}
 kgen.generator.interface @unary_add<size>(f32) -> si32
+
+// -----
+
+kgen.include "struct-test.mlir"
+
+kgen.struct.decl @FooStruct<T:type> {
+  // expected-error @below {{struct @FooStruct field #0 redeclared with different name "y"}}
+  y : !kgen.paramref<T>
+}
 
 // -----
 

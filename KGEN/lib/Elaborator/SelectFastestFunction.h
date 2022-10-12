@@ -16,7 +16,7 @@ namespace M::KGEN {
 /// returns an index into the `specializations` vector - that is the fastest
 /// implementation.
 ErrorOr<size_t> selectFastestFunction(GeneratorInterfaceOp itf,
-                                      ModuleOp primaryModule,
+                                      SymbolTable &symtab,
                                       ArrayRef<FuncOp> specializations);
 } // namespace M::KGEN
 
