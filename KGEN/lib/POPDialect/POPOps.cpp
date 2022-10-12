@@ -19,6 +19,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -633,6 +634,20 @@ LogicalResult VariantIsOp::verify() {
 
 LogicalResult VariantGetOp::verify() {
   return verifyVariantElementType(*this, getType(), getVariant().getType());
+}
+
+/// Canonicalize `pop.variant.get(pop.variant.create(x)) -> x`.
+LogicalResult VariantGetOp::canonicalize(VariantGetOp op,
+                                         PatternRewriter &rewriter) {
+  auto create = op.getVariant().getDefiningOp<VariantCreateOp>();
+  if (!create)
+    return rewriter.notifyMatchFailure(
+        op.getLoc(), "variant parent is not `pop.variant.create`");
+  if (create.getOperand().getType() != op.getType())
+    return rewriter.notifyMatchFailure(
+        op.getLoc(), "variant was created with different type");
+  rewriter.replaceOp(op, create.getOperand());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
