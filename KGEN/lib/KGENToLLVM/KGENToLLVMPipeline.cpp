@@ -25,8 +25,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   //        here.
   SmallVector<std::string> breakUpStructs;
   if (options.topLevelKernel.hasValue())
-    breakUpStructs.push_back(std::string(options.topLevelKernel.data(),
-                                         options.topLevelKernel.size()));
+    breakUpStructs.push_back(options.topLevelKernel);
 
   LowerKGENToLLVMOptions kgenToLLVMOptions{/*indexBitwidth=*/0, breakUpStructs,
                                            options.emitOpaqueWrappers,

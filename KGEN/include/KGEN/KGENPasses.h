@@ -39,7 +39,7 @@ class POPDialect;
 /// Options for the KGEN to LLVM pipeline.
 struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
-  Option<StringRef> topLevelKernel{
+  Option<std::string> topLevelKernel{
       *this, "top-level-kernel",
       llvm::cl::desc("The name of the top-level kernel. If specified, the "
                      "signature of the kernel is altered to be C-compatible")};
