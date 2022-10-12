@@ -206,7 +206,7 @@ OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
   if (auto dim = dyn_cast_if_present<IntegerAttr>(operands[1])) {
     auto tensorType = getTensor().getType();
     // If the index is out of bounds, then we do not fold the op.
-    if (dim.getInt() >= tensorType.getRank())
+    if (static_cast<size_t>(dim.getInt()) >= tensorType.getRank())
       return {};
     return tensorType.getShape().data()[dim.getInt()];
   }
