@@ -76,9 +76,9 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, SymbolTable &symtab,
   }
 
   // We only want the funcs passed-in to be code-generated.
-  for (FuncOp specialization : specializations)
-    if (ErrorOrSuccess err = engine.add(symtab, specialization))
-      return err.takeError();
+  if (ErrorOrSuccess err =
+          engine.add(cast<ModuleOp>(symtab.getOp()), specializations))
+    return err.takeError();
 
   // And now reset them. We have to be explicit cause otherwise zip adds a const
   // we don't want here.
@@ -147,7 +147,7 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, SymbolTable &symtab,
     std::unique_ptr<uint8_t[]> prevResultMem(new uint8_t[resultSize]);
     bool ranAtLeastOnce = false;
     auto evaluateFunction = [&](FuncOp func, size_t idx) -> ErrorOrSuccess {
-      auto wrapperOr = engine.lookupOpaqueWrapper(func);
+      auto wrapperOr = engine.lookupOpaqueWrapper(func.getName(), func);
       if (failed(wrapperOr))
         return wrapperOr.takeError();
 

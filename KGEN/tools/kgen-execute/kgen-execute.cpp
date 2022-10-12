@@ -8,6 +8,7 @@
 #include "KGEN/CompilerRT.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/IndexDialect/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -49,7 +50,24 @@ struct ProcessBuffer {
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
-    SymbolTable symtab(*module);
+    KGEN::ObjectCompiler compiler(".kgen_cache", *module);
+
+    // Lower the input to an object.
+    KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
+    if (failed(compiler.lowerAllFuncsToObject(attr)))
+      return failure();
+
+    // Produce a single standalone .o
+    auto standaloneOr = compiler.produceStandaloneObject();
+    if (failed(standaloneOr))
+      return failure();
+    std::unique_ptr<llvm::MemoryBuffer> standaloneObject =
+        std::move(*standaloneOr);
+
+    if (clOptions.cmd == Command::kEmit)
+      return clOptions.emitObject(std::move(standaloneObject));
+
+    SymbolTable &symtab = compiler.getSymbolTable();
     auto lookupFunc = [&](StringRef funcName) -> ErrorOr<KGEN::FuncOp> {
       auto func = symtab.lookup<KGEN::FuncOp>(funcName);
       if (!func)
@@ -58,7 +76,7 @@ struct ProcessBuffer {
     };
 
     // Add the module to the execution engine.
-    if (auto err = execEngine.add(*module))
+    if (auto err = execEngine.add("exec", std::move(standaloneObject)))
       return failure(clOptions.reportError(err.getError()));
 
     for (const auto &k : clOptions.funcs) {
@@ -67,7 +85,7 @@ struct ProcessBuffer {
         return failure(clOptions.reportError(funcOr.getError()));
 
       KGEN::FuncOp func = *funcOr;
-      auto compiledFuncOr = execEngine.lookup(func);
+      auto compiledFuncOr = execEngine.lookup("exec", func);
       if (failed(compiledFuncOr))
         return failure(clOptions.reportError(compiledFuncOr.getError()));
 
@@ -75,6 +93,7 @@ struct ProcessBuffer {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
+      case Command::kEmit:
         break;
       case Command::kExecute: {
         if (auto err = k.verifyFuncSignature(func.getFunctionType()))
@@ -82,23 +101,6 @@ struct ProcessBuffer {
 
         if (auto err = k.executeAndPrint(*compiledFuncOr))
           return failure(clOptions.reportError(err.getError()));
-        break;
-      }
-      case Command::kEmit: {
-        // Get the compiled object.
-        auto objOr = compiledFuncOr->getObject();
-        if (objOr.isError())
-          return failure(clOptions.reportError(objOr.getError()));
-
-        // Open the output file and write the compiled object to it.
-        std::string errMsg;
-        auto outFile = mlir::openOutputFile(k.outputFilename, &errMsg);
-        if (!outFile)
-          return failure(clOptions.reportError(errMsg));
-
-        outFile->os().write((*objOr)->getBufferStart(),
-                            (*objOr)->getBufferSize());
-        outFile->keep();
         break;
       }
       }

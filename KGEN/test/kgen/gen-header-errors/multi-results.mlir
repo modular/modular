@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit -func="kernel:%t.o" -verify-diagnostics
+// RUN: kgen %s -emit -o %t.o -verify-diagnostics
 
 // expected-error @below {{functions with more than 1 result unsupported}}
 // expected-note @below {{see current operation}}

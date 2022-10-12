@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "EmitFuncHeader.h"
-#include "EmitFuncObject.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
 #include "KGEN/Elaborator.h"
@@ -13,6 +12,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/IndexDialect/IndexDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -24,6 +24,7 @@
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -154,22 +155,57 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
+  ObjectCompiler compiler(".kgen_cache", *theModule);
+
+  TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
+  if (failed(compiler.lowerAllFuncsToObject(attr)))
+    return failure();
+
+  // This produces a standalone object for all the objects we requested.
+  auto standaloneOr = compiler.produceStandaloneObject();
+  if (failed(standaloneOr) && !clOptions.ignoreFailures)
+    return failure();
+  std::unique_ptr<llvm::MemoryBuffer> standaloneObject =
+      std::move(*standaloneOr);
+
+  // If we're emitting the object, do it.
+  if (clOptions.cmd == Command::kEmit) {
+    if (failed(clOptions.emitObject(std::move(standaloneObject))))
+      return failure();
+
+    std::string objPath = clOptions.getOutputPath();
+    // If we have no output path, we can't emit headers so return.
+    if (objPath.empty())
+      return mlir::success();
+
+    // And now we have to produce the header files for each requested func.
+    for (auto f : theModule->getOps<FuncOp>()) {
+      if ((clOptions.funcs.empty() && f.getLinkage() == Linkage::Public) ||
+          clOptions.shouldHandleFunc(f.getName())) {
+        if (failed(emitHeaderForFunc(f, std::filesystem::path(objPath)
+                                            .replace_extension(".h")
+                                            .string())))
+          return failure();
+      }
+    }
+    return mlir::success();
+  }
+
+  // Now we can load it into the JIT - we're definitely executing the thing.
+
   // Now create the execution engine so we can JIT.
   auto engineOr = ExecutionEngine::create();
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
-
   ExecutionEngine engine = std::move(*engineOr);
 
-  // Add the module to the execution engine. This will perform all the slicing
-  // necessary.
-  if (auto err = engine.add(*theModule))
+  if (auto err = engine.add("exec", std::move(standaloneObject)))
     return failure(clOptions.reportError(err.getError()));
 
   // Helper to execute a func.
   auto execFunc = [&](FuncOp theFunc,
                       const CommandLineFunc &clFunc) -> LogicalResult {
-    auto compiledFuncOr = engine.lookup(theFunc);
+    auto compiledFuncOr = engine.lookup("exec", theFunc);
     if (failed(compiledFuncOr))
       return failure(clOptions.reportError(compiledFuncOr.getError()));
 
@@ -192,26 +228,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     foundFuncs.insert(fn.getName());
 
     // If we were asked to handle this func, do so.
-    if (Optional<CommandLineFunc> clFunc = clOptions.shouldHandleFunc(fn)) {
+    if (Optional<CommandLineFunc> clFunc =
+            clOptions.shouldHandleFunc(fn.getName())) {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
+      case Command::kEmit:
         break;
-      case Command::kEmit: {
-        // If the filename is not provided, then default to the current working
-        // directory.
-        std::filesystem::path objPath = clFunc->outputFilename;
-        if (!objPath.is_absolute())
-          objPath = std::filesystem::current_path() / clFunc->outputFilename;
-
-        if (failed(emitObjectForFunc(engine, fn, objPath)))
-          return failure();
-
-        if (failed(emitHeaderForFunc(fn,
-                                     objPath.replace_extension(".h").string())))
-          return failure();
-        break;
-      }
       case Command::kExecute: {
         if (failed(execFunc(fn, *clFunc)))
           return failure();

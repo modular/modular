@@ -1,6 +1,6 @@
-// RUN: kgen-execute %s -execute -func="for_loop:f32():%t.o" | FileCheck %s --check-prefix=FOR
-// RUN: kgen-execute %s -execute -func="while_loop:f32():%t.o" | FileCheck %s --check-prefix=WHILE
-// RUN: kgen-execute %s -execute -func="while_accum_loop:f32():%t.o" | FileCheck %s --check-prefix=WHILE_ACCUM
+// RUN: kgen-execute %s -execute -func="for_loop:f32()" | FileCheck %s --check-prefix=FOR
+// RUN: kgen-execute %s -execute -func="while_loop:f32()" | FileCheck %s --check-prefix=WHILE
+// RUN: kgen-execute %s -execute -func="while_accum_loop:f32()" | FileCheck %s --check-prefix=WHILE_ACCUM
 
 kgen.func public @for_loop() -> f32 {
   %av = pop.constant(1.0 : f32) : !pop.scalar<f32>

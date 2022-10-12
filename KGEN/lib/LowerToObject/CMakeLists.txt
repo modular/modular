@@ -20,13 +20,13 @@ add_modular_mlir_library(KGENEmitObject
   IndexToLLVM
   KGENDialect
   KGENToLLVM
+  LowerZAPToPOP
 
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter
   MLIRBytecodeReader
 
-  lldCOFF
   lldELF
   lldMachO
   lldCommon

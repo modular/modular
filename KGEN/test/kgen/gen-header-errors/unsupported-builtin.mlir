@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit -func="kernel:%t.o" -verify-diagnostics
+// RUN: kgen %s -emit -func="kernel" -o %t.o -verify-diagnostics
 
 // expected-error @below {{unhandled float type: 'f128'}}
 // expected-note @below {{see current operation}}

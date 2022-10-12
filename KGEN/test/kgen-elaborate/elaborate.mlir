@@ -374,11 +374,11 @@ kgen.generator @parametricAdd<ty: type>
   kgen.return %res : !kgen.paramref<ty>
 }
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=@doubleExample"()
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample"()
 // CHECK: %0 = kgen.call @"doubleExample,dt=si32"(%cst) : (!pop.scalar<si32>) -> !pop.scalar<si32>
 // CHECK:  %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!pop.scalar<si32>) -> !pop.scalar<si32>
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=@nopExample"() {
+// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=nopExample"() {
 // CHECK:    %0 = kgen.call @"nopExample,dt=f32"(%cst) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
@@ -422,15 +422,15 @@ kgen.generator @takeParametricBinary
 
 // CHECK-LABEL:  kgen.func @test_symbol() {
 kgen.generator @test_symbol() {
-  // CHECK: kgen.call @"takeUnary,dt=si32,fn=@doubleExample"()
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=doubleExample"()
   kgen.call @takeUnary<dt: dtype = si32,
      fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = @doubleExample>() : () -> ()
 
-  // CHECK: kgen.call @"takeUnary,dt=f32,fn=@nopExample"()
+  // CHECK: kgen.call @"takeUnary,dt=f32,fn=nopExample"()
   kgen.call @takeUnary<dt: dtype = f32,
      fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = @nopExample>() : () -> ()
 
-  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=@parametricAdd"()
+  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricAdd"()
   kgen.call @takeParametricBinary<dt: dtype = f32,
       fn : <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
       = @parametricAdd>() : () -> ()
