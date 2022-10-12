@@ -13,26 +13,33 @@ using namespace M;
 
 ErrorOr<TempFile> TempFile::create(StringRef model) {
   int fd;
-  SmallVector<char, 0> outFilePathVec;
+  SmallString<0> outFilePathVec;
   std::error_code err =
       llvm::sys::fs::createUniqueFile(model, fd, outFilePathVec);
   if (err)
     return Error(err.message());
 
-  return TempFile{fd,
-                  std::string{outFilePathVec.data(), outFilePathVec.size()}};
+  return TempFile{fd, outFilePathVec.str().str()};
 }
 
 TempFile::TempFile(TempFile &&other)
-    : fd(other.fd), path(other.path), keepFile(other.keepFile) {
-  other.keepFile = true;
+    : fd(other.fd), path(std::move(other.path)), keepFile(other.keepFile) {
+  other.fd = -1;
 }
 
 TempFile::~TempFile() {
-  if (!keepFile) {
+  if (fd != -1)
     llvm::sys::fs::closeFile(fd);
+
+  if (!keepFile)
     std::filesystem::remove(path);
-  }
 }
 
-size_t TempFile::getSize() { return std::filesystem::file_size(path); }
+ErrorOr<size_t> TempFile::getSize() {
+  std::error_code ec;
+  uintmax_t size = std::filesystem::file_size(path, ec);
+  if (size == (uintmax_t)-1)
+    return Error(ec.message());
+
+  return size;
+}
