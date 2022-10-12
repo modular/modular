@@ -1,40 +1,71 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
 # CHECK: module {
-a = 5             # CHECK: %[[CST:.*]] = index.constant 5
-a = 55            # CHECK: %[[CST:.*]] = index.constant 55
-a = 10500         # CHECK: %[[CST:.*]] = index.constant 10500
-a = 12_500        # CHECK: %[[CST:.*]] = index.constant 12500
-a = 0             # CHECK: %[[CST:.*]] = index.constant 0
-a = 00            # CHECK: %[[CST:.*]] = index.constant 0
-a = 0____0__0_0   # CHECK: %[[CST:.*]] = index.constant 0
-a = 00__0_0       # CHECK: %[[CST:.*]] = index.constant 0
-a = 1__9_         # CHECK: %[[CST:.*]] = index.constant 19
-a = 0x123         # CHECK: %[[CST:.*]] = index.constant 291
-a = 0X123         # CHECK: %[[CST:.*]] = index.constant 291
-a = 0b10101       # CHECK: %[[CST:.*]] = index.constant 21
-a = 0B10101       # CHECK: %[[CST:.*]] = index.constant 21
-a = 0o711         # CHECK: %[[CST:.*]] = index.constant 457
-a = 0O711         # CHECK: %[[CST:.*]] = index.constant 457
-b = 1.1           # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.100000e+00>
-b = .1            # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e-01>
-b = 1.            # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+00>
-b = 1e2           # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+02>
-b = 1.1e2         # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.100000e+02>
-b = .1e2          # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+01>
-b = 1.e2          # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+02>
-b = 1e+2          # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+02>
-b = 1.1e-2        # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.100000e-02>
-b = .1e+2         # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+01>
-b = 1.e-2         # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e-02>
-b = 0.1           # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e-01>
-b = 0.            # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <0.000000e+00>
-b = 0e2           # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <0.000000e+00>
-b = 0.1e2         # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e+01>
-b = 0.e2          # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <0.000000e+00>
-b = 0e+2          # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <0.000000e+00>
-b = 0.1e-2        # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.000000e-03>
-b = 0.e-2         # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <0.000000e+00>
-b = 12.31e+11     # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.231000e+12>
-b = 1_2.3__1e+1_1 # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.231000e+12>
-b = 12.31E-3      # CHECK: %[[CST:.*]] = kgen.param.constant : f64 = <1.231000e-02>
+a = 5             # 5
+a = 55            # 55
+a = 10500         # 10500
+a = 12_500        # 12500
+a = 0             # 0
+a = 00            # 0
+a = 0____0__0_0   # 0
+a = 00__0_0       # 0
+a = 1__9_         # 19
+a = 0x123         # 291
+a = 0X123         # 291
+a = 0b10101       # 21
+a = 0B10101       # 21
+a = 0o711         # 457
+a = 0O711         # 457
+b = 1.1           # 1.100000e+00
+b = .1            # 1.000000e-01
+b = 1.            # 1.000000e+00
+b = 1e2           # 1.000000e+02
+b = 1.1e2         # 1.100000e+02
+b = .1e2          # 1.000000e+01
+b = 1.e2          # 1.000000e+02
+b = 1e+2          # 1.000000e+02
+b = 1.1e-2        # 1.100000e-02
+b = .1e+2         # 1.000000e+01
+b = 1.e-2         # 1.000000e-02
+b = 0.1           # 1.000000e-01
+b = 0.            # 0.000000e+00
+b = 0e2           # 0.000000e+00
+b = 0.1e2         # 1.000000e+01
+b = 0.e2          # 0.000000e+00
+b = 0e+2          # 0.000000e+00
+b = 0.1e-2        # 1.000000e-03
+b = 0.e-2         # 0.000000e+00
+b = 12.31e+11     # 1.231000e+12
+b = 1_2.3__1e+1_1 # 1.231000e+12
+b = 12.31E-3      # 1.231000e-02
+
+
+# CHECK: "hello world"
+b = "hello \
+world"
+
+# COM: match newline hex values via regex since they vary between OSs
+# CHECK: "hello \\\{{[0-9A-Z]+}}world"
+b = r"hello \
+world"
+
+b = ""                 # CHECK: ""
+b = "Hello"            # CHECK: "Hello"
+b = "Hello 'world'"    # CHECK: "Hello 'world'"
+b = "A\x42"            # CHECK: "AB"
+b = "A\x423"           # CHECK: "AB3"
+b = "A\102"            # CHECK: "AB"
+b = "A\1023"           # CHECK: "AB3"
+
+# COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
+b = 'Hello "world"'    # CHECK: "Hello \22world\22"
+b = r"A\x42"           # CHECK: "A\\x42"
+b = R"A\x42"           # CHECK: "A\\x42"
+b = r"AB\\"            # CHECK: "AB\\\\"
+b = r"A\x"             # CHECK: "A\\x"
+b = "AB\\"             # CHECK: "AB\\"
+b = r"A\"B"            # CHECK: "A\\\22B"
+b = r'A\'B'            # CHECK: "A\\'B"
+b = "A\"B"             # CHECK: "A\22B"
+b = 'A\'B'             # CHECK: "A'B"
+b = r"A\zB"            # CHECK: "A\\zB"

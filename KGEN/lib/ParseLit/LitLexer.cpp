@@ -157,8 +157,13 @@ LitToken LitLexer::lexTokenImpl() {
 
     default:
       // Handle identifiers.
-      if (llvm::isAlpha(curPtr[-1]))
+      if (llvm::isAlpha(curPtr[-1])) {
+        // Raw string literal
+        if ((curPtr[-1] == 'r' || curPtr[-1] == 'R') &&
+            (*curPtr == '\'' || *curPtr == '"'))
+          return lexString(tokStart, indentation);
         return lexIdentifierOrKeyword(tokStart, indentation);
+      }
 
       // Unknown character, emit an error.
       return emitError(tokStart, "unexpected character");
@@ -166,6 +171,9 @@ LitToken LitLexer::lexTokenImpl() {
     case '_':
       // Handle identifiers.
       return lexIdentifierOrKeyword(tokStart, indentation);
+    case '"':
+    case '\'':
+      return lexString(tokStart, indentation);
     case '%':
       if (*curPtr == '=')
         return formToken(LitToken::percent_equal, 1);
@@ -344,6 +352,96 @@ void LitLexer::skipComment() {
 /// Checks if character \p C is one of the 8 octal digits.
 inline bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
+/// Lex a string literal.
+///
+/// stringliteral   ::=  [stringprefix] shortstring
+/// stringprefix    ::=  "r" | "R"
+/// shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
+/// shortstringitem ::=  shortstringchar | stringescapeseq
+/// shortstringchar ::=  <any source character except "\" or newline or the
+/// quote> stringescapeseq ::=  "\" <any source character>
+///
+/*
+TODO: support full Python grammar below:
+stringliteral   ::=  [stringprefix](shortstring | longstring)
+stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
+                     | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
+shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
+longstring      ::=  "'''" longstringitem* "'''" | '"""' longstringitem* '"""'
+shortstringitem ::=  shortstringchar | stringescapeseq
+longstringitem  ::=  longstringchar | stringescapeseq
+shortstringchar ::=  <any source character except "\" or newline or the quote>
+longstringchar  ::=  <any source character except "\">
+stringescapeseq ::=  "\" <any source character>
+ */
+LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
+  curPtr = tokStart;
+  bool isRaw = false;
+  if (*curPtr == 'r' || *curPtr == 'R') {
+    isRaw = true;
+    ++curPtr;
+  }
+
+  if (*curPtr != '\'' && *curPtr != '"')
+    return emitError(tokStart,
+                     "expecting a string quoting character: `'` or `\"`");
+  char quoteChar = *curPtr;
+  ++curPtr;
+
+  while (*curPtr != quoteChar && curPtr != curBuffer.end()) {
+    switch (*curPtr++) {
+    case '\\':
+      if (isRaw) {
+        if (curPtr == curBuffer.end())
+          return emitError(tokStart, "unterminated string");
+        ++curPtr;
+        break;
+      }
+
+      // Skip escaped characters
+      if (isOctalDigit(*curPtr)) {
+        // at most 3 octal digits.
+        size_t i = 0;
+        while (isOctalDigit(*curPtr) && i < 3) {
+          ++curPtr;
+          i++;
+        }
+      } else if (*curPtr == 'x') {
+        ++curPtr;
+        // exactly 2 hex digits.
+        size_t i = 0;
+        while (llvm::isHexDigit(*curPtr) && i < 2) {
+          ++curPtr;
+          i++;
+        }
+        if (i != 2)
+          return emitError(
+              tokStart,
+              "invalid hex escape sequence: exactly two hex digits needed");
+      } else {
+        if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b', 'f',
+                                 'n', 'r', 't', 'v'},
+                                *curPtr))
+          return emitError(tokStart, "invalid escape sequence");
+        if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
+          ++curPtr;
+        ++curPtr;
+      }
+      break;
+    case '\n': // newline isn't allowed in a string.
+    case '\r':
+      return emitError(tokStart, "unterminated string");
+    default:
+      // Skip over other characters.
+      break;
+    }
+  }
+  if (curPtr == curBuffer.end())
+    return emitError(tokStart, "unterminated string");
+  ++curPtr;
+  return formToken(LitToken::string, tokStart, indentation);
+}
+
 /// Lex a integer number literal.
 ///
 /// integer      ::=  decinteger | bininteger | octinteger | hexinteger
@@ -490,6 +588,96 @@ APFloat LitLexer::getFloatLiteralValue(StringRef spelling) {
   assert(Status == APFloat::opOK ||
          Status & APFloat::opInexact && "Invalid floating point literal");
   return num;
+}
+
+/// Return the a string value of `spelling` after the escape sequences are
+/// handled. `spelling` is known to have been lexed as a string literal token.
+std::string LitLexer::getStringLiteralValue(StringRef spelling) {
+  bool isRaw = false;
+  if (spelling[0] == 'r' || spelling[0] == 'R') {
+    isRaw = true;
+    spelling = spelling.drop_front();
+  }
+  // Drop quotes.
+  StringRef bytes = spelling.drop_front().drop_back();
+
+  std::string result;
+  result.reserve(bytes.size());
+  for (size_t i = 0, end = bytes.size(); i != end;) {
+    auto c = bytes[i++];
+    if (c != '\\' || isRaw) {
+      result.push_back(c);
+      continue;
+    }
+
+    assert(i + 1 <= end && "invalid string should be caught by lexer");
+    auto c1 = bytes[i++];
+    switch (c1) {
+    case '\\':
+    case '"':
+    case '\'':
+      result.push_back(c1);
+      continue;
+    case '\n':
+      continue;
+    case '\r':
+      if (bytes[i] == '\n')
+        i++;
+      continue;
+    case 'a':
+      result.push_back('\a');
+      continue;
+    case 'b':
+      result.push_back('\b');
+      continue;
+    case 'f':
+      result.push_back('\f');
+      continue;
+    case 'n':
+      result.push_back('\n');
+      continue;
+    case 'r':
+      result.push_back('\r');
+      continue;
+    case 't':
+      result.push_back('\t');
+      continue;
+    case 'v':
+      result.push_back('\v');
+      continue;
+    case 'x': {
+      char hex0 = bytes[i++];
+      char hex1 = bytes[i++];
+      assert(llvm::isHexDigit(hex0) && llvm::isHexDigit(hex1) &&
+             "invalid escape");
+      result.push_back((llvm::hexDigitValue(hex0) << 4) |
+                       llvm::hexDigitValue(hex1));
+      continue;
+    }
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7': {
+      size_t startDigit = i - 1;
+      // At most 3 digits
+      while (i < (startDigit + 3) && isOctalDigit(bytes[i]))
+        i++;
+      unsigned int num;
+      bool failed = bytes.slice(startDigit, i).getAsInteger(8, num);
+      assert(!failed && "we know this should always work because we lexed it");
+      result.push_back(static_cast<char>(num));
+      continue;
+    }
+    default:
+      llvm_unreachable(
+          "invalid escape sequence: this should have been caught by lexString");
+    }
+  }
+  return result;
 }
 
 /// Return the a value for the specified string, which is known to have been

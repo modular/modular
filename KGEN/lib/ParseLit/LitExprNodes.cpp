@@ -112,6 +112,11 @@ MLIRValueRep FloatLiteralNode::emit(EmitterState &state) const {
   return state.builder.getF64FloatAttr(value.convertToDouble());
 }
 
+MLIRValueRep StringLiteralNode::emit(EmitterState &state) const {
+  std::string value = LitLexer::getStringLiteralValue(spelling);
+  return state.builder.getStringAttr(value);
+}
+
 MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   Operation *decl = state.scope->lookup(spelling);
   if (!decl) {

@@ -120,6 +120,9 @@ public:
   /// Return the a value for the specified string, which is known to have been
   /// lexed as a float literal token.
   static APFloat getFloatLiteralValue(StringRef spelling);
+  /// Return the a string value of `spelling` after the escape sequences are
+  /// handled. `spelling` is known to have been lexed as a string literal token.
+  static std::string getStringLiteralValue(StringRef spelling);
 
 private:
   LitToken lexTokenImpl();
@@ -136,6 +139,7 @@ private:
   LitToken lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
   LitToken lexInteger(const char *tokStart, ssize_t indentation);
   LitToken lexFloat(const char *tokStart, ssize_t indentation);
+  LitToken lexString(const char *tokStart, ssize_t indentation);
   void skipComment();
 
   const llvm::SourceMgr &sourceMgr;
