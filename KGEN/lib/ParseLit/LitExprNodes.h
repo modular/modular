@@ -62,6 +62,7 @@ struct ExprNode {
     kError,         // `
     kIntLiteral,    // 42
     kFloatLiteral,  // 1.1
+    kStringLiteral, // "Hello"
     kDeclRef,       // x
     kCall,          // thing(a, b)
     kParenExprNode, // (x+y)
@@ -124,6 +125,22 @@ struct FloatLiteralNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) {
     return node->kind == kFloatLiteral;
+  }
+  SMLoc getLoc() const override {
+    return SMLoc::getFromPointer(spelling.data());
+  }
+  bool containsError() const override { return false; }
+  MLIRValueRep emit(EmitterState &state) const override;
+};
+
+struct StringLiteralNode final : public ExprNode {
+  StringLiteralNode(StringRef spelling)
+      : ExprNode(kStringLiteral), spelling(spelling) {}
+
+  const StringRef spelling;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kStringLiteral;
   }
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());

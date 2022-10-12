@@ -30,6 +30,51 @@
 
 # // -----
 
+# expected-error @+1 {{unterminated string}}
+"Hello'
+
+# // -----
+
+# expected-error @+1 {{unterminated string}}
+'Hello"
+
+# // -----
+
+# expected-error @+1 {{unterminated string}}
+"Hello
+
+# // -----
+
+# expected-error @+1 {{unterminated string}}
+'Hello
+
+# // -----
+
+# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
+"A\x4"
+
+# // -----
+
+# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
+"A\x"
+
+# // -----
+
+# expected-error @+1 {{invalid escape sequence}}
+"A\zB"
+
+# // -----
+
+# expected-error @+1 {{unterminated string}}
+"AB\"
+
+# // -----
+
+# expected-error @+1 {{unterminated string}}
+r"AB\"
+
+# // -----
+
 def foo():
 # expected-error @+1 {{unexpected token in expression}}
   return pass
