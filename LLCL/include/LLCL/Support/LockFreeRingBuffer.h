@@ -71,7 +71,7 @@ public:
     }
 
     // Now we can safely write to `buffer[curWriteIndex & (size - 1)]`, which is
-    // effectively `buffer[curWriteIndex % size]` when size is power of 2..
+    // effectively `buffer[curWriteIndex % size]` when size is power of 2.
     buffer[curWriteIndex & (size - 1)] = std::move(item);
 
     // Update `published` to indicate that the value is actually written and
@@ -85,7 +85,7 @@ public:
   }
 
   /// Dequeue returns the stored item to the caller and release the ownership of
-  /// the item. Returns nullptr if the buffer is empty.
+  /// the item. Returns a value-initialized `ItemType` if the buffer is empty.
   ItemType dequeue() {
     // Make sure that the buffer is not empty.
     uint64_t curPublished = published.load(std::memory_order_acquire);
