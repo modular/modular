@@ -10,5 +10,6 @@ add_modular_tool(kgen-execute
   LINK_LIBS PRIVATE
   KGENCLOptions
   MLIRParser
+  KGENEmitObject
   KGENExecutionEngine
   KGENCompilerRT)

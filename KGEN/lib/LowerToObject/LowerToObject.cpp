@@ -8,6 +8,7 @@
 #include "BytecodeUtils.h"
 #include "LowerToObjectImpl.h"
 #include "Support/ErrorOr.h"
+#include "Support/TempFile.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -15,6 +16,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
@@ -25,6 +27,8 @@
 
 using namespace M;
 using namespace KGEN;
+
+#define DEBUG_TYPE "lower-to-object"
 
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject
@@ -40,7 +44,6 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 
   // Set up the pass manager builder to populate the passes we want.
   passManagerBuilder.OptLevel = 3;
-  passManagerBuilder.MergeFunctions = true;
 
   // Set up the pass manager and populate it.
   targetMachine.adjustPassManager(passManagerBuilder);
@@ -100,7 +103,7 @@ std::string ObjectCacheKeyInfo::hashKey(ObjectCacheKeyInfo::KeyTy key) {
         using T = std::decay_t<decltype(key)>;
         if constexpr (std::is_same_v<T, PrecompiledLLVMOp>) {
           return std::to_string(size_t(llvm::hash_combine(
-              key.getName(), key.getCompiledFor().hash(), key.getLlvm())));
+              key.getSymName(), key.getCompiledFor().hash(), key.getLlvm())));
         } else if constexpr (std::is_same_v<T, llvm::MemoryBufferRef>) {
           return std::to_string(size_t(llvm::hash_value(key.getBuffer())));
         } else {
@@ -154,6 +157,8 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func) {
     return mlir::emitError(func->getLoc()) << machineOr.getError();
   std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOr);
 
+  // TODO: We should really just keep the binary code and discard the other
+  //       object file trappings, then assemble everything together later.
   SmallVector<char, 0> objBuf;
   if (failed(compileLLVMToObject(*llvmModule, *machine, objBuf)))
     return failure();
@@ -161,6 +166,22 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func) {
   // Turn it into a memory buffer so we can put it into the cache.
   auto objectMemBuf = llvm::SmallVectorMemoryBuffer(
       std::move(objBuf), /*RequiresNullTerminator=*/false);
+
+  // If we're debugging, save the object file for the symbol.
+  LLVM_DEBUG({
+    auto fileOr = TempFile::create("lower-to-object-%%%%%%%%%%%.o");
+    if (failed(fileOr))
+      return mlir::emitError(func->getLoc()) << fileOr.getError();
+
+    // Write the object to this temp file.
+    llvm::raw_fd_ostream os(fileOr->getFD(), /*shouldClose=*/false);
+
+    llvm::dbgs() << "Keeping file " << fileOr->getPath() << " for symbol "
+                 << func.getSymName() << " for debugging, writing "
+                 << objectMemBuf.getBufferSize() << " bytes\n";
+    os.write(objectMemBuf.getBufferStart(), objectMemBuf.getBufferSize());
+    fileOr->keep();
+  });
 
   // Now we have to stuff it into the cache. We're going to key off of the
   // object file itself and store that, then place the key into the

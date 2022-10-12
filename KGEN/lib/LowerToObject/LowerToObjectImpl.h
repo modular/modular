@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/Support/FileSystem.h"
 
 namespace llvm {
 class Module;

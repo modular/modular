@@ -79,7 +79,7 @@ function(add_kgen_library target)
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
   )
 
-  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LIB_DEPENDS})
+  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} kgen ${KGEN_LIB_DEPENDS})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
@@ -112,7 +112,8 @@ function(add_kgen_kernel target)
 
       COMMAND $<TARGET_FILE:kgen> -emit
       $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
-      -func=${kernel}:${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+      -func=${kernel}
+      -o ${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
 
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
@@ -125,10 +126,10 @@ function(add_kgen_kernel target)
   endforeach ()
 
   add_library(${target} ${OBJS})
-  add_dependencies(${target} ${KGEN_LIB_DEPENDS})
+  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen)
   set_target_properties(${target}
-      PROPERTIES LINKER_LANGUAGE C
-                 INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
+    PROPERTIES LINKER_LANGUAGE C
+    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
 # Testing infrastructure

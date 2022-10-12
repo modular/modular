@@ -1,4 +1,4 @@
-// RUN: kgen -execute -func="test_print:():%t.o" %s | FileCheck %s
+// RUN: kgen -execute -func="test_print:()" %s | FileCheck %s
 
 kgen.generator @impl<lb, ub, step>(%buf: !zap.buffer<?, si64>) {
   %lb = kgen.param.constant = <lb>

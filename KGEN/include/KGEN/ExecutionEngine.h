@@ -14,9 +14,7 @@
 #include <functional>
 
 namespace M::KGEN {
-namespace detail {
-class ObjectCache;
-} // namespace detail
+class ObjectCompiler;
 
 /// This class provides an interface to interact with a compiled func. You
 /// can either invoke the func, or get it as an object. The lifetime of one of
@@ -35,16 +33,12 @@ public:
     return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
   }
 
-  /// Get the compiled object that corresponds to this func from `cache`.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getObject();
-
 private:
   /// Construct a CompiledFunc object. This constructor is private because it
   /// needs a reference to the cache that the ExecutionEngine holds, so it
   /// should really only be constructed from the ExecutionEngine or something
   /// like it.
-  CompiledFunc(void *ptr, FuncOp func, detail::ObjectCache &cache)
-      : fn(ptr), func(func), cache(cache) {}
+  CompiledFunc(void *ptr, FuncOp func) : fn(ptr), func(func) {}
   friend class ExecutionEngine;
 
   /// Pointer to the function to invoke.
@@ -52,10 +46,6 @@ private:
 
   /// This handle corresponds to this FuncOp.
   FuncOp func;
-
-  /// Pointer to the object cache. This allows us to look up the compiled
-  /// object as a memory buffer.
-  detail::ObjectCache &cache;
 };
 
 /// This class provides an interface to the LLVM ORCJIT. It can compile
@@ -74,17 +64,19 @@ public:
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
   /// every func and generate self-contained libraries.
-  ErrorOrSuccess add(mlir::ModuleOp module);
-  /// Add a function to the execution engine. This will slice the function's
-  /// dependencies out from the module and generate a self-contained library.
-  ErrorOrSuccess add(SymbolTable &symtab, FuncOp func);
+  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<FuncOp> only = {});
+
+  /// Add an object to the JIT.
+  ErrorOrSuccess add(StringRef libName,
+                     std::unique_ptr<llvm::MemoryBuffer> obj);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
-  ErrorOr<CompiledFunc> lookup(KGEN::FuncOp func);
+  ErrorOr<CompiledFunc> lookup(StringRef libName, FuncOp func);
 
   /// Look up the opaque wrapper for a func and return it as a CompiledFunc
   /// object.
-  ErrorOr<CompiledFunc> lookupOpaqueWrapper(KGEN::FuncOp func);
+  ErrorOr<CompiledFunc> lookupOpaqueWrapper(StringRef libName,
+                                            KGEN::FuncOp func);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
@@ -92,8 +84,11 @@ private:
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
 
+  /// Caches required for traversing up/down the compilation chain.
+  std::unique_ptr<ObjectCompiler> compiler;
+
+  /// Objects required for the ORCJIT.
   llvm::orc::ThreadSafeContext ctx;
-  std::unique_ptr<detail::ObjectCache> cache;
   std::unique_ptr<llvm::orc::LLJIT> jit;
   std::vector<llvm::orc::ThreadSafeModule> compiledModules;
 };

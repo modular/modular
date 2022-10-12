@@ -14,6 +14,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
@@ -133,6 +134,12 @@ static Operation *extractDependency(StringAttr name, SymbolTable &sliceSymtab,
 
   // Clone the symbol into the new symbol table.
   Operation *copy = symbol->clone();
+  if (auto linkage = copy->getAttrOfType<LinkageAttr>("linkage")) {
+    if (linkage.getValue() == Linkage::Public) {
+      copy->setAttr("linkage", LinkageAttr::get(copy->getContext(),
+                                                Linkage::ModulePrivate));
+    }
+  }
   sliceSymtab.insert(copy);
   return copy;
 }
@@ -141,12 +148,15 @@ static Operation *extractDependency(StringAttr name, SymbolTable &sliceSymtab,
 /// self-contained slice module.
 static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
                               const mlir::SymbolTable &symtab) {
+  auto checkForRefType = [&](Type type) {
+    if (auto ref = dyn_cast<RefType>(type))
+      extractDependency(ref.getName().getAttr(), sliceSymtab, symtab);
+  };
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
-    op->getAttrDictionary().walkSubTypes([&](Type type) {
-      if (auto ref = dyn_cast<RefType>(type))
-        extractDependency(ref.getName().getAttr(), sliceSymtab, symtab);
-    });
+    op->getAttrDictionary().walkSubTypes(checkForRefType);
+    llvm::for_each(op->getOperandTypes(), checkForRefType);
+    llvm::for_each(op->getResultTypes(), checkForRefType);
 
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
@@ -215,6 +225,25 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   llvm::LLVMContext ctx;
   auto llvmModule =
       mlir::translateModuleToLLVMIR(*singleModule, ctx, func.getName());
+
+  // Add any non-external function to the 'llvm.used' list. This means creating
+  // the global value, and therefore mucking about with some llvm:: types.
+  SmallVector<llvm::Constant *> funcPtrs;
+  for (auto &f : llvmModule->functions())
+    if (!f.isDeclarationForLinker() && !f.isIntrinsic() &&
+        f.getLinkage() != llvm::GlobalValue::ExternalLinkage)
+      funcPtrs.push_back(&f); //< Functions are constants.
+
+  // If we have any functions we processed then set up the llvm.used global.
+  if (!funcPtrs.empty()) {
+    llvm::ArrayType *usedTy =
+        llvm::ArrayType::get(llvm::PointerType::get(ctx, 0), funcPtrs.size());
+
+    auto *llvmUsed = new llvm::GlobalVariable(
+        *llvmModule, usedTy, false, llvm::GlobalValue::AppendingLinkage,
+        llvm::ConstantArray::get(usedTy, funcPtrs), "llvm.used");
+    llvmUsed->setSection("llvm.metadata");
+  }
 
   std::string bytes;
   llvm::raw_string_ostream stream(bytes);

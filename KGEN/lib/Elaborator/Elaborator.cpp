@@ -1042,7 +1042,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       // something if these get too verbose.
       os << typeConstant.getValue();
     } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-      os << symbolConstant.getSymbol();
+      os << symbolConstant.getSymbol().getValue();
     } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
       os << stringConstant.strref();
     } else {

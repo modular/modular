@@ -6,6 +6,8 @@
 
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include <filesystem>
 
 using namespace M;
 
@@ -59,22 +61,44 @@ CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
 
 bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
                                   StringRef argValue, CommandLineFunc &val) {
-  SmallVector<StringRef, 3> parts;
+  SmallVector<StringRef, 2> parts;
   argValue.split(parts, ':');
 
-  // If only 2 are provided, parse it into name + output filename.
-  if (parts.size() == 2) {
+  // If only one is provided, parse it into just a name.
+  if (parts.size() == 1) {
     val.name = parts[0];
-    val.outputFilename = parts[1];
     return false;
   }
 
-  if (parts.size() != 3)
-    return o.error("'" + argValue +
-                   "' invalid: must provide name:signature:filename");
+  if (parts.size() != 2)
+    return o.error("'" + argValue + "' invalid: must provide name:signature");
 
   val.name = parts[0];
   val.signature = parts[1];
-  val.outputFilename = parts[2];
   return false;
+}
+
+std::string KGENCLOptions::getOutputPath() const {
+  if (outputFilename.empty() || outputFilename == "-")
+    return "";
+
+  // If the filename is not provided, then default to the current working
+  // directory.
+  std::filesystem::path objPath =
+      std::filesystem::absolute(outputFilename.getValue());
+
+  return objPath.string();
+}
+
+LogicalResult
+KGENCLOptions::emitObject(std::unique_ptr<llvm::MemoryBuffer> object) const {
+  std::unique_ptr<llvm::ToolOutputFile> outFile =
+      getOutputFile(/*hasBinaryOutput=*/true);
+  if (!outFile)
+    return failure();
+
+  outFile->os().write(object->getBufferStart(), object->getBufferSize());
+  outFile->keep();
+
+  return mlir::success();
 }

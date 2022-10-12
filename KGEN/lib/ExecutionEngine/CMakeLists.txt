@@ -18,6 +18,7 @@ add_modular_mlir_library(KGENExecutionEngine
   LowerZAPToPOP
   KGENDialect
   KGENToLLVM
+  KGENEmitObject
 
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport

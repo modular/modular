@@ -6,7 +6,6 @@
 
 add_modular_tool(kgen
   EmitFuncHeader.cpp
-  EmitFuncObject.cpp
   kgen.cpp
 
   LINK_LIBS PRIVATE
