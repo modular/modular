@@ -8,27 +8,38 @@
 
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
+#include "Support/MicroBenchmark.h"
 #include "llvm/Support/Debug.h"
+
+#include <chrono>
 #include <numeric>
 
 #define DEBUG_TYPE "select-fastest-function"
 
 using namespace M;
 using namespace KGEN;
+using namespace std::chrono_literals;
 
 static uint64_t benchmarkSingleFunc(CompiledFunc k, void *argMemory,
                                     void *resultMemory) {
-  auto start = std::chrono::steady_clock::now();
-  // Invoke the kernel.
-  for (size_t i = 0; i < 10'000; ++i)
-    k.invoke<void, void *, void *>(argMemory, resultMemory);
+  MicroBenchmark benchmark(
+      "kgen benchmark function", [&](MicroBenchmark::State &state) {
+        for (auto _ : state)
+          k.invoke<void, void *, void *>(argMemory, resultMemory);
+      });
+  // Run the benchmark for at most 100ms.
+  // TODO: This should be configurable by the user.
+  MicroBenchmark::RunOptions runOptions;
+  runOptions.minRuntime = 100ms;
 
-  auto stop = std::chrono::steady_clock::now();
-  // Append the timing to the vector (divide by 10,000 to get the time per
-  // execution)
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start)
-             .count() /
-         10'000;
+  // Benchmark the function.
+  (void)benchmark.run(runOptions);
+
+  // Get the mean time in nanoseconds.
+  // TODO: We should be using a trimmed mean here.
+  auto time = benchmark.measurement(MicroBenchmark::ReportMetric::kMeanLatency,
+                                    MicroBenchmark::TimeUnit::kNanoseconds);
+  return std::lround(time);
 }
 
 ErrorOr<size_t>
