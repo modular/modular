@@ -75,8 +75,8 @@ struct ConvertZAPBufferSize : public mlir::OpConversionPattern<BufferSizeOp> {
   LogicalResult
   matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<GetElementOp>(op, adaptor.getBuffer(),
-                                              kBufferSizePosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+                                             kBufferSizePosition);
     return success();
   }
 };
@@ -93,8 +93,8 @@ struct ConvertZAPBufferAddress
   LogicalResult
   matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<GetElementOp>(op, adaptor.getBuffer(),
-                                              kBufferAddressPosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+                                             kBufferAddressPosition);
     return success();
   }
 };
@@ -110,8 +110,8 @@ struct ConvertZAPBufferDType : public mlir::OpConversionPattern<BufferDTypeOp> {
   LogicalResult
   matchAndRewrite(BufferDTypeOp op, BufferDTypeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<GetElementOp>(op, adaptor.getBuffer(),
-                                              kBufferDTypePosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+                                             kBufferDTypePosition);
     return success();
   }
 };
@@ -139,8 +139,8 @@ struct ConvertZAPBufferConvert
     }
 
     // Bitcast the pointer if needed.
-    Value ptr = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getInput(),
-                                              kBufferAddressPosition);
+    Value ptr = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+                                             kBufferAddressPosition);
     if (type.getDType() != op.getInput().getType().getDType())
       ptr = rewriter.create<PointerBitcastOp>(
           op.getLoc(), op.getType().getPointerType(), ptr);
@@ -162,13 +162,13 @@ struct ConvertZAPBufferConvert
     if (sizeExpr)
       size = rewriter.create<ParamConstantOp>(op.getLoc(), sizeExpr);
     else
-      size = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getInput(),
-                                           kBufferSizePosition);
+      size = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+                                          kBufferSizePosition);
     if (dtypeExpr)
       dtype = rewriter.create<ParamConstantOp>(op.getLoc(), dtypeExpr);
     else
-      dtype = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getInput(),
-                                            kBufferDTypePosition);
+      dtype = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+                                           kBufferDTypePosition);
 
     rewriter.replaceOpWithNewOp<StructConstructOp>(
         op, getTypeConverter()->convertType(type),
@@ -234,8 +234,8 @@ struct ConvertZAPBufferLoad : mlir::OpConversionPattern<BufferLoadOp> {
   LogicalResult
   matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
-                                               kBufferAddressPosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
+                                              kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/None);
@@ -253,8 +253,8 @@ struct ConvertZAPBufferStore : mlir::OpConversionPattern<BufferStoreOp> {
   LogicalResult
   matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
-                                               kBufferAddressPosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
+                                              kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
@@ -273,8 +273,8 @@ struct ConvertZAPBufferSIMDLoad : mlir::OpConversionPattern<BufferSIMDLoadOp> {
   LogicalResult
   matchAndRewrite(BufferSIMDLoadOp op, BufferSIMDLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
-                                               kBufferAddressPosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
+                                              kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
@@ -297,8 +297,8 @@ struct ConvertZAPBufferSIMDStore
   LogicalResult
   matchAndRewrite(BufferSIMDStoreOp op, BufferSIMDStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<GetElementOp>(op.getLoc(), adaptor.getBuffer(),
-                                               kBufferAddressPosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
+                                              kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
