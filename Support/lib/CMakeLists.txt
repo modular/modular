@@ -32,6 +32,7 @@ add_modular_library(MSupport
   Error.cpp
   HMAC.cpp
   MicroBenchmark.cpp
+  TempFile.cpp
   TimeProfiler.cpp
 
   LINK_LIBS PUBLIC
