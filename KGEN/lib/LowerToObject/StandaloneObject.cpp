@@ -7,22 +7,17 @@
 #include "KGEN/LowerToObject.h"
 #include "LowerToObjectImpl.h"
 #include "Support/TempFile.h"
-#include "Support/VCSRevision.h"
-#include "lld/Common/Driver.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Target/TargetMachine.h"
-#include <filesystem>
 #include <utility>
 
 #define DEBUG_TYPE "standalone-object"
