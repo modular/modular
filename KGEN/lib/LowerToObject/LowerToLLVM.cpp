@@ -117,60 +117,50 @@ std::string RaisingCacheKeyInfo::hashKey(RaisingCacheKeyInfo::KeyTy key) {
 // lowerToLLVM implementation
 //===----------------------------------------------------------------------===//
 
-/// Slice a func and all its dependencies out of the existing module. This
-/// operates using FunctionOpInterface as the 'function' op type so that we can
-/// use LLVMFuncOps as well as KGEN::FuncOp and friends. This also uses
-/// CallOpInterface to capture all callees.
-static ErrorOrSuccess funcSlicer(mlir::FunctionOpInterface func,
-                                 mlir::SymbolTable &sliceSymtab,
-                                 const mlir::SymbolTable &symtab) {
-  Optional<Error> error;
-  auto extractDependencies = [&](mlir::CallOpInterface call) {
-    auto callableForCallee = call.getCallableForCallee();
-    if (auto val = callableForCallee.dyn_cast<Value>()) {
-      auto err = mlir::emitError(call.getLoc())
-                 << "dynamic callee is not supported";
-      err.attachNote(val.getLoc()) << "dynamic callee here";
-      error = Error("dynamic callee is not supported");
-      return WalkResult::interrupt();
+/// Extract a dependency from the IR parent module and place it into the slice
+/// module if it does not already exist. If a symbol was copied, return it.
+static Operation *extractDependency(StringAttr name, SymbolTable &sliceSymtab,
+                                    const SymbolTable &symtab) {
+  // Don't copy the symbol if it already was.
+  if (sliceSymtab.lookup(name))
+    return nullptr;
+
+  Operation *symbol = symtab.lookup(name);
+  // If the symbol reference attribute doesn't reference a symbol, ignore it.
+  // Missing symbol references are caught by the verifier.
+  if (!symbol)
+    return nullptr;
+
+  // Clone the symbol into the new symbol table.
+  Operation *copy = symbol->clone();
+  sliceSymtab.insert(copy);
+  return copy;
+}
+
+/// Slice the dependencies of an operation out of the existing module into the
+/// self-contained slice module.
+static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
+                              const mlir::SymbolTable &symtab) {
+  auto extractDependencies = [&](Operation *op) {
+    // Extract references to type declarations.
+    op->getAttrDictionary().walkSubTypes([&](Type type) {
+      if (auto ref = dyn_cast<RefType>(type))
+        extractDependency(ref.getName().getAttr(), sliceSymtab, symtab);
+    });
+
+    // Extract references to functions. Mark copied functions as module private
+    // and recurse.
+    if (auto call = dyn_cast<CallOp>(op)) {
+      Operation *symbol = extractDependency(call.getCalleeAttr().getAttr(),
+                                            sliceSymtab, symtab);
+      if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
+        func.setLinkageAttr(
+            LinkageAttr::get(op->getContext(), Linkage::ModulePrivate));
+        sliceDependencies(func, sliceSymtab, symtab);
+      }
     }
-    // This is safe because in KGEN all symbols are flattened, and we don't
-    // support recursion in KGEN.
-    StringAttr calleeRef =
-        callableForCallee.get<SymbolRefAttr>().getLeafReference();
-    auto callee = symtab.lookup<mlir::FunctionOpInterface>(calleeRef);
-    if (!callee || (!isa<PrecompiledLLVMOp, PrecompiledObjectOp>(callee) &&
-                    callee.isExternal())) {
-      auto err = mlir::emitError(call.getLoc())
-                 << "could not find local callee '@" << calleeRef.getValue()
-                 << "' in the current module";
-      if (callee)
-        err.attachNote(callee.getLoc()) << "callee defined here";
-
-      error = Error("could not find local callee '@" + calleeRef.getValue() +
-                    "' in the current module.");
-      return WalkResult::interrupt();
-    }
-
-    // Don't copy the function if it already was.
-    if (sliceSymtab.lookup(calleeRef))
-      return WalkResult::advance();
-
-    if (auto err = funcSlicer(callee, sliceSymtab, symtab)) {
-      error = err.takeError();
-      return WalkResult::interrupt();
-    }
-
-    // Mark copied dependencies as private.
-    Operation *dependency = callee.clone();
-    SymbolTable::setSymbolVisibility(dependency,
-                                     SymbolTable::Visibility::Private);
-    sliceSymtab.insert(dependency);
-    return WalkResult::advance();
   };
-  if (func->walk(extractDependencies).wasInterrupted())
-    return std::move(*error);
-  return success();
+  op->walk(extractDependencies);
 }
 
 static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
@@ -180,7 +170,7 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   pm.addPass(createLowerZAPToPOP());
 
   if (!name.empty())
-    options.topLevelKernel = name;
+    options.topLevelKernel = name.str();
 
   options.emitOpaqueWrappers = true;
   buildLowerToLLVMPipeline(pm, options);
@@ -209,8 +199,7 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   mlir::SymbolTable sliceSymtab(*singleModule);
 
   // Traverse the call graph and clone all the callees into this module.
-  if (auto err = funcSlicer(func, sliceSymtab, symtab))
-    return mlir::emitError(func->getLoc()) << err.getError();
+  sliceDependencies(func, sliceSymtab, symtab);
 
   // Clone the func into this new module. We don't want to remove it from
   // the current module.
