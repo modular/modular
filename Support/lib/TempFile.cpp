@@ -23,7 +23,8 @@ ErrorOr<TempFile> TempFile::create(StringRef model) {
 }
 
 TempFile::TempFile(TempFile &&other)
-    : fd(other.fd), path(std::move(other.path)), keepFile(other.keepFile) {
+    : fd(std::move(other.fd)), path(std::move(other.path)),
+      keepFile(std::move(other.keepFile)) {
   other.fd = -1;
 }
 
