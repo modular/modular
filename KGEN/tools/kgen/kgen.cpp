@@ -138,6 +138,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerLIT());
+  pm.addPass(createPruneImpossibleVariants());
 
   pm.addPass(mlir::createCanonicalizerPass());
   if (clOptions.cmd != Command::kGenLibraryFile)

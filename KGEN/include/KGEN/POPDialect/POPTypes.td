@@ -298,6 +298,9 @@ def POP_VariantType : POPType<"Variant", "variant",
     /// Returns the index of the type in the variant type list. If the type is
     /// not in the list, returns None.
     Optional<int64_t> getTypeIndex(Type type) const;
+
+    /// Get the element types as parameterized types.
+    SmallVector<Type> getParameterizedElementTypes() const;
   }];
 }
 

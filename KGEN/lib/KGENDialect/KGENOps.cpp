@@ -282,6 +282,12 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyDeclMatchesInterface("generator", *this, "interface", interface);
 }
 
+Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
+
+ArrayRef<Type> GeneratorOp::getCallableResults() {
+  return getFunctionType().getResults();
+}
+
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
@@ -374,6 +380,12 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     }
   }
   return success();
+}
+
+Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
+
+ArrayRef<Type> FuncOp::getCallableResults() {
+  return getFunctionType().getResults();
 }
 
 //===----------------------------------------------------------------------===//
