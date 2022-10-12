@@ -10,8 +10,10 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
+#include "Support/LogicalResult.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -94,9 +96,7 @@ Optional<int64_t> BufferType::getResolvedSize() const {
 }
 
 Optional<DType> BufferType::getResolvedDType() const {
-  if (auto dtype = dyn_cast_if_present<DTypeConstantAttr>(getDType()))
-    return dtype.getDType();
-  return {};
+  return ::getResolvedDType(this);
 }
 
 POP::PointerType BufferType::getPointerType() const {
@@ -123,10 +123,10 @@ BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
 /// Print an array of parameter values that either has an index type or is null
 /// (which prints as a `?`).
 void printOptionalIndicesParamValue(AsmPrinter &p, ArrayRef<TypedAttr> value) {
-  p << "[";
+  p << '[';
   interleaveComma(
       value, p, [&](TypedAttr attr) { printOptionalIndexParamValue(p, attr); });
-  p << "]";
+  p << ']';
 }
 
 /// Parse an array of parameter values that is known to be an index type or a

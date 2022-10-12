@@ -15,6 +15,7 @@
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/Support/Casting.h"
 
 using namespace M;
 using namespace KGEN;
@@ -172,6 +173,44 @@ LogicalResult BufferSIMDStoreOp::verify() {
          << getBuffer().getType()
          << ") must have the same element type as the value simd type ("
          << getValue().getType() << ")";
+}
+
+//===----------------------------------------------------------------------===//
+// TensorConstructOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TensorConstructOp::verify() {
+  TensorType type = getType();
+  size_t numUnknownDims =
+      std::count_if(type.getShape().begin(), type.getShape().end(),
+                    [](auto shape) { return !shape; });
+  size_t numShapeParams = getShape().size();
+  if (numShapeParams != numUnknownDims)
+    return emitOpError("requires the shape operand to match the non-static "
+                       "dimensions of the tensor type");
+  if (!type.getDType() == !getDType())
+    return emitOpError(
+        "requires either a dtype operand or a tensor type with static dtype");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TensorDimOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 2 && "zap.tensor.size has two operand");
+  // A null size indicates ? size (unknown size). Since returning null
+  // indicates that we don't fold anything, we don't need to check if
+  // size is null.
+  if (auto dim = dyn_cast_if_present<IntegerAttr>(operands[1])) {
+    auto tensorType = getTensor().getType();
+    // If the index is out of bounds, then we do not fold the op.
+    if (dim.getInt() >= tensorType.getRank())
+      return {};
+    return tensorType.getShape().data()[dim.getInt()];
+  }
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
