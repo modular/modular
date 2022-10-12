@@ -26,6 +26,7 @@ class SIMDType;
 } // namespace POP
 namespace ZAP {
 class BufferType;
+class TensorType;
 } // namespace ZAP
 } // namespace M::KGEN
 

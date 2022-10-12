@@ -10,6 +10,7 @@
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
 
 class ZAPType<string typeName, string typeMnemonic, list<Trait> traits = []>
   : TypeDef<ZAPDialect, typeName,
@@ -143,5 +144,25 @@ def ZAP_TensorType : ZAP_MemoryLikeType<"Tensor", "tensor"> {
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// Tensor Type Constraints
+//===----------------------------------------------------------------------===//
+
+def TensorKnownDType : ConfinedType<ZAP_TensorType,
+    [CPred<"$_self.cast<ZAP::TensorType>().getDType()">],
+    "tensor with concrete dtype">;
+
+def ConcreteTensor : ConfinedType<ZAP_TensorType,
+    [CPred<"$_self.cast<ZAP::TensorType>().getDType() && " #
+           "$_self.cast<ZAP::TensorType>().getSize()">],
+    "tensor with concrete size and dtype">;
+
+class TensorPointerType<string lhs, string rhs>
+  : TypesMatchWith<"pointer to scalar of the same dtype", lhs, rhs,
+                   "$_self.cast<ZAP::TensorType>().getPointerType()">;
+
+class TensorElementType<string lhs, string rhs>
+  : TypesMatchWith<"scalar of the same dtype", lhs, rhs,
+                   "$_self.cast<ZAP::TensorType>().getElementType()">;
 
 #endif // ZAPTYPES_TD

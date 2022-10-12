@@ -253,6 +253,64 @@ kgen.generator @zap_tensor_with_params<type:dtype, size>(
     !zap.tensor<[?, 4, size], f32>
 }
 
+// CHECK-LABEL: @zap_tensor_construct
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<!pop.scalar<invalid>>
+// CHECK-SAME: %[[SIZE:.*]]: index
+// CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
+kgen.func @zap_tensor_construct(
+  %ptr: !pop.pointer<!pop.scalar<f32>>,
+  %opaque: !pop.pointer<!pop.scalar<invalid>>,
+  %size: index,
+  %dtype: !kgen.dtype) -> (!zap.tensor<[4, 5, 3], f32>,
+                           !zap.tensor<[?, 4], f32>,
+                           !zap.tensor<[4, 5], ?>,
+                           !zap.tensor<[?, ?, ?], ?>) {
+  // CHECK: zap.tensor.construct %[[PTR]] : !zap.tensor<[4, 5, 3], f32>
+  %0 = zap.tensor.construct %ptr : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.construct %[[PTR]][%[[SIZE]]] : !zap.tensor<[?, 4], f32>
+  %1 = zap.tensor.construct %ptr[%size] : !zap.tensor<[?, 4], f32>
+  // CHECK: zap.tensor.construct %[[OPAQUE]] of %[[DTYPE]] : !zap.tensor<[4, 5], ?>
+  %2 = zap.tensor.construct %opaque of %dtype : !zap.tensor<[4, 5], ?>
+  // CHECK: zap.tensor.construct %[[OPAQUE]][%[[SIZE]], %[[SIZE]], %[[SIZE]]] of %[[DTYPE]] : !zap.tensor<[?, ?, ?], ?>
+  %3 = zap.tensor.construct %opaque[%size, %size, %size] of %dtype : !zap.tensor<[?, ?, ?], ?>
+  kgen.return %0, %1, %2, %3 : !zap.tensor<[4, 5, 3], f32>,
+                               !zap.tensor<[?, 4], f32>,
+                               !zap.tensor<[4, 5], ?>,
+                               !zap.tensor<[?, ?, ?], ?>
+}
+
+// CHECK-LABEL: @zap_tensor_dim
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_dim(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?, 4, ?], f32>,
+  %tensor2: !zap.tensor<[?, ?, ?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.tensor.dim %[[TENSOR0]][%[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
+  %0 = zap.tensor.dim %tensor0[%idx] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR0]][%[[IDXZERO]]] : !zap.tensor<[4, 5, 3], f32>
+  %1 = zap.tensor.dim %tensor0[%idxZero] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR1]][%[[IDXZERO]]] : !zap.tensor<[?, 4, ?], f32>
+  %2 = zap.tensor.dim %tensor1[%idxZero] : !zap.tensor<[?, 4, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR1]][%[[IDXONE]]] : !zap.tensor<[?, 4, ?], f32>
+  %3 = zap.tensor.dim %tensor1[%idxOne] : !zap.tensor<[?, 4, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDXZERO]]] : !zap.tensor<[?, ?, ?], f32>
+  %4 = zap.tensor.dim %tensor2[%idxZero] : !zap.tensor<[?, ?, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDXONE]]] : !zap.tensor<[?, ?, ?], f32>
+  %5 = zap.tensor.dim %tensor2[%idxOne] : !zap.tensor<[?, ?, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?, ?, ?], f32>
+  %6 = zap.tensor.dim %tensor2[%idx] : !zap.tensor<[?, ?, ?], f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>

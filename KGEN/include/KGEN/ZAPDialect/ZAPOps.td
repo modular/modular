@@ -364,6 +364,76 @@ def ZAP_BufferSIMDStoreOp : ZAPOp<"buffer.simd_store"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TensorConstructOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [NoSideEffect,
+    AttrSizedOperandSegments, TensorPointerType<"result", "ptr">]> {
+  let summary = "construct a type with a pointer";
+  let description = [{
+    The `zap.tensor.construct` operation constructs a tensor using a raw
+    pointer. Requires size and/or dtype operands as necessary, if they are
+    dynamic, so not known by the return type. The order of the operands bind
+    to the order of unknown sizes in the return type.
+
+    Example:
+
+    ```mlir
+    // Construct a tensor with a known size and type.
+    %0 = zap.tensor.construct %ptr : !zap.tensor<[4], f32>
+
+    // Construct a 2-dimensional tensor with a dynamic size.
+    %1 = zap.tensor.construct %ptr[%s1, %s2] : !zap.tensor<[?, ?], f32>
+
+    // Construct a 2-dimensional tensor with the last dimension being dynamic.
+    %2 = zap.tensor.construct %ptr[%s1] : !zap.tensor<[42, ?], f32>
+
+    // Construct a tensor with a dynamic dtype.
+    %3 = zap.tensor.construct %ptr of %dtype : !zap.tensor<[4], ?>
+
+    // Construct a buffer with a dynamic size and dtype.
+    %4 = zap.tensor.construct %ptr[%size] of %dtype : !zap.tensor<[?], ?>
+    ```
+  }];
+
+  let arguments = (ins POP_PointerType:$ptr, Variadic<Index>:$shape,
+                       Optional<DTypeType>:$dType);
+  let results = (outs ZAP_TensorType:$result);
+  let assemblyFormat = [{
+    $ptr (`[` $shape^ `]`)? (`of` $dType^)? attr-dict `:`
+    qualified(type($result))
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// TensorDimOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
+  let summary = "get the dimension of the tensor at specified index";
+  let description = [{
+    The `zap.tensor.dim` operation returns the size of the given tensor as an
+    SSA value (of type `index`) at the specified dimension.
+
+    Example:
+
+    ```mlir
+    %0 = zap.tensor.dim %arg0[%idx] : !zap.tensor<[3], f32>
+    %1 = zap.tensor.dim %arg1[%idx] : !zap.tensor<[4, ?], f32>
+    ```
+  }];
+
+  let arguments = (ins ZAP_TensorType:$tensor, Index:$dimension);
+  let results = (outs Index:$result);
+  let assemblyFormat = [{
+    $tensor `[` $dimension `]` attr-dict `:` qualified(type($tensor))
+  }];
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PrintOp
 //===----------------------------------------------------------------------===//
 
