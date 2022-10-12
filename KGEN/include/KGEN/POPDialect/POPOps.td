@@ -1031,6 +1031,7 @@ def VariantGetOp : POPOp<"variant.get", [NoSideEffect]> {
   }];
 
   let hasVerifier = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
