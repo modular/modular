@@ -602,14 +602,14 @@ kgen.generator @struct<type: type, dtype: dtype>(
 ) -> (!kgen.paramref<type>, !pop.scalar<dtype>) {
   // CHECK: %[[S0:.*]] = pop.struct.construct(%[[A]], %[[B]]) : !pop.struct<type, !pop.scalar<dtype>>
   %0 = pop.struct.construct(%a, %b) : !pop.struct<type, !pop.scalar<dtype>>
-  // CHECK: %[[V0:.*]] = pop.get_element %[[S0]][0] : !pop.struct<type, !pop.scalar<dtype>>
-  %1 = pop.get_element %0[0] : !pop.struct<type, !pop.scalar<dtype>>
-  // CHECK: %[[V1:.*]] = pop.get_element %[[S0]][1] : !pop.struct<type, !pop.scalar<dtype>>
-  %2 = pop.get_element %0[1] : !pop.struct<type, !pop.scalar<dtype>>
-  // CHECK: pop.replace_element %{{.*}}, %[[S0]][0] : !pop.struct<type, !pop.scalar<dtype>>
-  %3 = pop.replace_element %1, %0[0] : !pop.struct<type, !pop.scalar<dtype>>
-  // CHECK: pop.replace_element %{{.*}}, %{{.*}}[1] : !pop.struct<type, !pop.scalar<dtype>>
-  %4 = pop.replace_element %2, %3[1] : !pop.struct<type, !pop.scalar<dtype>>
+  // CHECK: %[[V0:.*]] = pop.struct.get %[[S0]][0] : !pop.struct<type, !pop.scalar<dtype>>
+  %1 = pop.struct.get %0[0] : !pop.struct<type, !pop.scalar<dtype>>
+  // CHECK: %[[V1:.*]] = pop.struct.get %[[S0]][1] : !pop.struct<type, !pop.scalar<dtype>>
+  %2 = pop.struct.get %0[1] : !pop.struct<type, !pop.scalar<dtype>>
+  // CHECK: pop.struct.replace %{{.*}}, %[[S0]][0] : !pop.struct<type, !pop.scalar<dtype>>
+  %3 = pop.struct.replace %1, %0[0] : !pop.struct<type, !pop.scalar<dtype>>
+  // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1] : !pop.struct<type, !pop.scalar<dtype>>
+  %4 = pop.struct.replace %2, %3[1] : !pop.struct<type, !pop.scalar<dtype>>
   // CHECK: return %[[V0]], %[[V1]] : !kgen.paramref<type>, !pop.scalar<dtype>
   kgen.return %1, %2 : !kgen.paramref<type>, !pop.scalar<dtype>
 }

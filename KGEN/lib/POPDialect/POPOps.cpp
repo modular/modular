@@ -520,7 +520,7 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 }
 
 //===----------------------------------------------------------------------===//
-// GetElementOp
+// StructGetOp
 //===----------------------------------------------------------------------===//
 
 /// Verify the value type matches the struct element type at the given index.
@@ -541,17 +541,17 @@ verifyStructValueType(Operation *op, mlir::TypedValue<StructType> container,
   return success();
 }
 
-LogicalResult GetElementOp::verify() {
+LogicalResult StructGetOp::verify() {
   return verifyStructValueType(*this, getContainer(), getIndexAttr(), getType(),
                                "result");
 }
 
-LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
-                                             Optional<Location> loc,
-                                             ValueRange operands,
-                                             DictionaryAttr attrs,
-                                             mlir::RegionRange regions,
-                                             SmallVectorImpl<Type> &types) {
+LogicalResult StructGetOp::inferReturnTypes(MLIRContext *context,
+                                            Optional<Location> loc,
+                                            ValueRange operands,
+                                            DictionaryAttr attrs,
+                                            mlir::RegionRange regions,
+                                            SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     if (loc)
       return mlir::emitError(*loc, msg);
@@ -574,13 +574,13 @@ LogicalResult GetElementOp::inferReturnTypes(MLIRContext *context,
   return success();
 }
 
-void GetElementOp::build(OpBuilder &b, OperationState &state, Value container,
-                         int64_t index) {
+void StructGetOp::build(OpBuilder &b, OperationState &state, Value container,
+                        int64_t index) {
   return build(b, state, container, b.getIndexAttr(index));
 }
 
 //===----------------------------------------------------------------------===//
-// ReplaceElementOp
+// StructReplaceOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
@@ -598,7 +598,7 @@ static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
 static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
                                  Type structType, IntegerAttr index) {}
 
-LogicalResult ReplaceElementOp::verify() {
+LogicalResult StructReplaceOp::verify() {
   return verifyStructValueType(*this, getContainer(), getIndexAttr(),
                                getValue().getType(), "operand");
 }

@@ -870,25 +870,25 @@ def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
-// GetElementOp
+// StructGetOp
 //===----------------------------------------------------------------------===//
 
-def POP_GetElementOp : POPOp<"get_element", [NoSideEffect,
+def POP_StructGetOp : POPOp<"struct.get", [NoSideEffect,
     DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "struct extract value";
   let description = [{
-    The `pop.get_element` operation gets the struct element at the given
+    The `pop.struct.get` operation gets the struct element at the given
     index from the provided struct.
 
     Example:
 
     ```mlir
     // Extract the !pop.scalar<f32> at index 0.
-    %0 = pop.get_element %struct[0]
+    %0 = pop.struct.get %struct[0]
       : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
 
     // Extract the !pop.scalar<f64> at index 1.
-    %1 = pop.get_element %struct[1]
+    %1 = pop.struct.get %struct[1]
       : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
     ```
   }];
@@ -905,25 +905,25 @@ def POP_GetElementOp : POPOp<"get_element", [NoSideEffect,
 }
 
 //===----------------------------------------------------------------------===//
-// ReplaceElementOp
+// StructReplaceOp
 //===----------------------------------------------------------------------===//
 
-def POP_ReplaceElementOp : POPOp<"replace_element", [NoSideEffect,
+def POP_StructReplaceOp : POPOp<"struct.replace", [NoSideEffect,
     AllTypesMatch<["container", "result"]>]> {
   let summary = "struct insert value";
   let description = [{
-    The `pop.replace_element` operation inserts the given value into the struct
+    The `pop.struct.replace` operation inserts the given value into the struct
     at the given index. It returns a new struct with the inserted value.
 
     Example:
 
     ```mlir
     // Insert the !pop.scalar<f32> at index 0.
-    %0 = pop.replace_element %f32, %struct[0]
+    %0 = pop.struct.replace %f32, %struct[0]
       : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
 
     // Insert the !pop.scalar<f64> at index 1.
-    %1 = pop.replace_element %f64, %struct[1]
+    %1 = pop.struct.replace %f64, %struct[1]
       : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
     ```
   }];

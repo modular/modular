@@ -20,13 +20,13 @@ kgen.func @struct_insert(
     %b: !pop.scalar<f32>
 ) -> !pop.struct<!pop.scalar<f32>> {
   // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[0] : !llvm.struct<(f32)>
-  %0 = pop.replace_element %b, %a[0] : !pop.struct<!pop.scalar<f32>>
+  %0 = pop.struct.replace %b, %a[0] : !pop.struct<!pop.scalar<f32>>
   kgen.return %0 : !pop.struct<!pop.scalar<f32>>
 }
 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%a: !pop.struct<!pop.scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: llvm.extractvalue %{{.*}}[0]
-  %0 = pop.get_element %a[0] : !pop.struct<!pop.scalar<f32>>
+  %0 = pop.struct.get %a[0] : !pop.struct<!pop.scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }

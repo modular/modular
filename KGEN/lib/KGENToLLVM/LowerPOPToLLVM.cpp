@@ -481,15 +481,14 @@ struct ConvertPOPStructConstruct
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPReplaceElement
+// ConvertPOPStructReplace
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPReplaceElement
-    : mlir::ConvertOpToLLVMPattern<ReplaceElementOp> {
+struct ConvertPOPStructReplace : mlir::ConvertOpToLLVMPattern<StructReplaceOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(ReplaceElementOp op, ReplaceElementOpAdaptor adaptor,
+  matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
         op, adaptor.getContainer(), adaptor.getValue(),
@@ -499,14 +498,14 @@ struct ConvertPOPReplaceElement
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPGetElement
+// ConvertPOPStructGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPGetElement : mlir::ConvertOpToLLVMPattern<GetElementOp> {
+struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(GetElementOp op, GetElementOpAdaptor adaptor,
+  matchAndRewrite(StructGetOp op, StructGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, adaptor.getContainer(), op.getIndexAttr().getInt());
@@ -801,7 +800,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,
-      ConvertPOPGetElement,
+      ConvertPOPStructGet,
       ConvertPOPIndexToPointer,
       ConvertPOPLoad,
       ConvertPOPMax,
@@ -811,7 +810,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPOffset,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
-      ConvertPOPReplaceElement,
+      ConvertPOPStructReplace,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
