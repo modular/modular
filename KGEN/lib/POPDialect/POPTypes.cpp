@@ -291,6 +291,14 @@ Optional<int64_t> VariantType::getTypeIndex(Type type) const {
   return {};
 }
 
+SmallVector<Type> VariantType::getParameterizedElementTypes() const {
+  SmallVector<Type> types;
+  types.reserve(getTypes().size());
+  for (TypedAttr type : getTypes())
+    types.push_back(ParamRefType::get(type));
+  return types;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

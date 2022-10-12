@@ -13,13 +13,14 @@ add_modular_tool(kgen
   KGENCLOptions
   LITDialect
   IndexDialect
-  KGENElaborator
+  KGENCompilerRT
   KGENDialect
+  KGENElaborator
+  KGENTransforms
   ZAPDialect
   LowerLIT
   LowerZAPToPOP
   POPDialect
-  KGENCompilerRT
 
   MLIRBytecodeWriter
   MLIRParser

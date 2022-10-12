@@ -30,6 +30,7 @@ def FuncOp
   : KGENOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                     Symbol, IsolatedFromAbove,
                     SingleBlockImplicitTerminator<"ReturnOp">,
+                    DeclareOpInterfaceMethods<CallableOpInterface>,
                     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "concrete function definition";
@@ -77,6 +78,7 @@ def GeneratorOp
   : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
                          SingleBlockImplicitTerminator<"ReturnOp">,
+                         DeclareOpInterfaceMethods<CallableOpInterface>,
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                          DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "Function generator definition";

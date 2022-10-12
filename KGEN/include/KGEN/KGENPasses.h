@@ -65,7 +65,6 @@ void registerLowerToLLVMPipeline();
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
-#define GEN_PASS_DECL_EMITLLVM
 #include "KGEN/KGENPasses.h.inc"
 
 } // namespace M::KGEN
