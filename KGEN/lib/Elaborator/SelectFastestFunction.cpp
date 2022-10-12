@@ -43,7 +43,7 @@ static uint64_t benchmarkSingleFunc(CompiledFunc k, void *argMemory,
 }
 
 ErrorOr<size_t>
-M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
+M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, SymbolTable &symtab,
                                ArrayRef<FuncOp> specializations) {
   // If any of the input or result types are not OpaqueObjectInterface
   // adherents, we can't do this evaluation.
@@ -76,8 +76,9 @@ M::KGEN::selectFastestFunction(GeneratorInterfaceOp itf, ModuleOp primaryModule,
   }
 
   // We only want the funcs passed-in to be code-generated.
-  if (auto err = engine.add(primaryModule, specializations))
-    return err.takeError();
+  for (FuncOp specialization : specializations)
+    if (ErrorOrSuccess err = engine.add(symtab, specialization))
+      return err.takeError();
 
   // And now reset them. We have to be explicit cause otherwise zip adds a const
   // we don't want here.

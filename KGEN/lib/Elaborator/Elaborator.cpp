@@ -98,6 +98,8 @@ namespace {
 /// consistent bindings.
 class ElaboratedGenerator {
 public:
+  explicit ElaboratedGenerator(FuncOp func) : func(func) {}
+
   /// This is the func that is produced.
   FuncOp func;
 
@@ -187,9 +189,10 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(ModuleOp primary, ArrayRef<OwningOpRef<ModuleOp>> libraryModules);
+  Elaborator(SymbolTable &symtab, ArrayRef<GeneratorOp> primaryGenerators)
+      : symtab(symtab), primaryGenerators(primaryGenerators) {}
 
-  ModuleOp getPrimaryModule() const { return primaryModule; }
+  ArrayRef<GeneratorOp> getPrimaryGenerators() { return primaryGenerators; }
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
@@ -200,16 +203,13 @@ public:
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(SymbolRefAttr symbolRef) {
-    return symbolTable.lookup(symbolRef.getLeafReference());
+    return symtab.lookup(symbolRef.cast<FlatSymbolRefAttr>().getAttr());
   }
 
   /// Return all instantiations of the specified declaration (a func,
   /// generator, or interface) with the specified input parameter values.
-  /// `insertionPoint` is always a point in the primary module where a new
-  /// func should be placed if necessary.
   ArrayRef<ElaboratedGeneratorOrCalleeError>
-  getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                       Operation *insertionPoint);
+  getAllInstantiations(DeclAndInputParamsPair declAndInputParams);
 
   /// Insert a variant of an existing func into the primary file.
   void insertFuncVariant(FuncOp existing, FuncOp newFunc);
@@ -245,23 +245,14 @@ private:
   specializeFunc(FuncOp func, ModuleOp sourceModule);
 
   /// Specialize a generator with the specified input parameters and return the
-  /// generated func.  `insertionPoint` is always a point in the primary module
-  /// where a new func should be placed if necessary.
+  /// generated func.
   SmallVector<ElaboratedGeneratorOrCalleeError>
-  specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                      Operation *insertionPoint);
+  specializeGenerator(DeclAndInputParamsPair declAndInputParams);
 
   /// Specialize a generator interface with the specified input parameters and
-  /// return the generated func.  `insertionPoint` is always a point in the
-  /// primary module where a new func should be placed if necessary.
+  /// return the generated func.
   SmallVector<ElaboratedGeneratorOrCalleeError>
-  specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                      Operation *insertionPoint);
-
-  void insertIntoPrimaryModule(FuncOp func, Block::iterator insertPt = {}) {
-    StringAttr name = primaryModuleSymbolTable.insert(func, insertPt);
-    symbolTable.try_emplace(name, func);
-  }
+  specializeInterface(DeclAndInputParamsPair declAndInputParams);
 
   /// Report an error given an interface and an error string - just reduces
   /// boilerplate around CalleeExpansionError creation.
@@ -272,14 +263,11 @@ private:
   };
 
 private:
-  /// These are the two modules we start with.  The primary module is mutated by
-  /// our algorithm, the library modules are immutable.
-  ModuleOp primaryModule;
-  ArrayRef<OwningOpRef<ModuleOp>> libraryModules;
+  /// This symbol table allows efficient lookups across the module.
+  SymbolTable symtab;
 
-  /// This symbol table allows efficient lookups across all modules.
-  DenseMap<StringAttr, Operation *> symbolTable;
-  SymbolTable primaryModuleSymbolTable;
+  /// These are the primary generators to specialize.
+  ArrayRef<GeneratorOp> primaryGenerators;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -305,29 +293,10 @@ private:
 };
 } // namespace
 
-Elaborator::Elaborator(ModuleOp primary,
-                       ArrayRef<OwningOpRef<ModuleOp>> libraryModules)
-    : primaryModule(primary), libraryModules(libraryModules),
-      primaryModuleSymbolTable(primary) {
-  // Initialize the symbol table.
-  auto nameId =
-      StringAttr::get(primary.getContext(), SymbolTable::getSymbolAttrName());
-  auto collectSymbols = [&](ModuleOp module) {
-    for (Operation &op : *module.getBody()) {
-      if (auto name = op.getAttrOfType<StringAttr>(nameId))
-        symbolTable.try_emplace(name, &op);
-    }
-  };
-  collectSymbols(primary);
-  for (auto &libraryModule : libraryModules)
-    collectSymbols(libraryModule.get());
-}
-
 /// Insert a variant of an existing func into the primary file.
 void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
-  insertIntoPrimaryModule(newFunc,
-                          /*insertionPoint*/ ++insertPt);
+  symtab.insert(newFunc, ++insertPt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -369,8 +338,8 @@ class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func, ModuleOp sourceModule,
                     ArrayRef<Operation *> opsToRewrite)
-      : elaborator(elaborator), sourceModule(sourceModule) {
-    elaboratedGenerator.func = func;
+      : elaborator(elaborator), sourceModule(sourceModule),
+        elaboratedGenerator(func) {
     nextCallRegionID = 0;
     evaluators.push_back(ParameterEvaluator());
     commandWorklist.reserve(opsToRewrite.size());
@@ -390,8 +359,8 @@ public:
     return evaluators.back();
   }
 
-  /// Process all the `commandWorklist`, simplifying this func.  If new variants
-  /// of this func are necessary, they are added to rewriterWorklist.
+  /// Process all the `commandWorklist`, simplifying this func.  If new
+  /// variants of this func are necessary, they are added to rewriterWorklist.
   LogicalResult
   rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
 
@@ -407,8 +376,8 @@ public:
   /// may not even verify correctly, it will be removed later.
   CalleeExpansionError takeDiagnosticAndEraseFunc();
 
-  /// Generate a error expanding this generator.  The location specified is the
-  /// operation with the problem, and the message is the problem with it.
+  /// Generate a error expanding this generator.  The location specified is
+  /// the operation with the problem, and the message is the problem with it.
   LogicalResult error(Location loc, Error message) {
     assert(!diagnostic.has_value() && "Already emitted an error");
     diagnostic = ElaborationDiagnostic(loc, std::move(message));
@@ -417,8 +386,8 @@ public:
 
   /// Generate an error expanding this generator for a call expansion problem.
   /// The location specified is for the call.  Each entry in calleeErrors
-  /// includes the location of the declaration that failed to expand along with
-  /// why it failed.
+  /// includes the location of the declaration that failed to expand along
+  /// with why it failed.
   LogicalResult errorCalling(Location callLoc,
                              ArrayRef<CalleeExpansionError> calleeErrors) {
     assert(!diagnostic.has_value() && "Already emitted an error");
@@ -446,7 +415,8 @@ private:
                          SmallVectorImpl<ParameterRewriter> &rewriters);
   LogicalResult processGenericOp(Operation *op);
 
-  /// This is maintains global information about the file we're generating into.
+  /// This is maintains global information about the file we're generating
+  /// into.
   Elaborator &elaborator;
 
   /// This indicates which module this func originally came from (e.g. one of
@@ -457,14 +427,14 @@ private:
   /// This is the generator -> func we're working on.
   ElaboratedGenerator elaboratedGenerator;
 
-  /// This is the diagnostic explaining the expansion failure if something goes
-  /// wrong.
+  /// This is the diagnostic explaining the expansion failure if something
+  /// goes wrong.
   Optional<ElaborationDiagnostic> diagnostic;
 
-  /// This is a stack of evaluators to use to process parameter expressions. The
-  /// current evaluator is always at the back() of the list.  Having a stack of
-  /// evaluators allows us to maintain scoped parameters when processing
-  /// regions.
+  /// This is a stack of evaluators to use to process parameter expressions.
+  /// The current evaluator is always at the back() of the list.  Having a
+  /// stack of evaluators allows us to maintain scoped parameters when
+  /// processing regions.
   SmallVector<ParameterEvaluator, 2> evaluators;
 
   /// These are the commands that still need to get performed before this func
@@ -472,8 +442,8 @@ private:
   /// rewritten.
   SmallVector<RewriterCommandType> commandWorklist;
 
-  /// This is a counter that gives each region attached to a kgen.call a unique
-  /// number (and therefore, unique name).
+  /// This is a counter that gives each region attached to a kgen.call a
+  /// unique number (and therefore, unique name).
   unsigned nextCallRegionID;
 };
 } // namespace
@@ -719,17 +689,15 @@ LogicalResult ParameterRewriter::processCallOp(
   // consistent callee.
   if (FuncOp callee =
           elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
-    ElaboratedGenerator elaboratedCallee;
-    elaboratedCallee.func = callee;
-    completeCallOpProcessing(call, calleeDeclAndInputParams, elaboratedCallee);
+    completeCallOpProcessing(call, calleeDeclAndInputParams,
+                             ElaboratedGenerator(callee));
     return success();
   }
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
   ArrayRef<ElaboratedGeneratorOrCalleeError> newCalleesRef =
-      elaborator.getAllInstantiations(calleeDeclAndInputParams,
-                                      elaboratedGenerator.func);
+      elaborator.getAllInstantiations(calleeDeclAndInputParams);
 
   // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -739,7 +707,7 @@ LogicalResult ParameterRewriter::processCallOp(
   // If we found more than one callee to produce then we need to spawn
   // multiple versions of the func we are currently constructing, each
   // which get a different callee.
-  ElaboratedGenerator thisCallee;
+  ElaboratedGenerator thisCallee(/*func=*/nullptr);
   for (const ElaboratedGeneratorOrCalleeError &candidate : newCallees) {
     // Ignore erroneous callees.
     if (std::holds_alternative<CalleeExpansionError>(candidate))
@@ -815,7 +783,6 @@ void ParameterRewriter::spawnNewFuncClone(
     CallOp call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
-
   // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
   DenseMap<Operation *, Operation *> operationMap;
@@ -1132,22 +1099,10 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
 
 /// Specialize a generator with the specified input parameters and return the
 /// symbol name to use for the result, along with an array of ParamBindAttrs for
-/// the result attributes.  `insertionPoint` is always a point in the primary
-/// module where a new func should be placed if necessary.
+/// the result attributes.
 SmallVector<ElaboratedGeneratorOrCalleeError>
-Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                                Operation *insertionPoint) {
+Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
-
-  // We insert specializations of the generator immediately before the generator
-  // if it is defined in the primary module.  Otherwise if it is from the
-  // library, it would be better to insert it before the first client that
-  // needed it (make tests easier to write).
-  if (generator->getParentOp() == primaryModule) {
-    insertionPoint = generator;
-  } else {
-    assert(insertionPoint && insertionPoint->getParentOp() == primaryModule);
-  }
 
   ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
   auto inputParamDecls = generator.getInputParamDecls();
@@ -1156,7 +1111,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
-  OpBuilder b(insertionPoint);
+  OpBuilder b(generator);
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
       generator.getFunctionType(), generator.getLinkageAttr(),
@@ -1164,7 +1119,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  insertIntoPrimaryModule(newFunc);
+  symtab.insert(newFunc);
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
@@ -1206,11 +1161,9 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 }
 
 /// Specialize a generator interface with the specified input parameters and
-/// return the generated func.  `insertionPoint` is always a point in the
-/// primary module where a new func should be placed if necessary.
+/// return the generated func.
 SmallVector<ElaboratedGeneratorOrCalleeError>
-Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                                Operation *insertionPoint) {
+Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
   SmallVector<ElaboratedGeneratorOrCalleeError> result;
 
@@ -1228,8 +1181,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
-    auto funcs =
-        getAllInstantiations({gen, declAndInputParams.second}, insertionPoint);
+    auto funcs = getAllInstantiations({gen, declAndInputParams.second});
     result.append(funcs.begin(), funcs.end());
   }
 
@@ -1265,7 +1217,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
 
   ErrorOr<size_t> bestSpecializationIdxOr =
-      selectFastestFunction(itf, primaryModule, searchInputs);
+      selectFastestFunction(itf, symtab, searchInputs);
 
   if (failed(bestSpecializationIdxOr))
     return {
@@ -1277,12 +1229,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
 /// Return all instantiations of the specified declaration (a  generator or
 /// interface) with the specified input parameter values.
-///
-/// `insertionPoint` is always a point in the primary module where a new
-/// func should be placed if necessary.
 ArrayRef<ElaboratedGeneratorOrCalleeError>
-Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                                 Operation *insertionPoint) {
+Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
   auto cacheIt = generatedFuncs.find(declAndInputParams);
@@ -1303,34 +1251,17 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  localError))) {
     /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
-    auto sourceModule = decl->getParentOfType<ModuleOp>();
-
-    // If the func being referenced is in an included module, then copy it
-    // into the primary module (the primary module must be self contained by the
-    // time we are done).  We can/should consider more flexible approaches, e.g.
-    // allowing 'extern' references to funcs.
-    // FIXME(Issue #2703): Stop doing this.
-    if (sourceModule != primaryModule) {
-      /// Clone the library func and insert it at the insertion point.
-      func = func.clone();
-      assert(insertionPoint && "must be set in non-primary modules");
-      insertIntoPrimaryModule(func, Block::iterator(insertionPoint));
-    }
-
-    // FIXME: There is no need to specialize it.  All this does in practice is
-    // pull in other recursively referenced funcs.
-    newCallees = specializeFunc(func, sourceModule);
+    // Nothing to do here. Just return the function.
+    newCallees.emplace_back(ElaboratedGenerator(func));
   } else if (isa<GeneratorOp>(decl)) {
-    newCallees = specializeGenerator(declAndInputParams, insertionPoint);
+    newCallees = specializeGenerator(declAndInputParams);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
-    newCallees = specializeInterface(declAndInputParams, insertionPoint);
+    newCallees = specializeInterface(declAndInputParams);
   } else {
     (void)localError(decl->getLoc(), "call to an unknown kind of declaration");
   }
 
-  auto &result = generatedFuncs[declAndInputParams];
-  result = std::move(newCallees);
-  return result;
+  return generatedFuncs[declAndInputParams] = std::move(newCallees);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1348,43 +1279,25 @@ ParseResult Elaborator::collectInterfaces() {
 
   // Scan the specified module collecting all the generators that implement an
   // interface and checking the interfaces between library files line up.
-  auto collectGeneratorsAndInterfaces = [&](ModuleOp module) -> ParseResult {
-    for (auto &op : module.getOps()) {
-      // Collect interfaces, and if we have seen another one already, verify
-      // their signatures match.
-      if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
-        auto [it, inserted] =
-            libraryInterfaces.insert({itf.getNameAttr(), itf});
-        if (inserted) // Just remember it on the first hit.
-          continue;
-
-        // If this is the second match, check that the signatures match.
-        if (failed(verifyDeclMatchesInterface("interface", itf,
-                                              "library interface", it->second)))
-          return failure();
+  for (Operation &op : cast<ModuleOp>(symtab.getOp()).getOps()) {
+    // Collect interfaces.
+    if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
+      if (auto [it, inserted] =
+              libraryInterfaces.insert({itf.getNameAttr(), itf});
+          inserted)
         continue;
-      }
-
-      // If this is a generator, keep track of it.
-      if (auto generator = dyn_cast<GeneratorOp>(op))
-        if (auto interface = generator.getImplementsAttr())
-          interfaceImpls[interface.getAttr()].push_back(generator);
-
-      // Detect common errors cleanly, and report it.
-      if (op.getName().getStringRef() == "lit.func")
-        return op.emitError("unlowered lit.func discovered in KGEN elaborator");
     }
-    return success();
-  };
 
-  for (auto &module : libraryModules) {
-    if (failed(collectGeneratorsAndInterfaces(module.get())))
-      return failure();
+    // If this is a generator, keep track of it.
+    if (auto generator = dyn_cast<GeneratorOp>(op))
+      if (auto interface = generator.getImplementsAttr())
+        interfaceImpls[interface.getAttr()].push_back(generator);
+
+    // Detect common errors cleanly, and report it.
+    if (op.getName().getStringRef() == "lit.func")
+      return op.emitError("unlowered lit.func discovered in KGEN elaborator");
   }
-
-  // If they all match up, collect the generator implementations from the
-  // primary module.
-  return collectGeneratorsAndInterfaces(primaryModule);
+  return success();
 }
 
 namespace {
@@ -1394,7 +1307,7 @@ public:
   ParseResult run();
 
 private:
-  ParseResult checkRecursively(Operation *op, ModuleOp module);
+  ParseResult checkRecursively(Operation *op);
 
   Elaborator &elaborator;
   llvm::SetVector<Operation *> callStack;
@@ -1406,7 +1319,7 @@ private:
 /// Check the specified operation and its call-tree by visiting callees in
 /// depth-first order.  If we report errors the call-graph, and keep track of
 /// known-ok operators to avoid redundant work.
-ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
+ParseResult RecursionChecker::checkRecursively(Operation *op) {
   // If we've already verified that this operator and all its callees are ok,
   // then we're already done.
   if (alreadyCheckedOps.count(op))
@@ -1441,7 +1354,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
     callStackCalls.push_back(call);
     if (isa<FuncOp, GeneratorOp>(callee)) {
       // For direct calls, we immediately check the callee.
-      if (checkRecursively(callee, module))
+      if (checkRecursively(callee))
         failed = true;
     } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(callee)) {
       // For generator interfaces, we resolve to all the implementations.
@@ -1449,8 +1362,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
         // Make sure we keep track of the current module we're scanning.
         // TODO: This recursively checks all code in the imported libraries.
         // Will this be needed when these are individually checked on their own?
-        ModuleOp genModule = gen->getParentOfType<ModuleOp>();
-        if (checkRecursively(gen, genModule))
+        if (checkRecursively(gen))
           failed = true;
       }
     } else {
@@ -1472,9 +1384,8 @@ ParseResult RecursionChecker::checkRecursively(Operation *op, ModuleOp module) {
 
 ParseResult RecursionChecker::run() {
   // Check all the operations at the top level of the primary module.
-  auto module = elaborator.getPrimaryModule();
-  for (Operation &op : module.getOps())
-    if (checkRecursively(&op, module))
+  for (GeneratorOp gen : elaborator.getPrimaryGenerators())
+    if (checkRecursively(gen))
       return failure();
   return success();
 }
@@ -1538,10 +1449,140 @@ static void emitElaborationError(InFlightDiagnostic &diag,
   }
 }
 
-static LogicalResult
-resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
-               DenseSet<StringAttr> &loadedFiles,
-               SmallVectorImpl<OwningOpRef<ModuleOp>> &includedModules) {
+/// When including files, some symbols may be duplicated. Attempt to reconcile
+/// the `included` symbol with the current `symbol`. Returns failure if the
+/// duplicate symbols could not be reconciled.
+static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
+                                              Operation *included) {
+  // Make sure they're the same kind of op.
+  if (symbol->getName() != included->getName()) {
+    InFlightDiagnostic diag = symbol->emitError("redefinition of symbol @")
+                              << name << " as a " << symbol->getName();
+    return diag.attachNote(included->getLoc())
+           << "previously defined as a " << included->getName() << " here";
+  }
+
+  // If the symbol is a generator or function, it cannot be redefined.
+  if (isa<FuncOp, GeneratorOp>(symbol)) {
+    InFlightDiagnostic diag =
+        symbol->emitError("redefinition of ")
+        << (isa<FuncOp>(symbol) ? "function" : "generator") << " @" << name;
+    return diag.attachNote(included->getLoc())
+           << "see previous definition here";
+  }
+
+  // Interfaces can be redeclared. Ensure the declarations match.
+  if (auto iface = dyn_cast<GeneratorInterfaceOp>(symbol)) {
+    auto incIface = cast<GeneratorInterfaceOp>(included);
+
+    // Emit nice diagnostics for the obvious possible differences: signatures
+    // and constraints.
+    if (failed(verifyDeclSignaturesMatch(
+            "interface redeclaration", iface.getSignature(), iface.getLoc(),
+            "previous interface declaration", incIface.getSignature(),
+            incIface.getLoc())))
+      return failure();
+
+    if (iface.getConstraintsAttr() != incIface.getConstraintsAttr()) {
+      return (symbol->emitError("interface @")
+              << name << " was redeclared with different constraints")
+                 .attachNote(included->getLoc())
+             << "previous declaration here";
+    }
+
+    // Just check the attributes now.
+    if (symbol->getAttrDictionary() != included->getAttrDictionary()) {
+      InFlightDiagnostic diag =
+          symbol->emitError("redeclaration of interface @")
+          << name << " has different attributes";
+      return diag.attachNote(included->getLoc())
+             << "see previous declaration here";
+    }
+
+    // Identical interface declarations can be reconciled if they match.
+    return success();
+  }
+
+  // Structs can be redeclared. Ensure parameters and fields match.
+  if (auto type = dyn_cast<StructDeclOp>(symbol)) {
+    auto incType = cast<StructDeclOp>(included);
+
+    // Emit nice diagnostics for for the obvious possible differences: input
+    // parameters.
+    if (failed(verifyParamDeclsMatch(
+            "struct redeclaration", type.getParamDecls(), type.getLoc(),
+            "previous struct declaration", incType.getParamDeclsAttr(),
+            incType.getLoc())))
+      return failure();
+
+    if (type.getConstraintsAttr() != incType.getConstraintsAttr()) {
+      return (symbol->emitError("type @")
+              << name << " was redeclared with different constraints")
+                 .attachNote(included->getLoc())
+             << "previous declaration here";
+    }
+
+    // Check other attributes.
+    if (symbol->getAttrDictionary() != included->getAttrDictionary()) {
+      InFlightDiagnostic diag =
+          symbol->emitError("redeclaration of interface @")
+          << name << " has different attributes";
+      return diag.attachNote(included->getLoc())
+             << "see previous declaration here";
+    }
+
+    // Check that the fields match.
+    unsigned numFields = std::distance(type.field_begin(), type.field_end());
+    unsigned incNumFields =
+        std::distance(incType.field_begin(), incType.field_end());
+    if (numFields != incNumFields) {
+      InFlightDiagnostic diag = symbol->emitError("type @")
+                                << name << " redeclared with " << numFields
+                                << " fields";
+      diag.attachNote(included->getLoc())
+          << "previously declared with " << incNumFields << " fields here";
+      return failure();
+    }
+
+    unsigned i = 0;
+    auto checkStructField = [&](StructFieldOp lhs, StructFieldOp rhs, auto lhsE,
+                                auto rhsE, StringRef kind) {
+      if (lhsE == rhsE)
+        return false;
+      InFlightDiagnostic diag = lhs->emitError("struct @")
+                                << name << " field #" << i
+                                << " redeclared with different " << kind << " "
+                                << lhsE;
+      diag.attachNote(rhs.getLoc())
+          << "previously declared as " << rhsE << " here";
+      return true;
+    };
+    for (auto [lhs, rhs] :
+         llvm::zip(type.getFieldDecls(), incType.getFieldDecls())) {
+      if (checkStructField(lhs, rhs, lhs.getNameAttr(), rhs.getNameAttr(),
+                           "name") ||
+          checkStructField(lhs, rhs, lhs.getType(), rhs.getType(), "type") ||
+          checkStructField(lhs, rhs, lhs->getAttrDictionary(),
+                           rhs->getAttrDictionary(), "attributes"))
+        return failure();
+      ++i;
+    }
+
+    return success();
+  }
+
+  return included->emitError("included symbol @")
+         << name
+         << " is something other than a function, generator, interface, or "
+            "type";
+}
+
+/// Recursively resolve included files according to the provided search paths,
+/// appending the included IR to the main module. Include each file at most
+/// once.
+static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
+                                    ArrayRef<std::filesystem::path> searchPaths,
+                                    DenseSet<StringAttr> &loadedFiles) {
   if (auto [_, didInsert] = loadedFiles.insert(include.getFileNameAttr());
       !didInsert)
     return success();
@@ -1572,10 +1613,30 @@ resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
   // Recursively resolve transitive includes.
   for (auto inc :
        llvm::make_early_inc_range(includedModule->getOps<IncludeOp>()))
-    if (failed(resolveInclude(inc, searchPaths, loadedFiles, includedModules)))
+    if (failed(resolveInclude(symtab, inc, searchPaths, loadedFiles)))
       return failure();
 
-  includedModules.push_back(std::move(includedModule));
+  // Prepend all the ops to the main module.
+  for (Operation &included :
+       llvm::make_early_inc_range(includedModule->getOps())) {
+    auto name =
+        included.getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName());
+    if (!name)
+      return included.emitError(
+          "unexpected top-level operation that is not a symbol");
+    Operation *symbol = symtab.lookup(name);
+    // If there is no conflict, just add it.
+    if (!symbol) {
+      included.remove();
+      symtab.insert(&included);
+      included.moveAfter(included.getBlock(), included.getBlock()->begin());
+      continue;
+    }
+    if (failed(reconcileDuplicateSymbol(name, symbol, &included)))
+      return failure();
+    // The symbols match, so just ignore the include.
+  }
+
   include->erase();
   return success();
 }
@@ -1585,14 +1646,18 @@ resolveInclude(IncludeOp include, ArrayRef<std::filesystem::path> searchPaths,
 LogicalResult
 M::elaborateGenerators(ModuleOp primary,
                        ArrayRef<std::filesystem::path> searchPaths) {
-  SmallVector<OwningOpRef<ModuleOp>> includedModules;
+  // Save the generators from the main module. These are the only generators
+  // that will be elaborated.
+  SmallVector<GeneratorOp> primaryGenerators =
+      llvm::to_vector(primary.getOps<GeneratorOp>());
+
+  SymbolTable symtab(primary);
   DenseSet<StringAttr> loadedFiles;
   for (auto include : llvm::make_early_inc_range(primary.getOps<IncludeOp>()))
-    if (failed(
-            resolveInclude(include, searchPaths, loadedFiles, includedModules)))
+    if (failed(resolveInclude(symtab, include, searchPaths, loadedFiles)))
       return failure();
 
-  Elaborator elaborator(primary, includedModules);
+  Elaborator elaborator(symtab, primaryGenerators);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -1606,12 +1671,12 @@ M::elaborateGenerators(ModuleOp primary,
   auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
 
   // Elaborate the bodies of all generators without input parameters in the
-  // primary module.  These are roots that will cause callees to get recursively
-  // elaborated.
+  // primary module.  These are roots that will cause callees to get
+  // recursively elaborated.
   // TODO: When we have access control, we can limit this to just the publicly
   // exposed ones.
   bool didFail = false;
-  for (auto generatorRoot : primary.getOps<GeneratorOp>()) {
+  for (GeneratorOp generatorRoot : primaryGenerators) {
     // Ignore generators with input parameters, they can't be turned into
     // concrete funcs anyway, but will get specialized if anything uses them.
     if (!generatorRoot.getInputParamDecls().empty())
@@ -1619,8 +1684,7 @@ M::elaborateGenerators(ModuleOp primary,
 
     // Elaborate the generator into concrete versions.
     ArrayRef<ElaboratedGeneratorOrCalleeError> results =
-        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey},
-                                        generatorRoot);
+        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey});
 
     // If the generator failed to expand into /anything/ then emit an error.
     // Note that the func will have been deleted.
@@ -1643,8 +1707,8 @@ M::elaborateGenerators(ModuleOp primary,
   if (didFail)
     return failure();
 
-  // After removing all the generators, we'll rename any direct implementations
-  // of them to use their name.
+  // After removing all the generators, we'll rename any direct
+  // implementations of them to use their name.
   DenseMap<StringAttr, StringAttr> funcsToRename;
   for (auto [generator, func] : elaborator.getFirstConcreteFuncForGenerator()) {
     // Rename the (auto-renamed) func to match the generator's name.
@@ -1654,8 +1718,8 @@ M::elaborateGenerators(ModuleOp primary,
            "should only include successful expansions");
   }
 
-  // On success, we remove generators and generator interfaces from the file to
-  // clean it up.
+  // On success, we remove generators and generator interfaces from the file
+  // to clean it up.
   for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
     if (isa<GeneratorOp, GeneratorInterfaceOp>(op)) {
       op.erase();

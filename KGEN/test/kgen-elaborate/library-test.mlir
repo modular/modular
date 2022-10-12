@@ -5,7 +5,7 @@
 
 // CHECK-LABEL: kgen.generator.interface @unary_add<size>(si32) -> si32
 
-// expected-note @+1 {{library interface}}
+// expected-note @below {{previous interface declaration declared here}}
 kgen.generator.interface @unary_add<size>(si32) -> si32
 
 // Trivial kernel so we can call something

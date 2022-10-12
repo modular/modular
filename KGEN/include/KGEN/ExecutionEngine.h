@@ -73,9 +73,11 @@ public:
   static ErrorOr<ExecutionEngine> create();
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
-  /// every func and generate self-contained libraries. `only` is a list of
-  /// funcs to process, if empty, adds all the funcs in the module.
-  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<FuncOp> only = {});
+  /// every func and generate self-contained libraries.
+  ErrorOrSuccess add(mlir::ModuleOp module);
+  /// Add a function to the execution engine. This will slice the function's
+  /// dependencies out from the module and generate a self-contained library.
+  ErrorOrSuccess add(SymbolTable &symtab, FuncOp func);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
   ErrorOr<CompiledFunc> lookup(KGEN::FuncOp func);
