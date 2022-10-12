@@ -47,18 +47,17 @@ private:
   friend class RCRef;
 
   // Add a new reference to this object.
-  void addRef() const {
+  void addRef(uint32_t count = 1) const {
     // It is OK to use std::memory_order_relaxed here as it does not affect the
     // ownership state of the object.
-    refCount.fetch_add(1, std::memory_order_relaxed);
+    refCount.fetch_add(count, std::memory_order_relaxed);
   }
 
   // Drop a reference to this object, potentially deallocating it.
-  void dropRef() const {
-    // If refCount == 1, this object is owned only by the caller. Bypass a
+  void dropRef(uint32_t count = 1) const {
+    // If refCount == count, this object is owned only by the caller. Bypass a
     // locked op in that case.
-    if (refCount.load(std::memory_order_acquire) == 1 ||
-        refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    if (refCount.fetch_sub(count, std::memory_order_acq_rel) == count) {
       // Make assert in ~ReferenceCounted happy
       assert((refCount.store(0, std::memory_order_relaxed), true));
       static_cast<const SubClass *>(this)->destroy();
@@ -138,11 +137,12 @@ private:
   friend class RCRef;
 
   // Add a new reference to this object.
-  void addRef() const { ++refCount; }
+  void addRef(uint32_t count = 1) const { refCount += count; }
 
   // Drop a reference to this object, potentially deallocating it.
-  void dropRef() const {
-    if (--refCount == 0)
+  void dropRef(uint32_t count = 1) const {
+    refCount -= count;
+    if (refCount == 0)
       static_cast<const SubClass *>(this)->destroy();
   }
 
