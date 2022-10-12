@@ -23,7 +23,8 @@ class ZAPType<string typeName, string typeMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
-        list<Trait> traits = []> : ZAPType<typeName, typeMnemonic, traits> {
+        list<Trait> traits = []> : ZAPType<typeName, typeMnemonic,
+        [DeclareTypeInterfaceMethods<OpaqueObjectInterface>] # traits> {
   string classDeclaration = "";
   string baseExtraClassDeclaration = [{
     /// Try to narrow the size expression of the type to an integer.
