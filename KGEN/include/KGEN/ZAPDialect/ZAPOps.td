@@ -460,6 +460,69 @@ def ZAP_TensorSizeOp : ZAPOp<"tensor.size", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
+// TensorLoadOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorLoadOp : ZAPOp<"tensor.load",
+    [TensorElementType<"tensor", "result">]> {
+  let summary = "tensor load operation";
+  let description = [{
+    The `zap.tensor.load` operation takes a tensor and a list of index
+    positions and extracts the `!pop.scalar` value at that position. The
+    positions must be of type index and their length must be of the same rank
+    as the tensor.
+
+    Example:
+
+    ```mlir
+    %1 = zap.tensor.load %0[%pos0] : !zap.tensor<[size], dtype>
+    %2 = zap.tensor.load %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>
+    ```
+  }];
+
+  let arguments = (ins Arg<TensorKnownDType, "", [MemRead]>:$tensor,
+                       Variadic<Index>:$positions);
+  let results = (outs POP_ScalarType:$result);
+
+  let assemblyFormat = [{
+    $tensor `[` $positions `]` attr-dict `:` qualified(type($tensor))
+  }];
+
+  let hasVerifier = 1;
+}
+//===----------------------------------------------------------------------===//
+
+// TensorStoreOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorStoreOp : ZAPOp<"tensor.store",
+    [TensorElementType<"tensor", "value">]> {
+  let summary = "tensor store operation";
+  let description = [{
+    The `zap.tensor.store` operation takes a source value, a buffer, and index
+    positions and inserts the source value into the tensor at the specified
+    position. The positions must be of type index and their length must be of
+    the same rank as the tensor.
+
+    Example:
+
+    ```mlir
+    %1 = zap.tensor.store %val, %0[%pos0] : !zap.tensor<[size], dtype>
+    %2 = zap.tensor.store %val, %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>
+    ```
+  }];
+
+  let arguments = (ins Arg<TensorKnownDType, "", [MemWrite]>:$tensor,
+                       POP_ScalarType:$value, Variadic<Index>:$positions);
+
+  let assemblyFormat = [{
+    $value `,` $tensor `[` $positions `]` attr-dict `:` qualified(type($tensor))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // TensorDTypeOp
 //===----------------------------------------------------------------------===//
 

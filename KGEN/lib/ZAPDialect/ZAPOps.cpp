@@ -196,6 +196,30 @@ LogicalResult TensorConstructOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// TensorLoadOp
+//===----------------------------------------------------------------------===//
+
+template <typename Operation>
+static LogicalResult verifyTensorLoadStoreOp(Operation op) {
+  size_t positionsSize = op.getPositions().size();
+  size_t tensorRank =
+      op.getTensor().getType().template cast<TensorType>().getRank();
+  if (positionsSize == tensorRank)
+    return success();
+  return op.emitOpError("requires the number of input positions (")
+         << positionsSize << ") to match the rank of the tensor type ("
+         << tensorRank << ")";
+}
+
+LogicalResult TensorLoadOp::verify() { return verifyTensorLoadStoreOp(*this); }
+
+//===----------------------------------------------------------------------===//
+// TensorStoreOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TensorStoreOp::verify() { return verifyTensorLoadStoreOp(*this); }
+
+//===----------------------------------------------------------------------===//
 // TensorDimOp
 //===----------------------------------------------------------------------===//
 
