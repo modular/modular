@@ -386,3 +386,60 @@ kgen.func @zap_tensor_dim(
   %4 = zap.tensor.dim %tensor2[2] : !zap.tensor<[?, ?, ?], ?>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_rank
+// CHECK-SAME: %[[TENSOR0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[TENSOR1:.*]]: !pop.struct<!pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[TENSOR2:.*]]: !pop.struct<!pop.pointer<!pop.scalar<invalid>>
+kgen.func @zap_tensor_rank(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?], si32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], ?>) {
+  // CHECK: kgen.param.constant = <3>
+  %0 = zap.tensor.rank %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: kgen.param.constant = <1>
+  %1 = zap.tensor.rank %tensor1 : !zap.tensor<[?], si32>
+  // CHECK: kgen.param.constant = <4>
+  %2 = zap.tensor.rank %tensor2 : !zap.tensor<[?, ?, ?, ?], ?>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_address
+// CHECK-SAME: %[[TENSOR0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[TENSOR1:.*]]: !pop.struct<!pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[TENSOR2:.*]]: !pop.struct<!pop.pointer<!pop.scalar<invalid>>
+kgen.func @zap_tensor_address(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?], si32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], ?>) {
+  // CHECK: pop.struct.get %[[TENSOR0]][0]
+  %0 = zap.tensor.address %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: pop.struct.get %[[TENSOR1]][0]
+  %1 = zap.tensor.address %tensor1 : !zap.tensor<[?], si32>
+  // CHECK: pop.struct.get %[[TENSOR2]][0]
+  %2 = zap.tensor.address %tensor2 : !zap.tensor<[?, ?, ?, ?], ?>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_dtype
+// CHECK-SAME: %[[TENSOR0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[TENSOR1:.*]]: !pop.struct<!pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[TENSOR2:.*]]: !pop.struct<!pop.pointer<!pop.scalar<invalid>>
+kgen.func @zap_tensor_dtype(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?], si32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], ?>) {
+  // CHECK: kgen.param.constant: dtype = <f32>
+  %0 = zap.tensor.dtype %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: kgen.param.constant: dtype = <si32>
+  %1 = zap.tensor.dtype %tensor1 : !zap.tensor<[?], si32>
+  // CHECK: pop.struct.get %[[TENSOR2]][3]
+  %2 = zap.tensor.dtype %tensor2 : !zap.tensor<[?, ?, ?, ?], ?>
+  kgen.return
+}
