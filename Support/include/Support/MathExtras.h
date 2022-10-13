@@ -43,8 +43,8 @@ static bool isClose(T a, T b, double absoluteTolerance = 1.0E-5,
 }
 
 /// Computes the mean of the input array.
-template <typename Container>
-inline auto mean(const Container &values)
+template <typename Range>
+inline auto mean(const Range &values)
     -> std::remove_reference_t<decltype(*llvm::adl_begin(values))> {
   using value_type =
       std::remove_reference_t<decltype(*llvm::adl_begin(values))>;
@@ -76,13 +76,16 @@ inline auto trimmedMean(const Range &values, double percent = 0.05)
 }
 
 /// Computes the median of the input array assuming it is sorted.
-template <typename Container>
-inline auto median(const Container &values)
+template <typename Range>
+inline auto median(const Range &values)
     -> std::remove_reference_t<decltype(*llvm::adl_begin(values))> {
   assert(llvm::is_sorted(values) && "values are assumed to be sorted");
 
+  auto begin = llvm::adl_begin(values);
+  auto end = llvm::adl_end(values);
+
   // Get the size of the container.
-  auto size = std::size(values);
+  auto size = std::distance(begin, end);
 
   // If the array is less than or equal to 2 elements, then the median is the
   // mean.
@@ -90,22 +93,34 @@ inline auto median(const Container &values)
     return mean(values);
 
   auto mid = size / 2;
-  auto midValue = values[mid];
+  auto iter = begin;
+  std::advance(iter, mid);
+  auto midValue = *iter;
   // If the size is odd, the center is the median.
   if (size % 2 == 1)
     return midValue;
   // Otherwise, the average of the two elements in the center are the median.
-  auto midValue2 = values[mid - 1];
+  auto midValue2 = *std::prev(iter);
   return (midValue + midValue2) / 2;
 }
 
 /// Computes the percentile of the input array assuming it is sorted.
-template <typename Container>
-inline auto percentile(const Container &values, double percent)
+template <typename Range>
+inline auto percentile(const Range &values, double percent)
     -> std::remove_reference_t<decltype(*llvm::adl_begin(values))> {
   assert(llvm::is_sorted(values) && "values are assumed to be sorted");
   assert(percent >= 0.0 && percent < 1.0 && "percentile must be in [0, 1)");
-  return values[static_cast<size_t>(values.size() * percent)];
+
+  using value_type =
+      std::remove_reference_t<decltype(*llvm::adl_begin(values))>;
+
+  auto begin = llvm::adl_begin(values);
+  auto end = llvm::adl_end(values);
+  auto size = std::distance(begin, end);
+  if (size == 0)
+    return value_type(0);
+  return *std::next(llvm::adl_begin(values),
+                    static_cast<size_t>(values.size() * percent));
 }
 
 } // namespace M
