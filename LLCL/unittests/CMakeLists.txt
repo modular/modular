@@ -6,12 +6,12 @@
 
 add_modular_unittest(
   SUITE_NAME
-  GenericMLUnitTests
+  LLCLUnitTests
 
   TEST_NAME
-  GenericMLTests
+  LLCLTests
 
-  BufferTest.cpp
+  RCBufferTest.cpp
 
   LINK_LIBS PRIVATE
   LLCLRuntime
