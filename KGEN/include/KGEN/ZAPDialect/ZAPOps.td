@@ -433,6 +433,32 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
   let hasFolder = 1;
 }
 
+
+//===----------------------------------------------------------------------===//
+// TensorSizeOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorSizeOp : ZAPOp<"tensor.size", [NoSideEffect]> {
+  let summary = "get the total number of elements in the tensor";
+  let description = [{
+    The `zap.tensor.size` operation returns the total number of elements in the
+    given tensor as an SSA value (of type `index`).
+
+    Example:
+
+    ```mlir
+    %0 = zap.tensor.size %arg0 : !zap.tensor<[3], f32>
+    %1 = zap.tensor.size %arg1 : !zap.tensor<[?, 4, ?], ?>
+    ```
+  }];
+
+  let arguments = (ins ZAP_TensorType:$tensor);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+
+  let hasFolder = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // TensorDTypeOp
 //===----------------------------------------------------------------------===//

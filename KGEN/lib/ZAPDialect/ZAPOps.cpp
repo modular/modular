@@ -14,6 +14,7 @@
 #include "Support/MDialect/MTypes.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/Support/Casting.h"
 
@@ -227,6 +228,17 @@ OpFoldResult TensorRankOp::fold(ArrayRef<Attribute> constants) {
   // The rank is always known for a tensor.
   return IntegerAttr::get(IndexType::get(getContext()),
                           getTensor().getType().getRank());
+}
+
+//===----------------------------------------------------------------------===//
+// TensorSizeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult TensorSizeOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "zap.tensor.size has a single operand");
+  if (auto size = getTensor().getType().getResolvedSize())
+    return IntegerAttr::get(IndexType::get(getContext()), *size);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
