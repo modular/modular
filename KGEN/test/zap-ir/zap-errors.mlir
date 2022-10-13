@@ -87,3 +87,21 @@ kgen.generator @zap_tensor(%arg0 : !zap.tensor<[-1], f32>) {
 kgen.generator @zap_tensor(%arg0 : !zap.tensor<[1,2,3,4,5,6], f32>) {
   kgen.return
 }
+
+// -----
+
+kgen.generator @zap_tensor_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.tensor.load' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
+  %val = zap.tensor.load %arg0[%idx, %idx] : !zap.tensor<[3], f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @zap_tensor_load(%val : !pop.scalar<f32>,
+                                %arg0 : !zap.tensor<[3], f32>,
+                                %idx : index) {
+  // expected-error @below {{'zap.tensor.store' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
+  zap.tensor.store %val, %arg0[%idx, %idx] : !zap.tensor<[3], f32>
+  kgen.return
+}

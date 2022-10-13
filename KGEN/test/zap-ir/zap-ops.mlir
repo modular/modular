@@ -358,6 +358,58 @@ kgen.func @zap_tensor_address(
   kgen.return
 }
 
+// CHECK-LABEL: @zap_tensor_load
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_load(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[4, ?], f32>,
+  %tensor2: !zap.tensor<[?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.tensor.load %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.tensor<[4, 5, 3], f32>
+  %0 = zap.tensor.load %tensor0[%idx, %idxZero, %idxOne] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.load %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
+  %1 = zap.tensor.load %tensor0[%idx, %idx, %idx] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.load %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !zap.tensor<[4, ?], f32>
+  %2 = zap.tensor.load %tensor1[%idx, %idx] : !zap.tensor<[4, ?], f32>
+  // CHECK: zap.tensor.load %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?], f32>
+  %3 = zap.tensor.load %tensor2[%idx] : !zap.tensor<[?], f32>
+  kgen.return
+}
+
+// CHECK-LABEL: @zap_tensor_store
+// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<f32>
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_store(
+  %val : !pop.scalar<f32>,
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[4, ?], f32>,
+  %tensor2: !zap.tensor<[?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.tensor<[4, 5, 3], f32>
+  zap.tensor.store %val, %tensor0[%idx, %idxZero, %idxOne] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
+  zap.tensor.store %val, %tensor0[%idx, %idx, %idx] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !zap.tensor<[4, ?], f32>
+  zap.tensor.store %val, %tensor1[%idx, %idx] : !zap.tensor<[4, ?], f32>
+  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?], f32>
+  zap.tensor.store %val, %tensor2[%idx] : !zap.tensor<[?], f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_tensor_size
 // CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
 // CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
