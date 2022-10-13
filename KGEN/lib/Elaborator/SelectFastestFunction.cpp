@@ -42,10 +42,10 @@ static uint64_t benchmarkSingleFunc(CompiledFunc k, void *argMemory,
   // Benchmark the function.
   (void)benchmark.run(runOptions);
 
-  // Get the mean time in nanoseconds.
-  // TODO: We should be using a trimmed mean here.
-  auto time = benchmark.measurement(MicroBenchmark::ReportMetric::kMeanLatency,
-                                    MicroBenchmark::TimeUnit::kNanoseconds);
+  // Get the trimmed mean time in nanoseconds.
+  auto time =
+      benchmark.measurement(MicroBenchmark::ReportMetric::kTrimmedMeanLatency,
+                            MicroBenchmark::TimeUnit::kNanoseconds);
   return std::lround(time);
 }
 
