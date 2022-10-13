@@ -48,6 +48,12 @@ TEST(MicroBenchmarkTest, BenchmarkAllocation) {
                         /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
   EXPECT_GT(meanLatency, 0) << "the mean latency must be positive";
 
+  double trimmedMeanLatency =
+      bench.measurement(MicroBenchmark::ReportMetric::kTrimmedMeanLatency,
+                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
+  EXPECT_GT(trimmedMeanLatency, 0)
+      << "the trimmed mean latency must be positive";
+
   // Generate the benchmark report.
   MicroBenchmark::ReportOptions reportOpts;
   std::string reportStr;

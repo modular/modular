@@ -123,6 +123,7 @@ struct MicroBenchmark {
     kMinLatency,
     kMaxLatency,
     kMeanLatency,
+    kTrimmedMeanLatency,
     kMedianLatency,
     k95PercentileLatency,
     k99PercentileLatency,
