@@ -65,10 +65,9 @@ protected:
 /// synchronization.
 std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
-/// Create a thread pool. Setting 0 as the number of threads makes this default
-/// to std::thread::hardware_concurrency().
+/// Create a thread pool.
 std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(size_t numThreads = 0,
+createThreadPoolWorkQueue(size_t numThreads,
                           std::chrono::nanoseconds busyWait = {},
                           bool profilingEnabled = false);
 
