@@ -64,6 +64,18 @@ def POP_ArrayType : POPType<"Array", "array"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Type Constraints
+
+class ArrayElementType<string lhs, string rhs> : TypesMatchWith<
+    "value type matches array element type", lhs, rhs,
+    "ParamRefType::get($_self.cast<POP::ArrayType>().getElementType())",
+    "typeRangeMatches">;
+
+def ArrayKnownSize : ConfinedType<POP_ArrayType,
+    [CPred<"$_self.cast<POP::ArrayType>().getResolvedSize()">],
+    "array with known size">;
+
+//===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
 

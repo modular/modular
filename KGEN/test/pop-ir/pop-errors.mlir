@@ -321,3 +321,27 @@ kgen.func @unknown_size_simd(%arg0: !pop.simd<?, f32>) -> !pop.simd<?, f32> {
 kgen.func @unknown_type_simd(%arg0: !pop.simd<4, ?>) -> !pop.simd<4, ?> {
   kgen.return %arg0 : !pop.simd<4, ?>
 }
+
+// -----
+
+kgen.func @invalid_array_create(%arg0: i32) {
+  // expected-error @below {{expected 2 operands to create array but got 1}}
+  %0 = pop.array.create [%arg0] : !pop.array<2, i32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
+  // expected-error @below {{array index cannot be negative}}
+  %0 = pop.array.get %arg0[-1] : !pop.array<1, i32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
+  // expected-error @below {{array index out of bounds (2 >= 1)}}
+  %0 = pop.array.get %arg0[2] : !pop.array<1, i32>
+  kgen.return
+}

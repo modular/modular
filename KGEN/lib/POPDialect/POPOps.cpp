@@ -604,6 +604,54 @@ LogicalResult StructReplaceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayCreateOp
+//===----------------------------------------------------------------------===//
+
+/// This is used by the `ArrayElementType` constraint to match a type range
+/// against a single type.
+static bool typeRangeMatches(Type type, TypeRange range) {
+  return llvm::all_of(range, [&](Type e) { return type == e; });
+}
+
+LogicalResult ArrayCreateOp::verify() {
+  int64_t size = *getType().getResolvedSize();
+  if (size != getNumOperands())
+    return emitOpError("expected ")
+           << size << " operands to create array but got " << getNumOperands();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayGetOp
+//===----------------------------------------------------------------------===//
+
+// If the array has a concrete size, do a bounds check.
+static LogicalResult verifyArrayIndex(Operation *op, IntegerAttr indexAttr,
+                                      POP::ArrayType arrayType) {
+  int64_t index = indexAttr.getInt();
+  if (index < 0)
+    return op->emitOpError("array index cannot be negative");
+  if (Optional<int64_t> size = arrayType.getResolvedSize()) {
+    if (index >= *size)
+      return op->emitOpError("array index out of bounds (")
+             << index << " >= " << *size << ")";
+  }
+  return success();
+}
+
+LogicalResult ArrayGetOp::verify() {
+  return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayReplaceOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ArrayReplaceOp::verify() {
+  return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
