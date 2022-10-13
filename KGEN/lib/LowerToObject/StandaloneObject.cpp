@@ -17,6 +17,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Target/TargetMachine.h"
 #include <utility>
 
@@ -180,10 +181,9 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
 /// Combine all the LLVM modules into a single module and emit that to an object
 /// file. This is effectively LTO on steroids, as we recover the original LLVMIR
 /// and optimize/emit it directly.
-/// TODO: We ultimately want to be caching the composite modules.
 static FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-constructSingleModule(Location loc, LLVMModuleSet &moduleSet,
-                      llvm::TargetMachine &machine) {
+constructSingleModule(Location loc, CompositeObjectCache &compositeCache,
+                      LLVMModuleSet &moduleSet, llvm::TargetMachine &machine) {
   auto &firstModule = moduleSet.front();
 
   llvm::Linker linker(*firstModule);
@@ -206,12 +206,24 @@ constructSingleModule(Location loc, LLVMModuleSet &moduleSet,
   if (llvm::GlobalVariable *used = firstModule->getNamedGlobal("llvm.used"))
     used->eraseFromParent();
 
+  auto objOr = compositeCache.find(&*firstModule);
+  if (succeeded(objOr))
+    return objOr.takeValue();
+
   SmallVector<char, 0> objBuf;
   if (failed(compileLLVMToObject(*firstModule, machine, objBuf)))
     return failure();
 
-  // Return a copy of this thing, that's the object file.
-  return llvm::MemoryBuffer::getMemBufferCopy({objBuf.data(), objBuf.size()});
+  // Turn it into a memory buffer so we can put it into the cache.
+  auto obj = std::make_unique<llvm::SmallVectorMemoryBuffer>(
+      std::move(objBuf), /*RequiresNullTerminator=*/false);
+
+  // Insert the compiled object into the cache.
+  if (auto err = compositeCache.insert(&*firstModule, *obj))
+    return mlir::emitError(loc) << err.getError();
+
+  // Return the object itself.
+  return std::unique_ptr<llvm::MemoryBuffer>(std::move(obj));
 }
 
 //===----------------------------------------------------------------------===//
@@ -250,7 +262,8 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
   // optimizer and lower it to an object file. Then we pass it through the
   // linker to clean up all the symbols we don't want to export.
   if (slicer.haveAllLLVM()) {
-    auto modOr = constructSingleModule(loc, slicer.moduleSet, *machine);
+    auto modOr = constructSingleModule(loc, caches.getComposite(),
+                                       slicer.moduleSet, *machine);
     if (mlir::succeeded(modOr)) {
       slicer.objSet.clear();
       slicer.objSet.push_back(std::move(*modOr));

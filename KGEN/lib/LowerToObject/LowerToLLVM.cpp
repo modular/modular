@@ -115,6 +115,14 @@ std::string RaisingCacheKeyInfo::hashKey(RaisingCacheKeyInfo::KeyTy key) {
 }
 
 //===----------------------------------------------------------------------===//
+// CompositeObjectCacheKeyInfo implementation
+//===----------------------------------------------------------------------===//
+
+std::string CompositeObjectCacheKeyInfo::hashKey(llvm::Module *key) {
+  return hashLLVMModule(key);
+}
+
+//===----------------------------------------------------------------------===//
 // lowerToLLVM implementation
 //===----------------------------------------------------------------------===//
 
