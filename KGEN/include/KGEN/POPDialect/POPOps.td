@@ -580,6 +580,8 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
     Takes a SIMD vector and an index position and extracts the `!pop.scalar` at
     that position. The position must be of type index.
 
+    If the position is out-of-bounds, the behavior is undefined.
+
     Example:
 
     ```mlir
@@ -608,6 +610,8 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
     source value into the vector at the proper position. The position must be
     of type index.
 
+    If the position is out-of-bounds, the behavior is undefined.
+
     Example:
 
     ```mlir
@@ -635,6 +639,8 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
     The `pop.simd.shuffle` operation constructs a permutation of two vectors of
     the same length and returns a vector of the same element type with the same
     length as the provided mask, and thus must be a non-parametric constant.
+
+    If any of the indices is out-of-bounds, the behavior is undefined.
 
     Example:
 

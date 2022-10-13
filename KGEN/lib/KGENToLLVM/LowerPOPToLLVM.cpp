@@ -12,10 +12,12 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -183,8 +185,12 @@ public:
           adaptor.getRhs());
     } else {
       Type i1Type = rewriter.getI1Type();
-      if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType()))
-        i1Type = VectorType::get(*simd.getResolvedSize(), i1Type);
+      if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType())) {
+        auto size = *simd.getResolvedSize();
+        // Vectors of size 1 should remain scalars
+        if (size != 1)
+          i1Type = VectorType::get(size, i1Type);
+      }
       rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
           op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
           adaptor.getRhs());
@@ -316,21 +322,150 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
   LogicalResult
   matchAndRewrite(SIMDSplatOp op, SIMDSplatOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto type = op.getType().cast<SIMDType>();
+    // If the vector is size 1, skip the shuffle.
+    if (isSIMDSizeOneType(op.getType())) {
+      rewriter.replaceOp(op, adaptor.getScalar());
+      return success();
+    }
+
+    SIMDType simdType = op.getType();
+    int64_t size = *simdType.getResolvedSize();
     Value undef = rewriter.create<LLVM::UndefOp>(
-        op.getLoc(), getTypeConverter()->convertType(type));
+        op.getLoc(), getTypeConverter()->convertType(simdType));
     Value zero = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), rewriter.getI32IntegerAttr(0));
     Value vector = rewriter.create<LLVM::InsertElementOp>(
         op.getLoc(), undef, adaptor.getScalar(), zero);
-    // If the vector is size 1, skip the shuffle.
-    int64_t size = type.getSize().cast<IntegerAttr>().getInt();
-    if (size == 1) {
-      rewriter.replaceOp(op, vector);
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
-          op, vector, undef, /*mask=*/SmallVector<int32_t>(size, 0));
+    rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+        op, vector, undef, /*mask=*/SmallVector<int32_t>(size, 0));
+
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDInsertElement
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDInsertElement
+    : public mlir::ConvertOpToLLVMPattern<SIMDInsertElementOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDInsertElementOp op, SIMDInsertElementOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (isSIMDSizeOneType(op.getVector().getType())) {
+      // If the vector is size 1, return the value as is - it's a scalar.
+      rewriter.replaceOp(op, adaptor.getVector());
+      return success();
     }
+    rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
+        op, getTypeConverter()->convertType(op.getType()),
+        adaptor.getOperands());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDShuffle
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDShuffle
+    : public mlir::ConvertOpToLLVMPattern<SIMDShuffleOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDShuffleOp op, SIMDShuffleOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+
+    auto lhs = adaptor.getLhs();
+    auto rhs = adaptor.getRhs();
+    auto inputSize = *op.getLhs().getType().getResolvedSize();
+    if (inputSize != 1) {
+      // Both LHS and RHS are vectors - generate LLVM ShuffleVector
+      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(op, lhs, rhs,
+                                                         adaptor.getMask());
+
+      return success();
+    }
+    // Special handling for inputs consisting of just 1 element - instead of
+    // converting them to vectors and generating shufflevector for them, we will
+    // instead generate a sequence of insertelement operations.  Since there are
+    // just two elements to pick from, mask should only contain 0s and 1s. If it
+    // contains a different value, the behavior is undefined - we will simply
+    // treat such a case as value 1.
+    DType dtype = *op.getType().getResolvedDType();
+    auto llvmVecType = LLVM::getFixedVectorType(
+        *getMLIRTypeForDType(op.getType().getContext(), dtype),
+        adaptor.getMask().size());
+    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), llvmVecType);
+    int idx = 0;
+    for (auto maskElement : adaptor.getMask()) {
+      Value pos = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI32IntegerAttr(idx));
+      result = rewriter.create<LLVM ::InsertElementOp>(
+          op.getLoc(), result, maskElement == 0 ? lhs : rhs, pos);
+      idx++;
+    }
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPConstant
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPConstant : public mlir::ConvertOpToLLVMPattern<ConstantOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ConstantOp op, ConstantOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto type = getTypeConverter()->convertType(op.getType());
+
+    // Vector constants with a single element should be lowered to scalar
+    // constants in LLVM dialect
+    if (isSIMDSizeOneType(op.getType())) {
+      TypeSwitch<Attribute>(op.getValue())
+          .Case([&](FloatArrayElementsAttr arry) {
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type,
+                                                          *arry.begin());
+          })
+          .Case([&](IntArrayElementsAttr arry) {
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type,
+                                                          *arry.begin());
+          })
+          .Default([&](Attribute attr) {
+            llvm_unreachable("unknown constant dtype");
+          });
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+        op, type, adaptor.getOperands(), op->getAttrs());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDExtractElement
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDExtractElement
+    : public mlir::ConvertOpToLLVMPattern<SIMDExtractElementOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDExtractElementOp op, SIMDExtractElementOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Special handling for scalars
+    if (isSIMDSizeOneType(op.getVector().getType())) {
+      rewriter.replaceOp(op, adaptor.getVector());
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
+        op, getTypeConverter()->convertType(op.getType()), adaptor.getVector(),
+        adaptor.getPosition());
     return success();
   }
 };
@@ -407,6 +542,11 @@ struct ConvertPOPSIMDReduceAdd
   LogicalResult
   matchAndRewrite(SIMDReduceAddOp op, SIMDReduceAddOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // Handle 1 element vector, i.e. scalar, case
+    if (isSIMDSizeOneType(op.getOperand().getType())) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
     DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
@@ -437,6 +577,11 @@ struct ConvertPOPSIMDReduceMul
   LogicalResult
   matchAndRewrite(SIMDReduceMulOp op, SIMDReduceMulOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // Handle 1 element vector, i.e. scalar, case
+    if (isSIMDSizeOneType(op.getOperand().getType())) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
     DType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
@@ -452,6 +597,76 @@ struct ConvertPOPSIMDReduceMul
         op.getLoc(), eltType, rewriter.getFloatAttr(eltType, 1.0));
     rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmul>(op, eltType, one,
                                                           adaptor.getOperand());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDReduceMax
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDReduceMax
+    : public mlir::ConvertOpToLLVMPattern<SIMDReduceMaxOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDReduceMaxOp op, SIMDReduceMaxOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Handle 1 element vector, i.e. scalar, case
+    if (isSIMDSizeOneType(op.getOperand().getType())) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    DType dtype = *op.getType().getResolvedDType();
+    Type type = getTypeConverter()->convertType(op.getType());
+    if (dtype.isFloat()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmax>(
+          op, type, adaptor.getOperands(), op->getAttrs());
+      return success();
+    }
+    if (dtype.isSInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_smax>(
+          op, type, adaptor.getOperands(), op->getAttrs());
+      return success();
+    }
+    assert(dtype.isUInt() && "expected dtype to be fp, uint, or sint");
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_umax>(
+        op, type, adaptor.getOperands(), op->getAttrs());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDReduceMin
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDReduceMin
+    : public mlir::ConvertOpToLLVMPattern<SIMDReduceMinOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDReduceMinOp op, SIMDReduceMinOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Handle 1 element vector, i.e. scalar, case
+    if (isSIMDSizeOneType(op.getOperand().getType())) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    DType dtype = *op.getType().getResolvedDType();
+    Type type = getTypeConverter()->convertType(op.getType());
+    if (dtype.isFloat()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmin>(
+          op, type, adaptor.getOperands(), op->getAttrs());
+      return success();
+    }
+    if (dtype.isSInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::vector_reduce_smin>(
+          op, type, adaptor.getOperands(), op->getAttrs());
+      return success();
+    }
+    assert(dtype.isUInt() && "expected dtype to be fp, uint, or sint");
+    rewriter.replaceOpWithNewOp<LLVM::vector_reduce_umin>(
+        op, type, adaptor.getOperands(), op->getAttrs());
     return success();
   }
 };
@@ -869,8 +1084,6 @@ struct ConvertPOPCastFromBuiltin
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
-using ConvertPOPConstant =
-    mlir::OneToOneConvertToLLVMPattern<ConstantOp, LLVM::ConstantOp>;
 using ConvertPOPCopySign =
     mlir::OneToOneConvertToLLVMPattern<CopySignOp, LLVM::CopySignOp>;
 using ConvertPOPAdd =
@@ -892,22 +1105,6 @@ using ConvertPOPPointerBitcast =
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
 using ConvertPOPSelect =
     mlir::OneToOneConvertToLLVMPattern<SelectOp, LLVM::SelectOp>;
-using ConvertPOPSIMDExtractElement =
-    mlir::OneToOneConvertToLLVMPattern<SIMDExtractElementOp,
-                                       LLVM::ExtractElementOp>;
-using ConvertPOPSIMDInsertElement =
-    mlir::OneToOneConvertToLLVMPattern<SIMDInsertElementOp,
-                                       LLVM::InsertElementOp>;
-using ConvertPOPSIMDShuffle =
-    mlir::OneToOneConvertToLLVMPattern<SIMDShuffleOp, LLVM::ShuffleVectorOp>;
-using ConvertPOPSIMDReduceMax =
-    OneToOneFloatOrIntConversion<SIMDReduceMaxOp, LLVM::vector_reduce_fmax,
-                                 LLVM::vector_reduce_smax,
-                                 LLVM::vector_reduce_umax>;
-using ConvertPOPSIMDReduceMin =
-    OneToOneFloatOrIntConversion<SIMDReduceMinOp, LLVM::vector_reduce_fmin,
-                                 LLVM::vector_reduce_smin,
-                                 LLVM::vector_reduce_umin>;
 using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =

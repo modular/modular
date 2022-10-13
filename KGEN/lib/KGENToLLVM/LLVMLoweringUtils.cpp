@@ -40,6 +40,16 @@ Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, DType dtype) {
   return LLVM::LLVMPointerType::get(ctx);
 }
 
+bool M::KGEN::isSIMDSizeOneType(Type type) {
+  if (auto simd = dyn_cast<POP::SIMDType>(type)) {
+    auto resolvedSize = simd.getResolvedSize();
+    assert(resolvedSize.has_value() &&
+           "parametric types should be gone in LLVM lowering");
+    return *resolvedSize == 1;
+  }
+  return false;
+}
+
 POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     mlir::Location loc, const mlir::LowerToLLVMOptions &options)
     : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
@@ -106,15 +116,21 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   addConversion([=](POP::SIMDType simd) -> Optional<Type> {
     Optional<Type> dtype = convertDType(simd);
     Optional<uint64_t> size = convertSize(simd);
-    if (dtype && size)
-      return LLVM::getFixedVectorType(*dtype, *size);
-
-    // Emit an error.
-    if (!dtype)
+    if (!dtype) {
       emitError("SIMD dtype not fully specified: ") << simd;
-    if (!size)
+      return {};
+    }
+    if (!size) {
       emitError("SIMD size not fully specified: ") << simd;
-    return {};
+      return {};
+    }
+
+    // Scalar case, size = 1
+    if (*size == 1)
+      return *dtype;
+
+    // Vector case, size != 1
+    return LLVM::getFixedVectorType(*dtype, *size);
   });
 
   // Convert data type types to `i8`.
