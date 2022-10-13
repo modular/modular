@@ -61,6 +61,21 @@ struct ObjectCacheKeyInfo {
 /// `kgen.precompiled.object`. These objects are cached on a per-op basis.
 using ObjectCache = M::BlobCache<ObjectCacheKeyInfo>;
 
+/// Provides a way to hash a composite llvm::Module. This will be used to map a
+/// compiled object for that composite. This allows us to avoid recompiling
+/// composite modules whenever possible.
+struct CompositeObjectCacheKeyInfo {
+  using KeyTy = llvm::Module *;
+  static std::string hashKey(llvm::Module *key);
+};
+
+/// Provides a mapping from composite llvm::Module to the bytes of the object
+/// file for that composite. A composite module is created when we produce a
+/// standalone object - we take the modules for each of the symbols and merge
+/// them together, then produce a single object for that merged (composite)
+/// module.
+using CompositeObjectCache = M::BlobCache<CompositeObjectCacheKeyInfo>;
+
 /// Provides a basic way to interact with the set of caches needed
 /// lowering/raising to/from LLVM and objects.
 ///
@@ -83,6 +98,9 @@ using ObjectCache = M::BlobCache<ObjectCacheKeyInfo>;
 ///       `kgen.precompiled.object` is largely intended as a cache reference.
 ///     - MemoryBuffer -> MemoryBuffer: This is the main purpose of the cache,
 ///       to store the actual objects serialized into memory buffers.
+///   CompositeObjectCache - Stores a mapping from a LLVM module made up of the
+///     modules from multiple symbols to the object file produced by compiling
+///     that composite.
 class LoweringCacheCollection {
 public:
   explicit LoweringCacheCollection(StringRef basePath)
@@ -91,16 +109,20 @@ public:
         llvm(getDefaultBackendChain(
             (std::filesystem::path(basePath.str()) / "llvm").string())),
         obj(getDefaultBackendChain(
-            (std::filesystem::path(basePath.str()) / "obj").string())) {}
+            (std::filesystem::path(basePath.str()) / "obj").string())),
+        composite(getDefaultBackendChain(
+            (std::filesystem::path(basePath.str()) / "composite").string())) {}
 
   RaisingCache &getRaising() { return raising; }
   LLVMCache &getLLVM() { return llvm; }
   ObjectCache &getObject() { return obj; }
+  CompositeObjectCache &getComposite() { return composite; }
 
 private:
   RaisingCache raising;
   LLVMCache llvm;
   ObjectCache obj;
+  CompositeObjectCache composite;
 };
 
 /// The purpose of this class is to provide methods to lower concrete KGEN
