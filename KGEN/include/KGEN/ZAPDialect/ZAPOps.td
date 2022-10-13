@@ -434,6 +434,81 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
 }
 
 //===----------------------------------------------------------------------===//
+// TensorDTypeOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorDTypeOp : ZAPOp<"tensor.dtype", [NoSideEffect]> {
+  let summary = "get the dtype of the tensor";
+  let description = [{
+    The `zap.tensor.dtype` operation returns the dtype of the given tensor as an
+    SSA value (of type `!kgen.dtype`) that may be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = zap.tensor.dtype %arg0 : !zap.tensor<[3], ?>
+    %1 = zap.tensor.dtype %arg1 : !zap.tensor<[4, ?], f32>
+    ```
+  }];
+
+  let arguments = (ins ZAP_TensorType:$tensor);
+  let results = (outs DTypeType:$result);
+  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// TensorRankOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorRankOp : ZAPOp<"tensor.rank", [NoSideEffect]> {
+  let summary = "get the rank of the tensor";
+  let description = [{
+    The `zap.tensor.rank` operation returns the rank of the given tensor as an
+    SSA value (of type `index`) that may be used by other ops.
+
+    Example:
+
+    ```mlir
+    %0 = zap.tensor.rank %arg0 : !zap.tensor<[3], f32>
+    %1 = zap.tensor.rank %arg1 : !zap.tensor<[4, ?], f32>
+    ```
+  }];
+
+  let arguments = (ins ZAP_TensorType:$tensor);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// TensorAddressOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorAddressOp : ZAPOp<"tensor.address", [NoSideEffect,
+    TensorPointerType<"tensor", "ptr">]> {
+  let summary = "get the address of the tensor";
+  let description = [{
+    The `zap.tensor.address` operation returns the address of the given tensor
+    as a pointer to a scalar of the tensor dtype. The pointer is to the start
+    of the underlying tensor data.
+
+    Example:
+
+    ```mlir
+    %0 = zap.tensor.address %arg0 : !zap.tensor<[3], f32>
+    %1 = zap.tensor.address %arg1 : !zap.buffer<[?, 3], ?>
+    ```
+  }];
+
+  let arguments = (ins ZAP_TensorType:$tensor);
+  let results = (outs POP_PointerType:$ptr);
+  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+}
+
+//===----------------------------------------------------------------------===//
 // PrintOp
 //===----------------------------------------------------------------------===//
 

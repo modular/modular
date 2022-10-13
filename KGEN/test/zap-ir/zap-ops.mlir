@@ -311,6 +311,63 @@ kgen.func @zap_tensor_dim(
   kgen.return
 }
 
+// CHECK-LABEL: @zap_tensor_dtype
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_dtype(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[4, ?], f32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+  %idx: index) {
+  // CHECK: zap.tensor.dtype %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
+  %0 = zap.tensor.dtype %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.dtype %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
+  %1 = zap.tensor.dtype %tensor1 : !zap.tensor<[4, ?], f32>
+  // CHECK: zap.tensor.dtype %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
+  %2 = zap.tensor.dtype %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  kgen.return
+}
+
+// CHECK-LABEL: @zap_tensor_rank
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_rank(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[4, ?], f32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+  %idx: index) {
+  // CHECK: zap.tensor.rank %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
+  zap.tensor.rank %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.rank %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
+  zap.tensor.rank %tensor1 : !zap.tensor<[4, ?], f32>
+  // CHECK: zap.tensor.rank %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
+  zap.tensor.rank %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  kgen.return
+}
+
+// CHECK-LABEL: @zap_tensor_address
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_address(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?, 4, ?], f32>,
+  %tensor2: !zap.tensor<[?, ?, ?], f32>,
+  %idx: index) {
+  // CHECK: zap.tensor.address %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
+  zap.tensor.address %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.address %[[TENSOR1]] : !zap.tensor<[?, 4, ?], f32>
+  zap.tensor.address %tensor1 : !zap.tensor<[?, 4, ?], f32>
+  // CHECK: zap.tensor.address %[[TENSOR2]] : !zap.tensor<[?, ?, ?], f32>
+  zap.tensor.address %tensor2 : !zap.tensor<[?, ?, ?], f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
