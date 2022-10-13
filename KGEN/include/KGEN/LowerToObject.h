@@ -126,7 +126,8 @@ public:
   /// Get the body of the `kgen.precompiled.llvm`, emit an object, and replace
   /// the `kgen.precompiled.llvm` with a `kgen.precompiled.object` with the same
   /// name.
-  FailureOr<PrecompiledObjectOp> lowerToObject(PrecompiledLLVMOp func);
+  FailureOr<PrecompiledObjectOp> lowerToObject(PrecompiledLLVMOp func,
+                                               bool isJIT);
 
   /// Backtrack up the compilation stack - given a `kgen.precompiled.object`,
   /// replace it with the `kgen.precompiled.llvm` it came from if possible.
@@ -134,21 +135,22 @@ public:
 
   /// Lower all `kgen.func` to objects and populate them in the cache. This
   /// modifies the compiler-held module in-place.
-  LogicalResult lowerAllFuncsToObject(TargetInfoAttr target);
+  LogicalResult lowerAllFuncsToObject(TargetInfoAttr target, bool isJIT);
 
   /// Slices the call graph for `which` to produce a standalone object. If
   /// slicing the call graph is not possible, it simply returns the object
   /// already in the cache. This function will also raise any
   /// `kgen.precompiled.object` to `kgen.func` for which the raising exists.
   FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-  produceStandaloneObject(ArrayRef<StringRef> symbols);
+  produceStandaloneObject(ArrayRef<StringRef> symbols, bool isJIT);
 
   /// Collects all the `kgen.precompiled.object` in the module and slices the
   /// call graph for them to produce a single standalone object. If slicing the
   /// call graph is not possible, it simply returns the object already in the
   /// cache. This function will also raise any `kgen.precompiled.object` to
   /// `kgen.func` for which the raising exists.
-  FailureOr<std::unique_ptr<llvm::MemoryBuffer>> produceStandaloneObject();
+  FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
+  produceStandaloneObject(bool isJIT);
 
   /// Get access to the symbol table the compiler holds.
   mlir::SymbolTable &getSymbolTable() { return symtab; }

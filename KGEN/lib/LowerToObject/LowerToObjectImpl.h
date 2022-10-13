@@ -20,7 +20,7 @@ class TargetMachine;
 namespace M::KGEN {
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-createTargetMachine(TargetInfoAttr targetInfo);
+createTargetMachine(TargetInfoAttr targetInfo, bool isJIT);
 
 /// Compile the given LLVM module to an object file stored in `buf`.
 LogicalResult compileLLVMToObject(llvm::Module &module,

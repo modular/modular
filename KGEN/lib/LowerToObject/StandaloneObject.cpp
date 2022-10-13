@@ -219,7 +219,8 @@ constructSingleModule(Location loc, LLVMModuleSet &moduleSet,
 //===----------------------------------------------------------------------===//
 
 FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols) {
+ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
+                                        bool isJIT) {
   // Grab the first one so we can use it for locations, etc.
   Location loc = module.getLoc();
   TargetInfoAttr theTarget =
@@ -240,7 +241,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols) {
     return std::move(slicer.objSet.front());
 
   // Create the target machine.
-  auto machineOr = createTargetMachine(theTarget);
+  auto machineOr = createTargetMachine(theTarget, isJIT);
   if (failed(machineOr))
     return emitError(loc) << machineOr.getError();
   std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOr);
@@ -420,12 +421,12 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols) {
 //===----------------------------------------------------------------------===//
 
 FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-ObjectCompiler::produceStandaloneObject() {
+ObjectCompiler::produceStandaloneObject(bool isJIT) {
   // Collect all the `kgen.precompiled.object`.
   SmallVector<StringRef> objs;
   for (auto obj : module.getOps<PrecompiledObjectOp>())
     if (obj.getLinkage() == Linkage::Public)
       objs.push_back(obj.getName());
 
-  return produceStandaloneObject(objs);
+  return produceStandaloneObject(objs, isJIT);
 }

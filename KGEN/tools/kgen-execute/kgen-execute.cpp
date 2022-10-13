@@ -54,11 +54,13 @@ struct ProcessBuffer {
 
     // Lower the input to an object.
     KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
-    if (failed(compiler.lowerAllFuncsToObject(attr)))
+    if (failed(compiler.lowerAllFuncsToObject(attr, /*isJIT=*/clOptions.cmd ==
+                                                        Command::kExecute)))
       return failure();
 
     // Produce a single standalone .o
-    auto standaloneOr = compiler.produceStandaloneObject();
+    auto standaloneOr = compiler.produceStandaloneObject(
+        /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
       return failure();
     std::unique_ptr<llvm::MemoryBuffer> standaloneObject =
