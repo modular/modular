@@ -49,10 +49,30 @@ inline auto mean(const Container &values)
   using value_type =
       std::remove_reference_t<decltype(*llvm::adl_begin(values))>;
   value_type init(0);
-  if (values.empty())
+  auto begin = llvm::adl_begin(values);
+  auto end = llvm::adl_end(values);
+  size_t size = std::distance(begin, end);
+  if (!size)
     return init;
-  return std::accumulate(llvm::adl_begin(values), llvm::adl_end(values), init) /
-         std::size(values);
+  return std::accumulate(begin, end, init) / size;
+}
+
+/// Computes the trimmed mean of the sorted input array. The trimmed mean is a
+/// method to remove outliers before computing the mean. The percentage of
+/// outliers is determined by the `percentage` argument passed in. This function
+/// assumes the input values are already sorted.
+template <typename Range>
+inline auto trimmedMean(const Range &values, double percent = 0.05)
+    -> std::remove_reference_t<decltype(*llvm::adl_begin(values))> {
+  assert(llvm::is_sorted(values) && "values are assumed to be sorted");
+  assert(percent >= 0.0 && percent < 1.0 && "percent must be in [0, 1)");
+  size_t size = std::size(values);
+  if (size < 3)
+    return mean(values);
+  double k = size * percent / 2;
+  return mean(llvm::make_range(
+      std::next(llvm::adl_begin(values), static_cast<size_t>(std::lround(k))),
+      std::prev(llvm::adl_end(values), static_cast<size_t>(std::round(k)))));
 }
 
 /// Computes the median of the input array assuming it is sorted.
