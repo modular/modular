@@ -52,7 +52,8 @@ def POP_ArrayType : POPType<"Array", "array"> {
                                         "TypedAttr":$elementType)>,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
                                         "Type":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "int64_t":$size, "Type":$elementType)>
+    TypeBuilderWithInferredContext<(ins "int64_t":$size, "Type":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "ValueRange":$elements)>
   ];
 
   let extraClassDeclaration = [{

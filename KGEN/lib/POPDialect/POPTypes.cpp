@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -78,6 +79,17 @@ ArrayType ArrayType::get(TypedAttr size, Type elementType) {
 
 ArrayType ArrayType::get(int64_t size, Type elementType) {
   return get(Builder(elementType.getContext()).getIndexAttr(size), elementType);
+}
+
+ArrayType ArrayType::get(ValueRange elements) {
+  assert(!elements.empty() && "expected non-empty elements");
+  auto firstElement = elements.front();
+  assert(llvm::all_of(elements,
+                      [firstType = firstElement.getType()](Value v) {
+                        return v.getType() == firstType;
+                      }) &&
+         "expected same element types");
+  return get(elements.size(), firstElement.getType());
 }
 
 //===----------------------------------------------------------------------===//

@@ -12,9 +12,13 @@
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
+#include "Support/IndexDialect/IndexDialect.h"
 #include "Support/IndexDialect/IndexOps.h"
+#include "Support/MDialect/MTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -27,6 +31,9 @@ static constexpr int kBufferAddressPosition = 0;
 static constexpr int kBufferSizePosition = 1;
 /// The position of the buffer dtype in its struct representation.
 static constexpr int kBufferDTypePosition = 2;
+
+/// The position of the tensor shape in its struct representation.
+static constexpr int kTensorShapePosition = 2;
 
 namespace {
 
@@ -490,6 +497,77 @@ struct ConvertRebind : public mlir::OpConversionPattern<RebindOp> {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorConstruct
+//===----------------------------------------------------------------------===//
+
+/// Construct a buffer struct. If either the size or dtype are dynamic, values
+/// for them must be provided.
+static Value constructTensor(PatternRewriter &rewriter,
+                             TypeConverter &typeConverter, Location loc,
+                             TensorType type, Value ptr, size_t rank,
+                             ValueRange shape = {}, Value dtype = {}) {
+  IndexType indexType = rewriter.getIndexType();
+  // Initialize the shape values with all zeros.
+  auto zeroIndex = rewriter.create<index::ConstantOp>(loc, 0);
+  std::array<Value, TensorType::getMaximumRank()> shapeValues;
+  shapeValues.fill(zeroIndex);
+  // Fill the shape values with the provided values or the constants specified
+  // by the type.
+  for (size_t i = 0, shapeParamOffset = 0; i < rank; ++i) {
+    if (type.getShape()[i])
+      shapeValues[i] = rewriter.create<index::ConstantOp>(
+          loc, indexType, type.getShape()[i].cast<IntegerAttr>());
+    else
+      shapeValues[i] = shape[shapeParamOffset++];
+  }
+  // Create the shape array.
+  auto shapeArray = rewriter.create<ArrayCreateOp>(loc, shapeValues);
+
+  auto rankVal = rewriter.create<index::ConstantOp>(loc, type.getRank());
+  if (!dtype)
+    dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
+  return rewriter.create<StructConstructOp>(
+      loc, typeConverter.convertType(type),
+      ValueRange{ptr, rankVal, shapeArray, dtype});
+}
+
+/// Convert the construction of a buffer to building the underlying struct.
+struct ConvertZAPTensorConstruct
+    : public mlir::OpConversionPattern<TensorConstructOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorConstructOp op, TensorConstructOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value tensor =
+        constructTensor(rewriter, *getTypeConverter(), op.getLoc(),
+                        op.getType(), adaptor.getPtr(), op.getType().getRank(),
+                        adaptor.getShape(), adaptor.getDType());
+    rewriter.replaceOp(op, tensor);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorDim
+//===----------------------------------------------------------------------===//
+
+/// Extract the buffer dimension at index provided.
+struct ConvertZAPTensorDim : public mlir::OpConversionPattern<TensorDimOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorDimOp op, TensorDimOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value shape = rewriter.create<StructGetOp>(
+        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
+    rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
+                                            op.getIndex());
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -526,6 +604,8 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,
       ConvertZAPDebugAssert,
+      ConvertZAPTensorConstruct,
+      ConvertZAPTensorDim,
       ConvertZAPPrint
 
       // clang-format on
@@ -556,21 +636,38 @@ void LowerZAPToPOPPass::runOnOperation() {
   // Configure the type converter.
   TypeConverter typeConverter;
   typeConverter.addConversion([=](Type type) -> Optional<Type> {
-    auto buf = dyn_cast<BufferType>(type);
-    if (!buf)
-      return type;
-    // Convert buffer types to a struct of (pointer, index, dtype).
-    return StructType::get({buf.getPointerType(),
-                            IndexType::get(buf.getContext()),
-                            DTypeType::get(buf.getContext())});
+    return TypeSwitch<Type, Optional<Type>>(type)
+        .Case([&](BufferType buf) {
+          // Convert buffer types to a struct of (pointer, index, dtype).
+          return StructType::get({buf.getPointerType(),
+                                  IndexType::get(buf.getContext()),
+                                  DTypeType::get(buf.getContext())});
+        })
+        .Case([&](TensorType tensor) {
+          auto indexType = IndexType::get(tensor.getContext());
+          // Convert tensor types to a struct of the form
+          // {
+          //    pointer,   --- for buffer
+          //    index,     --- for rank
+          //    index[5],  --- for shape
+          //    dtype      --- for dtype
+          // }
+          return StructType::get(
+              {tensor.getPointerType(), indexType,
+               POP::ArrayType::get(TensorType::getMaximumRank(), indexType),
+               DTypeType::get(tensor.getContext())});
+        })
+        .Default([&](Type type) { return type; });
   });
 
   // Configure dialect conversion
   ConversionTarget target(getContext());
   target.addIllegalDialect<ZAPDialect>();
-  target.addLegalDialect<POPDialect, KGENDialect>();
+  target.addLegalDialect<index::IndexDialect, KGENDialect, POPDialect>();
 
-  auto isZAPType = [&](Type type) { return type.isa<BufferType>(); };
+  auto isZAPType = [&](Type type) {
+    return type.isa<BufferType, TensorType>();
+  };
 
   // Dynamically legalize KGEN operations that can interact with any parametric
   // type, including ZAP types.
