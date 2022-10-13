@@ -106,7 +106,7 @@ namespace {
 /// on disk.
 struct FilesystemBackend : public BlobCacheBackend {
   explicit FilesystemBackend(const std::filesystem::path &basePath)
-      : basePath(basePath) {}
+      : basePath(basePath.string()) {}
 
   ErrorOrSuccess insertImpl(StringRef keyHash,
                             llvm::MemoryBufferRef obj) override {
