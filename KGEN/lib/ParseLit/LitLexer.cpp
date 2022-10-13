@@ -147,6 +147,8 @@ LitToken LitLexer::lexTokenImpl() {
         ++curPtr;
       if (*curPtr == '\n' || *curPtr == '\r' || *curPtr == '\f' ||
           *curPtr == '\v') {
+        if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
+          ++curPtr;
         ++curPtr;
         indentation = -1;
         continue;
