@@ -105,15 +105,16 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
   }
 
   // First try to find the object in the cache.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> objOr =
-      compiler.getCaches().getObject().find(objOp);
-  if (failed(objOr))
+  CacheFindResult objOr = compiler.getCaches().getObject().find(objOp);
+  if (objOr.isError())
+    return mlir::emitError(loc) << objOr.getError();
+  if (!objOr.hasValue())
     return SliceResult::notInCache;
 
   // Insert this object into the set if we haven't already.
   if (seenObjectSymbols.insert(objOp.getNameAttr()).second) {
     LLVM_DEBUG(dbgs << "Inserting object for " << symbol << "\n");
-    objSet.push_back(std::move(*objOr));
+    objSet.push_back(objOr.takeValue());
   }
 
   // First, we decompile the object.
@@ -122,13 +123,17 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
     return SliceResult::failed;
 
   // Read the LLVM module out of the LLVM cache.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> llvmModuleBufOr =
+  CacheFindResult llvmModuleBufOr =
       compiler.getCaches().getLLVM().find(*llvmOr);
-  if (failed(llvmModuleBufOr))
+  if (llvmModuleBufOr.isError())
     return emitError(llvmOr->getLoc()) << llvmModuleBufOr.getError();
+  // If the LLVM module is not in the cache, then we don't have to continue, but
+  // we have gathered the object we wanted so it's not a failure.
+  if (!llvmModuleBufOr.hasValue())
+    return SliceResult::succeeded;
 
   // Parse the module to an in-memory object.
-  auto moduleOr = llvm::parseBitcodeFile(**llvmModuleBufOr, ctx);
+  auto moduleOr = llvm::parseBitcodeFile(*llvmModuleBufOr, ctx);
   if (auto err = moduleOr.takeError())
     return emitError(llvmOr->getLoc()) << toString(std::move(err));
   std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
@@ -206,8 +211,8 @@ constructSingleModule(Location loc, CompositeObjectCache &compositeCache,
   if (llvm::GlobalVariable *used = firstModule->getNamedGlobal("llvm.used"))
     used->eraseFromParent();
 
-  auto objOr = compositeCache.find(&*firstModule);
-  if (succeeded(objOr))
+  CacheFindResult objOr = compositeCache.find(&*firstModule);
+  if (objOr.hasValue())
     return objOr.takeValue();
 
   SmallVector<char, 0> objBuf;

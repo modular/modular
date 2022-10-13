@@ -124,24 +124,24 @@ std::string ObjectCacheKeyInfo::hashKey(ObjectCacheKeyInfo::KeyTy key) {
 FailureOr<PrecompiledObjectOp>
 ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
   // So first, check if the result is already in the cache.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> precompiledOr =
-      caches.getObject().find(func);
-  if (succeeded(precompiledOr)) {
-    auto precompiled = replaceSymbolFromBytecode(func, symtab, **precompiledOr);
+  CacheFindResult precompiledOr = caches.getObject().find(func);
+  if (precompiledOr.hasValue()) {
+    auto precompiled = replaceSymbolFromBytecode(func, symtab, *precompiledOr);
     if (succeeded(precompiled))
       return llvm::cast<PrecompiledObjectOp>(*precompiled);
   }
 
   // Read the LLVM module out of the LLVM cache.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> llvmModuleBufOr =
-      caches.getLLVM().find(func);
-  if (failed(llvmModuleBufOr))
+  CacheFindResult llvmModuleBufOr = caches.getLLVM().find(func);
+  if (llvmModuleBufOr.isError())
     return mlir::emitError(func->getLoc()) << llvmModuleBufOr.getError();
+  assert(llvmModuleBufOr.hasValue() && "Given a kgen.precompiled.llvm, we must "
+                                       "have an llvm object in the cache.");
 
   // Parse the module to an in-memory object.
   llvm::LLVMContext ctx;
   llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-      llvm::parseBitcodeFile(**llvmModuleBufOr, ctx);
+      llvm::parseBitcodeFile(*llvmModuleBufOr, ctx);
   if (auto err = moduleOr.takeError())
     return mlir::emitError(func->getLoc()) << toString(std::move(err));
   std::unique_ptr<llvm::Module> llvmModule = std::move(*moduleOr);
@@ -236,14 +236,16 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
 /// Backtrack to a `kgen.precompiled.llvm`.
 FailureOr<PrecompiledLLVMOp>
 ObjectCompiler::raiseFromObject(PrecompiledObjectOp precompiled) {
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> llvmBufOr =
-      caches.getRaising().find(precompiled);
-  if (failed(llvmBufOr))
+  CacheFindResult llvmBufOr = caches.getRaising().find(precompiled);
+  if (llvmBufOr.isError())
     return mlir::emitError(precompiled->getLoc()) << llvmBufOr.getError();
+  if (!llvmBufOr.hasValue())
+    return mlir::emitError(precompiled->getLoc())
+           << "could not find corresponding llvm object";
 
   // It was in the cache, so do the replacement.
   FailureOr<Operation *> func =
-      replaceSymbolFromBytecode(precompiled, symtab, **llvmBufOr);
+      replaceSymbolFromBytecode(precompiled, symtab, *llvmBufOr);
   if (failed(func))
     return failure();
 
