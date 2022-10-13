@@ -622,6 +622,18 @@ LogicalResult ArrayCreateOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayRepeatOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ArrayRepeatOp::verify() {
+  Optional<int64_t> size = getType().getResolvedSize();
+  if (size && *size != 0 && getNumOperands() == 0)
+    return emitOpError("requires at least one operand to create an array whose "
+                       "size is non-zero");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayGetOp
 //===----------------------------------------------------------------------===//
 
