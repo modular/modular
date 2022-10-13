@@ -157,6 +157,12 @@ struct MicroBenchmark {
     /// The maximum runtime of a benchmarking is measured in seconds. The
     /// maximum runtime is set to 1m.
     std::chrono::milliseconds maxRuntime = std::chrono::seconds(60);
+    /// When enabled, the first run of the benchmark will print a warning if you
+    /// are in debug mode. This is generally useful to always have enabled,
+    /// unless in cases where the benchmark is performed by some internal
+    /// function withing the Modular stack. When enabled, the warning is printed
+    /// at most once in the session.
+    bool printWarningIfDebugMode = true;
   };
 
   /// Options used to control the report output. The user can specify which
