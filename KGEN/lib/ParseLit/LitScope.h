@@ -11,6 +11,7 @@
 #ifndef LITSCOPE_H
 #define LITSCOPE_H
 
+#include "KGEN/LITDialect/LITOps.h"
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -41,34 +42,39 @@ public:
     return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
   }
 
-  /// Add the specified declaration to the current scope, returning non-null if
-  /// a previous operation is already in this scope.
-  Operation *addToScope(StringRef name, Operation *newDecl) {
-    Operation *&entry = decls[name];
-    if (entry)
-      return entry;
-    entry = newDecl;
-    return nullptr;
-  }
+  /// This is the value of a parameter bound to a name, attributes in MLIR don't
+  /// track locations, so we do so explicitly here.
+  struct MetaParameterValue {
+    Attribute value;
+    Location loc;
+  };
+
+  /// An entry in the symbol table is either a mutable variable declaration or
+  /// an immutable attribute (which is known to be a TypedAttr) or a VarDeclOp.
+  using ScopeValue = std::variant<MetaParameterValue, VarDeclOp>;
+
+  /// Add the specified declaration to the current scope, emitting an error on
+  /// a name collision and setting hadError to true.
+  void addToScope(StringRef name, ScopeValue newValue, bool &hadError);
 
   /// Look up a name in the current scope only.
-  Operation *lookupInCurrentScope(StringRef name) {
+  Optional<ScopeValue> lookupInCurrentScope(StringRef name) {
     auto it = decls.find(name);
     if (it != decls.end())
       return it->second;
-    return nullptr;
+    return None;
   }
 
   /// Perform a lookup in this scope tree, returning the nearest target or null
   /// if nothing is found.
-  Operation *lookup(StringRef name) {
+  Optional<ScopeValue> lookup(StringRef name) {
     Scope *curScope = this;
     while (curScope) {
-      if (Operation *result = curScope->lookupInCurrentScope(name))
-        return result;
+      if (Optional<ScopeValue> result = curScope->lookupInCurrentScope(name))
+        return result.value();
       curScope = curScope->parentScope.getPointer();
     }
-    return nullptr;
+    return None;
   }
 
 private:
@@ -78,7 +84,7 @@ private:
   LLCL::RCRef<Scope> parentScope;
 
   // Note: we could unique the identifiers and use a DenseMap.
-  llvm::StringMap<Operation *> decls;
+  llvm::StringMap<Optional<ScopeValue>> decls;
 };
 
 } // namespace M::KGEN::LIT
