@@ -29,7 +29,7 @@ TempFile::TempFile(TempFile &&other)
 
 TempFile::~TempFile() {
   if (fd != -1)
-    llvm::sys::fs::closeFile(fd);
+    llvm::sys::fs::closeFile((llvm::sys::fs::file_t &)fd);
 
   if (!keepFile)
     std::filesystem::remove(path);

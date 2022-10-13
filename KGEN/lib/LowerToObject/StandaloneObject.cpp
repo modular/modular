@@ -294,7 +294,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
                fileOr->keep());
 
     // And save the temp file.
-    tmpFileNames.push_back(fileOr->getPath().str());
+    tmpFileNames.push_back(fileOr->getPath().string());
     tmpFiles.push_back(std::move(*fileOr));
   }
 
@@ -312,9 +312,9 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
   // Start off the arguments with the tmp file names.
   SmallVector<std::string> args(tmpFileNames.begin(), tmpFileNames.end());
 
-  // Otherwise, use lld's ::link method for whichever target we're on.
+  // Shell out to the system linker for now just to bring things up.
   bool worked = true;
-  // TODO: We probably also want WASM and COFF
+  // TODO: We probably also want WASM
   if (triple.isOSBinFormatELF()) {
     // Add the requested AND public symbols as retained.
     auto retainOr =
@@ -344,10 +344,10 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
 
     args.append({
         "--retain-symbols-file",
-        retainOr->getPath().str(),
+        retainOr->getPath().string(),
         "-r", //< Get a relocatable object
         "-o",
-        outFileOr->getPath().str(),
+        outFileOr->getPath().string(),
     });
 
     auto ldOr = llvm::sys::findProgramByName("ld");
@@ -390,13 +390,51 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
         triple.getArchName().str(),
         "-flat_namespace",
         "-o",
-        outFileOr->getPath().str(),
+        outFileOr->getPath().string(),
     });
 
     auto ldOr = llvm::sys::findProgramByName("ld");
     if (!ldOr)
       return mlir::emitError(loc)
              << "could not find ld: " << ldOr.getError().message();
+
+    // The first argument must be the program's name.
+    SmallVector<StringRef> cstrArgs = {*ldOr};
+    for (const auto &a : args) {
+      LLVM_DEBUG(llvm::dbgs() << a << "\n");
+      cstrArgs.push_back(a);
+    }
+
+    std::string err;
+    if (llvm::sys::ExecuteAndWait(*ldOr, cstrArgs, /*Env=*/None,
+                                  /*Redirects=*/{}, /*SecondsToWait=*/0,
+                                  /*MemoryLimit=*/0, /*ErrMsg=*/&err) != 0) {
+      worked = false;
+      emitError(loc) << err;
+    }
+  } else if (triple.isOSBinFormatCOFF()) {
+    // Add the requested AND public symbols as exported.
+    for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
+      if (llvm::is_contained(symbols, f.getName())) {
+        if (f.getLinkage() != Linkage::Public)
+          return mlir::emitError(f.getLoc())
+                 << "requested export of private symbol, aborting";
+
+        args.push_back(("/EXPORT:" + f.getName()).str());
+        LLVM_DEBUG(llvm::dbgs() << "Exporting symbol: " << args.back() << "\n");
+      }
+    }
+
+    // Append windows-specific arguments to the linker args.
+    args.append({
+        "/INCREMENTAL",
+        "/OUT:" + outFileOr->getPath().string(),
+    });
+
+    auto ldOr = llvm::sys::findProgramByName("link.exe");
+    if (!ldOr)
+      return mlir::emitError(loc)
+             << "could not find link.exe: " << ldOr.getError().message();
 
     // The first argument must be the program's name.
     SmallVector<StringRef> cstrArgs = {*ldOr};
@@ -421,7 +459,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
     return reportFailure() << "linking failed";
 
   // Now, open the output tmp file as a memory buffer.
-  auto objFileOr = llvm::MemoryBuffer::getFile(outFileOr->getPath());
+  auto objFileOr = llvm::MemoryBuffer::getFile(outFileOr->getPath().string());
   if (!objFileOr)
     return reportFailure() << objFileOr.getError().message();
 

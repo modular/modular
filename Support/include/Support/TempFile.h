@@ -36,7 +36,7 @@ public:
   /// completion of the `create` call.
   int getFD() { return fd; }
   /// Return the path to the temp file. This path is absolute.
-  StringRef getPath() { return path.c_str(); }
+  const std::filesystem::path &getPath() const { return path; }
   /// Get the size of the temp file in bytes.
   ErrorOr<size_t> getSize();
 
