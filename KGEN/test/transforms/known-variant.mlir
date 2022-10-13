@@ -3,7 +3,7 @@
 // CHECK-LABEL: @known_true_or_false
 kgen.generator public @known_true_or_false<T:type>(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   %0 = pop.variant.create %arg0 : i32 -> !pop.variant<T, i32>
-  // CHECK: %[[TRUE:.*]] = kgen.param.constant : i1 = <1>
+  // CHECK: %[[TRUE:.*]] = kgen.param.constant: i1 = <1>
   %1 = pop.variant.is i32, %0 : !pop.variant<T, i32>
   // CHECK: scf.if %[[TRUE]]
   %2 = scf.if %1 -> !pop.variant<f32, i8> {
@@ -13,7 +13,7 @@ kgen.generator public @known_true_or_false<T:type>(%arg0: i32, %arg1: f32, %arg2
     %3 = pop.variant.create %arg1 : f32 -> !pop.variant<f32, i8>
     scf.yield %3 : !pop.variant<f32, i8>
   }
-  // CHECK: %[[FALSE:.*]] = kgen.param.constant : i1 = <0>
+  // CHECK: %[[FALSE:.*]] = kgen.param.constant: i1 = <0>
   %5 = pop.variant.is f32, %2 : !pop.variant<f32, i8>
   // CHECK: return %[[FALSE]]
   kgen.return %5 : i1
@@ -30,7 +30,7 @@ kgen.generator public @known_false<T:type>(%arg0: i32, %arg1: !kgen.paramref<T>,
     %1 = pop.variant.create %arg1 : !kgen.paramref<T> -> !pop.variant<T, i32, f32>
     scf.yield %1 : !pop.variant<T, i32, f32>
   }
-  // CHECK: %[[FALSE:.*]] = kgen.param.constant : i1 = <0>
+  // CHECK: %[[FALSE:.*]] = kgen.param.constant: i1 = <0>
   %2 = pop.variant.is f32, %0 : !pop.variant<T, i32, f32>
   // CHECK: return %[[FALSE]]
   kgen.return %2 : i1

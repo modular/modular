@@ -63,7 +63,7 @@ While other frameworks have focused on targeting the “HLO subset of ML” or s
 4. Layouts assumed by existing frameworks.
 5. Support for dynamic shapes and dynamic dtypes.`
 
-Why would we start with this?  The most important thing is that it keeps us grounded: we can always A/B compare our codegen against the existing hand-written code.  We won’t be able to declare success without meeting and beating the existing hand-written kernel libraries.  This approach also forces us to design for a certain amount of generality, which will help make sure we generalize to more complex situations in the future.  
+Why would we start with this?  The most important thing is that it keeps us grounded: we can always A/B compare our codegen against the existing hand-written code.  We won’t be able to declare success without meeting and beating the existing hand-written kernel libraries.  This approach also forces us to design for a certain amount of generality, which will help make sure we generalize to more complex situations in the future.
 
 One nice thing to observe here is that we have a great carrot to encourage us to do this work: success means that we can delete the legacy code that we started with when we can show that we’re consistently better than it.  As we implement this, we will build in the ability to specialize on one or more aspects of the design, including target architecture (+ µarch), desired operator set, supported data types, shapes, or anything else in the future.
 
@@ -146,7 +146,7 @@ kgen.generator @fillWithOnes<type: dtype, vecLen>
 {
   %bufferLen = meta.buffer.size %dest : !meta.buffer<?xtype>
   // Parameters are not SSA values, but can be projected into them explicitly.
-  %vecLen = kgen.param.constant : index = <vecLen>
+  %vecLen = kgen.param.constant: index = <vecLen>
 
   %ones = kgen.call @simd_splat<veclen, type> 1 : !simd<veclen x type>
   scf.for i = 0 ... %bufferLen step %vecLen {
@@ -162,7 +162,7 @@ kgen.generator @fillWithOnes<type: dtype, vecLen>
 }
 ```
 
-The need to have a parametric IR drives a number of other decisions in the implementation.  For example, we aren’t likely to be able to use the `llvm` dialect directly.  We will likely have to define a “parametric llvm operations” (`pop`) dialect that is lowered to the `llvm` dialect when the generator is run. 
+The need to have a parametric IR drives a number of other decisions in the implementation.  For example, we aren’t likely to be able to use the `llvm` dialect directly.  We will likely have to define a “parametric llvm operations” (`pop`) dialect that is lowered to the `llvm` dialect when the generator is run.
 
 Kernel generators are partial functions, and they are allowed to fail during generation time.  This just removes a candidate from the set of implementations that is explored by search.  If no implementations are available for an operator for a given target, then that needs to be solved at a higher level, e.g. by graph partitioning the accelerator vs host computation.
 
@@ -259,10 +259,10 @@ For example, one can implement a matrix multiplication microkernel with a three-
 
 This design is inherent to how operators work, but if each level of expansion has a dozen or more expansions, we will quickly find that this “tree of expansions” has an exponential number of expansions possible for a single framework operator.  This makes it impractical to search the entire space for a single kernel, and even more challenging to support an entire ML framework – particularly when a single framework may have hundreds/thousands of individual kernels.
 
-There are three major ways to address this explosion: 
+There are three major ways to address this explosion:
 
-1. A simple approach is to define human-authored constraints on the kernels to cut off the search space or guide the exploration.  This is what the basic bounds provide in the parameter declarations: we can go further by having conditional constraints, e.g. target specific ones.  
-2. We can use [fancy black box optimization techniques](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46180.pdf) to explore subsets of the search space. 
+1. A simple approach is to define human-authored constraints on the kernels to cut off the search space or guide the exploration.  This is what the basic bounds provide in the parameter declarations: we can go further by having conditional constraints, e.g. target specific ones.
+2. We can use [fancy black box optimization techniques](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46180.pdf) to explore subsets of the search space.
 3. We can exploit redundancy in the tree-based structure with dynamic programming techniques.
 
 We should build all of these in time, but the most important one to get architecturally right when building the system is to get the structure of the computation right, which means we should prioritize dynamic programming.

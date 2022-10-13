@@ -45,23 +45,23 @@ kgen.generator @test<p1>() {
 // -----
 
 // expected-error @+1 {{operator requires an index type}}
-%0 = kgen.param.constant : i32 = <shl(1, 2)>
+%0 = kgen.param.constant: i32 = <shl(1, 2)>
 
 // -----
 
 // expected-error @+1 {{integer literal not valid for specified type}}
-kgen.param.constant : !kgen.dtype = <mul(1, 4)>
+kgen.param.constant: !kgen.dtype = <mul(1, 4)>
 
 // -----
 
 // expected-error @+1 {{kgen.dtype.constant requires !kgen.dtype type}}
-kgen.param.constant : i8 = <#kgen.dtype.constant<f32>>
+kgen.param.constant: i8 = <#kgen.dtype.constant<f32>>
 
 // -----
 
 kgen.generator @foo() {
   // expected-error @+1 {{invalid use of parameter with no declaration "f32"}}
-  kgen.param.constant : i8 = <f32>
+  kgen.param.constant: i8 = <f32>
   kgen.return
 }
 
@@ -245,7 +245,7 @@ kgen.generator @bad<barf>() implements @itf {
 // -----
 
 // expected-error @below {{expected attribute value}}
-%0 = kgen.param.constant : i32 = <[:i32]>
+%0 = kgen.param.constant: i32 = <[:i32]>
 
 // -----
 

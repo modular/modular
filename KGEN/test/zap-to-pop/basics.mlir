@@ -23,7 +23,7 @@ kgen.func @buffer_size(%a: !zap.buffer<?, f32>) -> index {
 
 // CHECK-LABEL: @buffer_dtype
 kgen.func @buffer_dtype(%a: !zap.buffer<?, f32>) -> !kgen.dtype {
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   %0 = zap.buffer.dtype %a : !zap.buffer<?, f32>
   // CHECK: return %[[DTYPE]]
   kgen.return %0 : !kgen.dtype
@@ -83,7 +83,7 @@ kgen.func @buffer_convert(%a: !zap.buffer<?, f32>) -> !zap.buffer<?, f64> {
   // CHECK: %[[RAW:.*]] = pop.struct.get %[[A]][0]
   // CHECK: %[[PTR:.*]] = pop.pointer.bitcast %[[RAW]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<f64>>
   // CHECK: %[[SIZE:.*]] = pop.struct.get %[[A]][1]
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f64>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f64>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[PTR]], %[[SIZE]], %[[DTYPE]])
   %0 = zap.buffer.bitcast %a : !zap.buffer<?, f32> to !zap.buffer<?, f64>
   // CHECK: return %[[BUF]]
@@ -98,7 +98,7 @@ kgen.func @buffer_convert(%a: !zap.buffer<?, ?>) -> !zap.buffer<4, f32> {
   // CHECK: %[[RAW:.*]] = pop.struct.get %[[A]][0]
   // CHECK: %[[PTR:.*]] = pop.pointer.bitcast %[[RAW]]
   // CHECK: %[[SIZE:.*]] = kgen.param.constant = <4>
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[PTR]], %[[SIZE]], %[[DTYPE]])
   %0 = zap.buffer.bitcast %a : !zap.buffer<?, ?> to !zap.buffer<4, f32>
   // CHECK: return %[[BUF]]
@@ -113,7 +113,7 @@ kgen.func @buffer_convert(%a: !zap.buffer<4, f32>) -> !zap.buffer<?, ?> {
   // CHECK: %[[RAW:.*]] = pop.struct.get %[[A]][0]
   // CHECK: %[[PTR:.*]] = pop.pointer.bitcast %[[RAW]]
   // CHECK: %[[SIZE:.*]] = kgen.param.constant = <4>
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[PTR]], %[[SIZE]], %[[DTYPE]])
   %0 = zap.buffer.bitcast %a : !zap.buffer<4, f32> to !zap.buffer<?, ?>
   // CHECK: return %[[BUF]]
@@ -126,7 +126,7 @@ kgen.func @buffer_convert(%a: !zap.buffer<4, f32>) -> !zap.buffer<?, ?> {
 // CHECK-SAME: %[[PTR:.*]]:
 kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>) -> !zap.buffer<4, f32> {
   // CHECK: %[[SIZE:.*]] = kgen.param.constant = <4>
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[PTR]], %[[SIZE]], %[[DTYPE]])
   %0 = zap.buffer.construct %ptr : !zap.buffer<4, f32>
   // CHECK: return %[[BUF]]
@@ -139,7 +139,7 @@ kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>) -> !zap.buffer
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer
 // CHECK-SAME: %[[SIZE:.*]]:
 kgen.func @buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %size: index) -> !zap.buffer<?, f32> {
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[BUF:.*]] = pop.struct.construct(%[[PTR]], %[[SIZE]], %[[DTYPE]])
   %0 = zap.buffer.construct %ptr[%size] : !zap.buffer<?, f32>
   // CHECK: return %[[BUF]]
