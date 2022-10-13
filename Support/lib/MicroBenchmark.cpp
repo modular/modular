@@ -193,6 +193,8 @@ static StringRef toString(MicroBenchmark::ReportMetric metric) {
     return "max_latency";
   case MicroBenchmark::ReportMetric::kMeanLatency:
     return "mean_latency";
+  case MicroBenchmark::ReportMetric::kTrimmedMeanLatency:
+    return "trimmed_mean_latency";
   case MicroBenchmark::ReportMetric::kMedianLatency:
     return "median_latency";
   case MicroBenchmark::ReportMetric::k95PercentileLatency:
@@ -259,6 +261,16 @@ static double getMeanLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
   return formatTime(timeUnit, mean(getTimings(measurements)));
 }
 
+/// Computes the trimmed mean latency and returns the value as a double in the
+/// specified time unit.
+static double
+getTrimmedMeanLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+                      MicroBenchmark::TimeUnit timeUnit) {
+  auto timings = getTimings(measurements);
+  llvm::sort(timings);
+  return formatTime(timeUnit, trimmedMean(timings));
+}
+
 /// Computes the median latency and returns the value as a double in the
 /// specified time unit.
 static double
@@ -307,6 +319,8 @@ double MicroBenchmark::measurement(MicroBenchmark::ReportMetric metric,
     return getMaxLatency(measurements, timeUnit);
   case ReportMetric::kMeanLatency:
     return getMeanLatency(measurements, timeUnit);
+  case ReportMetric::kTrimmedMeanLatency:
+    return getTrimmedMeanLatency(measurements, timeUnit);
   case ReportMetric::kMedianLatency:
     return getMedianLatency(measurements, timeUnit);
   case ReportMetric::k95PercentileLatency:
