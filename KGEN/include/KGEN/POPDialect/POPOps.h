@@ -21,6 +21,8 @@
 namespace M::KGEN::POP {
 enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
+
+class ArrayType;
 class PointerType;
 class ScalarType;
 class SIMDType;

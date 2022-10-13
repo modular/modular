@@ -96,7 +96,8 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
     ```
   }];
   let arguments = (ins TypedAttrInterface:$value);
-  let results = (outs ScalarOrSIMD:$result);
+  let results = (outs AnyTypeOf<[ParamRefType, POP_ScalarType, POP_SIMDType,
+                                 POP_ArrayType]>:$result);
 
   let extraClassDeclaration = [{
     /// Whether the constant op can be constructed with a particular value and
@@ -935,6 +936,138 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [NoSideEffect,
     $value `,` $container `[` $index `]` attr-dict `:`
     qualified(type($container)) ``
     custom<StructValueType>(type($value), ref(type($container)), ref($index))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayCreateOp
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayCreateOp : POPOp<"array.create", [NoSideEffect,
+    ArrayElementType<"result", "operands">]> {
+  let summary = "create an array";
+  let description = [{
+    The `pop.array.create` operation creates an `!pop.array` populated with the
+    given SSA values. The resulting array must have a fixed size equal to the
+    number of operands.
+
+    Example:
+
+    ```mlir
+    // Create an array of scalar floats.
+    %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, !pop.scalar<f32>>
+
+    // Create an array of structs.
+    %1 = pop.array.create [%arg2, %arg3] : !pop.array<2, !pop.struct<>>
+
+    // Create an array of parametric types.
+    %2 = pop.array.create [%arg4] : !pop.array<1, T>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs ArrayKnownSize:$result);
+  let assemblyFormat = [{
+    ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayRepeatOp
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayRepeatOp : POPOp<"array.repeat", [NoSideEffect,
+    ArrayElementType<"result", "operands">]> {
+  let summary = "create an array";
+  let description = [{
+    The `pop.array.repeat` operation facilitates the creation of splat or
+    parametric arrays. The operation repeats the given operands into the
+    resulting array in the provided order until the array is full. Extra
+    elements are truncated.
+
+    Example:
+
+    ```mlir
+    // Create a splat array.
+    %0 = pop.array.repeat [%arg0] : !pop.array<N, !pop.scalar<f32>>
+
+    // Repeat the pair to fill the array. The last element is dropped.
+    %1 = pop.array.repeat [%arg2, %arg3] : !pop.array<9, T>
+
+    // Repeat the triplet to populate the array.
+    %2 = pop.array.create [%a, %b, %c] : !pop.array<M, T>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs ArrayKnownSize:$result);
+  let assemblyFormat = [{
+    ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayGetOp
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayGetOp : POPOp<"array.get", [NoSideEffect,
+    ArrayElementType<"array", "result">]> {
+  let summary = "array get element";
+  let description = [{
+    The `pop.array.get` operation extracts the element of the given array at the
+    specified index. An out-of-bounds index is invalid.
+
+    Example:
+
+    ```mlir
+    // Get the third element.
+    %0 = pop.array.get %arr0[2] : !pop.array<4, T>
+
+    // Get the first element.
+    %1 = pop.array.get %arr1[0] : !pop.array<N, f32>
+    ```
+  }];
+
+  let arguments = (ins POP_ArrayType:$array, IndexAttr:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $array `[` $index `]` attr-dict `:` qualified(type($array))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayReplaceOp
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayReplaceOp : POPOp<"array.replace", [NoSideEffect,
+    AllTypesMatch<["array", "result"]>, ArrayElementType<"result", "value">]> {
+  let summary = "array replace element";
+  let description = [{
+    The `pop.array.replace` operation inserts the given into the array at the
+    given index. It returns a new array with the inserted value. The original
+    array is not modified. An out-of-bounds index is invalid.
+
+    Example:
+
+    ```mlir
+    // Replace the second element.
+    %0 = pop.array.replace %a, %arr0[1] : !pop.array<4, T>
+
+    // Replace the first element.
+    %1 = pop.array.replace %b, %arr1[0] : !pop.array<N, i32>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value, POP_ArrayType:$array, IndexAttr:$index);
+  let results = (outs POP_ArrayType:$result);
+  let assemblyFormat = [{
+    $value `,` $array `[` $index `]` attr-dict `:` qualified(type($result))
   }];
 
   let hasVerifier = 1;

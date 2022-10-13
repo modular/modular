@@ -650,6 +650,21 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !pop.simd<1, f32> {
   kgen.return %0 : !pop.simd<1, f32>
 }
 
+// CHECK-LABEL: @array_ops
+kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>) -> !pop.array<2, T> {
+  // CHECK: pop.array.create [%arg0, %arg0] : !pop.array<2, T>
+  %0 = pop.array.create [%arg0, %arg0] : !pop.array<2, T>
+  // CHECK: pop.array.get %0[1] : !pop.array<2, T>
+  %1 = pop.array.get %0[1] : !pop.array<2, T>
+  // CHECK: pop.array.replace %{{.*}}, %0[0] : !pop.array<2, T>
+  %2 = pop.array.replace %1, %0[0] : !pop.array<2, T>
+  // CHECK: pop.constant(0 : i64) : !pop.array<N, !pop.scalar<dtype>>
+  %3 = pop.constant(0) : !pop.array<N, !pop.scalar<dtype>>
+  // CHECK: pop.constant(#M.dense_array<0.{{0+}}e+00, 1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<3xf64>) : !pop.array<3, !pop.scalar<f64>>
+  %4 = pop.constant(#M.dense_array<0.0, 1.0, 2.0> : !M.array<3xf64>) : !pop.array<3, !pop.scalar<f64>>
+  kgen.return %2 : !pop.array<2, T>
+}
+
 // CHECK-LABEL: @variant_type
 kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramref<T> {
   // CHECK: pop.variant.create %arg0 : !pop.simd<N, f32> -> !pop.variant<T, !pop.simd<N, f32>>
