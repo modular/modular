@@ -457,6 +457,14 @@ kgen.generator @pop_load_store<type: dtype>(%p0: !pop.pointer<!pop.scalar<f32>>,
   kgen.return
 }
 
+// CHECK-LABEL: @pop_prefetch
+kgen.generator @pop_prefetch<type: dtype>(%p0: !pop.pointer<!pop.scalar<f32>>) {
+  %zero = pop.constant(0 : ui32) : !pop.scalar<ui32>
+  // CHECK: pop.prefetch %{{.*}}(NoLocality, ReadDCache) : !pop.pointer<!pop.scalar<f32>>
+  pop.prefetch %p0 (NoLocality, ReadDCache) : !pop.pointer<!pop.scalar<f32>>
+  kgen.return
+}
+
 // CHECK-LABEL: @pop_load_store_alignment
 kgen.generator @pop_load_store_alignment<type: dtype>(%p0: !pop.pointer<!pop.scalar<f32>>, %p1: !pop.pointer<!pop.scalar<type>>) {
   // CHECK: pop.load %{{.*}} align 42 : !pop.pointer<!pop.scalar<f32>>

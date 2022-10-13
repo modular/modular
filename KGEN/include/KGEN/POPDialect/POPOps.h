@@ -21,6 +21,10 @@
 namespace M::KGEN::POP {
 enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
+enum class PrefetchTag : uint32_t;
+class PrefetchTagAttr;
+enum class PrefetchLocality : uint32_t;
+class PrefetchLocalityAttr;
 
 class ArrayType;
 class PointerType;

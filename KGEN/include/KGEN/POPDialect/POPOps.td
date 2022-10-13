@@ -813,6 +813,46 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
 }
 
 //===----------------------------------------------------------------------===//
+// PrefetchOp
+//===----------------------------------------------------------------------===//
+
+def POP_PrefetchOp : POPOp<"prefetch"> {
+  let summary = "prefetch instruction or data into cache";
+  let description = [{
+    The `pop.prefetch` operation provides prefetching hints for the target
+    to prefetch instruction or data into cache before they are used.
+
+    This op follows similar interface as prefetch op in LLVM dialect,
+    with a "locality" attribute that specifies the level of temporal locality
+    in the application, i.e. how soon would the same data be visited again, 
+    possible locality values are: `NoLocality`, `LowLocality`, `MediumLocality`,
+    `HighLocality`, and `VeryHighLocality`.
+    
+    This op also takes a "cache tag" attribute giving hints on how the 
+    prefetched data will be used. Possible tags are: `ReadICache`, `ReadDCache` 
+    and `WriteDCache`.
+
+    Note: the actual behavior of this op and concrete interpretation 
+    of these attributes are target-dependent.
+    
+    Example:
+
+    ```mlir
+    pop.prefetch %p (NoLocality, ReadDCache) : !pop.pointer<!pop.scalar<f32>>
+    pop.prefetch %p (HighLocality, WriteDCache) : !pop.pointer<!pop.scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins POP_PointerType:$ptr,
+                       POP_PrefetchLocalityAttr:$locality,
+                       POP_PrefetchTagAttr:$cache_tag);
+
+  let assemblyFormat = [{
+    $ptr `(` $locality `,` $cache_tag `)` attr-dict `:` qualified(type($ptr))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
