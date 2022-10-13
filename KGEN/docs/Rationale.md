@@ -144,7 +144,7 @@ kgen.generator @algo<veclen, dt: dtype>(%src: !pop.simd<mul(veclen,veclen), dt>)
   %veclenSSAValue = pop.simd.size %src: !pop.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
-  %dtypeSSAValue = kgen.param.constant : dtype = <dt>
+  %dtypeSSAValue = kgen.param.constant: dtype = <dt>
   %veclenSSAValue = kgen.param.constant = <mul(veclen,veclen)>
 }
 ```

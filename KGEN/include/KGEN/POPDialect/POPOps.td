@@ -1431,7 +1431,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [NoSideEffect]> {
     ```mlir
     kgen.generator @addN<N: si32>(%arg0: !pop.scalar<si32>)
         -> !pop.scalar<si32> {
-      %N = kgen.param.constant : si32 = <N>
+      %N = kgen.param.constant: si32 = <N>
       %rhs = pop.cast_from_builtin %N : si32 to !pop.scalar<si32>
       %result = pop.add %arg0, %rhs : !pop.scalar<f32>
       kgen.return %result : !pop.scalar<f32>

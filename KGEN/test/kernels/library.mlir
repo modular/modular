@@ -13,7 +13,7 @@ kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
 kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
   (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
   implements @buffer.loadOrValue {
-  %isLoad = kgen.param.constant : i1 = <isLoad>
+  %isLoad = kgen.param.constant: i1 = <isLoad>
   %res = scf.if %isLoad -> !pop.scalar<type> {
     %t0 = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>
     scf.yield %t0 : !pop.scalar<type>

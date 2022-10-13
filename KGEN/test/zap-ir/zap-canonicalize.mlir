@@ -6,7 +6,7 @@ kgen.func @buffer_size_dtype_folds(%arg0: !zap.buffer<42, f32>,
                               %arg1: !zap.buffer<?, f32>,
                               %arg2: !zap.buffer<42, ?>)
   -> (index, index, !kgen.dtype, !kgen.dtype) {
-  // CHECK: %[[V0:.*]] = kgen.param.constant : dtype = <f32>
+  // CHECK: %[[V0:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[V1:.*]] = kgen.param.constant = <42>
 
   %0 = zap.buffer.size %arg0 : !zap.buffer<42, f32>
