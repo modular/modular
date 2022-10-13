@@ -525,6 +525,43 @@ kgen.func public @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
 
 // -----
 
+// CHECK-LABEL: @prefetch
+kgen.func @prefetch(%p: !pop.pointer<!pop.scalar<si32>>) {
+  // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
+  pop.prefetch %p (NoLocality, ReadDCache) 
+    : !pop.pointer<!pop.scalar<si32>>
+  // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
+  pop.prefetch %p (LowLocality, WriteDCache) 
+    : !pop.pointer<!pop.scalar<si32>>
+  // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(2 : i32) : i32
+  // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
+  pop.prefetch %p (MediumLocality, ReadICache) 
+    : !pop.pointer<!pop.scalar<si32>>
+  // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(3 : i32) : i32
+  // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
+  pop.prefetch %p (HighLocality, ReadDCache) 
+    : !pop.pointer<!pop.scalar<si32>>
+  // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(4 : i32) : i32
+  // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
+  pop.prefetch %p (VeryHighLocality, ReadDCache) 
+    : !pop.pointer<!pop.scalar<si32>>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @array_create
 kgen.func @array_create(%a: i32) -> !pop.array<2, i32> {
   // CHECK: %[[A0:.*]] = llvm.mlir.undef : !llvm.array<2 x i32>

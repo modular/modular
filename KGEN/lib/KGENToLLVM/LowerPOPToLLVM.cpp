@@ -657,6 +657,51 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPPrefetch
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPPrefetch : mlir::ConvertOpToLLVMPattern<PrefetchOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PrefetchOp op, PrefetchOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Convert enum attributes to LLVM encoding.
+    auto [rwInt, cacheBankInt] = unpackRwAndCacheBank(op.getCacheTag());
+
+    // Create LLVM constants for the encoded attributes.
+    Value rw = rewriter.create<LLVM::ConstantOp>(
+        op->getLoc(), rewriter.getI32IntegerAttr(rwInt));
+
+    Value locality = rewriter.create<LLVM::ConstantOp>(
+        op->getLoc(),
+        rewriter.getI32IntegerAttr(static_cast<int>(op.getLocality())));
+
+    Value cacheBank = rewriter.create<LLVM::ConstantOp>(
+        op->getLoc(), rewriter.getI32IntegerAttr(cacheBankInt));
+
+    rewriter.replaceOpWithNewOp<LLVM::Prefetch>(op, adaptor.getPtr(), rw,
+                                                locality, cacheBank);
+    return success();
+  }
+
+private:
+  /// Unpacks the tag following the doc at:
+  /// https://llvm.org/docs/LangRef.html#llvm-prefetch-intrinsic
+  static std::pair<int, int> unpackRwAndCacheBank(PrefetchTag tag) {
+    switch (tag) {
+    case PrefetchTag::ReadDCache:
+      return {0, 1};
+    case PrefetchTag::ReadICache:
+      return {0, 0};
+    case PrefetchTag::WriteDCache:
+      return {1, 1};
+    }
+    llvm_unreachable("unknown prefetch tag");
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
@@ -903,6 +948,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPOffset,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
+      ConvertPOPPrefetch,
       ConvertPOPStructReplace,
       ConvertPOPSelect,
       ConvertPOPShl,
