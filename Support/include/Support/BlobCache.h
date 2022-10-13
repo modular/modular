@@ -10,6 +10,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include <filesystem>
 
 namespace M {
 /// This class is the backend interface for a BlobCache. The backend contains a
@@ -116,13 +117,14 @@ std::unique_ptr<BlobCacheBackend> getInMemoryBackend();
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD.
-std::unique_ptr<BlobCacheBackend> getFilesystemBackend(StringRef basePath = "");
+std::unique_ptr<BlobCacheBackend>
+getFilesystemBackend(const std::filesystem::path &basePath = "");
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `basePath` is passed to getFilesystemBackend
 /// directly.
 std::unique_ptr<BlobCacheBackend>
-getDefaultBackendChain(StringRef basePath = "");
+getDefaultBackendChain(const std::filesystem::path &basePath = "");
 } // namespace M
 
 #endif // SUPPORT_BLOBCACHE_H

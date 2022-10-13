@@ -9,7 +9,6 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
-#include <filesystem>
 
 using namespace M;
 
@@ -106,7 +105,8 @@ namespace {
 /// Provides a filesystem-backed backend that stores the buffers in binary files
 /// on disk.
 struct FilesystemBackend : public BlobCacheBackend {
-  explicit FilesystemBackend(StringRef basePath) : basePath(basePath.str()) {}
+  explicit FilesystemBackend(const std::filesystem::path &basePath)
+      : basePath(basePath) {}
 
   ErrorOrSuccess insertImpl(StringRef keyHash,
                             llvm::MemoryBufferRef obj) override {
@@ -117,10 +117,12 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (err)
       return Error(err.message());
 
+    std::string filePathStr = filePath.string();
+
     // If the file doesn't exist, just touch and close immediately. We resize in
     // the next step, and then mmap it in as a writable buffer.
-    if (!containsImpl(filePath.string().c_str()))
-      fclose(fopen(filePath.string().c_str(), "w"));
+    if (!containsImpl(filePathStr))
+      fclose(fopen(filePathStr.c_str(), "w"));
 
     // Resize the file to contain enough bytes.
     std::filesystem::resize_file(filePath, obj.getBufferSize() + sha256Bytes,
@@ -128,7 +130,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (err)
       return Error(err.message());
 
-    auto fileOr = llvm::WritableMemoryBuffer::getFile(filePath.string());
+    auto fileOr = llvm::WritableMemoryBuffer::getFile(filePathStr);
     if (!fileOr)
       return Error(fileOr.getError().message());
 
@@ -201,13 +203,28 @@ struct FilesystemBackend : public BlobCacheBackend {
 };
 } // namespace
 
-std::unique_ptr<BlobCacheBackend> M::getFilesystemBackend(StringRef basePath) {
+std::unique_ptr<BlobCacheBackend>
+M::getFilesystemBackend(const std::filesystem::path &basePath) {
   return std::make_unique<FilesystemBackend>(basePath);
 }
 
 std::unique_ptr<BlobCacheBackend>
-M::getDefaultBackendChain(StringRef basePath) {
+M::getDefaultBackendChain(const std::filesystem::path &basePath) {
   auto backend = getInMemoryBackend();
-  backend->setDelegate(getFilesystemBackend(basePath));
+
+  // Default to be in the `.derived` folder if we can.
+  std::error_code ec;
+  std::filesystem::path derived = std::filesystem::absolute(
+      llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
+  if (ec) {
+    llvm::errs() << ec.message();
+    return nullptr;
+  }
+
+  std::filesystem::path base = basePath;
+  if (!base.is_absolute())
+    base = derived / basePath;
+
+  backend->setDelegate(getFilesystemBackend(base));
   return backend;
 }
