@@ -158,11 +158,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ObjectCompiler compiler(".kgen_cache", *theModule);
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
-  if (failed(compiler.lowerAllFuncsToObject(attr)))
+  if (failed(compiler.lowerAllFuncsToObject(attr, /*isJIT=*/clOptions.cmd ==
+                                                      Command::kExecute)))
     return failure();
 
   // This produces a standalone object for all the objects we requested.
-  auto standaloneOr = compiler.produceStandaloneObject();
+  auto standaloneOr = compiler.produceStandaloneObject(
+      /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
   std::unique_ptr<llvm::MemoryBuffer> standaloneObject =

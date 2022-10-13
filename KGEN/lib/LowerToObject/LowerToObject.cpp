@@ -65,7 +65,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-KGEN::createTargetMachine(TargetInfoAttr targetInfo) {
+KGEN::createTargetMachine(TargetInfoAttr targetInfo, bool isJIT) {
   { // TODO: remove this once we have more cross-compilation capability.
     auto targetTriple = llvm::sys::getDefaultTargetTriple();
     assert(targetInfo.getTriple() == targetTriple &&
@@ -86,7 +86,7 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo) {
       targetInfo.getTriple(), targetInfo.getCpu(), targetInfo.getFeatures(),
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
-      /*CM=*/None, /*OL=*/llvm::CodeGenOpt::Aggressive, /*JIT=*/true));
+      /*CM=*/None, /*OL=*/llvm::CodeGenOpt::Aggressive, /*JIT=*/isJIT));
   if (!machine)
     return Error("unable to create target machine");
 
@@ -122,7 +122,7 @@ std::string ObjectCacheKeyInfo::hashKey(ObjectCacheKeyInfo::KeyTy key) {
 /// compiled object in `cache` and stores a back-pointer from the precompiled
 /// object to the precompiled LLVM in `backtrackCache`.
 FailureOr<PrecompiledObjectOp>
-ObjectCompiler::lowerToObject(PrecompiledLLVMOp func) {
+ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
   // So first, check if the result is already in the cache.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> precompiledOr =
       caches.getObject().find(func);
@@ -152,7 +152,7 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func) {
 
   // Create the target machine.
   ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
-      createTargetMachine(targetInfo);
+      createTargetMachine(targetInfo, isJIT);
   if (failed(machineOr))
     return mlir::emitError(func->getLoc()) << machineOr.getError();
   std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOr);
@@ -254,12 +254,13 @@ ObjectCompiler::raiseFromObject(PrecompiledObjectOp precompiled) {
 // lowerAllFuncsToObject
 //===----------------------------------------------------------------------===//
 
-LogicalResult ObjectCompiler::lowerAllFuncsToObject(TargetInfoAttr target) {
+LogicalResult ObjectCompiler::lowerAllFuncsToObject(TargetInfoAttr target,
+                                                    bool isJIT) {
   for (auto f : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
     auto llvmFuncOr = lowerToLLVM(f, target);
     if (failed(llvmFuncOr))
       return mlir::emitError(f->getLoc()) << "lowering to llvm failed";
-    if (failed(lowerToObject(*llvmFuncOr)))
+    if (failed(lowerToObject(*llvmFuncOr, isJIT)))
       return mlir::emitError(llvmFuncOr->getLoc())
              << "lowering to object failed";
   }
