@@ -989,6 +989,8 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [NoSideEffect,
     resulting array in the provided order until the array is full. Extra
     elements are truncated.
 
+    It is only valid to have no operands if the resulting array has no elements.
+
     Example:
 
     ```mlir
@@ -1008,6 +1010,8 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [NoSideEffect,
   let assemblyFormat = [{
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

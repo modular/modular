@@ -345,3 +345,11 @@ kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
   %0 = pop.array.get %arg0[2] : !pop.array<1, i32>
   kgen.return
 }
+
+// -----
+
+kgen.func @repeat_zero() {
+  // expected-error @below {{requires at least one operand to create an array whose size is non-zero}}
+  %0 = pop.array.repeat [] : !pop.array<1, i32>
+  kgen.return
+}
