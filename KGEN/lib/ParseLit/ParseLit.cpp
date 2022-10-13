@@ -558,6 +558,9 @@ struct DeferredDeclBodyToParse {
 
   /// This is the indentation level of the decl.
   size_t indentLevel;
+
+  /// This is the location of each input parameter.
+  std::vector<Location> inputParamLocs;
 };
 
 /// This class provides the implementation details of the concrete Lit Grammar.
@@ -578,7 +581,8 @@ private:
 
   // Compound statements.
   ParseResult parseDefStmt(size_t curIndent);
-  void parseDefBody(size_t defIndent, LITFuncOp defDecl);
+  void parseDefBody(LITFuncOp defDecl, size_t defIndent,
+                    ArrayRef<Location> inputParamLocs);
 
   // Simple statements.
   ParseResult parseReturnStmt();
@@ -652,7 +656,8 @@ void LitParser::finalizeScopeDecl() {
     decl.lexerCursor.restore(lexer);
 
     // Only support def's right now.
-    parseDefBody(decl.indentLevel, cast<LITFuncOp>(currentScope->getDecl()));
+    parseDefBody(cast<LITFuncOp>(currentScope->getDecl()), decl.indentLevel,
+                 decl.inputParamLocs);
   }
 }
 
@@ -913,8 +918,11 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   };
 
   SmallVector<ParamDeclAttr> inputMetaParameters;
+  std::vector<Location> inputParamLocs;
 
   auto parseMetaParameter = [&]() -> ParseResult {
+    inputParamLocs.push_back(getTokenLocation());
+
     StringAttr name;
     if (parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -998,7 +1006,8 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
   deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
-                           lexer.getCursor(), curIndent});
+                           lexer.getCursor(), curIndent,
+                           std::move(inputParamLocs)});
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the function definition.
@@ -1013,14 +1022,14 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 }
 
 /// Parse a deferred 'def' body.
-void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
+void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
+                             ArrayRef<Location> inputParamLocs) {
   // Add the meta parameters to the symbol table.
-  for (ParamDeclAttr param : defDecl.getParamDecls()) {
+  for (auto [param, loc] : llvm::zip(defDecl.getParamDecls(), inputParamLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-    currentScope->addToScope(
-        // FIXME: Should have locations of input parameters.
-        param.getName(), Scope::MetaParameterValue{value, defDecl.getLoc()},
-        sharedParserState->errorOccurred);
+    currentScope->addToScope(param.getName(),
+                             Scope::MetaParameterValue{value, loc},
+                             sharedParserState->errorOccurred);
   }
 
   // Set up the body of the def, creating declarations for the value parameters
