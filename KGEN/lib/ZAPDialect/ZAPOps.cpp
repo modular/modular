@@ -199,18 +199,11 @@ LogicalResult TensorConstructOp::verify() {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.size() == 2 && "zap.tensor.size has two operand");
+  assert(operands.size() == 1 && "zap.tensor.dim has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
   // size is null.
-  if (auto dim = dyn_cast_if_present<IntegerAttr>(operands[1])) {
-    auto tensorType = getTensor().getType();
-    // If the index is out of bounds, then we do not fold the op.
-    if (static_cast<size_t>(dim.getInt()) >= tensorType.getRank())
-      return {};
-    return tensorType.getShape().data()[dim.getInt()];
-  }
-  return {};
+  return getTensor().getType().getShape()[getIndexAttr().getInt()];
 }
 
 //===----------------------------------------------------------------------===//

@@ -424,10 +424,10 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor, Index:$dimension);
+  let arguments = (ins ZAP_TensorType:$tensor, IndexAttr:$index);
   let results = (outs Index:$result);
   let assemblyFormat = [{
-    $tensor `[` $dimension `]` attr-dict `:` qualified(type($tensor))
+    $tensor `[` $index `]` attr-dict `:` qualified(type($tensor))
   }];
 
   let hasFolder = 1;

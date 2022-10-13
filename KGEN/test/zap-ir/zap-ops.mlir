@@ -284,30 +284,20 @@ kgen.func @zap_tensor_construct(
 // CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
 // CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4, ?], f32>
 // CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
 kgen.func @zap_tensor_dim(
   %tensor0: !zap.tensor<[4, 5, 3], f32>,
   %tensor1: !zap.tensor<[?, 4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.tensor.dim %[[TENSOR0]][%[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
-  %0 = zap.tensor.dim %tensor0[%idx] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR0]][%[[IDXZERO]]] : !zap.tensor<[4, 5, 3], f32>
-  %1 = zap.tensor.dim %tensor0[%idxZero] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR1]][%[[IDXZERO]]] : !zap.tensor<[?, 4, ?], f32>
-  %2 = zap.tensor.dim %tensor1[%idxZero] : !zap.tensor<[?, 4, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR1]][%[[IDXONE]]] : !zap.tensor<[?, 4, ?], f32>
-  %3 = zap.tensor.dim %tensor1[%idxOne] : !zap.tensor<[?, 4, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDXZERO]]] : !zap.tensor<[?, ?, ?], f32>
-  %4 = zap.tensor.dim %tensor2[%idxZero] : !zap.tensor<[?, ?, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDXONE]]] : !zap.tensor<[?, ?, ?], f32>
-  %5 = zap.tensor.dim %tensor2[%idxOne] : !zap.tensor<[?, ?, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?, ?, ?], f32>
-  %6 = zap.tensor.dim %tensor2[%idx] : !zap.tensor<[?, ?, ?], f32>
+  %tensor2: !zap.tensor<[?, ?, ?], f32>) {
+  // CHECK: zap.tensor.dim %[[TENSOR0]][0] : !zap.tensor<[4, 5, 3], f32>
+  %0 = zap.tensor.dim %tensor0[0] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR1]][0] : !zap.tensor<[?, 4, ?], f32>
+  %1 = zap.tensor.dim %tensor1[0] : !zap.tensor<[?, 4, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR1]][1] : !zap.tensor<[?, 4, ?], f32>
+  %2 = zap.tensor.dim %tensor1[1] : !zap.tensor<[?, 4, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR2]][0] : !zap.tensor<[?, ?, ?], f32>
+  %3 = zap.tensor.dim %tensor2[0] : !zap.tensor<[?, ?, ?], f32>
+  // CHECK: zap.tensor.dim %[[TENSOR2]][0] : !zap.tensor<[?, ?, ?], f32>
+  %4 = zap.tensor.dim %tensor2[0] : !zap.tensor<[?, ?, ?], f32>
   kgen.return
 }
 

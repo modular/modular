@@ -50,18 +50,13 @@ kgen.func @tensor_dim_folds(%arg0: !zap.tensor<[42], f32>,
                             %arg2: !zap.tensor<[?, 42], f32>)
   -> (index, index, index, index, index) {
   // CHECK-DAG: %[[V0:.*]] = kgen.param.constant = <42>
-  // CHECK-DAG: %[[V1:.*]] = index.constant 0
-  // CHECK-DAG: %[[V2:.*]] = index.constant 1
-  %zero = index.constant 0
-  %one = index.constant 1
-
-  %0 = zap.tensor.dim %arg0[%zero] : !zap.tensor<[42], f32>
-  %1 = zap.tensor.dim %arg1[%zero] : !zap.tensor<[42, ?], f32>
-  // CHECK: %[[V3:.*]] = zap.tensor.dim %[[ARG1]]
-  %2 = zap.tensor.dim %arg1[%one] : !zap.tensor<[42, ?], f32>
-  // CHECK: %[[V4:.*]] = zap.tensor.dim %[[ARG2]]
-  %3 = zap.tensor.dim %arg2[%zero] : !zap.tensor<[?, 42], f32>
-  %4 = zap.tensor.dim %arg2[%one] : !zap.tensor<[?, 42], f32>
+  %0 = zap.tensor.dim %arg0[0] : !zap.tensor<[42], f32>
+  %1 = zap.tensor.dim %arg1[0] : !zap.tensor<[42, ?], f32>
+  // CHECK: %[[V3:.*]] = zap.tensor.dim %[[ARG1]][1]
+  %2 = zap.tensor.dim %arg1[1] : !zap.tensor<[42, ?], f32>
+  // CHECK: %[[V4:.*]] = zap.tensor.dim %[[ARG2]][0]
+  %3 = zap.tensor.dim %arg2[0] : !zap.tensor<[?, 42], f32>
+  %4 = zap.tensor.dim %arg2[1] : !zap.tensor<[?, 42], f32>
 
   // CHECK: kgen.return %[[V0]], %[[V0]], %[[V3]], %[[V4]], %[[V0]]
   kgen.return %0, %1, %2, %3, %4 : index, index, index, index, index

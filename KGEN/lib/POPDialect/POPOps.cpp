@@ -621,6 +621,11 @@ LogicalResult ArrayCreateOp::verify() {
   return success();
 }
 
+void ArrayCreateOp::build(OpBuilder &b, OperationState &state,
+                          ValueRange elements) {
+  return build(b, state, ArrayType::get(elements), elements);
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayRepeatOp
 //===----------------------------------------------------------------------===//

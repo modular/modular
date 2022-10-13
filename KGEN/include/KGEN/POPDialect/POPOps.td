@@ -1013,6 +1013,10 @@ def POP_ArrayCreateOp : POPOp<"array.create", [NoSideEffect,
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
 
+  let builders = [
+    OpBuilder<(ins "ValueRange":$elements)>
+  ];
+
   let hasVerifier = 1;
 }
 

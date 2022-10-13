@@ -311,3 +311,78 @@ kgen.precompiled.object @buffer(%a: !zap.buffer<5, f32>) attributes {
   object = "hash key for @symbol object",
   llvm = "hash key for @llvm_precompiled"
 }
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_construct
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
+kgen.func @zap_tensor_construct(%ptr: !pop.pointer<!pop.scalar<f32>>) {
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[ONE:.*]] = index.constant 1
+  // CHECK-DAG: %[[FOUR:.*]] = index.constant 4
+  // CHECK-DAG: %[[ARRAY:.*]] = pop.array.create [%[[FOUR]], %[[ZERO]], %[[ZERO]], %[[ZERO]], %[[ZERO]]] : !pop.array<5, index>
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK: pop.struct.construct(%[[PTR]], %[[ONE]], %[[ARRAY]], %[[DTYPE]]) : !pop.struct<!pop.pointer<!pop.scalar<f32>>, index, !pop.array<5, index>, !kgen.dtype>
+  %0 = zap.tensor.construct %ptr : !zap.tensor<[4], f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_construct
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[SIZE:.*]]: index
+kgen.func @zap_tensor_construct(%ptr: !pop.pointer<!pop.scalar<f32>>,
+                                %size: index) {
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[THREE:.*]] = index.constant 3
+  // CHECK-DAG: %[[FOUR:.*]] = index.constant 4
+  // CHECK-DAG: %[[ARRAY:.*]] = pop.array.create [%[[SIZE]], %[[FOUR]], %[[SIZE]], %[[ZERO]], %[[ZERO]]] : !pop.array<5, index>
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK: pop.struct.construct(%[[PTR]], %[[THREE]], %[[ARRAY]], %[[DTYPE]]) : !pop.struct<!pop.pointer<!pop.scalar<f32>>, index, !pop.array<5, index>, !kgen.dtype>
+  %0 = zap.tensor.construct %ptr[%size, %size] : !zap.tensor<[?, 4, ?], f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_construct
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<invalid>>
+// CHECK-SAME: %[[SIZE0:.*]]: index
+// CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
+kgen.func @zap_tensor_construct(%ptr: !pop.pointer<!pop.scalar<invalid>>,
+                                %size: index,
+                                %dtype: !kgen.dtype) {
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[FOUR:.*]] = index.constant 4
+  // CHECK-DAG: %[[ARRAY:.*]] = pop.array.create [%[[SIZE]], %[[SIZE]], %[[SIZE]], %[[SIZE]], %[[ZERO]]] : !pop.array<5, index>
+  // CHECK: pop.struct.construct(%[[PTR]], %[[FOUR]], %[[ARRAY]], %[[DTYPE]]) : !pop.struct<!pop.pointer<!pop.scalar<invalid>>, index, !pop.array<5, index>, !kgen.dtype>
+  %0 = zap.tensor.construct %ptr[%size, %size, %size, %size] of %dtype : !zap.tensor<[?, ?, ?, ?], ?>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_dim
+// CHECK-SAME: %[[TENSOR0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[TENSOR1:.*]]: !pop.struct<!pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[TENSOR2:.*]]: !pop.struct<!pop.pointer<!pop.scalar<invalid>>
+kgen.func @zap_tensor_dim(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[?, 4, ?], si32>,
+  %tensor2: !zap.tensor<[?, ?, ?], ?>) {
+  // CHECK: kgen.param.constant  = <4>
+  %0 = zap.tensor.dim %tensor0[0] : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: %[[ARRAY0:.*]] = pop.struct.get %[[TENSOR1]][2] : !pop.struct<
+  // CHECK: pop.array.get %[[ARRAY0]][0] : !pop.array<5, index>
+  %1 = zap.tensor.dim %tensor1[0] : !zap.tensor<[?, 4, ?], si32>
+  // CHECK: kgen.param.constant  = <4>
+  %2 = zap.tensor.dim %tensor1[1] : !zap.tensor<[?, 4, ?], si32>
+  // CHECK: %[[ARRAY1:.*]] = pop.struct.get %[[TENSOR2]][2] : !pop.struct<
+  // CHECK: pop.array.get %[[ARRAY1]][0] : !pop.array<5, index>
+  %3 = zap.tensor.dim %tensor2[0] : !zap.tensor<[?, ?, ?], ?>
+  // CHECK: %[[ARRAY2:.*]] = pop.struct.get %[[TENSOR2]][2] : !pop.struct<
+  // CHECK: pop.array.get %[[ARRAY2]][2] : !pop.array<5, index>
+  %4 = zap.tensor.dim %tensor2[2] : !zap.tensor<[?, ?, ?], ?>
+  kgen.return
+}
