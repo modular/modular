@@ -26,6 +26,9 @@ llvm::Optional<mlir::Type> getMLIRTypeForDType(mlir::MLIRContext *ctx,
 /// untyped pointer.
 mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, DType dtype);
 
+/// Check if the type is !pop.simd<1, ?>.
+bool isSIMDSizeOneType(Type type);
+
 /// This type converter maps fully-specified pop dialect parametric types and
 /// built-in MLIR types to LLVM types.
 class POPToLLVMTypeConverter : public mlir::LLVMTypeConverter {
