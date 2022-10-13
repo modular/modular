@@ -514,6 +514,95 @@ struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPArrayCreate
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPArrayCreate
+    : public mlir::ConvertOpToLLVMPattern<ArrayCreateOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ArrayCreateOp op, ArrayCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = getTypeConverter()->convertType(op.getType());
+    if (!type)
+      return op.emitError("failed to convert array type");
+
+    Value array = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    for (auto &operand : llvm::enumerate(op.getOperands())) {
+      array = rewriter.create<LLVM::InsertValueOp>(
+          op.getLoc(), array, operand.value(), operand.index());
+    }
+    rewriter.replaceOp(op, array);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPArrayRepeat
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPArrayRepeat
+    : public mlir::ConvertOpToLLVMPattern<ArrayRepeatOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ArrayRepeatOp op, ArrayRepeatOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = getTypeConverter()->convertType(op.getType());
+    if (!type)
+      return op.emitError("failed to convert array type");
+
+    Value array = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    // Fill the consecutive elements of the array by cycling through the
+    // operands until the array is filled.
+    for (unsigned i = 0, size = *op.getType().getResolvedSize(); i < size;) {
+      for (auto it = adaptor.getOperands().begin(),
+                e = adaptor.getOperands().end();
+           it != e && i < size; ++it, ++i) {
+        array =
+            rewriter.create<LLVM::InsertValueOp>(op.getLoc(), array, *it, i);
+      }
+    }
+    rewriter.replaceOp(op, array);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPArrayGet
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPArrayGet : public mlir::ConvertOpToLLVMPattern<ArrayGetOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ArrayGetOp op, ArrayGetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getArray(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPArrayReplace
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPArrayReplace
+    : public mlir::ConvertOpToLLVMPattern<ArrayReplaceOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ArrayReplaceOp op, ArrayReplaceOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+        op, adaptor.getArray(), adaptor.getValue(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // getAlignment
 //===----------------------------------------------------------------------===//
 
@@ -791,6 +880,10 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertPOPAbs,
       ConvertPOPAdd,
+      ConvertPOPArrayCreate,
+      ConvertPOPArrayGet,
+      ConvertPOPArrayRepeat,
+      ConvertPOPArrayReplace,
       ConvertPOPBitcast,
       ConvertPOPCast,
       ConvertPOPCastToBuiltin,

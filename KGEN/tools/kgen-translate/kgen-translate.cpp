@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ParseLit.h"
+#include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -13,6 +14,7 @@
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+
 using namespace M;
 
 int main(int argc, char *argv[]) {
@@ -38,6 +40,7 @@ int main(int argc, char *argv[]) {
         return success();
       },
       [](mlir::DialectRegistry &registry) {
+        registry.insert<MDialect>();
         mlir::registerLLVMDialectTranslation(registry);
       });
 
