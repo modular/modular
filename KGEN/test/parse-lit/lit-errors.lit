@@ -122,9 +122,9 @@ def a() -> Int:
 
 # // -----
 
-# expected-note @below {{previous definition here}}
-# expected-error @below {{invalid redefinition of "dt"}}
-def bad[dt: Int](dt: Int):
+def bad[
+      dt: Int # expected-note {{previous definition here}}
+    ](dt: Int):    # expected-error {{invalid redefinition of "dt"}}
   pass
 
 # // -----
