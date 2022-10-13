@@ -358,6 +358,25 @@ kgen.func @zap_tensor_address(
   kgen.return
 }
 
+// CHECK-LABEL: @zap_tensor_size
+// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
+// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
+// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_tensor_size(
+  %tensor0: !zap.tensor<[4, 5, 3], f32>,
+  %tensor1: !zap.tensor<[4, ?], f32>,
+  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+  %idx: index) {
+  // CHECK: zap.tensor.size %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
+  zap.tensor.size %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  // CHECK: zap.tensor.size %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
+  zap.tensor.size %tensor1 : !zap.tensor<[4, ?], f32>
+  // CHECK: zap.tensor.size %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
+  zap.tensor.size %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
