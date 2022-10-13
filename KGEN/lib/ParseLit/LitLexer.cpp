@@ -145,8 +145,7 @@ LitToken LitLexer::lexTokenImpl() {
       // Check that there is only horizontal whitespace before the \n.
       while (*curPtr == ' ' || *curPtr == '\t')
         ++curPtr;
-      if (*curPtr == '\n' || *curPtr == '\r' || *curPtr == '\f' ||
-          *curPtr == '\v') {
+      if (*curPtr == '\n' || *curPtr == '\r') {
         if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
           ++curPtr;
         ++curPtr;
