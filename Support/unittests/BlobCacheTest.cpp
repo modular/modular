@@ -39,7 +39,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 
 TEST_F(BlobCacheTest, FindShouldReturnErrorForNonexistantItem) {
   auto dneOr = cache.find("does not exist");
-  EXPECT_FALSE(succeeded(dneOr))
+  EXPECT_FALSE(dneOr.hasValue() && !dneOr.isError())
       << "expected not to have item named 'does not exist'\n";
 }
 
@@ -49,7 +49,7 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
 
   ErrorOr<std::string> err = cache.insert("zeros", *zerosBuf);
-  EXPECT_FALSE(failed(err)) << err.getError() << '\n';
+  EXPECT_FALSE(err.isError()) << err.getError() << '\n';
   EXPECT_FALSE(err->empty()) << "expected to receive the hash key\v";
   EXPECT_TRUE(cache.contains("zeros"))
       << "expected to have item named 'zeros'\n";
@@ -64,11 +64,12 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   ASSERT_FALSE(failed(err)) << err.getError() << '\n';
 
   auto zerosOr = cache.find("zeros");
-  EXPECT_FALSE(failed(zerosOr)) << zerosOr.getError();
+  EXPECT_TRUE(zerosOr.hasValue()) << zerosOr.getError();
 
-  ASSERT_TRUE((*zerosOr)->getBufferSize() == zerosBuf->getBufferSize())
+  std::unique_ptr<llvm::MemoryBuffer> outZeros = zerosOr.takeValue();
+  ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
       << "output buffer size did not match input buffer size\n";
-  EXPECT_TRUE((*zerosOr)->getBuffer() ==
+  EXPECT_TRUE(outZeros->getBuffer() ==
               StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
       << "buffer returned did not match the buffer inputted\n";
 }

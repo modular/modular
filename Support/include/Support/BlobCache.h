@@ -9,10 +9,87 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
-#include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
 
 namespace M {
+/// This type allows the BlobCache to differentiate between "an error
+/// occurred" and "the object was not found in the cache". This is because
+/// something not being in the cache isn't necessarily an error - that's a
+/// policy decision we'd like to leave to clients.
+struct CacheFindResult {
+  /// Construct a CacheFindResult that indicates there's nothing in the cache.
+  static CacheFindResult notInCache() { return {}; }
+
+  /// Construct a CacheFindResult with a value. The CacheFindResult takes
+  /// ownership of the value.
+  static CacheFindResult value(std::unique_ptr<llvm::MemoryBuffer> value) {
+    return {std::move(value)};
+  }
+
+  /// Construct a CacheFindResult with an error. The CacheFindResult takes
+  /// ownership of the error.
+  static CacheFindResult error(Error err) { return {std::move(err)}; }
+
+  /// Returns true if this holds a value. Returns false if an error occurred
+  /// OR if the requested key was not in the cache.
+  bool hasValue() const {
+    return !valueOr.isError() &&
+           std::holds_alternative<std::unique_ptr<llvm::MemoryBuffer>>(
+               *valueOr);
+  }
+
+  /// Returns true if an error occurred.
+  bool isError() const { return valueOr.isError(); }
+
+  /// Take the value held in this result. This object is in an undefined state
+  /// after this returns.
+  std::unique_ptr<llvm::MemoryBuffer> takeValue() { return std::move(get()); }
+
+  /// Get a MemoryBufferRef from the underlying memory buffer.
+  llvm::MemoryBufferRef operator*() const { return *get(); }
+
+  /// Get the error string held by the underlying ErrorOr. The result
+  /// maintains ownership of the string.
+  const char *getError() const { return valueOr.getError(); }
+
+  /// Take the error in the underlying ErrorOr. The result is in an undefined
+  /// state after this returns.
+  Error takeError() { return valueOr.takeError(); }
+
+private:
+  /// Construct the CacheFindResult with an error - this puts it in the error
+  /// state.
+  CacheFindResult(Error error) : valueOr(std::move(error)) {}
+  /// Construct the CacheFindResult with a value - this puts it in the value
+  /// state.
+  CacheFindResult(std::unique_ptr<llvm::MemoryBuffer> value)
+      : valueOr(std::move(value)) {}
+  /// Construct the CacheFindResult with nothing - this puts it in the "not in
+  /// cache" state.
+  CacheFindResult() : valueOr(false) {}
+
+  /// Provide a safe getter. This is private because we want the user to
+  /// explicitly take ownership of the value rather than leaving it sitting in
+  /// this result object if they're going to return it or something.
+  std::unique_ptr<llvm::MemoryBuffer> &get() {
+    assert(
+        !valueOr.isError() &&
+        std::holds_alternative<std::unique_ptr<llvm::MemoryBuffer>>(*valueOr));
+    return std::get<std::unique_ptr<llvm::MemoryBuffer>>(valueOr.get());
+  }
+
+  const std::unique_ptr<llvm::MemoryBuffer> &get() const {
+    return const_cast<CacheFindResult *>(this)->get();
+  }
+
+  /// The value here can be either T or a boolean - the boolean simply tells
+  /// us that the object was not in the cache. Using std::variant instead of
+  /// std::pair means that we don't allocate extra space for the bool that
+  /// says "this is not in the cache".
+  ErrorOr<std::variant<std::unique_ptr<llvm::MemoryBuffer>, bool>> valueOr;
+};
+
 /// This class is the backend interface for a BlobCache. The backend contains a
 /// pointer to its delegate, which is meant to be used as an option if this
 /// backend has a cache miss. This means that the backends should be ordered on
@@ -36,7 +113,7 @@ public:
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> find(StringRef keyHash);
+  CacheFindResult find(StringRef keyHash);
 
   /// Overwrite the current delegate.
   void setDelegate(std::unique_ptr<BlobCacheBackend> &&d) {
@@ -53,8 +130,7 @@ protected:
   virtual bool containsImpl(StringRef keyHash) const = 0;
   /// Subclasses should use this to provide the implementation of getting an
   /// item from storage.
-  virtual ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  findImpl(StringRef keyHash) const = 0;
+  virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
 
 private:
   /// The next backend in the list. The public APIs handle nullptr here
@@ -104,7 +180,7 @@ public:
   }
 
   /// Get the item from any of the provided backends.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> find(KeyTy key) {
+  CacheFindResult find(KeyTy key) {
     return backendList->find(KeyInfo::hashKey(key));
   }
 

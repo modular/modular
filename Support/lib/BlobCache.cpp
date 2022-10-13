@@ -36,25 +36,24 @@ bool BlobCacheBackend::contains(StringRef keyHash) {
   return false;
 }
 
-ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-BlobCacheBackend::find(StringRef keyHash) {
+CacheFindResult BlobCacheBackend::find(StringRef keyHash) {
   if (containsImpl(keyHash))
     return this->findImpl(keyHash);
 
   if (!delegate)
-    return Error("could not find item '" + keyHash + "'");
+    return CacheFindResult::error("could not find item '" + keyHash + "'");
 
   auto itemOr = delegate->find(keyHash);
-  if (failed(itemOr))
-    return itemOr.takeError();
+  if (itemOr.isError())
+    return CacheFindResult::error(itemOr.takeError());
 
-  std::unique_ptr<llvm::MemoryBuffer> item = std::move(*itemOr);
+  std::unique_ptr<llvm::MemoryBuffer> item = itemOr.takeValue();
   // Store the item in our cache level so we can get a cache hit later.
   if (auto err = insertImpl(keyHash, *item))
-    return err.takeError();
+    return CacheFindResult::error(err.takeError());
 
   // Return the item.
-  return item;
+  return CacheFindResult::value(std::move(item));
 }
 
 //===----------------------------------------------------------------------===//
@@ -77,16 +76,15 @@ struct InMemoryBackend : public BlobCacheBackend {
     return cache.count(keyHash);
   }
 
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  findImpl(StringRef keyHash) const override {
+  CacheFindResult findImpl(StringRef keyHash) const override {
     auto found = cache.find(keyHash);
     if (found == cache.end())
-      return Error("could not find item '" + keyHash + "'");
+      return CacheFindResult::error("could not find item '" + keyHash + "'");
 
     // Create a memory buffer that aliases this same data.
     auto &mbuf = (*found).second;
-    return llvm::MemoryBuffer::getMemBuffer(mbuf->getBuffer(),
-                                            mbuf->getBufferIdentifier());
+    return CacheFindResult::value(llvm::MemoryBuffer::getMemBuffer(
+        mbuf->getBuffer(), mbuf->getBufferIdentifier()));
   }
 
   llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> cache;
@@ -150,17 +148,17 @@ struct FilesystemBackend : public BlobCacheBackend {
     return std::filesystem::exists(abs) && !std::filesystem::is_directory(abs);
   }
 
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  findImpl(StringRef keyHash) const override {
+  CacheFindResult findImpl(StringRef keyHash) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
     auto fileOr = llvm::WritableMemoryBuffer::getFile(filePath.string());
 
     // If the file doesn't exist, or it's empty, return an error.
     if (!fileOr)
-      return Error(fileOr.getError().message());
+      return CacheFindResult::error(Error(fileOr.getError().message()));
     if ((*fileOr)->getBufferSize() == 0)
-      return Error("file '" + filePath.string() + "' exists, but is empty");
+      return CacheFindResult::error("file '" + Twine(filePath.string()) +
+                                    "' exists, but is empty");
 
     std::unique_ptr<llvm::MemoryBuffer> fileBuf = std::move(*fileOr);
 
@@ -180,11 +178,12 @@ struct FilesystemBackend : public BlobCacheBackend {
       isIncorrect |= computed ^ stored;
 
     if (isIncorrect)
-      return Error("corrupted file, stored hash and computed hash did not "
-                   "match for file '" +
-                   filePath.string() + "'");
+      return CacheFindResult::error(
+          "corrupted file: stored hash and computed hash did not "
+          "match for file '" +
+          Twine(filePath.string()) + "'");
 
-    return fileBuf;
+    return CacheFindResult::value(std::move(fileBuf));
   }
 
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {

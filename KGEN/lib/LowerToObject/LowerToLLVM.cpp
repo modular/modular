@@ -201,9 +201,9 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
 FailureOr<PrecompiledLLVMOp>
 ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   // So first, check if the result is already in the cache.
-  auto precompiledOr = caches.getLLVM().find(func);
-  if (succeeded(precompiledOr)) {
-    auto precompiled = replaceSymbolFromBytecode(func, symtab, **precompiledOr);
+  CacheFindResult precompiledOr = caches.getLLVM().find(func);
+  if (precompiledOr.hasValue()) {
+    auto precompiled = replaceSymbolFromBytecode(func, symtab, *precompiledOr);
     if (succeeded(precompiled))
       return llvm::cast<PrecompiledLLVMOp>(*precompiled);
   }
@@ -305,14 +305,16 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
 /// Backtrack up the compilation stack and get back the function that was used
 /// to generate the `kgen.precompiled.llvm`.
 FailureOr<FuncOp> ObjectCompiler::raiseFromLLVM(PrecompiledLLVMOp precompiled) {
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> funcBufOr =
-      caches.getRaising().find(precompiled);
-  if (failed(funcBufOr))
+  CacheFindResult funcBufOr = caches.getRaising().find(precompiled);
+  if (funcBufOr.isError())
     return mlir::emitError(precompiled->getLoc()) << funcBufOr.getError();
+  if (!funcBufOr.hasValue())
+    return mlir::emitError(precompiled->getLoc())
+           << "could not find corresponding function IR";
 
   // It was in the cache, so do the replacement.
   FailureOr<Operation *> func =
-      replaceSymbolFromBytecode(precompiled, symtab, **funcBufOr);
+      replaceSymbolFromBytecode(precompiled, symtab, *funcBufOr);
   if (failed(func))
     return failure();
 
@@ -360,13 +362,15 @@ void EmitLLVMPass::runOnOperation() {
   llvm::LLVMContext ctx;
   SmallVector<std::unique_ptr<llvm::Module>> modules;
   for (auto llvm : getOperation().getOps<PrecompiledLLVMOp>()) {
-    auto moduleOr = compiler.getCaches().getLLVM().find(llvm);
-    if (failed(moduleOr)) {
+    CacheFindResult moduleOr = compiler.getCaches().getLLVM().find(llvm);
+    if (moduleOr.isError()) {
       mlir::emitError(llvm.getLoc()) << moduleOr.getError();
       return signalPassFailure();
     }
+    assert(moduleOr.hasValue() && "Given a kgen.precompiled.llvm, we must have "
+                                  "an llvm object in the cache.");
 
-    auto llvmModuleOr = llvm::parseBitcodeFile(**moduleOr, ctx);
+    auto llvmModuleOr = llvm::parseBitcodeFile(*moduleOr, ctx);
     if (auto err = llvmModuleOr.takeError()) {
       mlir::emitError(llvm->getLoc()) << toString(std::move(err));
       return signalPassFailure();
