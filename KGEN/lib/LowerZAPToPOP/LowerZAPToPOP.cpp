@@ -32,8 +32,14 @@ static constexpr int kBufferSizePosition = 1;
 /// The position of the buffer dtype in its struct representation.
 static constexpr int kBufferDTypePosition = 2;
 
+/// The position of the tensor address in its struct representation.
+static constexpr int kTensorAddressPosition = 0;
+/// The position of the tensor rank in its struct representation.
+static constexpr int kTensorRankPosition = 1;
 /// The position of the tensor shape in its struct representation.
 static constexpr int kTensorShapePosition = 2;
+/// The position of the tensor dtype in its struct representation.
+static constexpr int kTensorDTypePosition = 3;
 
 namespace {
 
@@ -550,6 +556,41 @@ struct ConvertZAPTensorConstruct
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertZAPTensorAddress
+//===----------------------------------------------------------------------===//
+
+/// Extract the tensor address.
+struct ConvertZAPTensorAddress
+    : public mlir::OpConversionPattern<TensorAddressOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorAddressOp op, TensorAddressOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
+                                             kTensorAddressPosition);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorRank
+//===----------------------------------------------------------------------===//
+
+/// Extract the tensor rank.
+struct ConvertZAPTensorRank : public mlir::OpConversionPattern<TensorRankOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorRankOp op, TensorRankOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
+                                             kTensorRankPosition);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertZAPTensorDim
 //===----------------------------------------------------------------------===//
 
@@ -564,6 +605,23 @@ struct ConvertZAPTensorDim : public mlir::OpConversionPattern<TensorDimOp> {
         op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
     rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
                                             op.getIndex());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorDType
+//===----------------------------------------------------------------------===//
+
+/// Extract the tensor rank.
+struct ConvertZAPTensorDType : public mlir::OpConversionPattern<TensorDTypeOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorDTypeOp op, TensorDTypeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
+                                             kTensorDTypePosition);
     return success();
   }
 };
@@ -604,9 +662,12 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,
       ConvertZAPDebugAssert,
+      ConvertZAPPrint,
+      ConvertZAPTensorAddress,
       ConvertZAPTensorConstruct,
       ConvertZAPTensorDim,
-      ConvertZAPPrint
+      ConvertZAPTensorDType,
+      ConvertZAPTensorRank
 
       // clang-format on
       >(converter, patterns.getContext());
