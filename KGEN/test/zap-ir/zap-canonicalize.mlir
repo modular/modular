@@ -66,3 +66,43 @@ kgen.func @tensor_dim_folds(%arg0: !zap.tensor<[42], f32>,
   // CHECK: kgen.return %[[V0]], %[[V0]], %[[V3]], %[[V4]], %[[V0]]
   kgen.return %0, %1, %2, %3, %4 : index, index, index, index, index
 }
+
+
+// CHECK-LABEL: kgen.func @tensor_dtype_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.tensor<[42], f32>
+// CHECK-SAME: %[[ARG1:.*]]: !zap.tensor<[42, ?], f32>
+// CHECK-SAME: %[[ARG2:.*]]: !zap.tensor<[?, 42], ?>
+kgen.func @tensor_dtype_folds(%arg0: !zap.tensor<[42], f32>,
+                              %arg1: !zap.tensor<[42, ?], f32>,
+                              %arg2: !zap.tensor<[?, 42], ?>)
+  -> (!kgen.dtype, !kgen.dtype, !kgen.dtype) {
+  // CHECK-DAG: %[[V0:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK-DAG: %[[V1:.*]] = zap.tensor.dtype %[[ARG2]] : !zap.tensor<[?, 42], ?>
+
+  %0 = zap.tensor.dtype %arg0 : !zap.tensor<[42], f32>
+  %1 = zap.tensor.dtype %arg1 : !zap.tensor<[42, ?], f32>
+  %2 = zap.tensor.dtype %arg2 : !zap.tensor<[?, 42], ?>
+
+  // CHECK: kgen.return %[[V0]], %[[V0]], %[[V1]]
+  kgen.return %0, %1, %2 : !kgen.dtype, !kgen.dtype, !kgen.dtype
+}
+
+// CHECK-LABEL: kgen.func @tensor_rank_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.tensor<[42], f32>
+// CHECK-SAME: %[[ARG1:.*]]: !zap.tensor<[?, ?, ?], f32>
+// CHECK-SAME: %[[ARG2:.*]]: !zap.tensor<[1, ?, 3, 4], ?>
+kgen.func @tensor_rank_folds(%arg0: !zap.tensor<[42], f32>,
+                             %arg1: !zap.tensor<[?, ?, ?], f32>,
+                             %arg2: !zap.tensor<[1, ?, 3, 4], ?>)
+  -> (index, index, index) {
+  // CHECK-DAG: %[[V0:.*]] = kgen.param.constant = <1>
+  // CHECK-DAG: %[[V1:.*]] = kgen.param.constant = <3>
+  // CHECK-DAG: %[[V2:.*]] = kgen.param.constant = <4>
+
+  %0 = zap.tensor.rank %arg0 : !zap.tensor<[42], f32>
+  %1 = zap.tensor.rank %arg1 : !zap.tensor<[?, ?, ?], f32>
+  %2 = zap.tensor.rank %arg2 : !zap.tensor<[1, ?, 3, 4], ?>
+
+  // CHECK: kgen.return %[[V0]], %[[V1]], %[[V2]]
+  kgen.return %0, %1, %2 : index, index, index
+}

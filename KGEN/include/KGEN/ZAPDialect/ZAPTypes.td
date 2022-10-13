@@ -44,7 +44,9 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
 // BufferType
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer"> {
+def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer", [
+    DeclareTypeInterfaceMethods<OpaqueObjectInterface>
+  ]> {
   let summary = "parameterized buffer type";
   let description = [{
     This type is a parameterized buffer type with a size and a `!kgen.dtype`.

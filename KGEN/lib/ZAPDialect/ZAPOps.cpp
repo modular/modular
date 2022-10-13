@@ -214,6 +214,29 @@ OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// TensorDTypeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult TensorDTypeOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.size() == 1 && "zap.tensor.dtype has one operand");
+  // A null dtype indicates ? dtype (unknown dtype). Since returning null
+  // indicates that we don't fold anything, we don't need to check if dtype is
+  // null.
+  return getTensor().getType().getDType();
+}
+
+//===----------------------------------------------------------------------===//
+// TensorRankOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult TensorRankOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.size() == 1 && "zap.tensor.dtype has one operand");
+  // The rank is always known for a tensor.
+  return IntegerAttr::get(IndexType::get(getContext()),
+                          getTensor().getType().getRank());
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
