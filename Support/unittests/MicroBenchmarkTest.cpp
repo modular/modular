@@ -17,6 +17,7 @@ using ::testing::HasSubstr;
 
 TEST(MicroBenchmarkTest, BenchmarkAllocation) {
   MicroBenchmark::RunOptions runOpts;
+  runOpts.printWarningIfDebugMode = false;
   runOpts.maxRuntime = 10ms; // Set to 10ms to avoid long running tests.
 
   MicroBenchmark bench("vector allocation", [&](MicroBenchmark::State &st) {
