@@ -14,7 +14,6 @@
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -31,6 +30,35 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 using llvm::SourceMgr;
+
+//===----------------------------------------------------------------------===//
+// Scope
+//===----------------------------------------------------------------------===//
+
+static Location getLocationFrom(Scope::ScopeValue value) {
+  if (std::holds_alternative<VarDeclOp>(value))
+    return std::get<VarDeclOp>(value).getLoc();
+  return std::get<Scope::MetaParameterValue>(value).loc;
+}
+
+/// Add the specified declaration to the current scope, emitting an error on
+/// a name collision.
+void Scope::addToScope(StringRef name, ScopeValue newValue, bool &hadError) {
+  Optional<Scope::ScopeValue> &entry = decls[name];
+  if (!entry) {
+    entry = newValue;
+    return;
+  }
+
+  auto diag = emitError(getLocationFrom(newValue), "invalid redefinition of \"")
+              << name << '"';
+  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
+  hadError = true;
+
+  // TODO: We should mark both declarations erroneous in the symbol table
+  // so reference to them get squashed as errors during name lookup,
+  // avoiding cascading errors.
+}
 
 //===----------------------------------------------------------------------===//
 // SharedParserState
@@ -778,12 +806,11 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
 
   // Look up the name being assigned to if it already exists.
   Value lvalue;
-  if (Operation *decl = currentScope->lookupInCurrentScope(dre->spelling)) {
-    // Don't allow reassigning to functions and other declarations.
-    // TODO: We actually just need type consistency.  If there were a reason to
-    // need this, we could support reassignment.
-    if (auto varDecl = dyn_cast<VarDeclOp>(decl))
-      lvalue = varDecl;
+  if (Optional<Scope::ScopeValue> decl =
+          currentScope->lookupInCurrentScope(dre->spelling)) {
+    // Don't allow reassigning to functions and other constant parameters.
+    if (std::holds_alternative<VarDeclOp>(decl.value()))
+      lvalue = std::get<VarDeclOp>(decl.value());
     else
       emitError(lhs->getLoc(), "this declaration isn't reassignable");
   } else {
@@ -800,7 +827,8 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     auto varDecl =
         builder.create<VarDeclOp>(translateLocation(lhs->getLoc()), declType,
                                   builder.getStringAttr(dre->spelling));
-    (void)currentScope->addToScope(dre->spelling, varDecl);
+    currentScope->addToScope(dre->spelling, varDecl,
+                             sharedParserState->errorOccurred);
     lvalue = varDecl;
   }
 
@@ -827,13 +855,16 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
   return success();
 }
 
-/// funcdef ::=  [decorators] "def" funcname generic_signature?
-///              "(" [parameter_list] ")"
-///              ["->" expression] ":" suite
+/// funcdef ::=  [decorators] "def" funcname [meta_signature]
+///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
-/// parameter_list ::= parameter ("," parameter)*
-/// parameter      ::= parammarker identifier [":" expression] ["=" expression]
-/// parammarker    ::= "/" | "*" | "**"
+/// identifier_opt_type  ::= identifier [":" expression]
+/// meta_signature    ::= "[" [meta_param_list] "]"
+/// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
+///
+/// value_param_list  ::= value_parameter ("," value_parameter)*
+/// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
+/// value_parammarker ::= "/" | "*" | "**"
 ///
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto loc = getTokenLocation();
@@ -848,8 +879,8 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  SmallVector<StringAttr> valueParamNames;
   SmallVector<Location> valueParamLocs;
+  SmallVector<StringAttr> valueParamNames;
   SmallVector<Type> valueParamTypes;
   // TODO: Default values.
 
@@ -881,7 +912,33 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     return success();
   };
 
+  SmallVector<ParamDeclAttr> inputMetaParameters;
+
+  auto parseMetaParameter = [&]() -> ParseResult {
+    StringAttr name;
+    if (parseIdentifier(name, "expected parameter name"))
+      // TODO: Scan ahead for better recovery.
+      return failure();
+
+    Type paramType = IndexType::get(getContext());
+    if (consumeIf(LitToken::colon)) {
+      ExprParser exprParser(*this, currentScope);
+      ExprNode *typeExpr = exprParser.parseExpression();
+      // TODO (types): translate typeExpr into a type.
+      (void)typeExpr;
+    }
+    inputMetaParameters.push_back(ParamDeclAttr::get(name, paramType));
+    return success();
+  };
+
   auto parseGenericSignature = [&]() -> ParseResult {
+    if (!consumeIf(LitToken::l_square) || consumeIf(LitToken::r_square))
+      return success();
+
+    if (parseCommaSeparatedList(parseMetaParameter) ||
+        parseToken(LitToken::r_square, "expected ']' for parameter list"))
+      return failure();
+
     // TODO: implement this correctly.
     return eatUntil(LitToken::l_paren);
   };
@@ -923,24 +980,19 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto newFunc = builder.create<LITFuncOp>(
       loc, funcNameAttr, StringArrayAttr::get(getContext(), valueParamNames),
       TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(), {}),
+      ParamDeclArrayAttr::get(getContext(), inputMetaParameters),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
   bodyBlock->addArguments(valueParamTypes, valueParamLocs);
   newFunc.getRegion().push_back(bodyBlock);
 
-  auto prevDecl = currentScope->addToScope(funcNameAttr, newFunc);
-  if (prevDecl) {
-    auto diag = emitError(loc, "invalid redefinition of function ")
-                << funcNameAttr;
-    diag.attachNote(prevDecl->getLoc()) << "previous definition here";
-    // Keep parsing even though we failed to add to the scope.  Note that this
-    // can cause type errors downstream.
-    // TODO: We should mark both declarations erroneous in the symbol table so
-    // reference to them get squashed as errors during name lookup, avoiding
-    // cascading errors.
-  }
+  auto newFuncRefAttr = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(funcNameAttr), newFunc.getSignature());
+
+  currentScope->addToScope(
+      funcNameAttr, Scope::MetaParameterValue{newFuncRefAttr, newFunc.getLoc()},
+      sharedParserState->errorOccurred);
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
@@ -962,8 +1014,17 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
 /// Parse a deferred 'def' body.
 void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
-  // Set up the body of the def, creating declarations for the parameters and
-  // adding them to the symbol table.
+  // Add the meta parameters to the symbol table.
+  for (ParamDeclAttr param : defDecl.getParamDecls()) {
+    auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
+    currentScope->addToScope(
+        // FIXME: Should have locations of input parameters.
+        param.getName(), Scope::MetaParameterValue{value, defDecl.getLoc()},
+        sharedParserState->errorOccurred);
+  }
+
+  // Set up the body of the def, creating declarations for the value parameters
+  // and adding them to the symbol table.
   auto builder = currentScope->getBuilder();
   for (auto [arg, name] : llvm::zip(defDecl.getBody()->getArguments(),
                                     defDecl.getValueParamNames())) {
@@ -972,7 +1033,7 @@ void LitParser::parseDefBody(size_t defIndent, LITFuncOp defDecl) {
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    (void)currentScope->addToScope(name, varDecl);
+    currentScope->addToScope(name, varDecl, sharedParserState->errorOccurred);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }

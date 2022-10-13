@@ -85,7 +85,7 @@ def foo():
 def redecl():
   pass
 
-# expected-error @+1 {{invalid redefinition of function "redecl"}}
+# expected-error @+1 {{invalid redefinition of "redecl"}}
 def redecl():
   pass
 
@@ -119,3 +119,17 @@ def a() -> Int:
 
 def a() -> Int:
   return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}
+
+# // -----
+
+# expected-note @below {{previous definition here}}
+# expected-error @below {{invalid redefinition of "dt"}}
+def bad[dt: Int](dt: Int):
+  pass
+
+# // -----
+
+# expected-note @below {{previous definition here}}
+# expected-error @below {{invalid redefinition of "x"}}
+def bad(x: Int, x: Int):
+  pass

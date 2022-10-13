@@ -51,14 +51,14 @@ z
   return x
 
 
-# CHECK-LABEL: lit.func public @fancy_signature(%x: index, %exp: index) -> index {
+# CHECK-LABEL: lit.func public @fancy_signature<dt, size>(%x: index, %exp: index) -> index {
 def fancy_signature[dt: DType, size: Int]
   # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
   (x: SIMD, exp: SIMD) -> SIMD:
   pass
-  # CHECK: %[[TMP:.*]] = index.constant 42
+  # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
-  return 42
+  return size+42
 
 
 # CHECK-LABEL: lit.func public @noop() {

@@ -14,7 +14,6 @@
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/IndexDialect/IndexOps.h"
@@ -118,27 +117,24 @@ MLIRValueRep StringLiteralNode::emit(EmitterState &state) const {
 }
 
 MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
-  Operation *decl = state.scope->lookup(spelling);
-  if (!decl) {
+  Optional<Scope::ScopeValue> declOrValue = state.scope->lookup(spelling);
+  if (!declOrValue) {
     state.emitError(getLoc(), "use of unknown declaration \"")
         << spelling << '"';
     return {};
   }
 
-  // Function references resolve to attributes.
-  if (auto ref = dyn_cast<LITFuncOp>(decl))
-    return (TypedAttr)SymbolConstantAttr::get(
-        FlatSymbolRefAttr::get(ref.getSymNameAttr()), ref.getSignature());
+  // Attributes always resolve to their known value.
+  if (std::holds_alternative<Scope::MetaParameterValue>(declOrValue.value()))
+    return cast<TypedAttr>(
+        std::get<Scope::MetaParameterValue>(declOrValue.value()).value);
 
   // Variable references resolve to load from the variable.
-  if (auto var = dyn_cast<VarDeclOp>(decl))
-    return state.builder
-        .create<POP::LoadOp>(state.mapLocation(getLoc()), var,
-                             /*alignment*/ None)
-        .getResult();
-
-  state.emitError(getLoc(), "cannot emit reference to decl yet");
-  return {};
+  auto var = std::get<VarDeclOp>(declOrValue.value());
+  return state.builder
+      .create<POP::LoadOp>(state.mapLocation(getLoc()), var,
+                           /*alignment*/ None)
+      .getResult();
 }
 
 MLIRValueRep CallNode::emit(EmitterState &state) const {
