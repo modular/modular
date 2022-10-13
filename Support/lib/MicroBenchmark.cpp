@@ -22,19 +22,7 @@
 using namespace M;
 
 MicroBenchmark::MicroBenchmark(StringRef name, std::function<void(State &)> fn)
-    : name(name), benchmarkFunction(std::move(fn)) {
-#ifdef MODULAR_DEBUG
-  // Show a warning when benchmarking in debug mode. We make sure that we only
-  // show the warning a single time per run (this reduces noise).
-  static std::once_flag showDebugWarningOnceFlag;
-  std::call_once(showDebugWarningOnceFlag, [&]() {
-    llvm::errs()
-        << "WARNING: Benchmarking in debug mode is not recommended due to "
-           "increased overhead. Please use a release build.\n";
-    llvm::errs().flush();
-  });
-#endif // MODULAR_DEBUG
-}
+    : name(name), benchmarkFunction(std::move(fn)) {}
 
 /// Get the name of the benchmark. The name is a description of what is being
 /// benchmarked.
@@ -43,6 +31,19 @@ StringRef MicroBenchmark::getName() const { return name; }
 /// The main benchmark loop which calls the function to be benchmarked and
 /// stores the results in the measurements field.
 ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
+#ifdef MODULAR_DEBUG
+  if (options.printWarningIfDebugMode) {
+    // Show a warning when benchmarking in debug mode. We make sure that we only
+    // show the warning a single time per run (this reduces noise).
+    static std::once_flag showDebugWarningOnceFlag;
+    std::call_once(showDebugWarningOnceFlag, [&]() {
+      llvm::errs()
+          << "WARNING: Benchmarking in debug mode is not recommended due to "
+             "increased overhead. Please use a release build.\n";
+      llvm::errs().flush();
+    });
+  }
+#endif // MODULAR_DEBUG
   assert(measurements.empty() &&
          "Measurements should be empty before running. This usually means that "
          "you have invoked the run function twice for the same MicroBenchmark "

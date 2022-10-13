@@ -27,10 +27,17 @@ static uint64_t benchmarkSingleFunc(CompiledFunc k, void *argMemory,
         for (auto _ : state)
           k.invoke<void, void *, void *>(argMemory, resultMemory);
       });
-  // Run the benchmark for at most 100ms.
+  // Run the benchmark for at most 20ms when building Modular in debug model
+  // (and you do not really care about performance) and 100ms in release mode.
+  //
   // TODO: This should be configurable by the user.
   MicroBenchmark::RunOptions runOptions;
+  runOptions.printWarningIfDebugMode = false;
+#ifdef MODULAR_DEBUG
+  runOptions.minRuntime = 20ms;
+#else  // MODULAR_DEBUG
   runOptions.minRuntime = 100ms;
+#endif // MODULAR_DEBUG
 
   // Benchmark the function.
   (void)benchmark.run(runOptions);
