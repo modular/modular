@@ -28,11 +28,10 @@ using namespace ZAP;
 static LogicalResult
 verifyHasSameUnderlyingDType(Operation *op, Value memory,
                              mlir::TypedValue<POP::SIMDType> simd) {
-  TypedAttr aDType =
-      TypeSwitch<Type, TypedAttr>(memory.getType())
-          .Case([](BufferType buf) { return buf.getDType(); })
-          .Case([](TensorType tensor) { return tensor.getDType(); })
-          .Default([](Type) { return TypedAttr(); });
+  TypedAttr aDType = TypeSwitch<Type, TypedAttr>(memory.getType())
+                         .Case<BufferType, TensorType>(
+                             [](auto type) { return type.getDType(); })
+                         .Default([](Type) { return TypedAttr(); });
   TypedAttr bDType = simd.getType().getDType();
   if (aDType == bDType)
     return success();
