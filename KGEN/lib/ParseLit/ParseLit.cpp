@@ -23,6 +23,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::LLCL;
@@ -194,6 +195,18 @@ struct LitParserBase {
   ParseResult
   parseCommaSeparatedList(const std::function<ParseResult()> &parseElement) {
     return parseSeparatedList(LitToken::comma, parseElement);
+  }
+
+  /// Skip tokens until we get to a token at start of line that has indentation
+  /// that is equal or less than the specified indentation.  This is used for
+  /// multiphase parsing.
+  void skipUntilIndentation(size_t minIndent) {
+    while (getToken().isNot(LitToken::eof)) {
+      auto indent = getToken().getIndentation();
+      if (indent.has_value() && indent.value() <= minIndent)
+        break;
+      consumeToken();
+    }
   }
 
   /// Consume tokens until we get to the end of the current line, used for error
@@ -572,6 +585,8 @@ struct LitParser : public LitParserBase {
   ParseResult parseFile();
   void finalizeScopeDecl();
 
+  const RCRef<Scope> &getCurrentScope() const { return currentScope; }
+
 private:
   // Statements.
   ParseResult parseSuite(size_t curIndent);
@@ -583,6 +598,7 @@ private:
   ParseResult parseDefStmt(size_t curIndent);
   void parseDefBody(LITFuncOp defDecl, size_t defIndent,
                     ArrayRef<Location> inputParamLocs);
+  ParseResult parseStructStmt(size_t curIndent);
 
   // Simple statements.
   ParseResult parseReturnStmt();
@@ -655,7 +671,6 @@ void LitParser::finalizeScopeDecl() {
     currentScope = std::move(decl.declScope);
     decl.lexerCursor.restore(lexer);
 
-    // Only support def's right now.
     parseDefBody(cast<LITFuncOp>(currentScope->getDecl()), decl.indentLevel,
                  decl.inputParamLocs);
   }
@@ -669,14 +684,20 @@ void LitParser::finalizeScopeDecl() {
 /// one line, or an indented block of statements. curIndent is the containing
 /// statement's indentation level.
 ///
-/// suite     ::=  stmt_list NEWLINE | NEWLINE INDENT statement+ DEDENT
+/// suite     ::=  [stmt_list NEWLINE] | NEWLINE INDENT statement+ DEDENT
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
 ParseResult LitParser::parseSuite(size_t curIndent) {
-  auto indent = getToken().getIndentation();
+  // Ignore empty body at end of file: a `pass` is not required.
+  if (getToken().is(LitToken::eof))
+    return success();
+
   // If there is a newline, then parse a list of statements.
+  auto indent = getToken().getIndentation();
   if (indent.has_value()) {
+    // If the current token is less indented that the source of the suite,
+    // then the body is empty.  We don't require a pass.
     if (indent.value() <= curIndent)
-      emitError("body should be indented more than containing statement");
+      return success();
     return parseStmts(indent.value());
   }
 
@@ -718,6 +739,7 @@ ParseResult LitParser::parseStmts(size_t minIndent) {
 ///                 | with_stmt [TODO]
 ///                 | match_stmt [TODO]
 ///                 | funcdef
+///                 | structdef
 ///                 | classdef [TODO]
 ///                 | async_with_stmt [TODO]
 ///                 | async_for_stmt [TODO]
@@ -729,6 +751,8 @@ ParseResult LitParser::parseStmt(size_t curIndent) {
   switch (getToken().getKind()) {
   case LitToken::kw_def:
     return parseDefStmt(curIndent);
+  case LitToken::kw_struct:
+    return parseStructStmt(curIndent);
   default:
     // Otherwise must be a simple statement.
     return parseSimpleStmt();
@@ -860,12 +884,47 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
   return success();
 }
 
-/// funcdef ::=  [decorators] "def" funcname [meta_signature]
-///              "(" [value_param_list] ")" ["->" expression] ":" suite
-///
+namespace {
 /// identifier_opt_type  ::= identifier [":" expression]
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
+struct MetaSignatureParser {
+  SmallVector<ParamDeclAttr> inputParameters;
+  std::vector<Location> inputParamLocs;
+
+  ParseResult parseOptionalMetaSignature(LitParser &p) {
+    if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
+      return success();
+
+    auto parseMetaParameter = [&]() -> ParseResult {
+      inputParamLocs.push_back(p.getTokenLocation());
+
+      StringAttr name;
+      if (p.parseIdentifier(name, "expected parameter name"))
+        // TODO: Scan ahead for better recovery.
+        return failure();
+
+      Type paramType = IndexType::get(p.getContext());
+      if (p.consumeIf(LitToken::colon)) {
+        ExprParser exprParser(p, p.getCurrentScope());
+        ExprNode *typeExpr = exprParser.parseExpression();
+        // TODO (types): translate typeExpr into a type.
+        (void)typeExpr;
+      }
+      inputParameters.push_back(ParamDeclAttr::get(name, paramType));
+      return success();
+    };
+
+    if (p.parseCommaSeparatedList(parseMetaParameter) ||
+        p.parseToken(LitToken::r_square, "expected ']' for parameter list"))
+      return failure();
+    return success();
+  };
+};
+} // namespace
+
+/// funcdef ::=  [decorators] "def" identifier [meta_signature]
+///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
 /// value_param_list  ::= value_parameter ("," value_parameter)*
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
@@ -917,43 +976,10 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
     return success();
   };
 
-  SmallVector<ParamDeclAttr> inputMetaParameters;
-  std::vector<Location> inputParamLocs;
-
-  auto parseMetaParameter = [&]() -> ParseResult {
-    inputParamLocs.push_back(getTokenLocation());
-
-    StringAttr name;
-    if (parseIdentifier(name, "expected parameter name"))
-      // TODO: Scan ahead for better recovery.
-      return failure();
-
-    Type paramType = IndexType::get(getContext());
-    if (consumeIf(LitToken::colon)) {
-      ExprParser exprParser(*this, currentScope);
-      ExprNode *typeExpr = exprParser.parseExpression();
-      // TODO (types): translate typeExpr into a type.
-      (void)typeExpr;
-    }
-    inputMetaParameters.push_back(ParamDeclAttr::get(name, paramType));
-    return success();
-  };
-
-  auto parseGenericSignature = [&]() -> ParseResult {
-    if (!consumeIf(LitToken::l_square) || consumeIf(LitToken::r_square))
-      return success();
-
-    if (parseCommaSeparatedList(parseMetaParameter) ||
-        parseToken(LitToken::r_square, "expected ']' for parameter list"))
-      return failure();
-
-    // TODO: implement this correctly.
-    return eatUntil(LitToken::l_paren);
-  };
-
   StringAttr funcNameAttr;
+  MetaSignatureParser metaSignature;
   if (parseIdentifier(funcNameAttr, "expected function name") ||
-      parseGenericSignature() ||
+      metaSignature.parseOptionalMetaSignature(*this) ||
       parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -988,7 +1014,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto newFunc = builder.create<LITFuncOp>(
       loc, funcNameAttr, StringArrayAttr::get(getContext(), valueParamNames),
       TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(), inputMetaParameters),
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
@@ -998,26 +1024,20 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto newFuncRefAttr = SymbolConstantAttr::get(
       FlatSymbolRefAttr::get(funcNameAttr), newFunc.getSignature());
 
-  currentScope->addToScope(
-      funcNameAttr, Scope::MetaParameterValue{newFuncRefAttr, newFunc.getLoc()},
-      sharedParserState->errorOccurred);
+  currentScope->addToScope(funcNameAttr,
+                           Scope::MetaParameterValue{newFuncRefAttr, loc},
+                           sharedParserState->errorOccurred);
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
   deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
                            lexer.getCursor(), curIndent,
-                           std::move(inputParamLocs)});
+                           std::move(metaSignature.inputParamLocs)});
 
   // Skip the body of this definition: go to a token the starts a line at the
-  // same indent level (or less) as the function definition.
-  while (getToken().isNot(LitToken::eof)) {
-    auto indent = getToken().getIndentation();
-    if (indent.has_value() && indent.value() <= curIndent)
-      break;
-    consumeToken();
-  }
-
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
   return success();
 }
 
@@ -1126,6 +1146,139 @@ ParseResult LitParser::parseReturnStmt() {
   auto returnParams = ArrayAttr::get(getContext(), {});
   currentScope->getBuilder().create<ReturnOp>(translateLocation(loc),
                                               returnParams, operandValues);
+  return success();
+}
+
+// FIXME(https://reviews.llvm.org/D135940): This is a clone of
+// llvm::SaveAndRestore that is updated to work with non-copyable values. Remove
+// this when fixed upstream.
+namespace {
+/// A utility class that uses RAII to save and restore the value of a variable.
+template <typename T>
+struct SaveAndRestore {
+  SaveAndRestore(T &X) : X(X), OldValue(X) {}
+  SaveAndRestore(T &X, const T &NewValue) : X(X), OldValue(X) { X = NewValue; }
+  SaveAndRestore(T &X, T &&NewValue) : X(X), OldValue(std::move(X)) {
+    X = std::move(NewValue);
+  }
+  ~SaveAndRestore() { X = std::move(OldValue); }
+  const T &get() { return OldValue; }
+
+private:
+  T &X;
+  T OldValue;
+};
+
+} // namespace
+
+/// structdef ::=
+///   [decorators] "struct" identifier [meta_signature] ":" struct-decl-body
+///
+/// struct-decl-body is a subset of `suite` that only contains a few statements.
+///
+ParseResult LitParser::parseStructStmt(size_t curIndent) {
+  auto loc = getTokenLocation();
+
+  // TODO: Add support for decorators.
+  consumeToken(LitToken::kw_struct);
+
+  StringAttr nameAttr;
+  MetaSignatureParser metaSignature;
+  if (parseIdentifier(nameAttr, "expected struct name") ||
+      metaSignature.parseOptionalMetaSignature(*this) ||
+      parseToken(LitToken::colon, "expected ':' in function definition"))
+    return failure();
+
+  auto builder = currentScope->getBuilder();
+  // TODO: Should have nicer builder.
+  auto newStruct = builder.create<StructDeclOp>(
+      loc, nameAttr,
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
+      TypeArrayAttr::get(getContext(), {}),
+      ConstraintArrayAttr::get(getContext(), {}));
+  newStruct.getRegion().push_back(new Block());
+
+  auto newRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(nameAttr),
+                                            builder.getType<MLIRTypeType>());
+
+  currentScope->addToScope(nameAttr, Scope::MetaParameterValue{newRefAttr, loc},
+                           sharedParserState->errorOccurred);
+
+  // Switch to the struct's scope to parse things into it.
+  SaveAndRestore<RCRef<Scope>> scopeSaver(
+      currentScope, RCRef<Scope>::create(newStruct, currentScope.copy()));
+
+  // Add the meta parameters to the symbol table.
+  for (auto [param, loc] :
+       llvm::zip(newStruct.getParamDecls(), metaSignature.inputParamLocs)) {
+    auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
+    currentScope->addToScope(param.getName(),
+                             Scope::MetaParameterValue{value, loc},
+                             sharedParserState->errorOccurred);
+  }
+
+  // Parse the struct decl body.
+  // Ignore empty body at end of file: a `pass` is not required.
+  if (getToken().is(LitToken::eof))
+    return success();
+
+  // Parse a single struct-body statement.
+  auto parseStructBodyStatement =
+      [&](Optional<size_t> curIndent) -> ParseResult {
+    switch (getToken().getKind()) {
+    case LitToken::kw_def:
+      if (!curIndent.has_value())
+        return emitError("def method must be on its own line");
+      return parseDefStmt(curIndent.value());
+      // TODO: Support nested structs.
+      // case LitToken::kw_struct:
+      //   return parseStructStmt(curIndent);
+    case LitToken::kw_pass:
+      // pass_stmt ::= "pass"
+      consumeToken(LitToken::kw_pass);
+      return success();
+
+    // TODO: var/let declarations.
+    default:
+      emitError("expected property or method definition in struct body");
+      // TODO: Better error recovery!
+      return failure();
+    }
+  };
+
+  // If there is a newline, then parse a list of statements.
+  auto indent = getToken().getIndentation();
+  if (indent.has_value()) {
+    size_t minIndent = indent.value();
+    // If the current token is less indented that the source of the suite, then
+    // the body is empty.  We don't require a pass.
+    if (minIndent <= curIndent)
+      return success();
+
+    while (getToken().isNot(LitToken::eof)) {
+      auto indent = getToken().getIndentation();
+      if (!indent.has_value())
+        return emitError(
+            "struct body statement must start at the beginning of a line");
+      if (indent.value() < minIndent)
+        break;
+
+      if (parseStructBodyStatement(indent.value()))
+        return failure();
+    }
+    return success();
+  }
+
+  // Otherwise, parse a stmt_list.
+  do {
+    if (parseStructBodyStatement(None))
+      return failure();
+    // Stop if we see a semicolon at the end of line or a missing semicolon.
+  } while (consumeIf(LitToken::semi) &&
+           !getToken().getIndentation().has_value());
+
+  return success();
+
   return success();
 }
 

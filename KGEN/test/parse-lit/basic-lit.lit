@@ -2,6 +2,10 @@
 
 # CHECK: module {
 
+# CHECK-LABEL: lit.func public @empty_def() {
+def empty_def():
+  # Pass isn't required.
+
 # CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %a_0 = lit.var.decl "a"
@@ -60,8 +64,27 @@ def fancy_signature[dt: DType, size: Int]
   # CHECK: kgen.return %[[TMP]] : index
   return size+42
 
-
 # CHECK-LABEL: lit.func public @noop() {
 def noop():
   pass
   # CHECK-NEXT : kgen.return
+
+# CHECK-LABEL: kgen.struct.decl @EmptyStruct {
+struct EmptyStruct:
+  # No body
+# CHECK-NEXT: }
+
+# CHECK-LABEL: kgen.struct.decl @OneLineStruct<size> {
+struct OneLineStruct[size: Int]: pass; pass
+# CHECK-NEXT: }
+
+# CHECK-LABEL: kgen.struct.decl @Int {
+struct Int:
+  pass
+# CHECK-NEXT: }
+
+# CHECK-LABEL: kgen.struct.decl @Pair {
+struct Pair:
+  #var a : Int
+  #var b : Int
+# CHECK-NEXT: }

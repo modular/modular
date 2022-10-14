@@ -133,3 +133,8 @@ def bad[
 # expected-error @below {{invalid redefinition of "x"}}
 def bad(x: Int, x: Int):
   pass
+
+# // -----
+
+# expected-error @+1 {{def method must be on its own line}}
+struct Struct: def foo(): pass
