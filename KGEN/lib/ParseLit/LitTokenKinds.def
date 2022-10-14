@@ -11,7 +11,7 @@
 
 #if !defined(TOK_MARKER) && !defined(TOK_IDENTIFIER) &&                        \
     !defined(TOK_LITERAL) && !defined(TOK_PUNCTUATION) &&                      \
-    !defined(TOK_KEYWORD) && !defined(TOK_SOFT_KEYWORD)
+    !defined(TOK_KEYWORD)
 #error Must define one of the TOK_ macros.
 #endif
 
@@ -29,9 +29,6 @@
 #endif
 #ifndef TOK_KEYWORD
 #define TOK_KEYWORD(SPELLING)
-#endif
-#ifndef TOK_SOFT_KEYWORD
-#define TOK_SOFT_KEYWORD(SPELLING)
 #endif
 
 // Markers
@@ -107,6 +104,7 @@ TOK_KEYWORD(and)
 TOK_KEYWORD(as)
 TOK_KEYWORD(assert)
 TOK_KEYWORD(break)
+TOK_KEYWORD(case)
 TOK_KEYWORD(class)
 TOK_KEYWORD(continue)
 TOK_KEYWORD(def)
@@ -124,6 +122,7 @@ TOK_KEYWORD(import)
 TOK_KEYWORD(in)
 TOK_KEYWORD(is)
 TOK_KEYWORD(lambda)
+TOK_KEYWORD(match)
 TOK_KEYWORD(None)
 TOK_KEYWORD(nonlocal)
 TOK_KEYWORD(not )
@@ -137,15 +136,6 @@ TOK_KEYWORD(try)
 TOK_KEYWORD(while)
 TOK_KEYWORD(with)
 TOK_KEYWORD(yield)
-
-// Soft keywords.  These turn "foo" into LitToken::skw_foo enums.
-// See soft_keywords at cpython/3.X/Parser/parser.c
-
-// NOTE: Please key these alphabetized to make it easier to find something in
-// this list and to cater to OCD.
-TOK_SOFT_KEYWORD(_)
-TOK_SOFT_KEYWORD(case)
-TOK_SOFT_KEYWORD(match)
 
 #undef TOK_MARKER
 #undef TOK_IDENTIFIER
