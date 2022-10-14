@@ -446,6 +446,31 @@ kgen.func @zap_tensor_dtype(
 
 // -----
 
+// CHECK-LABEL: @zap_tensor_size
+// CHECK-SAME: %[[TENSOR0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+kgen.func @zap_tensor_size(%tensor0: !zap.tensor<[4, 5, 3], f32>) {
+  // CHECK: kgen.param.constant = <60>
+  %0 = zap.tensor.size %tensor0 : !zap.tensor<[4, 5, 3], f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_size
+// CHECK-SAME: %[[TENSOR:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+kgen.func @zap_tensor_size(%tensor0: !zap.tensor<[4, ?, 3], f32>) {
+  // CHECK: %[[STRUCT:.*]] = pop.struct.get %[[TENSOR]][2]
+  // CHECK: %[[DIM0:.*]] = index.constant 4
+  // CHECK: %[[DIM1:.*]] = pop.array.get %[[STRUCT]][1] : !pop.array<5, index>
+  // CHECK: %[[PARTIAL:.*]] = index.mul %[[DIM0]], %[[DIM1]]
+  // CHECK: %[[DIM2:.*]] = index.constant 3
+  // CHECK: %[[SIZE:.*]] = index.mul %[[PARTIAL]], %[[DIM2]]
+  %0 = zap.tensor.size %tensor0 : !zap.tensor<[4, ?, 3], f32>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @zap_tensor_load
 // CHECK-SAME: %[[TENSOR0:[a-z0-9]+]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
 // CHECK-SAME: %[[TENSOR1:[a-z0-9]+]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>

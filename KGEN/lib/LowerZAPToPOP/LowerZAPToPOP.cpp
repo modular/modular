@@ -609,6 +609,44 @@ struct ConvertZAPTensorDim : public mlir::OpConversionPattern<TensorDimOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertZAPTensorSize
+//===----------------------------------------------------------------------===//
+
+/// Compute the size of the tensor.
+struct ConvertZAPTensorSize : public mlir::OpConversionPattern<TensorSizeOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorSizeOp op, TensorSizeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+    TensorType tensorType = op.getTensor().getType();
+    Value shape = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
+                                               kTensorShapePosition);
+    Value product = getDimensionAtIndex(op, shape, 0, rewriter);
+    for (size_t i = 1, e = tensorType.getRank(); i < e; ++i) {
+      Value dim = getDimensionAtIndex(op, shape, i, rewriter);
+      product = rewriter.create<index::MulOp>(loc, product, dim);
+    }
+    rewriter.replaceOp(op, product);
+    return success();
+  }
+
+private:
+  /// If we know the dimension statically, use a constant. Otherwise, query the
+  /// array.
+  Value getDimensionAtIndex(TensorSizeOp op, Value shape, size_t idx,
+                            ConversionPatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+    ArrayRef<TypedAttr> tensorShape = op.getTensor().getType().getShape();
+    if (tensorShape[idx])
+      return rewriter.create<index::ConstantOp>(
+          loc, tensorShape[idx].cast<IntegerAttr>());
+    return rewriter.create<ArrayGetOp>(loc, shape, idx);
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertZAPTensorDType
 //===----------------------------------------------------------------------===//
 
@@ -825,6 +863,7 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPTensorRank,
       ConvertZAPTensorSIMDLoad,
       ConvertZAPTensorSIMDStore,
+      ConvertZAPTensorSize,
       ConvertZAPTensorStore
 
       // clang-format on
