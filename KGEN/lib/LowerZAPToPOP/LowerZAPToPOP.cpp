@@ -626,6 +626,112 @@ struct ConvertZAPTensorDType : public mlir::OpConversionPattern<TensorDTypeOp> {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorLoad
+//===----------------------------------------------------------------------===//
+
+/// Generates pop/index ops that computes the linearized index expression
+///  given a tensor shape array and an index array, by essentially computing
+///  a dot product between the index and shape vectors.
+/// Assumes that the tensor is in row-major contiguous layout.
+/// This function also assumes the index and shape layout as
+///  [x,y,z,0,0], with x being the highest order dimension
+///  i.e. outermost dimension.
+static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
+                                        Location loc, IndexType indexType,
+                                        Value shapeArray,
+                                        OperandRange indexArray) {
+
+  // This function computes the dot product between the index and
+  //  shape vector. Example:
+  //      zap.tensor.load %tens[x, y, z] : !zap.tensor<[a,b,c], dtype>
+  // will compute the `accumulatedOffset` by
+  //   accumulatedOffset = z + c*(y + b*x)
+  // in 2 iterations, each iteration multiplies a number from the shape
+  // list and adds a number from the index list.
+
+  // Initialize `accumulatedOffset` with the innermost index.
+  //  e.g. add the `x` term in the example above.
+  Value accumulatedOffset = *indexArray.begin();
+
+  // Iterate through indices and create the multiply and add
+  //   in each iteration.
+  for (auto [indexPosition, indexValue] :
+       llvm::drop_begin(llvm::enumerate(indexArray))) {
+    // Dimension size at current position from the shape list.
+    //  e.g. load the `b` term from example above.
+    Value positionSize = rewriter.create<ArrayGetOp>(
+        loc, indexType, shapeArray, rewriter.getIndexAttr(indexPosition));
+
+    // Multiply by the current size, e.g. x-> b*x from example above.
+    accumulatedOffset = rewriter.create<index::MulOp>(
+        loc, indexType, accumulatedOffset, positionSize);
+
+    // Add the current index, e.g. b*x -> b*x + y from example above.
+    accumulatedOffset = rewriter.create<index::AddOp>(
+        loc, indexType, accumulatedOffset, indexValue);
+  }
+
+  return accumulatedOffset;
+}
+
+/// Load a scalar value from tensor given a list of position indices.
+struct ConvertZAPTensorLoad : public mlir::OpConversionPattern<TensorLoadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorLoadOp op, TensorLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+
+    Value shapeArray = rewriter.create<StructGetOp>(
+        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
+
+    auto offset = linearizeContiguousIndices(rewriter, op->getLoc(),
+                                             rewriter.getIndexType(),
+                                             shapeArray, op.getPositions());
+
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
+                                              kTensorAddressPosition);
+
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
+
+    rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/None);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorStore
+//===----------------------------------------------------------------------===//
+
+/// Store a scalar value into tensor given a list of position indices.
+struct ConvertZAPTensorStore : public mlir::OpConversionPattern<TensorStoreOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorStoreOp op, TensorStoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+
+    Value shapeArray = rewriter.create<StructGetOp>(
+        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
+
+    // Assumes that the tensor op verifier already checked
+    //  the equality of index and shape list sizes.
+    auto offset = linearizeContiguousIndices(rewriter, op->getLoc(),
+                                             rewriter.getIndexType(),
+                                             shapeArray, op.getPositions());
+
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
+                                              kTensorAddressPosition);
+
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
+
+    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
+                                         /*alignment=*/None);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -667,7 +773,9 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPTensorConstruct,
       ConvertZAPTensorDim,
       ConvertZAPTensorDType,
-      ConvertZAPTensorRank
+      ConvertZAPTensorLoad,
+      ConvertZAPTensorRank,
+      ConvertZAPTensorStore
 
       // clang-format on
       >(converter, patterns.getContext());
