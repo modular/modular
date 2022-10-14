@@ -660,8 +660,8 @@ static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
        llvm::drop_begin(llvm::enumerate(indexArray))) {
     // Dimension size at current position from the shape list.
     //  e.g. load the `b` term from example above.
-    Value positionSize = rewriter.create<ArrayGetOp>(
-        loc, indexType, shapeArray, rewriter.getIndexAttr(indexPosition));
+    Value positionSize =
+        rewriter.create<ArrayGetOp>(loc, shapeArray, indexPosition);
 
     // Multiply by the current size, e.g. x-> b*x from example above.
     accumulatedOffset =

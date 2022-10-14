@@ -656,6 +656,14 @@ static LogicalResult verifyArrayIndex(Operation *op, IntegerAttr indexAttr,
   return success();
 }
 
+void ArrayGetOp::build(OpBuilder &b, OperationState &state, Value array,
+                       int64_t index) {
+  return build(
+      b, state,
+      ParamRefType::get(array.getType().cast<ArrayType>().getElementType()),
+      array, b.getIndexAttr(index));
+}
+
 LogicalResult ArrayGetOp::verify() {
   return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
 }
