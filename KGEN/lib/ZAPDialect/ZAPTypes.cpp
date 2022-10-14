@@ -176,15 +176,12 @@ void TensorType::walkImmediateSubElements(
 Type TensorType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                              ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == (getRank() + 1) && replTypes.empty());
-  SmallVector<TypedAttr> castedShapeAttrs;
-  for (auto attr : llvm::drop_end(replAttrs)) {
-    castedShapeAttrs.push_back(attr.cast<TypedAttr>());
-    // Reject attempts to change an operand to something that isn't a TypedAttr.
-    if (!castedShapeAttrs.back())
-      return {};
-  }
+  SmallVector<TypedAttr, 5> shapeAttrs;
+  shapeAttrs.reserve(replAttrs.size() - 1);
+  for (auto attr : llvm::drop_end(replAttrs))
+    shapeAttrs.push_back(attr);
 
-  return TensorType::get(getContext(), castedShapeAttrs, replAttrs.back());
+  return TensorType::get(getContext(), shapeAttrs, replAttrs.back());
 }
 
 size_t TensorType::getRank() const { return getShape().size(); }
