@@ -1584,8 +1584,10 @@ static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
                                     ArrayRef<std::filesystem::path> searchPaths,
                                     DenseSet<StringAttr> &loadedFiles) {
   if (auto [_, didInsert] = loadedFiles.insert(include.getFileNameAttr());
-      !didInsert)
+      !didInsert) {
+    include->erase();
     return success();
+  }
 
   std::string modulePath;
   if (std::filesystem::path(include.getFileName().str()).is_absolute()) {
