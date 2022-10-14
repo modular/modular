@@ -583,7 +583,7 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
         /*numRegions=*/0);
 }
 
-LogicalResult CallOp::verify() {
+LogicalResult CallOp::verifyRegions() {
   // Verify the region signatures match region parameter signatures.
   return verifyRegionSignatures(*this);
 }
@@ -680,7 +680,7 @@ void CallParamOp::build(OpBuilder &builder, OperationState &state,
         /*numRegions=*/0);
 }
 
-LogicalResult CallParamOp::verify() {
+LogicalResult CallParamOp::verifyRegions() {
   KGENDeclInterface parent =
       getOperation()->getParentOfType<KGENDeclInterface>();
   if (!parent || isa<FuncOp>(parent))
