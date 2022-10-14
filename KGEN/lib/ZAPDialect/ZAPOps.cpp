@@ -288,6 +288,45 @@ OpFoldResult TensorSizeOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalStringOp
+//===----------------------------------------------------------------------===//
+
+/// Parse just the size of the array. Infer the element type.
+static ParseResult parseStringSizeArray(AsmParser &p, Type &type) {
+  int64_t size;
+  if (p.parseInteger(size))
+    return failure();
+  type = POP::PointerType::get(POP::ArrayType::get(
+      size, POP::ScalarType::get(p.getContext(), DType::si8)));
+  return success();
+}
+
+/// Print just the size of the array.
+static void printStringSizeArray(AsmPrinter &p, Operation *op, Type type) {
+  p << *type.cast<POP::PointerType>()
+            .getResolvedElementType()
+            .cast<POP::ArrayType>()
+            .getResolvedSize();
+}
+
+/// Returns true if the type is an array of scalar `si8`.
+static bool isSI8Array(Type type) {
+  if (auto elementType = type.cast<POP::ArrayType>().getResolvedElementType())
+    if (auto scalarType = dyn_cast<POP::ScalarType>(elementType))
+      return scalarType.getResolvedDType() == DType(DType::si8);
+  return false;
+}
+
+LogicalResult GlobalStringOp::verify() {
+  auto type = getType().getResolvedElementType().cast<POP::ArrayType>();
+  int64_t size = *type.getResolvedSize();
+  if (size != static_cast<int64_t>(getValue().size()))
+    return emitOpError("expected array result to have ")
+           << getValue().size() << " elements but got " << size;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

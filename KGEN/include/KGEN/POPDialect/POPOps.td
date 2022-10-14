@@ -1338,7 +1338,7 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
 }
 
 //===----------------------------------------------------------------------===//
-// GlobalConstant
+// GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
 def POP_GlobalConstantOp : POPOp<"global_constant",

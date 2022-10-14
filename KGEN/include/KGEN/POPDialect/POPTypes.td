@@ -127,6 +127,15 @@ class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
     "ParamRefType::get($_self.cast<POP::PointerType>().getElementType())">;
 
+class PointerOf<Type type> : ConfinedType<POP_PointerType,
+    [CPred<"$_self.cast<POP::PointerType>().getElementType()">,
+     SubstLeaves<"$_self",
+      "$_self.cast<POP::PointerType>().getResolvedElementType()",
+      type.predicate>],
+    "pointer to " # type.summary> {
+  let cppClassName = "::M::KGEN::POP::PointerType";
+}
+
 //===----------------------------------------------------------------------===//
 // ScalarType
 //===----------------------------------------------------------------------===//

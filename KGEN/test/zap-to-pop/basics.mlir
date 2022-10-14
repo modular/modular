@@ -292,6 +292,15 @@ kgen.generator @zap_debug_assert(%cond: !pop.scalar<bool>) {
 
 // -----
 
+// CHECK-LABEL: @zap_global_string
+kgen.generator @zap_global_string() -> !pop.pointer<!pop.array<4, !pop.scalar<si8>>> {
+  // CHECK: pop.global_constant
+  %0 = zap.global_string "foo!"[4]
+  kgen.return %0 : !pop.pointer<!pop.array<4, !pop.scalar<si8>>>
+}
+
+// -----
+
 // CHECK-LABEL: @simd_store
 // CHECK-SAME: !pop.simd
 // CHECK-SAME: !pop.struct

@@ -142,3 +142,19 @@ kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, f32>,
   zap.tensor.simd_store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.tensor<[3], f32>
   kgen.return
 }
+
+// -----
+
+kgen.func @string_wrong_array_size() {
+  // expected-error @below {{expected array result to have 6 elements but got 1}}
+  %0 = zap.global_string "foobar"[1]
+  kgen.return
+}
+
+// -----
+
+kgen.func @not_si8_array() {
+  // expected-error @below {{result #0 must be pointer to array of scalar `si8`}}
+  %0 = "zap.global_string"() {value = "foobar"} : () -> (!pop.scalar<si8>)
+  kgen.return
+}

@@ -694,6 +694,42 @@ def ZAP_PrintOp : ZAPOp<"print"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// GlobalStringOp
+//===----------------------------------------------------------------------===//
+
+def KnownSizeSI8Array : ConfinedType<ArrayKnownSize,
+    [CPred<"isSI8Array($_self)">], "array of scalar `si8`">;
+
+def POP_GlobalStringOp : ZAPOp<"global_string", [NoSideEffect]> {
+  let summary = "create a global string";
+  let description = [{
+    The `zap.global_string` operation creates a global string value and returns
+    a pointer to it. The returned pointer is read-only. Writing to the pointer
+    is undefined behaviour. The string is NOT null-terminated.
+
+    This operation is similar to `pop.global_constant` except it uses a string
+    literal and only returns pointers to `!pop.array<N, !pop.scalar<si8>>`.
+
+    Example:
+
+    ```mlir
+    // Create a string.
+    %1 = zap.global_string "foo"[3]
+
+    // Create a null-terminated string.
+    %1 = zap.global_string "hello world!!\00"[14]
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$value);
+  let results = (outs PointerOf<KnownSizeSI8Array>:$result);
+  let assemblyFormat = [{
+    $value `[` custom<StringSizeArray>(type($result)) `]` attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // DebugAssertOp
