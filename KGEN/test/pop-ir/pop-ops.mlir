@@ -687,3 +687,11 @@ kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramre
 // CHECK-LABEL: @variant_canonicalize
 // CHECK-SAME: !pop.variant<i32, f32>
 kgen.generator.interface @variant_canonicalize(!pop.variant<i32, i32, f32, f32>)
+
+// CHECK-LABEL: @indirect_call
+kgen.generator @indirect_call(%a: i32, %fn: (i32) -> index) -> index {
+  // CHECK: pop.indirect_call %arg1(%arg0) : (i32) -> index
+  %0 = pop.indirect_call %fn(%a) : (i32) -> index
+  // CHECK: return %0 : index
+  kgen.return %0 : index
+}
