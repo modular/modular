@@ -33,11 +33,7 @@ struct CacheFindResult {
 
   /// Returns true if this holds a value. Returns false if an error occurred
   /// OR if the requested key was not in the cache.
-  bool hasValue() const {
-    return !valueOr.isError() &&
-           std::holds_alternative<std::unique_ptr<llvm::MemoryBuffer>>(
-               *valueOr);
-  }
+  bool hasValue() const { return !valueOr.isError() && valueOr->has_value(); }
 
   /// Returns true if an error occurred.
   bool isError() const { return valueOr.isError(); }
@@ -67,27 +63,25 @@ private:
       : valueOr(std::move(value)) {}
   /// Construct the CacheFindResult with nothing - this puts it in the "not in
   /// cache" state.
-  CacheFindResult() : valueOr(false) {}
+  CacheFindResult() : valueOr(llvm::None) {}
 
   /// Provide a safe getter. This is private because we want the user to
   /// explicitly take ownership of the value rather than leaving it sitting in
   /// this result object if they're going to return it or something.
   std::unique_ptr<llvm::MemoryBuffer> &get() {
-    assert(
-        !valueOr.isError() &&
-        std::holds_alternative<std::unique_ptr<llvm::MemoryBuffer>>(*valueOr));
-    return std::get<std::unique_ptr<llvm::MemoryBuffer>>(valueOr.get());
+    assert(!valueOr.isError() && valueOr->has_value());
+    return valueOr.get().value();
   }
 
   const std::unique_ptr<llvm::MemoryBuffer> &get() const {
     return const_cast<CacheFindResult *>(this)->get();
   }
 
-  /// The value here can be either T or a boolean - the boolean simply tells
-  /// us that the object was not in the cache. Using std::variant instead of
-  /// std::pair means that we don't allocate extra space for the bool that
-  /// says "this is not in the cache".
-  ErrorOr<std::variant<std::unique_ptr<llvm::MemoryBuffer>, bool>> valueOr;
+  /// This can be an error, "not in cache", or it can have a value. Error is
+  /// indicated by having an error, while "not in cache" is indicated by
+  /// llvm::None in the Optional, but no error in the ErrorOr. A value is
+  /// indicated by having a value in the Optional *and* no error in the ErrorOr.
+  ErrorOr<Optional<std::unique_ptr<llvm::MemoryBuffer>>> valueOr;
 };
 
 /// This class is the backend interface for a BlobCache. The backend contains a
