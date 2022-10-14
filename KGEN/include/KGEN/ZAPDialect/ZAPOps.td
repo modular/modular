@@ -537,8 +537,10 @@ def ZAP_TensorSIMDLoadOp : ZAPOp<"tensor.simd_load"> {
     Example:
 
     ```mlir
-    %1 = zap.tensor.simd_load %0[%pos0] : !zap.tensor<[size], dtype>, !pop.simd<simd_width, dtype>
-    %2 = zap.tensor.simd_load %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>, , !pop.simd<simd_width, dtype>
+    %1 = zap.tensor.simd_load %0[%pos0] :
+                      !zap.tensor<[size], dtype>, !pop.simd<simd_width, dtype>
+    %2 = zap.tensor.simd_load %1[%pos0, %pos1] : !zap.tensor<[s0, s1], dtype>,
+                                                 !pop.simd<simd_width, dtype>
     ```
   }];
 
@@ -569,8 +571,11 @@ def ZAP_TensorSIMDStoreOp : ZAPOp<"tensor.simd_store"> {
     Example:
 
     ```mlir
-    %1 = zap.tensor.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>, !zap.tensor<[size], dtype>
-    %2 = zap.tensor.simd_store %val, %1[%pos0, %pos1] : !pop.simd<simd_width, dtype>, !zap.tensor<[size0, size1], dtype>
+    %1 = zap.tensor.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>,
+                                                 !zap.tensor<[size], dtype>
+    %2 = zap.tensor.simd_store %val, %1[%pos0, %pos1] :
+                                        !pop.simd<simd_width, dtype>,
+                                        !zap.tensor<[size0, size1], dtype>
     ```
   }];
 
