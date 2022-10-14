@@ -479,14 +479,14 @@ kgen.func @zap_tensor_size(%tensor0: !zap.tensor<[4, ?, 3], f32>) {
 // CHECK-SAME: %[[IDX2:.*]]: index)
 kgen.func @zap_tensor_load(
   %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[?, 5, ?], f32>,
+  %tensor1: !zap.tensor<[?, 99, ?], f32>,
   %idx0: index,
   %idx1: index,
   %idx2: index) {
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = index.constant 4
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 5
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
@@ -496,15 +496,15 @@ kgen.func @zap_tensor_load(
   %0 = zap.tensor.load %tensor0[%idx0, %idx1, %idx2] : !zap.tensor<[4, 5, 3], f32>
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR1]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR1]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 99
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
   // CHECK-DAG: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]] : !pop.pointer<!pop.scalar<f32>>
   // CHECK: pop.load %[[POP_OFFSET]] : !pop.pointer<!pop.scalar<f32>>
-  %1 = zap.tensor.load %tensor1[%idx0, %idx1, %idx2] : !zap.tensor<[?, 5, ?], f32>
+  %1 = zap.tensor.load %tensor1[%idx0, %idx1, %idx2] : !zap.tensor<[?, 99, ?], f32>
   kgen.return
 }
 
@@ -520,14 +520,14 @@ kgen.func @zap_tensor_load(
 kgen.func @zap_tensor_store(
   %val : !pop.scalar<f32>,
   %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[?, 5, ?], f32>,
+  %tensor1: !zap.tensor<[?, 99, ?], f32>,
   %idx0: index,
   %idx1: index,
   %idx2: index) {
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = index.constant 4
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 5
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
@@ -537,15 +537,15 @@ kgen.func @zap_tensor_store(
   zap.tensor.store %val, %tensor0[%idx0, %idx1, %idx2] : !zap.tensor<[4, 5, 3], f32>
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR1]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR1]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 99
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
   // CHECK-DAG: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]] : !pop.pointer<!pop.scalar<f32>>
   // CHECK: pop.store %[[VAL]], %[[POP_OFFSET]] : !pop.pointer<!pop.scalar<f32>>
-  zap.tensor.store %val, %tensor1[%idx0, %idx1, %idx2] : !zap.tensor<[?, 5, ?], f32>
+  zap.tensor.store %val, %tensor1[%idx0, %idx1, %idx2] : !zap.tensor<[?, 99, ?], f32>
   kgen.return
 }
 
@@ -563,8 +563,8 @@ kgen.func @zap_tensor_simd_load(
   %idx2: index) {
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 5
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
@@ -592,8 +592,8 @@ kgen.func @zap_tensor_simd_store(
   %idx2: index) {
   // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
   // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
-  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
-  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = index.constant 5
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
