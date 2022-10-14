@@ -291,8 +291,7 @@ struct ConvertZAPBufferSIMDLoad : mlir::OpConversionPattern<BufferSIMDLoadOp> {
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
-        op.getLoc(), PointerType::get(TypeConstantAttr::get(op.getType())),
-        ptr);
+        op.getLoc(), PointerType::get(op.getType()), ptr);
     // We set the alignment to 1 to force LLVM to generate unaligned loads.
     rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr, /*alignment=*/1);
     return success();
@@ -682,19 +681,14 @@ struct ConvertZAPTensorLoad : public mlir::OpConversionPattern<TensorLoadOp> {
   LogicalResult
   matchAndRewrite(TensorLoadOp op, TensorLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-
     Value shapeArray = rewriter.create<StructGetOp>(
         op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
-
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
+                                              kTensorAddressPosition);
     auto offset = linearizeContiguousIndices(rewriter, op->getLoc(),
                                              rewriter.getIndexType(),
                                              shapeArray, op.getPositions());
-
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
-                                              kTensorAddressPosition);
-
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
-
     rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/None);
     return success();
   }
@@ -711,26 +705,80 @@ struct ConvertZAPTensorStore : public mlir::OpConversionPattern<TensorStoreOp> {
   LogicalResult
   matchAndRewrite(TensorStoreOp op, TensorStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-
     Value shapeArray = rewriter.create<StructGetOp>(
         op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
-
-    // Assumes that the tensor op verifier already checked
-    //  the equality of index and shape list sizes.
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
+                                              kTensorAddressPosition);
     auto offset = linearizeContiguousIndices(rewriter, op->getLoc(),
                                              rewriter.getIndexType(),
                                              shapeArray, op.getPositions());
-
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
-                                              kTensorAddressPosition);
-
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
-
     rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
                                          /*alignment=*/None);
     return success();
   }
 };
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorSIMDLoad
+//===----------------------------------------------------------------------===//
+
+/// Load a simd value from tensor given a list of position indices.
+struct ConvertZAPTensorSIMDLoad
+    : public mlir::OpConversionPattern<TensorSIMDLoadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorSIMDLoadOp op, TensorSIMDLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+    IndexType indexType = rewriter.getIndexType();
+    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
+                                                    kTensorShapePosition);
+    Value base = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
+                                              kTensorAddressPosition);
+    Value offset = linearizeContiguousIndices(rewriter, loc, indexType,
+                                              shapeArray, op.getPositions());
+    Value simdPtr = rewriter.create<PointerBitcastOp>(
+        loc, PointerType::get(op.getType()), base);
+    Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
+    rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/1);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorSIMDStore
+//===----------------------------------------------------------------------===//
+
+/// Store a simd value into the tensor at the given a list of position indices.
+struct ConvertZAPTensorSIMDStore
+    : public mlir::OpConversionPattern<TensorSIMDStoreOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(TensorSIMDStoreOp op, TensorSIMDStoreOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+    IndexType indexType = rewriter.getIndexType();
+    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
+                                                    kTensorShapePosition);
+    Value base = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
+                                              kTensorAddressPosition);
+    Value offset = linearizeContiguousIndices(rewriter, loc, indexType,
+                                              shapeArray, op.getPositions());
+    Value simdPtr = rewriter.create<PointerBitcastOp>(
+        loc, PointerType::get(op.getValue().getType()), base);
+    Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
+    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
+                                         /*alignment=*/1);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPTensorSIMDStore
+//===----------------------------------------------------------------------===//
 
 } // namespace
 
@@ -775,6 +823,8 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPTensorDType,
       ConvertZAPTensorLoad,
       ConvertZAPTensorRank,
+      ConvertZAPTensorSIMDLoad,
+      ConvertZAPTensorSIMDStore,
       ConvertZAPTensorStore
 
       // clang-format on

@@ -523,3 +523,59 @@ kgen.func @zap_tensor_store(
   zap.tensor.store %val, %tensor1[%idx0, %idx1, %idx2] : !zap.tensor<[?, 5, ?], f32>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_simd_load
+// CHECK-SAME: %[[TENSOR0:[a-z0-9]+]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[IDX0:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX1:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX2:.*]]: index)
+kgen.func @zap_tensor_simd_load(
+  %tensor0: !zap.tensor<[?, 5, ?], f32>,
+  %idx0: index,
+  %idx1: index,
+  %idx2: index) {
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
+  // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
+  // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
+  // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
+  // CHECK: %[[POP_LOAD:.*]] = pop.pointer.bitcast %[[BASE]]
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[POP_LOAD]][%[[ADD2]]]
+  // CHECK: pop.load %[[POP_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
+  %0 = zap.tensor.simd_load %tensor0[%idx0, %idx1, %idx2] : !zap.tensor<[?, 5, ?], f32>, !pop.simd<4, f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_tensor_simd_store
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
+// CHECK-SAME: %[[TENSOR0:[a-z0-9]+]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[IDX0:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX1:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX2:.*]]: index)
+kgen.func @zap_tensor_simd_store(
+  %val : !pop.simd<4, f32>,
+  %tensor0: !zap.tensor<[?, 5, ?], f32>,
+  %idx0: index,
+  %idx1: index,
+  %idx2: index) {
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[TENSOR0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[TENSOR0]][0]
+  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
+  // CHECK-DAG: %[[SIZE1:.*]] = pop.array.get %[[SHAPEARRAY]][1]
+  // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
+  // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
+  // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
+  // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
+  // CHECK: %[[POP_LOAD:.*]] = pop.pointer.bitcast %[[BASE]]
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[POP_LOAD]][%[[ADD2]]]
+  // CHECK: pop.store %[[VAL]], %[[POP_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
+  zap.tensor.simd_store %val, %tensor0[%idx0, %idx1, %idx2] : !pop.simd<4, f32>, !zap.tensor<[?, 5, ?], f32>
+  kgen.return
+}
