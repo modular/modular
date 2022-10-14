@@ -88,7 +88,7 @@ Value EmitterState::emitAsValue(const ExprNode *node) {
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
-ExprNode::~ExprNode() { assert(0 && "never called"); }
+ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 /// Error nodes cannot be emitted.
 MLIRValueRep ErrorNode::emit(EmitterState &state) const {
@@ -191,7 +191,7 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
       POC opcode;
       switch (kind) {
       default:
-        assert(0 && "unknown binary operator");
+        llvm_unreachable("unknown binary operator");
       case kAdd:
         opcode = POC::Add;
         break;
@@ -208,13 +208,13 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
 
   switch (kind) {
   default:
-    assert(0 && "unknown binary operator");
+    llvm_unreachable("unknown binary operator");
   case kAdd:
     return (Value)state.builder.create<index::AddOp>(
-        state.mapLocation(getLoc()), lhsType, lhsVal, rhsVal);
+        state.mapLocation(getLoc()), lhsVal, rhsVal);
 
   case kMul:
     return (Value)state.builder.create<index::MulOp>(
-        state.mapLocation(getLoc()), lhsType, lhsVal, rhsVal);
+        state.mapLocation(getLoc()), lhsVal, rhsVal);
   }
 }
