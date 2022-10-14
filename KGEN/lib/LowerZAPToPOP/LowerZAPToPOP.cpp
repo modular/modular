@@ -326,21 +326,26 @@ struct ConvertZAPBufferSIMDStore
 // ConvertZAPPrint
 //===----------------------------------------------------------------------===//
 
-/// Lower the string into the a global constant. Null-terminate the string.
+/// Lower the string to a global constant.
 static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
-                                         ConversionPatternRewriter &rewriter) {
-  SmallVector<char> nullTerminatedStr(str.begin(), str.end());
-  nullTerminatedStr.push_back('\0');
-  auto values = IntArrayElementsAttr::get(rewriter.getContext(),
-                                          ArrayRef<char>(nullTerminatedStr),
-                                          IntegerType::Signed);
-  auto charType = rewriter.getType<ScalarType>(DType::si8);
-  Value nullTerminatedStrData = rewriter.create<GlobalConstantOp>(
-      op->getLoc(),
-      PointerType::get(POP::ArrayType::get(nullTerminatedStr.size(), charType)),
+                                         OpBuilder &b) {
+  auto values = IntArrayElementsAttr::get<char>(
+      b.getContext(), {str.data(), str.size()}, IntegerType::Signed);
+  auto charType = b.getType<ScalarType>(DType::si8);
+  return b.create<GlobalConstantOp>(
+      op->getLoc(), PointerType::get(POP::ArrayType::get(str.size(), charType)),
       values);
-  return rewriter.create<PointerBitcastOp>(
-      op->getLoc(), PointerType::get(charType), nullTerminatedStrData);
+}
+
+/// Lower the string into a global C string. Null-terminate the string and
+/// return an `si8` pointer.
+static Value lowerToCString(Operation *op, StringRef str, OpBuilder &b) {
+  SmallString<256> nullTerminatedStr = str;
+  nullTerminatedStr.push_back('\0');
+  auto charType = b.getType<ScalarType>(DType::si8);
+  return b.create<PointerBitcastOp>(
+      op->getLoc(), PointerType::get(charType),
+      lowerStringToGlobalConstant(op, nullTerminatedStr, b));
 }
 
 struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
@@ -350,7 +355,7 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
   matchAndRewrite(PrintOp op, PrintOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Lower the format into the a global constant.
-    Value fmt = lowerStringToGlobalConstant(op, op.getFmt(), rewriter);
+    Value fmt = lowerToCString(op, op.getFmt(), rewriter);
     // Create the invocation to `printf`.
     SmallVector<Value> operands;
     operands.reserve(op.getNumOperands() + 1);
@@ -364,7 +369,23 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPAssert
+// ConvertZAPGlobalString
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPGlobalString : mlir::OpConversionPattern<GlobalStringOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(GlobalStringOp op, GlobalStringOpAdaptor adapator,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value str = lowerStringToGlobalConstant(op, op.getValue(), rewriter);
+    rewriter.replaceOp(op, str);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPDebugAssert
 //===----------------------------------------------------------------------===//
 
 struct ConvertZAPDebugAssert : mlir::OpConversionPattern<DebugAssertOp> {
@@ -390,10 +411,9 @@ struct ConvertZAPDebugAssert : mlir::OpConversionPattern<DebugAssertOp> {
     }
 
     // Convert into MLIR Values.
-    Value functionName =
-        lowerStringToGlobalConstant(op, functionNameStr, rewriter);
-    Value filenameVal = lowerStringToGlobalConstant(op, locationStr, rewriter);
-    Value message = lowerStringToGlobalConstant(op, op.getMsg(), rewriter);
+    Value functionName = lowerToCString(op, functionNameStr, rewriter);
+    Value filenameVal = lowerToCString(op, locationStr, rewriter);
+    Value message = lowerToCString(op, op.getMsg(), rewriter);
 
     // Call into the CompilerRT assert function.
     rewriter.replaceOpWithNewOp<ExternalCallOp>(
@@ -856,6 +876,7 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,
       ConvertZAPDebugAssert,
+      ConvertZAPGlobalString,
       ConvertZAPPrint,
       ConvertZAPTensorAddress,
       ConvertZAPTensorConstruct,

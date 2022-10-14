@@ -495,3 +495,11 @@ kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
   zap.debug_assert %a, "my message" : !pop.scalar<bool>
   kgen.return
 }
+
+// CHECK-LABEL: @global_string
+kgen.generator @global_string() -> !pop.pointer<!pop.array<14, !pop.scalar<si8>>> {
+  // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]
+  %0 = zap.global_string "hello world!!\00"[14]
+  // CHECK: return %{{.*}} : !pop.pointer<!pop.array<14, !pop.scalar<si8>>>
+  kgen.return %0 : !pop.pointer<!pop.array<14, !pop.scalar<si8>>>
+}
