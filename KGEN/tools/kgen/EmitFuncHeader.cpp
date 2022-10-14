@@ -39,6 +39,10 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       os << "void";
       return success();
     }
+    if (dt.isBool()) {
+      os << "bool";
+      return success();
+    }
 
     return func.emitError("unhandled dtype for header generation ")
            << dt.getAsString();
