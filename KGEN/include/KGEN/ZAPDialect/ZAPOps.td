@@ -523,6 +523,70 @@ def ZAP_TensorStoreOp : ZAPOp<"tensor.store",
 }
 
 //===----------------------------------------------------------------------===//
+// TensorSIMDLoadOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorSIMDLoadOp : ZAPOp<"tensor.simd_load"> {
+  let summary = "tensor load operation";
+  let description = [{
+    The `zap.tensor.simd_load` operation takes a tensor and a list of index
+    positions and extracts the `!pop.simd` value at that position. The
+    positions must be of type index and their length must be of the same rank
+    as the tensor.
+
+    Example:
+
+    ```mlir
+    %1 = zap.tensor.simd_load %0[%pos0] : !zap.tensor<[size], dtype>, !pop.simd<simd_width, dtype>
+    %2 = zap.tensor.simd_load %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>, , !pop.simd<simd_width, dtype>
+    ```
+  }];
+
+  let arguments = (ins Arg<TensorKnownDType, "", [MemRead]>:$tensor,
+                       Variadic<Index>:$positions);
+  let results = (outs POP_SIMDType:$result);
+
+  let assemblyFormat = [{
+    $tensor `[` $positions `]` attr-dict `:`
+      qualified(type($tensor)) `,` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+//===----------------------------------------------------------------------===//
+
+// TensorSIMDStoreOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_TensorSIMDStoreOp : ZAPOp<"tensor.simd_store"> {
+  let summary = "tensor store operation";
+  let description = [{
+    The `zap.tensor.simd_store` operation takes a source simd value, a tensor,
+    and index positions and inserts the source value into the tensor at the
+    specified position. The positions must be of type index and their length
+    must be of the same rank as the tensor.
+
+    Example:
+
+    ```mlir
+    %1 = zap.tensor.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>, !zap.tensor<[size], dtype>
+    %2 = zap.tensor.simd_store %val, %1[%pos0, %pos1] : !pop.simd<simd_width, dtype>, !zap.tensor<[size0, size1], dtype>
+    ```
+  }];
+
+  let arguments = (ins Arg<TensorKnownDType, "", [MemWrite]>:$tensor,
+                       POP_SIMDType:$value, Variadic<Index>:$positions);
+
+  let assemblyFormat = [{
+    $value `,` $tensor `[` $positions `]` attr-dict `:`
+      qualified(type($value)) `,` qualified(type($tensor))
+  }];
+
+  let hasVerifier = 1;
+}
+
+
+//===----------------------------------------------------------------------===//
 // TensorDTypeOp
 //===----------------------------------------------------------------------===//
 
