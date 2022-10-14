@@ -34,7 +34,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<!pop.scalar<f32>>, %dtype: !k
 
 kgen.func @simd_load(%buff: !zap.buffer<4, si32>) {
   %idx = index.constant 0
-  // expected-error @below {{'zap.buffer.simd_load' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the result simd type ('!pop.simd<4, f32>')}}
+  // expected-error @below {{'zap.buffer.simd_load' op the type ('!zap.buffer<4, si32>') must have the same element type as the simd type ('!pop.simd<4, f32>')}}
   %0 = zap.buffer.simd_load %buff[%idx]: !zap.buffer<4, si32>, !pop.simd<4, f32>
 }
 
@@ -42,7 +42,7 @@ kgen.func @simd_load(%buff: !zap.buffer<4, si32>) {
 
 kgen.func @simd_store(%val : !pop.simd<4, f32>, %buff: !zap.buffer<4, si32>) {
   %idx = index.constant 0
-  // expected-error @below {{'zap.buffer.simd_store' op the buffer type ('!zap.buffer<4, si32>') must have the same element type as the value simd type ('!pop.simd<4, f32>')}}
+  // expected-error @below {{'zap.buffer.simd_store' op the type ('!zap.buffer<4, si32>') must have the same element type as the simd type ('!pop.simd<4, f32>')}}
   zap.buffer.simd_store %val, %buff[%idx]: !pop.simd<4, f32>, !zap.buffer<4, si32>
 }
 
@@ -98,10 +98,47 @@ kgen.generator @zap_tensor_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
 
 // -----
 
-kgen.generator @zap_tensor_load(%val : !pop.scalar<f32>,
+kgen.generator @zap_tensor_store(%val : !pop.scalar<f32>,
                                 %arg0 : !zap.tensor<[3], f32>,
                                 %idx : index) {
   // expected-error @below {{'zap.tensor.store' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
   zap.tensor.store %val, %arg0[%idx, %idx] : !zap.tensor<[3], f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @zap_tensor_simd_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.tensor.simd_load' op the type ('!zap.tensor<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  %val = zap.tensor.simd_load %arg0[%idx, %idx] : !zap.tensor<[3], f32>, !pop.simd<4, si32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @zap_tensor_simd_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.tensor.simd_load' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
+  %val = zap.tensor.simd_load %arg0[%idx, %idx] : !zap.tensor<[3], f32>, !pop.simd<4, f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, si32>,
+                                      %arg0 : !zap.tensor<[3], f32>,
+                                      %idx : index) {
+  // expected-error @below {{'zap.tensor.simd_store' op the type ('!zap.tensor<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  zap.tensor.simd_store %val, %arg0[%idx] : !pop.simd<4, si32>, !zap.tensor<[3], f32>
+  kgen.return
+}
+
+
+// -----
+
+kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, f32>,
+                                      %arg0 : !zap.tensor<[3], f32>,
+                                      %idx : index) {
+  // expected-error @below {{'zap.tensor.simd_store' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
+  zap.tensor.simd_store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.tensor<[3], f32>
   kgen.return
 }

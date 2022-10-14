@@ -16,18 +16,30 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Casting.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace ZAP;
 
-/// Returns true if the buffer value and SIMD value have the same dtype.
-static bool hasSameUnderlyingDType(Value buffer,
-                                   mlir::TypedValue<POP::SIMDType> simd) {
-  TypedAttr aDType = buffer.getType().cast<BufferType>().getDType();
+/// Returns success if the memory value and SIMD value have the same dtype,
+/// otherwise emit an Op error and return failure.
+static LogicalResult
+verifyHasSameUnderlyingDType(Operation *op, Value memory,
+                             mlir::TypedValue<POP::SIMDType> simd) {
+  TypedAttr aDType =
+      TypeSwitch<Type, TypedAttr>(memory.getType())
+          .Case([](BufferType buf) { return buf.getDType(); })
+          .Case([](TensorType tensor) { return tensor.getDType(); })
+          .Default([](Type) { return TypedAttr(); });
   TypedAttr bDType = simd.getType().getDType();
-  return aDType == bDType;
+  if (aDType == bDType)
+    return success();
+  return op->emitOpError("the type (")
+         << memory.getType()
+         << ") must have the same element type as the simd type ("
+         << simd.getType() << ")";
 }
 
 //===----------------------------------------------------------------------===//
@@ -155,12 +167,7 @@ LogicalResult BufferConstantOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult BufferSIMDLoadOp::verify() {
-  if (hasSameUnderlyingDType(getBuffer(), getResult()))
-    return success();
-  return emitOpError("the buffer type (")
-         << getBuffer().getType()
-         << ") must have the same element type as the result simd type ("
-         << getResult().getType() << ")";
+  return verifyHasSameUnderlyingDType(*this, getBuffer(), getResult());
 }
 
 //===----------------------------------------------------------------------===//
@@ -168,12 +175,7 @@ LogicalResult BufferSIMDLoadOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult BufferSIMDStoreOp::verify() {
-  if (hasSameUnderlyingDType(getBuffer(), getValue()))
-    return success();
-  return emitOpError("the buffer type (")
-         << getBuffer().getType()
-         << ") must have the same element type as the value simd type ("
-         << getValue().getType() << ")";
+  return verifyHasSameUnderlyingDType(*this, getBuffer(), getValue());
 }
 
 //===----------------------------------------------------------------------===//
@@ -218,6 +220,26 @@ LogicalResult TensorLoadOp::verify() { return verifyTensorLoadStoreOp(*this); }
 //===----------------------------------------------------------------------===//
 
 LogicalResult TensorStoreOp::verify() { return verifyTensorLoadStoreOp(*this); }
+
+//===----------------------------------------------------------------------===//
+// TensorSIMDLoadOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TensorSIMDLoadOp::verify() {
+  if (failed(verifyHasSameUnderlyingDType(*this, getTensor(), getResult())))
+    return failure();
+  return verifyTensorLoadStoreOp(*this);
+}
+
+//===----------------------------------------------------------------------===//
+// TensorStoreOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TensorSIMDStoreOp::verify() {
+  if (failed(verifyHasSameUnderlyingDType(*this, getTensor(), getValue())))
+    return failure();
+  return verifyTensorLoadStoreOp(*this);
+}
 
 //===----------------------------------------------------------------------===//
 // TensorDimOp
