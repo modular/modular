@@ -589,10 +589,14 @@ struct LitParser : public LitParserBase {
 
 private:
   // Statements.
-  ParseResult parseSuite(size_t curIndent);
-  ParseResult parseStmts(size_t minIndent);
-  ParseResult parseStmt(size_t curIndent);
-  ParseResult parseSimpleStmt();
+  enum class StmtContext {
+    normal,     // All normal statements are supported.
+    structBody, // Only statements in a struct body supported.
+  };
+  ParseResult parseSuite(size_t curIndent, StmtContext stmtContext);
+  ParseResult parseStmts(size_t minIndent, StmtContext stmtContext);
+  ParseResult parseStmt(size_t curIndent, StmtContext stmtContext);
+  ParseResult parseSimpleStmt(StmtContext stmtContext);
 
   // Compound statements.
   ParseResult parseDefStmt(size_t curIndent);
@@ -631,7 +635,7 @@ ParseResult LitParser::parseFile() {
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
-  if (parseStmts(/*indent=*/0))
+  if (parseStmts(/*indent=*/0, StmtContext::normal))
     return failure();
 
   // Finalize the current scope, parsing any deferred declarations in it.
@@ -682,11 +686,12 @@ void LitParser::finalizeScopeDecl() {
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on
 /// one line, or an indented block of statements. curIndent is the containing
-/// statement's indentation level.
+/// statement's indentation level and stmtContext indicates if there are a
+/// subset of statements supported.
 ///
 /// suite     ::=  [stmt_list NEWLINE] | NEWLINE INDENT statement+ DEDENT
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
-ParseResult LitParser::parseSuite(size_t curIndent) {
+ParseResult LitParser::parseSuite(size_t curIndent, StmtContext stmtContext) {
   // Ignore empty body at end of file: a `pass` is not required.
   if (getToken().is(LitToken::eof))
     return success();
@@ -698,12 +703,12 @@ ParseResult LitParser::parseSuite(size_t curIndent) {
     // then the body is empty.  We don't require a pass.
     if (indent.value() <= curIndent)
       return success();
-    return parseStmts(indent.value());
+    return parseStmts(indent.value(), stmtContext);
   }
 
   // Otherwise, parse a stmt_list.
   do {
-    if (parseSimpleStmt())
+    if (parseSimpleStmt(stmtContext))
       return failure();
     // Stop if we see a semicolon at the end of line or a missing semicolon.
   } while (consumeIf(LitToken::semi) &&
@@ -716,7 +721,7 @@ ParseResult LitParser::parseSuite(size_t curIndent) {
 ///
 /// This parses statements at the current indentation level or greater, it
 /// refuses to parse things at lower indentation level.
-ParseResult LitParser::parseStmts(size_t minIndent) {
+ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
   while (getToken().isNot(LitToken::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
@@ -724,7 +729,7 @@ ParseResult LitParser::parseStmts(size_t minIndent) {
     if (indent.value() < minIndent)
       break;
 
-    if (parseStmt(indent.value()))
+    if (parseStmt(indent.value(), stmtContext))
       return failure();
   }
   return success();
@@ -745,17 +750,23 @@ ParseResult LitParser::parseStmts(size_t minIndent) {
 ///                 | async_for_stmt [TODO]
 ///                 | async_funcdef [TODO]
 ///
-ParseResult LitParser::parseStmt(size_t curIndent) {
+ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
   // Handle compound stmts here and chain to simple statements to handle the
   // whole "statement" production.
   switch (getToken().getKind()) {
   case LitToken::kw_def:
     return parseDefStmt(curIndent);
   case LitToken::kw_struct:
+    // We don't support structs in structs (yet?).
+    if (stmtContext != StmtContext::normal)
+      emitError("nested struct not supported here");
     return parseStructStmt(curIndent);
+
+  // NOTE: When adding new cases here, make sure to add them to parseSimpleStmt
+  // as well for error recovery.
   default:
     // Otherwise must be a simple statement.
-    return parseSimpleStmt();
+    return parseSimpleStmt(stmtContext);
   }
 }
 
@@ -775,8 +786,14 @@ ParseResult LitParser::parseStmt(size_t curIndent) {
 ///               | future_stmt [TODO]
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
-ParseResult LitParser::parseSimpleStmt() {
+ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
   switch (getToken().getKind()) {
+  case LitToken::kw_def:
+  case LitToken::kw_struct:
+    emitError() << "'" << getToken().getSpelling()
+                << "' statement must be on its own line";
+    return parseStmt(0, stmtContext);
+
   case LitToken::kw_pass:
     // pass_stmt ::= "pass"
     consumeToken(LitToken::kw_pass);
@@ -789,6 +806,8 @@ ParseResult LitParser::parseSimpleStmt() {
 
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
+  if (stmtContext != StmtContext::normal)
+    emitError("invalid expression in this context");
 
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
@@ -1067,7 +1086,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
                                  /*alignment*/ None);
   }
 
-  (void)parseSuite(defIndent);
+  (void)parseSuite(defIndent, StmtContext::normal);
 
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
@@ -1120,7 +1139,7 @@ ParseResult LitParser::parseReturnStmt() {
   // Check the result values match expected types.
   LITFuncOp decl = dyn_cast<LITFuncOp>(currentScope->getDecl());
   if (!decl) {
-    emitError(loc, "cannot know how to return out of this scope");
+    emitError(loc, "cannot return from this context");
     return success();
   }
 
@@ -1172,9 +1191,7 @@ private:
 } // namespace
 
 /// structdef ::=
-///   [decorators] "struct" identifier [meta_signature] ":" struct-decl-body
-///
-/// struct-decl-body is a subset of `suite` that only contains a few statements.
+///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
 ParseResult LitParser::parseStructStmt(size_t curIndent) {
   auto loc = getTokenLocation();
@@ -1217,67 +1234,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
                              sharedParserState->errorOccurred);
   }
 
-  // Parse the struct decl body.
-  // Ignore empty body at end of file: a `pass` is not required.
-  if (getToken().is(LitToken::eof))
-    return success();
-
-  // Parse a single struct-body statement.
-  auto parseStructBodyStatement =
-      [&](Optional<size_t> curIndent) -> ParseResult {
-    switch (getToken().getKind()) {
-    case LitToken::kw_def:
-      if (!curIndent.has_value())
-        return emitError("def method must be on its own line");
-      return parseDefStmt(curIndent.value());
-      // TODO: Support nested structs.
-      // case LitToken::kw_struct:
-      //   return parseStructStmt(curIndent);
-    case LitToken::kw_pass:
-      // pass_stmt ::= "pass"
-      consumeToken(LitToken::kw_pass);
-      return success();
-
-    // TODO: var/let declarations.
-    default:
-      emitError("expected property or method definition in struct body");
-      // TODO: Better error recovery!
-      return failure();
-    }
-  };
-
-  // If there is a newline, then parse a list of statements.
-  auto indent = getToken().getIndentation();
-  if (indent.has_value()) {
-    size_t minIndent = indent.value();
-    // If the current token is less indented that the source of the suite, then
-    // the body is empty.  We don't require a pass.
-    if (minIndent <= curIndent)
-      return success();
-
-    while (getToken().isNot(LitToken::eof)) {
-      auto indent = getToken().getIndentation();
-      if (!indent.has_value())
-        return emitError(
-            "struct body statement must start at the beginning of a line");
-      if (indent.value() < minIndent)
-        break;
-
-      if (parseStructBodyStatement(indent.value()))
-        return failure();
-    }
-    return success();
-  }
-
-  // Otherwise, parse a stmt_list.
-  do {
-    if (parseStructBodyStatement(None))
-      return failure();
-    // Stop if we see a semicolon at the end of line or a missing semicolon.
-  } while (consumeIf(LitToken::semi) &&
-           !getToken().getIndentation().has_value());
-
-  return success();
+  (void)parseSuite(curIndent, StmtContext::structBody);
 
   return success();
 }

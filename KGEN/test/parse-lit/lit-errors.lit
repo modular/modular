@@ -103,7 +103,7 @@ def fn():
 
 # // -----
 
-return 32 # expected-error {{cannot know how to return out of this scope}}
+return 32 # expected-error {{cannot return from this context}}
 
 # // -----
 
@@ -136,5 +136,11 @@ def bad(x: Int, x: Int):
 
 # // -----
 
-# expected-error @+1 {{def method must be on its own line}}
+# expected-error @+1 {{'def' statement must be on its own line}}
 struct Struct: def foo(): pass
+
+# // -----
+
+struct Pair:
+  # expected-error @+1 {{cannot return from this context}}
+  return 42
