@@ -786,4 +786,57 @@ void LowerKGENToLLVMPass::runOnOperation() {
   if (failed(emitWrappers(theModule, breakUpStructs, emitCWrappers,
                           emitOpaqueWrappers)))
     signalPassFailure();
+
+  // Type references can be used in nested types. Walk through all the types and
+  // rewrite them in-place to use the lowered types.
+  auto rewriteType = [&](Type type) -> Type {
+    if (auto ref = dyn_cast<RefType>(type))
+      return typeConverter.convertType(ref);
+    auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
+    if (!itf)
+      return type;
+
+    return itf.replaceSubElements([&](Type type) -> Type {
+      auto ref = dyn_cast<RefType>(type);
+      if (!ref)
+        return type;
+      return typeConverter.convertType(ref);
+    });
+  };
+  WalkResult result = getOperation()->walk([&](Operation *op) {
+    // Substitute any references in attributes.
+    op->setAttrs(op->getAttrDictionary()
+                     .replaceSubElements(rewriteType)
+                     .cast<DictionaryAttr>());
+
+    // Substitute the result types.
+    for (OpResult result : op->getOpResults()) {
+      Type replType = rewriteType(result.getType());
+      if (!replType) {
+        op->emitError("failed to substitute result type #")
+            << result.getResultNumber();
+        return WalkResult::interrupt();
+      }
+      result.setType(replType);
+    }
+
+    // Substitute the block argument types.
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region) {
+        for (BlockArgument arg : block.getArguments()) {
+          Type replType = rewriteType(arg.getType());
+          if (!replType) {
+            op->emitError("failed to substitute block argument type ")
+                << arg.getType();
+            return WalkResult::interrupt();
+          }
+          arg.setType(replType);
+        }
+      }
+    }
+
+    return WalkResult::advance();
+  });
+  if (result.wasInterrupted())
+    return signalPassFailure();
 }

@@ -31,7 +31,6 @@ int main(int argc, char *argv[]) {
       "mlir-to-llvmir", "Translate MLIR to LLVMIR",
       [](ModuleOp module, llvm::raw_ostream &os) -> LogicalResult {
         llvm::LLVMContext llvmContext;
-        llvmContext.setOpaquePointers(/*Enable=*/false);
         auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
         if (!llvmModule)
           return failure();
