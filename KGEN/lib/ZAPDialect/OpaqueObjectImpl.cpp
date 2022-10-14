@@ -117,13 +117,12 @@ LogicalResult TensorType::populate(Location loc, InputGenKind kind,
                           << *this;
 
   size_t shape[TensorType::getMaximumRank()] = {0};
-  for (const auto &it : llvm::enumerate(getShape())) {
-    auto dimVal = it.value();
-    if (auto dim = dyn_cast_if_present<IntegerAttr>(dimVal))
-      shape[it.index()] = dim.getInt();
+  for (const auto &[index, value] : llvm::enumerate(getShape())) {
+    if (auto dim = dyn_cast_if_present<IntegerAttr>(value))
+      shape[index] = dim.getInt();
     else
-      shape[it.index()] =
-          tag.cast<IntArrayElementsAttr>().asArrayRef<ssize_t>()[it.index()];
+      shape[index] =
+          tag.cast<IntArrayElementsAttr>().asArrayRef<ssize_t>()[index];
   }
 
   size_t numElements =
