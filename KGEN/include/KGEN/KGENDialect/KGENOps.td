@@ -197,7 +197,7 @@ def CallOp
                    "ValueRange":$operands)>,
   ];
 
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -249,7 +249,7 @@ def CallParamOp : KGENOp<"call_param"> {
   ];
 
   let hasCanonicalizeMethod = 1;
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
