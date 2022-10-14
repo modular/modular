@@ -83,6 +83,10 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       os << "void *, ssize_t, uint8_t";
       return success();
     }
+    if (auto tensor = dyn_cast<ZAP::TensorType>(t)) {
+      os << "void *, ssize_t, ssize_t[5], uint8_t";
+      return success();
+    }
 
     if (auto structType = dyn_cast<POP::StructType>(t)) {
       SmallVector<Type> elementTypes;
