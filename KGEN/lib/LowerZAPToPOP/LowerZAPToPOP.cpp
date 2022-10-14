@@ -664,12 +664,12 @@ static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
         loc, indexType, shapeArray, rewriter.getIndexAttr(indexPosition));
 
     // Multiply by the current size, e.g. x-> b*x from example above.
-    accumulatedOffset = rewriter.create<index::MulOp>(
-        loc, indexType, accumulatedOffset, positionSize);
+    accumulatedOffset =
+        rewriter.create<index::MulOp>(loc, accumulatedOffset, positionSize);
 
     // Add the current index, e.g. b*x -> b*x + y from example above.
-    accumulatedOffset = rewriter.create<index::AddOp>(
-        loc, indexType, accumulatedOffset, indexValue);
+    accumulatedOffset =
+        rewriter.create<index::AddOp>(loc, accumulatedOffset, indexValue);
   }
 
   return accumulatedOffset;
