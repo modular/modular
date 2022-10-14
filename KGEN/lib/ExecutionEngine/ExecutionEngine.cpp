@@ -162,55 +162,6 @@ ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-/// Extract a dependency from the IR parent module and place it into the slice
-/// module if it does not already exist. If a symbol was copied, return it.
-static Operation *extractDependency(StringAttr name, SymbolTable &sliceSymtab,
-                                    const SymbolTable &symtab) {
-  // Don't copy the symbol if it is already copied.
-  if (sliceSymtab.lookup(name))
-    return nullptr;
-
-  Operation *symbol = symtab.lookup(name);
-  // If the symbol reference attribute doesn't reference a symbol, ignore it.
-  // Missing symbol references are caught by the verifier.
-  if (!symbol)
-    return nullptr;
-
-  // Clone the symbol into the new symbol table.
-  Operation *copy = symbol->clone();
-  sliceSymtab.insert(copy);
-  return copy;
-}
-
-/// Slice the dependencies of an operation out of the existing module into the
-/// self-contained slice module.
-static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
-                              const mlir::SymbolTable &symtab) {
-  auto checkForRefType = [&](Type type) {
-    if (auto ref = dyn_cast<RefType>(type))
-      extractDependency(ref.getName().getAttr(), sliceSymtab, symtab);
-  };
-  auto extractDependencies = [&](Operation *op) {
-    // Extract references to type declarations.
-    op->getAttrDictionary().walkSubTypes(checkForRefType);
-    llvm::for_each(op->getOperandTypes(), checkForRefType);
-    llvm::for_each(op->getResultTypes(), checkForRefType);
-
-    // Extract references to functions. Mark copied functions as module private
-    // and recurse.
-    if (auto call = dyn_cast<CallOp>(op)) {
-      Operation *symbol = extractDependency(call.getCalleeAttr().getAttr(),
-                                            sliceSymtab, symtab);
-      if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
-        func.setLinkageAttr(
-            LinkageAttr::get(op->getContext(), Linkage::ModulePrivate));
-        sliceDependencies(func, sliceSymtab, symtab);
-      }
-    }
-  };
-  op->walk(extractDependencies);
-}
-
 /// Add the given module to the execution engine. This slices all public funcs
 /// out of the module with their dependencies to generate self-contained object
 /// files.

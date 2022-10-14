@@ -126,39 +126,36 @@ std::string CompositeObjectCacheKeyInfo::hashKey(llvm::Module *key) {
 // lowerToLLVM implementation
 //===----------------------------------------------------------------------===//
 
-/// Extract a dependency from the IR parent module and place it into the slice
-/// module if it does not already exist. If a symbol was copied, return it.
-static Operation *extractDependency(StringAttr name, SymbolTable &sliceSymtab,
-                                    const SymbolTable &symtab) {
-  // Don't copy the symbol if it already was.
-  if (sliceSymtab.lookup(name))
-    return nullptr;
-
-  Operation *symbol = symtab.lookup(name);
-  // If the symbol reference attribute doesn't reference a symbol, ignore it.
-  // Missing symbol references are caught by the verifier.
-  if (!symbol)
-    return nullptr;
-
-  // Clone the symbol into the new symbol table.
-  Operation *copy = symbol->clone();
-  if (auto linkage = copy->getAttrOfType<LinkageAttr>("linkage")) {
-    if (linkage.getValue() == Linkage::Public) {
-      copy->setAttr("linkage", LinkageAttr::get(copy->getContext(),
-                                                Linkage::ModulePrivate));
-    }
-  }
-  sliceSymtab.insert(copy);
-  return copy;
-}
-
 /// Slice the dependencies of an operation out of the existing module into the
 /// self-contained slice module.
 static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
                               const mlir::SymbolTable &symtab) {
+  // Extract a dependency from the IR parent module and place it into the slice
+  // module if it does not already exist. If a symbol was copied, return it.
+  auto extractDependency = [&](StringAttr name) -> Operation * {
+    // Don't copy the symbol if it is already copied.
+    if (sliceSymtab.lookup(name))
+      return nullptr;
+
+    Operation *symbol = symtab.lookup(name);
+    // If the symbol reference attribute doesn't reference a symbol, ignore it.
+    // Missing symbol references are caught by the verifier.
+    if (!symbol)
+      return nullptr;
+
+    // Clone the symbol into the new symbol table.
+    Operation *copy = symbol->clone();
+    sliceSymtab.insert(copy);
+    return copy;
+  };
+
   auto checkForRefType = [&](Type type) {
-    if (auto ref = dyn_cast<RefType>(type))
-      extractDependency(ref.getName().getAttr(), sliceSymtab, symtab);
+    if (auto ref = dyn_cast<RefType>(type)) {
+      Operation *decl = extractDependency(ref.getName().getAttr());
+      // Recurse on the type declaration.
+      if (decl)
+        sliceDependencies(decl, sliceSymtab, symtab);
+    }
   };
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
@@ -169,8 +166,7 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
     if (auto call = dyn_cast<CallOp>(op)) {
-      Operation *symbol = extractDependency(call.getCalleeAttr().getAttr(),
-                                            sliceSymtab, symtab);
+      Operation *symbol = extractDependency(call.getCalleeAttr().getAttr());
       if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
         func.setLinkageAttr(
             LinkageAttr::get(op->getContext(), Linkage::ModulePrivate));
