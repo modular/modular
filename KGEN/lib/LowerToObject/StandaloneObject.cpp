@@ -275,6 +275,12 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
     }
   }
 
+  // This is an undesirable workaround because ld64 doesn't copy the .debug_info
+  // section into the output binary.
+  // TODO: Remove this when we no longer have to use the system linker.
+  if (slicer.objSet.size() == 1)
+    return std::move(slicer.objSet.front());
+
   SmallVector<std::string> tmpFileNames;
   SmallVector<TempFile> tmpFiles;
   for (auto &obj : slicer.objSet) {
