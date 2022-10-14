@@ -1,10 +1,7 @@
-// RUN: kgen-opt -canonicalize %s | FileCheck %s
+// RUN: kgen-opt -lower-zap-to-pop -lower-kgen-to-llvm -pass-pipeline='kgen.func(lower-pop-to-llvm)' -lower-to-llvm %s | kgen-translate -mlir-to-llvmir | FileCheck %s
 
-// CHECK-LABEL: naive_matmul
-// CHECK: %[[A:.*]]: [[TENSOR_TYPE:.*]], f32>,
-// CHECK: %[[B:.*]]: [[TENSOR_TYPE]]
-// CHECK: %[[C:.*]]: [[TENSOR_TYPE]]
-kgen.func @naive_matmul(%a: !zap.tensor<[?, ?], f32>,
+// CHECK-LABEL: define void @naive_matmul
+kgen.func public @naive_matmul(%a: !zap.tensor<[?, ?], f32>,
                         %b: !zap.tensor<[?, ?], f32>,
                         %c: !zap.tensor<[?, ?], f32>) {
   %zero = index.constant 0
@@ -18,7 +15,6 @@ kgen.func @naive_matmul(%a: !zap.tensor<[?, ?], f32>,
   %K_eq_BK0 = index.cmp eq(%K, %BK)
   %K_eq_BK = pop.cast_from_builtin %K_eq_BK0 : i1 to !pop.scalar<bool>
   zap.debug_assert %K_eq_BK, "K != BK" : !pop.scalar<bool>
-
 
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
