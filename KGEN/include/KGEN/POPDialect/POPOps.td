@@ -830,17 +830,17 @@ def POP_PrefetchOp : POPOp<"prefetch"> {
 
     This op follows similar interface as prefetch op in LLVM dialect,
     with a "locality" attribute that specifies the level of temporal locality
-    in the application, i.e. how soon would the same data be visited again, 
+    in the application, i.e. how soon would the same data be visited again,
     possible locality values are: `NoLocality`, `LowLocality`, `MediumLocality`,
     `HighLocality`, and `VeryHighLocality`.
-    
-    This op also takes a "cache tag" attribute giving hints on how the 
-    prefetched data will be used. Possible tags are: `ReadICache`, `ReadDCache` 
+
+    This op also takes a "cache tag" attribute giving hints on how the
+    prefetched data will be used. Possible tags are: `ReadICache`, `ReadDCache`
     and `WriteDCache`.
 
-    Note: the actual behavior of this op and concrete interpretation 
+    Note: the actual behavior of this op and concrete interpretation
     of these attributes are target-dependent.
-    
+
     Example:
 
     ```mlir
@@ -1091,6 +1091,8 @@ def POP_ArrayGetOp : POPOp<"array.get", [NoSideEffect,
   let assemblyFormat = [{
     $array `[` $index `]` attr-dict `:` qualified(type($array))
   }];
+
+  let builders = [OpBuilder<(ins "Value":$array, "int64_t":$index)>];
 
   let hasVerifier = 1;
 }
