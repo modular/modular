@@ -21,9 +21,6 @@
 using namespace M::LLCL;
 using llvm::ArrayRef;
 using llvm::Optional;
-using mlir::failure;
-using mlir::LogicalResult;
-using mlir::success;
 
 /// This value is set to a number for workqueue threads.  Foreign threads always
 /// have index #0.
@@ -288,12 +285,11 @@ public:
   /// Initialize the thread pool and start up the worker threads. By the time
   /// the constructor finishes, all the worker threads have started and shall
   /// only be cancelled by the destructor.
-  ThreadPoolWorkQueue(size_t numWorkerThreads,
-                      std::chrono::nanoseconds busyWaitNs,
+  ThreadPoolWorkQueue(size_t numWorkers, std::chrono::nanoseconds busyWaitNs,
                       bool profilingEnabled);
 
   void shutdown() override;
-  ~ThreadPoolWorkQueue() override {}
+  ~ThreadPoolWorkQueue() override = default;
 
   void addTask(TaskFunction work) override;
 
