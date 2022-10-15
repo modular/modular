@@ -327,6 +327,27 @@ def ParamDeclareOp : KGENOp<"param.declare", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamSearchOp
+//===----------------------------------------------------------------------===//
+
+def ParamSearchOp : KGENOp<"param.search", []> {
+  let summary = [{
+    Declare a new parameter that gets one out of a set of values at elaboration
+    time.
+  }];
+
+  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
+                       ParameterExprArrayAttr:$values);
+  let assemblyFormat =
+     "custom<ParamSearchOpValue>($paramDecls, $values) attr-dict";
+
+  let extraClassDeclaration = [{
+    /// Return the single parameter declaration as a well typed attribute.
+    ParamDeclAttr getParamDecl();
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 

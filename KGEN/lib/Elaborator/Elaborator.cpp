@@ -397,6 +397,13 @@ public:
 
 private:
   LogicalResult processParamDeclareOp(ParamDeclareOp op);
+  LogicalResult
+  processParamSearchOp(ParamSearchOp op,
+                       SmallVectorImpl<ParameterRewriter> &rewriters);
+  void spawnParamSearchClone(ParamSearchOp searchOp, Attribute value,
+                             SmallVectorImpl<ParameterRewriter> &rewriters);
+  void completeParamSearchOpProcessing(ParamSearchOp op, Attribute value);
+
   LogicalResult processParamConstantOp(ParamConstantOp op);
   LogicalResult processParamAssertOp(ParamAssertOp op);
 
@@ -500,6 +507,8 @@ LogicalResult ParameterRewriter::rewriteOps(
       /// context of the parameter values we know are defined.
       if (auto bind = dyn_cast<ParamDeclareOp>(op))
         result = processParamDeclareOp(bind);
+      else if (auto value = dyn_cast<ParamSearchOp>(op))
+        result = processParamSearchOp(value, rewriterWorklist);
       else if (auto value = dyn_cast<ParamConstantOp>(op))
         result = processParamConstantOp(value);
       else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
@@ -578,9 +587,82 @@ LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Bind it to the parameter declaration it is setting.
   getEvaluator().setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
 
-  // The param.bind operation serves no other purpose, so we can remove it.
+  // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
   return success();
+}
+
+LogicalResult ParameterRewriter::processParamSearchOp(
+    ParamSearchOp op, SmallVectorImpl<ParameterRewriter> &rewriters) {
+  // Loop over all the possible candidates that we will search over, spawning
+  // N-1 possibilities to explore.
+  std::string errors;
+  Attribute firstValid;
+  DenseSet<Attribute> seenValues;
+  for (Attribute candidate : op.getValues()) {
+    // Simplify the input expressions.
+    auto errorOrValue = getEvaluator().concretizeParameterExpr(candidate);
+    if (errorOrValue.isError()) {
+      if (!errors.empty())
+        errors += ", ";
+      errors += errorOrValue.takeError().get();
+      continue;
+    }
+
+    Attribute value = errorOrValue.get();
+
+    // If we've already seen this concrete value before, ignore the duplicate.
+    if (!seenValues.insert(value).second)
+      continue;
+
+    // If this is the first viable value we've seen, remember it.
+    if (!firstValid) {
+      firstValid = value;
+    } else {
+      // Otherwise, we have to enqueue an exploration of this value.
+      spawnParamSearchClone(op, value, rewriters);
+    }
+  }
+
+  // If all the expansions failed, then this call fails overall.
+  if (!firstValid) {
+    if (errors.empty())
+      return error(op->getLoc(), "no values to search over");
+    return error(op->getLoc(), Error(errors));
+  }
+
+  completeParamSearchOpProcessing(op, firstValid);
+  return success();
+}
+
+void ParameterRewriter::spawnParamSearchClone(
+    ParamSearchOp searchOp, Attribute value,
+    SmallVectorImpl<ParameterRewriter> &rewriters) {
+  // Start by cloning the current WIP func to a new copy of it.
+  BlockAndValueMapping blocksAndValues;
+  DenseMap<Operation *, Operation *> operationMap;
+  auto newFunc = cast<FuncOp>(
+      cloneOperation(elaboratedGenerator.func, blocksAndValues, operationMap));
+
+  // Insert the func into the output file and auto-unique the symbol.
+  elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
+
+  // Generate the new rewriter which will process this.
+  auto &newRewriter = rewriters.emplace_back(*this, operationMap);
+
+  // Change the future of this func by resolving the searchOp in the new func to
+  // the specifed value.
+  auto newSearch = cast<ParamSearchOp>(operationMap[searchOp]);
+  newRewriter.completeParamSearchOpProcessing(newSearch, value);
+}
+
+void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
+                                                        Attribute value) {
+  // Bind it to the parameter declaration it is setting.
+  getEvaluator().setParameterValue(op.getParamDecl(), value);
+
+  // The kgne.param.search operation serves no other purpose: remove it.
+  op->erase();
 }
 
 LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
@@ -731,7 +813,7 @@ LogicalResult ParameterRewriter::processCallOp(
   // If all the expansions failed, then this call fails overall.
   if (!thisCallee.func) {
     SmallVector<CalleeExpansionError> errors;
-    for (const auto &value : newCalleesRef)
+    for (const auto &value : newCallees)
       errors.push_back(std::get<CalleeExpansionError>(value));
     return errorCalling(call->getLoc(), errors);
   }
