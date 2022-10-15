@@ -1211,8 +1211,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   auto newStruct = builder.create<StructDeclOp>(
       loc, nameAttr,
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
-      TypeArrayAttr::get(getContext(), {}),
-      ConstraintArrayAttr::get(getContext(), {}));
+      TypeArrayAttr::get(getContext(), {}));
   newStruct.getRegion().push_back(new Block());
 
   auto newRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(nameAttr),

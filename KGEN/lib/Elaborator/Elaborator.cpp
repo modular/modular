@@ -1597,13 +1597,6 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
             incType.getLoc())))
       return failure();
 
-    if (type.getConstraintsAttr() != incType.getConstraintsAttr()) {
-      return (symbol->emitError("type @")
-              << name << " was redeclared with different constraints")
-                 .attachNote(included->getLoc())
-             << "previous declaration here";
-    }
-
     // Check other attributes.
     if (symbol->getAttrDictionary() != included->getAttrDictionary()) {
       InFlightDiagnostic diag =

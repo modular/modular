@@ -500,12 +500,11 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
 
   let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
                        // Needed for KGENDeclInterface. Always empty.
-                       KTypeArrayAttr:$resultParamTypes,
-                       ConstraintArrayAttr:$constraints);
+                       KTypeArrayAttr:$resultParamTypes);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
-    `` custom<OptionalConstraints>($constraints) custom<StructFields>($fields)
+    custom<StructFields>($fields)
     attr-dict
   }];
 
