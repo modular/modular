@@ -26,7 +26,7 @@ class ZAPOp<string mnemonic, list<Trait> traits = []>
 // BufferConstructOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [NoSideEffect,
+def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [Pure,
     AttrSizedOperandSegments, BufferPointerType<"result", "ptr">]> {
   let summary = "construct a buffer with a pointer";
   let description = [{
@@ -67,7 +67,7 @@ def ZAP_BufferConstructOp : ZAPOp<"buffer.construct", [NoSideEffect,
 // BufferSizeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferSizeOp : ZAPOp<"buffer.size", [NoSideEffect]> {
+def ZAP_BufferSizeOp : ZAPOp<"buffer.size", [Pure]> {
   let summary = "get the size of a buffer";
   let description = [{
     The `zap.buffer.size` operation returns the size of the given buffer as an
@@ -91,7 +91,7 @@ def ZAP_BufferSizeOp : ZAPOp<"buffer.size", [NoSideEffect]> {
 // BufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferDTypeOp : ZAPOp<"buffer.dtype", [NoSideEffect]> {
+def ZAP_BufferDTypeOp : ZAPOp<"buffer.dtype", [Pure]> {
   let summary = "get the dtype of a buffer";
   let description = [{
     The `zap.buffer.dtype` operation returns the dtype of the given buffer as an
@@ -115,7 +115,7 @@ def ZAP_BufferDTypeOp : ZAPOp<"buffer.dtype", [NoSideEffect]> {
 // BufferAddressOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [NoSideEffect,
+def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [Pure,
     BufferPointerType<"buffer", "ptr">]> {
   let summary = "get the starting address of a buffer";
   let description = [{
@@ -139,7 +139,7 @@ def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [NoSideEffect,
 // BufferConvertOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferConvertOp : ZAPOp<"buffer.bitcast", [NoSideEffect,
+def ZAP_BufferConvertOp : ZAPOp<"buffer.bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "cast a buffer type";
   let description = [{
@@ -367,7 +367,7 @@ def ZAP_BufferSIMDStoreOp : ZAPOp<"buffer.simd_store"> {
 // TensorConstructOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [NoSideEffect,
+def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [Pure,
     AttrSizedOperandSegments, TensorPointerType<"result", "ptr">]> {
   let summary = "construct a type with a pointer";
   let description = [{
@@ -410,7 +410,7 @@ def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [NoSideEffect,
 // TensorDimOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
+def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [Pure]> {
   let summary = "get the dimension of the tensor at specified index";
   let description = [{
     The `zap.tensor.dim` operation returns the size of the given tensor as an
@@ -438,7 +438,7 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [NoSideEffect]> {
 // TensorSizeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorSizeOp : ZAPOp<"tensor.size", [NoSideEffect]> {
+def ZAP_TensorSizeOp : ZAPOp<"tensor.size", [Pure]> {
   let summary = "get the total number of elements in the tensor";
   let description = [{
     The `zap.tensor.size` operation returns the total number of elements in the
@@ -595,7 +595,7 @@ def ZAP_TensorSIMDStoreOp : ZAPOp<"tensor.simd_store"> {
 // TensorDTypeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorDTypeOp : ZAPOp<"tensor.dtype", [NoSideEffect]> {
+def ZAP_TensorDTypeOp : ZAPOp<"tensor.dtype", [Pure]> {
   let summary = "get the dtype of the tensor";
   let description = [{
     The `zap.tensor.dtype` operation returns the dtype of the given tensor as an
@@ -620,7 +620,7 @@ def ZAP_TensorDTypeOp : ZAPOp<"tensor.dtype", [NoSideEffect]> {
 // TensorRankOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorRankOp : ZAPOp<"tensor.rank", [NoSideEffect]> {
+def ZAP_TensorRankOp : ZAPOp<"tensor.rank", [Pure]> {
   let summary = "get the rank of the tensor";
   let description = [{
     The `zap.tensor.rank` operation returns the rank of the given tensor as an
@@ -645,7 +645,7 @@ def ZAP_TensorRankOp : ZAPOp<"tensor.rank", [NoSideEffect]> {
 // TensorAddressOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorAddressOp : ZAPOp<"tensor.address", [NoSideEffect,
+def ZAP_TensorAddressOp : ZAPOp<"tensor.address", [Pure,
     TensorPointerType<"tensor", "ptr">]> {
   let summary = "get the address of the tensor";
   let description = [{
@@ -701,7 +701,7 @@ def ZAP_PrintOp : ZAPOp<"print"> {
 def KnownSizeSI8Array : ConfinedType<ArrayKnownSize,
     [CPred<"isSI8Array($_self)">], "array of scalar `si8`">;
 
-def POP_GlobalStringOp : ZAPOp<"global_string", [NoSideEffect]> {
+def POP_GlobalStringOp : ZAPOp<"global_string", [Pure]> {
   let summary = "create a global string";
   let description = [{
     The `zap.global_string` operation creates a global string value and returns

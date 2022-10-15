@@ -68,31 +68,6 @@ struct ModulePtrKeyInfo {
     return std::to_string(size_t(moduleHash));
   }
 };
-class LLVMOptimizer {
-public:
-  LLVMOptimizer() : passmgr(std::make_unique<llvm::legacy::PassManager>()) {
-    using namespace llvm;
-    passmgr->add(createFunctionInliningPass());
-    passmgr->add(createSCCPPass());
-    passmgr->add(createLICMPass());
-    passmgr->add(createLoopStrengthReducePass());
-    passmgr->add(createCFGSimplificationPass());
-    passmgr->add(createAggressiveInstCombinerPass());
-    passmgr->add(createStripDeadDebugInfoPass());  // Remove dead debug info
-    passmgr->add(createStripDeadPrototypesPass()); // Remove dead func decls
-  }
-
-  llvm::Expected<llvm::orc::ThreadSafeModule>
-  operator()(llvm::orc::ThreadSafeModule tsm,
-             llvm::orc::MaterializationResponsibility &r) {
-    tsm.withModuleDo([this](llvm::Module &m) { passmgr->run(m); });
-    return std::move(tsm);
-  }
-
-private:
-  std::unique_ptr<llvm::legacy::PassManager> passmgr;
-};
-
 } // namespace
 
 /// Setup the machine properties from the current architecture.
@@ -142,17 +117,20 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   // Create the JIT.
   auto jitOr =
       llvm::orc::LLJITBuilder()
-          .setCompileFunctionCreator(
-              [&](const llvm::orc::JITTargetMachineBuilder &jtmb) {
-                return std::make_unique<llvm::orc::TMOwningSimpleCompiler>(
-                    std::move(*machineOr));
+          // TODO: The default ObjectLinkingLayer registers an eh_frame handler
+          //       that results in an undefined symbol. However, removing that
+          //       handler may break debugging for JIT'ed code, so we need to
+          //       revisit this.
+          .setObjectLinkingLayerCreator(
+              [](llvm::orc::ExecutionSession &ES, const llvm::Triple &)
+                  -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+                return std::make_unique<llvm::orc::ObjectLinkingLayer>(ES);
               })
           .create();
   if (!jitOr)
     return M::Error(llvm::toString(jitOr.takeError()));
 
   ee.jit = std::move(*jitOr);
-  ee.jit->getIRTransformLayer().setTransform(LLVMOptimizer());
   return ee;
 }
 
