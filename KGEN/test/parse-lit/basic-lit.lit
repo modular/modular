@@ -19,7 +19,7 @@ def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[TMP]], %c_2
   c = b # Parameters are mutable!
 
-  # CHECK-NEXT: %z = lit.var.decl "z": <index>
+  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[A]]
@@ -40,7 +40,7 @@ def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
   z = a * (5 + 6)
 
-  # CHECK-NEXT: %x = lit.var.decl "x": <index>
+  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
   # This is checking the lexer handles \ at end of line correctly.
@@ -69,21 +69,21 @@ def noop():
   pass
   # CHECK-NEXT : kgen.return
 
-# CHECK-LABEL: kgen.struct.decl @EmptyStruct {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct {
 struct EmptyStruct:
   # No body
 # CHECK-NEXT: }
 
-# CHECK-LABEL: kgen.struct.decl @OneLineStruct<size> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<size> {
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
-# CHECK-LABEL: kgen.struct.decl @Int {
+# CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
   pass
 # CHECK-NEXT: }
 
-# CHECK-LABEL: kgen.struct.decl @Pair {
+# CHECK-LABEL: lit.struct.decl @Pair {
 struct Pair:
   #var a : Int
   #var b : Int
