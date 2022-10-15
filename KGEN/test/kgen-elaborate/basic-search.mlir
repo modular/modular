@@ -41,3 +41,24 @@ kgen.generator public @returnTwo() -> !pop.scalar<f32> {
   kgen.return %1 : !pop.scalar<f32>
 }
 // CHECK-NOT: kgen.call @badAddOne
+
+
+// CHECK-LABEL: kgen.func public @"even_only,param=72"()
+// CHECK-NOT: @"even_only,
+// CHECK-LABEL: kgen.func public @"even_only,param=16"() {
+// CHECK-NOT: @"even_only,
+kgen.generator public @even_only<param>() {
+  kgen.param.assert <eq(and(param, 1), 0)>, "the param shalt be even!"
+  kgen.return
+}
+
+// This should turn into two variants exactly, not a duplicate for 72.
+// CHECK-LABEL: kgen.func public @find_even
+// CHECK-LABEL: kgen.func public @find_even
+// CHECK-NOT: kgen.func public @find_even
+kgen.generator public @find_even() {
+  kgen.param.search seventy_two = <72>
+  kgen.param.search value = <3, 16, 1, 72, seventy_two>
+  kgen.call @even_only<param=value>() : () -> ()
+  kgen.return
+}

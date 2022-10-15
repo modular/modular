@@ -46,32 +46,6 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
-// custom<ParamDeclareOpValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
-                                            ParamDeclArrayAttr &paramDecls,
-                                            TypedAttr &value) {
-  std::string varname;
-  Type valTy;
-  if (p.parseKeywordOrString(&varname) ||
-      parseParamConstantOpValue(p, value, valTy))
-    return failure();
-
-  paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
-      ParamDeclAttr::get(varname, valTy));
-  return success();
-}
-
-static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
-                                     ParamDeclArrayAttr paramDecls,
-                                     TypedAttr value) {
-  ParamDeclAttr variable = paramDecls.front();
-  printParamName(p, variable.getName().getValue());
-  printParamConstantOpValue(p, nullptr, value, value.getType());
-}
-
-//===----------------------------------------------------------------------===//
 // custom<ParameterValues>
 //===----------------------------------------------------------------------===//
 
@@ -125,6 +99,28 @@ static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
+                                            ParamDeclArrayAttr &paramDecls,
+                                            TypedAttr &value) {
+  std::string varname;
+  Type valTy;
+  if (p.parseKeywordOrString(&varname) ||
+      parseParamConstantOpValue(p, value, valTy))
+    return failure();
+
+  paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
+      ParamDeclAttr::get(varname, valTy));
+  return success();
+}
+
+static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
+                                     ParamDeclArrayAttr paramDecls,
+                                     TypedAttr value) {
+  ParamDeclAttr variable = paramDecls.front();
+  printParamName(p, variable.getName().getValue());
+  printParamConstantOpValue(p, nullptr, value, value.getType());
+}
+
 void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
                            ParamDeclAttr decl, Attribute value) {
   build(builder, result, /*no result types*/ TypeRange{},
@@ -134,6 +130,54 @@ void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
 ParamDeclAttr ParamDeclareOp::getParamDecl() {
   assert(getParamDecls().size() == 1 &&
          "ParamDeclareOp only allows a single parameter decl.");
+  return *getParamDecls().begin();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamSearchOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamSearchOpValue(OpAsmParser &p,
+                                           ParamDeclArrayAttr &paramDecls,
+                                           ArrayAttr &values) {
+  std::string varname;
+  Type valTy;
+  SmallVector<Attribute> valuesElts;
+
+  if (p.parseKeywordOrString(&varname) || parseColonTypeOrIndex(p, valTy) ||
+      p.parseEqual() ||
+      p.parseCommaSeparatedList(OpAsmParser::Delimiter::LessGreater,
+                                [&]() -> ParseResult {
+                                  TypedAttr elt;
+                                  if (parseParamValue(p, elt, valTy))
+                                    return failure();
+                                  valuesElts.push_back(elt);
+                                  return success();
+                                }))
+    return failure();
+
+  paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
+      ParamDeclAttr::get(varname, valTy));
+  values = p.getBuilder().getAttr<ArrayAttr>(valuesElts);
+  return success();
+}
+
+static void printParamSearchOpValue(OpAsmPrinter &p, Operation *,
+                                    ParamDeclArrayAttr paramDecls,
+                                    ArrayAttr values) {
+  ParamDeclAttr variable = paramDecls.front();
+  printParamName(p, variable.getName().getValue());
+
+  printColonTypeOrIndex(p.getStream(), variable.getType());
+  p << " = <";
+  llvm::interleaveComma(values, p,
+                        [&](Attribute elt) { printParamValue(p, elt); });
+  p << ">";
+}
+
+ParamDeclAttr ParamSearchOp::getParamDecl() {
+  assert(getParamDecls().size() == 1 &&
+         "ParamSearchOp only allows a single parameter decl.");
   return *getParamDecls().begin();
 }
 
