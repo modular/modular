@@ -431,6 +431,7 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [Pure]> {
   }];
 
   let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 

@@ -145,6 +145,14 @@ kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, f32>,
 
 // -----
 
+kgen.generator @zap_tensor_dim(%arg0 : !zap.tensor<[3], f32>) {
+  // expected-error @below {{'zap.tensor.dim' op requires the '1' index to be less than the rank of the tensor's rank of '1'}}
+  zap.tensor.dim %arg0[1] : !zap.tensor<[3], f32>
+  kgen.return
+}
+
+// -----
+
 kgen.func @string_wrong_array_size() {
   // expected-error @below {{expected array result to have 6 elements but got 1}}
   %0 = zap.global_string "foobar"[1]

@@ -244,6 +244,19 @@ LogicalResult TensorSIMDStoreOp::verify() {
 // TensorDimOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult TensorDimOp::verify() {
+  size_t index = getIndexAttr().getInt();
+  size_t rank = getTensor().getType().getRank();
+  if (index < rank)
+    return success();
+
+  return emitOpError("requires the '")
+         << index
+         << "' index to be less than the rank of the "
+            "tensor's rank of '"
+         << rank << "'";
+}
+
 OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 1 && "zap.tensor.dim has one operand");
   // A null size indicates ? size (unknown size). Since returning null
