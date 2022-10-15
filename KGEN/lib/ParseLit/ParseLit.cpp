@@ -1208,7 +1208,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   auto builder = currentScope->getBuilder();
   // TODO: Should have nicer builder.
-  auto newStruct = builder.create<StructDeclOp>(
+  auto newStruct = builder.create<LITStructDeclOp>(
       loc, nameAttr,
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
       TypeArrayAttr::get(getContext(), {}));

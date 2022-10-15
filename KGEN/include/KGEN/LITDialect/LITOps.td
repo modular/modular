@@ -24,8 +24,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def LITFuncOp
-  : LITOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
-                   Symbol, IsolatedFromAbove,
+  : LITOp<"func", [FunctionOpInterface, Symbol, IsolatedFromAbove,
                    SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                    DeclareOpInterfaceMethods<KGENDeclInterface>,
@@ -58,6 +57,34 @@ def LITFuncOp
   let hasCustomAssemblyFormat = 1;
 }
 
+
+//===----------------------------------------------------------------------===//
+// LITStructDeclOp
+//===----------------------------------------------------------------------===//
+
+def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
+                  DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                  DeclareOpInterfaceMethods<KGENDeclInterface>, NoTerminator]> {
+  let summary = "Struct declaration.";
+  let description = [{
+    The `lit.struct.decl` operation represents a Lightning struct declaration.
+    This models the syntactic structure, which can contain functions and other
+    things just like Lightning source.
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
+                       // Needed for KGENDeclInterface. Always empty.
+                       KTypeArrayAttr:$resultParamTypes);
+  let regions = (region SizedRegion<1>:$fields);
+  let assemblyFormat = [{
+    $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    attr-dict-with-keyword
+    $fields
+  }];
+
+  let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // VarDeclOp
 //===----------------------------------------------------------------------===//
@@ -68,5 +95,5 @@ def VarDeclOp : LITOp<"var.decl",
 
   let arguments = (ins StrAttr:$name);
   let results = (outs POP_PointerType:$result);
-  let assemblyFormat = "$name `` `:` type($result) attr-dict";
+  let assemblyFormat = "$name `:` type($result) attr-dict";
 }

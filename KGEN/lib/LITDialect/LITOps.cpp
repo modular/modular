@@ -83,6 +83,33 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// LITStructDeclOp
+//===----------------------------------------------------------------------===//
+
+/// Struct declarations aren't functions.
+FunctionType LITStructDeclOp::getFunctionType() {
+  llvm_unreachable("structs don't have function types");
+}
+
+/// Verify that the body has no arguments and that the declaration has no result
+/// types.
+LogicalResult LITStructDeclOp::verify() {
+  if (getFields().getNumArguments())
+    return emitOpError("expected declaration body to have no arguments");
+
+  if (!getResultParamTypes().empty())
+    return emitOpError("unexpected result parameters");
+
+  return success();
+}
+
+/// Verify parameter uses.
+LogicalResult
+LITStructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
