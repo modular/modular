@@ -26,7 +26,7 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
+def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ElaboratorOpInterface, ["finalizeElaboration"]>
   ]> {
@@ -116,7 +116,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, NoSideEffect,
 
 // Base class for unary arithmetic pop operations.
 class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [NoSideEffect, SameOperandsAndResultType]> {
+       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let assemblyFormat = "$operand attr-dict `:` type($result)";
 }
 
@@ -172,7 +172,7 @@ def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
 
 // Base class for binary arithmetic pop operations.
 class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [NoSideEffect, SameOperandsAndResultType]> {
+       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
 }
 
@@ -389,7 +389,7 @@ def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
 
 // Base class for ternary arithmetic pop operations.
 class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [NoSideEffect, SameOperandsAndResultType]> {
+       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let assemblyFormat = "$a `,` $b `,` $c attr-dict `:` type($result)";
 }
 
@@ -424,7 +424,7 @@ def POP_FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-def POP_CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
+def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
                           DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "comparison";
   let description = [{
@@ -455,7 +455,7 @@ def POP_CmpOp : POPOp<"cmp", [NoSideEffect, SameTypeOperands,
 //===----------------------------------------------------------------------===//
 
 def POP_SelectOp : POPOp<"select",
-        [NoSideEffect,
+        [Pure,
          AllTypesMatch<["trueValue", "falseValue", "result"]>,
          TypesMatchWith<"bool of same branch type", "result", "condition",
                         "getBoolOfSameParentType($_self)">
@@ -489,7 +489,7 @@ def POP_SelectOp : POPOp<"select",
 // BitCastOp
 //===----------------------------------------------------------------------===//
 
-def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
+def POP_BitcastOp : POPOp<"bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "scalar and simd bitcast";
   let description = [{
@@ -517,7 +517,7 @@ def POP_BitcastOp : POPOp<"bitcast", [NoSideEffect,
 // PointerBitcastOp
 //===----------------------------------------------------------------------===//
 
-def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [NoSideEffect,
+def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "pointer bitcast";
   let description = [{
@@ -546,7 +546,7 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [NoSideEffect,
 // CastOp
 //===----------------------------------------------------------------------===//
 
-def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
+def POP_CastOp : POPOp<"cast", [Pure]> {
   let summary = "element wise cast";
   let description = [{
     Perform an element-wise cast between SIMD vectors types or between scalar
@@ -573,7 +573,7 @@ def POP_CastOp : POPOp<"cast", [NoSideEffect]> {
 // SIMDExtractElementOp
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
+def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     ScalarOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
@@ -601,7 +601,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [NoSideEffect,
 // SIMDInsertElementOp
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
+def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     ScalarOfSameDType<"vector", "value">,
     AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
@@ -632,7 +632,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [NoSideEffect,
 // SIMDShuffle
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
+def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     AllTypesMatch<["lhs", "rhs"]>]> {
   let summary = "shufflevector operation";
   let description = [{
@@ -665,7 +665,7 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [NoSideEffect,
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
+def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
     ScalarOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
@@ -697,7 +697,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [NoSideEffect,
 
 // Base class for SIMD reduction operations.
 class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
-    POPOp<mnemonic, traits # [ NoSideEffect,
+    POPOp<mnemonic, traits # [ Pure,
                                ScalarOfSameDType<"operand", "result">]>,
     Arguments<(ins POP_SIMDType:$operand)>,
     Results<(outs POP_ScalarType:$result)> {
@@ -863,7 +863,7 @@ def POP_PrefetchOp : POPOp<"prefetch"> {
 //===----------------------------------------------------------------------===//
 
 def POP_OffsetOp : POPOp<"offset",
-    [NoSideEffect, AllTypesMatch<["result", "ptr"]>]> {
+    [Pure, AllTypesMatch<["result", "ptr"]>]> {
   let summary = "pointer offset operation";
   let description = [{
     The `pop.offset` operation takes a pointer and increments or decrements its
@@ -888,7 +888,7 @@ def POP_OffsetOp : POPOp<"offset",
 // StructConstructOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect,
+def POP_StructConstructOp : POPOp<"struct.construct", [Pure,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
                    "$_self.cast<StructType>().getParameterizedElementTypes()">
@@ -920,7 +920,7 @@ def POP_StructConstructOp : POPOp<"struct.construct", [NoSideEffect,
 // StructGetOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructGetOp : POPOp<"struct.get", [NoSideEffect,
+def POP_StructGetOp : POPOp<"struct.get", [Pure,
     DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "struct extract value";
   let description = [{
@@ -955,7 +955,7 @@ def POP_StructGetOp : POPOp<"struct.get", [NoSideEffect,
 // StructReplaceOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructReplaceOp : POPOp<"struct.replace", [NoSideEffect,
+def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
     AllTypesMatch<["container", "result"]>]> {
   let summary = "struct insert value";
   let description = [{
@@ -991,7 +991,7 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [NoSideEffect,
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayCreateOp : POPOp<"array.create", [NoSideEffect,
+def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
     ArrayElementType<"result", "operands">]> {
   let summary = "create an array";
   let description = [{
@@ -1030,7 +1030,7 @@ def POP_ArrayCreateOp : POPOp<"array.create", [NoSideEffect,
 // ArrayRepeatOp
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayRepeatOp : POPOp<"array.repeat", [NoSideEffect,
+def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
     ArrayElementType<"result", "operands">]> {
   let summary = "create an array";
   let description = [{
@@ -1068,7 +1068,7 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [NoSideEffect,
 // ArrayGetOp
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayGetOp : POPOp<"array.get", [NoSideEffect,
+def POP_ArrayGetOp : POPOp<"array.get", [Pure,
     ArrayElementType<"array", "result">]> {
   let summary = "array get element";
   let description = [{
@@ -1101,7 +1101,7 @@ def POP_ArrayGetOp : POPOp<"array.get", [NoSideEffect,
 // ArrayReplaceOp
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayReplaceOp : POPOp<"array.replace", [NoSideEffect,
+def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
     AllTypesMatch<["array", "result"]>, ArrayElementType<"result", "value">]> {
   let summary = "array replace element";
   let description = [{
@@ -1133,7 +1133,7 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [NoSideEffect,
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
-def VariantCreateOp : POPOp<"variant.create", [NoSideEffect]> {
+def VariantCreateOp : POPOp<"variant.create", [Pure]> {
   let summary = "Create a parametric variant.";
   let description = [{
     The `pop.variant.create` operation creates a variant of the referred type
@@ -1167,7 +1167,7 @@ def VariantCreateOp : POPOp<"variant.create", [NoSideEffect]> {
 // VariantIsOp
 //===----------------------------------------------------------------------===//
 
-def VariantIsOp : POPOp<"variant.is", [NoSideEffect]> {
+def VariantIsOp : POPOp<"variant.is", [Pure]> {
   let summary = "Check the field contained by a variant.";
   let description = [{
     The `pop.variant.is` operation checks whether the given variant contains
@@ -1196,7 +1196,7 @@ def VariantIsOp : POPOp<"variant.is", [NoSideEffect]> {
 // VariantGetOp
 //===----------------------------------------------------------------------===//
 
-def VariantGetOp : POPOp<"variant.get", [NoSideEffect]> {
+def VariantGetOp : POPOp<"variant.get", [Pure]> {
   let summary = "Get a variant as one of its possible types.";
   let description = [{
     The `pop.variant.get` operation interprets the given variant as one of its
@@ -1371,7 +1371,7 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
 //===----------------------------------------------------------------------===//
 
 def POP_GlobalConstantOp : POPOp<"global_constant",
-    [NoSideEffect, DeclareOpInterfaceMethods<ElaboratorOpInterface,
+    [Pure, DeclareOpInterfaceMethods<ElaboratorOpInterface,
                                              ["finalizeElaboration"]>]> {
   let summary = "create a global constant";
   let description = [{
@@ -1405,7 +1405,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
-def POP_IndexToPointerOp : POPOp<"index_to_pointer", [NoSideEffect]> {
+def POP_IndexToPointerOp : POPOp<"index_to_pointer", [Pure]> {
   let summary = "converts an index value to a pointer type.";
   let description = [{
     The `pop.index_to_pointer` instruction takes an index value to cast, and a
@@ -1428,7 +1428,7 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [NoSideEffect]> {
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
+def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure]> {
   let summary = "gets the address of the pointer as an index type.";
   let description = [{
     The `pop.pointer_to_index` instruction takes a pointer to cast and gets
@@ -1451,7 +1451,7 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [NoSideEffect]> {
 // CastToBuiltinOp
 //===----------------------------------------------------------------------===//
 
-def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [NoSideEffect]> {
+def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
   let summary = "Unmaterialized type lowering conversion.";
   let description = [{
     The `pop.cast_to_builtin` operation casts a POP type to an MLIR builtin
@@ -1484,7 +1484,7 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [NoSideEffect]> {
 // CastFromBuiltinOp
 //===----------------------------------------------------------------------===//
 
-def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [NoSideEffect]> {
+def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
   let summary = "Unmaterialized type raising conversion.";
   let description = [{
     The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP

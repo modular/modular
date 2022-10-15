@@ -285,7 +285,7 @@ def RegionBodyOp : KGENOp<"region.body",
 //===----------------------------------------------------------------------===//
 
 def ParamConstantOp : KGENOp<"param.constant",
-                             [FirstAttrDerivedResultType, NoSideEffect,
+                             [FirstAttrDerivedResultType, Pure,
                               ConstantLike]> {
   let summary = [{
     Return the value of a parameter expression as an SSA value that may be used
@@ -524,7 +524,7 @@ def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
-def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
+def StructCreateOp : KGENOp<"struct.create", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Create a parametric struct.";
   let description = [{
@@ -558,7 +558,7 @@ def StructCreateOp : KGENOp<"struct.create", [NoSideEffect,
 // StructInsertOp
 //===----------------------------------------------------------------------===//
 
-def StructInsertOp : KGENOp<"struct.insert", [NoSideEffect,
+def StructInsertOp : KGENOp<"struct.insert", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     AllTypesMatch<["container", "result"]>]> {
   let summary = "Insert a value into a struct.";
@@ -591,7 +591,7 @@ def StructInsertOp : KGENOp<"struct.insert", [NoSideEffect,
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
-def StructExtractOp : KGENOp<"struct.extract", [NoSideEffect,
+def StructExtractOp : KGENOp<"struct.extract", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Extract a value from a struct.";
   let description = [{
