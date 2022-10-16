@@ -1121,6 +1121,30 @@ struct ConvertPOPCastFromBuiltin
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPCastFromBuiltin
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto isVolatile = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile().has_value()));
+    if (op.getIsInlined()) {
+      rewriter.replaceOpWithNewOp<LLVM::MemcpyInlineOp>(
+          op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(),
+          isVolatile);
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
+        op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(), isVolatile);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1168,18 +1192,18 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPArrayReplace,
       ConvertPOPBitcast,
       ConvertPOPCast,
-      ConvertPOPCastToBuiltin,
       ConvertPOPCastFromBuiltin,
+      ConvertPOPCastToBuiltin,
       ConvertPOPCmp,
       ConvertPOPConstant,
       ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,
-      ConvertPOPStructGet,
-      ConvertPOPIndirectCall,
       ConvertPOPIndexToPointer,
+      ConvertPOPIndirectCall,
       ConvertPOPLoad,
       ConvertPOPMax,
+      ConvertPOPMemcpy,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
@@ -1187,7 +1211,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPPrefetch,
-      ConvertPOPStructReplace,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
@@ -1201,6 +1224,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPStructConstruct,
+      ConvertPOPStructGet,
+      ConvertPOPStructReplace,
       ConvertPOPSub,
       ConvertPOPVariantCreate,
       ConvertPOPVariantGet,

@@ -530,32 +530,32 @@ kgen.func @prefetch(%p: !pop.pointer<!pop.scalar<si32>>) {
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
-  pop.prefetch %p (NoLocality, ReadDCache) 
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
+  pop.prefetch %p (NoLocality, ReadDCache)
     : !pop.pointer<!pop.scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
-  pop.prefetch %p (LowLocality, WriteDCache) 
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
+  pop.prefetch %p (LowLocality, WriteDCache)
     : !pop.pointer<!pop.scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(2 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
-  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
-  pop.prefetch %p (MediumLocality, ReadICache) 
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
+  pop.prefetch %p (MediumLocality, ReadICache)
     : !pop.pointer<!pop.scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(3 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
-  pop.prefetch %p (HighLocality, ReadDCache) 
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
+  pop.prefetch %p (HighLocality, ReadDCache)
     : !pop.pointer<!pop.scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(4 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]]) 
-  pop.prefetch %p (VeryHighLocality, ReadDCache) 
+  // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
+  pop.prefetch %p (VeryHighLocality, ReadDCache)
     : !pop.pointer<!pop.scalar<si32>>
   kgen.return
 }
@@ -607,4 +607,59 @@ kgen.func @indirect_call(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f3
   %0:2 = pop.indirect_call %fn(%a, %b) : (i32, i64) -> (f32, f64)
   // CHECK: return %[[R0]], %[[R1]] : f32, f64
   kgen.return %0#0, %0#1 : f32, f64
+}
+
+// -----
+
+// CHECK-LABEL: @memcpy
+// CHECK-SAME: %[[DEST:.*]]: !pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[SRC:.*]]: !pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[SIZE:.*]]: index
+kgen.func @memcpy(%dest: !pop.pointer<!pop.scalar<si32>>,
+                  %src: !pop.pointer<!pop.scalar<f32>>,
+                  %size: index) {
+  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
+  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
+  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
+  // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(false) : i1
+  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, !llvm.ptr<f32>, i64, i1) -> ()
+  pop.memcpy %dest, %src, %size : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<si32>>
+  kgen.return
+}
+
+
+// -----
+
+// CHECK-LABEL: @memcpy_volatile
+// CHECK-SAME: %[[DEST:.*]]: !pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[SRC:.*]]: !pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[SIZE:.*]]: index
+kgen.func @memcpy_volatile(%dest: !pop.pointer<!pop.scalar<si32>>,
+                           %src: !pop.pointer<!pop.scalar<f32>>,
+                           %size: index) {
+  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
+  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
+  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
+  // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(true) : i1
+  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, !llvm.ptr<f32>, i64, i1) -> ()
+  pop.memcpy volatile %dest, %src, %size : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<si32>>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @memcpy_inline
+// CHECK-SAME: %[[DEST:.*]]: !pop.pointer<!pop.scalar<si32>>
+// CHECK-SAME: %[[SRC:.*]]: !pop.pointer<!pop.scalar<f32>>
+// CHECK-SAME: %[[SIZE:.*]]: index
+kgen.func @memcpy_inline(%dest: !pop.pointer<!pop.scalar<si32>>,
+                         %src: !pop.pointer<!pop.scalar<f32>>,
+                         %size: index) {
+  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
+  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
+  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
+  // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(false) : i1
+  // CHECK:  "llvm.intr.memcpy.inline"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, !llvm.ptr<f32>, i64, i1) -> ()
+  pop.memcpy inline %dest, %src, %size : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.scalar<si32>>
+  kgen.return
 }
