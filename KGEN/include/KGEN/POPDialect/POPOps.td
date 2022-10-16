@@ -1333,14 +1333,15 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-def POP_MemcpyOp : POPOp<"memcpy"> {
+def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
   let summary = "copies memory from one location to another";
   let description = [{
     The `pop.memcpy` operation copies memory from the src operand to the
-    destination operand. The the source location to the destination location
-    must either be equal or non-overlapping. It copies `size` bytes of memory
-    over. The `pop.memcpy` does not return a value and lowers to either an
-    `"llvm.intrin.memcpy"` or `"llvm.intr.memcpy.inline"` LLVM dialect Op.
+    destination operand. The element type of both the source and destination
+    locations must be the same. The the source location to the destination
+    location must either be equal or non-overlapping. It copies `size` bytes of
+    memory over. The `pop.memcpy` does not return a value and lowers to either
+    an `"llvm.intrin.memcpy"` or `"llvm.intr.memcpy.inline"` LLVM dialect Op.
 
     The first argument is a pointer to the destination, the second is a pointer
     to the source. The third argument is an integer argument specifying the
@@ -1359,18 +1360,15 @@ def POP_MemcpyOp : POPOp<"memcpy"> {
 
     ```mlir
     // Copy size bytes from src to dest.
-    pop.memcpy %dest, %src, %size : !pop.pointer<!pop.scalar<type>> to
-                                    !pop.pointer<!pop.scalar<i32>>
+    pop.memcpy %dest, %src, %size : !pop.pointer<!pop.scalar<type>>
 
     // Generate an inlined memcpy which copies size bytes from src to dest.
-    pop.memcpy inline %dest, %src, %size : !pop.pointer<!pop.scalar<i32>> to
-                                           !pop.pointer<!pop.scalar<type>>
+    pop.memcpy inline %dest, %src, %size : !pop.pointer<!pop.scalar<i32>>
 
     // Generate an inlined memcpy which copies size bytes from src to dest and
     // mark the memcpy as a volatile access.
     pop.memcpy inline volatile %dest, %src, %size :
-                                           !pop.pointer<!pop.scalar<i32>> to
-                                           !pop.pointer<!pop.scalar<i32>>
+                                           !pop.pointer<!pop.scalar<f32>>
     ```
   }];
 
@@ -1382,7 +1380,7 @@ def POP_MemcpyOp : POPOp<"memcpy"> {
 
   let assemblyFormat = [{
     (`inline` $isInlined^)? (`volatile` $isVolatile^)? operands attr-dict `:`
-    qualified(type($src)) `to` qualified(type($dest))
+    qualified(type($src))
   }];
 }
 
