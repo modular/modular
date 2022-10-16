@@ -144,3 +144,27 @@ struct Struct: def foo(): pass
 struct Pair:
   # expected-error @+1 {{cannot return from this context}}
   return 42
+
+# // -----
+
+def f():
+  # expected-error @+1 {{var declaration requires a type}}
+  var x = 42
+
+# // -----
+
+struct Str:
+  var x : Int    # expected-note {{previous definition here}}
+  var x : Float  # expected-error {{invalid redefinition of "x"}}
+
+# // -----
+
+def var_decl():
+  x = 123        # expected-note {{previous definition here}}
+  var x : Int    # expected-error {{invalid redefinition of "x"}}
+
+# // -----
+
+struct Pair:
+  var a : Int   # expected-note {{previous definition here}}
+  var a : Int   # expected-error {{invalid redefinition of "a"}}
