@@ -605,6 +605,7 @@ private:
   ParseResult parseStructStmt(size_t curIndent);
 
   // Simple statements.
+  ParseResult parseVarDeclStmt();
   ParseResult parseReturnStmt();
   ParseResult parseAssignmentStmt(ExprParser &exprParser, ExprNode *lhs,
                                   SMLoc equalsLoc);
@@ -772,6 +773,7 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
 
 /// simple_stmt ::= expression_stmt
 ///               | assert_stmt [TODO]
+///               | var_decl_stmt
 ///               | assignment_stmt
 ///               | augmented_assignment_stmt [TODO]
 ///               | annotated_assignment_stmt [TODO]
@@ -798,6 +800,8 @@ ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
     // pass_stmt ::= "pass"
     consumeToken(LitToken::kw_pass);
     return success();
+  case LitToken::kw_var:
+    return parseVarDeclStmt();
   case LitToken::kw_return:
     return parseReturnStmt();
   default:
@@ -1106,6 +1110,41 @@ void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
   }
 
   finalizeScopeDecl();
+}
+
+/// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
+///                 | "var" identifier "=" expression [TODO]
+///
+ParseResult LitParser::parseVarDeclStmt() {
+  Location loc = getTokenLocation();
+  StringAttr name;
+
+  if (parseToken(LitToken::kw_var, "expected 'var' declaration") ||
+      parseIdentifier(name, "expected name for 'var' declaration") ||
+      parseToken(LitToken::colon, "var declaration requires a type"))
+    return failure();
+
+  ExprParser exprParser(*this, currentScope);
+  ExprNode *typeExpr = exprParser.parseExpression();
+  // TODO (types): translate typeExpr into a type.
+  (void)typeExpr;
+  Type type = IndexType::get(getContext());
+
+  if (consumeIf(LitToken::equal)) {
+    ExprParser exprParser(*this, currentScope);
+    ExprNode *defaultExpr = exprParser.parseExpression();
+    // TODO: add support for default parameter expressions.
+    if (!defaultExpr->containsError())
+      emitError(defaultExpr->getLoc(), "var initializers not supported yet");
+  }
+  auto builder = currentScope->getBuilder();
+
+  // If we are in a function, emit a variable declaration, if we are in a
+  // struct, emit a field declaration.  Both have the same IR representation.
+  auto varType = POP::PointerType::get(type);
+  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
+  currentScope->addToScope(name, varDecl, sharedParserState->errorOccurred);
+  return success();
 }
 
 /// return_stmt ::= "return" [expression_list]
