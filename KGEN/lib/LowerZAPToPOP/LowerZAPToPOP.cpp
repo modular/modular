@@ -32,14 +32,14 @@ static constexpr int kBufferSizePosition = 1;
 /// The position of the buffer dtype in its struct representation.
 static constexpr int kBufferDTypePosition = 2;
 
-/// The position of the tensor address in its struct representation.
-static constexpr int kTensorAddressPosition = 0;
-/// The position of the tensor rank in its struct representation.
-static constexpr int kTensorRankPosition = 1;
-/// The position of the tensor shape in its struct representation.
-static constexpr int kTensorShapePosition = 2;
-/// The position of the tensor dtype in its struct representation.
-static constexpr int kTensorDTypePosition = 3;
+/// The position of the ndbuffer address in its struct representation.
+static constexpr int kNDBufferAddressPosition = 0;
+/// The position of the ndbuffer rank in its struct representation.
+static constexpr int kNDBufferRankPosition = 1;
+/// The position of the ndbuffer shape in its struct representation.
+static constexpr int kNDBufferShapePosition = 2;
+/// The position of the ndbuffer dtype in its struct representation.
+static constexpr int kNDBufferDTypePosition = 3;
 
 namespace {
 
@@ -523,19 +523,19 @@ struct ConvertRebind : public mlir::OpConversionPattern<RebindOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorConstruct
+// ConvertZAPNDBufferConstruct
 //===----------------------------------------------------------------------===//
 
 /// Construct a buffer struct. If either the size or dtype are dynamic, values
 /// for them must be provided.
-static Value constructTensor(PatternRewriter &rewriter,
-                             TypeConverter &typeConverter, Location loc,
-                             TensorType type, Value ptr, size_t rank,
-                             ValueRange shape = {}, Value dtype = {}) {
+static Value constructNDBuffer(PatternRewriter &rewriter,
+                               TypeConverter &typeConverter, Location loc,
+                               NDBufferType type, Value ptr, size_t rank,
+                               ValueRange shape = {}, Value dtype = {}) {
   IndexType indexType = rewriter.getIndexType();
   // Initialize the shape values with all zeros.
   auto zeroIndex = rewriter.create<index::ConstantOp>(loc, 0);
-  std::array<Value, TensorType::getMaximumRank()> shapeValues;
+  std::array<Value, NDBufferType::getMaximumRank()> shapeValues;
   shapeValues.fill(zeroIndex);
   // Fill the shape values with the provided values or the constants specified
   // by the type.
@@ -558,70 +558,71 @@ static Value constructTensor(PatternRewriter &rewriter,
 }
 
 /// Convert the construction of a buffer to building the underlying struct.
-struct ConvertZAPTensorConstruct
-    : public mlir::OpConversionPattern<TensorConstructOp> {
+struct ConvertZAPNDBufferConstruct
+    : public mlir::OpConversionPattern<NDBufferConstructOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorConstructOp op, TensorConstructOpAdaptor adaptor,
+  matchAndRewrite(NDBufferConstructOp op, NDBufferConstructOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Value tensor =
-        constructTensor(rewriter, *getTypeConverter(), op.getLoc(),
-                        op.getType(), adaptor.getPtr(), op.getType().getRank(),
-                        adaptor.getShape(), adaptor.getDType());
-    rewriter.replaceOp(op, tensor);
+    Value ndbuffer = constructNDBuffer(rewriter, *getTypeConverter(),
+                                       op.getLoc(), op.getType(),
+                                       adaptor.getPtr(), op.getType().getRank(),
+                                       adaptor.getShape(), adaptor.getDType());
+    rewriter.replaceOp(op, ndbuffer);
     return success();
   }
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorAddress
+// ConvertZAPNDBufferAddress
 //===----------------------------------------------------------------------===//
 
-/// Extract the tensor address.
-struct ConvertZAPTensorAddress
-    : public mlir::OpConversionPattern<TensorAddressOp> {
+/// Extract the NDBuffer address.
+struct ConvertZAPNDBufferAddress
+    : public mlir::OpConversionPattern<NDBufferAddressOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorAddressOp op, TensorAddressOpAdaptor adaptor,
+  matchAndRewrite(NDBufferAddressOp op, NDBufferAddressOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
-                                             kTensorAddressPosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
+                                             kNDBufferAddressPosition);
     return success();
   }
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorRank
+// ConvertZAPNDBufferRank
 //===----------------------------------------------------------------------===//
 
-/// Extract the tensor rank.
-struct ConvertZAPTensorRank : public mlir::OpConversionPattern<TensorRankOp> {
+/// Extract the NDBuffer rank.
+struct ConvertZAPNDBufferRank
+    : public mlir::OpConversionPattern<NDBufferRankOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorRankOp op, TensorRankOpAdaptor adaptor,
+  matchAndRewrite(NDBufferRankOp op, NDBufferRankOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
-                                             kTensorRankPosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
+                                             kNDBufferRankPosition);
     return success();
   }
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorDim
+// ConvertZAPNDBufferDim
 //===----------------------------------------------------------------------===//
 
 /// Extract the buffer dimension at index provided.
-struct ConvertZAPTensorDim : public mlir::OpConversionPattern<TensorDimOp> {
+struct ConvertZAPNDBufferDim : public mlir::OpConversionPattern<NDBufferDimOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorDimOp op, TensorDimOpAdaptor adaptor,
+  matchAndRewrite(NDBufferDimOp op, NDBufferDimOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value shape = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
+        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
     rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
                                             op.getIndex());
     return success();
@@ -629,35 +630,36 @@ struct ConvertZAPTensorDim : public mlir::OpConversionPattern<TensorDimOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorSize
+// ConvertZAPNDBufferSize
 //===----------------------------------------------------------------------===//
 
 /// If we know the dimension statically, use a constant. Otherwise, query the
 /// array.
 static Value getDimensionAtIndex(OpBuilder &builder, Location loc,
-                                 TensorType tensorType, Value shape,
+                                 NDBufferType ndBufferType, Value shape,
                                  size_t idx) {
-  ArrayRef<TypedAttr> tensorShape = tensorType.getShape();
-  if (tensorShape[idx])
+  ArrayRef<TypedAttr> ndBufferShape = ndBufferType.getShape();
+  if (ndBufferShape[idx])
     return builder.create<index::ConstantOp>(
-        loc, tensorShape[idx].cast<IntegerAttr>());
+        loc, ndBufferShape[idx].cast<IntegerAttr>());
   return builder.create<ArrayGetOp>(loc, shape, idx);
 }
 
-/// Compute the size of the tensor.
-struct ConvertZAPTensorSize : public mlir::OpConversionPattern<TensorSizeOp> {
+/// Compute the size of the ndBuffer.
+struct ConvertZAPNDBufferSize
+    : public mlir::OpConversionPattern<NDBufferSizeOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorSizeOp op, TensorSizeOpAdaptor adaptor,
+  matchAndRewrite(NDBufferSizeOp op, NDBufferSizeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
-    TensorType tensorType = op.getTensor().getType();
-    Value shape = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
-                                               kTensorShapePosition);
-    Value product = getDimensionAtIndex(rewriter, loc, tensorType, shape, 0);
-    for (size_t i = 1, e = tensorType.getRank(); i < e; ++i) {
-      Value dim = getDimensionAtIndex(rewriter, loc, tensorType, shape, i);
+    NDBufferType ndBufferType = op.getNDBuffer().getType();
+    Value shape = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+                                               kNDBufferShapePosition);
+    Value product = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, 0);
+    for (size_t i = 1, e = ndBufferType.getRank(); i < e; ++i) {
+      Value dim = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, i);
       product = rewriter.create<index::MulOp>(loc, product, dim);
     }
     rewriter.replaceOp(op, product);
@@ -666,29 +668,30 @@ struct ConvertZAPTensorSize : public mlir::OpConversionPattern<TensorSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorDType
+// ConvertZAPNDBufferDType
 //===----------------------------------------------------------------------===//
 
-/// Extract the tensor rank.
-struct ConvertZAPTensorDType : public mlir::OpConversionPattern<TensorDTypeOp> {
+/// Extract the NDBuffer rank.
+struct ConvertZAPNDBufferDType
+    : public mlir::OpConversionPattern<NDBufferDTypeOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorDTypeOp op, TensorDTypeOpAdaptor adaptor,
+  matchAndRewrite(NDBufferDTypeOp op, NDBufferDTypeOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getTensor(),
-                                             kTensorDTypePosition);
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
+                                             kNDBufferDTypePosition);
     return success();
   }
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorLoad
+// ConvertZAPNDBufferLoad
 //===----------------------------------------------------------------------===//
 
 /// Generates pop/index ops that computes the linearized index expression given
-/// a tensor shape array and an index array, by essentially computing a dot
-/// product between the index and shape vectors. Assumes that the tensor is in
+/// a NDBuffer shape array and an index array, by essentially computing a dot
+/// product between the index and shape vectors. Assumes that the NDBuffer is in
 /// row-major contiguous layout. This function also assumes the index and shape
 /// layout as [x,y,z,0,0], with x being the highest order dimension i.e.
 /// outermost dimension.
@@ -696,7 +699,7 @@ struct ConvertZAPTensorDType : public mlir::OpConversionPattern<TensorDTypeOp> {
 /// This function computes the dot product between the index and shape vector.
 /// Example:
 ///
-///   zap.tensor.load %tensor[x, y, z] : !zap.tensor<[a,b,c], dtype>
+///   zap.ndbuffer.load %ndBuffer[x, y, z] : !zap.ndbuffer<[a,b,c], dtype>
 ///
 /// will compute the `accumulatedOffset` by
 ///
@@ -705,7 +708,7 @@ struct ConvertZAPTensorDType : public mlir::OpConversionPattern<TensorDTypeOp> {
 /// in 2 iterations, each iteration multiplies a number from the shape list and
 /// adds a number from the index list.
 static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
-                                        Location loc, TensorType tensorType,
+                                        Location loc, NDBufferType ndBufferType,
                                         Value shapeArray,
                                         ValueRange indexArray) {
   // Initialize `accumulatedOffset` with the innermost index. e.g. add the `x`
@@ -719,7 +722,7 @@ static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
   for (auto indexValue : llvm::drop_begin(indexArray)) {
     // Dimension size at current position from the shape list. e.g. load the `b`
     // term from example above.
-    Value positionSize = getDimensionAtIndex(rewriter, loc, tensorType,
+    Value positionSize = getDimensionAtIndex(rewriter, loc, ndBufferType,
                                              shapeArray, indexPosition++);
 
     // Multiply by the current size, e.g. x-> b*x from example above.
@@ -734,19 +737,20 @@ static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
   return accumulatedOffset;
 }
 
-/// Load a scalar value from tensor given a list of position indices.
-struct ConvertZAPTensorLoad : public mlir::OpConversionPattern<TensorLoadOp> {
+/// Load a scalar value from NDBuffer given a list of position indices.
+struct ConvertZAPNDBufferLoad
+    : public mlir::OpConversionPattern<NDBufferLoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorLoadOp op, TensorLoadOpAdaptor adaptor,
+  matchAndRewrite(NDBufferLoadOp op, NDBufferLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value shapeArray = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
-                                              kTensorAddressPosition);
+        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(
+        op.getLoc(), adaptor.getNDBuffer(), kNDBufferAddressPosition);
     auto offset = linearizeContiguousIndices(
-        rewriter, op->getLoc(), op.getTensor().getType().cast<TensorType>(),
+        rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
     rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/None);
@@ -755,22 +759,23 @@ struct ConvertZAPTensorLoad : public mlir::OpConversionPattern<TensorLoadOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorStore
+// ConvertZAPNDBufferStore
 //===----------------------------------------------------------------------===//
 
-/// Store a scalar value into tensor given a list of position indices.
-struct ConvertZAPTensorStore : public mlir::OpConversionPattern<TensorStoreOp> {
+/// Store a scalar value into NDBuffer given a list of position indices.
+struct ConvertZAPNDBufferStore
+    : public mlir::OpConversionPattern<NDBufferStoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorStoreOp op, TensorStoreOpAdaptor adaptor,
+  matchAndRewrite(NDBufferStoreOp op, NDBufferStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value shapeArray = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getTensor(), kTensorShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getTensor(),
-                                              kTensorAddressPosition);
+        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(
+        op.getLoc(), adaptor.getNDBuffer(), kNDBufferAddressPosition);
     auto offset = linearizeContiguousIndices(
-        rewriter, op->getLoc(), op.getTensor().getType().cast<TensorType>(),
+        rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
     rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
@@ -780,25 +785,25 @@ struct ConvertZAPTensorStore : public mlir::OpConversionPattern<TensorStoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorSIMDLoad
+// ConvertZAPNDBufferSIMDLoad
 //===----------------------------------------------------------------------===//
 
-/// Load a simd value from tensor given a list of position indices.
-struct ConvertZAPTensorSIMDLoad
-    : public mlir::OpConversionPattern<TensorSIMDLoadOp> {
+/// Load a simd value from NDBuffer given a list of position indices.
+struct ConvertZAPNDBufferSIMDLoad
+    : public mlir::OpConversionPattern<NDBufferSIMDLoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorSIMDLoadOp op, TensorSIMDLoadOpAdaptor adaptor,
+  matchAndRewrite(NDBufferSIMDLoadOp op, NDBufferSIMDLoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
-    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
-                                                    kTensorShapePosition);
-    Value base = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
-                                              kTensorAddressPosition);
+    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+                                                    kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+                                              kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
-        rewriter, loc, op.getTensor().getType().cast<TensorType>(), shapeArray,
-        op.getPositions());
+        rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
+        shapeArray, op.getPositions());
     Value simdPtr = rewriter.create<PointerBitcastOp>(
         loc, PointerType::get(op.getType()), base);
     Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
@@ -808,25 +813,26 @@ struct ConvertZAPTensorSIMDLoad
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorSIMDStore
+// ConvertZAPNDBufferSIMDStore
 //===----------------------------------------------------------------------===//
 
-/// Store a simd value into the tensor at the given a list of position indices.
-struct ConvertZAPTensorSIMDStore
-    : public mlir::OpConversionPattern<TensorSIMDStoreOp> {
+/// Store a simd value into the NDBuffer at the given a list of position
+/// indices.
+struct ConvertZAPNDBufferSIMDStore
+    : public mlir::OpConversionPattern<NDBufferSIMDStoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(TensorSIMDStoreOp op, TensorSIMDStoreOpAdaptor adaptor,
+  matchAndRewrite(NDBufferSIMDStoreOp op, NDBufferSIMDStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
-    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
-                                                    kTensorShapePosition);
-    Value base = rewriter.create<StructGetOp>(loc, adaptor.getTensor(),
-                                              kTensorAddressPosition);
+    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+                                                    kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+                                              kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
-        rewriter, loc, op.getTensor().getType().cast<TensorType>(), shapeArray,
-        op.getPositions());
+        rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
+        shapeArray, op.getPositions());
     Value simdPtr = rewriter.create<PointerBitcastOp>(
         loc, PointerType::get(op.getValue().getType()), base);
     Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
@@ -837,7 +843,7 @@ struct ConvertZAPTensorSIMDStore
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPTensorSIMDStore
+// ConvertZAPNDBufferSIMDStore
 //===----------------------------------------------------------------------===//
 
 } // namespace
@@ -878,16 +884,16 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPDebugAssert,
       ConvertZAPGlobalString,
       ConvertZAPPrint,
-      ConvertZAPTensorAddress,
-      ConvertZAPTensorConstruct,
-      ConvertZAPTensorDim,
-      ConvertZAPTensorDType,
-      ConvertZAPTensorLoad,
-      ConvertZAPTensorRank,
-      ConvertZAPTensorSIMDLoad,
-      ConvertZAPTensorSIMDStore,
-      ConvertZAPTensorSize,
-      ConvertZAPTensorStore
+      ConvertZAPNDBufferAddress,
+      ConvertZAPNDBufferConstruct,
+      ConvertZAPNDBufferDim,
+      ConvertZAPNDBufferDType,
+      ConvertZAPNDBufferLoad,
+      ConvertZAPNDBufferRank,
+      ConvertZAPNDBufferSIMDLoad,
+      ConvertZAPNDBufferSIMDStore,
+      ConvertZAPNDBufferSize,
+      ConvertZAPNDBufferStore
 
       // clang-format on
       >(converter, patterns.getContext());
@@ -924,9 +930,9 @@ void LowerZAPToPOPPass::runOnOperation() {
                                   IndexType::get(buf.getContext()),
                                   DTypeType::get(buf.getContext())});
         })
-        .Case([&](TensorType tensor) {
-          auto indexType = IndexType::get(tensor.getContext());
-          // Convert tensor types to a struct of the form
+        .Case([&](NDBufferType ndBuffer) {
+          auto indexType = IndexType::get(ndBuffer.getContext());
+          // Convert NDBuffer types to a struct of the form
           // {
           //    pointer,   --- for buffer
           //    index,     --- for rank
@@ -934,9 +940,9 @@ void LowerZAPToPOPPass::runOnOperation() {
           //    dtype      --- for dtype
           // }
           return StructType::get(
-              {tensor.getPointerType(), indexType,
-               POP::ArrayType::get(TensorType::getMaximumRank(), indexType),
-               DTypeType::get(tensor.getContext())});
+              {ndBuffer.getPointerType(), indexType,
+               POP::ArrayType::get(NDBufferType::getMaximumRank(), indexType),
+               DTypeType::get(ndBuffer.getContext())});
         })
         .Default([&](Type type) { return type; });
   });
@@ -947,7 +953,7 @@ void LowerZAPToPOPPass::runOnOperation() {
   target.addLegalDialect<index::IndexDialect, KGENDialect, POPDialect>();
 
   auto isZAPType = [&](Type type) {
-    return type.isa<BufferType, TensorType>();
+    return type.isa<BufferType, NDBufferType>();
   };
 
   // Dynamically legalize KGEN operations that can interact with any parametric

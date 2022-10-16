@@ -29,7 +29,7 @@ static LogicalResult
 verifyHasSameUnderlyingDType(Operation *op, Value memory,
                              mlir::TypedValue<POP::SIMDType> simd) {
   TypedAttr aDType = TypeSwitch<Type, TypedAttr>(memory.getType())
-                         .Case<BufferType, TensorType>(
+                         .Case<BufferType, NDBufferType>(
                              [](auto type) { return type.getDType(); })
                          .Default([](Type) { return TypedAttr(); });
   TypedAttr bDType = simd.getType().getDType();
@@ -178,123 +178,126 @@ LogicalResult BufferSIMDStoreOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// TensorConstructOp
+// NDBufferConstructOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TensorConstructOp::verify() {
-  TensorType type = getType();
+LogicalResult NDBufferConstructOp::verify() {
+  NDBufferType type = getType();
   size_t numUnknownDims =
       std::count_if(type.getShape().begin(), type.getShape().end(),
                     [](auto shape) { return !shape; });
   size_t numShapeParams = getShape().size();
   if (numShapeParams != numUnknownDims)
     return emitOpError("requires the shape operand to match the non-static "
-                       "dimensions of the tensor type");
+                       "dimensions of the ndbuffer type");
   if (!type.getDType() == !getDType())
     return emitOpError(
-        "requires either a dtype operand or a tensor type with static dtype");
+        "requires either a dtype operand or a ndbuffer type with static dtype");
   return success();
 }
 
 //===----------------------------------------------------------------------===//
-// TensorLoadOp
+// NDBufferLoadOp
 //===----------------------------------------------------------------------===//
 
 template <typename Operation>
-static LogicalResult verifyTensorLoadStoreOp(Operation op) {
+static LogicalResult verifyNDBufferLoadStoreOp(Operation op) {
   size_t positionsSize = op.getPositions().size();
-  size_t tensorRank =
-      op.getTensor().getType().template cast<TensorType>().getRank();
-  if (positionsSize == tensorRank)
+  size_t rank =
+      op.getNDBuffer().getType().template cast<NDBufferType>().getRank();
+  if (positionsSize == rank)
     return success();
   return op.emitOpError("requires the number of input positions (")
-         << positionsSize << ") to match the rank of the tensor type ("
-         << tensorRank << ")";
+         << positionsSize << ") to match the rank of the ndbuffer type ("
+         << rank << ")";
 }
 
-LogicalResult TensorLoadOp::verify() { return verifyTensorLoadStoreOp(*this); }
+LogicalResult NDBufferLoadOp::verify() {
+  return verifyNDBufferLoadStoreOp(*this);
+}
 
 //===----------------------------------------------------------------------===//
-// TensorStoreOp
+// NDBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TensorStoreOp::verify() { return verifyTensorLoadStoreOp(*this); }
+LogicalResult NDBufferStoreOp::verify() {
+  return verifyNDBufferLoadStoreOp(*this);
+}
 
 //===----------------------------------------------------------------------===//
-// TensorSIMDLoadOp
+// NDBufferSIMDLoadOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TensorSIMDLoadOp::verify() {
-  if (failed(verifyHasSameUnderlyingDType(*this, getTensor(), getResult())))
+LogicalResult NDBufferSIMDLoadOp::verify() {
+  if (failed(verifyHasSameUnderlyingDType(*this, getNDBuffer(), getResult())))
     return failure();
-  return verifyTensorLoadStoreOp(*this);
+  return verifyNDBufferLoadStoreOp(*this);
 }
 
 //===----------------------------------------------------------------------===//
-// TensorStoreOp
+// NDBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TensorSIMDStoreOp::verify() {
-  if (failed(verifyHasSameUnderlyingDType(*this, getTensor(), getValue())))
+LogicalResult NDBufferSIMDStoreOp::verify() {
+  if (failed(verifyHasSameUnderlyingDType(*this, getNDBuffer(), getValue())))
     return failure();
-  return verifyTensorLoadStoreOp(*this);
+  return verifyNDBufferLoadStoreOp(*this);
 }
 
 //===----------------------------------------------------------------------===//
-// TensorDimOp
+// NDBufferDimOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult TensorDimOp::verify() {
+LogicalResult NDBufferDimOp::verify() {
   size_t index = getIndexAttr().getInt();
-  size_t rank = getTensor().getType().getRank();
+  size_t rank = getNDBuffer().getType().getRank();
   if (index < rank)
     return success();
 
   return emitOpError("requires the '")
          << index
-         << "' index to be less than the rank of the "
-            "tensor's rank of '"
+         << "' index to be less than the rank of the ndbuffer's rank of '"
          << rank << "'";
 }
 
-OpFoldResult TensorDimOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.size() == 1 && "zap.tensor.dim has one operand");
+OpFoldResult NDBufferDimOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "zap.ndbuffer.dim has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
   // size is null.
-  return getTensor().getType().getShape()[getIndexAttr().getInt()];
+  return getNDBuffer().getType().getShape()[getIndexAttr().getInt()];
 }
 
 //===----------------------------------------------------------------------===//
-// TensorDTypeOp
+// NDBufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult TensorDTypeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.size() == 1 && "zap.tensor.dtype has one operand");
+OpFoldResult NDBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.size() == 1 && "zap.ndbuffer.dtype has one operand");
   // A null dtype indicates ? dtype (unknown dtype). Since returning null
   // indicates that we don't fold anything, we don't need to check if dtype is
   // null.
-  return getTensor().getType().getDType();
+  return getNDBuffer().getType().getDType();
 }
 
 //===----------------------------------------------------------------------===//
-// TensorRankOp
+// NDBufferRankOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult TensorRankOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.size() == 1 && "zap.tensor.dtype has one operand");
-  // The rank is always known for a tensor.
+OpFoldResult NDBufferRankOp::fold(ArrayRef<Attribute> constants) {
+  assert(constants.size() == 1 && "zap.ndbuffer.dtype has one operand");
+  // The rank is always known for a ndbuffer.
   return IntegerAttr::get(IndexType::get(getContext()),
-                          getTensor().getType().getRank());
+                          getNDBuffer().getType().getRank());
 }
 
 //===----------------------------------------------------------------------===//
-// TensorSizeOp
+// NDBufferSizeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult TensorSizeOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.size() == 1 && "zap.tensor.size has a single operand");
-  if (auto size = getTensor().getType().getResolvedSize())
+OpFoldResult NDBufferSizeOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "zap.ndbuffer.size has a single operand");
+  if (auto size = getNDBuffer().getType().getResolvedSize())
     return IntegerAttr::get(IndexType::get(getContext()), *size);
   return {};
 }

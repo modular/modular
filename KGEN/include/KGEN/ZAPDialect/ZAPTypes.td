@@ -91,32 +91,32 @@ class BufferElementType<string lhs, string rhs>
 
 
 //===----------------------------------------------------------------------===//
-// TensorType
+// NDBufferType
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorType : ZAP_MemoryLikeType<"Tensor", "tensor"> {
-  let summary = "parameterized tensor type";
+def ZAP_NDBufferType : ZAP_MemoryLikeType<"NDBuffer", "ndbuffer"> {
+  let summary = "parameterized NDBuffer type";
   let description = [{
-    This type is a parameterized tensor type with both the shape and a
+    This type is a parameterized NDBuffer type with both the shape and a
     `!kgen.dtype`. The rank is not parametrized however. A shape field is
-    optional (may be null) in which case this tensor with a dynamic size at
+    optional (may be null) in which case this NDBuffer with a dynamic size at
     that shape axis and therefore is of an unknown size. The dtype type is also
-    optional, in which case this is a tensor with unknown element type. None of
-    the shape dimensions can be zero. Currently, the tensor cannot be of zero
-    rank and cannot have more than 5 dimensions (i.e. cannot be of rank more
-    than 5). For example:
+    optional, in which case this is a NDBuffer with unknown element type. None
+    of the shape dimensions can be zero. Currently, the NDBuffer cannot be of
+    zero rank and cannot have more than 5 dimensions (i.e. cannot be of rank
+    more than 5). For example:
 
     ```mlir
-    // a rank-4 tensor with 4x4x4x3x1 shape and si32 dtype
-    !zap.tensor<[4, 4, 3, 1], si32>
-    // a rank-2 tensor with 2x2 shape and unknown dtype
-    !zap.tensor<[2, 2], ?>
-    // a rank-3 tensor with unknown shape and f32 dtype
-    !zap.tensor<[?, ?, ?], f32>
-    // an invalid tensor because it has shape dimension of 0
-    !zap.tensor<[1, 0], f32>
-    // an invalid tensor because it has rank greater than 5
-    !zap.tensor<[2, 3, 3, 1, 1, 4], f32>
+    // a rank-4 NDBuffer with 4x4x4x3x1 shape and si32 dtype
+    !zap.ndbuffer<[4, 4, 3, 1], si32>
+    // a rank-2 NDBuffer with 2x2 shape and unknown dtype
+    !zap.ndbuffer<[2, 2], ?>
+    // a rank-3 NDBuffer with unknown shape and f32 dtype
+    !zap.ndbuffer<[?, ?, ?], f32>
+    // an invalid NDBuffer because it has shape dimension of 0
+    !zap.ndbuffer<[1, 0], f32>
+    // an invalid NDBuffer because it has rank greater than 5
+    !zap.ndbuffer<[2, 3, 3, 1, 1, 4], f32>
     ````
   }];
 
@@ -128,9 +128,9 @@ def ZAP_TensorType : ZAP_MemoryLikeType<"Tensor", "tensor"> {
   }];
 
   let classDeclaration = [{
-    /// Get the rank of the tensor.
+    /// Get the rank of the NDBuffer.
     size_t getRank() const;
-    /// Get the maximum rank of the tensor.
+    /// Get the maximum rank of the NDBuffer.
     static constexpr size_t getMaximumRank() { return 5; }
   }];
 
@@ -145,24 +145,24 @@ def ZAP_TensorType : ZAP_MemoryLikeType<"Tensor", "tensor"> {
 }
 
 //===----------------------------------------------------------------------===//
-// Tensor Type Constraints
+// NDBuffer Type Constraints
 //===----------------------------------------------------------------------===//
 
-def TensorKnownDType : ConfinedType<ZAP_TensorType,
-    [CPred<"$_self.cast<ZAP::TensorType>().getDType()">],
-    "tensor with concrete dtype">;
+def NDBufferKnownDType : ConfinedType<ZAP_NDBufferType,
+    [CPred<"$_self.cast<ZAP::NDBufferType>().getDType()">],
+    "ndbuffer with concrete dtype">;
 
-def ConcreteTensor : ConfinedType<ZAP_TensorType,
-    [CPred<"$_self.cast<ZAP::TensorType>().getDType() && " #
-           "$_self.cast<ZAP::TensorType>().getSize()">],
-    "tensor with concrete size and dtype">;
+def ConcreteNDBuffer : ConfinedType<ZAP_NDBufferType,
+    [CPred<"$_self.cast<ZAP::NDBufferType>().getDType() && " #
+           "$_self.cast<ZAP::NDBufferType>().getSize()">],
+    "ndbuffer with concrete size and dtype">;
 
-class TensorPointerType<string lhs, string rhs>
+class NDBufferPointerType<string lhs, string rhs>
   : TypesMatchWith<"pointer to scalar of the same dtype", lhs, rhs,
-                   "$_self.cast<ZAP::TensorType>().getPointerType()">;
+                   "$_self.cast<ZAP::NDBufferType>().getPointerType()">;
 
-class TensorElementType<string lhs, string rhs>
+class NDBufferElementType<string lhs, string rhs>
   : TypesMatchWith<"scalar of the same dtype", lhs, rhs,
-                   "$_self.cast<ZAP::TensorType>().getElementType()">;
+                   "$_self.cast<ZAP::NDBufferType>().getElementType()">;
 
 #endif // ZAPTYPES_TD

@@ -41,62 +41,62 @@ kgen.func @buffer_bitcast_folds(%arg0: !zap.buffer<?, ?>, %arg1: !zap.buffer<10,
   kgen.return %0, %2, %4 : !zap.buffer<?, ?>, !zap.buffer<?, ?>, !zap.buffer<?, ?>
 }
 
-// CHECK-LABEL: kgen.func @tensor_dim_folds
-// CHECK-SAME: %[[ARG0:.*]]: !zap.tensor<[42], f32>
-// CHECK-SAME: %[[ARG1:.*]]: !zap.tensor<[42, ?], f32>
-// CHECK-SAME: %[[ARG2:.*]]: !zap.tensor<[?, 42], f32>
-kgen.func @tensor_dim_folds(%arg0: !zap.tensor<[42], f32>,
-                            %arg1: !zap.tensor<[42, ?], f32>,
-                            %arg2: !zap.tensor<[?, 42], f32>)
+// CHECK-LABEL: kgen.func @ndbuffer_dim_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.ndbuffer<[42], f32>
+// CHECK-SAME: %[[ARG1:.*]]: !zap.ndbuffer<[42, ?], f32>
+// CHECK-SAME: %[[ARG2:.*]]: !zap.ndbuffer<[?, 42], f32>
+kgen.func @ndbuffer_dim_folds(%arg0: !zap.ndbuffer<[42], f32>,
+                            %arg1: !zap.ndbuffer<[42, ?], f32>,
+                            %arg2: !zap.ndbuffer<[?, 42], f32>)
   -> (index, index, index, index, index) {
   // CHECK-DAG: %[[V0:.*]] = kgen.param.constant = <42>
-  %0 = zap.tensor.dim %arg0[0] : !zap.tensor<[42], f32>
-  %1 = zap.tensor.dim %arg1[0] : !zap.tensor<[42, ?], f32>
-  // CHECK: %[[V3:.*]] = zap.tensor.dim %[[ARG1]][1]
-  %2 = zap.tensor.dim %arg1[1] : !zap.tensor<[42, ?], f32>
-  // CHECK: %[[V4:.*]] = zap.tensor.dim %[[ARG2]][0]
-  %3 = zap.tensor.dim %arg2[0] : !zap.tensor<[?, 42], f32>
-  %4 = zap.tensor.dim %arg2[1] : !zap.tensor<[?, 42], f32>
+  %0 = zap.ndbuffer.dim %arg0[0] : !zap.ndbuffer<[42], f32>
+  %1 = zap.ndbuffer.dim %arg1[0] : !zap.ndbuffer<[42, ?], f32>
+  // CHECK: %[[V3:.*]] = zap.ndbuffer.dim %[[ARG1]][1]
+  %2 = zap.ndbuffer.dim %arg1[1] : !zap.ndbuffer<[42, ?], f32>
+  // CHECK: %[[V4:.*]] = zap.ndbuffer.dim %[[ARG2]][0]
+  %3 = zap.ndbuffer.dim %arg2[0] : !zap.ndbuffer<[?, 42], f32>
+  %4 = zap.ndbuffer.dim %arg2[1] : !zap.ndbuffer<[?, 42], f32>
 
   // CHECK: kgen.return %[[V0]], %[[V0]], %[[V3]], %[[V4]], %[[V0]]
   kgen.return %0, %1, %2, %3, %4 : index, index, index, index, index
 }
 
 
-// CHECK-LABEL: kgen.func @tensor_dtype_folds
-// CHECK-SAME: %[[ARG0:.*]]: !zap.tensor<[42], f32>
-// CHECK-SAME: %[[ARG1:.*]]: !zap.tensor<[42, ?], f32>
-// CHECK-SAME: %[[ARG2:.*]]: !zap.tensor<[?, 42], ?>
-kgen.func @tensor_dtype_folds(%arg0: !zap.tensor<[42], f32>,
-                              %arg1: !zap.tensor<[42, ?], f32>,
-                              %arg2: !zap.tensor<[?, 42], ?>)
+// CHECK-LABEL: kgen.func @ndbuffer_dtype_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.ndbuffer<[42], f32>
+// CHECK-SAME: %[[ARG1:.*]]: !zap.ndbuffer<[42, ?], f32>
+// CHECK-SAME: %[[ARG2:.*]]: !zap.ndbuffer<[?, 42], ?>
+kgen.func @ndbuffer_dtype_folds(%arg0: !zap.ndbuffer<[42], f32>,
+                              %arg1: !zap.ndbuffer<[42, ?], f32>,
+                              %arg2: !zap.ndbuffer<[?, 42], ?>)
   -> (!kgen.dtype, !kgen.dtype, !kgen.dtype) {
   // CHECK-DAG: %[[V0:.*]] = kgen.param.constant: dtype = <f32>
-  // CHECK-DAG: %[[V1:.*]] = zap.tensor.dtype %[[ARG2]] : !zap.tensor<[?, 42], ?>
+  // CHECK-DAG: %[[V1:.*]] = zap.ndbuffer.dtype %[[ARG2]] : !zap.ndbuffer<[?, 42], ?>
 
-  %0 = zap.tensor.dtype %arg0 : !zap.tensor<[42], f32>
-  %1 = zap.tensor.dtype %arg1 : !zap.tensor<[42, ?], f32>
-  %2 = zap.tensor.dtype %arg2 : !zap.tensor<[?, 42], ?>
+  %0 = zap.ndbuffer.dtype %arg0 : !zap.ndbuffer<[42], f32>
+  %1 = zap.ndbuffer.dtype %arg1 : !zap.ndbuffer<[42, ?], f32>
+  %2 = zap.ndbuffer.dtype %arg2 : !zap.ndbuffer<[?, 42], ?>
 
   // CHECK: kgen.return %[[V0]], %[[V0]], %[[V1]]
   kgen.return %0, %1, %2 : !kgen.dtype, !kgen.dtype, !kgen.dtype
 }
 
-// CHECK-LABEL: kgen.func @tensor_rank_folds
-// CHECK-SAME: %[[ARG0:.*]]: !zap.tensor<[42], f32>
-// CHECK-SAME: %[[ARG1:.*]]: !zap.tensor<[?, ?, ?], f32>
-// CHECK-SAME: %[[ARG2:.*]]: !zap.tensor<[1, ?, 3, 4], ?>
-kgen.func @tensor_rank_folds(%arg0: !zap.tensor<[42], f32>,
-                             %arg1: !zap.tensor<[?, ?, ?], f32>,
-                             %arg2: !zap.tensor<[1, ?, 3, 4], ?>)
+// CHECK-LABEL: kgen.func @ndbuffer_rank_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.ndbuffer<[42], f32>
+// CHECK-SAME: %[[ARG1:.*]]: !zap.ndbuffer<[?, ?, ?], f32>
+// CHECK-SAME: %[[ARG2:.*]]: !zap.ndbuffer<[1, ?, 3, 4], ?>
+kgen.func @ndbuffer_rank_folds(%arg0: !zap.ndbuffer<[42], f32>,
+                             %arg1: !zap.ndbuffer<[?, ?, ?], f32>,
+                             %arg2: !zap.ndbuffer<[1, ?, 3, 4], ?>)
   -> (index, index, index) {
   // CHECK-DAG: %[[V0:.*]] = kgen.param.constant = <1>
   // CHECK-DAG: %[[V1:.*]] = kgen.param.constant = <3>
   // CHECK-DAG: %[[V2:.*]] = kgen.param.constant = <4>
 
-  %0 = zap.tensor.rank %arg0 : !zap.tensor<[42], f32>
-  %1 = zap.tensor.rank %arg1 : !zap.tensor<[?, ?, ?], f32>
-  %2 = zap.tensor.rank %arg2 : !zap.tensor<[1, ?, 3, 4], ?>
+  %0 = zap.ndbuffer.rank %arg0 : !zap.ndbuffer<[42], f32>
+  %1 = zap.ndbuffer.rank %arg1 : !zap.ndbuffer<[?, ?, ?], f32>
+  %2 = zap.ndbuffer.rank %arg2 : !zap.ndbuffer<[1, ?, 3, 4], ?>
 
   // CHECK: kgen.return %[[V0]], %[[V1]], %[[V2]]
   kgen.return %0, %1, %2 : index, index, index

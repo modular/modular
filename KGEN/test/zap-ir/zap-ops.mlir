@@ -213,271 +213,271 @@ kgen.generator @zap_simd_store<size, type: dtype>(
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[4, 5], ?>
-// CHECK-SAME: %[[TENSOR3:.*]]: !zap.tensor<[?, ?, ?], ?>
-kgen.func @zap_tensor(
-  %arg0 : !zap.tensor<[4, 5, 3], f32>,
-  %arg1 : !zap.tensor<[?, 4], f32>,
-  %arg2: !zap.tensor<[4, 5], ?>,
-  %arg3 : !zap.tensor<[?, ?, ?], ?>) -> (!zap.tensor<[4, 5, 3], f32>,
-                                         !zap.tensor<[?, 4], f32>,
-                                         !zap.tensor<[4, 5], ?>,
-                                         !zap.tensor<[?, ?, ?], ?>) {
-  kgen.return %arg0, %arg1, %arg2, %arg3 : !zap.tensor<[4, 5, 3], f32>,
-                                           !zap.tensor<[?, 4], f32>,
-                                           !zap.tensor<[4, 5], ?>,
-                                           !zap.tensor<[?, ?, ?], ?>
+// CHECK-LABEL: @zap_ndbuffer
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[?, 4], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[4, 5], ?>
+// CHECK-SAME: %[[NDBUFFER3:.*]]: !zap.ndbuffer<[?, ?, ?], ?>
+kgen.func @zap_ndbuffer(
+  %arg0 : !zap.ndbuffer<[4, 5, 3], f32>,
+  %arg1 : !zap.ndbuffer<[?, 4], f32>,
+  %arg2: !zap.ndbuffer<[4, 5], ?>,
+  %arg3 : !zap.ndbuffer<[?, ?, ?], ?>) -> (!zap.ndbuffer<[4, 5, 3], f32>,
+                                         !zap.ndbuffer<[?, 4], f32>,
+                                         !zap.ndbuffer<[4, 5], ?>,
+                                         !zap.ndbuffer<[?, ?, ?], ?>) {
+  kgen.return %arg0, %arg1, %arg2, %arg3 : !zap.ndbuffer<[4, 5, 3], f32>,
+                                           !zap.ndbuffer<[?, 4], f32>,
+                                           !zap.ndbuffer<[4, 5], ?>,
+                                           !zap.ndbuffer<[?, ?, ?], ?>
 }
 
-// CHECK-LABEL: @zap_tensor_with_params
-// CHECK-SAME: !zap.tensor<[size, 5, 3], type>
-// CHECK-SAME: !zap.tensor<[size, 5, 3], f32>
-// CHECK-SAME: !zap.tensor<[size, size], f32>
-// CHECK-SAME: !zap.tensor<[?, 4, size], f32>
-kgen.generator @zap_tensor_with_params<type:dtype, size>(
-    %arg0 : !zap.tensor<[size, 5, 3], type>,
-    %arg1 : !zap.tensor<[size, 5, 3], f32>,
-    %arg2 : !zap.tensor<[size, size], f32>,
-    %arg3 : !zap.tensor<[?, 4, size], f32>
-) -> (!zap.tensor<[size, 5, 3], type>,
-      !zap.tensor<[size, 5, 3], f32>,
-      !zap.tensor<[size, size], f32>,
-      !zap.tensor<[?, 4, size], f32>) {
+// CHECK-LABEL: @zap_ndbuffer_with_params
+// CHECK-SAME: !zap.ndbuffer<[size, 5, 3], type>
+// CHECK-SAME: !zap.ndbuffer<[size, 5, 3], f32>
+// CHECK-SAME: !zap.ndbuffer<[size, size], f32>
+// CHECK-SAME: !zap.ndbuffer<[?, 4, size], f32>
+kgen.generator @zap_ndbuffer_with_params<type:dtype, size>(
+    %arg0 : !zap.ndbuffer<[size, 5, 3], type>,
+    %arg1 : !zap.ndbuffer<[size, 5, 3], f32>,
+    %arg2 : !zap.ndbuffer<[size, size], f32>,
+    %arg3 : !zap.ndbuffer<[?, 4, size], f32>
+) -> (!zap.ndbuffer<[size, 5, 3], type>,
+      !zap.ndbuffer<[size, 5, 3], f32>,
+      !zap.ndbuffer<[size, size], f32>,
+      !zap.ndbuffer<[?, 4, size], f32>) {
   kgen.return %arg0, %arg1, %arg2, %arg3 :
-    !zap.tensor<[size, 5, 3], type>,
-    !zap.tensor<[size, 5, 3], f32>,
-    !zap.tensor<[size, size], f32>,
-    !zap.tensor<[?, 4, size], f32>
+    !zap.ndbuffer<[size, 5, 3], type>,
+    !zap.ndbuffer<[size, 5, 3], f32>,
+    !zap.ndbuffer<[size, size], f32>,
+    !zap.ndbuffer<[?, 4, size], f32>
 }
 
-// CHECK-LABEL: @zap_tensor_construct
+// CHECK-LABEL: @zap_ndbuffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
 // CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<!pop.scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
-kgen.func @zap_tensor_construct(
+kgen.func @zap_ndbuffer_construct(
   %ptr: !pop.pointer<!pop.scalar<f32>>,
   %opaque: !pop.pointer<!pop.scalar<invalid>>,
   %size: index,
-  %dtype: !kgen.dtype) -> (!zap.tensor<[4, 5, 3], f32>,
-                           !zap.tensor<[?, 4], f32>,
-                           !zap.tensor<[4, 5], ?>,
-                           !zap.tensor<[?, ?, ?], ?>) {
-  // CHECK: zap.tensor.construct %[[PTR]] : !zap.tensor<[4, 5, 3], f32>
-  %0 = zap.tensor.construct %ptr : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.construct %[[PTR]][%[[SIZE]]] : !zap.tensor<[?, 4], f32>
-  %1 = zap.tensor.construct %ptr[%size] : !zap.tensor<[?, 4], f32>
-  // CHECK: zap.tensor.construct %[[OPAQUE]] of %[[DTYPE]] : !zap.tensor<[4, 5], ?>
-  %2 = zap.tensor.construct %opaque of %dtype : !zap.tensor<[4, 5], ?>
-  // CHECK: zap.tensor.construct %[[OPAQUE]][%[[SIZE]], %[[SIZE]], %[[SIZE]]] of %[[DTYPE]] : !zap.tensor<[?, ?, ?], ?>
-  %3 = zap.tensor.construct %opaque[%size, %size, %size] of %dtype : !zap.tensor<[?, ?, ?], ?>
-  kgen.return %0, %1, %2, %3 : !zap.tensor<[4, 5, 3], f32>,
-                               !zap.tensor<[?, 4], f32>,
-                               !zap.tensor<[4, 5], ?>,
-                               !zap.tensor<[?, ?, ?], ?>
+  %dtype: !kgen.dtype) -> (!zap.ndbuffer<[4, 5, 3], f32>,
+                           !zap.ndbuffer<[?, 4], f32>,
+                           !zap.ndbuffer<[4, 5], ?>,
+                           !zap.ndbuffer<[?, ?, ?], ?>) {
+  // CHECK: zap.ndbuffer.construct %[[PTR]] : !zap.ndbuffer<[4, 5, 3], f32>
+  %0 = zap.ndbuffer.construct %ptr : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.construct %[[PTR]][%[[SIZE]]] : !zap.ndbuffer<[?, 4], f32>
+  %1 = zap.ndbuffer.construct %ptr[%size] : !zap.ndbuffer<[?, 4], f32>
+  // CHECK: zap.ndbuffer.construct %[[OPAQUE]] of %[[DTYPE]] : !zap.ndbuffer<[4, 5], ?>
+  %2 = zap.ndbuffer.construct %opaque of %dtype : !zap.ndbuffer<[4, 5], ?>
+  // CHECK: zap.ndbuffer.construct %[[OPAQUE]][%[[SIZE]], %[[SIZE]], %[[SIZE]]] of %[[DTYPE]] : !zap.ndbuffer<[?, ?, ?], ?>
+  %3 = zap.ndbuffer.construct %opaque[%size, %size, %size] of %dtype : !zap.ndbuffer<[?, ?, ?], ?>
+  kgen.return %0, %1, %2, %3 : !zap.ndbuffer<[4, 5, 3], f32>,
+                               !zap.ndbuffer<[?, 4], f32>,
+                               !zap.ndbuffer<[4, 5], ?>,
+                               !zap.ndbuffer<[?, ?, ?], ?>
 }
 
-// CHECK-LABEL: @zap_tensor_dim
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?], f32>
-kgen.func @zap_tensor_dim(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[?, 4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?], f32>) {
-  // CHECK: zap.tensor.dim %[[TENSOR0]][0] : !zap.tensor<[4, 5, 3], f32>
-  %0 = zap.tensor.dim %tensor0[0] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR1]][0] : !zap.tensor<[?, 4, ?], f32>
-  %1 = zap.tensor.dim %tensor1[0] : !zap.tensor<[?, 4, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR1]][1] : !zap.tensor<[?, 4, ?], f32>
-  %2 = zap.tensor.dim %tensor1[1] : !zap.tensor<[?, 4, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR2]][0] : !zap.tensor<[?, ?, ?], f32>
-  %3 = zap.tensor.dim %tensor2[0] : !zap.tensor<[?, ?, ?], f32>
-  // CHECK: zap.tensor.dim %[[TENSOR2]][0] : !zap.tensor<[?, ?, ?], f32>
-  %4 = zap.tensor.dim %tensor2[0] : !zap.tensor<[?, ?, ?], f32>
+// CHECK-LABEL: @zap_ndbuffer_dim
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[?, 4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?, ?, ?], f32>
+kgen.func @zap_ndbuffer_dim(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[?, 4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?, ?, ?], f32>) {
+  // CHECK: zap.ndbuffer.dim %[[NDBUFFER0]][0] : !zap.ndbuffer<[4, 5, 3], f32>
+  %0 = zap.ndbuffer.dim %ndbuffer0[0] : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.dim %[[NDBUFFER1]][0] : !zap.ndbuffer<[?, 4, ?], f32>
+  %1 = zap.ndbuffer.dim %ndbuffer1[0] : !zap.ndbuffer<[?, 4, ?], f32>
+  // CHECK: zap.ndbuffer.dim %[[NDBUFFER1]][1] : !zap.ndbuffer<[?, 4, ?], f32>
+  %2 = zap.ndbuffer.dim %ndbuffer1[1] : !zap.ndbuffer<[?, 4, ?], f32>
+  // CHECK: zap.ndbuffer.dim %[[NDBUFFER2]][0] : !zap.ndbuffer<[?, ?, ?], f32>
+  %3 = zap.ndbuffer.dim %ndbuffer2[0] : !zap.ndbuffer<[?, ?, ?], f32>
+  // CHECK: zap.ndbuffer.dim %[[NDBUFFER2]][0] : !zap.ndbuffer<[?, ?, ?], f32>
+  %4 = zap.ndbuffer.dim %ndbuffer2[0] : !zap.ndbuffer<[?, ?, ?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_dtype
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-LABEL: @zap_ndbuffer_dtype
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?, ?, ?, ?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_dtype(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+kgen.func @zap_ndbuffer_dtype(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?, ?, ?, ?], f32>,
   %idx: index) {
-  // CHECK: zap.tensor.dtype %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
-  %0 = zap.tensor.dtype %tensor0 : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.dtype %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
-  %1 = zap.tensor.dtype %tensor1 : !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.dtype %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
-  %2 = zap.tensor.dtype %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  // CHECK: zap.ndbuffer.dtype %[[NDBUFFER0]] : !zap.ndbuffer<[4, 5, 3], f32>
+  %0 = zap.ndbuffer.dtype %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.dtype %[[NDBUFFER1]] : !zap.ndbuffer<[4, ?], f32>
+  %1 = zap.ndbuffer.dtype %ndbuffer1 : !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.dtype %[[NDBUFFER2]] : !zap.ndbuffer<[?, ?, ?, ?], f32>
+  %2 = zap.ndbuffer.dtype %ndbuffer2 : !zap.ndbuffer<[?, ?, ?, ?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_rank
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-LABEL: @zap_ndbuffer_rank
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?, ?, ?, ?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_rank(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+kgen.func @zap_ndbuffer_rank(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?, ?, ?, ?], f32>,
   %idx: index) {
-  // CHECK: zap.tensor.rank %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.rank %tensor0 : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.rank %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
-  zap.tensor.rank %tensor1 : !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.rank %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
-  zap.tensor.rank %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  // CHECK: zap.ndbuffer.rank %[[NDBUFFER0]] : !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.rank %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.rank %[[NDBUFFER1]] : !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.rank %ndbuffer1 : !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.rank %[[NDBUFFER2]] : !zap.ndbuffer<[?, ?, ?, ?], f32>
+  zap.ndbuffer.rank %ndbuffer2 : !zap.ndbuffer<[?, ?, ?, ?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_address
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[?, 4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?], f32>
+// CHECK-LABEL: @zap_ndbuffer_address
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[?, 4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?, ?, ?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_address(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[?, 4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?], f32>,
+kgen.func @zap_ndbuffer_address(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[?, 4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?, ?, ?], f32>,
   %idx: index) {
-  // CHECK: zap.tensor.address %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.address %tensor0 : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.address %[[TENSOR1]] : !zap.tensor<[?, 4, ?], f32>
-  zap.tensor.address %tensor1 : !zap.tensor<[?, 4, ?], f32>
-  // CHECK: zap.tensor.address %[[TENSOR2]] : !zap.tensor<[?, ?, ?], f32>
-  zap.tensor.address %tensor2 : !zap.tensor<[?, ?, ?], f32>
+  // CHECK: zap.ndbuffer.address %[[NDBUFFER0]] : !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.address %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.address %[[NDBUFFER1]] : !zap.ndbuffer<[?, 4, ?], f32>
+  zap.ndbuffer.address %ndbuffer1 : !zap.ndbuffer<[?, 4, ?], f32>
+  // CHECK: zap.ndbuffer.address %[[NDBUFFER2]] : !zap.ndbuffer<[?, ?, ?], f32>
+  zap.ndbuffer.address %ndbuffer2 : !zap.ndbuffer<[?, ?, ?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_load
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
+// CHECK-LABEL: @zap_ndbuffer_load
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_load(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.tensor.load %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.tensor<[4, 5, 3], f32>
-  %0 = zap.tensor.load %tensor0[%idx, %idxZero, %idxOne] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.load %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
-  %1 = zap.tensor.load %tensor0[%idx, %idx, %idx] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.load %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !zap.tensor<[4, ?], f32>
-  %2 = zap.tensor.load %tensor1[%idx, %idx] : !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.load %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?], f32>
-  %3 = zap.tensor.load %tensor2[%idx] : !zap.tensor<[?], f32>
-  kgen.return
-}
-
-// CHECK-LABEL: @zap_tensor_simd_load
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_simd_load(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?], f32>,
+kgen.func @zap_ndbuffer_load(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
   %idx: index) {
   // CHECK: %[[IDXZERO:.*]] =  index.constant
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.tensor.simd_load %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.tensor<[4, 5, 3], f32>, !pop.simd<4, f32>
-  %0 = zap.tensor.simd_load %tensor0[%idx, %idxZero, %idxOne] : !zap.tensor<[4, 5, 3], f32>, !pop.simd<4, f32>
-  // CHECK: zap.tensor.simd_load %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.tensor<[4, 5, 3], f32>, !pop.simd<3, f32>
-  %1 = zap.tensor.simd_load %tensor0[%idx, %idx, %idx] : !zap.tensor<[4, 5, 3], f32>, !pop.simd<3, f32>
-  // CHECK: zap.tensor.simd_load %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !zap.tensor<[4, ?], f32>, !pop.simd<3, f32>
-  %2 = zap.tensor.simd_load %tensor1[%idx, %idx] : !zap.tensor<[4, ?], f32>, !pop.simd<3, f32>
-  // CHECK: zap.tensor.simd_load %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?], f32>, !pop.simd<3, f32>
-  %3 = zap.tensor.simd_load %tensor2[%idx] : !zap.tensor<[?], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>
+  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>
+  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>
+  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_store
+// CHECK-LABEL: @zap_ndbuffer_simd_load
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap_ndbuffer_simd_load(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  %1 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  %2 = zap.ndbuffer.simd_load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  %3 = zap.ndbuffer.simd_load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  kgen.return
+}
+
+// CHECK-LABEL: @zap_ndbuffer_store
 // CHECK-SAME: %[[VAL:.*]]: !pop.scalar<f32>
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_store(
+kgen.func @zap_ndbuffer_store(
   %val : !pop.scalar<f32>,
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?], f32>,
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
   %idx: index) {
   // CHECK: %[[IDXZERO:.*]] =  index.constant
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.store %val, %tensor0[%idx, %idxZero, %idxOne] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.store %val, %tensor0[%idx, %idx, %idx] : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !zap.tensor<[4, ?], f32>
-  zap.tensor.store %val, %tensor1[%idx, %idx] : !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.store %[[VAL]], %[[TENSOR2]][%[[IDX]]] : !zap.tensor<[?], f32>
-  zap.tensor.store %val, %tensor2[%idx] : !zap.tensor<[?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_simd_store
+// CHECK-LABEL: @zap_ndbuffer_simd_store
 // CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?], f32>
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_simd_store(
+kgen.func @zap_ndbuffer_simd_store(
   %val : !pop.simd<4, f32>,
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?], f32>,
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
   %idx: index) {
   // CHECK: %[[IDXZERO:.*]] =  index.constant
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.tensor.simd_store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<4, f32>, !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.simd_store %val, %tensor0[%idx, %idxZero, %idxOne] : !pop.simd<4, f32>, !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.simd_store %[[VAL]], %[[TENSOR0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.simd_store %val, %tensor0[%idx, %idx, %idx] : !pop.simd<4, f32>, !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.simd_store %[[VAL]], %[[TENSOR1]][%[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.tensor<[4, ?], f32>
-  zap.tensor.simd_store %val, %tensor1[%idx, %idx] : !pop.simd<4, f32>, !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.simd_store %[[VAL]], %[[TENSOR2]][%[[IDX]]] : !pop.simd<4, f32>, !zap.tensor<[?], f32>
-  zap.tensor.simd_store %val, %tensor2[%idx] : !pop.simd<4, f32>, !zap.tensor<[?], f32>
+  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.simd_store %val, %ndbuffer1[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.simd_store %val, %ndbuffer2[%idx] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
   kgen.return
 }
 
-// CHECK-LABEL: @zap_tensor_size
-// CHECK-SAME: %[[TENSOR0:.*]]: !zap.tensor<[4, 5, 3], f32>
-// CHECK-SAME: %[[TENSOR1:.*]]: !zap.tensor<[4, ?], f32>
-// CHECK-SAME: %[[TENSOR2:.*]]: !zap.tensor<[?, ?, ?, ?], f32>
+// CHECK-LABEL: @zap_ndbuffer_size
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?, ?, ?, ?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_tensor_size(
-  %tensor0: !zap.tensor<[4, 5, 3], f32>,
-  %tensor1: !zap.tensor<[4, ?], f32>,
-  %tensor2: !zap.tensor<[?, ?, ?, ?], f32>,
+kgen.func @zap_ndbuffer_size(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?, ?, ?, ?], f32>,
   %idx: index) {
-  // CHECK: zap.tensor.size %[[TENSOR0]] : !zap.tensor<[4, 5, 3], f32>
-  zap.tensor.size %tensor0 : !zap.tensor<[4, 5, 3], f32>
-  // CHECK: zap.tensor.size %[[TENSOR1]] : !zap.tensor<[4, ?], f32>
-  zap.tensor.size %tensor1 : !zap.tensor<[4, ?], f32>
-  // CHECK: zap.tensor.size %[[TENSOR2]] : !zap.tensor<[?, ?, ?, ?], f32>
-  zap.tensor.size %tensor2 : !zap.tensor<[?, ?, ?, ?], f32>
+  // CHECK: zap.ndbuffer.size %[[NDBUFFER0]] : !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.size %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.size %[[NDBUFFER1]] : !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.size %ndbuffer1 : !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.size %[[NDBUFFER2]] : !zap.ndbuffer<[?, ?, ?, ?], f32>
+  zap.ndbuffer.size %ndbuffer2 : !zap.ndbuffer<[?, ?, ?, ?], f32>
   kgen.return
 }
 

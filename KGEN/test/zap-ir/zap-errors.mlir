@@ -64,90 +64,90 @@ kgen.generator @buffer_stack_allocation<size>() {
 
 // -----
 
-// expected-error @below {{shape parameter for tensor must not be empty}}
-kgen.generator @zap_tensor(%arg0 : !zap.tensor<[], f32>) {
+// expected-error @below {{shape parameter for ndbuffer must not be empty}}
+kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[], f32>) {
   kgen.return
 }
 // -----
 
-// expected-error @below {{size parameter for tensor must be positive}}
-kgen.generator @zap_tensor(%arg0 : !zap.tensor<[0], f32>) {
+// expected-error @below {{size parameter for ndbuffer must be positive}}
+kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[0], f32>) {
   kgen.return
 }
 // -----
 
-// expected-error @below {{size parameter for tensor must be positive}}
-kgen.generator @zap_tensor(%arg0 : !zap.tensor<[-1], f32>) {
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{shape parameter exceeds the maximum rank of the tensor type}}
-kgen.generator @zap_tensor(%arg0 : !zap.tensor<[1,2,3,4,5,6], f32>) {
+// expected-error @below {{size parameter for ndbuffer must be positive}}
+kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[-1], f32>) {
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
-  // expected-error @below {{'zap.tensor.load' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
-  %val = zap.tensor.load %arg0[%idx, %idx] : !zap.tensor<[3], f32>
+// expected-error @below {{shape parameter exceeds the maximum rank of the ndbuffer type}}
+kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[1,2,3,4,5,6], f32>) {
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_store(%val : !pop.scalar<f32>,
-                                %arg0 : !zap.tensor<[3], f32>,
+kgen.generator @zap_ndbuffer_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.ndbuffer.load' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  %val = zap.ndbuffer.load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @zap_ndbuffer_store(%val : !pop.scalar<f32>,
+                                %arg0 : !zap.ndbuffer<[3], f32>,
                                 %idx : index) {
-  // expected-error @below {{'zap.tensor.store' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
-  zap.tensor.store %val, %arg0[%idx, %idx] : !zap.tensor<[3], f32>
+  // expected-error @below {{'zap.ndbuffer.store' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  zap.ndbuffer.store %val, %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_simd_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
-  // expected-error @below {{'zap.tensor.simd_load' op the type ('!zap.tensor<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
-  %val = zap.tensor.simd_load %arg0[%idx, %idx] : !zap.tensor<[3], f32>, !pop.simd<4, si32>
+kgen.generator @zap_ndbuffer_simd_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.ndbuffer.simd_load' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  %val = zap.ndbuffer.simd_load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, si32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_simd_load(%arg0 : !zap.tensor<[3], f32>, %idx : index) {
-  // expected-error @below {{'zap.tensor.simd_load' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
-  %val = zap.tensor.simd_load %arg0[%idx, %idx] : !zap.tensor<[3], f32>, !pop.simd<4, f32>
+kgen.generator @zap_ndbuffer_simd_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.ndbuffer.simd_load' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  %val = zap.ndbuffer.simd_load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, si32>,
-                                      %arg0 : !zap.tensor<[3], f32>,
+kgen.generator @zap_ndbuffer_simd_store(%val : !pop.simd<4, si32>,
+                                      %arg0 : !zap.ndbuffer<[3], f32>,
                                       %idx : index) {
-  // expected-error @below {{'zap.tensor.simd_store' op the type ('!zap.tensor<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
-  zap.tensor.simd_store %val, %arg0[%idx] : !pop.simd<4, si32>, !zap.tensor<[3], f32>
+  // expected-error @below {{'zap.ndbuffer.simd_store' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  zap.ndbuffer.simd_store %val, %arg0[%idx] : !pop.simd<4, si32>, !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
 
 // -----
 
-kgen.generator @zap_tensor_simd_store(%val : !pop.simd<4, f32>,
-                                      %arg0 : !zap.tensor<[3], f32>,
+kgen.generator @zap_ndbuffer_simd_store(%val : !pop.simd<4, f32>,
+                                      %arg0 : !zap.ndbuffer<[3], f32>,
                                       %idx : index) {
-  // expected-error @below {{'zap.tensor.simd_store' op requires the number of input positions (2) to match the rank of the tensor type (1)}}
-  zap.tensor.simd_store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.tensor<[3], f32>
+  // expected-error @below {{'zap.ndbuffer.simd_store' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  zap.ndbuffer.simd_store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_tensor_dim(%arg0 : !zap.tensor<[3], f32>) {
-  // expected-error @below {{'zap.tensor.dim' op requires the '1' index to be less than the rank of the tensor's rank of '1'}}
-  zap.tensor.dim %arg0[1] : !zap.tensor<[3], f32>
+kgen.generator @zap_ndbuffer_dim(%arg0 : !zap.ndbuffer<[3], f32>) {
+  // expected-error @below {{'zap.ndbuffer.dim' op requires the '1' index to be less than the rank of the ndbuffer's rank of '1'}}
+  zap.ndbuffer.dim %arg0[1] : !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
