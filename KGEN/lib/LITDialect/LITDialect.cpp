@@ -12,8 +12,10 @@
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -25,20 +27,22 @@ using namespace KGEN;
 // Pull in the dialect definition.
 #include "KGEN/LITDialect/LITDialect.cpp.inc"
 
+#define GET_TYPEDEF_CLASSES
+#include "KGEN/LITDialect/LITTypes.cpp.inc"
+
 void LITDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
   llvm_unreachable("no lit dialect attrs");
 }
 Attribute LITDialect::parseAttribute(DialectAsmParser &p, Type type) const {
   llvm_unreachable("no lit dialect attrs");
 }
-void LITDialect::printType(Type type, DialectAsmPrinter &os) const {
-  llvm_unreachable("no lit dialect types");
-}
-Type LITDialect::parseType(DialectAsmParser &p) const {
-  llvm_unreachable("no lit dialect types");
-}
 
 void LITDialect::initialize() {
+  // Register types.
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "KGEN/LITDialect/LITTypes.cpp.inc"
+      >();
 
   // Register operations.
   addOperations<

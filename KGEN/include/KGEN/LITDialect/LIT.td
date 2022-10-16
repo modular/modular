@@ -12,6 +12,7 @@
 #define LIT_TD
 
 include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/LITDialect/LITTypes.td"
 include "KGEN/LITDialect/LITOps.td"
 
 #endif // KGEN_TD
