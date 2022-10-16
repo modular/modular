@@ -9,30 +9,21 @@ document is intended to track notes about its ongoing development.
 
 ## Intentional differences from Python
 
-Lightning is generally a superset, but here are some intentional differences in
-our current implementation.  These are subject to discussion and re-evaluation
-over time.  Not all of these are implemented.
+Lightning is generally a superset of Python, but here are some intentional
+differences in our current implementation as well as extensions.  These are
+subject to discussion and re-evaluation over time.  Not all of these are
+implemented.
 
-1) Lightning supports structs, not just classes.  Design TBD.
+### Differences with features that Python already supports
 
-2) In addition to the builtin dynamic Python object types like "int" and "dict",
-   we will have library-defined static versions named "Int" and "Dict" etc that
-   are defined as Lightning structs in the library.  These implementations will
-   be very similar to the Python types in surface syntax, but will have type
-   parameters and may have different behavior in some cases (TBD).
-
-3) We support type parameters being declared on function definitions, ala
-   `def method[size: Int]`.  This may be standardized into Python as [PEP
-   695](https://peps.python.org/pep-0695/).
-
-4) We have more generous indentation rules, not requiring `\` at end of line
+1) We have more generous indentation rules, not requiring `\` at end of line
    in most cases, due to a more sophisticated lexer rule that allows expression
    continuation so long as the continuation is more indented than the start of
    the expression.
 
-5) While we allow forward references to values defined in outer scopes, we do
-   not allow forward references within the same scope.  We will need to decide
-   what to do about things like:
+2) While we allow forward references to values defined in outer scopes, we do
+   not allow forward references within the same scope.  TODO: we should support
+   things like:
 
 ```
    if cond:
@@ -42,19 +33,49 @@ over time.  Not all of these are implemented.
    use(x)
 ```
 
-   We will probably want to allow variable definitions anyway (with let/var like
-   syntax), so that can probably be the solution.  We can also use dataflow
-   analysis to reason about this.  Immediate-term workaround: use `x = 0` ahead
-   of the `if` in cases like this.
+   by hoisting the implicit variable declaration to the top of the function.
 
- 6) In addition to loosely typed `def` statements, we (will) support a more
+3) We do not support all the deprecated features of the Python lexer.
+
+4) We treat "soft" keywords like `case` as "hard" keywords in Lightning.
+   Rationale is that we don't want things like "case = 42" to be supported.
+   Python supports this for backwards compatibility reasons, but we can handle
+   this in the future Python -> Lightning translator tool by (e.g.) adding an
+   underscore to the keywords.
+
+### New Features / Extensions that Python doesn't have
+
+In addition to specific differences, we support the following extensions:
+
+1) `struct` definitions, not just classes.  Structs are stored inline in their
+   containing type/frame instead of indirectly with a reference count.  They
+   don't support inheritance, and therefore are suitable for lots of
+   optimization and things built with zero-cost abstractions.
+
+2) We support type parameters being declared on function definitions, ala
+   `def method[size: Int]`.  This may be standardized into Python as [PEP
+   695](https://peps.python.org/pep-0695/).
+
+3) In addition to the builtin dynamic Python object types like "int" and "dict",
+   we will have library-defined static versions named "Int" and "Dict" etc that
+   are defined as Lightning structs in the library.  These implementations will
+   be very similar to the Python types in surface syntax, but will have type
+   parameters and may have different behavior in some cases (TBD).
+
+4) `var` definitions for local variables and instance properties in structs:
+   We support implicit local variable definitions, but allow them to be
+   optionally explicitly declared as well.
+
+5) In addition to loosely typed `def` statements, we (will) support a more
     strict `fn` statement.  The difference is not about capabilities - a `fn`
     can include dynamic operations and interact with Python objects directly,
     the difference is that a `fn` statement is more strict and doesn't allow
     error of omission as easily.  For example, all arguments must have types,
     and we may require introducers on local variables.
 
-## Expression parsing happens in two phases
+## Various Design notes
+
+### Expression parsing happens in two phases
 
 Python uses its expression grammar for value expressions and for types.  This is
 quite convenient for Lightning ⚡️ given we want types to be parameter values!
@@ -79,7 +100,7 @@ in `LitExprNodes.h`) and we can then "codegen" them into SSA expressions or into
 a type.  This second phase is what performs name lookup etc, which means we can
 parse the expression (and then ignore it) even before name binding.
 
-## Structure of parsing + name binding + type checking
+### Structure of parsing + name binding + type checking
 
 Python supports forward references to declarations in a file and/or module.
 It handles this by making everything be dynamically executable (including `def`s

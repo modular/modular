@@ -202,9 +202,9 @@ struct LitParserBase {
   /// multiphase parsing.
   void skipUntilIndentation(size_t minIndent) {
     while (getToken().isNot(LitToken::eof)) {
-      auto indent = getToken().getIndentation();
-      if (indent.has_value() && indent.value() <= minIndent)
-        break;
+      if (auto indent = getToken().getIndentation())
+        if (indent.value() <= minIndent)
+          break;
       consumeToken();
     }
   }
@@ -698,8 +698,7 @@ ParseResult LitParser::parseSuite(size_t curIndent, StmtContext stmtContext) {
     return success();
 
   // If there is a newline, then parse a list of statements.
-  auto indent = getToken().getIndentation();
-  if (indent.has_value()) {
+  if (auto indent = getToken().getIndentation()) {
     // If the current token is less indented that the source of the suite,
     // then the body is empty.  We don't require a pass.
     if (indent.value() <= curIndent)
@@ -727,6 +726,7 @@ ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
       return emitError("statements must start at the beginning of a line");
+
     if (indent.value() < minIndent)
       break;
 
@@ -923,9 +923,10 @@ struct MetaSignatureParser {
       inputParamLocs.push_back(p.getTokenLocation());
 
       StringAttr name;
-      if (p.parseIdentifier(name, "expected parameter name"))
+      if (p.parseIdentifier(name, "expected parameter name")) {
         // TODO: Scan ahead for better recovery.
         return failure();
+      }
 
       Type paramType = IndexType::get(p.getContext());
       if (p.consumeIf(LitToken::colon)) {
