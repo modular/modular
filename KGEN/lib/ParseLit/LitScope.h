@@ -31,16 +31,17 @@ namespace M::KGEN::LIT {
 class Scope : public LLCL::NonAtomicallyReferenceCounted<Scope> {
 public:
   Scope(Operation *decl, LLCL::RCRef<Scope> parentScope)
-      : decl(decl), parentScope(std::move(parentScope)) {}
+      : decl(decl),
+        parentScope(std::move(parentScope)), builder{OpBuilder::atBlockEnd(
+                                                 &decl->getRegion(0).front())} {
+  }
 
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
   Operation *getDecl() const { return decl; }
   const LLCL::RCRef<Scope> &getParentScope() const { return parentScope; }
 
-  OpBuilder getBuilder() {
-    return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
-  }
+  OpBuilder &getBuilder() { return builder; }
 
   /// This is the value of a parameter bound to a name, attributes in MLIR don't
   /// track locations, so we do so explicitly here.
@@ -82,6 +83,7 @@ private:
   /// to.
   Operation *decl;
   LLCL::RCRef<Scope> parentScope;
+  OpBuilder builder;
 
   // Note: we could unique the identifiers and use a DenseMap.
   llvm::StringMap<Optional<ScopeValue>> decls;

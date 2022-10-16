@@ -18,8 +18,11 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/IndexDialect/IndexAttrs.h"
 #include "Support/IndexDialect/IndexDialect.h"
+#include "Support/IndexDialect/IndexOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -32,6 +35,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 using llvm::SourceMgr;
+namespace scf = mlir::scf;
 
 //===----------------------------------------------------------------------===//
 // Scope
@@ -61,6 +65,28 @@ void Scope::addToScope(StringRef name, ScopeValue newValue, bool &hadError) {
   // so reference to them get squashed as errors during name lookup,
   // avoiding cascading errors.
 }
+
+// FIXME(https://reviews.llvm.org/D135940): This is a clone of
+// llvm::SaveAndRestore that is updated to work with non-copyable values. Remove
+// this when fixed upstream.
+namespace {
+/// A utility class that uses RAII to save and restore the value of a variable.
+template <typename T>
+struct SaveAndRestore {
+  SaveAndRestore(T &X) : X(X), OldValue(X) {}
+  SaveAndRestore(T &X, const T &NewValue) : X(X), OldValue(X) { X = NewValue; }
+  SaveAndRestore(T &X, T &&NewValue) : X(X), OldValue(std::move(X)) {
+    X = std::move(NewValue);
+  }
+  ~SaveAndRestore() { X = std::move(OldValue); }
+  const T &get() { return OldValue; }
+
+private:
+  T &X;
+  T OldValue;
+};
+
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // SharedParserState
@@ -600,6 +626,7 @@ private:
   ParseResult parseSimpleStmt(StmtContext stmtContext);
 
   // Compound statements.
+  ParseResult parseIfStmt(size_t curIndent);
   ParseResult parseDefStmt(size_t curIndent);
   void parseDefBody(LITFuncOp defDecl, size_t defIndent,
                     ArrayRef<Location> inputParamLocs);
@@ -739,7 +766,7 @@ ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
 
 /// statement ::= compound_stmt | simple_stmt
 ///
-/// compound_stmt ::= if_stmt [TODO]
+/// compound_stmt ::= if_stmt
 ///                 | while_stmt [TODO]
 ///                 | for_stmt [TODO]
 ///                 | try_stmt [TODO]
@@ -756,6 +783,8 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
   // Handle compound stmts here and chain to simple statements to handle the
   // whole "statement" production.
   switch (getToken().getKind()) {
+  case LitToken::kw_if:
+    return parseIfStmt(curIndent);
   case LitToken::kw_def:
     return parseDefStmt(curIndent);
   case LitToken::kw_struct:
@@ -791,6 +820,7 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
 ///               | nonlocal_stmtParseResult [TODO]
 ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
   switch (getToken().getKind()) {
+  case LitToken::kw_if:
   case LitToken::kw_def:
   case LitToken::kw_struct:
     emitError() << "'" << getToken().getSpelling()
@@ -947,6 +977,78 @@ struct MetaSignatureParser {
   };
 };
 } // namespace
+
+/// if_stmt ::=  "if" assignment_expression ":" suite
+///             ("elif" assignment_expression ":" suite)*
+///             ["else" ":" suite]
+/// TODO: ensure var declarations inside bodies are
+// placed the main function scope: lit, like python, has
+// only one scope per function
+ParseResult LitParser::parseIfStmt(size_t curIndent) {
+  OpBuilder &builder = currentScope->getBuilder();
+  Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
+  auto one = builder.create<index::ConstantOp>(ifLoc, 1);
+
+  // Parse the condition expression of the If statement and create a comparison
+  // with the current builder.
+  // The caller should be sure to have the correct builder in currentScope to
+  // build the conditional expression in the desired place.
+  auto parseCondition = [&](index::CmpOp &cmpOp) -> ParseResult {
+    // TODO: add type checking: the condition should be bool
+    ExprParser exprParser(*this, currentScope);
+    ExprNode *condExp = exprParser.parseExpression();
+    Location loc = translateLocation(condExp->getLoc());
+    Value cond = exprParser.emitAsValue(condExp);
+    if (!cond)
+      return failure();
+    auto cmpBuilder = currentScope->getBuilder();
+    cmpOp = cmpBuilder.create<index::CmpOp>(loc, index::IndexCmpPredicate::EQ,
+                                            cond, one);
+    if (parseToken(LitToken::colon, "expected ':' after expression"))
+      return failure();
+    return success();
+  };
+
+  index::CmpOp cmp;
+  if (failed(parseCondition(cmp)))
+    return failure();
+
+  auto ifOp = builder.create<scf::IfOp>(ifLoc, cmp, /*withElse=*/true);
+  {
+    SaveAndRestore<OpBuilder> builderSaver(builder, ifOp.getThenBodyBuilder());
+    if (failed(parseSuite(curIndent, StmtContext::normal)))
+      return failure();
+  }
+  scf::IfOp lastIfOp = ifOp;
+  while (getToken().is(LitToken::kw_elif)) {
+    Location elifLoc =
+        translateLocation(consumeToken(LitToken::kw_elif).getLoc());
+    auto elseBuilder = lastIfOp.getElseBodyBuilder();
+    index::CmpOp elifCmp;
+    {
+      SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
+                                             elseBuilder);
+      if (failed(parseCondition(elifCmp)))
+        return failure();
+    }
+    lastIfOp =
+        elseBuilder.create<scf::IfOp>(elifLoc, elifCmp, /*withElse=*/true);
+    SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
+                                           lastIfOp.getThenBodyBuilder());
+    if (failed(parseSuite(curIndent, StmtContext::normal)))
+      return failure();
+  }
+  if (getToken().is(LitToken::kw_else)) {
+    consumeToken(LitToken::kw_else);
+    if (parseToken(LitToken::colon, "expected ':' after else"))
+      return failure();
+    SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
+                                           lastIfOp.getElseBodyBuilder());
+    if (failed(parseSuite(curIndent, StmtContext::normal)))
+      return failure();
+  }
+  return success();
+}
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
@@ -1209,28 +1311,6 @@ ParseResult LitParser::parseReturnStmt() {
   return success();
 }
 
-// FIXME(https://reviews.llvm.org/D135940): This is a clone of
-// llvm::SaveAndRestore that is updated to work with non-copyable values. Remove
-// this when fixed upstream.
-namespace {
-/// A utility class that uses RAII to save and restore the value of a variable.
-template <typename T>
-struct SaveAndRestore {
-  SaveAndRestore(T &X) : X(X), OldValue(X) {}
-  SaveAndRestore(T &X, const T &NewValue) : X(X), OldValue(X) { X = NewValue; }
-  SaveAndRestore(T &X, T &&NewValue) : X(X), OldValue(std::move(X)) {
-    X = std::move(NewValue);
-  }
-  ~SaveAndRestore() { X = std::move(OldValue); }
-  const T &get() { return OldValue; }
-
-private:
-  T &X;
-  T OldValue;
-};
-
-} // namespace
-
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
@@ -1290,7 +1370,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   context->loadDialect<POP::POPDialect, LITDialect, index::IndexDialect,
-                       KGENDialect>();
+                       KGENDialect, scf::SCFDialect>();
 
   // This is the result module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(
