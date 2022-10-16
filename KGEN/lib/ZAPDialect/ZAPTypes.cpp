@@ -117,7 +117,7 @@ BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
 }
 
 //===----------------------------------------------------------------------===//
-// TensorType
+// NDBufferType
 //===----------------------------------------------------------------------===//
 
 /// Print an array of parameter values that either has an index type or is null
@@ -146,26 +146,27 @@ parseOptionalIndicesParamValue(AsmParser &p,
 }
 
 LogicalResult
-TensorType::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
-                   ArrayRef<TypedAttr> shape, TypedAttr dtype) {
+NDBufferType::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
+                     ArrayRef<TypedAttr> shape, TypedAttr dtype) {
   if (shape.empty())
-    return emitError() << "shape parameter for tensor must not be empty";
-  if (shape.size() > TensorType::getMaximumRank())
+    return emitError() << "shape parameter for ndbuffer must not be empty";
+  if (shape.size() > NDBufferType::getMaximumRank())
     return emitError()
-           << "shape parameter exceeds the maximum rank of the tensor type";
+           << "shape parameter exceeds the maximum rank of the ndbuffer type";
   for (auto size : shape) {
     if (size && !size.getType().isIndex())
-      return emitError() << "size parameter for tensor must have type `index`";
+      return emitError()
+             << "size parameter for ndbuffer must have type `index`";
     auto sizeInt = dyn_cast_if_present<IntegerAttr>(size);
     if (sizeInt && sizeInt.getInt() <= 0)
-      return emitError() << "size parameter for tensor must be positive";
+      return emitError() << "size parameter for ndbuffer must be positive";
   }
   if (dtype && !dtype.getType().isa<DTypeType>())
-    return emitError() << "type parameter for tensor must be a !kgen.dtype";
+    return emitError() << "type parameter for ndbuffer must be a !kgen.dtype";
   return success();
 }
 
-void TensorType::walkImmediateSubElements(
+void NDBufferType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {
   for (TypedAttr shape : getShape())
@@ -173,20 +174,20 @@ void TensorType::walkImmediateSubElements(
   walkAttrsFn(getDType());
 }
 
-Type TensorType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                             ArrayRef<Type> replTypes) const {
+Type NDBufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                               ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == (getRank() + 1) && replTypes.empty());
   SmallVector<TypedAttr, 5> shapeAttrs;
   shapeAttrs.reserve(replAttrs.size() - 1);
   for (auto attr : llvm::drop_end(replAttrs))
     shapeAttrs.push_back(attr);
 
-  return TensorType::get(getContext(), shapeAttrs, replAttrs.back());
+  return NDBufferType::get(getContext(), shapeAttrs, replAttrs.back());
 }
 
-size_t TensorType::getRank() const { return getShape().size(); }
+size_t NDBufferType::getRank() const { return getShape().size(); }
 
-Optional<int64_t> TensorType::getResolvedSize() const {
+Optional<int64_t> NDBufferType::getResolvedSize() const {
   int64_t size = 1;
   for (TypedAttr shape : getShape()) {
     auto intAttr = dyn_cast_if_present<IntegerAttr>(shape);
@@ -197,29 +198,29 @@ Optional<int64_t> TensorType::getResolvedSize() const {
   return size;
 }
 
-Optional<DType> TensorType::getResolvedDType() const {
+Optional<DType> NDBufferType::getResolvedDType() const {
   return ::getResolvedDType(this);
 }
 
-POP::PointerType TensorType::getPointerType() const {
+POP::PointerType NDBufferType::getPointerType() const {
   return ::getPointerType(this);
 }
 
-POP::ScalarType TensorType::getElementType() const {
+POP::ScalarType NDBufferType::getElementType() const {
   return ::getElementType(this);
 }
 
-TensorType TensorType::get(ArrayRef<TypedAttr> shape, TypedAttr dtype) {
+NDBufferType NDBufferType::get(ArrayRef<TypedAttr> shape, TypedAttr dtype) {
   return get(dtype.getContext(), shape, dtype);
 }
 
-TensorType TensorType::get(MLIRContext *ctx, ArrayRef<TypedAttr> shape,
-                           DType dtype) {
+NDBufferType NDBufferType::get(MLIRContext *ctx, ArrayRef<TypedAttr> shape,
+                               DType dtype) {
   return get(ctx, shape, DTypeConstantAttr::get(ctx, dtype));
 }
 
-TensorType TensorType::get(MLIRContext *ctx, ArrayRef<int64_t> shape,
-                           DType dtype) {
+NDBufferType NDBufferType::get(MLIRContext *ctx, ArrayRef<int64_t> shape,
+                               DType dtype) {
   SmallVector<TypedAttr, 5> shapeAttr;
   llvm::transform(shape, std::back_inserter(shapeAttr),
                   [&](int64_t dim) { return Builder(ctx).getIndexAttr(dim); });

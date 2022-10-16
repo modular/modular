@@ -364,14 +364,14 @@ def ZAP_BufferSIMDStoreOp : ZAPOp<"buffer.simd_store"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TensorConstructOp
+// NDBufferConstructOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [Pure,
-    AttrSizedOperandSegments, TensorPointerType<"result", "ptr">]> {
+def ZAP_NDBufferConstructOp : ZAPOp<"ndbuffer.construct", [Pure,
+    AttrSizedOperandSegments, NDBufferPointerType<"result", "ptr">]> {
   let summary = "construct a type with a pointer";
   let description = [{
-    The `zap.tensor.construct` operation constructs a tensor using a raw
+    The `zap.ndbuffer.construct` operation constructs a ndbuffer using a raw
     pointer. Requires size and/or dtype operands as necessary, if they are
     dynamic, so not known by the return type. The order of the operands bind
     to the order of unknown sizes in the return type.
@@ -379,26 +379,26 @@ def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [Pure,
     Example:
 
     ```mlir
-    // Construct a tensor with a known size and type.
-    %0 = zap.tensor.construct %ptr : !zap.tensor<[4], f32>
+    // Construct a ndbuffer with a known size and type.
+    %0 = zap.ndbuffer.construct %ptr : !zap.ndbuffer<[4], f32>
 
-    // Construct a 2-dimensional tensor with a dynamic size.
-    %1 = zap.tensor.construct %ptr[%s1, %s2] : !zap.tensor<[?, ?], f32>
+    // Construct a 2-dimensional ndbuffer with a dynamic size.
+    %1 = zap.ndbuffer.construct %ptr[%s1, %s2] : !zap.ndbuffer<[?, ?], f32>
 
-    // Construct a 2-dimensional tensor with the last dimension being dynamic.
-    %2 = zap.tensor.construct %ptr[%s1] : !zap.tensor<[42, ?], f32>
+    // Construct a 2-dimensional ndbuffer with the last dimension being dynamic.
+    %2 = zap.ndbuffer.construct %ptr[%s1] : !zap.ndbuffer<[42, ?], f32>
 
-    // Construct a tensor with a dynamic dtype.
-    %3 = zap.tensor.construct %ptr of %dtype : !zap.tensor<[4], ?>
+    // Construct a ndbuffer with a dynamic dtype.
+    %3 = zap.ndbuffer.construct %ptr of %dtype : !zap.ndbuffer<[4], ?>
 
     // Construct a buffer with a dynamic size and dtype.
-    %4 = zap.tensor.construct %ptr[%size] of %dtype : !zap.tensor<[?], ?>
+    %4 = zap.ndbuffer.construct %ptr[%size] of %dtype : !zap.ndbuffer<[?], ?>
     ```
   }];
 
   let arguments = (ins POP_PointerType:$ptr, Variadic<Index>:$shape,
                        Optional<DTypeType>:$dType);
-  let results = (outs ZAP_TensorType:$result);
+  let results = (outs ZAP_NDBufferType:$result);
   let assemblyFormat = [{
     $ptr (`[` $shape^ `]`)? (`of` $dType^)? attr-dict `:`
     qualified(type($result))
@@ -407,27 +407,27 @@ def ZAP_TensorConstructOp : ZAPOp<"tensor.construct", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// TensorDimOp
+// NDBufferDimOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [Pure]> {
-  let summary = "get the dimension of the tensor at specified index";
+def ZAP_NDBufferDimOp : ZAPOp<"ndbuffer.dim", [Pure]> {
+  let summary = "get the dimension of the ndbuffer at specified index";
   let description = [{
-    The `zap.tensor.dim` operation returns the size of the given tensor as an
-    SSA value (of type `index`) at the specified dimension.
+    The `zap.ndbuffer.dim` operation returns the size of the given ndbuffer as
+    an SSA value (of type `index`) at the specified dimension.
 
     Example:
 
     ```mlir
-    %0 = zap.tensor.dim %arg0[%idx] : !zap.tensor<[3], f32>
-    %1 = zap.tensor.dim %arg1[%idx] : !zap.tensor<[4, ?], f32>
+    %0 = zap.ndbuffer.dim %arg0[%idx] : !zap.ndbuffer<[3], f32>
+    %1 = zap.ndbuffer.dim %arg1[%idx] : !zap.ndbuffer<[4, ?], f32>
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor, IndexAttr:$index);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer, IndexAttr:$index);
   let results = (outs Index:$result);
   let assemblyFormat = [{
-    $tensor `[` $index `]` attr-dict `:` qualified(type($tensor))
+    $nDBuffer `[` $index `]` attr-dict `:` qualified(type($nDBuffer))
   }];
 
   let hasFolder = 1;
@@ -436,156 +436,157 @@ def ZAP_TensorDimOp : ZAPOp<"tensor.dim", [Pure]> {
 
 
 //===----------------------------------------------------------------------===//
-// TensorSizeOp
+// NDBufferSizeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorSizeOp : ZAPOp<"tensor.size", [Pure]> {
-  let summary = "get the total number of elements in the tensor";
+def ZAP_NDBufferSizeOp : ZAPOp<"ndbuffer.size", [Pure]> {
+  let summary = "get the total number of elements in the NDBuffer";
   let description = [{
-    The `zap.tensor.size` operation returns the total number of elements in the
-    given tensor as an SSA value (of type `index`).
+    The `zap.ndbuffer.size` operation returns the total number of elements in
+    the given ndbuffer as an SSA value (of type `index`).
 
     Example:
 
     ```mlir
-    %0 = zap.tensor.size %arg0 : !zap.tensor<[3], f32>
-    %1 = zap.tensor.size %arg1 : !zap.tensor<[?, 4, ?], ?>
+    %0 = zap.ndbuffer.size %arg0 : !zap.ndbuffer<[3], f32>
+    %1 = zap.ndbuffer.size %arg1 : !zap.ndbuffer<[?, 4, ?], ?>
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer);
   let results = (outs Index:$result);
-  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+  let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
 
   let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
-// TensorLoadOp
+// NDBufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorLoadOp : ZAPOp<"tensor.load",
-    [TensorElementType<"tensor", "result">]> {
-  let summary = "tensor load operation";
+def ZAP_NDBufferLoadOp : ZAPOp<"ndbuffer.load",
+    [NDBufferElementType<"nDBuffer", "result">]> {
+  let summary = "ndbuffer load operation";
   let description = [{
-    The `zap.tensor.load` operation takes a tensor and a list of index
+    The `zap.ndbuffer.load` operation takes a ndbuffer and a list of index
     positions and extracts the `!pop.scalar` value at that position. The
     positions must be of type index and their length must be of the same rank
-    as the tensor.
+    as the NDBuffer.
 
     Example:
 
     ```mlir
-    %1 = zap.tensor.load %0[%pos0] : !zap.tensor<[size], dtype>
-    %2 = zap.tensor.load %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>
+    %1 = zap.ndbuffer.load %0[%pos0] : !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.load %1[%pos0, %pos1]:!zap.ndbuffer<[size0, size1], dtype>
     ```
   }];
 
-  let arguments = (ins Arg<TensorKnownDType, "", [MemRead]>:$tensor,
+  let arguments = (ins Arg<NDBufferKnownDType, "", [MemRead]>:$nDBuffer,
                        Variadic<Index>:$positions);
   let results = (outs POP_ScalarType:$result);
 
   let assemblyFormat = [{
-    $tensor `[` $positions `]` attr-dict `:` qualified(type($tensor))
+    $nDBuffer `[` $positions `]` attr-dict `:` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
 }
 //===----------------------------------------------------------------------===//
 
-// TensorStoreOp
+// NDBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorStoreOp : ZAPOp<"tensor.store",
-    [TensorElementType<"tensor", "value">]> {
-  let summary = "tensor store operation";
+def ZAP_NDBufferStoreOp : ZAPOp<"ndbuffer.store",
+    [NDBufferElementType<"nDBuffer", "value">]> {
+  let summary = "ndbuffer store operation";
   let description = [{
-    The `zap.tensor.store` operation takes a source value, a buffer, and index
-    positions and inserts the source value into the tensor at the specified
+    The `zap.ndbuffer.store` operation takes a source value, a buffer, and index
+    positions and inserts the source value into the ndbuffer at the specified
     position. The positions must be of type index and their length must be of
-    the same rank as the tensor.
+    the same rank as the NDBuffer.
 
     Example:
 
     ```mlir
-    %1 = zap.tensor.store %val, %0[%pos0] : !zap.tensor<[size], dtype>
-    %2 = zap.tensor.store %val, %1[%pos0, %pos1] : !zap.tensor<[size0, size1], dtype>
+    %1 = zap.ndbuffer.store %val, %0[%pos0] : !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] :
+                                      !zap.ndbuffer<[size0, size1], dtype>
     ```
   }];
 
-  let arguments = (ins Arg<TensorKnownDType, "", [MemWrite]>:$tensor,
+  let arguments = (ins Arg<NDBufferKnownDType, "", [MemWrite]>:$nDBuffer,
                        POP_ScalarType:$value, Variadic<Index>:$positions);
 
   let assemblyFormat = [{
-    $value `,` $tensor `[` $positions `]` attr-dict `:` qualified(type($tensor))
+    $value `,` $nDBuffer `[` $positions `]` attr-dict `:` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
-// TensorSIMDLoadOp
+// NDBufferSIMDLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorSIMDLoadOp : ZAPOp<"tensor.simd_load"> {
-  let summary = "tensor load operation";
+def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
+  let summary = "ndbuffer load operation";
   let description = [{
-    The `zap.tensor.simd_load` operation takes a tensor and a list of index
+    The `zap.ndbuffer.simd_load` operation takes a ndbuffer and a list of index
     positions and extracts the `!pop.simd` value at that position. The
     positions must be of type index and their length must be of the same rank
-    as the tensor.
+    as the NDBuffer.
 
     Example:
 
     ```mlir
-    %1 = zap.tensor.simd_load %0[%pos0] :
-                      !zap.tensor<[size], dtype>, !pop.simd<simd_width, dtype>
-    %2 = zap.tensor.simd_load %1[%pos0, %pos1] : !zap.tensor<[s0, s1], dtype>,
+    %1 = zap.ndbuffer.simd_load %0[%pos0] :
+                      !zap.ndbuffer<[size], dtype>, !pop.simd<simd_width, dtype>
+    %2 = zap.ndbuffer.simd_load %1[%pos0, %pos1]:!zap.ndbuffer<[s0, s1], dtype>,
                                                  !pop.simd<simd_width, dtype>
     ```
   }];
 
-  let arguments = (ins Arg<TensorKnownDType, "", [MemRead]>:$tensor,
+  let arguments = (ins Arg<NDBufferKnownDType, "", [MemRead]>:$nDBuffer,
                        Variadic<Index>:$positions);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
-    $tensor `[` $positions `]` attr-dict `:`
-      qualified(type($tensor)) `,` qualified(type($result))
+    $nDBuffer `[` $positions `]` attr-dict `:`
+      qualified(type($nDBuffer)) `,` qualified(type($result))
   }];
 
   let hasVerifier = 1;
 }
 //===----------------------------------------------------------------------===//
 
-// TensorSIMDStoreOp
+// NDBufferSIMDStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorSIMDStoreOp : ZAPOp<"tensor.simd_store"> {
-  let summary = "tensor store operation";
+def ZAP_NDBufferSIMDStoreOp : ZAPOp<"ndbuffer.simd_store"> {
+  let summary = "ndbuffer store operation";
   let description = [{
-    The `zap.tensor.simd_store` operation takes a source simd value, a tensor,
-    and index positions and inserts the source value into the tensor at the
-    specified position. The positions must be of type index and their length
-    must be of the same rank as the tensor.
+    The `zap.ndbuffer.simd_store` operation takes a source simd value, a
+    NDBuffer, and index positions and inserts the source value into the
+    ndbuffer at the specified position. The positions must be of type index and
+    their length must be of the same rank as the NDBuffer.
 
     Example:
 
     ```mlir
-    %1 = zap.tensor.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>,
-                                                 !zap.tensor<[size], dtype>
-    %2 = zap.tensor.simd_store %val, %1[%pos0, %pos1] :
+    %1 = zap.ndbuffer.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>,
+                                                 !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.simd_store %val, %1[%pos0, %pos1] :
                                         !pop.simd<simd_width, dtype>,
-                                        !zap.tensor<[size0, size1], dtype>
+                                        !zap.ndbuffer<[size0, size1], dtype>
     ```
   }];
 
-  let arguments = (ins Arg<TensorKnownDType, "", [MemWrite]>:$tensor,
+  let arguments = (ins Arg<NDBufferKnownDType, "", [MemWrite]>:$nDBuffer,
                        POP_SIMDType:$value, Variadic<Index>:$positions);
 
   let assemblyFormat = [{
-    $value `,` $tensor `[` $positions `]` attr-dict `:`
-      qualified(type($value)) `,` qualified(type($tensor))
+    $value `,` $nDBuffer `[` $positions `]` attr-dict `:`
+      qualified(type($value)) `,` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
@@ -593,78 +594,78 @@ def ZAP_TensorSIMDStoreOp : ZAPOp<"tensor.simd_store"> {
 
 
 //===----------------------------------------------------------------------===//
-// TensorDTypeOp
+// NDBufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorDTypeOp : ZAPOp<"tensor.dtype", [Pure]> {
-  let summary = "get the dtype of the tensor";
+def ZAP_NDBufferDTypeOp : ZAPOp<"ndbuffer.dtype", [Pure]> {
+  let summary = "get the dtype of the NDBuffer";
   let description = [{
-    The `zap.tensor.dtype` operation returns the dtype of the given tensor as an
-    SSA value (of type `!kgen.dtype`) that may be used by other ops.
+    The `zap.ndbuffer.dtype` operation returns the dtype of the given ndbuffer
+    as an SSA value (of type `!kgen.dtype`) that may be used by other ops.
 
     Example:
 
     ```mlir
-    %0 = zap.tensor.dtype %arg0 : !zap.tensor<[3], ?>
-    %1 = zap.tensor.dtype %arg1 : !zap.tensor<[4, ?], f32>
+    %0 = zap.ndbuffer.dtype %arg0 : !zap.ndbuffer<[3], ?>
+    %1 = zap.ndbuffer.dtype %arg1 : !zap.ndbuffer<[4, ?], f32>
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer);
   let results = (outs DTypeType:$result);
-  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+  let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
 
   let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
-// TensorRankOp
+// NDBufferRankOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorRankOp : ZAPOp<"tensor.rank", [Pure]> {
-  let summary = "get the rank of the tensor";
+def ZAP_NDBufferRankOp : ZAPOp<"ndbuffer.rank", [Pure]> {
+  let summary = "get the rank of the NDBuffer";
   let description = [{
-    The `zap.tensor.rank` operation returns the rank of the given tensor as an
-    SSA value (of type `index`) that may be used by other ops.
+    The `zap.ndbuffer.rank` operation returns the rank of the given ndbuffer as
+    an SSA value (of type `index`) that may be used by other ops.
 
     Example:
 
     ```mlir
-    %0 = zap.tensor.rank %arg0 : !zap.tensor<[3], f32>
-    %1 = zap.tensor.rank %arg1 : !zap.tensor<[4, ?], f32>
+    %0 = zap.ndbuffer.rank %arg0 : !zap.ndbuffer<[3], f32>
+    %1 = zap.ndbuffer.rank %arg1 : !zap.ndbuffer<[4, ?], f32>
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer);
   let results = (outs Index:$result);
-  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+  let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
 
   let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
-// TensorAddressOp
+// NDBufferAddressOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_TensorAddressOp : ZAPOp<"tensor.address", [Pure,
-    TensorPointerType<"tensor", "ptr">]> {
-  let summary = "get the address of the tensor";
+def ZAP_NDBufferAddressOp : ZAPOp<"ndbuffer.address", [Pure,
+    NDBufferPointerType<"nDBuffer", "ptr">]> {
+  let summary = "get the address of the NDBuffer";
   let description = [{
-    The `zap.tensor.address` operation returns the address of the given tensor
-    as a pointer to a scalar of the tensor dtype. The pointer is to the start
-    of the underlying tensor data.
+    The `zap.ndbuffer.address` operation returns the address of the given
+    NDBuffer as a pointer to a scalar of the ndbuffer dtype. The pointer is to
+    the start of the underlying ndbuffer data.
 
     Example:
 
     ```mlir
-    %0 = zap.tensor.address %arg0 : !zap.tensor<[3], f32>
-    %1 = zap.tensor.address %arg1 : !zap.buffer<[?, 3], ?>
+    %0 = zap.ndbuffer.address %arg0 : !zap.ndbuffer<[3], f32>
+    %1 = zap.ndbuffer.address %arg1 : !zap.buffer<[?, 3], ?>
     ```
   }];
 
-  let arguments = (ins ZAP_TensorType:$tensor);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer);
   let results = (outs POP_PointerType:$ptr);
-  let assemblyFormat = "$tensor attr-dict `:` qualified(type($tensor))";
+  let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -674,9 +675,9 @@ def ZAP_TensorAddressOp : ZAPOp<"tensor.address", [Pure,
 def ZAP_PrintOp : ZAPOp<"print"> {
   let summary = "print format operation";
   let description = [{
-    Print a series of values formatted according to the provided string.
-    This function is meant for debugging. The format string is the same as
-    `printf` and may not be supported on all targets.
+    Print a series of values formatted according to the provided string. This
+    function is meant for debugging. The format string is the same as `printf`
+    and may not be supported on all targets.
 
     Example:
 

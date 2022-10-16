@@ -33,7 +33,7 @@ As we build things up we will start caring about the execution time of search.  
 This doc doesn’t include a lot of things that we’ll eventually want to add.
 
 
-## ⚠️Multidimensional tensors
+## ✅ Multidimensional tensors
 
 I hear that these are a thing, and so are a lot of other data types with implicit parallelism (e.g. tables, trees, etc), they will be added later.  The key observation is that the “buffer” type we need for 1D operations isn’t hard coded into the system.  It is a type and set of operations that allow kernel authors to express algorithms.  Once this is proven we can add new types and operations for more complicated algorithms.
 
