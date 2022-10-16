@@ -85,12 +85,12 @@ struct Int:
 
 # CHECK-LABEL: lit.struct.decl @Pair {
 struct Pair:
-  var a : Int   # CHECK-NEXT: %a = lit.var.decl "a" : <index>
-  var b : Int   # CHECK-NEXT: %b = lit.var.decl "b" : <index>
+  var a : Int   # CHECK-NEXT: %a = lit.var.decl "a" : <!lit.unresolved>
+  var b : Int   # CHECK-NEXT: %b = lit.var.decl "b" : <!lit.unresolved>
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.func public @var_decls
 def var_decls():
   x = 123       # CHECK: %x = lit.var.decl "x" : <index>
-  var y : Int   # CHECK: %y = lit.var.decl "y" : <index>
-  y = 42
+  var y : Int   # CHECK: %y = lit.var.decl "y" : <!lit.unresolved>
+  #y = 42  # TODO: Enable

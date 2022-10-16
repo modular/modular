@@ -14,6 +14,7 @@
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -1129,7 +1130,7 @@ ParseResult LitParser::parseVarDeclStmt() {
   ExprNode *typeExpr = exprParser.parseExpression();
   // TODO (types): translate typeExpr into a type.
   (void)typeExpr;
-  Type type = IndexType::get(getContext());
+  Type type = UnresolvedType::get(getContext());
 
   if (consumeIf(LitToken::equal)) {
     ExprParser exprParser(*this, currentScope);
