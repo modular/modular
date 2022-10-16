@@ -1,0 +1,47 @@
+# RUN: kgen-translate -import-lit %s | FileCheck %s
+
+# CHECK-LABEL: lit.func public @test_if(%a: index, %b: index, %c: index) -> index {
+def test_if(a: Int, b: Int, c: Int) -> Int:
+  # CHECK:          scf.if
+  if a:
+    inside_a = 0
+  # CHECK:          } else {
+  # CHECK:            scf.if
+  elif b:
+    inside_b = 1
+  # CHECK:          } else {
+  # CHECK:            scf.if
+  elif c:
+    inside_c = 2
+  # CHECK:          } else {
+  else:
+    inside_else = 3
+  # CHECK:                }
+  # CHECK-NEXT:        }
+  # CHECK-NEXT:     }
+  z = 4
+  return a
+
+# CHECK-LABEL: lit.func public @test_if_nested(%a: index, %b: index, %c: index) -> index {
+def test_if_nested(a: Int, b: Int, c: Int) -> Int:
+  # CHECK:                    scf.if
+  if a:
+    inside_a = 0
+  # CHECK:                   } else {
+  # CHECK:                     scf.if
+  else:
+    if b:
+      inside_b = 1
+  # CHECK:                   } else {
+  # CHECK:                     scf.if
+    else:
+      if c:
+        inside_c = 2
+  # CHECK:                   } else {
+      else:
+        inside_else = 3
+  # CHECK:                         }
+  # CHECK-NEXT:                 }
+  # CHECK-NEXT:              }
+  z = 4
+  return a
