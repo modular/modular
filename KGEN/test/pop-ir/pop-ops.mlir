@@ -552,6 +552,22 @@ kgen.generator @stack_allocation<size, type: type>() {
   kgen.return
 }
 
+// CHECK-LABEL: @memcpy
+// CHECK-SAME: %[[DEST:.*]]: !pop.pointer<type>
+// CHECK-SAME: %[[SRC:.*]]: !pop.pointer<!pop.scalar<f32>>
+kgen.generator @memcpy<type: type, dtype: dtype>(%dest: !pop.pointer<type>, %src: !pop.pointer<!pop.scalar<f32>>) {
+  // CHECK: %[[SIZE:.*]] = index.constant 1
+  %one = index.constant 1
+  // CHECK: pop.memcpy %[[DEST]], %[[SRC]], %[[SIZE]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  pop.memcpy %dest, %src, %one : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  // CHECK: pop.memcpy inline %[[DEST]], %[[SRC]], %[[SIZE]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  pop.memcpy inline %dest, %src, %one : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  // CHECK: pop.memcpy inline volatile %[[DEST]], %[[SRC]], %[[SIZE]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  pop.memcpy inline volatile %dest, %src, %one : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<type>
+  kgen.return
+}
+
+
 // CHECK-LABEL: @external_call
 kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>, %b: !pop.scalar<dtype>) {
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
