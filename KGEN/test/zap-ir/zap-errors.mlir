@@ -161,6 +161,15 @@ kgen.generator @zap_ndbuffer_dim(%arg0 : !zap.ndbuffer<[3], f32>) {
 
 // -----
 
+kgen.generator @zap_ndbuffer_dim(%arg0 : !zap.ndbuffer<[3], f32>) {
+  // expected-error @below {{'zap.ndbuffer.dim' op attribute 'index' failed to satisfy constraint: index attribute whose value is non-negative}}
+  zap.ndbuffer.dim %arg0[-1] : !zap.ndbuffer<[3], f32>
+  kgen.return
+}
+
+
+// -----
+
 kgen.func @string_wrong_array_size() {
   // expected-error @below {{expected array result to have 6 elements but got 1}}
   %0 = zap.global_string "foobar"[1]

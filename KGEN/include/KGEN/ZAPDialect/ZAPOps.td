@@ -427,7 +427,7 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
     %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
     %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size0, size1], f32>
     %2 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size], type>
-    
+
     // The following is not allowed:
     %3 = pop.ndbuffer.stack_allocation : !zap.ndbuffer<[?], f32>
     %4 = pop.ndbuffer.stack_allocation : !zap.ndbuffer<[4], ?>
@@ -457,7 +457,8 @@ def ZAP_NDBufferDimOp : ZAPOp<"ndbuffer.dim", [Pure]> {
     ```
   }];
 
-  let arguments = (ins ZAP_NDBufferType:$nDBuffer, IndexAttr:$index);
+  let arguments = (ins ZAP_NDBufferType:$nDBuffer,
+                       ConfinedAttr<IndexAttr, [IntNonNegative]>:$index);
   let results = (outs Index:$result);
   let assemblyFormat = [{
     $nDBuffer `[` $index `]` attr-dict `:` qualified(type($nDBuffer))
