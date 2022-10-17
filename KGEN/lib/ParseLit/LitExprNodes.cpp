@@ -69,11 +69,14 @@ Value MLIRValueRep::getAsValue(Location loc, OpBuilder &builder) const {
 // EmitterState Implementation
 //===----------------------------------------------------------------------===//
 
+EmitterState::EmitterState(LitParserBase &parser, Scope &scope)
+    : parser(parser), scope(scope), builder(scope.getBuilder()) {}
+
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
 Value EmitterState::emitAsValue(MLIRValueRep rep, SMLoc loc) {
-  return rep.getAsValue(mapLocation(loc), builder);
+  return rep.getAsValue(translateLocation(loc), builder);
 }
 
 /// This helper emits the specified value rep as an SSA value, materializing
@@ -117,7 +120,7 @@ MLIRValueRep StringLiteralNode::emit(EmitterState &state) const {
 }
 
 MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
-  Optional<Scope::ScopeValue> declOrValue = state.scope->lookup(spelling);
+  Optional<Scope::ScopeValue> declOrValue = state.scope.lookup(spelling);
   if (!declOrValue) {
     state.emitError(getLoc(), "use of unknown declaration \"")
         << spelling << '"';
@@ -131,7 +134,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   // Variable references resolve to load from the variable.
   auto var = std::get<VarDeclOp>(declOrValue.value());
   return state.builder
-      .create<POP::LoadOp>(state.mapLocation(getLoc()), var,
+      .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
                            /*alignment*/ None)
       .getResult();
 }
@@ -155,7 +158,7 @@ MLIRValueRep CallNode::emit(EmitterState &state) const {
     return {};
   }
 
-  state.builder.create<CallParamOp>(state.mapLocation(getLoc()),
+  state.builder.create<CallParamOp>(state.translateLocation(getLoc()),
                                     /*resultTypes*/ ArrayRef<Type>(),
                                     calleeParam,
                                     /*inputParams*/ ArrayRef<ParamBindAttr>(),
@@ -210,10 +213,10 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
     llvm_unreachable("unknown binary operator");
   case kAdd:
     return (Value)state.builder.create<index::AddOp>(
-        state.mapLocation(getLoc()), lhsVal, rhsVal);
+        state.translateLocation(getLoc()), lhsVal, rhsVal);
 
   case kMul:
     return (Value)state.builder.create<index::MulOp>(
-        state.mapLocation(getLoc()), lhsVal, rhsVal);
+        state.translateLocation(getLoc()), lhsVal, rhsVal);
   }
 }

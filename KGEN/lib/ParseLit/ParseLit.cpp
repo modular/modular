@@ -254,12 +254,15 @@ struct LitParser : public LitParserBase {
   // TODO: Move expression emission elsewhere!
 
   /// Emit the specified expression tree to MLIR in the current context.
-  MLIRValueRep emitExpr(ExprNode *node);
+  MLIRValueRep emitExpr(ExprNode *node) {
+    EmitterState state(*this, *currentScope);
+    return node->emit(state);
+  }
 
   Value emitExprAsValue(ExprNode *node) {
-    auto &builder = currentScope->getBuilder();
-    return emitExpr(node).getAsValue(translateLocation(node->getLoc()),
-                                     builder);
+    EmitterState state(*this, *currentScope);
+    return node->emit(state).getAsValue(translateLocation(node->getLoc()),
+                                        state.builder);
   }
 
   // Statements.
@@ -358,23 +361,6 @@ void LitParser::finalizeScopeDecl() {
     parseDefBody(cast<LITFuncOp>(currentScope->getDecl()), decl.indentLevel,
                  decl.inputParamLocs);
   }
-}
-
-//===----------------------------------------------------------------------===//
-// Expressions
-//===----------------------------------------------------------------------===//
-
-/// Emit the specified expression tree to MLIR in the current context.
-MLIRValueRep LitParser::emitExpr(ExprNode *node) {
-  // TODO: Need a notion of a current builder that isn't just end of decl.
-  auto &builder = currentScope->getBuilder();
-  EmitterState state{
-      builder, currentScope.getPointer(),
-      [&](SMLoc loc) -> Location { return translateLocation(loc); },
-      [&](SMLoc loc, const Twine &twine) -> InFlightDiagnostic {
-        return emitError(loc, twine);
-      }};
-  return node->emit(state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1057,6 +1043,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   }
 
   (void)parseSuite(curIndent, StmtContext::structBody);
+
   return success();
 }
 
