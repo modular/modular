@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(ParseLit
   LitExprNodes.cpp
+  LitExprParser.cpp
   LitLexer.cpp
   LitParserBase.cpp
   ParseLit.cpp
