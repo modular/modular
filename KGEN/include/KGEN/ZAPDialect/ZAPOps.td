@@ -407,6 +407,39 @@ def ZAP_NDBufferConstructOp : ZAPOp<"ndbuffer.construct", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// NDBufferStackAllocation
+//===----------------------------------------------------------------------===//
+
+def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
+  let summary = "ndbuffer scoped stack memory allocation operation";
+  let description = [{
+    The `zap.ndbuffer.stack_allocation` operation allocates memory on the stack.
+    The allocated memory is automatically released when control transfers back
+    from the region of its closest surrounding operation. The amount of memory
+    allocated is specified by the ndbuffer type.
+
+    The resulting ndbuffer type must be concrete in both the shape and dtype.
+    That is, the ndbuffer type cannot have `?` as either the shape or dtype.
+
+    Example:
+
+    ```mlir
+    %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
+    %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size0, size1], f32>
+    %2 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size], type>
+    
+    // The following is not allowed:
+    %3 = pop.ndbuffer.stack_allocation : !zap.ndbuffer<[?], f32>
+    %4 = pop.ndbuffer.stack_allocation : !zap.ndbuffer<[4], ?>
+    ```
+  }];
+
+  let results = (outs Res<ConcreteNDBuffer, "", [MemAlloc]>:$result);
+
+  let assemblyFormat = "attr-dict `:` qualified(type($result))";
+}
+
+//===----------------------------------------------------------------------===//
 // NDBufferDimOp
 //===----------------------------------------------------------------------===//
 

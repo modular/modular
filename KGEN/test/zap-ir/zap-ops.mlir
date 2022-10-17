@@ -280,6 +280,18 @@ kgen.func @zap_ndbuffer_construct(
                                !zap.ndbuffer<[?, ?, ?], ?>
 }
 
+
+// CHECK-LABEL: @zap_ndbuffer_stack_allocation
+kgen.generator @zap_ndbuffer_stack_allocation<type: dtype, size>() {
+  // CHECK: zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
+  %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
+  // CHECK: zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, size], f32>
+  %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, size], f32>
+  // CHECK: zap.ndbuffer.stack_allocation : !zap.ndbuffer<[3, 1, size, 42], type>
+  %2 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[3, 1, size, 42], type>
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_ndbuffer_dim
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[?, 4, ?], f32>

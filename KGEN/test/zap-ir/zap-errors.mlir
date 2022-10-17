@@ -83,6 +83,14 @@ kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[-1], f32>) {
 
 // -----
 
+kgen.generator @zap_ndbuffer_stack_allocate() {
+  // expected-error @below {{'zap.ndbuffer.stack_allocation' op result #0 must be ndbuffer with concrete size and dtype, but got '!zap.ndbuffer<[?], f32>'}}
+  %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[?], f32>
+  kgen.return
+}
+
+// -----
+
 // expected-error @below {{shape parameter exceeds the maximum rank of the ndbuffer type}}
 kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[1,2,3,4,5,6], f32>) {
   kgen.return
