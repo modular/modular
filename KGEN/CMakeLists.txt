@@ -62,7 +62,7 @@ endmacro()
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "" "OUTPUT" "LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SAVE_TEMPS" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
 

@@ -62,10 +62,18 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
                   .string();
   }
 
-  llvm::outs() << "Emitting intermediate file to " << outFile << ".\n";
+  std::error_code errorCode;
+  auto absoluteOutputFile = std::filesystem::absolute(outFile, errorCode);
+  if (errorCode)
+    exit(reportError("Cannot get absolute path for output file: '" + outFile +
+                     "': " + errorCode.message()));
+
+  llvm::outs() << "Emitting intermediate file to '" << absoluteOutputFile
+               << "'.\n";
 
   std::string errorMessage;
-  auto result = mlir::openOutputFile(outFile, &errorMessage);
+  auto result =
+      mlir::openOutputFile(absoluteOutputFile.string(), &errorMessage);
   if (!result)
     exit(reportError(errorMessage));
   return result;
