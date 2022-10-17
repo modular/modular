@@ -1060,9 +1060,10 @@ struct ConvertPOPIndirectCall : mlir::ConvertOpToLLVMPattern<IndirectCallOp> {
   matchAndRewrite(IndirectCallOp op, IndirectCallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Convert the result types.
-    SmallVector<Type> types = llvm::to_vector(op.getResultTypes());
-    if (!types.empty()) {
-      types.assign({getTypeConverter()->packFunctionResults(types)});
+    SmallVector<Type> types;
+    if (op.getNumResults()) {
+      types.assign(
+          {getTypeConverter()->packFunctionResults(op.getResultTypes())});
       if (!types.back())
         return emitError(op.getLoc(), "failed to convert call result types");
     }
@@ -1071,16 +1072,17 @@ struct ConvertPOPIndirectCall : mlir::ConvertOpToLLVMPattern<IndirectCallOp> {
     auto llvmCall = rewriter.create<LLVM::CallOp>(
         op.getLoc(), types, FlatSymbolRefAttr(), adaptor.getOperands());
 
+    if (op.getNumResults() <= 1) {
+      rewriter.replaceOp(op, llvmCall.getResults());
+      return success();
+    }
+
     // Unpack the struct if necessary.
     SmallVector<Value> results;
-    if (op.getNumResults() <= 1) {
-      llvm::append_range(results, llvmCall.getResults());
-    } else {
-      results.reserve(op.getNumResults());
-      for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
-        results.push_back(rewriter.create<LLVM::ExtractValueOp>(
-            op.getLoc(), llvmCall.getResult(), i));
-      }
+    results.reserve(op.getNumResults());
+    for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
+      results.push_back(rewriter.create<LLVM::ExtractValueOp>(
+          op.getLoc(), llvmCall.getResult(), i));
     }
 
     // Replace the call operation.
