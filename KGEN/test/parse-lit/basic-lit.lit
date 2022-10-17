@@ -8,6 +8,8 @@ def empty_def():
 
 # CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: Int, b: Int, c: Int) -> Int:
+  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
+  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %a_0 = lit.var.decl "a"
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %b_1 = lit.var.decl "b"
@@ -19,7 +21,6 @@ def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[TMP]], %c_2
   c = b # Parameters are mutable!
 
-  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[A]]
@@ -40,7 +41,6 @@ def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
   z = a * (5 + 6)
 
-  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
   # This is checking the lexer handles \ at end of line correctly.
@@ -85,12 +85,16 @@ struct Int:
 
 # CHECK-LABEL: lit.struct.decl @Pair {
 struct Pair:
-  var a : Int   # CHECK-NEXT: %a = lit.var.decl "a" : <!lit.unresolved>
-  var b : Int   # CHECK-NEXT: %b = lit.var.decl "b" : <!lit.unresolved>
+ # CHECK: %b = lit.var.decl "b" : <!lit.unresolved>
+ # CHECK: %a = lit.var.decl "a" : <!lit.unresolved>
+  var a : Int
+  var b : Int
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.func public @var_decls
 def var_decls():
-  x = 123       # CHECK: %x = lit.var.decl "x" : <index>
-  var y : Int   # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
+  # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
+  # CHECK: %x = lit.var.decl "x" : <index>
+  x = 123
+  var y : Int
   #y = 42  # TODO: Enable
