@@ -7,6 +7,15 @@ features, and support for kgen-parameters and search.
 That said, it is still in early development and is missing many features.  This
 document is intended to track notes about its ongoing development.
 
+## Topics to come back to later.
+
+Here are a few things we should reconsider as we get further along.
+
+1) Should `var` declarations be lexically scoped to their containing
+   if/while/etc statement, or should they be whole-function like Python handles
+   things.  Lexical scoping has some advantages and using explicit syntax to
+   designate this makes it opt-in and teachable.
+
 ## Intentional differences from Python
 
 Lightning is generally a superset of Python, but here are some intentional
