@@ -645,10 +645,8 @@ LogicalResult ArrayRepeatOp::verify() {
 // If the array has a concrete size, do a bounds check.
 static LogicalResult verifyArrayIndex(Operation *op, IntegerAttr indexAttr,
                                       POP::ArrayType arrayType) {
-  int64_t index = indexAttr.getInt();
-  if (index < 0)
-    return op->emitOpError("array index cannot be negative");
   if (Optional<int64_t> size = arrayType.getResolvedSize()) {
+    int64_t index = indexAttr.getInt();
     if (index >= *size)
       return op->emitOpError("array index out of bounds (")
              << index << " >= " << *size << ")";
