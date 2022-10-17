@@ -10,6 +10,7 @@
 
 include "KGEN/LITDialect/LITDialect.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
+include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"

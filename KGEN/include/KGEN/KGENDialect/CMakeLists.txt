@@ -12,13 +12,16 @@ add_mlir_interface(KGENDeclInterface)
 add_mlir_interface(ElaboratorOpInterface)
 
 set(LLVM_TARGET_DEFINITIONS KGEN.td)
-mlir_tablegen(KGENAttrs.h.inc -gen-attrdef-decls -dialect=kgen)
-mlir_tablegen(KGENAttrs.cpp.inc -gen-attrdef-defs -dialect=kgen)
+mlir_tablegen(KGENAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=kgen)
+mlir_tablegen(KGENAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=kgen)
 add_public_tablegen_target(MLIRKGENAttrsIncGen)
 add_dependencies(MLIRKGENIncGen MLIRKGENAttrsIncGen)
 
+set(LLVM_TARGET_DEFINITIONS KGENEnums.td)
 mlir_tablegen(KGENEnums.h.inc -gen-enum-decls)
 mlir_tablegen(KGENEnums.cpp.inc -gen-enum-defs)
+mlir_tablegen(KGENEnumAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=kgen)
+mlir_tablegen(KGENEnumAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=kgen)
 add_public_tablegen_target(MLIRKGENEnumsIncGen)
 add_dependencies(MLIRKGENIncGen MLIRKGENEnumsIncGen)
 
