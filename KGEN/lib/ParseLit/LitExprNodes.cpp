@@ -126,8 +126,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
 
   // Attributes always resolve to their known value.
   if (std::holds_alternative<Scope::MetaParameterValue>(declOrValue.value()))
-    return cast<TypedAttr>(
-        std::get<Scope::MetaParameterValue>(declOrValue.value()).value);
+    return std::get<Scope::MetaParameterValue>(declOrValue.value()).getAttr();
 
   // Variable references resolve to load from the variable.
   auto var = std::get<VarDeclOp>(declOrValue.value());

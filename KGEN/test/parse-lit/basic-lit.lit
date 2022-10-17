@@ -92,5 +92,5 @@ struct Pair:
 # CHECK-LABEL: lit.func public @var_decls
 def var_decls():
   x = 123       # CHECK: %x = lit.var.decl "x" : <index>
-  var y : Int   # CHECK: %y = lit.var.decl "y" : <!lit.unresolved>
+  var y : Int   # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
   #y = 42  # TODO: Enable

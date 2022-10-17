@@ -27,6 +27,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -374,6 +375,14 @@ public:
   // be (or include) an Error node if parsing failed.
   void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
   ExprNode *parseExpression();
+
+  /// Parse an expression to check for syntactic validity, but throw it away
+  /// immediately.  Record the starting position for the expression in the
+  /// specified cursor.
+  static ParseResult parseOverExpression(LitParserBase &p,
+                                         Optional<LitLexerCursor> &cursor);
+
+private:
   ExprNode *parsePrimary();
 
   enum class Precedence {
@@ -414,6 +423,18 @@ private:
     return ArrayRef<T>(result, elements.size());
   }
 };
+
+/// Parse an expression to check for syntactic validity, but throw it away
+/// immediately.  Record the starting position for the expression in the
+/// specified cursor.
+ParseResult ExprParser::parseOverExpression(LitParserBase &p,
+                                            Optional<LitLexerCursor> &cursor) {
+  cursor = p.getLexer().getCursor();
+  ExprParser exprParser(p);
+  if (exprParser.parseExpression())
+    return success();
+  return failure();
+}
 
 //===----------------------------------------------------------------------===//
 // Expressions
@@ -559,14 +580,139 @@ ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
 }
 
 //===----------------------------------------------------------------------===//
+// NameBindingContext
+//===----------------------------------------------------------------------===//
+
+/// This class is used to perform name binding for a scope after all the
+/// declarations within it have been parsed.
+class NameBindingContext {
+public:
+  NameBindingContext(LitParserBase &parser, Scope &scope)
+      : parser(parser), scope(scope), declCursors(scope.takeDeclCursors()),
+        declsWithExprsToNameBind(scope.takeDeclsWithExprsToNameBind()) {}
+
+  void doNameBinding();
+
+private:
+  void ensureOpIsNameBound(Operation *op);
+
+  void nameBind(VarDeclOp op, LitLexerCursor cursor);
+  void nameBind(LITStructDeclOp op, LitLexerCursor cursor);
+
+  /// Given a cursor location for a type expression that correctly parsed in the
+  /// first pass, reparse it into an expression and resolve it into a type by
+  /// performing name lookup and other resolution.  This can produce errors, but
+  /// always returns a non-null type.
+  Type resolveType(LitLexerCursor cursor);
+
+private:
+  LitParserBase &parser;
+  Scope &scope;
+
+  /// This records where (lexically) a declaration is that has types that need
+  /// to be reparsed.  This allows us to do name binding of types in an
+  /// on-demand order, necessary for resolving inter-dependencies between
+  /// declarations.
+  DenseMap<Operation *, LitLexerCursor> declCursors;
+
+  /// This is a list of operations that have deferred expressions to name bind
+  /// and type check in the second pass of parsing.
+  std::vector<Operation *> declsWithExprsToNameBind;
+
+  /// Name binding is an recursive process in the general case.  This keeps
+  /// track of the declarations currently being name bound so we can diagnose
+  /// cyclic dependencies.
+  DenseSet<Operation *> declsCurrentlyProcessing;
+};
+
+void NameBindingContext::doNameBinding() {
+  // Name binding can recursively visit entries that are transitively referenced
+  // by other declarations, but we need to make sure that each declaration is
+  // visited.  We handle this by using the declsWithExprsToNameBind list as the
+  // top level to visit (which also gives us lexical order of top-level
+  // visitation, nice for diagnostics coming out in a logical order) but remove
+  // declarations from `declCursors` when they are processed.
+  for (Operation *op : declsWithExprsToNameBind)
+    ensureOpIsNameBound(op);
+}
+
+void NameBindingContext::ensureOpIsNameBound(Operation *op) {
+  // Find the cursor for this operation, if we don't know any, it is already
+  // done.
+  auto cursorIt = declCursors.find(op);
+  if (cursorIt == declCursors.end())
+    return;
+
+  // If we are currently name binding this operation, we found a cycle, reject
+  // it with an error.
+  if (!declsCurrentlyProcessing.insert(op).second) {
+    assert(0 &&
+           "FIXME: Diagnose cyclic reference when it is possible to happen");
+  }
+
+  // Handle each operation that can be name bound.
+  TypeSwitch<Operation *>(op)
+      .Case<LITStructDeclOp, VarDeclOp>(
+          [&](auto op) { nameBind(op, cursorIt->second); })
+      .Default([&](auto attr) {
+        op->emitError("do not know how to perform name binding on this op!");
+      });
+
+  declsCurrentlyProcessing.erase(op);
+}
+
+/// Given a cursor location for a type expression that correctly parsed in the
+/// first pass, reparse it into an expression and resolve it into a type by
+/// performing name lookup and other resolution.  This can produce errors, but
+/// always returns a non-null type.
+Type NameBindingContext::resolveType(LitLexerCursor cursor) {
+  // Move the cursor to the specified location.
+  cursor.restore(parser.getLexer());
+  // Re-parse the expression at that location.
+  ExprParser exprParser(parser);
+  ExprNode *typeExpr = exprParser.parseExpression();
+  assert(typeExpr && "We know expr parsing will work");
+
+  auto emitError = [&](const Twine &message) -> Type {
+    parser.emitError(typeExpr->getLoc(), message);
+    return UnresolvedType::get(parser.getContext());
+  };
+
+  // TODO: Make this a recursive walk when we have more interesting types.
+  if (auto dre = dyn_cast<DeclRefNode>(typeExpr)) {
+    // TODO(types): This is a hack to unblock tests in the interim.
+    if (dre->spelling == "index")
+      return IndexType::get(parser.getContext());
+
+    // Lookup the identifier.
+    Optional<Scope::ScopeValue> lookup = scope.lookup(dre->spelling);
+    if (!lookup)
+      return emitError("unknown type name '" + dre->spelling + "'");
+    if (std::holds_alternative<VarDeclOp>(*lookup))
+      return emitError("'" + dre->spelling + "' names a value, not a type");
+    auto attr = dyn_cast<SymbolConstantAttr>(
+        std::get<Scope::MetaParameterValue>(*lookup).getAttr());
+    if (!attr || !isa<MLIRTypeType>(attr.getType()))
+      return emitError("'" + dre->spelling + "' names a value, not a type");
+
+    // TODO: Handle type parameters!
+    return RefType::get(attr.getSymbol(),
+                        ParamBindArrayAttr::get(parser.getContext(), {}));
+  }
+
+  return emitError("FIXME: Unsupported type kind!");
+}
+
+//===----------------------------------------------------------------------===//
 // LitParser
 //===----------------------------------------------------------------------===//
 
-/// Declaration bodies are parsed after all the signatures at the current level
-/// of the file are parsed.  This keeps track of
+namespace {
+/// Declaration bodies are parsed after all the signatures at the current
+/// level of the file are parsed.  This keeps track of
 struct DeferredDeclBodyToParse {
-  /// This is the scope for the declaration, which also contains the declaration
-  /// itself.
+  /// This is the scope for the declaration, which also contains the
+  /// declaration itself.
   RCRef<Scope> declScope;
 
   /// This is where to start lexing the body from.
@@ -578,6 +724,7 @@ struct DeferredDeclBodyToParse {
   /// This is the location of each input parameter.
   std::vector<Location> inputParamLocs;
 };
+} // namespace
 
 /// This class provides the implementation details of the concrete Lit Grammar.
 struct LitParser : public LitParserBase {
@@ -586,9 +733,14 @@ struct LitParser : public LitParserBase {
       : LitParserBase(lexer, sharedParserState), module(module) {}
 
   ParseResult parseFile();
+
   void finalizeScopeDecl();
+  void performNameBinding();
 
   const RCRef<Scope> &getCurrentScope() const { return currentScope; }
+
+  // Expressions.
+  // TODO: Move expression emission elsewhere!
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emitExpr(ExprNode *node);
@@ -599,7 +751,6 @@ struct LitParser : public LitParserBase {
                                      builder);
   }
 
-private:
   // Statements.
   enum class StmtContext {
     normal,     // All normal statements are supported.
@@ -663,11 +814,11 @@ ParseResult LitParser::parseFile() {
 
 /// Finalize parsing of a scoped declaration (e.g. module, class, function).
 ///
-/// Once its body is fully parsed, we loop back around to parse the bodies of
-/// any nested scopes (e.g. nested functions) that are encountered while parsing
-/// this scope.  This ensures that the forward references between peer
-/// declarations are handled correctly, for example in mutually recursive
-/// functions and code like this:
+/// Once its body is fully parsed, we loop back around to parse the bodies
+/// of any nested scopes (e.g. nested functions) that are encountered while
+/// parsing this scope.  This ensures that the forward references between
+/// peer declarations are handled correctly, for example in mutually
+/// recursive functions and code like this:
 ///
 ///   def foo():
 ///     def bar():
@@ -676,8 +827,12 @@ ParseResult LitParser::parseFile() {
 ///     bar()
 ///   foo()
 void LitParser::finalizeScopeDecl() {
+  // If we have any expressions that need second pass name binding, do it now.
+  NameBindingContext(*this, *currentScope).doNameBinding();
+
   // We're done with the current scope and the declaration we're parsing into.
   currentScope.reset();
+
   if (deferredDecls.empty())
     return;
 
@@ -693,6 +848,10 @@ void LitParser::finalizeScopeDecl() {
                  decl.inputParamLocs);
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Expressions
+//===----------------------------------------------------------------------===//
 
 /// Emit the specified expression tree to MLIR in the current context.
 MLIRValueRep LitParser::emitExpr(ExprNode *node) {
@@ -897,7 +1056,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
   } else {
     // Otherwise, introduce a new lit.var.decl node.
 
-    // TODO: Add types instead of hard coding to index type!
+    // TODO(types): Add types instead of hard coding to index type!
     auto declType = POP::PointerType::get(builder.getIndexType());
 
     // TODO: This will emit it on first use, which can be in weird places (e.g.
@@ -916,12 +1075,15 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
   ExprNode *rhs = exprParser.parseExpression();
 
   // Materialize the expression statement in our current scope.
+  // TODO: Should pass in contextual type if known from previous declaration.
   auto rhsValue = emitExprAsValue(rhs);
 
   // If IR generation failed, return success since we have a fine parse.
   if (!lvalue || !rhsValue)
     return success();
 
+  // TODO(types): this is incorrect for index types, need to coerce to the
+  // destination type.
   if (!rhsValue.getType().isIndex()) {
     // emitError(rhs->getLoc(), "TODO: don't support non-index types yet");
     return success();
@@ -1216,36 +1378,67 @@ void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
-ParseResult LitParser::parseVarDeclStmt() {
-  Location loc = getTokenLocation();
+namespace {
+struct ParsedVarDecl {
   StringAttr name;
+  Optional<LitLexerCursor> typeCursor;
+  Optional<LitLexerCursor> initValueCursor;
 
-  if (parseToken(LitToken::kw_var, "expected 'var' declaration") ||
-      parseIdentifier(name, "expected name for 'var' declaration") ||
-      parseToken(LitToken::colon, "var declaration requires a type"))
+  static Optional<ParsedVarDecl> parse(LitParserBase &p) {
+    ParsedVarDecl result;
+    if (p.parseToken(LitToken::kw_var, "expected 'var' declaration") ||
+        p.parseIdentifier(result.name, "expected name for 'var' declaration") ||
+        p.parseToken(LitToken::colon, "var declaration requires a type") ||
+        ExprParser::parseOverExpression(p, result.typeCursor))
+      return None;
+
+    if (p.consumeIf(LitToken::equal)) {
+      if (ExprParser::parseOverExpression(p, result.initValueCursor))
+        return None;
+    }
+    return result;
+  }
+};
+} // namespace
+
+ParseResult LitParser::parseVarDeclStmt() {
+  LitLexerCursor declCursor = getLexer().getCursor();
+  Location loc = getTokenLocation();
+  Optional<ParsedVarDecl> info = ParsedVarDecl::parse(*this);
+  if (!info)
     return failure();
 
-  ExprParser exprParser(*this);
-  ExprNode *typeExpr = exprParser.parseExpression();
-  // TODO (types): translate typeExpr into a type.
-  (void)typeExpr;
-  Type type = UnresolvedType::get(getContext());
+  // TODO: add support for default parameter expressions.
+  if (info->initValueCursor)
+    emitError(loc, "var initializers not supported yet");
 
-  if (consumeIf(LitToken::equal)) {
-    ExprParser exprParser(*this);
-    ExprNode *defaultExpr = exprParser.parseExpression();
-    // TODO: add support for default parameter expressions.
-    if (!defaultExpr->containsError())
-      emitError(defaultExpr->getLoc(), "var initializers not supported yet");
-  }
   auto builder = currentScope->getBuilder();
 
   // If we are in a function, emit a variable declaration, if we are in a
   // struct, emit a field declaration.  Both have the same IR representation.
-  auto varType = POP::PointerType::get(type);
-  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
-  currentScope->addToScope(name, varDecl, sharedParserState->errorOccurred);
+  auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
+  auto varDecl = builder.create<VarDeclOp>(loc, varType, info->name);
+  currentScope->addToScope(info->name, varDecl,
+                           sharedParserState->errorOccurred);
+  currentScope->addExprToNameBind(varDecl, declCursor);
   return success();
+}
+
+void NameBindingContext::nameBind(VarDeclOp op, LitLexerCursor cursor) {
+  // Move the lexer to point to the start of the declaration so we can reparse.
+  cursor.restore(parser.getLexer());
+
+  // Reparse the var-decl signature again.  We know the initial parse succeeded.
+  ParsedVarDecl info = ParsedVarDecl::parse(parser).value();
+
+  // Parse the type if present.
+  if (info.typeCursor)
+    op.getResult().setType(
+        POP::PointerType::get(resolveType(info.typeCursor.value())));
+
+  if (info.initValueCursor)
+    emitError(info.initValueCursor->getLoc(parser.getLexer()),
+              "var initializers not supported yet");
 }
 
 /// return_stmt ::= "return" [expression_list]
@@ -1352,8 +1545,11 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   }
 
   (void)parseSuite(curIndent, StmtContext::structBody);
-
   return success();
+}
+
+void NameBindingContext::nameBind(LITStructDeclOp op, LitLexerCursor cursor) {
+  op->emitError("TODO: name binding not implemented yet");
 }
 
 //===----------------------------------------------------------------------===//
