@@ -372,6 +372,44 @@ kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<!pop.scalar<invalid>>,
 
 // -----
 
+// CHECK-LABEL: @ndbuffer_stack_allocation
+kgen.generator @ndbuffer_stack_allocation<type: dtype>(%i: index) -> (
+  !zap.ndbuffer<[4], f32>, !zap.ndbuffer<[42, 42], type>
+) {
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 : !pop.scalar<f32>
+  // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<!pop.pointer<!pop.scalar<f32>>, index, !pop.array<5, index>, !kgen.dtype>
+  %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
+
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation 1764 : !pop.scalar<type>
+  // CHECK: %[[BUF1:.*]] = pop.struct.construct(%[[PTR1]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<!pop.pointer<!pop.scalar<type>>, index, !pop.array<5, index>, !kgen.dtype>
+  %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, 42], type>
+
+  // CHECK: return %[[BUF0]], %[[BUF1]]
+  kgen.return %0, %1 : !zap.ndbuffer<[4], f32>,
+                       !zap.ndbuffer<[42, 42], type>
+}
+// -----
+
+// CHECK-LABEL: @ndbuffer_stack_allocation_parametric_size
+kgen.generator @ndbuffer_stack_allocation_parametric_size<type: dtype, size>(%i: index) -> (
+  !zap.ndbuffer<[size], f32>, !zap.ndbuffer<[42, size, 2], type>
+) {
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation size : !pop.scalar<f32>
+  // CHECK: %[[SIZE:.*]] = kgen.param.constant = <size>
+  // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<!pop.pointer<!pop.scalar<f32>>, index, !pop.array<5, index>, !kgen.dtype>
+  %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size], f32>
+
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation mul(size, 84) : !pop.scalar<type>
+  // CHECK: %[[BUF1:.*]] = pop.struct.construct(%[[PTR1]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<!pop.pointer<!pop.scalar<type>>, index, !pop.array<5, index>, !kgen.dtype>
+  %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, size, 2], type>
+
+  // CHECK: return %[[BUF0]], %[[BUF1]]
+  kgen.return %0, %1 : !zap.ndbuffer<[size], f32>,
+                       !zap.ndbuffer<[42, size, 2], type>
+}
+
+// -----
+
 // CHECK-LABEL: @zap_ndbuffer_dim
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !pop.struct<!pop.pointer<!pop.scalar<f32>>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !pop.struct<!pop.pointer<!pop.scalar<si32>>

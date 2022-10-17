@@ -154,7 +154,8 @@ def NDBufferKnownDType : ConfinedType<ZAP_NDBufferType,
 
 def ConcreteNDBuffer : ConfinedType<ZAP_NDBufferType,
     [CPred<"$_self.cast<ZAP::NDBufferType>().getDType() && " #
-           "$_self.cast<ZAP::NDBufferType>().getSize()">],
+           "!llvm::any_of($_self.cast<ZAP::NDBufferType>().getShape(), "#
+                    "[](TypedAttr shape) { return !shape; })">],
     "ndbuffer with concrete size and dtype">;
 
 class NDBufferPointerType<string lhs, string rhs>

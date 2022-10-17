@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -540,11 +541,22 @@ static Value constructNDBuffer(PatternRewriter &rewriter,
   // Fill the shape values with the provided values or the constants specified
   // by the type.
   for (size_t i = 0, shapeParamOffset = 0; i < rank; ++i) {
-    if (type.getShape()[i])
-      shapeValues[i] = rewriter.create<index::ConstantOp>(
-          loc, indexType, type.getShape()[i].cast<IntegerAttr>());
-    else
+    TypedAttr dim = type.getShape()[i];
+    // If the dimension is not statically known, then we query the dimension
+    // from the user-specified shape values.
+    if (!dim) {
       shapeValues[i] = shape[shapeParamOffset++];
+      continue;
+    }
+    // Otherwise, we use the constant value from the type.
+    shapeValues[i] =
+        TypeSwitch<TypedAttr, Value>(dim)
+            .Case([&](IntegerAttr attr) {
+              return rewriter.create<index::ConstantOp>(loc, indexType, attr);
+            })
+            .Case([&](ParamDeclRefAttr attr) {
+              return rewriter.create<ParamConstantOp>(loc, attr);
+            });
   }
   // Create the shape array.
   auto shapeArray = rewriter.create<ArrayCreateOp>(loc, shapeValues);
@@ -570,6 +582,32 @@ struct ConvertZAPNDBufferConstruct
                                        adaptor.getPtr(), op.getType().getRank(),
                                        adaptor.getShape(), adaptor.getDType());
     rewriter.replaceOp(op, ndbuffer);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertZAPNDBufferStackAllocation
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPNDBufferStackAllocation
+    : mlir::OpConversionPattern<NDBufferStackAllocationOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(NDBufferStackAllocationOp op,
+                  NDBufferStackAllocationOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    NDBufferType type = op.getType().cast<NDBufferType>();
+    auto size =
+        ParamOperatorAttr::get(rewriter.getContext(), POC::Mul, type.getShape(),
+                               rewriter.getIndexType());
+    Value ptr =
+        rewriter.create<StackAllocationOp>(loc, type.getPointerType(), size);
+    Value buf = constructNDBuffer(rewriter, *getTypeConverter(), loc, type, ptr,
+                                  type.getRank());
+    rewriter.replaceOp(op, buf);
     return success();
   }
 };
@@ -883,7 +921,6 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferStore,
       ConvertZAPDebugAssert,
       ConvertZAPGlobalString,
-      ConvertZAPPrint,
       ConvertZAPNDBufferAddress,
       ConvertZAPNDBufferConstruct,
       ConvertZAPNDBufferDim,
@@ -893,7 +930,9 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPNDBufferSIMDLoad,
       ConvertZAPNDBufferSIMDStore,
       ConvertZAPNDBufferSize,
-      ConvertZAPNDBufferStore
+      ConvertZAPNDBufferStackAllocation,
+      ConvertZAPNDBufferStore,
+      ConvertZAPPrint
 
       // clang-format on
       >(converter, patterns.getContext());
