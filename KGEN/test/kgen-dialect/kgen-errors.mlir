@@ -649,10 +649,3 @@ kgen.generator @give_it_B<C>() {
   %0 = "a"() : () -> !kgen.ref<@ParamNamedA<B = C>>
   kgen.return
 }
-
-// -----
-
-lit.struct.decl @SomeStruct {
-  // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}
-  %size = lit.var.decl "size" : !pop.pointer<!pop.scalar<ty>>
-}
