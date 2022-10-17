@@ -1044,6 +1044,8 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   (void)parseSuite(curIndent, StmtContext::structBody);
 
+  // If we have any expressions that need second pass name binding, do it now.
+  NameBindingContext(*this, *currentScope).doNameBinding();
   return success();
 }
 
