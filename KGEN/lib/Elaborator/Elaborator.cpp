@@ -1658,8 +1658,7 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
 static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
                                     ArrayRef<std::filesystem::path> searchPaths,
                                     DenseSet<StringAttr> &loadedFiles) {
-  if (auto [_, didInsert] = loadedFiles.insert(include.getFileNameAttr());
-      !didInsert) {
+  if (!loadedFiles.insert(include.getFileNameAttr()).second) {
     include->erase();
     return success();
   }
