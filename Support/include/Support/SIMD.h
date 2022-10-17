@@ -511,6 +511,12 @@ public:
     }
   }
 
+  /// Perform a vector product with the current vector and the other vector.
+  element_type dot(const SIMDVector &other) const {
+    auto tmp = *this + other;
+    return tmp.reduceAdd();
+  }
+
   /// Gets the underlying vector value.
   const vector_type &value() const { return vectorData; }
   vector_type &value() { return vectorData; }
