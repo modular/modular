@@ -710,17 +710,11 @@ LogicalResult VariantGetOp::verify() {
 }
 
 /// Canonicalize `pop.variant.get(pop.variant.create(x)) -> x`.
-LogicalResult VariantGetOp::canonicalize(VariantGetOp op,
-                                         PatternRewriter &rewriter) {
-  auto create = op.getVariant().getDefiningOp<VariantCreateOp>();
-  if (!create)
-    return rewriter.notifyMatchFailure(
-        op.getLoc(), "variant parent is not `pop.variant.create`");
-  if (create.getOperand().getType() != op.getType())
-    return rewriter.notifyMatchFailure(
-        op.getLoc(), "variant was created with different type");
-  rewriter.replaceOp(op, create.getOperand());
-  return success();
+OpFoldResult VariantGetOp::fold(ArrayRef<Attribute> operands) {
+  auto create = getVariant().getDefiningOp<VariantCreateOp>();
+  if (!create || create.getOperand().getType() != getType())
+    return {};
+  return create.getOperand();
 }
 
 //===----------------------------------------------------------------------===//

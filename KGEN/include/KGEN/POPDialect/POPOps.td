@@ -1220,7 +1220,7 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
   }];
 
   let hasVerifier = 1;
-  let hasCanonicalizeMethod = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
