@@ -14,6 +14,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/identity.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TypeName.h"
@@ -48,21 +49,22 @@ static constexpr size_t kPreferredSIMDBitWidth = 128;
 #define M_SIMD_VECTOR_EMULATED 1
 #endif // __GNUC__
 
-/// For our optimized representation of SIMDTile, we use Clang's matrix_type.
-/// For other compilers, we emulate the SIMDTile by having a sequence of
-/// SIMDVectors.
-#ifdef __clang__
+/// For our optimized representation of SIMDTile, we use Clang's matrix_type for
+/// CLANG version 15 and above. Prior CLANG versions had issues lowering the
+/// matrix_type operations to assembly. For older or non-clang compilers, we
+/// emulate the SIMDTile by having a sequence of SIMDVectors.
+#if defined(__clang__) && __clang_major__ >= 15
 #define M_SIMD_MATRIX_EMULATED 0
-#else // __clang__
+#else // defined(__clang__) && __clang_major__ >= 15
 #define M_SIMD_MATRIX_EMULATED 1
-#endif // __clang__
+#endif // defined(__clang__) && __clang_major__ >= 15
 
 /// Ignore warnings about using vector registers that are wider than what the
 /// hardware supports.
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpsabi"
-#endif
+#endif // __GNUC__
 
 template <typename T, size_t Width>
 class SIMDVector;
@@ -583,10 +585,9 @@ class SIMDMatrix {
                 "SIMD matrix must have a positive size");
   // TODO: Generalize later to support non-square matrices.
   static_assert(Height == Width, "SIMD matrix size must be square");
+  // TODO: Generalize later to support non-power of 2 matrices.
   static_assert(llvm::isPowerOf2_64(Height) && llvm::isPowerOf2_64(Width),
                 "SIMD matrix size must be a power of 2");
-  static_assert(Layout == SIMDMatrixLayout::kColumnMajor,
-                "SIMD matrix layout must be in column major layout");
 
 public:
   using element_type = ElemTy;
@@ -599,15 +600,23 @@ public:
   /// If the isEmulated flag is true, then we are not actually explicitly using
   /// SIMD matrix intrinsics. Instead, we are emulating the matrix by stacking
   /// SIMD vectors.
-  static constexpr bool isEmulated = M_SIMD_MATRIX_EMULATED == 1;
+  static constexpr bool isEmulated =
+      M_SIMD_MATRIX_EMULATED == 1 || layout == SIMDMatrixLayout::kRowMajor;
 
 #if M_SIMD_MATRIX_EMULATED
   // We are just going to emulate the SIMD matrix type using an array of SIMD
   // vectors.
-  using matrix_type = std::array<SIMDVector<ElemTy, Width>, Height>;
+  using matrix_type = std::array<SIMDVector<element_type, width>, height>;
 #else  // M_SIMD_VECTOR_EMULATED
-  using matrix_type __attribute__((matrix_type(Height, Width))) = element_type;
-#endif // M_SIMD_MATRIX_EMULATED
+  // Currently the matrix_type extensions only operate on the column major
+  // layout. So, we need to also emulate the matrix type if we are using the
+  // row major layout order.
+  using matrix_type =
+      std::conditional_t<layout == SIMDMatrixLayout::kColumnMajor,
+                         __attribute__((matrix_type(height, width)))
+                         element_type,
+                         std::array<SIMDVector<element_type, width>, height>>;
+#endif // M_SIMD_VECTOR_EMULATED
 
   /// Default constructor.
   SIMDMatrix() = default;
@@ -620,7 +629,19 @@ public:
       matrixData = mat;
   }
 
-  /// Initializes the vector with the given values. If a single scalar is
+  /// Initializes the tensor with an array of values.
+  template <size_t OtherDim0, size_t OtherDim1>
+  SIMDMatrix(element_type (&arg)[OtherDim0][OtherDim1]) {
+    if constexpr (layout == SIMDMatrixLayout::kRowMajor)
+      static_assert(OtherDim0 == width && OtherDim1 == height,
+                    "invalid dimensions for row major matrix");
+    else
+      static_assert(OtherDim0 == height && OtherDim1 == width,
+                    "invalid dimensions for column major matrix");
+    memcpy(data(), arg, byte_count);
+  }
+
+  /// Initializes the tensor with the given values. If a single scalar is
   /// provided, then the value is broadcasted.
   template <typename Arg>
   SIMDMatrix(Arg arg) {
@@ -745,7 +766,7 @@ public:
   }
 
   /// Transpose the matrix.
-  SIMDMatrix<element_type, width, height> tr() {
+  SIMDMatrix<element_type, width, height, layout> tr() {
     if constexpr (isEmulated) {
       // TODO: Use the shuffle instructions to transpose the matrix.
       SIMDMatrix<element_type, width, height> resultMatrix;
@@ -759,23 +780,42 @@ public:
 
   /// Performs Matrix multiplication.
   template <size_t OtherHeight, size_t OtherWidth>
-  SIMDMatrix<element_type, height, OtherWidth>
-  dot(SIMDMatrix<element_type, OtherHeight, OtherWidth> other) {
+  SIMDMatrix<element_type, height, OtherWidth, Layout>
+  dot(SIMDMatrix<element_type, OtherHeight, OtherWidth, Layout> b) {
     static_assert(OtherHeight == width, "matrix dimensions mismatch");
     if constexpr (isEmulated) {
-      // TODO: Use the SIMD operations to implement matrix multiplication.
-      SIMDMatrix<element_type, height, OtherWidth> resultMatrix;
+      SIMDMatrix<element_type, height, OtherWidth, Layout> resultMatrix;
+      if constexpr (Width == Height) {
+        std::array<SIMDVector<element_type, Width>, Height> cRows;
+        if constexpr (Layout == SIMDMatrixLayout::kRowMajor) {
+          for (size_t i = 0; i < Height; ++i) {
+            cRows[i] = 0;
+            for (size_t j = 0; j < Width; ++j)
+              cRows[i] += b.row(j) * at(i, j);
+          }
+        } else {
+          for (size_t i = 0; i < Width; ++i) {
+            cRows[i] = 0;
+            for (size_t j = 0; j < Height; ++j)
+              cRows[i] += row(j) * b.at(i, j);
+          }
+        }
+        memcpy(resultMatrix.data(), cRows.data(), byte_count);
+        return resultMatrix;
+      }
+      // Otherwise, use the naive matrix multiplication if we are both emulating
+      // the matrix and do not have a square matrix.
       for (size_t i = 0; i < height; ++i) {
         for (size_t j = 0; j < OtherWidth; ++j) {
           element_type accum(0);
-          for (size_t k = 0; k < width; ++k) {
-            accum += at(i, k) * other.at(k, j);
-          }
+          for (size_t k = 0; k < width; ++k)
+            accum += at(i, k) * b.at(k, j);
           resultMatrix.at(i, j) = accum;
         }
       }
+      return resultMatrix;
     } else {
-      return value() * other.value();
+      return value() * b.value();
     }
   }
 
@@ -958,7 +998,7 @@ T simd_reduce(const InputElemTy *first, const InputElemTy *last, T init,
 }
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
-#endif
+#endif // __GNUC__
 
 } // namespace M
 
