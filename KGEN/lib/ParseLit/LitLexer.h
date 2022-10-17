@@ -18,6 +18,7 @@
 
 namespace M::KGEN::LIT {
 class LitLexerCursor;
+using llvm::SMLoc;
 
 /// This represents a specific token for .lit files.
 class LitToken {
@@ -78,8 +79,8 @@ public:
   bool isKeyword() const;
 
   // Location processing.
-  llvm::SMLoc getLoc() const;
-  llvm::SMLoc getEndLoc() const;
+  SMLoc getLoc() const;
+  SMLoc getEndLoc() const;
   llvm::SMRange getLocRange() const;
 
 private:
@@ -109,7 +110,7 @@ public:
 
   const LitToken &getToken() const { return curToken; }
 
-  mlir::Location translateLocation(llvm::SMLoc loc);
+  mlir::Location translateLocation(SMLoc loc);
 
   /// Get an opaque pointer into the lexer state that can be restored later.
   LitLexerCursor getCursor() const;

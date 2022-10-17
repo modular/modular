@@ -7,6 +7,7 @@
 add_modular_conversion_library(ParseLit
   LitExprNodes.cpp
   LitLexer.cpp
+  LitParserBase.cpp
   ParseLit.cpp
 
   DEPENDS
