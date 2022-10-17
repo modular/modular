@@ -12,6 +12,7 @@
 #define KGEN_TD
 
 include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/KGENDialect/KGENOps.td"
 

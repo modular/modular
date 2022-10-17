@@ -18,6 +18,14 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+//===----------------------------------------------------------------------===//
+// Forward Declarations
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+class TypeArrayAttr;
+} // namespace M::KGEN
+
 namespace M::KGEN::POP {
 enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
@@ -33,6 +41,10 @@ class SIMDType;
 class StructType;
 class VariantType;
 } // namespace M::KGEN::POP
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
 #include "KGEN/POPDialect/POP.h.inc"

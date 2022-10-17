@@ -11,6 +11,7 @@
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENDialect.td"
+include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
