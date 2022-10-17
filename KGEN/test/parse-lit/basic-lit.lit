@@ -93,8 +93,12 @@ struct Pair:
 
 # CHECK-LABEL: lit.func public @var_decls
 def var_decls():
+  # CHECK: %z = lit.var.decl "z" : <index>
   # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
   # CHECK: %x = lit.var.decl "x" : <index>
   x = 123
   var y : Int
-  #y = 42  # TODO: Enable
+  var z : index
+  z = 42
+  # CHECK: %[[TMP:.*]] = index.constant 42
+  # CHECK: pop.store %[[TMP]], %z
