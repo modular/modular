@@ -85,8 +85,8 @@ struct Int:
 
 # CHECK-LABEL: lit.struct.decl @Pair {
 struct Pair:
- # CHECK: %b = lit.var.decl "b" : <!lit.unresolved>
- # CHECK: %a = lit.var.decl "a" : <!lit.unresolved>
+ # CHECK: %b = lit.var.decl "b" : <!kgen.ref<@Int>>
+ # CHECK: %a = lit.var.decl "a" : <!kgen.ref<@Int>>
   var a : Int
   var b : Int
 # CHECK-NEXT: }
