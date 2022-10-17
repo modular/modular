@@ -20,7 +20,9 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
+#include "LitParserBase.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Builders.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/StringRef.h"
@@ -264,17 +266,17 @@ private:
 //===----------------------------------------------------------------------===//
 
 struct EmitterState {
-  /// This is the builder to emit into.
-  OpBuilder &builder;
+  /// This is the parser we are working on behalf of.
+  LitParserBase &parser;
 
   /// This is scope to resolve declaration references against.
-  Scope *scope;
+  Scope &scope;
 
-  /// This maps SMLoc's into Location's.
-  std::function<Location(SMLoc)> mapLocation;
+  /// This is the current builder to emit into.  It is mutable to support
+  /// expresions that require internal control flow.
+  OpBuilder builder;
 
-  /// This is the error handler to emit new diagnostics into.
-  std::function<InFlightDiagnostic(SMLoc, const Twine &)> emitError;
+  EmitterState(LitParserBase &parser, Scope &scope);
 
   /// This helper emits the specified value rep as an SSA value, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
@@ -285,6 +287,16 @@ struct EmitterState {
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
   Value emitAsValue(const ExprNode *node);
+
+  /// Emit an error through the parser's logic.
+  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
+    return parser.emitError(loc, twine);
+  }
+
+  /// Translate an SMLoc into an MLIR Location.
+  Location translateLocation(SMLoc loc) const {
+    return parser.translateLocation(loc);
+  }
 };
 
 } // namespace M::KGEN::LIT
