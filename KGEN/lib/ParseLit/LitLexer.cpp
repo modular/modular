@@ -25,6 +25,10 @@ using llvm::SourceMgr;
 #define isalpha(x) DO_NOT_USE_SLOW_CTYPE_FUNCTIONS
 #define isdigit(x) DO_NOT_USE_SLOW_CTYPE_FUNCTIONS
 
+Location LitLexerCursor::getLoc(LitLexer &lexer) const {
+  return lexer.translateLocation(SMLoc::getFromPointer(state));
+}
+
 //===----------------------------------------------------------------------===//
 // LitToken
 //===----------------------------------------------------------------------===//

@@ -14,11 +14,13 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
+#include "LitLexer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/StringMap.h"
 
 namespace M::KGEN::LIT {
+
 /// Scopes in Lightning work the same way as in Python: scopes are nested and
 /// are defined when a builtin, module, class/struct, or function definition is
 /// introduced.  Because Lightning (like Python) allows forward references to
@@ -48,6 +50,9 @@ public:
   struct MetaParameterValue {
     Attribute value;
     Location loc;
+
+    /// The value in a MetaParameterValue is always known to be a TypedAttr.
+    TypedAttr getAttr() const { return cast<TypedAttr>(value); }
   };
 
   /// An entry in the symbol table is either a mutable variable declaration or
@@ -78,6 +83,22 @@ public:
     return None;
   }
 
+  /// In the first pass parse of a declaration, we record that we see type
+  /// expressions but cannot actually resolve them fully because we can't name
+  /// bind them.  This method is called to record the declaration that needs
+  /// binding and a cursor that indicates where to reparse from.
+  void addExprToNameBind(Operation *decl, LitLexerCursor cursor) {
+    declCursors.insert({decl, cursor});
+    declsWithExprsToNameBind.push_back(decl);
+  }
+
+  DenseMap<Operation *, LitLexerCursor> takeDeclCursors() {
+    return std::move(declCursors);
+  }
+  std::vector<Operation *> takeDeclsWithExprsToNameBind() {
+    return std::move(declsWithExprsToNameBind);
+  }
+
 private:
   /// This is the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
@@ -87,6 +108,16 @@ private:
 
   // Note: we could unique the identifiers and use a DenseMap.
   llvm::StringMap<Optional<ScopeValue>> decls;
+
+  /// This records where (lexically) a declaration is that has types that need
+  /// to be reparsed.  This allows us to do name binding of types in an
+  /// on-demand order, necessary for resolving inter-dependencies between
+  /// declarations.
+  DenseMap<Operation *, LitLexerCursor> declCursors;
+
+  /// This is a list of operations that have deferred expressions to name bind
+  /// and type check in the second pass of parsing.
+  std::vector<Operation *> declsWithExprsToNameBind;
 };
 
 } // namespace M::KGEN::LIT

@@ -161,11 +161,15 @@ class LitLexerCursor {
 public:
   LitLexerCursor(const LitLexer &lexer)
       : state(lexer.curPtr), curToken(lexer.getToken()) {}
+  LitLexerCursor(const LitLexerCursor &cursor) = default;
+  LitLexerCursor &operator=(const LitLexerCursor &cursor) = default;
 
   void restore(LitLexer &lexer) {
     lexer.curPtr = state;
     lexer.curToken = curToken;
   }
+
+  Location getLoc(LitLexer &lexer) const;
 
 private:
   const char *state;
