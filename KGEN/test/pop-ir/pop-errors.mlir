@@ -333,7 +333,7 @@ kgen.func @invalid_array_create(%arg0: i32) {
 // -----
 
 kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
-  // expected-error @below {{array index cannot be negative}}
+  // expected-error @below {{index attribute whose value is non-negative}}
   %0 = pop.array.get %arg0[-1] : !pop.array<1, i32>
   kgen.return
 }

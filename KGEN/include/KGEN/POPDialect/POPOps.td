@@ -1086,7 +1086,8 @@ def POP_ArrayGetOp : POPOp<"array.get", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_ArrayType:$array, IndexAttr:$index);
+  let arguments = (ins POP_ArrayType:$array,
+                       ConfinedAttr<IndexAttr, [IntNonNegative]>:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $array `[` $index `]` attr-dict `:` qualified(type($array))
