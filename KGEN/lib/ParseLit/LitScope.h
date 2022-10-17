@@ -45,6 +45,15 @@ public:
 
   OpBuilder &getBuilder() { return builder; }
 
+  /// Return the builder associated to the declaration that introduced the
+  /// Scope.
+  /// This method must be used instead of getBuilder() when we create
+  /// variable declaration ops to make sure we honor the one scope per function
+  /// rule of Python.
+  OpBuilder getDeclBuilder() {
+    return OpBuilder::atBlockBegin(&decl->getRegion(0).front());
+  }
+
   /// This is the value of a parameter bound to a name, attributes in MLIR don't
   /// track locations, so we do so explicitly here.
   struct MetaParameterValue {
@@ -55,8 +64,8 @@ public:
     TypedAttr getAttr() const { return cast<TypedAttr>(value); }
   };
 
-  /// An entry in the symbol table is either a mutable variable declaration or
-  /// an immutable attribute (which is known to be a TypedAttr) or a VarDeclOp.
+  /// An entry in the symbol table is either a mutable variable declaration
+  /// (VarDeclOp) or an immutable attribute (which is known to be a TypedAttr).
   using ScopeValue = std::variant<MetaParameterValue, VarDeclOp>;
 
   /// Add the specified declaration to the current scope, emitting an error on
@@ -71,7 +80,7 @@ public:
     return None;
   }
 
-  /// Perform a lookup in this scope tree, returning the nearest target or null
+  /// Perform a lookup in this scope list, returning the nearest target or None
   /// if nothing is found.
   Optional<ScopeValue> lookup(StringRef name) {
     Scope *curScope = this;

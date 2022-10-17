@@ -1043,6 +1043,10 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
   }
 
   auto builder = currentScope->getBuilder();
+  // Use this builder to place any VarDeclOps. In Python there is only one
+  // scope per function and all variables belong to that scope, so builders
+  // should reflect that.
+  auto funcBodyBuilder = currentScope->getDeclBuilder();
 
   // Look up the name being assigned to if it already exists.
   Value lvalue;
@@ -1064,9 +1068,9 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     // analysis to do definitive analysis of the accesses to the declaration. We
     // could just emit all these in the entry to the enclosing function/module
     // to maintain SSA.
-    auto varDecl =
-        builder.create<VarDeclOp>(translateLocation(lhs->getLoc()), declType,
-                                  builder.getStringAttr(dre->spelling));
+    auto varDecl = funcBodyBuilder.create<VarDeclOp>(
+        translateLocation(lhs->getLoc()), declType,
+        funcBodyBuilder.getStringAttr(dre->spelling));
     currentScope->addToScope(dre->spelling, varDecl,
                              sharedParserState->errorOccurred);
     lvalue = varDecl;
@@ -1140,9 +1144,6 @@ struct MetaSignatureParser {
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
-/// TODO: ensure var declarations inside bodies are
-// placed the main function scope: lit, like python, has
-// only one scope per function
 ParseResult LitParser::parseIfStmt(size_t curIndent) {
   OpBuilder &builder = currentScope->getBuilder();
   Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
@@ -1412,7 +1413,7 @@ ParseResult LitParser::parseVarDeclStmt() {
   if (info->initValueCursor)
     emitError(loc, "var initializers not supported yet");
 
-  auto builder = currentScope->getBuilder();
+  auto builder = currentScope->getDeclBuilder();
 
   // If we are in a function, emit a variable declaration, if we are in a
   // struct, emit a field declaration.  Both have the same IR representation.

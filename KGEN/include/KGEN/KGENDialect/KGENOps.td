@@ -208,7 +208,7 @@ def CallOp
 // NOTE: This cannot be a CallOpInterface, because the callee is not a
 // SymbolRefAttr, it is a different kind of attribute.
 def CallParamOp : KGENOp<"call_param"> {
-  let summary = "Call declaration specified by a parameter experession";
+  let summary = "Call declaration specified by a parameter expression";
 
   let arguments =
    (ins ParameterExprAttr:$callee, ParamBindArrayAttr:$paramValues,
