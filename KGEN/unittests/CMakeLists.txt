@@ -12,4 +12,9 @@ add_modular_unittest(
   KGENTests
 
   KGENInvokeTest.cpp
+
+  LINK_LIBS PRIVATE
+  GenericMLSupport
+  LLCLRuntime
+  MSupportML
 )
