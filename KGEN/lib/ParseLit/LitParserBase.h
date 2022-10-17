@@ -40,7 +40,8 @@ struct SharedParserState {
 
 /// This class implements logic that is common to many parts of the parser, but
 /// which is independent of the concrete grammar.
-struct LitParserBase {
+class LitParserBase {
+public:
   LitParserBase(LitLexer &lexer, SharedParserState *sharedParserState)
       : lexer(lexer), sharedParserState(sharedParserState) {}
 
