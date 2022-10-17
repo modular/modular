@@ -413,7 +413,7 @@ void DeclParameterVerifier::verifyRefType(RefType typeDef) {
 
   auto decl = dyn_cast_if_present<KGENDeclInterface>(
       symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, typeDef.getName()));
-  if (!decl || !isa<StructDeclOp>(decl)) {
+  if (!decl) {
     hadError = true;
     emitError(curLocationCollecting.value())
         << typeDef.getName() << " does not reference a KGEN type declaration";

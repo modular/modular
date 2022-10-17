@@ -35,3 +35,5 @@ lit.struct.decl @SomeStruct<ty: dtype> {
   // CHECK: %size = lit.var.decl "size" : <!pop.scalar<ty>>
   %size = lit.var.decl "size" : !pop.pointer<!pop.scalar<ty>>
 }
+
+%thing = lit.var.decl "thing" : !pop.pointer<!kgen.ref<@Int>>
