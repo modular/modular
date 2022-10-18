@@ -102,6 +102,8 @@ private:
 class LitLexer {
 public:
   LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context);
+  LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context,
+           const LitLexerCursor &cursor);
 
   const llvm::SourceMgr &getSourceMgr() const { return sourceMgr; }
 

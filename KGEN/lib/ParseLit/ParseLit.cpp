@@ -218,10 +218,13 @@ Type NameBindingContext::resolveType(LitLexerCursor cursor) {
 // LitParser
 //===----------------------------------------------------------------------===//
 
-/// This class provides the implementation details of the concrete Lit Grammar.
+/// This class provides the implementation details of the concrete Lightning
+/// grammar.
 struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, SharedParserState *sharedParserState)
-      : LitParserBase(lexer, sharedParserState) {}
+  LitParser(LitLexer &lexer, SharedParserState *sharedParserState,
+            RCRef<Scope> scope = {})
+      : LitParserBase(lexer, sharedParserState),
+        currentScope(std::move(scope)) {}
 
   ParseResult parseFile(ModuleOp module);
 
@@ -270,10 +273,6 @@ struct LitParser : public LitParserBase {
 private:
   /// This is the current context that we're parsing into.
   RCRef<Scope> currentScope;
-
-  /// These are deferred declarations that need parsing, which are processed
-  /// after other things in a scope have been resolved.
-  std::vector<RCRef<Scope>> deferredDecls;
 };
 
 /// file ::= statements
@@ -322,22 +321,6 @@ ParseResult LitParser::parseFile(ModuleOp module) {
 void LitParser::finalizeScopeDecl() {
   // If we have any expressions that need second pass name binding, do it now.
   NameBindingContext(*this, *currentScope).doNameBinding();
-
-  // We're done with the current scope and the declaration we're parsing into.
-  currentScope.reset();
-
-  if (deferredDecls.empty())
-    return;
-
-  // If we have deferred declarations, process each of them.
-  std::vector<RCRef<Scope>> decls;
-  std::swap(deferredDecls, decls);
-
-  for (RCRef<Scope> &declScope : decls) {
-    currentScope = std::move(declScope);
-    currentScope->getCursor().restore(lexer);
-    parseDefBody(cast<LITFuncOp>(currentScope->getDecl()));
-  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -580,15 +563,15 @@ namespace {
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
-  SmallVector<ParamDeclAttr> inputParameters;
-  std::vector<Location> inputParamLocs;
+  SmallVector<ParamDeclAttr> inputDecls;
+  std::vector<Location> inputLocs;
 
   ParseResult parseOptionalMetaSignature(LitParserBase &p) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
     auto parseMetaParameter = [&]() -> ParseResult {
-      inputParamLocs.push_back(p.getTokenLocation());
+      inputLocs.push_back(p.getTokenLocation());
 
       StringAttr name;
       if (p.parseIdentifier(name, "expected parameter name")) {
@@ -603,7 +586,7 @@ struct ParsedMetaSignature {
         // TODO (types): translate typeExpr into a type.
         (void)typeExpr;
       }
-      inputParameters.push_back(ParamDeclAttr::get(name, paramType));
+      inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       return success();
     };
 
@@ -800,7 +783,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto newFunc = builder.create<LITFuncOp>(
       loc, info.name, StringArrayAttr::get(getContext(), paramNames),
       TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(), info.metaSignature.inputParameters),
+      ParamDeclArrayAttr::get(getContext(), info.metaSignature.inputDecls),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
@@ -817,7 +800,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
-  deferredDecls.push_back(
+  sharedParserState->declResolver.addDecl(
       RCRef<Scope>::create(newFunc, currentScope.copy(), declCursor));
 
   // Skip the body of this definition: go to a token the starts a line at the
@@ -835,7 +818,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
 
   // Add the meta parameters to the symbol table.
   for (auto [param, loc] :
-       llvm::zip(defDecl.getParamDecls(), info.metaSignature.inputParamLocs)) {
+       llvm::zip(defDecl.getParamDecls(), info.metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     currentScope->addToScope(param.getName(),
                              Scope::MetaParameterValue{value, loc},
@@ -1026,7 +1009,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   // TODO: Should have nicer builder.
   auto newStruct = builder.create<LITStructDeclOp>(
       loc, nameAttr,
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls),
       TypeArrayAttr::get(getContext(), {}));
   newStruct.getRegion().push_back(new Block());
 
@@ -1043,7 +1026,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   // Add the meta parameters to the symbol table.
   for (auto [param, loc] :
-       llvm::zip(newStruct.getParamDecls(), metaSignature.inputParamLocs)) {
+       llvm::zip(newStruct.getParamDecls(), metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     currentScope->addToScope(param.getName(),
                              Scope::MetaParameterValue{value, loc},
@@ -1059,6 +1042,40 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
 void NameBindingContext::nameBind(LITStructDeclOp op, LitLexerCursor cursor) {
   op->emitError("TODO: name binding not implemented yet");
+}
+
+//===----------------------------------------------------------------------===//
+// DeclResolver
+//===----------------------------------------------------------------------===//
+
+// TODO: Move to LitDeclParser.cpp, along with decl related parsing logic.
+
+DeclResolver::DeclResolver(SharedParserState *state)
+    : sharedParserState(state) {}
+DeclResolver::~DeclResolver() {}
+
+/// Add a new declaration that needs to be resolved.
+void DeclResolver::addDecl(LLCL::RCRef<Scope> declScope) {
+  Operation *op = declScope->getDecl();
+  parsedDeclList.push_back(op);
+  parsedDecls[op] = std::move(declScope);
+}
+
+/// Resolve all of the declarations that are visible.
+void DeclResolver::resolveAll() {
+  // We can do this in any order, but choose to use the order they are
+  // discovered so diagnostics are mostly top-down.  Resolving declarations may
+  // cause more entries to be added to this list.
+  for (size_t i = 0; i != parsedDeclList.size(); ++i)
+    resolve(*parsedDecls[parsedDeclList[i]]);
+}
+
+void DeclResolver::resolve(Scope &scope) {
+  LitLexer lexer(sharedParserState->sourceMgr, sharedParserState->context,
+                 scope.getCursor());
+  LitParser parser(lexer, sharedParserState, RCRef<Scope>::copy(&scope));
+
+  parser.parseDefBody(cast<LITFuncOp>(scope.getDecl()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1079,11 +1096,18 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
       FileLineColLoc::get(context, sourceBuf->getBufferIdentifier(), /*line=*/0,
                           /*column=*/0)));
 
-  SharedParserState sharedState(context);
+  SharedParserState sharedState(sourceMgr, context);
 
   // Parse the file.
   LitLexer lexer(sourceMgr, context);
   if (LitParser(lexer, &sharedState).parseFile(*module))
+    return nullptr;
+
+  // With the top-level of the file parsed, we can now go ahead and resolve all
+  // of the deferred declarations.
+  sharedState.declResolver.resolveAll();
+
+  if (sharedState.errorOccurred)
     return nullptr;
 
   // Make sure the parse module has no other structural problems detected by
