@@ -139,11 +139,18 @@ public:
   /// Skip tokens until we get to a token at start of line that has indentation
   /// that is equal or less than the specified indentation.  This is used for
   /// multiphase parsing.
-  void skipUntilIndentation(size_t minIndent) {
+  ///
+  /// When stopOnSemicolon is true this will stop at the first semicolon seen.
+  /// This should only be used for statements that can share a line with other
+  /// statements with ; separation.
+  void skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false) {
+    // TODO: This needs to do python style brace matching.
     while (getToken().isNot(LitToken::eof)) {
       if (auto indent = getToken().getIndentation())
         if (indent.value() <= minIndent)
           break;
+      if (stopOnSemicolon && getToken().is(LitToken::semi))
+        break;
       consumeToken();
     }
   }
@@ -156,22 +163,6 @@ public:
     while (!getToken().getIndentation().has_value() &&
            getToken().isNot(LitToken::eof))
       consumeToken();
-  }
-
-  /// Consume tokens until one of the specified set of token, leaving the
-  /// stopToken in the stream.  This produces an error if EOF is encountered.
-  ///
-  /// NOTE: This shouldn't be used in a real parser, this is just for phasing
-  /// things in.
-  ParseResult eatUntil(ArrayRef<LitToken::Kind> stopTokens) {
-    while (getToken().isNot(LitToken::eof)) {
-      // If we found our stop token, we succeeded!
-      if (getToken().isAny(stopTokens))
-        return success();
-      consumeToken();
-    }
-
-    return emitError("expected end token");
   }
 
 public:
