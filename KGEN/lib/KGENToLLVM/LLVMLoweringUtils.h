@@ -8,11 +8,12 @@
 #define KGEN_LLVM_LOWERING_UTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
+
+class KGENDType;
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMTypeConverter
@@ -20,11 +21,11 @@ namespace M::KGEN {
 
 /// Get the MLIR type for a data type.
 llvm::Optional<mlir::Type> getMLIRTypeForDType(mlir::MLIRContext *ctx,
-                                               DType dtype);
+                                               KGENDType dtype);
 
 /// Get an LLVM pointer to the given dtype. If the dtype is unknown, return an
 /// untyped pointer.
-mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, DType dtype);
+mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, KGENDType dtype);
 
 /// Check if the type is !pop.simd<1, ?>.
 bool isSIMDSizeOneType(Type type);

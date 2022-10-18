@@ -70,3 +70,12 @@ kgen.func public @addressof() -> ((i64) -> i64) {
   %0 = kgen.addressof @reference_me : (i64) -> i64
   kgen.return %0 : (i64) -> i64
 }
+
+// -----
+
+// CHECK-LABEL: @address_dtype
+// CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr,
+// CHECK-SAME: %[[ARG1:.*]]: !llvm.vec<4 x ptr>
+kgen.func @address_dtype(%arg0 : !pop.scalar<address>, %arg1 : !pop.simd<4, address>) {
+  kgen.return
+}
