@@ -127,6 +127,12 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     result = itf.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
+  // If an operator persisted, try to simplify it with the symbol table.
+  if (symtab && isa<ParamOperatorAttr>(result))
+    if (Optional<TypedAttr> expr =
+            evaluateSymbolicExpression(cast<ParamOperatorAttr>(result)))
+      result = *expr;
+
   return rewrittenAttrs[attr] = result;
 }
 
@@ -163,6 +169,8 @@ Type ParameterEvaluator::getReboundType(Type type) {
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
 ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
+  assert(symtab && "must have a symbol table to concretize expressions");
+
   // If we can fold this to a simple constant result, do.
   auto result = getReboundAttribute(expr);
   if (isSimpleConstant(result))
@@ -232,7 +240,8 @@ LogicalResult KGEN::evaluateConstraints(
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
     KGENDeclInterface decl, ArrayRef<Attribute> inputParamValues,
-    function_ref<LogicalResult(Location, Error)> emitError) {
+    function_ref<LogicalResult(Location, Error)> emitError,
+    SymbolTable &symtab) {
   // If there are no constraints, we are trivially done.
   ConstraintArrayAttr constraints = decl.getConstraintsAttr();
   if (!constraints || constraints.empty())
@@ -240,7 +249,7 @@ LogicalResult KGEN::evaluateConstraints(
 
   // Otherwise, we have constraints to evaluate.  Bind each of the input
   // parameter names.
-  ParameterEvaluator evaluator;
+  ParameterEvaluator evaluator(&symtab);
   auto inputParamDecls = decl.getParamDeclsAttr();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");

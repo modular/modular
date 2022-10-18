@@ -56,11 +56,7 @@ using DeclAndInputParamsPair = std::pair<KGENDeclInterface, ArrayAttr>;
 /// and simplify parameter expressions based on those values.
 class ParameterEvaluator {
 public:
-  ParameterEvaluator() = default;
-  ParameterEvaluator(ParameterEvaluator &&) = default;
-  ParameterEvaluator(const ParameterEvaluator &) = default;
-  ParameterEvaluator &operator=(ParameterEvaluator &&) = default;
-  ParameterEvaluator &operator=(const ParameterEvaluator &) = default;
+  ParameterEvaluator(SymbolTable *symtab = nullptr) : symtab(symtab) {}
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -86,6 +82,12 @@ public:
   void dump() const;
 
 private:
+  /// Evaluate a potentially symbolic expression.
+  Optional<TypedAttr> evaluateSymbolicExpression(ParamOperatorAttr op);
+
+  /// A symbol table to lookup type declarations.
+  SymbolTable *symtab;
+
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
 
@@ -114,7 +116,8 @@ evaluateConstraints(ConstraintArrayAttr constraints,
 LogicalResult
 evaluateConstraints(KGENDeclInterface decl,
                     ArrayRef<Attribute> inputParamValues,
-                    function_ref<LogicalResult(Location, Error)> emitError);
+                    function_ref<LogicalResult(Location, Error)> emitError,
+                    SymbolTable &symtab);
 
 } // namespace M::KGEN
 

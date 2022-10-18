@@ -328,12 +328,13 @@ namespace {
 /// returned.
 class ParameterRewriter {
 public:
-  ParameterRewriter(Elaborator &elaborator, FuncOp func, ModuleOp sourceModule,
+  ParameterRewriter(Elaborator &elaborator, FuncOp func, SymbolTable &symtab,
                     ArrayRef<Operation *> opsToRewrite)
-      : elaborator(elaborator), sourceModule(sourceModule),
+      : elaborator(elaborator), symtab(&symtab),
+        sourceModule(cast<ModuleOp>(symtab.getOp())),
         elaboratedGenerator(func) {
     nextCallRegionID = 0;
-    evaluators.push_back(ParameterEvaluator());
+    evaluators.push_back(ParameterEvaluator(&symtab));
     commandWorklist.reserve(opsToRewrite.size());
     llvm::append_range(commandWorklist, opsToRewrite);
   }
@@ -422,6 +423,9 @@ private:
   /// into.
   Elaborator &elaborator;
 
+  /// The symbol table for lookups.
+  SymbolTable *symtab;
+
   /// This indicates which module this func originally came from (e.g. one of
   /// the imported files).  This is important to know so we can correctly
   /// resolve callee symbols.
@@ -465,7 +469,8 @@ ParameterRewriter::~ParameterRewriter() {
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
+    : elaborator(existing.elaborator), symtab(existing.symtab),
+      sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
       evaluators(existing.evaluators),
       nextCallRegionID(existing.nextCallRegionID) {
@@ -944,7 +949,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // operations from the region have finished their processing.  That command
   // also handles binding returned parameters to the declaration in the caller
   // context.
-  evaluators.push_back(ParameterEvaluator());
+  evaluators.push_back(ParameterEvaluator(symtab));
   commandWorklist.push_back(new RegionReturn{
       call.getLoc(), theRegionReturnOp.getLoc(),
       theRegionReturnOp.getParametersAttr(), call.getParamDeclsAttr()});
@@ -985,7 +990,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   // visit all of them as the evaluator continues processing the ops we just
   // cloned over.
   SmallVector<Operation *> regionOpsToRewrite =
-      ParameterDeclsAndUses::calculate(region).getUsingAndDeclaringOps();
+      ParameterDeclsAndUses::calculate(region).getParametricOps();
 
   // Add the parameter-using operations we cloned over from the region to the
   // commandWorklist so we rewrite them.
@@ -1155,7 +1160,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
   SmallVector<Operation *> opsToRewrite;
   {
     auto paramInfo = ParameterDeclsAndUses::calculate(func);
-    opsToRewrite = paramInfo.getUsingAndDeclaringOps();
+    opsToRewrite = paramInfo.getParametricOps();
   }
 
   // We are going to use opsToRewrite as a worklist, so reverse it for efficient
@@ -1164,8 +1169,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
 
   // Start by rewriting this func.
   SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(*this, func, sourceModule,
-                                std::move(opsToRewrite));
+  rewriterWorklist.emplace_back(*this, func, symtab, std::move(opsToRewrite));
 
   // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
@@ -1337,7 +1341,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams) {
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
   if (failed(evaluateConstraints(decl, declAndInputParams.second.getValue(),
-                                 localError))) {
+                                 localError, symtab))) {
     /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     // Nothing to do here. Just return the function.

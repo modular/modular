@@ -12,6 +12,7 @@ add_modular_dialect_library(KGENDialect
   KGENTypeInterfaces.cpp
   KGENUtils.cpp
   ParameterEvaluator.cpp
+  TypeExpressions.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${MODULAR_MAIN_INCLUDE_DIR}/KGEN/KGENDialect

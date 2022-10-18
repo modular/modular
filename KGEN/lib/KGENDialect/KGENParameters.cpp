@@ -37,13 +37,14 @@ public:
 
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
-  void collectParameterUsesFromAttr(Attribute attr,
-                                    SmallVector<ParamDeclRefAttr> &uses);
+  void collectUsesFromAttr(Attribute attr,
+                           SmallVectorImpl<ParamDeclRefAttr> &uses,
+                           bool &hasConstExpr);
 
   /// Scan the specified type and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
-  void collectParameterUsesFromType(Type type,
-                                    SmallVector<ParamDeclRefAttr> &uses);
+  void collectUsesFromTypes(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
+                            bool &hasConstExpr);
 
 private:
   /// The first time we encounter a SymbolConstantAttr, check to see if the
@@ -58,20 +59,26 @@ private:
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
   /// such, we memoize the attributes and types we've already checked that we
-  /// know have no parameters in them.
-  llvm::SmallDenseSet<Attribute> parameterLessAttrs;
-  llvm::SmallDenseSet<Type> parameterLessTypes;
+  /// know have no parameters in them and whether the paramless attributes are
+  /// constant parameter expressions.
+  llvm::SmallDenseMap<Attribute, bool> parameterLessAttrs;
+  llvm::SmallDenseMap<Type, bool> parameterLessTypes;
 };
 } // end anonymous namespace
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterCollector::collectParameterUsesFromAttr(
-    Attribute attr, SmallVector<ParamDeclRefAttr> &uses) {
+void ParameterCollector::collectUsesFromAttr(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasConstExpr) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
-  if (!attr || parameterLessAttrs.contains(attr))
+  if (!attr)
     return;
+  if (auto it = parameterLessAttrs.find(attr); it != parameterLessAttrs.end()) {
+    hasConstExpr |= it->second;
+    return;
+  }
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
@@ -83,63 +90,85 @@ void ParameterCollector::collectParameterUsesFromAttr(
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr))
     verifySymbolConstantAttr(symbolConstant);
 
+  // Save the number of nested parameters before recursing and check whether the
+  // attribute has a nested constant expression.
   size_t oldSize = uses.size();
+  bool hasNestedConstExpr = false;
 
   // Otherwise we haven't processed this, check the attribute's type if it has
   // one.
   if (auto typedAttr = dyn_cast<TypedAttr>(attr))
-    collectParameterUsesFromType(typedAttr.getType(), uses);
+    collectUsesFromTypes(typedAttr.getType(), uses, hasNestedConstExpr);
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
     itf.walkImmediateSubElements(
-        [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
-        [&](Type type) { collectParameterUsesFromType(type, uses); });
+        [&](Attribute attr) {
+          collectUsesFromAttr(attr, uses, hasNestedConstExpr);
+        },
+        [&](Type type) {
+          collectUsesFromTypes(type, uses, hasNestedConstExpr);
+        });
   }
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == uses.size())
-    parameterLessAttrs.insert(attr);
+  if (oldSize == uses.size()) {
+    // Check whether this is a parameterless expression.
+    hasNestedConstExpr |= isa<ParamOperatorAttr>(attr);
+    parameterLessAttrs.try_emplace(attr, hasNestedConstExpr);
+    hasConstExpr |= hasNestedConstExpr;
+  }
 }
 
 /// Scan the specified type and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterCollector::collectParameterUsesFromType(
-    Type type, SmallVector<ParamDeclRefAttr> &uses) {
-  // Ignore types we have already scanned.
-  if (!type || parameterLessTypes.count(type))
+void ParameterCollector::collectUsesFromTypes(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
+  // Signature types are effectively "isolated from above" in that they may have
+  // their own local parameter declarations that are used in their type
+  // signature, but they cannot "capture" parameters from the enclosing context.
+  // As such, they are always considered "parameterless".
+  if (llvm::isa_and_present<SignatureType>(type))
     return;
+
+  // Ignore types we have already scanned.
+  if (!type)
+    return;
+  if (auto it = parameterLessTypes.find(type); it != parameterLessTypes.end()) {
+    hasConstExpr |= it->second;
+    return;
+  }
 
   // Check any RefType's we encounter.
   if (auto typeDef = dyn_cast<RefType>(type))
     verifyRefType(typeDef);
 
-  // Signature types are effectively "isolated from above" in that they may have
-  // their own local parameter declarations that are used in their type
-  // signature, but they cannot "capture" parameters from the enclosing context.
-  // As such, they are always considered "parameterless".
-  bool skipScan = isa<SignatureType>(type);
+  // Save the number of nested parameters before recursing and check whether the
+  // attribute has a nested constant expression.
+  size_t oldSize = uses.size();
+  bool hasNestedConstExpr = false;
 
-  if (!skipScan) {
-    // Recursively check for any nested types, e.g. the input/outputs of a
-    // function type, types like !pop.scalar<ty> etc.
-    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
-      size_t oldSize = uses.size();
-      itf.walkImmediateSubElements(
-          [&](Attribute attr) { collectParameterUsesFromAttr(attr, uses); },
-          [&](Type type) { collectParameterUsesFromType(type, uses); });
-
-      // If the attribute had uses of a parameter, don't consider it
-      // "parameterless".  We want other operations using the same type to
-      // record the uses as well.
-      if (oldSize != uses.size())
-        return;
-    }
+  // Recursively check for any nested types, e.g. the input/outputs of a
+  // function type, types like !pop.scalar<ty> etc.
+  if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
+    itf.walkImmediateSubElements(
+        [&](Attribute attr) {
+          collectUsesFromAttr(attr, uses, hasNestedConstExpr);
+        },
+        [&](Type type) {
+          collectUsesFromTypes(type, uses, hasNestedConstExpr);
+        });
   }
 
-  parameterLessTypes.insert(type);
+  // If the type had parameter uses or constant expressions, don't consider it
+  // "parameterless".  We want other operations using the same type to record
+  // the uses as well.
+  if (oldSize == uses.size()) {
+    parameterLessTypes.try_emplace(type, hasNestedConstExpr);
+    hasConstExpr |= hasNestedConstExpr;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,7 +189,8 @@ ErrorOrSuccess SignatureType::checkSelfContained() {
   // Collect all the parameter references from the function type in the
   // signature.
   SmallVector<ParamDeclRefAttr> uses;
-  parameterCollector.collectParameterUsesFromType(getValues(), uses);
+  bool hasConstExpr;
+  parameterCollector.collectUsesFromTypes(getValues(), uses, hasConstExpr);
 
   // Reject any SymbolConstantAttr's, they cannot exist in a signature.  This
   // structurally cannot exist, but this is defensive code in case something
@@ -266,7 +296,8 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       return WalkResult::skip();
 
     ParamDeclArrayAttr paramDeclsAttr;
-    SmallVector<ParamDeclRefAttr> paramUses;
+    SmallVector<ParamDeclRefAttr> uses;
+    bool hasConstExpr;
 
     curLocationCollecting = bodyOp->getLoc();
 
@@ -274,7 +305,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     // the walker scan the region hierarchy.
     for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
       // Scan the attribute tree looking or parameter uses.
-      collectParameterUsesFromAttr(namedAttr.getValue(), paramUses);
+      collectUsesFromAttr(namedAttr.getValue(), uses, hasConstExpr);
 
       // We handle the `paramDecls` attribute specially, remember it for
       // below.
@@ -293,10 +324,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     // types.  We don't have to check operands because they are always checked
     // when being defined.
     for (Type type : bodyOp->getResultTypes())
-      collectParameterUsesFromType(type, paramUses);
-
-    // We're done collecting from this operation.
-    curLocationCollecting = None;
+      collectUsesFromTypes(type, uses, hasConstExpr);
 
     // Scan the region list if present.  The walker will automatically recurse
     // for us, but we have to check the block arguments.
@@ -304,13 +332,20 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       for (auto &region : bodyOp->getRegions()) {
         for (auto &block : region)
           for (Value arg : block.getArguments())
-            collectParameterUsesFromType(arg.getType(), paramUses);
+            collectUsesFromTypes(arg.getType(), uses, hasConstExpr);
       }
     }
 
+    // We're done collecting from this operation.
+    curLocationCollecting = None;
+
     // If this operation had any parameter uses or decls, remember them.
-    if (!paramUses.empty() || paramDeclsAttr)
-      parameters.usersAndDeclarers.push_back({bodyOp, std::move(paramUses)});
+    if (!uses.empty() || paramDeclsAttr) {
+      parameters.usersAndDeclarers.push_back({bodyOp, std::move(uses)});
+    } else if (hasConstExpr) {
+      // If this operation contains only constant expressions, remember it.
+      parameters.constExprOps.push_back(bodyOp);
+    }
 
     // Ok, check parameter declarations if present.
     if (!paramDeclsAttr)
@@ -736,4 +771,13 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     return failure();
 
   return std::move(result);
+}
+
+SmallVector<Operation *> ParameterDeclsAndUses::getParametricOps() const {
+  SmallVector<Operation *> result;
+  result.reserve(usersAndDeclarers.size() + constExprOps.size());
+  for (const auto &elt : usersAndDeclarers)
+    result.push_back(elt.first);
+  llvm::append_range(result, constExprOps);
+  return result;
 }

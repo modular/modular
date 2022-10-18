@@ -57,15 +57,15 @@ public:
   SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8>
       usersAndDeclarers;
 
+  /// Keep track of the operations which contain parameter expressions but which
+  /// do not use or declare parameters themselves. These expressions need to be
+  /// evaluated during elaboration.
+  SmallVector<Operation *> constExprOps;
+
   /// Return a list containing just the operations that are using and defining
-  /// parameters in the analyzed region.
-  SmallVector<Operation *> getUsingAndDeclaringOps() const {
-    SmallVector<Operation *> result;
-    result.reserve(usersAndDeclarers.size());
-    for (const auto &elt : usersAndDeclarers)
-      result.push_back(elt.first);
-    return result;
-  }
+  /// parameters in the analyzed region or which contain constant parameter
+  /// expressions. Each operation appears in the list at most once.
+  SmallVector<Operation *> getParametricOps() const;
 
 private:
   static FailureOr<ParameterDeclsAndUses>
