@@ -625,7 +625,9 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         operandType = p.getBuilder().getIndexType();
         break;
       case (uint32_t)POC::GET_DTYPE:
-        // The `dtype` operator always has an `mlirtype` operand.
+      case (uint32_t)POC::GET_SIZEOF:
+      case (uint32_t)POC::GET_ALIGNOF:
+        // The `get_dtype` and `get_sizeof` operand is always an MLIR type.
         operandType = MLIRTypeType::get(p.getContext());
         break;
       default:

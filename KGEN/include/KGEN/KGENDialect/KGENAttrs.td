@@ -518,14 +518,18 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
   let parameters = (ins StringRefParameter<"">:$triple,
                         StringRefParameter<"">:$cpu,
                         StringRefParameter<"">:$features,
+                        "int64_t":$pointerSize,
                         AttributeSelfTypeParameter<"">:$type);
 
-  let assemblyFormat = "`<` $triple `,` $cpu `,` $features `>`";
+  let assemblyFormat = [{
+    `<` $triple `,` $cpu `,` $features `,` $pointerSize `>`
+  }];
 
   let extraClassDeclaration = [{
     /// Provides a stable hash function for use as part of a cache key.
     llvm::hash_code hash() const {
-      return llvm::hash_combine(getTriple(), getCpu(), getFeatures());
+      return llvm::hash_combine(getTriple(), getCpu(), getFeatures(),
+                                getPointerSize());
     }
 
     static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);
