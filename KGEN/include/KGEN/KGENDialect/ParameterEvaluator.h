@@ -106,19 +106,15 @@ private:
 LogicalResult
 evaluateConstraints(ConstraintArrayAttr constraints,
                     ParameterEvaluator &evaluator,
-                    function_ref<LogicalResult(Location, Error)> emitError,
-                    bool allowUnresolved = false);
+                    function_ref<LogicalResult(Location, Error)> emitError);
 
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues. If the constraints are met, return
-/// success, otherwise return why they aren't. If `allowUnresolved` is set,
-/// constraints are only evaluated if they could be fully simplified. This
-/// allows checking constraints pre-elaboration.
+/// success, otherwise return why they aren't.
 LogicalResult
 evaluateConstraints(KGENDeclInterface decl,
                     ArrayRef<Attribute> inputParamValues,
-                    function_ref<LogicalResult(Location, Error)> emitError,
-                    bool allowUnresolved = false);
+                    function_ref<LogicalResult(Location, Error)> emitError);
 
 } // namespace M::KGEN
 

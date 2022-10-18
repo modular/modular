@@ -430,24 +430,6 @@ void DeclParameterVerifier::verifyRefType(RefType typeDef) {
           curLocationCollecting.value(), paramName.c_str(),
           decl.getParamDeclsAttr(), decl.getLoc())))
     hadError = true;
-
-  // Check the constraints.
-  if (!decl.getConstraints().empty()) {
-    SmallVector<Attribute> values;
-    for (ParamBindAttr bind : typeDef.getParamValues())
-      values.push_back(bind.getValue());
-    auto emitErrorFn = [&](Location loc, Error err) -> LogicalResult {
-      InFlightDiagnostic diag = emitError(curLocationCollecting.value(),
-                                          "error in type specialization: ")
-                                << err;
-      return diag.attachNote(loc) << "see constraint defined here";
-    };
-
-    // Evaluate the potentially partial constraints.
-    if (failed(evaluateConstraints(decl, values, emitErrorFn,
-                                   /*allowUnresolved=*/true)))
-      hadError = true;
-  }
 }
 
 //===----------------------------------------------------------------------===//
