@@ -25,25 +25,27 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"And", 2, "and">,
   I32EnumAttrCase<"Or",  3, "or">,
   I32EnumAttrCase<"Xor", 4, "xor">,
+  I32EnumAttrCase<"Max", 5, "max">,
+  I32EnumAttrCase<"Min", 6, "min">,
 
   // Binary expressions.
-  I32EnumAttrCase<"Shl", 5, "shl">,
-  I32EnumAttrCase<"Shr", 6, "shr">,
-  I32EnumAttrCase<"Div", 7, "div">,
-  I32EnumAttrCase<"Mod", 8, "mod">,
+  I32EnumAttrCase<"Shl", 7, "shl">,
+  I32EnumAttrCase<"Shr", 8, "shr">,
+  I32EnumAttrCase<"Div", 9, "div">,
+  I32EnumAttrCase<"Mod", 10, "mod">,
 
   // Compares.
-  I32EnumAttrCase<"EQ", 9, "eq">,
-  I32EnumAttrCase<"LT", 10, "lt">,
-  I32EnumAttrCase<"LE", 11, "le">,
+  I32EnumAttrCase<"EQ", 11, "eq">,
+  I32EnumAttrCase<"LT", 12, "lt">,
+  I32EnumAttrCase<"LE", 13, "le">,
 
   // Complex variadic operations.
-  I32EnumAttrCase<"IN", 12, "in">,
+  I32EnumAttrCase<"IN", 14, "in">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GET_DTYPE", 13, "get_dtype">,
-  I32EnumAttrCase<"GET_SIZEOF", 14, "get_sizeof">,
-  I32EnumAttrCase<"GET_ALIGNOF", 15, "get_alignof">,
+  I32EnumAttrCase<"GET_DTYPE", 15, "get_dtype">,
+  I32EnumAttrCase<"GET_SIZEOF", 16, "get_sizeof">,
+  I32EnumAttrCase<"GET_ALIGNOF", 17, "get_alignof">,
 
   // TODO: Can add string concat, etc as needed.
 ]>;
