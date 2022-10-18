@@ -14,6 +14,7 @@
 #include "LitExprNodes.h"
 #include "LitParserBase.h"
 #include "LitScope.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -38,13 +39,23 @@ using namespace M::KGEN::LIT;
 //   foo()
 
 DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
-DeclResolver::~DeclResolver() {}
+DeclResolver::~DeclResolver() {
+  // Run the destructors on all the scope objects to make sure any transitively
+  // allocated data is released.
+  for (auto [op, scope] : parsedDecls)
+    scope->~Scope();
+}
 
 /// Add a new declaration that needs to be resolved.
-void DeclResolver::addDecl(LLCL::RCRef<Scope> declScope) {
-  Operation *op = declScope->getDecl();
-  parsedDeclList.push_back(op);
-  parsedDecls[op] = std::move(declScope);
+Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
+                             LitLexerCursor cursor) {
+  void *rawScopePtr =
+      sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
+  Scope *scope = new (rawScopePtr) Scope(decl, parentScope, cursor);
+
+  parsedDeclList.push_back(decl);
+  parsedDecls[decl] = scope;
+  return *scope;
 }
 
 /// Resolve all of the declarations that are visible.
@@ -73,7 +84,9 @@ void DeclResolver::resolve(Scope &scope) {
   // Handle each operation that can be name bound.
   TypeSwitch<Operation *>(decl)
       .Case<LITFuncOp>([&](auto op) { resolveBody(op, scope); })
+      .Case<LITStructDeclOp>([&](auto op) { resolveBody(op, scope); })
       .Case<VarDeclOp>([&](auto op) { resolveSignature(op, scope); })
+      .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
       .Default([&](auto attr) {
         decl->emitError("do not know how to perform name binding on this op!");
       });
