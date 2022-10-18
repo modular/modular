@@ -56,3 +56,17 @@ kgen.func @convert_call(%arg0: !pop.scalar<f32>) {
   // CHECK: llvm.extractvalue %[[PACK]][1]
   kgen.return
 }
+
+// -----
+
+kgen.func @reference_me(%a: i64) -> i64 {
+  kgen.return %a : i64
+}
+
+// CHECK-LABEL: llvm.func @addressof
+// CHECK-SAME: -> !llvm.ptr<func<i64 (i64)>>
+kgen.func public @addressof() -> ((i64) -> i64) {
+  // CHECK: llvm.mlir.addressof @reference_me : !llvm.ptr<func<i64 (i64)>>
+  %0 = kgen.addressof @reference_me : (i64) -> i64
+  kgen.return %0 : (i64) -> i64
+}
