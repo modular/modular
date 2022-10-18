@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ParseLit.h"
+#include "LitLexer.h"
 #include "LitParserBase.h"
 
 #include "LitDecls.h"
@@ -132,16 +133,19 @@ struct LitParser : public LitParserBase {
 
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
+
+  // Simple statements.
+  ParseResult parseReturnStmt();
+  ParseResult parseAssignmentStmt(ExprParser &exprParser, ExprNode *lhs,
+                                  SMLoc equalsLoc);
+
+  // Declarations.
   ParseResult parseDefStmt(size_t curIndent);
   void parseDefBody(LITFuncOp defDecl);
   ParseResult parseStructStmt(size_t curIndent);
   void parseStructBody(LITStructDeclOp structDecl);
-
-  // Simple statements.
   ParseResult parseVarDeclStmt();
-  ParseResult parseReturnStmt();
-  ParseResult parseAssignmentStmt(ExprParser &exprParser, ExprNode *lhs,
-                                  SMLoc equalsLoc);
+  void parseVarDeclBody(VarDeclOp varDecl);
 
 private:
   /// This is declaration scope that we're parsing into.
@@ -504,6 +508,69 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
   return success();
 }
 
+/// return_stmt ::= "return" [expression_list]
+ParseResult LitParser::parseReturnStmt() {
+  auto loc = consumeToken(LitToken::kw_return).getLoc();
+
+  SmallVector<Value> operandValues;
+
+  // If there is an expression list present, parse it.
+  if (!getToken().getIndentation().has_value()) {
+    ExprParser exprParser(*this);
+    SmallVector<ExprNode *> operandExprs;
+    exprParser.parseExpressionList(operandExprs);
+
+    // Materialize the expression values into our current scope.
+    // TODO: Should pass in contextual type from return value.
+    for (auto expr : operandExprs) {
+      auto value = emitExprAsValue(expr);
+      if (!value)
+        return failure();
+      operandValues.push_back(value);
+    }
+  }
+
+  // We don't support formation of tuples / multiple result values yet.
+  if (operandValues.size() > 1) {
+    emitError(loc, "tuple return not supported yet");
+    return success();
+  }
+
+  // Check the result values match expected types.
+  LITFuncOp decl = dyn_cast<LITFuncOp>(scope.getDecl());
+  if (!decl) {
+    emitError(loc, "cannot return from this context");
+    return success();
+  }
+
+  if (operandValues.empty() && !decl.getResultTypes().empty()) {
+    emitError(loc, "expected a return value from 'def' with return type ")
+        << decl.getResultTypes()[0];
+    return success();
+  }
+
+  if (operandValues.size() == 1 && decl.getResultTypes().empty()) {
+    emitError(loc, "extraneous return value from 'def'");
+    return success();
+  }
+
+  if (operandValues[0].getType() != decl.getResultTypes()[0]) {
+    emitError(loc, "returned value has type ")
+        << operandValues[0].getType() << " but 'def' expected "
+        << decl.getResultTypes()[0];
+    return success();
+  }
+
+  // TODO: Support result parameters.
+  builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
+                           operandValues);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Definitions
+//===----------------------------------------------------------------------===//
+
 namespace {
 struct ParsedParam {
   /// If this parameter has a type specifier or default value, these indicates
@@ -697,134 +764,65 @@ void DeclResolver::resolveBody(LITFuncOp op, Scope &scope) {
   parser.parseDefBody(op);
 }
 
-namespace {
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
-struct ParsedVarDecl {
-  SMLoc loc;
-  StringAttr name;
-  Optional<LitLexerCursor> typeCursor;
-  Optional<LitLexerCursor> initValueCursor;
-
-  ParseResult parse(LitParserBase &p) {
-    loc = p.getToken().getLoc();
-    if (p.parseToken(LitToken::kw_var, "expected 'var' declaration") ||
-        p.parseIdentifier(name, "expected name for 'var' declaration") ||
-        p.parseToken(LitToken::colon, "var declaration requires a type") ||
-        ExprParser::parseOverExpression(p, typeCursor))
-      return failure();
-
-    if (p.consumeIf(LitToken::equal)) {
-      if (ExprParser::parseOverExpression(p, initValueCursor))
-        return failure();
-    }
-    return success();
-  }
-};
-} // namespace
-
 ParseResult LitParser::parseVarDeclStmt() {
+  size_t indent = getToken().getIndentation().value_or(~size_t(0));
   LitLexerCursor declCursor = getLexer().getCursor();
-  ParsedVarDecl info;
-  if (info.parse(*this))
+  auto loc = getTokenLocation();
+  consumeToken(LitToken::kw_var);
+  StringAttr name;
+  if (parseIdentifier(name, "expected name for 'var' declaration"))
     return failure();
-
-  // TODO: add support for default parameter expressions.
-  if (info.initValueCursor)
-    emitError(info.loc, "var initializers not supported yet");
 
   auto builder = scope.getDeclBuilder();
 
   // If we are in a function, emit a variable declaration, if we are in a
   // struct, emit a field declaration.  Both have the same IR representation.
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
-  auto varDecl = builder.create<VarDeclOp>(translateLocation(info.loc), varType,
-                                           info.name);
-  scope.addToScope(info.name, varDecl, getSharedState());
+  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
+  scope.addToScope(name, varDecl, getSharedState());
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
   getDeclResolver().addDecl(varDecl, &scope, declCursor);
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(indent, /*stopOnSemicolon=*/true);
   return success();
+}
+
+void LitParser::parseVarDeclBody(VarDeclOp varDecl) {
+  consumeToken(LitToken::kw_var);
+  consumeToken(LitToken::identifier);
+  Optional<LitLexerCursor> typeCursor;
+  Optional<LitLexerCursor> initValueCursor;
+  if (parseToken(LitToken::colon, "var declaration requires a type") ||
+      ExprParser::parseOverExpression(*this, typeCursor))
+    return; // TODO: mark decl erroreous.
+
+  // Parse the type if present.
+  if (typeCursor)
+    varDecl.getResult().setType(
+        POP::PointerType::get(getSharedState().declResolver->resolveType(
+            typeCursor.value(), scope, *this)));
+
+  if (consumeIf(LitToken::equal)) {
+    if (ExprParser::parseOverExpression(*this, initValueCursor))
+      return; // TODO: mark decl erroreous.
+  }
+
+  if (initValueCursor)
+    emitError(initValueCursor->getLoc(getLexer()),
+              "var initializers not supported yet");
 }
 
 void DeclResolver::resolveSignature(VarDeclOp op, Scope &scope) {
   // Set up a lexer to point to the start of the declaration so we can reparse.
   LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, scope);
-
-  // Reparse the var-decl signature again.  We know the initial parse succeeded.
-  ParsedVarDecl info;
-  (void)info.parse(parser);
-
-  // Parse the type if present.
-  if (info.typeCursor)
-    op.getResult().setType(POP::PointerType::get(
-        resolveType(info.typeCursor.value(), scope, parser)));
-
-  if (info.initValueCursor)
-    emitError(info.initValueCursor->getLoc(parser.getLexer()),
-              "var initializers not supported yet");
-}
-
-/// return_stmt ::= "return" [expression_list]
-ParseResult LitParser::parseReturnStmt() {
-  auto loc = consumeToken(LitToken::kw_return).getLoc();
-
-  SmallVector<Value> operandValues;
-
-  // If there is an expression list present, parse it.
-  if (!getToken().getIndentation().has_value()) {
-    ExprParser exprParser(*this);
-    SmallVector<ExprNode *> operandExprs;
-    exprParser.parseExpressionList(operandExprs);
-
-    // Materialize the expression values into our current scope.
-    // TODO: Should pass in contextual type from return value.
-    for (auto expr : operandExprs) {
-      auto value = emitExprAsValue(expr);
-      if (!value)
-        return failure();
-      operandValues.push_back(value);
-    }
-  }
-
-  // We don't support formation of tuples / multiple result values yet.
-  if (operandValues.size() > 1) {
-    emitError(loc, "tuple return not supported yet");
-    return success();
-  }
-
-  // Check the result values match expected types.
-  LITFuncOp decl = dyn_cast<LITFuncOp>(scope.getDecl());
-  if (!decl) {
-    emitError(loc, "cannot return from this context");
-    return success();
-  }
-
-  if (operandValues.empty() && !decl.getResultTypes().empty()) {
-    emitError(loc, "expected a return value from 'def' with return type ")
-        << decl.getResultTypes()[0];
-    return success();
-  }
-
-  if (operandValues.size() == 1 && decl.getResultTypes().empty()) {
-    emitError(loc, "extraneous return value from 'def'");
-    return success();
-  }
-
-  if (operandValues[0].getType() != decl.getResultTypes()[0]) {
-    emitError(loc, "returned value has type ")
-        << operandValues[0].getType() << " but 'def' expected "
-        << decl.getResultTypes()[0];
-    return success();
-  }
-
-  // TODO: Support result parameters.
-  builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
-                           operandValues);
-  return success();
+  LitParser(lexer, scope).parseVarDeclBody(op);
 }
 
 /// structdef ::=
@@ -838,16 +836,12 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   consumeToken(LitToken::kw_struct);
 
   StringAttr nameAttr;
-  ParsedMetaSignature metaSignature;
-  if (parseIdentifier(nameAttr, "expected struct name") ||
-      metaSignature.parseOptionalMetaSignature(*this) ||
-      parseToken(LitToken::colon, "expected ':' in function definition"))
+  if (parseIdentifier(nameAttr, "expected struct name"))
     return failure();
 
   // TODO: Should have nicer builder.
   auto newStruct = builder.create<LITStructDeclOp>(
-      loc, nameAttr,
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls),
+      loc, nameAttr, ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), {}));
   newStruct.getRegion().push_back(new Block());
 
@@ -872,15 +866,17 @@ void LitParser::parseStructBody(LITStructDeclOp structDecl) {
 
   // TODO: Add support for decorators.
   consumeToken(LitToken::kw_struct);
+  consumeToken(LitToken::identifier);
 
-  StringAttr nameAttr;
   ParsedMetaSignature metaSignature;
-  if (parseIdentifier(nameAttr, "expected struct name") ||
-      metaSignature.parseOptionalMetaSignature(*this) ||
-      parseToken(LitToken::colon, "expected ':' in function definition"))
+  if (metaSignature.parseOptionalMetaSignature(*this) ||
+      parseToken(LitToken::colon, "expected ':' in struct definition"))
     return;
 
-  // Add the meta parameters to the symbol table.
+  structDecl.setParamDeclsAttr(
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
+
+  // Add the meta parameters to the struct's symbol table.
   for (auto [param, loc] :
        llvm::zip(structDecl.getParamDecls(), metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
