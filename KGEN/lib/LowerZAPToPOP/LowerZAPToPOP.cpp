@@ -851,10 +851,10 @@ struct ConvertZAPNDBufferSIMDLoad
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
+    Value ptr = rewriter.create<OffsetOp>(loc, base, offset);
     Value simdPtr = rewriter.create<PointerBitcastOp>(
-        loc, PointerType::get(op.getType()), base);
-    Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
-    rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/1);
+        loc, PointerType::get(op.getType()), ptr);
+    rewriter.replaceOpWithNewOp<LoadOp>(op, simdPtr, /*alignment=*/1);
     return success();
   }
 };
@@ -880,10 +880,10 @@ struct ConvertZAPNDBufferSIMDStore
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
+    Value ptr = rewriter.create<OffsetOp>(loc, base, offset);
     Value simdPtr = rewriter.create<PointerBitcastOp>(
-        loc, PointerType::get(op.getValue().getType()), base);
-    Value ptr = rewriter.create<OffsetOp>(loc, simdPtr, offset);
-    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
+        loc, PointerType::get(op.getValue().getType()), ptr);
+    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), simdPtr,
                                          /*alignment=*/1);
     return success();
   }
