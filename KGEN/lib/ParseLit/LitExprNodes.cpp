@@ -69,9 +69,6 @@ Value MLIRValueRep::getAsValue(Location loc, OpBuilder &builder) const {
 // EmitterState Implementation
 //===----------------------------------------------------------------------===//
 
-EmitterState::EmitterState(LitParserBase &parser, Scope &scope)
-    : parser(parser), scope(scope), builder(scope.getBuilder()) {}
-
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.

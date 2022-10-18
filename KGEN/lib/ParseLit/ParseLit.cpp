@@ -99,7 +99,7 @@ private:
 /// grammar.
 struct LitParser : public LitParserBase {
   LitParser(LitLexer &lexer, Scope &scope)
-      : LitParserBase(lexer), scope(scope) {}
+      : LitParserBase(lexer), scope(scope), builder(scope.getDeclBuilder()) {}
 
   ParseResult parseFile(ModuleOp module);
 
@@ -110,12 +110,12 @@ struct LitParser : public LitParserBase {
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emitExpr(ExprNode *node) {
-    EmitterState state(*this, scope);
+    EmitterState state(*this, scope, builder);
     return node->emit(state);
   }
 
   Value emitExprAsValue(ExprNode *node) {
-    EmitterState state(*this, scope);
+    EmitterState state(*this, scope, builder);
     return node->emit(state).getAsValue(translateLocation(node->getLoc()),
                                         state.builder);
   }
@@ -146,6 +146,9 @@ struct LitParser : public LitParserBase {
 private:
   /// This is declaration scope that we're parsing into.
   Scope &scope;
+
+  /// This is the builder that we are constructing IR into.
+  OpBuilder builder;
 };
 
 /// file ::= statements
@@ -338,7 +341,6 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     return success();
   }
 
-  auto builder = scope.getBuilder();
   // Use this builder to place any VarDeclOps. In Python there is only one
   // scope per function and all variables belong to that scope, so builders
   // should reflect that.
@@ -440,7 +442,6 @@ struct ParsedMetaSignature {
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
 ParseResult LitParser::parseIfStmt(size_t curIndent) {
-  OpBuilder &builder = scope.getBuilder();
   Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
   auto one = builder.create<index::ConstantOp>(ifLoc, 1);
 
@@ -456,9 +457,8 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     Value cond = emitExprAsValue(condExp);
     if (!cond)
       return failure();
-    auto cmpBuilder = scope.getBuilder();
-    cmpOp = cmpBuilder.create<index::CmpOp>(loc, index::IndexCmpPredicate::EQ,
-                                            cond, one);
+    cmpOp = builder.create<index::CmpOp>(loc, index::IndexCmpPredicate::EQ,
+                                         cond, one);
     if (parseToken(LitToken::colon, "expected ':' after expression"))
       return failure();
     return success();
@@ -481,13 +481,13 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     auto elseBuilder = lastIfOp.getElseBodyBuilder();
     index::CmpOp elifCmp;
     {
-      SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(), elseBuilder);
+      SaveAndRestore<OpBuilder> builderSaver(builder, elseBuilder);
       if (failed(parseCondition(elifCmp)))
         return failure();
     }
     lastIfOp =
         elseBuilder.create<scf::IfOp>(elifLoc, elifCmp, /*withElse=*/true);
-    SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(),
+    SaveAndRestore<OpBuilder> builderSaver(builder,
                                            lastIfOp.getThenBodyBuilder());
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
@@ -496,7 +496,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     consumeToken(LitToken::kw_else);
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
-    SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(),
+    SaveAndRestore<OpBuilder> builderSaver(builder,
                                            lastIfOp.getElseBodyBuilder());
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
@@ -612,7 +612,6 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   if (info.resultTypeCursor)
     resultTypes.push_back(IndexType::get(getContext()));
 
-  auto builder = scope.getBuilder();
   auto functionType = builder.getFunctionType(paramTypes, resultTypes);
   auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
@@ -661,7 +660,6 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
 
   // Set up the body of the def, creating declarations for the value parameters
   // and adding them to the symbol table.
-  auto builder = scope.getBuilder();
   for (auto [arg, name] : llvm::zip(defDecl.getBody()->getArguments(),
                                     defDecl.getValueParamNames())) {
     // Create a mutable var.decl that references to the name can load from.
@@ -824,8 +822,8 @@ ParseResult LitParser::parseReturnStmt() {
   }
 
   // TODO: Support result parameters.
-  scope.getBuilder().create<ReturnOp>(translateLocation(loc),
-                                      ArrayRef<TypedAttr>(), operandValues);
+  builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
+                           operandValues);
   return success();
 }
 
@@ -846,7 +844,6 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
       parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  auto builder = scope.getBuilder();
   // TODO: Should have nicer builder.
   auto newStruct = builder.create<LITStructDeclOp>(
       loc, nameAttr,
