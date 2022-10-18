@@ -381,17 +381,22 @@ kgen.func @variant_visit_duplicate_case(%a: !pop.variant<i32>) {
 
 // -----
 
-kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32>) {
-  // expected-error @below {{'pop.variant.visit' op expected 1 regions when all type cases are present}}
-  "pop.variant.visit"(%a) {cases = #kgen<type.array[i32]>} : (!pop.variant<i32>) -> ()
+kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32, f32>) {
+  // expected-error @below {{'pop.variant.visit' op expected 2 regions when all type cases are present}}
+  "pop.variant.visit"(%a) ({
+    pop.yield
+  }) {cases = #kgen<type.array[i32, f32]>} : (!pop.variant<i32, f32>) -> ()
   kgen.return
 }
 
 // -----
 
-kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32>) {
-  // expected-error @below {{'pop.variant.visit' op expected 0 regions plus a default region when not all case types are present}}
-  "pop.variant.visit"(%a) {cases = #kgen<type.array[]>} : (!pop.variant<i32>) -> ()
+kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32, f32>) {
+  // expected-error @below {{'pop.variant.visit' op expected 1 regions plus a default region when not all case types are present}}
+  "pop.variant.visit"(%a) ({
+  ^bb0(%v: i32):
+    pop.yield
+  }) {cases = #kgen<type.array[i32]>} : (!pop.variant<i32, f32>) -> ()
   kgen.return
 }
 

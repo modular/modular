@@ -13,6 +13,7 @@
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
 #include "mlir/Analysis/DataFlow/SparseAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 using namespace M;
 using namespace KGEN;
@@ -24,7 +25,7 @@ namespace {
 /// This state represents the known possible types of a variant.
 struct VariantTypes {
   static VariantTypes join(const VariantTypes &lhs, const VariantTypes &rhs) {
-    llvm::SetVector<Type> knownTypes = lhs.knownTypes;
+    auto knownTypes = lhs.knownTypes;
     knownTypes.insert(rhs.knownTypes.begin(), rhs.knownTypes.end());
     return {std::move(knownTypes)};
   }
@@ -39,7 +40,7 @@ struct VariantTypes {
     os << '}';
   }
 
-  llvm::SetVector<Type> knownTypes;
+  llvm::SetVector<Type, SmallVector<Type, 4>, SmallPtrSet<Type, 4>> knownTypes;
 };
 
 struct VariantState : public Lattice<VariantTypes> {
@@ -59,12 +60,51 @@ struct KnownVariantAnalysis : public SparseDataFlowAnalysis<VariantState> {
       VariantTypes value;
       value.knownTypes.insert(create.getOperand().getType());
       propagateIfChanged(results.front(), results.front()->join(value));
+      return;
     }
+    setAllToEntryStates(results);
   }
 
-  /// Nothing to do since the only op that produces a VariantType is
-  /// VariantCreateOp.
-  void setToEntryState(VariantState *state) override {}
+  void setToEntryState(VariantState *state) override {
+    if (auto variant = dyn_cast<VariantType>(state->getPoint().getType())) {
+      SmallVector<Type> types = variant.getParameterizedElementTypes();
+      VariantTypes value;
+      value.knownTypes.insert(types.begin(), types.end());
+      propagateIfChanged(state, state->join(value));
+    }
+  }
+};
+
+/// Subclass DeadCodeAnalysis to inject our transfer function.
+struct VariantAwareDeadCodeAnalysis : public DeadCodeAnalysis {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VariantAwareDeadCodeAnalysis);
+
+  using DeadCodeAnalysis::DeadCodeAnalysis;
+
+  LogicalResult visit(mlir::ProgramPoint point) override {
+    auto *op = point.dyn_cast<Operation *>();
+    auto visit = dyn_cast_if_present<VariantVisitOp>(op);
+    if (!visit)
+      return DeadCodeAnalysis::visit(point);
+
+    const VariantTypes &value =
+        getOrCreateFor<VariantState>(point, visit.getVariant())->getValue();
+    // Mark any case region of a known type to be live. If there is a known type
+    // that does not have a case region, the default region is live.
+    unsigned casesHit = 0;
+    for (auto [caseType, region] :
+         llvm::zip(visit.getCases(), visit.getRegions())) {
+      if (value.knownTypes.contains(caseType)) {
+        ++casesHit;
+        auto *executable = getOrCreate<Executable>(&region->front());
+        propagateIfChanged(executable, executable->setToLive());
+        auto *predecessors = getOrCreate<PredecessorState>(&region->front());
+        propagateIfChanged(predecessors,
+                           predecessors->join(visit, visit->getOperands()));
+      }
+    }
+    return success();
+  }
 };
 
 /// Subclass SparseConstantPropagation to inject our transfer function.
@@ -115,7 +155,7 @@ struct PruneImpossibleVariantsPass
 
 void PruneImpossibleVariantsPass::runOnOperation() {
   mlir::DataFlowSolver solver;
-  solver.load<DeadCodeAnalysis>();
+  solver.load<VariantAwareDeadCodeAnalysis>();
   solver.load<KnownVariantAnalysis>();
   solver.load<ConstantPropagation>();
 

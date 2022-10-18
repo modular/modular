@@ -802,7 +802,7 @@ static void printVariantVisitRegions(OpAsmPrinter &p, Operation *op,
   p.printRegion(*regions.back());
 }
 
-LogicalResult VariantVisitOp::verifyRegions() {
+LogicalResult VariantVisitOp::verify() {
   SmallPtrSet<Type, 4> typeSet, seenTypes;
   VariantType variant = getVariant().getType();
   for (Type type : variant.getParameterizedElementTypes())
@@ -846,6 +846,51 @@ LogicalResult VariantVisitOp::verifyRegions() {
              << region->getRegionNumber() << " argument type to be " << type;
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RegionBranchOpInterface implementation
+
+bool VariantVisitOp::areTypesCompatible(Type lhs, Type rhs) {
+  if (lhs == rhs)
+    return true;
+
+  // The variant operand maps to the case value.
+  if (auto variant = dyn_cast<VariantType>(lhs))
+    return variant.getTypeIndex(rhs).has_value();
+
+  return false;
+}
+
+void VariantVisitOp::getSuccessorRegions(
+    Optional<unsigned> index, ArrayRef<Attribute> operands,
+    SmallVectorImpl<mlir::RegionSuccessor> &successors) {
+  // All regions branch back to the parent op.
+  if (index) {
+    successors.emplace_back(getResults());
+    return;
+  }
+
+  // The known variant type of the operand can be used to narrow the successor
+  // regions of the parent op to just one, but we can't do that here.
+  for (Region *region : getRegions())
+    successors.emplace_back(region, region->getArguments());
+}
+
+OperandRange
+VariantVisitOp::getSuccessorEntryOperands(Optional<unsigned> index) {
+  assert(index);
+  if (getCases().size() != getVariant().getType().getTypes().size() &&
+      *index == getNumRegions() - 1)
+    return {(*this)->operand_end(), (*this)->operand_end()};
+  return (*this)->getOperands();
+}
+
+/// Each region is invoked at most once per op.
+void VariantVisitOp::getRegionInvocationBounds(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<mlir::InvocationBounds> &bounds) {
+  bounds.append(getNumRegions(), mlir::InvocationBounds(/*lb=*/0, /*ub=*/1));
 }
 
 //===----------------------------------------------------------------------===//

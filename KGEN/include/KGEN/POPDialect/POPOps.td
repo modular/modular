@@ -16,6 +16,7 @@ include "KGEN/POPDialect/POPTypes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1230,7 +1231,10 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
-    SingleBlockImplicitTerminator<"YieldOp">]> {
+    SingleBlockImplicitTerminator<"YieldOp">,
+    DeclareOpInterfaceMethods<RegionBranchOpInterface, [
+      "getSuccessorEntryOperands", "getRegionInvocationBounds",
+      "areTypesCompatible"]>]> {
   let summary = "variant case visit";
   let description = [{
     The `pop.variant.visit` operation performs a control-flow switch on the
@@ -1274,14 +1278,14 @@ def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
     custom<VariantVisitRegions>($cases, $regions)
   }];
 
-  let hasRegionVerifier = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def POP_YieldOp : POPOp<"yield", [Terminator, Pure,
+def POP_YieldOp : POPOp<"yield", [Pure, ReturnLike, Terminator,
     HasParent<"VariantVisitOp">]> {
   let summary = "yield operation";
   let description = [{
