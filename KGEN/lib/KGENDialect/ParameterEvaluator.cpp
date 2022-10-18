@@ -199,33 +199,17 @@ void ParameterEvaluator::dump() const {
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
     ConstraintArrayAttr constraints, ParameterEvaluator &evaluator,
-    function_ref<LogicalResult(Location, Error)> emitError,
-    bool allowUnresolved) {
+    function_ref<LogicalResult(Location, Error)> emitError) {
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
-    Attribute value;
-
-    // If the constraint must evaluate, concretize the expression.
-    if (!allowUnresolved) {
-      ErrorOr<Attribute> result =
-          evaluator.concretizeParameterExpr(constraint.getExpr());
-      if (failed(result)) {
-        return emitError(constraint.getLoc(),
-                         "constraint evaluation failure: " +
-                             Twine(result.getError()));
-      }
-      value = result.takeValue();
-
-      // Otherwise, rebind and simplify it as much as possible.
-    } else {
-      value = evaluator.getReboundAttribute(constraint.getExpr());
+    ErrorOr<Attribute> result =
+        evaluator.concretizeParameterExpr(constraint.getExpr());
+    if (failed(result)) {
+      return emitError(constraint.getLoc(), "constraint evaluation failure: " +
+                                                Twine(result.getError()));
     }
 
-    auto resultInt = dyn_cast<IntegerAttr>(value);
-    // If the expression was not fully simplified, skip it.
-    if (!resultInt && allowUnresolved)
-      continue;
-
+    auto resultInt = dyn_cast<IntegerAttr>(result.takeValue());
     if (!resultInt || resultInt.getValue().getBitWidth() != 1) {
       return emitError(constraint.getLoc(),
                        "constraint evaluation didn't return true or false");
@@ -248,8 +232,7 @@ LogicalResult KGEN::evaluateConstraints(
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
     KGENDeclInterface decl, ArrayRef<Attribute> inputParamValues,
-    function_ref<LogicalResult(Location, Error)> emitError,
-    bool allowUnresolved) {
+    function_ref<LogicalResult(Location, Error)> emitError) {
   // If there are no constraints, we are trivially done.
   ConstraintArrayAttr constraints = decl.getConstraintsAttr();
   if (!constraints || constraints.empty())
@@ -264,6 +247,5 @@ LogicalResult KGEN::evaluateConstraints(
   for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setParameterValue(paramDecl, value);
 
-  return evaluateConstraints(constraints, evaluator, std::move(emitError),
-                             allowUnresolved);
+  return evaluateConstraints(constraints, evaluator, std::move(emitError));
 }
