@@ -115,6 +115,22 @@ ParamDeclAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return ParamDeclAttr::get(replAttrs[0].cast<StringAttr>(), replTypes[0]);
 }
 
+void ParameterExprArrayAttr::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (TypedAttr value : getValue())
+    walkAttrsFn(value);
+}
+
+Attribute ParameterExprArrayAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  SmallVector<TypedAttr> exprs;
+  exprs.reserve(replAttrs.size());
+  for (Attribute replAttr : replAttrs)
+    exprs.push_back(replAttr.cast<TypedAttr>());
+  return get(getContext(), exprs);
+}
+
 void ParamDeclArrayAttr::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrsFn,
     function_ref<void(Type)> walkTypesFn) const {

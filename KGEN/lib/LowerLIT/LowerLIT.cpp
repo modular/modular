@@ -397,7 +397,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // It also captures the result parameters and returns them from the
     // kgen.output for the thunk.
     SmallVector<ParamDeclAttr> callResultParams; // <StringAttr name, Type type>
-    SmallVector<Attribute> returnParams;
+    SmallVector<TypedAttr> returnParams;
 
     unsigned paramNo = 0;
     for (Type resultParamType : gen.getResultParamTypes()) {
@@ -423,7 +423,8 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     for (auto [result, resultTy] : llvm::zip(callOp.getResults(), itfResTys))
       results.push_back(insertRebindOp(result, resultTy, b));
 
-    b.create<ReturnOp>(b.getAttr<ArrayAttr>(returnParams), results);
+    b.create<ReturnOp>(b.getAttr<ParameterExprArrayAttr>(returnParams),
+                       results);
 
     // The thunk is required because there could be direct callers of the
     // original generator, which expect the original signature.  If there

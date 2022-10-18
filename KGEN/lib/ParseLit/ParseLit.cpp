@@ -881,9 +881,8 @@ void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
     if (defDecl.getResultTypes().empty() &&
         defDecl.getResultParamTypes().empty()) {
       // TODO: Generalize lit.func.
-      auto returnParams = ArrayAttr::get(getContext(), {});
       OpBuilder::atBlockEnd(bodyBlock).create<ReturnOp>(
-          defDecl->getLoc(), returnParams, ArrayRef<Value>());
+          defDecl->getLoc(), ArrayRef<TypedAttr>(), ArrayRef<Value>());
     } else if (!sharedParserState->errorOccurred) {
       Location endLoc =
           bodyBlock->empty() ? defDecl.getLoc() : bodyBlock->back().getLoc();
@@ -1016,9 +1015,8 @@ ParseResult LitParser::parseReturnStmt() {
   }
 
   // TODO: Support result parameters.
-  auto returnParams = ArrayAttr::get(getContext(), {});
-  currentScope->getBuilder().create<ReturnOp>(translateLocation(loc),
-                                              returnParams, operandValues);
+  currentScope->getBuilder().create<ReturnOp>(
+      translateLocation(loc), ArrayRef<TypedAttr>(), operandValues);
   return success();
 }
 
