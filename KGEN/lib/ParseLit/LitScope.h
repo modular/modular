@@ -72,7 +72,8 @@ public:
 
   /// Add the specified declaration to the current scope, emitting an error on
   /// a name collision and setting hadError to true.
-  void addToScope(StringRef name, ScopeValue newValue, bool &hadError);
+  void addToScope(StringRef name, ScopeValue newValue,
+                  LitSharedState &sharedState);
 
   /// Look up a name in the current scope only.
   Optional<ScopeValue> lookupInCurrentScope(StringRef name) {

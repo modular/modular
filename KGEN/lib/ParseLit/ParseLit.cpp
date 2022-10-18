@@ -20,6 +20,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "LitSharedState.h"
 #include "Support/IndexDialect/IndexAttrs.h"
 #include "Support/IndexDialect/IndexDialect.h"
 #include "Support/IndexDialect/IndexOps.h"
@@ -52,7 +53,8 @@ static Location getLocationFrom(Scope::ScopeValue value) {
 
 /// Add the specified declaration to the current scope, emitting an error on
 /// a name collision.
-void Scope::addToScope(StringRef name, ScopeValue newValue, bool &hadError) {
+void Scope::addToScope(StringRef name, ScopeValue newValue,
+                       LitSharedState &sharedState) {
   Optional<Scope::ScopeValue> &entry = decls[name];
   if (!entry) {
     entry = newValue;
@@ -62,7 +64,7 @@ void Scope::addToScope(StringRef name, ScopeValue newValue, bool &hadError) {
   auto diag = emitError(getLocationFrom(newValue), "invalid redefinition of \"")
               << name << '"';
   diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
-  hadError = true;
+  sharedState.errorOccurred = true;
 
   // TODO: We should mark both declarations erroneous in the symbol table
   // so reference to them get squashed as errors during name lookup,
@@ -222,10 +224,8 @@ Type NameBindingContext::resolveType(LitLexerCursor cursor) {
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
 struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, SharedParserState *sharedParserState,
-            RCRef<Scope> scope = {})
-      : LitParserBase(lexer, sharedParserState),
-        currentScope(std::move(scope)) {}
+  LitParser(LitLexer &lexer, RCRef<Scope> scope = {})
+      : LitParserBase(lexer), currentScope(std::move(scope)) {}
 
   ParseResult parseFile(ModuleOp module);
 
@@ -299,7 +299,7 @@ ParseResult LitParser::parseFile(ModuleOp module) {
   // Finalize the current scope, parsing any deferred declarations in it.
   finalizeScopeDecl();
 
-  if (hadError())
+  if (getSharedState().errorOccurred)
     return failure();
 
   return success();
@@ -529,8 +529,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     auto varDecl = funcBodyBuilder.create<VarDeclOp>(
         translateLocation(lhs->getLoc()), declType,
         funcBodyBuilder.getStringAttr(dre->spelling));
-    currentScope->addToScope(dre->spelling, varDecl,
-                             sharedParserState->errorOccurred);
+    currentScope->addToScope(dre->spelling, varDecl, getSharedState());
     lvalue = varDecl;
   }
 
@@ -796,12 +795,12 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
   currentScope->addToScope(info.name,
                            Scope::MetaParameterValue{newFuncRefAttr, loc},
-                           sharedParserState->errorOccurred);
+                           getSharedState());
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
-  sharedParserState->declResolver->addDecl(
+  getDeclResolver().addDecl(
       RCRef<Scope>::create(newFunc, currentScope.copy(), declCursor));
 
   // Skip the body of this definition: go to a token the starts a line at the
@@ -823,7 +822,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     currentScope->addToScope(param.getName(),
                              Scope::MetaParameterValue{value, loc},
-                             sharedParserState->errorOccurred);
+                             getSharedState());
   }
 
   // Set up the body of the def, creating declarations for the value parameters
@@ -836,7 +835,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    currentScope->addToScope(name, varDecl, sharedParserState->errorOccurred);
+    currentScope->addToScope(name, varDecl, getSharedState());
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -852,7 +851,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
       // TODO: Generalize lit.func.
       OpBuilder::atBlockEnd(bodyBlock).create<ReturnOp>(
           defDecl->getLoc(), ArrayRef<TypedAttr>(), ArrayRef<Value>());
-    } else if (!sharedParserState->errorOccurred) {
+    } else if (!getSharedState().errorOccurred) {
       Location endLoc =
           bodyBlock->empty() ? defDecl.getLoc() : bodyBlock->back().getLoc();
       emitError(endLoc, "return expected at end of 'def' with results");
@@ -906,8 +905,7 @@ ParseResult LitParser::parseVarDeclStmt() {
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
   auto varDecl = builder.create<VarDeclOp>(translateLocation(info.loc), varType,
                                            info.name);
-  currentScope->addToScope(info.name, varDecl,
-                           sharedParserState->errorOccurred);
+  currentScope->addToScope(info.name, varDecl, getSharedState());
   currentScope->addExprToNameBind(varDecl, declCursor);
   return success();
 }
@@ -1018,7 +1016,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
                                             builder.getType<MLIRTypeType>());
 
   currentScope->addToScope(nameAttr, Scope::MetaParameterValue{newRefAttr, loc},
-                           sharedParserState->errorOccurred);
+                           getSharedState());
 
   // Switch to the struct's scope to parse things into it.
   SaveAndRestore<RCRef<Scope>> scopeSaver(
@@ -1031,7 +1029,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     currentScope->addToScope(param.getName(),
                              Scope::MetaParameterValue{value, loc},
-                             sharedParserState->errorOccurred);
+                             getSharedState());
   }
 
   (void)parseSuite(curIndent, StmtContext::structBody);
@@ -1052,21 +1050,35 @@ void NameBindingContext::nameBind(LITStructDeclOp op, LitLexerCursor cursor) {
 // TODO: Move this to LitDecls.cpp
 
 void DeclResolver::resolve(Scope &scope) {
-  LitLexer lexer(sharedParserState.sourceMgr, sharedParserState.context,
-                 scope.getCursor());
-  LitParser parser(lexer, &sharedParserState, RCRef<Scope>::copy(&scope));
+  LitLexer lexer(sharedState, scope.getCursor());
+  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
 
   parser.parseDefBody(cast<LITFuncOp>(scope.getDecl()));
 }
 
 //===----------------------------------------------------------------------===//
-// Driver
+// LitSharedState
 //===----------------------------------------------------------------------===//
 
-SharedParserState::SharedParserState(llvm::SourceMgr &sourceMgr,
-                                     MLIRContext *context)
+/// Get the name of the main buffer so we can rapidly build Location objects
+/// on demand.
+static StringAttr getMainBufferNameIdentifier(const SourceMgr &sourceMgr,
+                                              MLIRContext *context) {
+  auto mainBuffer = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+  StringRef bufferName = mainBuffer->getBufferIdentifier();
+  if (bufferName.empty())
+    bufferName = "<unknown>";
+  return StringAttr::get(context, bufferName);
+}
+
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
     : sourceMgr(sourceMgr), context(context),
-      declResolver(std::make_unique<DeclResolver>(*this)) {}
+      declResolver(std::make_unique<DeclResolver>(*this)),
+      bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)) {}
+
+//===----------------------------------------------------------------------===//
+// Driver
+//===----------------------------------------------------------------------===//
 
 // Parse the specified .lit file into the specified MLIR context.
 OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
@@ -1082,11 +1094,11 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
       FileLineColLoc::get(context, sourceBuf->getBufferIdentifier(), /*line=*/0,
                           /*column=*/0)));
 
-  SharedParserState sharedState(sourceMgr, context);
+  LitSharedState sharedState(sourceMgr, context);
 
   // Parse the file.
-  LitLexer lexer(sourceMgr, context);
-  if (LitParser(lexer, &sharedState).parseFile(*module))
+  LitLexer lexer(sharedState);
+  if (LitParser(lexer).parseFile(*module))
     return nullptr;
 
   // With the top-level of the file parsed, we can now go ahead and resolve all

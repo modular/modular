@@ -17,7 +17,7 @@
 
 namespace M::KGEN::LIT {
 
-class SharedParserState;
+class LitSharedState;
 class Scope;
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -25,7 +25,7 @@ class Scope;
 
 class DeclResolver {
 public:
-  DeclResolver(SharedParserState &state);
+  DeclResolver(LitSharedState &state);
   ~DeclResolver();
 
   /// Resolve all of the declarations that are visible, processing the entire
@@ -40,7 +40,7 @@ private:
 
 private:
   /// This is shared state across the whole parser.
-  SharedParserState &sharedParserState;
+  LitSharedState &sharedState;
 
   /// This is a mapping of every declaration (module, func, struct, etc) that
   /// we have parsed, along with the metadata for it maintained in `Scope`.

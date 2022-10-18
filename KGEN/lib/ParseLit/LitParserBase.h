@@ -13,7 +13,6 @@
 #define LIT_PARSER_BASE_H
 
 #include "LitLexer.h"
-#include "LitSharedState.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {
@@ -26,10 +25,14 @@ namespace M::KGEN::LIT {
 /// which is independent of the concrete grammar.
 class LitParserBase {
 public:
-  LitParserBase(LitLexer &lexer, SharedParserState *sharedParserState)
-      : lexer(lexer), sharedParserState(sharedParserState) {}
+  LitParserBase(LitLexer &lexer) : lexer(lexer) {}
 
-  MLIRContext *getContext() const { return sharedParserState->context; }
+  LitSharedState &getSharedState() const { return lexer.sharedState; }
+  MLIRContext *getContext() const { return getSharedState().context; }
+  DeclResolver &getDeclResolver() const {
+    return *getSharedState().declResolver;
+  }
+
   LitLexer &getLexer() { return lexer; }
 
   /// Return the current token the parser is inspecting.
@@ -43,7 +46,7 @@ public:
   /// Emit an error and notice that so we don't verify the IR at the end of
   /// compilation.
   InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
-    sharedParserState->errorOccurred = true;
+    getSharedState().errorOccurred = true;
     return mlir::emitError(loc, message);
   }
 
@@ -53,9 +56,6 @@ public:
   }
   /// Emit an error at a specific lexer location.
   InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
-
-  /// Return true if we encountered an error during compilation.
-  bool hadError() const { return sharedParserState->errorOccurred; }
 
   //===--------------------------------------------------------------------===//
   // Location Handling
@@ -176,7 +176,6 @@ public:
 
 public:
   LitLexer &lexer;
-  SharedParserState *const sharedParserState;
 
   LitParserBase(const LitParserBase &) = delete;
   void operator=(const LitParserBase &) = delete;

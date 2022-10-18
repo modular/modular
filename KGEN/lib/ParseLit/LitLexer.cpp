@@ -59,32 +59,20 @@ bool LitToken::isKeyword() const {
 // LitLexer
 //===----------------------------------------------------------------------===//
 
-/// Get the name of the main buffer so we can rapidly build Location objects
-/// on demand.
-static StringAttr getMainBufferNameIdentifier(const SourceMgr &sourceMgr,
-                                              MLIRContext *context) {
-  auto mainBuffer = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
-  StringRef bufferName = mainBuffer->getBufferIdentifier();
-  if (bufferName.empty())
-    bufferName = "<unknown>";
-  return StringAttr::get(context, bufferName);
+static StringRef getBuffer(LitSharedState &sharedState) {
+  return sharedState.sourceMgr
+      .getMemoryBuffer(sharedState.sourceMgr.getMainFileID())
+      ->getBuffer();
 }
 
-LitLexer::LitLexer(const SourceMgr &sourceMgr, MLIRContext *context)
-    : sourceMgr(sourceMgr),
-      bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)),
-      curBuffer(
-          sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer()),
+LitLexer::LitLexer(LitSharedState &sharedState)
+    : sharedState(sharedState), curBuffer(getBuffer(sharedState)),
       curPtr(curBuffer.begin()),
       // Prime the first token.
       curToken(lexTokenImpl()) {}
 
-LitLexer::LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context,
-                   const LitLexerCursor &cursor)
-    : sourceMgr(sourceMgr),
-      bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)),
-      curBuffer(
-          sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer()),
+LitLexer::LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor)
+    : sharedState(sharedState), curBuffer(getBuffer(sharedState)),
       curToken(LitToken::eof, {}, 0) {
   cursor.restore(*this);
 }
@@ -92,10 +80,10 @@ LitLexer::LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context,
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.
 Location LitLexer::translateLocation(llvm::SMLoc loc) {
-  unsigned mainFileID = sourceMgr.getMainFileID();
-  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, mainFileID);
-  return FileLineColLoc::get(bufferNameIdentifier, lineAndColumn.first,
-                             lineAndColumn.second);
+  unsigned mainFileID = getSourceMgr().getMainFileID();
+  auto lineAndColumn = getSourceMgr().getLineAndColumn(loc, mainFileID);
+  return FileLineColLoc::get(sharedState.bufferNameIdentifier,
+                             lineAndColumn.first, lineAndColumn.second);
 }
 
 /// Emit an error message and return a LitToken::error token.
