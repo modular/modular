@@ -18,9 +18,13 @@ namespace LLVM = mlir::LLVM;
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
-Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
+Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype) {
   if (dtype.isBool())
     return IntegerType::get(ctx, 1);
+
+  if (dtype.isAddress())
+    return LLVM::LLVMPointerType::get(ctx);
+
   // This intentionally discards signed-ness because LLVM is signless.
   if (dtype.isInt())
     return IntegerType::get(ctx, dtype.getIntegerWidthInBits());
@@ -34,7 +38,7 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, DType dtype) {
   return {};
 }
 
-Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, DType dtype) {
+Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype) {
   if (Optional<Type> type = getMLIRTypeForDType(ctx, dtype))
     return LLVM::LLVMPointerType::get(*type);
   return LLVM::LLVMPointerType::get(ctx);
