@@ -93,6 +93,12 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   // CHECK: = kgen.param.constant: i1 = <1>
   %25 = kgen.param.constant: i1 = <le(5, 9)>
 
+  // CHECK: = kgen.param.constant = <get_sizeof(mlirType)>
+  %26 = kgen.param.constant = <get_sizeof(mlirType)>
+
+  // CHECK: = kgen.param.constant = <get_alignof(mlirType)>
+  %27 = kgen.param.constant = <get_alignof(mlirType)>
+
   kgen.return
 }
 
@@ -193,6 +199,35 @@ kgen.generator @param_canonicalize<p1, p2>()  {
 
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
+
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @datalayout_operators()
+kgen.generator @datalayout_operators() {
+  // CHECK-NEXT: <4>
+  %0 = kgen.param.constant = <get_sizeof(i32)>
+  // CHECK-NEXT: <3>
+  %1 = kgen.param.constant = <get_sizeof(i20)>
+  // CHECK-NEXT: <8>
+  %2 = kgen.param.constant = <get_sizeof(f64)>
+  // CHECK-NEXT: <8>
+  %3 = kgen.param.constant = <get_sizeof(index)>
+  // CHECK-NEXT: <2>
+  %4 = kgen.param.constant = <get_sizeof(vector<2xi8>)>
+  // CHECK-NEXT: <4>
+  %5 = kgen.param.constant = <get_sizeof(vector<3xi8>)>
+
+  // CHECK-NEXT: <4>
+  %6 = kgen.param.constant = <get_alignof(i32)>
+  // CHECK-NEXT: <4>
+  %7 = kgen.param.constant = <get_alignof(i20)>
+  // CHECK-NEXT: <8>
+  %8 = kgen.param.constant = <get_alignof(f64)>
+  // CHECK-NEXT: <8>
+  %9 = kgen.param.constant = <get_alignof(index)>
+  // CHECK-NEXT: <4>
+  %10 = kgen.param.constant = <get_alignof(vector<3xi8>)>
 
   kgen.return
 }

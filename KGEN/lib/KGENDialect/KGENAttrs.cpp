@@ -299,6 +299,23 @@ LogicalResult ParamOperatorAttr::verify(
         return emitError() << "'get_dtype' constant type operand does not "
                               "implement DTypeInterface";
     }
+    break;
+  case POC::GET_SIZEOF:
+    if (operands.size() != 1)
+      return emitError() << "'get_sizeof' operator requires one operand";
+    if (!operands.front().getType().isa<MLIRTypeType>())
+      return emitError() << "'get_sizeof' operand should be a !kgen.mlirtype";
+    if (!type.isa<IndexType>())
+      return emitError() << "'get_sizeof' should return an index";
+    break;
+  case POC::GET_ALIGNOF:
+    if (operands.size() != 1)
+      return emitError() << "'get_alignof' operator requires one operand";
+    if (!operands.front().getType().isa<MLIRTypeType>())
+      return emitError() << "'get_alignof' operand should be a !kgen.mlirtype";
+    if (!type.isa<IndexType>())
+      return emitError() << "'get_alignof' should return an index";
+    break;
   }
   return success();
 }
@@ -814,12 +831,40 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
   return ParamOperatorAttr::get(POC::IN, newOperands);
 }
 
-/// Simplifies a `dtype` operator. Try to narrow the operand to a type constant.
-/// If it does, the type must implement `DTypeInterface`.
+/// Simplifies a `get_dtype` operator. Try to narrow the operand to a type
+/// constant. If it does, the type must implement `DTypeInterface`.
 static Attribute simplifyGET_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
-  if (auto typeCst = operands[0].dyn_cast<TypeConstantAttr>())
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(operands.front()))
     return typeCst.getValue().cast<DTypeInterface>().getDType();
   return {};
+}
+
+/// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
+/// constant. If it does, query its data layout.
+static Attribute simplifyGET_SIZEOF(SmallVectorImpl<TypedAttr> &operands) {
+  // FIXME: The target info attribute should be passed through the operator.
+  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
+  if (!typeCst)
+    return {};
+  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
+      TargetInfoAttr::getForHost(typeCst.getContext()), typeCst.getValue());
+  if (!size)
+    return {};
+  return Builder(typeCst.getContext()).getIndexAttr(*size);
+}
+
+/// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
+/// constant. If it does, query its data layout.
+static Attribute simplifyGET_ALIGNOF(SmallVectorImpl<TypedAttr> &operands) {
+  // FIXME: The target info attribute should be passed through the operator.
+  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
+  if (!typeCst)
+    return {};
+  Optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
+      TargetInfoAttr::getForHost(typeCst.getContext()), typeCst.getValue());
+  if (!size)
+    return {};
+  return Builder(typeCst.getContext()).getIndexAttr(*size);
 }
 
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
@@ -903,6 +948,14 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   case POC::GET_DTYPE:
     result = simplifyGET_DTYPE(operands);
     resultType = DTypeType::get(context);
+    break;
+  case POC::GET_SIZEOF:
+    result = simplifyGET_SIZEOF(operands);
+    resultType = IndexType::get(context);
+    break;
+  case POC::GET_ALIGNOF:
+    result = simplifyGET_ALIGNOF(operands);
+    resultType = IndexType::get(context);
     break;
   }
 
@@ -1212,5 +1265,5 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
 
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, targetTriple, cpu, features.getString(),
-                             StringType::get(ctx));
+                             sizeof(ssize_t), StringType::get(ctx));
 }

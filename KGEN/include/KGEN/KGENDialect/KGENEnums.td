@@ -42,6 +42,8 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
   // Unary type expressions.
   I32EnumAttrCase<"GET_DTYPE", 13, "get_dtype">,
+  I32EnumAttrCase<"GET_SIZEOF", 14, "get_sizeof">,
+  I32EnumAttrCase<"GET_ALIGNOF", 15, "get_alignof">,
 
   // TODO: Can add string concat, etc as needed.
 ]>;
