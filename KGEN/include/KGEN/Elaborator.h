@@ -11,11 +11,20 @@
 #include <filesystem>
 
 namespace M {
+namespace KGEN {
+class GeneratorOp;
+} // namespace KGEN
+
+/// Resolve the includes in the specified module, incorporating implementation
+/// logic from the included files found in `searchPaths`.
+LogicalResult resolveIncludes(SymbolTable &symtab,
+                              ArrayRef<std::filesystem::path> searchPaths);
+
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
-LogicalResult elaborateGenerators(ModuleOp primary,
-                                  ArrayRef<std::filesystem::path> searchPaths);
+LogicalResult elaborateGenerators(SymbolTable &symtab,
+                                  ArrayRef<KGEN::GeneratorOp> generators);
 
 /// This is like `Operation::clone`, but instead of just keeping track of the
 /// block and value mapping for the copy, it also keeps track of the
