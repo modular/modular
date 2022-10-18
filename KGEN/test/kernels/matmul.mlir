@@ -25,19 +25,24 @@ lit.func @matmaul_naive<type: dtype>(
     implements @matmul {
   %zero = index.constant 0
   %one = index.constant 1
+  %undef = pop.constant(0) : !pop.scalar<type>
+  %undefVec = pop.simd.splat %undef : !pop.simd<1, type>
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
       %init = pop.constant(0) : !pop.scalar<type>
       %acc = scf.for %k = %zero to %K step %one iter_args(%sum = %init) -> (!pop.scalar<type>) {
         %aikIndex = kgen.call @index2D(%i, %k, %N) : (index, index, index) -> index
         %bkjIndex = kgen.call @index2D(%k, %j, %M) : (index, index, index) -> index
-        %aik = zap.buffer.load %A[%aikIndex] : !zap.buffer<?, type>
-        %bkj = zap.buffer.load %B[%bkjIndex] : !zap.buffer<?, type>
+        %aik0 = zap.buffer.load %A[%aikIndex] : !zap.buffer<?, type>, !pop.simd<1, type>
+        %aik = pop.simd.extractelement %aik0[%zero] : !pop.simd<1, type>
+        %bkj0 = zap.buffer.load %B[%bkjIndex] : !zap.buffer<?, type>, !pop.simd<1, type>
+        %bkj = pop.simd.extractelement %bkj0[%zero] : !pop.simd<1, type>
         %res = pop.fma %aik, %bkj, %sum : !pop.scalar<type>
         scf.yield %res : !pop.scalar<type>
       }
       %cij = kgen.call @index2D(%i, %j, %K) : (index, index, index) -> index
-      zap.buffer.store %acc, %C[%cij] : !zap.buffer<?, type>
+      %accVec = pop.simd.insertelement %acc, %undefVec[%zero] : !pop.simd<1, type>
+      zap.buffer.store %accVec, %C[%cij] : !pop.simd<1, type>, !zap.buffer<?, type>
     }
   }
   kgen.return

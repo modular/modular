@@ -255,72 +255,17 @@ def ZAP_BufferConstantOp : ZAPOp<"buffer.constant"> {
 // BufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferLoadOp : ZAPOp<"buffer.load",
-    [BufferElementType<"buffer", "result">]> {
-  let summary = "buffer load operation";
-  let description = [{
-    The `buffer.load` operation takes a buffer and an index position and
-    extracts the `!pop.scalar` value at that position. The position must be of
-    type index.
-
-    Example:
-
-    ```mlir
-    %1 = zap.buffer.load %0[%position]: !zap.buffer<size, dtype>
-    ```
-  }];
-
-  let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
-                       Index:$position);
-  let results = (outs POP_ScalarType:$result);
-
-  let assemblyFormat = [{
-    $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// BufferStoreOp
-//===----------------------------------------------------------------------===//
-
-def ZAP_BufferStoreOp : ZAPOp<"buffer.store",
-    [BufferElementType<"buffer", "value">]> {
-  let summary = "buffer store operation";
-  let description = [{
-    The `buffer.store.` operation takes a source value, a buffer, and an index
-    position and inserts the source value into the buffer at that position. The
-    position must be of type index.
-
-    Example:
-
-    ```mlir
-    zap.buffer.store %val, %buf[%position]: !zap.buffer<size, dtype>
-    ```
-  }];
-
-  let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
-                       POP_ScalarType:$value, Index:$position);
-
-  let assemblyFormat = [{
-    $value `,` $buffer `[` $position `]` attr-dict `:` qualified(type($buffer))
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDLoadOp
-//===----------------------------------------------------------------------===//
-
-def ZAP_BufferSIMDLoadOp : ZAPOp<"buffer.simd_load"> {
+def ZAP_BufferLoadOp : ZAPOp<"buffer.load"> {
   let summary = "simd load operation";
   let description = [{
-    The `zap.buffer.simd_load` operation takes a buffer and an index position
+    The `zap.buffer.load` operation takes a buffer and an index position
     and extracts the `!pop.simd` value from the specified position. The
     position must be of type index.
 
     Example:
 
     ```mlir
-    %val = zap.buffer.simd_load %buf[%idx]: !zap.buffer<size,dtype>, !pop.simd<4,f32>
+    %val = zap.buffer.load %buf[%idx]: !zap.buffer<size,dtype>, !pop.simd<4,f32>
     ```
   }];
 
@@ -336,20 +281,20 @@ def ZAP_BufferSIMDLoadOp : ZAPOp<"buffer.simd_load"> {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDStoreOp
+// BufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferSIMDStoreOp : ZAPOp<"buffer.simd_store"> {
+def ZAP_BufferStoreOp : ZAPOp<"buffer.store"> {
   let summary = "buffer store operation";
   let description = [{
-    The `zap.buffer.simd_store` operation takes a source value, a buffer, and
+    The `zap.buffer.store` operation takes a source value, a buffer, and
     an index position and copies the eleemnt of simd value into the buffer
     starting at the specified position. The position must be of type index.
 
     Example:
 
     ```mlir
-    zap.buffer.simd_store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
+    zap.buffer.store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
     ```
   }];
 

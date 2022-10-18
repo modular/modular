@@ -163,18 +163,18 @@ LogicalResult BufferConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDLoadOp
+// BufferLoadOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult BufferSIMDLoadOp::verify() {
+LogicalResult BufferLoadOp::verify() {
   return verifyHasSameUnderlyingDType(*this, getBuffer(), getResult());
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDStoreOp
+// BufferStoreOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult BufferSIMDStoreOp::verify() {
+LogicalResult BufferStoreOp::verify() {
   return verifyHasSameUnderlyingDType(*this, getBuffer(), getValue());
 }
 

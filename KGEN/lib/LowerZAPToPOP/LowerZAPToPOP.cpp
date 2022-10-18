@@ -252,7 +252,10 @@ struct ConvertZAPBufferLoad : mlir::OpConversionPattern<BufferLoadOp> {
                                               kBufferAddressPosition);
     Value ptr =
         rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
-    rewriter.replaceOpWithNewOp<LoadOp>(op, ptr, /*alignment=*/None);
+    Value bitcastPtr = rewriter.create<PointerBitcastOp>(
+        op.getLoc(), PointerType::get(op.getType()), ptr);
+    // We set the alignment to 1 to force LLVM to generate unaligned loads.
+    rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr, /*alignment=*/1);
     return success();
   }
 };
@@ -266,49 +269,6 @@ struct ConvertZAPBufferStore : mlir::OpConversionPattern<BufferStoreOp> {
 
   LogicalResult
   matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
-                                              kBufferAddressPosition);
-    Value ptr =
-        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
-    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
-                                         /*alignment=*/None);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertZAPBufferSIMDLoad
-//===----------------------------------------------------------------------===//
-
-struct ConvertZAPBufferSIMDLoad : mlir::OpConversionPattern<BufferSIMDLoadOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(BufferSIMDLoadOp op, BufferSIMDLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
-                                              kBufferAddressPosition);
-    Value ptr =
-        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
-    Value bitcastPtr = rewriter.create<PointerBitcastOp>(
-        op.getLoc(), PointerType::get(op.getType()), ptr);
-    // We set the alignment to 1 to force LLVM to generate unaligned loads.
-    rewriter.replaceOpWithNewOp<LoadOp>(op, bitcastPtr, /*alignment=*/1);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertZAPBufferSIMDStore
-//===----------------------------------------------------------------------===//
-
-struct ConvertZAPBufferSIMDStore
-    : mlir::OpConversionPattern<BufferSIMDStoreOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(BufferSIMDStoreOp op, BufferSIMDStoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
                                               kBufferAddressPosition);
@@ -921,10 +881,6 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPBufferConvert,
       ConvertZAPBufferDType,
       ConvertZAPBufferLoad,
-      ConvertZAPBufferSIMDLoad,
-      ConvertZAPBufferSIMDLoad,
-      ConvertZAPBufferSIMDStore,
-      ConvertZAPBufferSIMDStore,
       ConvertZAPBufferSize,
       ConvertZAPBufferStackAllocation,
       ConvertZAPBufferStore,

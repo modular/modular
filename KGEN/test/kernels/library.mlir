@@ -13,10 +13,12 @@ kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
 kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
   (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
   implements @buffer.loadOrValue {
+  %zero = index.constant 0
   %isLoad = kgen.param.constant: i1 = <isLoad>
   %res = scf.if %isLoad -> !pop.scalar<type> {
-    %t0 = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>
-    scf.yield %t0 : !pop.scalar<type>
+    %t0 = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>, !pop.simd<1, type>
+    %t1 = pop.simd.extractelement %t0[%zero] : !pop.simd<1, type>
+    scf.yield %t1 : !pop.scalar<type>
   } else {
     scf.yield %val : !pop.scalar<type>
   }
@@ -42,7 +44,8 @@ kgen.generator @horner<type: dtype, size>(%val: !pop.scalar<type>, %coefficients
   %zerof = pop.constant(0.0) : !pop.scalar<type>
   %numCoeffs = zap.buffer.size %coefficients: !zap.buffer<size, type>
   %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !pop.scalar<type> {
-    %coeff = zap.buffer.load %coefficients[%i] : !zap.buffer<size, type>
+    %coeff0 = zap.buffer.load %coefficients[%i] : !zap.buffer<size, type>, !pop.simd<1, type>
+    %coeff = pop.simd.extractelement %coeff0[%zero] : !pop.simd<1, type>
     %res = pop.fma %sum, %val, %coeff : !pop.scalar<type>
     scf.yield %res : !pop.scalar<type>
   }
