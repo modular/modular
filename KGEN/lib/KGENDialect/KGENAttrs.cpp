@@ -343,6 +343,10 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   if (lhs == rhs)
     return false;
 
+  // There is no meaningful sort order for arbitrary types.
+  if (isa<TypeConstantAttr>(lhs))
+    return false;
+
   // All non-constant expressions are "less than" a constant, since they appear
   // on the right. We handle all simple constants consistently here: they can
   // never occur in the same expression since they have different types.
@@ -401,7 +405,6 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
       return false;
   }
 
-  llvm_unreachable("expressions should never be equivalent");
   return false;
 }
 
