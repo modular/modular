@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/KGENDialect/ElaboratorOpInterface.td"
+include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "KGEN/POPDialect/POPTypes.td"
@@ -1222,6 +1223,74 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
 
   let hasVerifier = 1;
   let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantVisitOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
+    SingleBlockImplicitTerminator<"YieldOp">]> {
+  let summary = "variant case visit";
+  let description = [{
+    The `pop.variant.visit` operation performs a control-flow switch on the
+    type of the variant, visiting the appropriate region based on the type of
+    the variant. The operation can return any number of results, but each region
+    must region the same results.
+
+    Either a case must be specified for each possible type OR a case can be
+    specified for a subset of possible types with a default region. Duplicate
+    cases or case types that are not one of the variant's types are invalid.
+
+    Example:
+
+    ```mlir
+    // Switch on the type of a variant. Return an index.
+    %0 = pop.variant.switch %arg0 : !pop.variant<i32, f32> -> index
+    case i32 {
+      %one = index.constant 1
+      pop.yield %one : index
+    }
+    case f32 {
+      %two = index.constant 2
+      pop.yield %two : index
+    }
+
+    // Switch on the type of a parametric variant. Default case.
+    pop.variant.switch %arg1 : !pop.variant<A, B, C>
+    case A {
+      zap.print "A!\n"()
+    }
+    default {}
+    ```
+  }];
+
+  let arguments = (ins POP_VariantType:$variant, KTypeArrayAttr:$cases);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
+
+  let assemblyFormat = [{
+    $variant attr-dict `:` qualified(type($variant)) (`->` type($results)^)?
+    custom<VariantVisitRegions>($cases, $regions)
+  }];
+
+  let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+def POP_YieldOp : POPOp<"yield", [Terminator, Pure,
+    HasParent<"VariantVisitOp">]> {
+  let summary = "yield operation";
+  let description = [{
+    The `pop.yield` operation is a terminator for control-flow regions that
+    transfers execution and results back to the parent operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//

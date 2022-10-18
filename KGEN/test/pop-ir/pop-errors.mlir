@@ -353,3 +353,100 @@ kgen.func @repeat_zero() {
   %0 = pop.array.repeat [] : !pop.array<1, i32>
   kgen.return
 }
+
+// -----
+
+kgen.func @variant_visit_invalid_case(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op type case 'f32' is not a possible variant type of '!pop.variant<i32>'}}
+  pop.variant.visit %a : !pop.variant<i32>
+  case (%v: f32) {
+    pop.yield
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_duplicate_case(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op duplicate type case 'i32'}}
+  pop.variant.visit %a : !pop.variant<i32>
+  case (%v: i32) {
+    pop.yield
+  }
+  case (%v: i32) {
+    pop.yield
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op expected 1 regions when all type cases are present}}
+  "pop.variant.visit"(%a) {cases = #kgen<type.array[i32]>} : (!pop.variant<i32>) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op expected 0 regions plus a default region when not all case types are present}}
+  "pop.variant.visit"(%a) {cases = #kgen<type.array[]>} : (!pop.variant<i32>) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_bad_regions(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op expected default region to have zero arguments}}
+  "pop.variant.visit"(%a) ({
+  ^bb0(%v: i32):
+    pop.yield
+  }) {cases = #kgen<type.array[]>} : (!pop.variant<i32>) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_bad_yield(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op operand types of region #0 yield do not match result types}}
+  pop.variant.visit %a : !pop.variant<i32>
+  case (%v: i32) {
+    // expected-note @below {{see terminator here}}
+    pop.yield %v : i32
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_visit_bad_arguments(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op expected region #0 to have one argument}}
+  "pop.variant.visit"(%a) ({
+    pop.yield
+  }) {cases = #kgen<type.array[i32]>} : (!pop.variant<i32>) -> ()
+  kgen.return
+}
+
+
+// -----
+
+kgen.func @variant_visit_bad_arguments(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op expected region #0 argument type to be 'i32'}}
+  "pop.variant.visit"(%a) ({
+  ^bb0(%v: f32):
+    pop.yield
+  }) {cases = #kgen<type.array[i32]>} : (!pop.variant<i32>) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.func @variant_asm_missing_default(%a: !pop.variant<i32, f32>) {
+  // expected-error @below {{'pop.variant.visit' op expected 1 regions plus a default region when not all case types are present}}
+  pop.variant.visit %a : !pop.variant<i32, f32>
+  case (%v: i32) {
+    pop.yield
+  }
+  kgen.return
+}
