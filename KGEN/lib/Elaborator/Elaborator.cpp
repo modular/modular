@@ -317,7 +317,7 @@ struct RegionReturn {
 
   /// This is a set of parameter expressions to evaluate as part of the return,
   /// taken from the ReturnOp's parameters list.
-  ArrayAttr returnedParamExprs;
+  ParameterExprArrayAttr returnedParamExprs;
 
   /// This is the set of declarations bound by the returned expressions when the
   /// call is popped off the evaluator stack.
@@ -532,7 +532,7 @@ LogicalResult ParameterRewriter::rewriteOps(
 
     // Evaluate each of the returned parameter expressions in the current scope.
     SmallVector<Attribute> returnedParams;
-    for (auto expr : rr->returnedParamExprs) {
+    for (TypedAttr expr : rr->returnedParamExprs) {
       auto value = getEvaluator().concretizeParameterExpr(expr);
       if (value.isError())
         return error(rr->returnLoc, value.takeError());
@@ -940,7 +940,7 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   evaluators.push_back(ParameterEvaluator());
   commandWorklist.push_back(new RegionReturn{
       call.getLoc(), theRegionReturnOp.getLoc(),
-      theRegionReturnOp.getParameters(), call.getParamDeclsAttr()});
+      theRegionReturnOp.getParametersAttr(), call.getParamDeclsAttr()});
 
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing

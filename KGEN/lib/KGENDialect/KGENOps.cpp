@@ -49,8 +49,9 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
 // custom<ParameterValues>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParameterValues(OpAsmParser &p, ArrayAttr &value) {
-  SmallVector<Attribute> elts;
+static ParseResult parseParameterValues(OpAsmParser &p,
+                                        ParameterExprArrayAttr &value) {
+  SmallVector<TypedAttr> elts;
   if (p.parseCommaSeparatedList(
           OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
             TypedAttr value;
@@ -61,17 +62,17 @@ static ParseResult parseParameterValues(OpAsmParser &p, ArrayAttr &value) {
           }))
     return failure();
 
-  value = ArrayAttr::get(p.getContext(), elts);
+  value = ParameterExprArrayAttr::get(p.getContext(), elts);
   return success();
 }
 
 static void printParameterValues(OpAsmPrinter &p, Operation *op,
-                                 ArrayAttr value) {
+                                 ParameterExprArrayAttr value) {
   if (value.empty())
     return;
   p << '<';
-  llvm::interleaveComma(value, p, [&](Attribute value) {
-    auto valType = value.cast<TypedAttr>().getType();
+  llvm::interleaveComma(value, p, [&](TypedAttr value) {
+    auto valType = value.getType();
     if (!valType.isIndex()) {
       p << ":";
       printKGENType(p.getStream(), valType);
@@ -139,10 +140,10 @@ ParamDeclAttr ParamDeclareOp::getParamDecl() {
 
 static ParseResult parseParamSearchOpValue(OpAsmParser &p,
                                            ParamDeclArrayAttr &paramDecls,
-                                           ArrayAttr &values) {
+                                           ParameterExprArrayAttr &values) {
   std::string varname;
   Type valTy;
-  SmallVector<Attribute> valuesElts;
+  SmallVector<TypedAttr> valuesElts;
 
   if (p.parseKeywordOrString(&varname) || parseColonTypeOrIndex(p, valTy) ||
       p.parseEqual() ||
@@ -158,20 +159,20 @@ static ParseResult parseParamSearchOpValue(OpAsmParser &p,
 
   paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
       ParamDeclAttr::get(varname, valTy));
-  values = p.getBuilder().getAttr<ArrayAttr>(valuesElts);
+  values = p.getBuilder().getAttr<ParameterExprArrayAttr>(valuesElts);
   return success();
 }
 
 static void printParamSearchOpValue(OpAsmPrinter &p, Operation *,
                                     ParamDeclArrayAttr paramDecls,
-                                    ArrayAttr values) {
+                                    ParameterExprArrayAttr values) {
   ParamDeclAttr variable = paramDecls.front();
   printParamName(p, variable.getName().getValue());
 
   printColonTypeOrIndex(p.getStream(), variable.getType());
   p << " = <";
   llvm::interleaveComma(values, p,
-                        [&](Attribute elt) { printParamValue(p, elt); });
+                        [&](TypedAttr elt) { printParamValue(p, elt); });
   p << ">";
 }
 

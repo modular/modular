@@ -30,10 +30,6 @@ def I1ParameterExprAttr
     >]>;
 
 
-def ParameterExprArrayAttr
-  : TypedArrayAttrBase<ParameterExprAttr,
-                       "array of kgen parameters expressions">;
-
 /// An attribute in the KGEN dialect.
 class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<KGENDialect, attrName, traits> {
@@ -82,6 +78,13 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
 class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
     : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
                   [DeclareAttrInterfaceMethods<SubElementAttrInterface>]>;
+
+//===----------------------------------------------------------------------===//
+// ParameterExprArrayAttr
+//===----------------------------------------------------------------------===//
+
+def ParameterExprArrayAttr : ArrayOfAttrsAttr<"ParameterExprArray", "exprs",
+                                              "TypedAttr">;
 
 //===----------------------------------------------------------------------===//
 // KStringArrayAttr
