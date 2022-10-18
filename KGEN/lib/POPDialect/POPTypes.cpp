@@ -156,7 +156,7 @@ ScalarType ScalarType::get(TypedAttr dtype) {
   return get(dtype.getContext(), dtype);
 }
 
-ScalarType ScalarType::get(MLIRContext *ctx, DType dtype) {
+ScalarType ScalarType::get(MLIRContext *ctx, KGENDType dtype) {
   return get(ctx, DTypeConstantAttr::get(ctx, dtype));
 }
 

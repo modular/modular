@@ -56,7 +56,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert a DType expression to an MLIR type.
   auto convertDType = [&](auto type) -> Optional<Type> {
-    if (Optional<DType> dtype = type.getResolvedDType())
+    if (Optional<KGENDType> dtype = type.getResolvedDType())
       return getMLIRTypeForDType(type.getContext(), *dtype);
     return {};
   };

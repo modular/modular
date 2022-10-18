@@ -13,6 +13,7 @@
 #ifndef KGEN_KGENATTRIBUTES_H
 #define KGEN_KGENATTRIBUTES_H
 
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
@@ -22,14 +23,14 @@
 #include "KGEN/KGENDialect/KGENEnums.h.inc"
 
 namespace M::KGEN {
-class ConstraintAttr;
 class ConcreteTypeConstantAttr;
-class ParameterizedTypeConstantAttr;
+class ConstraintAttr;
 class DTypeConstantAttr;
-class SymbolConstantAttr;
-class SignatureType;
-class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class ParamDeclAttr;
+class ParameterizedTypeConstantAttr;
+class SignatureType;
+class SymbolConstantAttr;
 
 inline raw_ostream &operator<<(raw_ostream &os, POC opcode) {
   return os << stringifyEnum(opcode);
@@ -57,8 +58,7 @@ inline bool isSimpleConstant(Attribute attr) {
 
 /// Base class for MLIR type constant attributes. This attribute represents a
 /// constant MLIR type expression.
-class TypeConstantAttr
-    : public Attribute {
+class TypeConstantAttr : public Attribute {
 public:
   using Attribute::Attribute;
 

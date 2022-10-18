@@ -329,7 +329,7 @@ static void printStringSizeArray(AsmPrinter &p, Operation *op, Type type) {
 static bool isSI8Array(Type type) {
   if (auto elementType = type.cast<POP::ArrayType>().getResolvedElementType())
     if (auto scalarType = dyn_cast<POP::ScalarType>(elementType))
-      return scalarType.getResolvedDType() == DType(DType::si8);
+      return scalarType.getResolvedDType() == KGENDType(KGENDType::si8);
   return false;
 }
 

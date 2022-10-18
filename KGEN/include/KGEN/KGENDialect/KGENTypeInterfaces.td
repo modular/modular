@@ -29,7 +29,7 @@ def DTypeInterface : TypeInterface<"DTypeInterface"> {
       /*desc=*/[{
         Try to resolve the data type from the parameter. Returns
         `DType::invalid` if the type could not be resolved.
-      }], "Optional<DType>", "getResolvedDType", (ins), [{}], [{
+      }], "Optional<KGEN::KGENDType>", "getResolvedDType", (ins), [{}], [{
         if (auto constant =
                 $_type.getDType().template dyn_cast<DTypeConstantAttr>())
           return constant.getDType();

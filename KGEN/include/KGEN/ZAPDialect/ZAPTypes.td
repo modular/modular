@@ -31,7 +31,7 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
     /// Try to narrow the size expression of the type to an integer.
     Optional<int64_t> getResolvedSize() const;
     /// Try to narrow the dtype expression of the type to a dtype.
-    Optional<DType> getResolvedDType() const;
+    Optional<KGENDType> getResolvedDType() const;
     /// Get the pointer type for the object.
     POP::PointerType getPointerType() const;
     /// Get the scalar element type for the object.
@@ -64,7 +64,7 @@ def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer", [
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "int64_t":$size, "DType":$dtype)>
+    TypeBuilder<(ins "int64_t":$size, "KGENDType":$dtype)>
   ];
 }
 
@@ -137,8 +137,8 @@ def ZAP_NDBufferType : ZAP_MemoryLikeType<"NDBuffer", "ndbuffer"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$shape,
                                         "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "ArrayRef<TypedAttr>":$shape, "DType":$dtype)>,
-    TypeBuilder<(ins "ArrayRef<int64_t>":$shape, "DType":$dtype)>
+    TypeBuilder<(ins "ArrayRef<TypedAttr>":$shape, "KGENDType":$dtype)>,
+    TypeBuilder<(ins "ArrayRef<int64_t>":$shape, "KGENDType":$dtype)>
   ];
 
   let genVerifyDecl = 1;

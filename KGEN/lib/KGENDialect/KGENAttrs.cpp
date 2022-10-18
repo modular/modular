@@ -9,11 +9,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/MLIRDType.h"
-#include "Support/ML/DType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -49,12 +47,12 @@ struct FieldParser<POC> {
 
 /// Parse a dtype.
 template <>
-struct FieldParser<DType> {
-  static FailureOr<DType> parse(AsmParser &parser) {
+struct FieldParser<KGENDType> {
+  static FailureOr<KGENDType> parse(AsmParser &parser) {
     StringRef value;
     if (parser.parseKeyword(&value))
       return failure();
-    return DType::getFromString(value);
+    return KGENDType::getFromString(value);
   }
 };
 
@@ -991,13 +989,13 @@ LogicalResult ParameterizedTypeConstantAttr::verify(
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, DType dtype) {
+DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, KGENDType dtype) {
   return get(ctx, dtype, DTypeType::get(ctx));
 }
 
 LogicalResult
 DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          DType dtype, Type type) {
+                          KGENDType dtype, Type type) {
   if (!type || !type.isa<DTypeType>())
     return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
   return success();

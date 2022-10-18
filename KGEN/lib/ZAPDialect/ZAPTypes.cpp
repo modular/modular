@@ -38,7 +38,7 @@ void ZAPDialect::registerTypes() {
 //===----------------------------------------------------------------------===//
 
 template <typename Op>
-static Optional<DType> getResolvedDType(Op *op) {
+static Optional<KGENDType> getResolvedDType(Op *op) {
   if (auto dtype =
           op->getDType().template dyn_cast_or_null<DTypeConstantAttr>())
     return dtype.getDType();
@@ -95,7 +95,7 @@ Optional<int64_t> BufferType::getResolvedSize() const {
   return {};
 }
 
-Optional<DType> BufferType::getResolvedDType() const {
+Optional<KGENDType> BufferType::getResolvedDType() const {
   return ::getResolvedDType(this);
 }
 
@@ -111,7 +111,7 @@ BufferType BufferType::get(TypedAttr size, TypedAttr dtype) {
   return get(size.getContext(), size, dtype);
 }
 
-BufferType BufferType::get(MLIRContext *ctx, int64_t size, DType dtype) {
+BufferType BufferType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
   return get(OpBuilder(ctx).getIndexAttr(size),
              DTypeConstantAttr::get(ctx, dtype));
 }
@@ -198,7 +198,7 @@ Optional<int64_t> NDBufferType::getResolvedSize() const {
   return size;
 }
 
-Optional<DType> NDBufferType::getResolvedDType() const {
+Optional<KGENDType> NDBufferType::getResolvedDType() const {
   return ::getResolvedDType(this);
 }
 
@@ -215,12 +215,12 @@ NDBufferType NDBufferType::get(ArrayRef<TypedAttr> shape, TypedAttr dtype) {
 }
 
 NDBufferType NDBufferType::get(MLIRContext *ctx, ArrayRef<TypedAttr> shape,
-                               DType dtype) {
+                               KGENDType dtype) {
   return get(ctx, shape, DTypeConstantAttr::get(ctx, dtype));
 }
 
 NDBufferType NDBufferType::get(MLIRContext *ctx, ArrayRef<int64_t> shape,
-                               DType dtype) {
+                               KGENDType dtype) {
   SmallVector<TypedAttr, 5> shapeAttr;
   llvm::transform(shape, std::back_inserter(shapeAttr),
                   [&](int64_t dim) { return Builder(ctx).getIndexAttr(dim); });

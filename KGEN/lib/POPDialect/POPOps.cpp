@@ -386,8 +386,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
     return false;
 
-  Optional<DType> inputDType = inputType.getResolvedDType();
-  Optional<DType> outputDType = outputType.getResolvedDType();
+  Optional<KGENDType> inputDType = inputType.getResolvedDType();
+  Optional<KGENDType> outputDType = outputType.getResolvedDType();
 
   // If neither dtype could be resolved, allow the cast.
   if (!inputDType || !outputDType)
