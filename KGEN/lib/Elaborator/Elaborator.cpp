@@ -27,6 +27,7 @@
 #include "mlir/Parser/Parser.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include <numeric>
 #include <variant>
 
@@ -409,17 +410,21 @@ private:
 
   ArrayAttr resolveCallInputParams(Operation *call,
                                    ArrayRef<ParamBindAttr> inputValues);
-  LogicalResult processCallOp(CallOp call,
-                              SmallVectorImpl<ParameterRewriter> &rewriters);
-  LogicalResult processCallParamOp(CallParamOp call);
 
-  void completeCallOpProcessing(CallOp call,
+  // Process either a `kgen.addressof` op or a `kgen.call` op.
+  template <typename OpT>
+  LogicalResult processCallOp(OpT call,
+                              SmallVectorImpl<ParameterRewriter> &rewriters);
+  template <typename OpT>
+  void completeCallOpProcessing(OpT call,
                                 DeclAndInputParamsPair calleeAndInputParams,
                                 const ElaboratedGenerator &newCallee);
-  void spawnNewFuncClone(CallOp call,
-                         DeclAndInputParamsPair calleeAndInputParams,
+  template <typename OpT>
+  void spawnNewFuncClone(OpT call, DeclAndInputParamsPair calleeAndInputParams,
                          const ElaboratedGenerator &callee,
                          SmallVectorImpl<ParameterRewriter> &rewriters);
+
+  LogicalResult processCallParamOp(CallParamOp call);
   LogicalResult processGenericOp(Operation *op);
 
   /// This is maintains global information about the file we're generating
@@ -513,6 +518,8 @@ LogicalResult ParameterRewriter::rewriteOps(
         result = processParamConstantOp(value);
       else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
         result = processParamAssertOp(assertOp);
+      else if (auto addressof = dyn_cast<AddressOfOp>(op))
+        result = processCallOp(addressof, rewriterWorklist);
       else if (auto call = dyn_cast<CallOp>(op))
         result = processCallOp(call, rewriterWorklist);
       else if (auto call = dyn_cast<CallParamOp>(op))
@@ -749,8 +756,9 @@ ParameterRewriter::resolveCallInputParams(Operation *call,
   return ArrayAttr::get(call->getContext(), boundInputParams);
 }
 
+template <typename OpT>
 LogicalResult ParameterRewriter::processCallOp(
-    CallOp call, SmallVectorImpl<ParameterRewriter> &rewriters) {
+    OpT call, SmallVectorImpl<ParameterRewriter> &rewriters) {
   // Evaluate any input parameters.
   auto inputParamKey = resolveCallInputParams(call, call.getParamValues());
   if (!inputParamKey)
@@ -823,8 +831,9 @@ LogicalResult ParameterRewriter::processCallOp(
   return success();
 }
 
+template <typename OpT>
 void ParameterRewriter::completeCallOpProcessing(
-    CallOp call, DeclAndInputParamsPair calleeAndInputParams,
+    OpT call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &newCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
@@ -834,16 +843,22 @@ void ParameterRewriter::completeCallOpProcessing(
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
-  for (auto result : call.getResultTypes())
+  for (auto result : call->getResultTypes())
     resultTypes.push_back(getEvaluator().getReboundType(result));
 
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   OpBuilder b(call);
-  auto newCall = b.create<CallOp>(
-      call.getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
-      /*input params*/ ArrayRef<ParamBindAttr>(),
-      /*output params*/ call.getParamDecls(), call.getOperands());
+  Operation *newCall;
+  if constexpr (std::is_same_v<OpT, CallOp>) {
+    newCall = b.create<CallOp>(
+        call.getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
+        ArrayRef<ParamBindAttr>(), call.getParamDecls(), call.getOperands());
+  } else {
+    newCall = b.create<AddressOfOp>(
+        call.getLoc(), resultTypes.front(), newCalleeFunc.getNameAttr(),
+        ArrayRef<ParamBindAttr>(), call.getParamDecls());
+  }
 
   // The SSA results of the old call go directly to the new call and remove it.
   call->getResults().replaceAllUsesWith(newCall);
@@ -851,7 +866,7 @@ void ParameterRewriter::completeCallOpProcessing(
 
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
-       llvm::zip(newCall.getParamDecls(),
+       llvm::zip(cast<OpT>(newCall).getParamDecls(),
                  newCalleeFunc.getReturnOp().getParameters()))
     getEvaluator().setParameterValue(decl, bindValue);
 }
@@ -861,8 +876,9 @@ void ParameterRewriter::completeCallOpProcessing(
 /// rewriters with state copied from the current one, but which resolve the call
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
+template <typename OpT>
 void ParameterRewriter::spawnNewFuncClone(
-    CallOp call, DeclAndInputParamsPair calleeAndInputParams,
+    OpT call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
     SmallVectorImpl<ParameterRewriter> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
@@ -879,7 +895,7 @@ void ParameterRewriter::spawnNewFuncClone(
 
   // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
-  auto newCall = cast<CallOp>(operationMap[call]);
+  auto newCall = cast<OpT>(operationMap[call]);
   newRewriter.completeCallOpProcessing(newCall, calleeAndInputParams, callee);
 }
 
@@ -1430,10 +1446,18 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   // Okay, we haven't seen this before, check all the calls in the body of the
   // declaration to see what they call.
   bool failed = false;
-  op->walk([&](CallOp call) {
-    auto callee = elaborator.lookupCallee(call.getCalleeAttr());
+  op->walk([&](Operation *op) {
+    FlatSymbolRefAttr calleeAttr;
+    if (auto call = dyn_cast<CallOp>(op))
+      calleeAttr = call.getCalleeAttr();
+    else if (auto addressof = dyn_cast<AddressOfOp>(op))
+      calleeAttr = addressof.getCalleeAttr();
+    else
+      return;
+
+    auto callee = elaborator.lookupCallee(calleeAttr);
     assert(callee && "couldn't resolve callee?");
-    callStackCalls.push_back(call);
+    callStackCalls.push_back(op);
     if (isa<FuncOp, GeneratorOp>(callee)) {
       // For direct calls, we immediately check the callee.
       if (checkRecursively(callee))
@@ -1448,7 +1472,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
           failed = true;
       }
     } else {
-      call->emitError("unknown callee in elaboration");
+      op->emitError("unknown callee in elaboration");
       failed = true;
     }
     callStackCalls.pop_back();
@@ -1821,13 +1845,12 @@ M::elaborateGenerators(ModuleOp primary,
       return;
     }
 
-    // If this is a call to a function that got renamed, update its target.
-    if (auto call = dyn_cast<CallOp>(op)) {
-      auto it = funcsToRename.find(call.getCalleeAttr().getLeafReference());
+    // If this is a reference to a function that got renamed, update its target.
+    TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
+      auto it = funcsToRename.find(op.getCalleeAttr().getLeafReference());
       if (it != funcsToRename.end())
-        call.setCalleeAttr(FlatSymbolRefAttr::get(it->second));
-      return;
-    }
+        op.setCalleeAttr(FlatSymbolRefAttr::get(it->second));
+    });
   });
 
   return success();

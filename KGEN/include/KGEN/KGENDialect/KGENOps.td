@@ -193,6 +193,12 @@ def AddressOfOp : KGENOp<"addressof",
 
   let hasRegionVerifier = 1;
 
+  let builders = [
+    OpBuilder<(ins "Type":$type, "StringAttr":$callee,
+                   "ArrayRef<ParamBindAttr>":$inputParams,
+                   "ArrayRef<ParamDeclAttr>":$resultParams)>
+  ];
+
   let extraClassDeclaration = [{
     /// Return a signature for this function reference.
     SignatureType getSignature();
