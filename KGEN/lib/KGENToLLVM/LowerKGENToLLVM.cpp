@@ -26,8 +26,7 @@ namespace {
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
-public:
+struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -74,9 +73,8 @@ public:
 
 /// Convert `kgen.precompiled.*` to an extern `llvm.func`.
 template <typename PrecompiledOpT>
-class ConvertKGENPrecompiled
+struct ConvertKGENPrecompiled
     : public mlir::ConvertOpToLLVMPattern<PrecompiledOpT> {
-public:
   using mlir::ConvertOpToLLVMPattern<PrecompiledOpT>::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -104,8 +102,7 @@ public:
 
 /// Convert `kgen.call` to `func.call` and re-use the latter's conversion to
 /// LLVM.
-class ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
-public:
+struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -145,8 +142,7 @@ public:
 // ConvertKGENReturn
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
-public:
+struct ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
@@ -179,9 +175,8 @@ public:
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENParamConstant
+struct ConvertKGENParamConstant
     : public mlir::ConvertOpToLLVMPattern<ParamConstantOp> {
-public:
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
