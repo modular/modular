@@ -443,6 +443,20 @@ kgen.generator @pop_simd_reduce_max<size, type: dtype>(%a: !pop.simd<4, f32>, %b
   kgen.return %u, %v : !pop.scalar<f32>, !pop.scalar<type>
 }
 
+// CHECK-LABEL: @pop_gather
+// CHECK-SAME: %[[BASE:.*]]: !pop.simd<2, address>
+// CHECK-SAME: %[[MASK:.*]]: !pop.simd<2, bool>
+// CHECK-SAME: %[[PASSTHROUGH:.*]]: !pop.simd<2, f32>
+kgen.generator @pop_gather(%base: !pop.simd<2, address>,
+                           %mask: !pop.simd<2, bool>,
+                           %passthrough: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  // CHECK: %[[GATHERED:.*]] = pop.simd.gather %[[BASE]][%[[MASK]]], %[[PASSTHROUGH]] : !pop.simd<2, address>, !pop.simd<2, bool>, !pop.simd<2, f32>
+  %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, address>,
+                                                    !pop.simd<2, bool>,
+                                                    !pop.simd<2, f32>
+  // CHECK: kgen.return %[[GATHERED]] : !pop.simd<2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}
 
 // CHECK-LABEL: @pop_load_store
 kgen.generator @pop_load_store<type: dtype>(%p0: !pop.pointer<!pop.scalar<f32>>, %p1: !pop.pointer<!pop.scalar<type>>) {
