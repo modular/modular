@@ -4,6 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+add_kgen_kernel(test_kernels
+  SOURCE
+  ${CMAKE_CURRENT_SOURCE_DIR}/test_kernels.mlir
+
+  KERNELS
+  array_index)
+
 add_modular_unittest(
   SUITE_NAME
   KGENUnitTests
@@ -12,9 +21,11 @@ add_modular_unittest(
   KGENTests
 
   KGENInvokeTest.cpp
+  KGENKernelTest.cpp
 
   LINK_LIBS PRIVATE
   GenericMLSupport
   LLCLRuntime
   MSupportML
+  test_kernels
 )

@@ -23,11 +23,11 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // FIXME: We don't necessarily always want to emit opaque wrappers. Split this
   //        code up better because there's 2 semi-separate compilation models
   //        here.
-  SmallVector<std::string> breakUpStructs;
+  SmallVector<std::string, 1> topLevelKernels;
   if (options.topLevelKernel.hasValue())
-    breakUpStructs.push_back(options.topLevelKernel);
+    topLevelKernels.push_back(options.topLevelKernel);
 
-  LowerKGENToLLVMOptions kgenToLLVMOptions{/*indexBitwidth=*/0, breakUpStructs,
+  LowerKGENToLLVMOptions kgenToLLVMOptions{/*indexBitwidth=*/0, topLevelKernels,
                                            options.emitOpaqueWrappers,
                                            /*emitCWrappers=*/{}};
   pm.addPass(createLowerKGENToLLVM(kgenToLLVMOptions));

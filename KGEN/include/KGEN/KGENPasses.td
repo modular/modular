@@ -45,9 +45,10 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
     kgen.func ops and kgen types to the corresponding LLVM-dialect
     structures/types/ops.
 
-    Set `break-up-structs` to the names of top-level funcs for which to break
-    up argument and results structs in-place. If any of the specified funcs
-    have callsites in the module, the pass fails.
+    Set `c-call` to the names of top-level funcs for which to convert to
+    C-compatible calling conventions. This breaks up argument and results
+    structs in-place and converts arrays to be pass-by-reference. If any of the
+    specified funcs have callsites in the module, the pass fails.
 
     For example, consider the following function that accepts and returns a
     buffer:
@@ -79,12 +80,12 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
     ```
 
     The original function is tagged with a reference to the wrapper. If a
-    function is listed under both `break-up-structs` and `emit-c-wrappers`, a
+    function is listed under both `c-call` and `emit-c-wrappers`, a
     wrapper is still generated for the function, but since the original function
     will have no structs, the wrapper will be a forwarding call.
 
     If `emit-opaque-wrappers` is set, top-level funcs listed under
-    `break-up-structs` will get an additional opaque wrapper in the form:
+    `c-call` will get an additional opaque wrapper in the form:
 
     ```
     llvm.func @slice_opaque_wrapper(
@@ -109,7 +110,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
            /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
            "Bitwidth of the index type, 0 to use size of machine word">,
-    ListOption<"breakUpStructs", "break-up-structs", "std::string",
+    ListOption<"topLevelFuncs", "c-call", "std::string",
                "top-level funcs to make callable from C">,
     Option<"emitOpaqueWrappers", "emit-opaque-wrappers", "bool",
            /*default=*/"false", "whether to emit opaque wrappers">,
