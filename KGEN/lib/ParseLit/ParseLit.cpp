@@ -599,7 +599,7 @@ namespace {
 /// identifier_opt_type  ::= identifier [":" expression]
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
-struct MetaSignatureParser {
+struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputParameters;
   std::vector<Location> inputParamLocs;
 
@@ -705,6 +705,42 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
 }
 
 namespace {
+struct ParsedParam {
+  /// If this parameter has a type specifier or default value, these indicates
+  /// where the expressions may be re-parsed from.
+  SMLoc loc;
+  StringAttr name;
+  Optional<LitLexerCursor> typeCursor;
+  Optional<LitLexerCursor> initValueCursor;
+
+  // TODO: Implement support for variadic parameter markers:
+  // Python's parameter grammar embeds checking for `/` and `*` and `**` into
+  // the grammar, we can just check for it using ad-hoc logic for simplicity,
+  // according to the following rules:
+  //   1) Only one /, *, and ** parameter may exist in the parameter list.
+  //   2) They are specified in that order.
+  //   3) These do not permit default arguments.
+  ParseResult parse(LitParserBase &p) {
+    loc = p.getToken().getLoc();
+
+    if (p.parseIdentifier(name, "expected parameter name"))
+      // TODO: Scan ahead for better recovery.
+      return failure();
+
+    if (p.consumeIf(LitToken::colon)) {
+      if (ExprParser::parseOverExpression(p, typeCursor))
+        return failure();
+    }
+    if (p.consumeIf(LitToken::equal)) {
+      if (ExprParser::parseOverExpression(p, initValueCursor))
+        return failure();
+    }
+    return success();
+  };
+};
+} // namespace
+
+namespace {
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
@@ -714,22 +750,11 @@ namespace {
 ///
 struct ParsedDefSignature {
   StringAttr name;
-  MetaSignatureParser metaSignature;
-  SmallVector<Location> paramLocs;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<Type> paramTypes;
-  // TODO: Default values.
-  SmallVector<Type> resultTypes;
+  ParsedMetaSignature metaSignature;
+  SmallVector<ParsedParam> params;
+  Optional<LitLexerCursor> resultTypeCursor;
 
-  static Optional<ParsedDefSignature> parse(LitParserBase &p) {
-    ParsedDefSignature result;
-    if (result.parseInstance(p))
-      return None;
-    return result;
-  }
-
-private:
-  ParseResult parseInstance(LitParserBase &p) {
+  ParseResult parse(LitParserBase &p) {
     // TODO: Add support for decorators.
     if (p.parseToken(LitToken::kw_def, "expected 'def' declaration") ||
         p.parseIdentifier(name, "expected function name") ||
@@ -738,7 +763,8 @@ private:
       return failure();
 
     if (!p.consumeIf(LitToken::r_paren)) {
-      if (p.parseCommaSeparatedList([&]() { return parseParameter(p); }) ||
+      if (p.parseCommaSeparatedList(
+              [&]() { return params.emplace_back(ParsedParam()).parse(p); }) ||
           p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
         return failure();
     }
@@ -750,78 +776,60 @@ private:
     // a fn can return void.  We can provide a guaranteed optimization to remove
     // it though.
     if (p.consumeIf(LitToken::minus_greater)) {
-      ExprParser exprParser(p);
-      ExprNode *typeExpr = exprParser.parseExpression();
-      // TODO (types): translate typeExpr into a type.
-      (void)typeExpr;
-      resultTypes.push_back(IndexType::get(p.getContext()));
+      if (ExprParser::parseOverExpression(p, resultTypeCursor))
+        return failure();
     }
 
     return p.parseToken(LitToken::colon, "expected ':' in function definition");
   }
-
-  // TODO: Implement support for variadic parameter markers:
-  // Python's parameter grammar embeds checking for `/` and `*` and `**` into
-  // the grammar, we can just check for it using ad-hoc logic for simplicity,
-  // according to the following rules:
-  //   1) Only one /, *, and ** parameter may exist in the parameter list.
-  //   2) They are specified in that order.
-  //   3) These do not permit default arguments.
-  ParseResult parseParameter(LitParserBase &p) {
-    auto loc = p.getTokenLocation();
-    if (p.parseIdentifier(paramNames.emplace_back(StringAttr()),
-                          "expected parameter name"))
-      // TODO: Scan ahead for better recovery.
-      return failure();
-
-    Type paramType = IndexType::get(p.getContext());
-    if (p.consumeIf(LitToken::colon)) {
-      ExprParser exprParser(p);
-      ExprNode *typeExpr = exprParser.parseExpression();
-      // TODO (types): translate typeExpr into a type.
-      (void)typeExpr;
-    }
-    paramLocs.push_back(loc);
-    paramTypes.push_back(paramType);
-
-    if (p.consumeIf(LitToken::equal)) {
-      // TODO: add support for default parameter expressions.
-      Optional<LitLexerCursor> initExpr;
-      if (ExprParser::parseOverExpression(p, initExpr))
-        return failure();
-    }
-    return success();
-  };
 };
 } // namespace
 
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
   Location loc = getTokenLocation();
-  Optional<ParsedDefSignature> info = ParsedDefSignature::parse(*this);
-  if (!info)
+  ParsedDefSignature info;
+  if (info.parse(*this))
     return failure();
 
+  // We have parsed the signature but skipped over the actual types, we use
+  // unresolved types for now.
+  SmallVector<Location> paramLocs;
+  SmallVector<StringAttr> paramNames;
+  // TODO(types): Replace index with unresolved types here.
+  SmallVector<Type> paramTypes(info.params.size(),
+                               IndexType::get(getContext()));
+  for (const auto &param : info.params) {
+    paramLocs.push_back(translateLocation(param.loc));
+    paramNames.push_back(param.name);
+    // TODO: add support for default parameter expressions.
+    if (param.initValueCursor)
+      emitError(param.initValueCursor->getLoc(getLexer()),
+                "TODO: No default values yet");
+  }
+
+  SmallVector<Type> resultTypes;
+  if (info.resultTypeCursor)
+    resultTypes.push_back(IndexType::get(getContext()));
+
   auto builder = currentScope->getBuilder();
-  auto functionType =
-      builder.getFunctionType(info->paramTypes, info->resultTypes);
+  auto functionType = builder.getFunctionType(paramTypes, resultTypes);
   auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
   // TODO: Should have nicer builder.
   auto newFunc = builder.create<LITFuncOp>(
-      loc, info->name, StringArrayAttr::get(getContext(), info->paramNames),
+      loc, info.name, StringArrayAttr::get(getContext(), paramNames),
       TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(),
-                              info->metaSignature.inputParameters),
+      ParamDeclArrayAttr::get(getContext(), info.metaSignature.inputParameters),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
-  bodyBlock->addArguments(info->paramTypes, info->paramLocs);
+  bodyBlock->addArguments(paramTypes, paramLocs);
   newFunc.getRegion().push_back(bodyBlock);
 
   auto newFuncRefAttr = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(info->name), newFunc.getSignature());
+      FlatSymbolRefAttr::get(info.name), newFunc.getSignature());
 
-  currentScope->addToScope(info->name,
+  currentScope->addToScope(info.name,
                            Scope::MetaParameterValue{newFuncRefAttr, loc},
                            sharedParserState->errorOccurred);
 
@@ -830,7 +838,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // do so.
   deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
                            lexer.getCursor(), curIndent,
-                           std::move(info->metaSignature.inputParamLocs)});
+                           std::move(info.metaSignature.inputParamLocs)});
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -891,45 +899,46 @@ namespace {
 ///                 | "var" identifier "=" expression [TODO]
 ///
 struct ParsedVarDecl {
+  SMLoc loc;
   StringAttr name;
   Optional<LitLexerCursor> typeCursor;
   Optional<LitLexerCursor> initValueCursor;
 
-  static Optional<ParsedVarDecl> parse(LitParserBase &p) {
-    ParsedVarDecl result;
+  ParseResult parse(LitParserBase &p) {
+    loc = p.getToken().getLoc();
     if (p.parseToken(LitToken::kw_var, "expected 'var' declaration") ||
-        p.parseIdentifier(result.name, "expected name for 'var' declaration") ||
+        p.parseIdentifier(name, "expected name for 'var' declaration") ||
         p.parseToken(LitToken::colon, "var declaration requires a type") ||
-        ExprParser::parseOverExpression(p, result.typeCursor))
-      return None;
+        ExprParser::parseOverExpression(p, typeCursor))
+      return failure();
 
     if (p.consumeIf(LitToken::equal)) {
-      if (ExprParser::parseOverExpression(p, result.initValueCursor))
-        return None;
+      if (ExprParser::parseOverExpression(p, initValueCursor))
+        return failure();
     }
-    return result;
+    return success();
   }
 };
 } // namespace
 
 ParseResult LitParser::parseVarDeclStmt() {
   LitLexerCursor declCursor = getLexer().getCursor();
-  Location loc = getTokenLocation();
-  Optional<ParsedVarDecl> info = ParsedVarDecl::parse(*this);
-  if (!info)
+  ParsedVarDecl info;
+  if (info.parse(*this))
     return failure();
 
   // TODO: add support for default parameter expressions.
-  if (info->initValueCursor)
-    emitError(loc, "var initializers not supported yet");
+  if (info.initValueCursor)
+    emitError(info.loc, "var initializers not supported yet");
 
   auto builder = currentScope->getDeclBuilder();
 
   // If we are in a function, emit a variable declaration, if we are in a
   // struct, emit a field declaration.  Both have the same IR representation.
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
-  auto varDecl = builder.create<VarDeclOp>(loc, varType, info->name);
-  currentScope->addToScope(info->name, varDecl,
+  auto varDecl = builder.create<VarDeclOp>(translateLocation(info.loc), varType,
+                                           info.name);
+  currentScope->addToScope(info.name, varDecl,
                            sharedParserState->errorOccurred);
   currentScope->addExprToNameBind(varDecl, declCursor);
   return success();
@@ -940,7 +949,8 @@ void NameBindingContext::nameBind(VarDeclOp op, LitLexerCursor cursor) {
   cursor.restore(parser.getLexer());
 
   // Reparse the var-decl signature again.  We know the initial parse succeeded.
-  ParsedVarDecl info = ParsedVarDecl::parse(parser).value();
+  ParsedVarDecl info;
+  (void)info.parse(parser);
 
   // Parse the type if present.
   if (info.typeCursor)
@@ -1022,7 +1032,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   consumeToken(LitToken::kw_struct);
 
   StringAttr nameAttr;
-  MetaSignatureParser metaSignature;
+  ParsedMetaSignature metaSignature;
   if (parseIdentifier(nameAttr, "expected struct name") ||
       metaSignature.parseOptionalMetaSignature(*this) ||
       parseToken(LitToken::colon, "expected ':' in function definition"))
