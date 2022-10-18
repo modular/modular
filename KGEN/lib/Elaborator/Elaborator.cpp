@@ -190,17 +190,11 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, ArrayRef<GeneratorOp> primaryGenerators)
-      : symtab(symtab), primaryGenerators(primaryGenerators) {}
-
-  ArrayRef<GeneratorOp> getPrimaryGenerators() { return primaryGenerators; }
+  Elaborator(SymbolTable &symtab) : symtab(symtab) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
-
-  // Check the generator call graph to reject any recursion.
-  ParseResult checkRecursion();
 
   /// Return the operation that defines the specified symbol.
   Operation *lookupCallee(SymbolRefAttr symbolRef) {
@@ -266,9 +260,6 @@ private:
 private:
   /// This symbol table allows efficient lookups across the module.
   SymbolTable symtab;
-
-  /// These are the primary generators to specialize.
-  ArrayRef<GeneratorOp> primaryGenerators;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -1402,7 +1393,7 @@ namespace {
 class RecursionChecker {
 public:
   RecursionChecker(Elaborator &elaborator) : elaborator(elaborator) {}
-  ParseResult run();
+  ParseResult verify(ArrayRef<GeneratorOp> primaryGenerators);
 
 private:
   ParseResult checkRecursively(Operation *op);
@@ -1488,17 +1479,12 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   return success();
 }
 
-ParseResult RecursionChecker::run() {
+ParseResult RecursionChecker::verify(ArrayRef<GeneratorOp> primaryGenerators) {
   // Check all the operations at the top level of the primary module.
-  for (GeneratorOp gen : elaborator.getPrimaryGenerators())
+  for (GeneratorOp gen : primaryGenerators)
     if (checkRecursively(gen))
       return failure();
   return success();
-}
-
-/// Check the generator call graph to reject any recursion.
-ParseResult Elaborator::checkRecursion() {
-  return RecursionChecker(*this).run();
 }
 
 /// When a top-level generator failed to elaborate, this is used to recursively
@@ -1746,10 +1732,12 @@ static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
 LogicalResult
 M::elaborateGenerators(ModuleOp primary,
                        ArrayRef<std::filesystem::path> searchPaths) {
-  // Save the generators from the main module. These are the only generators
-  // that will be elaborated.
-  SmallVector<GeneratorOp> primaryGenerators =
-      llvm::to_vector(primary.getOps<GeneratorOp>());
+  // Extract the top-level, parameterless generators from the main module. These
+  // are the only generators that will be elaborated.
+  SmallVector<GeneratorOp> primaryGenerators;
+  for (auto gen : primary.getOps<GeneratorOp>())
+    if (gen.getInputParamDecls().empty())
+      primaryGenerators.push_back(gen);
 
   SymbolTable symtab(primary);
   DenseSet<StringAttr> loadedFiles;
@@ -1757,7 +1745,7 @@ M::elaborateGenerators(ModuleOp primary,
     if (failed(resolveInclude(symtab, include, searchPaths, loadedFiles)))
       return failure();
 
-  Elaborator elaborator(symtab, primaryGenerators);
+  Elaborator elaborator(symtab);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -1765,7 +1753,8 @@ M::elaborateGenerators(ModuleOp primary,
     return failure();
 
   // Check the generator call graph to reject any recursion.
-  if (elaborator.checkRecursion())
+  RecursionChecker checker(elaborator);
+  if (failed(checker.verify(primaryGenerators)))
     return failure();
 
   auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
@@ -1777,10 +1766,6 @@ M::elaborateGenerators(ModuleOp primary,
   // exposed ones.
   bool didFail = false;
   for (GeneratorOp generatorRoot : primaryGenerators) {
-    // Ignore generators with input parameters, they can't be turned into
-    // concrete funcs anyway, but will get specialized if anything uses them.
-    if (!generatorRoot.getInputParamDecls().empty())
-      continue;
 
     // Elaborate the generator into concrete versions.
     ArrayRef<ElaboratedGeneratorOrCalleeError> results =
