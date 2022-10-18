@@ -139,13 +139,17 @@ public:
   // Categorization.
   constexpr bool isValid() const { return !isInvalid(); }
   constexpr bool isInvalid() const { return value == invalid; }
-  bool isBool() const { return value == DType::kBool; }
-  bool isInt() const { return (value & mIsInteger) != 0; }
-  bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
-  bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }
-  bool isFloat() const { return !isInt() & ((value & mIsFloat) != 0); }
-  bool isArithmetic() const { return isInt() || isFloat(); }
-  bool isOther() const { return !isInt() & ((value & mIsFloat) == 0); }
+  constexpr bool isBool() const { return value == DType::kBool; }
+  constexpr bool isInt() const { return (value & mIsInteger) != 0; }
+  constexpr bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
+  constexpr bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }
+  constexpr bool isFloat() const {
+    return !isInt() & ((value & mIsFloat) != 0);
+  }
+  constexpr bool isArithmetic() const { return isInt() || isFloat(); }
+  constexpr bool isOther() const {
+    return !isInt() & ((value & mIsFloat) == 0);
+  }
 
   // Complex number handling.
   constexpr bool isComplex() const { return value & mIsComplex; }
