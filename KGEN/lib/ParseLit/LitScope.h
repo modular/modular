@@ -33,10 +33,11 @@ namespace M::KGEN::LIT {
 class Scope : public LLCL::NonAtomicallyReferenceCounted<Scope> {
 public:
   Scope(Operation *decl, LLCL::RCRef<Scope> parentScope, LitLexerCursor cursor)
-      : decl(decl),
-        parentScope(std::move(parentScope)), builder{OpBuilder::atBlockEnd(
-                                                 &decl->getRegion(0).front())},
-        cursor(cursor) {}
+      : decl(decl), parentScope(std::move(parentScope)),
+        builder(decl->getContext()), cursor(cursor) {
+    if (decl->getNumRegions())
+      builder = OpBuilder::atBlockEnd(&decl->getRegion(0).front());
+  }
 
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
@@ -95,21 +96,8 @@ public:
     return None;
   }
 
-  /// In the first pass parse of a declaration, we record that we see type
-  /// expressions but cannot actually resolve them fully because we can't name
-  /// bind them.  This method is called to record the declaration that needs
-  /// binding and a cursor that indicates where to reparse from.
-  void addExprToNameBind(Operation *decl, LitLexerCursor cursor) {
-    declCursors.insert({decl, cursor});
-    declsWithExprsToNameBind.push_back(decl);
-  }
-
-  DenseMap<Operation *, LitLexerCursor> takeDeclCursors() {
-    return std::move(declCursors);
-  }
-  std::vector<Operation *> takeDeclsWithExprsToNameBind() {
-    return std::move(declsWithExprsToNameBind);
-  }
+  bool getIsResolved() const { return isResolved; }
+  void setIsResolved() { isResolved = true; }
 
 private:
   /// This is the Module, LITStructDecl, LITFunc that this scope corresponds
@@ -125,15 +113,9 @@ private:
   // Note: we could unique the identifiers and use a DenseMap.
   llvm::StringMap<Optional<ScopeValue>> decls;
 
-  /// This records where (lexically) a declaration is that has types that need
-  /// to be reparsed.  This allows us to do name binding of types in an
-  /// on-demand order, necessary for resolving inter-dependencies between
-  /// declarations.
-  DenseMap<Operation *, LitLexerCursor> declCursors;
-
-  /// This is a list of operations that have deferred expressions to name bind
-  /// and type check in the second pass of parsing.
-  std::vector<Operation *> declsWithExprsToNameBind;
+  /// This is true if this declaration is fully type checked.
+  /// TODO: Split to enum.
+  bool isResolved = false;
 };
 
 } // namespace M::KGEN::LIT
