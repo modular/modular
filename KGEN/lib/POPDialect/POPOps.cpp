@@ -23,6 +23,7 @@
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -757,6 +758,94 @@ LogicalResult GlobalConstantOp::verify() {
   return verifyConstant([this](StringRef msg) { return emitOpError(msg); },
                         getValue(),
                         ParamRefType::get(getType().getElementType()));
+}
+
+//===----------------------------------------------------------------------===//
+// VariantVisitOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseVariantVisitRegions(OpAsmParser &p, TypeArrayAttr &cases,
+                         SmallVectorImpl<std::unique_ptr<Region>> &regions) {
+  SmallVector<Type> caseTypes;
+  while (succeeded(p.parseOptionalKeyword("case"))) {
+    OpAsmParser::Argument arg;
+    if (p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
+        p.parseRParen() ||
+        p.parseRegion(*regions.emplace_back(std::make_unique<Region>()), arg))
+      return failure();
+    caseTypes.push_back(arg.type);
+  }
+  cases = TypeArrayAttr::get(p.getContext(), caseTypes);
+
+  if (succeeded(p.parseOptionalKeyword("default")))
+    if (p.parseRegion(*regions.emplace_back(std::make_unique<Region>())))
+      return failure();
+
+  return success();
+}
+
+static void printVariantVisitRegions(OpAsmPrinter &p, Operation *op,
+                                     TypeArrayAttr cases,
+                                     mlir::RegionRange regions) {
+  for (auto [caseType, region] : llvm::zip(cases, regions)) {
+    p.printNewline();
+    p << "case (";
+    p.printRegionArgument(region->getArgument(0));
+    p << ") ";
+    p.printRegion(*region, /*printEntryBlockArgs=*/false);
+  }
+  if (cases.size() == regions.size())
+    return;
+  p.printNewline();
+  p << "default ";
+  p.printRegion(*regions.back());
+}
+
+LogicalResult VariantVisitOp::verifyRegions() {
+  SmallPtrSet<Type, 4> typeSet, seenTypes;
+  VariantType variant = getVariant().getType();
+  for (Type type : variant.getParameterizedElementTypes())
+    typeSet.insert(type);
+  for (Type caseType : getCases()) {
+    if (!typeSet.contains(caseType))
+      return emitOpError("type case ")
+             << caseType << " is not a possible variant type of " << variant;
+    if (!seenTypes.insert(caseType).second)
+      return emitOpError("duplicate type case ") << caseType;
+  }
+  if (seenTypes.size() == variant.getTypes().size()) {
+    if (getNumRegions() != seenTypes.size())
+      return emitOpError("expected ")
+             << seenTypes.size() << " regions when all type cases are present";
+  } else {
+    if (getNumRegions() != seenTypes.size() + 1) {
+      return emitOpError("expected ") << seenTypes.size()
+                                      << " regions plus a default region when "
+                                         "not all case types are present";
+    }
+    if (getRegions().back()->getNumArguments())
+      return emitOpError("expected default region to have zero arguments");
+  }
+  for (Region *region : getRegions()) {
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    if (yield.getOperandTypes() != getResultTypes()) {
+      return (emitOpError("operand types of region #")
+              << region->getRegionNumber()
+              << " yield do not match result types")
+                 .attachNote(yield.getLoc())
+             << "see terminator here";
+    }
+  }
+  for (auto [type, region] : llvm::zip(getCases(), getRegions())) {
+    if (region->getNumArguments() != 1)
+      return emitOpError("expected region #")
+             << region->getRegionNumber() << " to have one argument";
+    if (region->getArgumentTypes().front() != type)
+      return emitOpError("expected region #")
+             << region->getRegionNumber() << " argument type to be " << type;
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
