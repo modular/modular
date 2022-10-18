@@ -745,7 +745,10 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // If this is a type constant, print it as a bare type.
   if (auto typeConstant = dyn_cast<TypeConstantAttr>(value)) {
-    os << typeConstant.getValue();
+    if (auto paramRef = dyn_cast<ParamRefType>(typeConstant.getValue()))
+      printParamValue(paramRef.getParam(), os);
+    else
+      os << typeConstant.getValue();
     return;
   }
 
