@@ -228,12 +228,6 @@ struct DeferredDeclBodyToParse {
 
   /// This is where to start lexing the body from.
   LitLexerCursor lexerCursor;
-
-  /// This is the indentation level of the decl.
-  size_t indentLevel;
-
-  /// This is the location of each input parameter.
-  std::vector<Location> inputParamLocs;
 };
 } // namespace
 
@@ -277,8 +271,7 @@ struct LitParser : public LitParserBase {
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
   ParseResult parseDefStmt(size_t curIndent);
-  void parseDefBody(LITFuncOp defDecl, size_t defIndent,
-                    ArrayRef<Location> inputParamLocs);
+  void parseDefBody(LITFuncOp defDecl);
   ParseResult parseStructStmt(size_t curIndent);
 
   // Simple statements.
@@ -355,8 +348,7 @@ void LitParser::finalizeScopeDecl() {
     currentScope = std::move(decl.declScope);
     decl.lexerCursor.restore(lexer);
 
-    parseDefBody(cast<LITFuncOp>(currentScope->getDecl()), decl.indentLevel,
-                 decl.inputParamLocs);
+    parseDefBody(cast<LITFuncOp>(currentScope->getDecl()));
   }
 }
 
@@ -786,6 +778,7 @@ struct ParsedDefSignature {
 } // namespace
 
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
+  LitLexerCursor declCursor = getLexer().getCursor();
   Location loc = getTokenLocation();
   ParsedDefSignature info;
   if (info.parse(*this))
@@ -836,9 +829,8 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
-  deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
-                           lexer.getCursor(), curIndent,
-                           std::move(info.metaSignature.inputParamLocs)});
+  deferredDecls.push_back(
+      {RCRef<Scope>::create(newFunc, currentScope.copy()), declCursor});
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -847,10 +839,15 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 }
 
 /// Parse a deferred 'def' body.
-void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
-                             ArrayRef<Location> inputParamLocs) {
+void LitParser::parseDefBody(LITFuncOp defDecl) {
+  size_t defIndent = getToken().getIndentation().value_or(0);
+
+  ParsedDefSignature info;
+  (void)info.parse(*this); // We know this will succeed parsing.
+
   // Add the meta parameters to the symbol table.
-  for (auto [param, loc] : llvm::zip(defDecl.getParamDecls(), inputParamLocs)) {
+  for (auto [param, loc] :
+       llvm::zip(defDecl.getParamDecls(), info.metaSignature.inputParamLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     currentScope->addToScope(param.getName(),
                              Scope::MetaParameterValue{value, loc},
