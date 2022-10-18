@@ -13,23 +13,26 @@
 #define LIT_SHARED_STATE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/BuiltinAttributes.h"
+
+namespace llvm {
+class SourceMgr;
+}
 
 namespace M::KGEN::LIT {
 class DeclResolver;
 
-//===----------------------------------------------------------------------===//
-// SharedParserState
-//===----------------------------------------------------------------------===//
-
-/// This is state shared across multiple different instances of LitParserBase
+/// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
-class SharedParserState {
+class LitSharedState {
 public:
-  SharedParserState(llvm::SourceMgr &sourceMgr, MLIRContext *context);
+  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context);
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;
   std::unique_ptr<DeclResolver> declResolver;
+
+  const mlir::StringAttr bufferNameIdentifier;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;

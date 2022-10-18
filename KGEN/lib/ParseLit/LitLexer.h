@@ -11,7 +11,7 @@
 #ifndef LITLEXER_H
 #define LITLEXER_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "LitSharedState.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SourceMgr.h"
@@ -101,11 +101,10 @@ private:
 /// This implements a lexer for .lit files.
 class LitLexer {
 public:
-  LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context);
-  LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context,
-           const LitLexerCursor &cursor);
+  LitLexer(LitSharedState &sharedState);
+  LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor);
 
-  const llvm::SourceMgr &getSourceMgr() const { return sourceMgr; }
+  const llvm::SourceMgr &getSourceMgr() const { return sharedState.sourceMgr; }
 
   /// Move to the next valid token.
   void lexToken() { curToken = lexTokenImpl(); }
@@ -145,9 +144,10 @@ private:
   LitToken lexString(const char *tokStart, ssize_t indentation);
   void skipComment();
 
-  const llvm::SourceMgr &sourceMgr;
-  const mlir::StringAttr bufferNameIdentifier;
+public:
+  LitSharedState &sharedState;
 
+private:
   StringRef curBuffer;
   const char *curPtr;
 

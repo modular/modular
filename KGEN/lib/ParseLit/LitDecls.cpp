@@ -19,8 +19,7 @@ using namespace M::KGEN::LIT;
 // DeclResolver
 //===----------------------------------------------------------------------===//
 
-DeclResolver::DeclResolver(SharedParserState &state)
-    : sharedParserState(state) {}
+DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
 DeclResolver::~DeclResolver() {}
 
 /// Add a new declaration that needs to be resolved.
