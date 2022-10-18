@@ -273,10 +273,11 @@ struct EmitterState {
   Scope &scope;
 
   /// This is the current builder to emit into.  It is mutable to support
-  /// expresions that require internal control flow.
-  OpBuilder builder;
+  /// expressions that require internal control flow.
+  OpBuilder &builder;
 
-  EmitterState(LitParserBase &parser, Scope &scope);
+  EmitterState(LitParserBase &parser, Scope &scope, OpBuilder &builder)
+      : parser(parser), scope(scope), builder(builder) {}
 
   /// This helper emits the specified value rep as an SSA value, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if

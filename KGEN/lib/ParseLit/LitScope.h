@@ -31,15 +31,10 @@ namespace M::KGEN::LIT {
 /// such, we heap allocate and reference count these.
 class Scope {
 public:
-  static Scope *create(Operation *decl, Scope *parentScope,
-                       LitLexerCursor cursor, LitSharedState &sharedState);
-
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
   Operation *getDecl() const { return decl; }
   Scope *getParentScope() const { return parentScope; }
-
-  OpBuilder &getBuilder() { return builder; }
 
   const LitLexerCursor &getCursor() const { return cursor; }
 
@@ -49,6 +44,8 @@ public:
   /// variable declaration ops to make sure we honor the one scope per function
   /// rule of Python.
   OpBuilder getDeclBuilder() {
+    if (decl->getNumRegions() == 0)
+      return OpBuilder(decl->getContext());
     return OpBuilder::atBlockBegin(&decl->getRegion(0).front());
   }
 
@@ -98,18 +95,13 @@ private:
   // Scope is created by DeclResolver.
   friend class DeclResolver;
   Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor)
-      : decl(decl), parentScope(std::move(parentScope)),
-        builder(decl->getContext()), cursor(cursor) {
-    if (decl->getNumRegions())
-      builder = OpBuilder::atBlockEnd(&decl->getRegion(0).front());
-  }
+      : decl(decl), parentScope(std::move(parentScope)), cursor(cursor) {}
 
 private:
   /// This is the Module, LITStructDecl, LITFunc that this scope corresponds
   /// to.
   Operation *decl;
   Scope *parentScope;
-  OpBuilder builder;
 
   /// This is the cursor that points to the start of the declaration.  This is
   /// useful if we want to reparse the declaration.
