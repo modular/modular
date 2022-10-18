@@ -32,11 +32,11 @@ namespace M::KGEN::LIT {
 /// such, we heap allocate and reference count these.
 class Scope : public LLCL::NonAtomicallyReferenceCounted<Scope> {
 public:
-  Scope(Operation *decl, LLCL::RCRef<Scope> parentScope)
+  Scope(Operation *decl, LLCL::RCRef<Scope> parentScope, LitLexerCursor cursor)
       : decl(decl),
         parentScope(std::move(parentScope)), builder{OpBuilder::atBlockEnd(
-                                                 &decl->getRegion(0).front())} {
-  }
+                                                 &decl->getRegion(0).front())},
+        cursor(cursor) {}
 
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
@@ -44,6 +44,8 @@ public:
   const LLCL::RCRef<Scope> &getParentScope() const { return parentScope; }
 
   OpBuilder &getBuilder() { return builder; }
+
+  const LitLexerCursor &getCursor() const { return cursor; }
 
   /// Return the builder associated to the declaration that introduced the
   /// Scope.
@@ -109,11 +111,15 @@ public:
   }
 
 private:
-  /// This is the Module, StructDecl, Func/Generator that this scope corresponds
+  /// This is the Module, LITStructDecl, LITFunc that this scope corresponds
   /// to.
   Operation *decl;
   LLCL::RCRef<Scope> parentScope;
   OpBuilder builder;
+
+  /// This is the cursor that points to the start of the declaration.  This is
+  /// useful if we want to reparse the declaration.
+  LitLexerCursor cursor;
 
   // Note: we could unique the identifiers and use a DenseMap.
   llvm::StringMap<Optional<ScopeValue>> decls;

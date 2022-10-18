@@ -218,19 +218,6 @@ Type NameBindingContext::resolveType(LitLexerCursor cursor) {
 // LitParser
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// Declaration bodies are parsed after all the signatures at the current
-/// level of the file are parsed.  This keeps track of
-struct DeferredDeclBodyToParse {
-  /// This is the scope for the declaration, which also contains the
-  /// declaration itself.
-  RCRef<Scope> declScope;
-
-  /// This is where to start lexing the body from.
-  LitLexerCursor lexerCursor;
-};
-} // namespace
-
 /// This class provides the implementation details of the concrete Lit Grammar.
 struct LitParser : public LitParserBase {
   LitParser(LitLexer &lexer, SharedParserState *sharedParserState)
@@ -286,7 +273,7 @@ private:
 
   /// These are deferred declarations that need parsing, which are processed
   /// after other things in a scope have been resolved.
-  std::vector<DeferredDeclBodyToParse> deferredDecls;
+  std::vector<RCRef<Scope>> deferredDecls;
 };
 
 /// file ::= statements
@@ -295,11 +282,13 @@ ParseResult LitParser::parseFile(ModuleOp module) {
   // TODO: Add these:
   // https://docs.python.org/3/library/functions.html#built-in-funcs
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
-  auto builtinsScope = RCRef<Scope>::create(module, RCRef<Scope>());
+  auto builtinsScope =
+      RCRef<Scope>::create(module, RCRef<Scope>(), getLexer().getCursor());
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
-  currentScope = RCRef<Scope>::create(module, std::move(builtinsScope));
+  currentScope = RCRef<Scope>::create(module, std::move(builtinsScope),
+                                      getLexer().getCursor());
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
@@ -341,13 +330,12 @@ void LitParser::finalizeScopeDecl() {
     return;
 
   // If we have deferred declarations, process each of them.
-  std::vector<DeferredDeclBodyToParse> decls;
+  std::vector<RCRef<Scope>> decls;
   std::swap(deferredDecls, decls);
 
-  for (DeferredDeclBodyToParse &decl : decls) {
-    currentScope = std::move(decl.declScope);
-    decl.lexerCursor.restore(lexer);
-
+  for (RCRef<Scope> &declScope : decls) {
+    currentScope = std::move(declScope);
+    currentScope->getCursor().restore(lexer);
     parseDefBody(cast<LITFuncOp>(currentScope->getDecl()));
   }
 }
@@ -830,7 +818,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
   deferredDecls.push_back(
-      {RCRef<Scope>::create(newFunc, currentScope.copy()), declCursor});
+      RCRef<Scope>::create(newFunc, currentScope.copy(), declCursor));
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -1022,6 +1010,7 @@ ParseResult LitParser::parseReturnStmt() {
 ///
 ParseResult LitParser::parseStructStmt(size_t curIndent) {
   auto loc = getTokenLocation();
+  auto declCursor = getLexer().getCursor();
 
   // TODO: Add support for decorators.
   consumeToken(LitToken::kw_struct);
@@ -1049,7 +1038,8 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   // Switch to the struct's scope to parse things into it.
   SaveAndRestore<RCRef<Scope>> scopeSaver(
-      currentScope, RCRef<Scope>::create(newStruct, currentScope.copy()));
+      currentScope,
+      RCRef<Scope>::create(newStruct, currentScope.copy(), declCursor));
 
   // Add the meta parameters to the symbol table.
   for (auto [param, loc] :
