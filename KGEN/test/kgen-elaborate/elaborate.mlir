@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="search-path=%S" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="search-path=%S" -allow-unregistered-dialect | FileCheck %s
 
 kgen.include "library-test.mlir"
 
@@ -217,7 +217,7 @@ kgen.generator @use_Itf2one() {
   kgen.return
 }
 
-// -----
+//===----------------------------------------------------------------------===//
 
 kgen.generator.interface @genItf3<ty: dtype>()
 
@@ -245,7 +245,7 @@ kgen.generator @use_Itf3() {
   kgen.return
 }
 
-// -----
+//===----------------------------------------------------------------------===//
 
 // Test that expansions are tracked and each ultimate kernel version only allows
 // any particular generator/parameter set pair to expand one direction, reducing
@@ -278,7 +278,7 @@ kgen.generator @track_expansions(%arg0: si32) {
 }
 
 
-// -----
+//===----------------------------------------------------------------------===//
 
 // Test that parameter and result argument types get rewritten and specialized.
 
@@ -306,7 +306,7 @@ kgen.generator @test_f32() -> f32 {
   kgen.return %2 : f32
 }
 
-// -----
+//===----------------------------------------------------------------------===//
 
 // Test that we can do static assertions on computed parameter expressions (e.g.
 // those that are the result of a sub-generator invocation.
@@ -519,5 +519,42 @@ kgen.generator @test_region_insanity() {
       %0 = pop.constant(1) : !pop.scalar<dt>
       kgen.return<123>
     }
+  kgen.return
+}
+
+// -----
+
+kgen.generator.interface @foo<size>(index) -> index
+
+kgen.generator @foo1<size>(%a: index) -> index
+    constraints <[eq(size, 1), "1"]>
+    implements @foo {
+  kgen.return %a : index
+}
+
+kgen.generator @foo2<size>(%a: index) -> index
+    constraints <[eq(size, 2), "2"]>
+    implements @foo {
+  kgen.return %a : index
+}
+
+kgen.generator @bar<T:type>(%a: !kgen.paramref<T>) -> !kgen.paramref<T> {
+  kgen.return %a : !kgen.paramref<T>
+}
+
+kgen.generator @baz<() -> index>() {
+  kgen.return<50>
+}
+
+// CHECK-LABEL: kgen.func @parametric_addressof
+kgen.generator @parametric_addressof() {
+  // CHECK-NEXT: kgen.addressof @"foo1,size=1" : (index) -> index
+  %0 = kgen.addressof @foo<size = 1> : (index) -> index
+  // CHECK-NEXT: kgen.addressof @"foo2,size=2" : (index) -> index
+  %1 = kgen.addressof @foo<size = 2> : (index) -> index
+  // CHECK-NEXT: kgen.addressof @"bar,T=i32" : (i32) -> i32
+  %2 = kgen.addressof @bar<T:type = i32> : (i32) -> i32
+  // CHECK-NEXT: kgen.addressof @baz<() -> result> : () -> ()
+  %3 = kgen.addressof @baz<() -> result> : () -> ()
   kgen.return
 }

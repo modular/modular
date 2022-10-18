@@ -615,6 +615,14 @@ SignatureType AddressOfOp::getSignature() {
       TypeArrayAttr::get(getContext(), callerResultParamTypes), getType());
 }
 
+void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
+                        StringAttr callee, ArrayRef<ParamBindAttr> inputParams,
+                        ArrayRef<ParamDeclAttr> resultParams) {
+  build(b, state, type, FlatSymbolRefAttr::get(callee),
+        b.getAttr<ParamBindArrayAttr>(inputParams),
+        b.getAttr<ParamDeclArrayAttr>(resultParams), 0);
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
