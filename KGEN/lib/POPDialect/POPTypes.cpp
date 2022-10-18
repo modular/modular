@@ -331,44 +331,32 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
   StringRef typeName;
   // Try to parse a keyword for a known POP type. Allow `dtype` for
   // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
-  if (p.parseOptionalKeyword(&typeName, {"array", "pointer", "scalar", "simd",
-                                         "struct", "variant", "dtype"}))
+  if (p.parseOptionalKeyword(
+          &typeName, {ArrayType::getMnemonic(), PointerType::getMnemonic(),
+                      ScalarType::getMnemonic(), SIMDType::getMnemonic(),
+                      StructType::getMnemonic(), VariantType::getMnemonic(),
+                      DTypeType::getMnemonic()}))
     return parseTypeParamValue(p, typeExpr);
 
-  if (typeName == "array")
+  if (typeName == ArrayType::getMnemonic())
     return parsePrettyTypeImpl<ArrayType>(p, typeExpr);
-  if (typeName == "pointer")
+  if (typeName == PointerType::getMnemonic())
     return parsePrettyTypeImpl<PointerType>(p, typeExpr);
-  if (typeName == "scalar")
+  if (typeName == ScalarType::getMnemonic())
     return parsePrettyTypeImpl<ScalarType>(p, typeExpr);
-  if (typeName == "simd")
+  if (typeName == SIMDType::getMnemonic())
     return parsePrettyTypeImpl<SIMDType>(p, typeExpr);
-  if (typeName == "struct")
+  if (typeName == StructType::getMnemonic())
     return parsePrettyTypeImpl<StructType>(p, typeExpr);
-  if (typeName == "variant")
+  if (typeName == VariantType::getMnemonic())
     return parsePrettyTypeImpl<VariantType>(p, typeExpr);
 
-  if (typeName == "dtype") {
+  if (typeName == DTypeType::getMnemonic()) {
     typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
     return success();
   }
 
   llvm_unreachable("unknown keyword");
-}
-
-template <typename TypeT>
-static StringRef getPrettyTypePrefix() {
-  if constexpr (std::is_same_v<TypeT, ArrayType>)
-    return "array";
-  if constexpr (std::is_same_v<TypeT, PointerType>)
-    return "pointer";
-  if constexpr (std::is_same_v<TypeT, ScalarType>)
-    return "scalar";
-  if constexpr (std::is_same_v<TypeT, SIMDType>)
-    return "simd";
-  if constexpr (std::is_same_v<TypeT, StructType>)
-    return "struct";
-  return "variant";
 }
 
 /// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
@@ -384,10 +372,10 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
   llvm::TypeSwitch<Type>(typeCst.getValue())
       .Case<ArrayType, PointerType, ScalarType, SIMDType, StructType,
             VariantType>([&](auto popType) {
-        p << getPrettyTypePrefix<decltype(popType)>();
+        p << decltype(popType)::getMnemonic();
         popType.print(p);
       })
-      .Case<DTypeType>([&](auto) { p << "dtype"; })
+      .Case<DTypeType>([&](auto) { p << DTypeType::getMnemonic(); })
       .Default([&](auto) { printTypeParamValue(p, typeExpr); });
 }
 
