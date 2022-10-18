@@ -677,10 +677,19 @@ static Value getDimensionAtIndex(OpBuilder &builder, Location loc,
                                  NDBufferType ndBufferType, Value shape,
                                  size_t idx) {
   ArrayRef<TypedAttr> ndBufferShape = ndBufferType.getShape();
-  if (ndBufferShape[idx])
-    return builder.create<index::ConstantOp>(
-        loc, ndBufferShape[idx].cast<IntegerAttr>());
-  return builder.create<ArrayGetOp>(loc, shape, idx);
+  TypedAttr dim = ndBufferShape[idx];
+  if (!dim)
+    // Emit op to get dimension from array if not known constant.
+    return builder.create<ArrayGetOp>(loc, shape, idx);
+
+  // Use constant or parameter constant if available.
+  return TypeSwitch<TypedAttr, Value>(dim)
+      .Case([&](IntegerAttr attr) {
+        return builder.create<index::ConstantOp>(loc, attr);
+      })
+      .Case([&](ParamDeclRefAttr attr) {
+        return builder.create<ParamConstantOp>(loc, attr);
+      });
 }
 
 /// Compute the size of the ndBuffer.

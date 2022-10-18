@@ -651,3 +651,33 @@ kgen.func @zap_ndbuffer_simd_store(
   zap.ndbuffer.simd_store %val, %ndbuffer0[%idx0, %idx1, %idx2] : !pop.simd<4, f32>, !zap.ndbuffer<[?, 5, ?], f32>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @zap_ndbuffer_loadstore_with_param
+// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<type>,
+// CHECK-SAME: %[[BUFFER:.*]]: !pop.struct<!pop.pointer<!pop.scalar<type>>
+kgen.generator @zap_ndbuffer_loadstore_with_param<size, type: dtype>(
+    %val : !pop.scalar<type>,
+    %buffer: !zap.ndbuffer<[size, size], type>
+  ) {
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
+  // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
+  // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
+  // CHECK-DAG: %[[OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD]]]
+  // CHECK-DAG: pop.load %[[OFFSET]]
+  %u = zap.ndbuffer.load %buffer[%idx, %idx] : !zap.ndbuffer<[size, size], type>
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
+  // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
+  // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
+  // CHECK-DAG: %[[OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD]]]
+  // CHECK-DAG: pop.store %[[VAL]], %[[OFFSET]]
+  zap.ndbuffer.store %val, %buffer[%idx, %idx] : !zap.ndbuffer<[size, size], type>
+  kgen.return
+}
