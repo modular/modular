@@ -30,7 +30,6 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -94,130 +93,6 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// NameBindingContext
-//===----------------------------------------------------------------------===//
-
-/// This class is used to perform name binding for a scope after all the
-/// declarations within it have been parsed.
-class NameBindingContext {
-public:
-  NameBindingContext(LitParserBase &parser, Scope &scope)
-      : parser(parser), scope(scope), declCursors(scope.takeDeclCursors()),
-        declsWithExprsToNameBind(scope.takeDeclsWithExprsToNameBind()) {}
-
-  void doNameBinding();
-
-private:
-  void ensureOpIsNameBound(Operation *op);
-
-  void nameBind(VarDeclOp op, LitLexerCursor cursor);
-  void nameBind(LITStructDeclOp op, LitLexerCursor cursor);
-
-  /// Given a cursor location for a type expression that correctly parsed in the
-  /// first pass, reparse it into an expression and resolve it into a type by
-  /// performing name lookup and other resolution.  This can produce errors, but
-  /// always returns a non-null type.
-  Type resolveType(LitLexerCursor cursor);
-
-private:
-  LitParserBase &parser;
-  Scope &scope;
-
-  /// This records where (lexically) a declaration is that has types that need
-  /// to be reparsed.  This allows us to do name binding of types in an
-  /// on-demand order, necessary for resolving inter-dependencies between
-  /// declarations.
-  DenseMap<Operation *, LitLexerCursor> declCursors;
-
-  /// This is a list of operations that have deferred expressions to name bind
-  /// and type check in the second pass of parsing.
-  std::vector<Operation *> declsWithExprsToNameBind;
-
-  /// Name binding is an recursive process in the general case.  This keeps
-  /// track of the declarations currently being name bound so we can diagnose
-  /// cyclic dependencies.
-  DenseSet<Operation *> declsCurrentlyProcessing;
-};
-
-void NameBindingContext::doNameBinding() {
-  // Name binding can recursively visit entries that are transitively referenced
-  // by other declarations, but we need to make sure that each declaration is
-  // visited.  We handle this by using the declsWithExprsToNameBind list as the
-  // top level to visit (which also gives us lexical order of top-level
-  // visitation, nice for diagnostics coming out in a logical order) but remove
-  // declarations from `declCursors` when they are processed.
-  for (Operation *op : declsWithExprsToNameBind)
-    ensureOpIsNameBound(op);
-}
-
-void NameBindingContext::ensureOpIsNameBound(Operation *op) {
-  // Find the cursor for this operation, if we don't know any, it is already
-  // done.
-  auto cursorIt = declCursors.find(op);
-  if (cursorIt == declCursors.end())
-    return;
-
-  // If we are currently name binding this operation, we found a cycle, reject
-  // it with an error.
-  if (!declsCurrentlyProcessing.insert(op).second) {
-    assert(0 &&
-           "FIXME: Diagnose cyclic reference when it is possible to happen");
-  }
-
-  // Handle each operation that can be name bound.
-  TypeSwitch<Operation *>(op)
-      .Case<LITStructDeclOp, VarDeclOp>(
-          [&](auto op) { nameBind(op, cursorIt->second); })
-      .Default([&](auto attr) {
-        op->emitError("do not know how to perform name binding on this op!");
-      });
-
-  declsCurrentlyProcessing.erase(op);
-}
-
-/// Given a cursor location for a type expression that correctly parsed in the
-/// first pass, reparse it into an expression and resolve it into a type by
-/// performing name lookup and other resolution.  This can produce errors, but
-/// always returns a non-null type.
-Type NameBindingContext::resolveType(LitLexerCursor cursor) {
-  // Move the cursor to the specified location.
-  cursor.restore(parser.getLexer());
-  // Re-parse the expression at that location.
-  ExprParser exprParser(parser);
-  ExprNode *typeExpr = exprParser.parseExpression();
-  assert(typeExpr && "We know expr parsing will work");
-
-  auto emitError = [&](const Twine &message) -> Type {
-    parser.emitError(typeExpr->getLoc(), message);
-    return UnresolvedType::get(parser.getContext());
-  };
-
-  // TODO: Make this a recursive walk when we have more interesting types.
-  if (auto dre = dyn_cast<DeclRefNode>(typeExpr)) {
-    // TODO(types): This is a hack to unblock tests in the interim.
-    if (dre->spelling == "index")
-      return IndexType::get(parser.getContext());
-
-    // Lookup the identifier.
-    Optional<Scope::ScopeValue> lookup = scope.lookup(dre->spelling);
-    if (!lookup)
-      return emitError("unknown type name '" + dre->spelling + "'");
-    if (std::holds_alternative<VarDeclOp>(*lookup))
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-    auto attr = dyn_cast<SymbolConstantAttr>(
-        std::get<Scope::MetaParameterValue>(*lookup).getAttr());
-    if (!attr || !isa<MLIRTypeType>(attr.getType()))
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-
-    // TODO: Handle type parameters!
-    return RefType::get(attr.getSymbol(),
-                        ParamBindArrayAttr::get(parser.getContext(), {}));
-  }
-
-  return emitError("FIXME: Unsupported type kind!");
-}
-
-//===----------------------------------------------------------------------===//
 // LitParser
 //===----------------------------------------------------------------------===//
 
@@ -229,7 +104,6 @@ struct LitParser : public LitParserBase {
 
   ParseResult parseFile(ModuleOp module);
 
-  void finalizeScopeDecl();
   void performNameBinding();
 
   const RCRef<Scope> &getCurrentScope() const { return currentScope; }
@@ -296,32 +170,10 @@ ParseResult LitParser::parseFile(ModuleOp module) {
   if (parseStmts(/*indent=*/0, StmtContext::normal))
     return failure();
 
-  // Finalize the current scope, parsing any deferred declarations in it.
-  finalizeScopeDecl();
-
   if (getSharedState().errorOccurred)
     return failure();
 
   return success();
-}
-
-/// Finalize parsing of a scoped declaration (e.g. module, class, function).
-///
-/// Once its body is fully parsed, we loop back around to parse the bodies
-/// of any nested scopes (e.g. nested functions) that are encountered while
-/// parsing this scope.  This ensures that the forward references between
-/// peer declarations are handled correctly, for example in mutually
-/// recursive functions and code like this:
-///
-///   def foo():
-///     def bar():
-///       print(x)
-///     x = 42
-///     bar()
-///   foo()
-void LitParser::finalizeScopeDecl() {
-  // If we have any expressions that need second pass name binding, do it now.
-  NameBindingContext(*this, *currentScope).doNameBinding();
 }
 
 //===----------------------------------------------------------------------===//
@@ -780,7 +632,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
   // TODO: Should have nicer builder.
-  auto newFunc = builder.create<LITFuncOp>(
+  auto funcDecl = builder.create<LITFuncOp>(
       loc, info.name, StringArrayAttr::get(getContext(), paramNames),
       TypeAttr::get(functionType), linkage,
       ParamDeclArrayAttr::get(getContext(), info.metaSignature.inputDecls),
@@ -788,20 +640,20 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
   bodyBlock->addArguments(paramTypes, paramLocs);
-  newFunc.getRegion().push_back(bodyBlock);
+  funcDecl.getRegion().push_back(bodyBlock);
 
-  auto newFuncRefAttr = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(info.name), newFunc.getSignature());
+  auto funcDeclRefAttr = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(info.name), funcDecl.getSignature());
 
   currentScope->addToScope(info.name,
-                           Scope::MetaParameterValue{newFuncRefAttr, loc},
+                           Scope::MetaParameterValue{funcDeclRefAttr, loc},
                            getSharedState());
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
   getDeclResolver().addDecl(
-      RCRef<Scope>::create(newFunc, currentScope.copy(), declCursor));
+      RCRef<Scope>::create(funcDecl, currentScope.copy(), declCursor));
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -857,8 +709,12 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
       emitError(endLoc, "return expected at end of 'def' with results");
     }
   }
+}
 
-  finalizeScopeDecl();
+void DeclResolver::resolveBody(LITFuncOp op, Scope &scope) {
+  LitLexer lexer(sharedState, scope.getCursor());
+  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
+  parser.parseDefBody(op);
 }
 
 namespace {
@@ -906,13 +762,18 @@ ParseResult LitParser::parseVarDeclStmt() {
   auto varDecl = builder.create<VarDeclOp>(translateLocation(info.loc), varType,
                                            info.name);
   currentScope->addToScope(info.name, varDecl, getSharedState());
-  currentScope->addExprToNameBind(varDecl, declCursor);
+
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(
+      RCRef<Scope>::create(varDecl, currentScope.copy(), declCursor));
   return success();
 }
 
-void NameBindingContext::nameBind(VarDeclOp op, LitLexerCursor cursor) {
-  // Move the lexer to point to the start of the declaration so we can reparse.
-  cursor.restore(parser.getLexer());
+void DeclResolver::resolveSignature(VarDeclOp op, Scope &scope) {
+  // Set up a lexer to point to the start of the declaration so we can reparse.
+  LitLexer lexer(sharedState, scope.getCursor());
+  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
 
   // Reparse the var-decl signature again.  We know the initial parse succeeded.
   ParsedVarDecl info;
@@ -920,8 +781,8 @@ void NameBindingContext::nameBind(VarDeclOp op, LitLexerCursor cursor) {
 
   // Parse the type if present.
   if (info.typeCursor)
-    op.getResult().setType(
-        POP::PointerType::get(resolveType(info.typeCursor.value())));
+    op.getResult().setType(POP::PointerType::get(
+        resolveType(info.typeCursor.value(), scope, parser)));
 
   if (info.initValueCursor)
     emitError(info.initValueCursor->getLoc(parser.getLexer()),
@@ -1034,26 +895,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   (void)parseSuite(curIndent, StmtContext::structBody);
 
-  // If we have any expressions that need second pass name binding, do it now.
-  NameBindingContext(*this, *currentScope).doNameBinding();
   return success();
-}
-
-void NameBindingContext::nameBind(LITStructDeclOp op, LitLexerCursor cursor) {
-  op->emitError("TODO: name binding not implemented yet");
-}
-
-//===----------------------------------------------------------------------===//
-// DeclResolver
-//===----------------------------------------------------------------------===//
-
-// TODO: Move this to LitDecls.cpp
-
-void DeclResolver::resolve(Scope &scope) {
-  LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
-
-  parser.parseDefBody(cast<LITFuncOp>(scope.getDecl()));
 }
 
 //===----------------------------------------------------------------------===//

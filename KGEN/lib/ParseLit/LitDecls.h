@@ -14,11 +14,20 @@
 #include "LLCL/Support/RCRef.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+
+namespace M::KGEN {
+class LITFuncOp;
+class VarDeclOp;
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 
+class LitLexerCursor;
+class LitParserBase;
 class LitSharedState;
 class Scope;
+
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
@@ -35,8 +44,17 @@ public:
   /// Add a new declaration that needs to be resolved.
   void addDecl(LLCL::RCRef<Scope> declScope);
 
+  /// Given a cursor location for a type expression that correctly parsed in the
+  /// first pass, reparse it into an expression and resolve it into a type by
+  /// performing name lookup and other resolution.  This can produce errors, but
+  /// always returns a non-null type.
+  Type resolveType(LitLexerCursor cursor, Scope &scope, LitParserBase &parser);
+
 private:
   void resolve(Scope &scope);
+
+  void resolveBody(LITFuncOp op, Scope &scope);
+  void resolveSignature(VarDeclOp op, Scope &scope);
 
 private:
   /// This is shared state across the whole parser.
@@ -48,6 +66,11 @@ private:
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<Operation *> parsedDeclList;
+
+  /// Name binding is an recursive process in the general case.  This keeps
+  /// track of the declarations currently being name bound so we can diagnose
+  /// cyclic dependencies.
+  DenseSet<Operation *> declsCurrentlyProcessing;
 };
 
 } // namespace M::KGEN::LIT
