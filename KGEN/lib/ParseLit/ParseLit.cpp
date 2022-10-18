@@ -239,11 +239,10 @@ struct DeferredDeclBodyToParse {
 
 /// This class provides the implementation details of the concrete Lit Grammar.
 struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, SharedParserState *sharedParserState,
-            ModuleOp module)
-      : LitParserBase(lexer, sharedParserState), module(module) {}
+  LitParser(LitLexer &lexer, SharedParserState *sharedParserState)
+      : LitParserBase(lexer, sharedParserState) {}
 
-  ParseResult parseFile();
+  ParseResult parseFile(ModuleOp module);
 
   void finalizeScopeDecl();
   void performNameBinding();
@@ -289,8 +288,6 @@ struct LitParser : public LitParserBase {
                                   SMLoc equalsLoc);
 
 private:
-  const ModuleOp module;
-
   /// This is the current context that we're parsing into.
   RCRef<Scope> currentScope;
 
@@ -300,7 +297,7 @@ private:
 };
 
 /// file ::= statements
-ParseResult LitParser::parseFile() {
+ParseResult LitParser::parseFile(ModuleOp module) {
   // The outermost scope contains the __builtins__ function definitions.
   // TODO: Add these:
   // https://docs.python.org/3/library/functions.html#built-in-funcs
@@ -606,7 +603,7 @@ struct MetaSignatureParser {
   SmallVector<ParamDeclAttr> inputParameters;
   std::vector<Location> inputParamLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParser &p) {
+  ParseResult parseOptionalMetaSignature(LitParserBase &p) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -707,6 +704,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
   return success();
 }
 
+namespace {
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
@@ -714,11 +712,53 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
 /// value_parammarker ::= "/" | "*" | "**"
 ///
-ParseResult LitParser::parseDefStmt(size_t curIndent) {
-  auto loc = getTokenLocation();
+struct ParsedDefSignature {
+  StringAttr name;
+  MetaSignatureParser metaSignature;
+  SmallVector<Location> paramLocs;
+  SmallVector<StringAttr> paramNames;
+  SmallVector<Type> paramTypes;
+  // TODO: Default values.
+  SmallVector<Type> resultTypes;
 
-  // TODO: Add support for decorators.
-  consumeToken(LitToken::kw_def);
+  static Optional<ParsedDefSignature> parse(LitParserBase &p) {
+    ParsedDefSignature result;
+    if (result.parseInstance(p))
+      return None;
+    return result;
+  }
+
+private:
+  ParseResult parseInstance(LitParserBase &p) {
+    // TODO: Add support for decorators.
+    if (p.parseToken(LitToken::kw_def, "expected 'def' declaration") ||
+        p.parseIdentifier(name, "expected function name") ||
+        metaSignature.parseOptionalMetaSignature(p) ||
+        p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+      return failure();
+
+    if (!p.consumeIf(LitToken::r_paren)) {
+      if (p.parseCommaSeparatedList([&]() { return parseParameter(p); }) ||
+          p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
+        return failure();
+    }
+
+    // Parse the result type if present.
+
+    // TODO: This will be one difference between a def and fn: no result type on
+    // a def should default to returning a (default initialized) Object, whereas
+    // a fn can return void.  We can provide a guaranteed optimization to remove
+    // it though.
+    if (p.consumeIf(LitToken::minus_greater)) {
+      ExprParser exprParser(p);
+      ExprNode *typeExpr = exprParser.parseExpression();
+      // TODO (types): translate typeExpr into a type.
+      (void)typeExpr;
+      resultTypes.push_back(IndexType::get(p.getContext()));
+    }
+
+    return p.parseToken(LitToken::colon, "expected ':' in function definition");
+  }
 
   // TODO: Implement support for variadic parameter markers:
   // Python's parameter grammar embeds checking for `/` and `*` and `**` into
@@ -727,88 +767,61 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  SmallVector<Location> valueParamLocs;
-  SmallVector<StringAttr> valueParamNames;
-  SmallVector<Type> valueParamTypes;
-  // TODO: Default values.
-
-  auto parseParameter = [&]() -> ParseResult {
-    auto loc = getTokenLocation();
-    if (parseIdentifier(valueParamNames.emplace_back(StringAttr()),
-                        "expected parameter name"))
+  ParseResult parseParameter(LitParserBase &p) {
+    auto loc = p.getTokenLocation();
+    if (p.parseIdentifier(paramNames.emplace_back(StringAttr()),
+                          "expected parameter name"))
       // TODO: Scan ahead for better recovery.
       return failure();
 
-    Type paramType = IndexType::get(getContext());
-    if (consumeIf(LitToken::colon)) {
-      ExprParser exprParser(*this);
+    Type paramType = IndexType::get(p.getContext());
+    if (p.consumeIf(LitToken::colon)) {
+      ExprParser exprParser(p);
       ExprNode *typeExpr = exprParser.parseExpression();
       // TODO (types): translate typeExpr into a type.
       (void)typeExpr;
     }
-    valueParamLocs.push_back(loc);
-    valueParamTypes.push_back(paramType);
+    paramLocs.push_back(loc);
+    paramTypes.push_back(paramType);
 
-    if (consumeIf(LitToken::equal)) {
-      ExprParser exprParser(*this);
-      ExprNode *defaultExpr = exprParser.parseExpression();
+    if (p.consumeIf(LitToken::equal)) {
       // TODO: add support for default parameter expressions.
-      if (!defaultExpr->containsError())
-        emitError(defaultExpr->getLoc(),
-                  "default parameters not supported yet");
+      Optional<LitLexerCursor> initExpr;
+      if (ExprParser::parseOverExpression(p, initExpr))
+        return failure();
     }
     return success();
   };
+};
+} // namespace
 
-  StringAttr funcNameAttr;
-  MetaSignatureParser metaSignature;
-  if (parseIdentifier(funcNameAttr, "expected function name") ||
-      metaSignature.parseOptionalMetaSignature(*this) ||
-      parseToken(LitToken::l_paren, "expected '(' for parameter list"))
-    return failure();
-
-  if (!consumeIf(LitToken::r_paren)) {
-    if (parseCommaSeparatedList(parseParameter) ||
-        parseToken(LitToken::r_paren, "expected ')' for parameter list"))
-      return failure();
-  }
-
-  // Parse the result type if present.
-  SmallVector<Type> resultTypes;
-  // TODO: This will be one difference between a def and fn: no result type on
-  // a def should default to returning a (default initialized) Object, whereas
-  // a fn can return void.  We can provide a guaranteed optimization to remove
-  // it though.
-  if (consumeIf(LitToken::minus_greater)) {
-    ExprParser exprParser(*this);
-    ExprNode *typeExpr = exprParser.parseExpression();
-    // TODO (types): translate typeExpr into a type.
-    (void)typeExpr;
-    resultTypes.push_back(IndexType::get(getContext()));
-  }
-
-  if (parseToken(LitToken::colon, "expected ':' in function definition"))
+ParseResult LitParser::parseDefStmt(size_t curIndent) {
+  Location loc = getTokenLocation();
+  Optional<ParsedDefSignature> info = ParsedDefSignature::parse(*this);
+  if (!info)
     return failure();
 
   auto builder = currentScope->getBuilder();
-  auto functionType = builder.getFunctionType(valueParamTypes, resultTypes);
+  auto functionType =
+      builder.getFunctionType(info->paramTypes, info->resultTypes);
   auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
   // TODO: Should have nicer builder.
   auto newFunc = builder.create<LITFuncOp>(
-      loc, funcNameAttr, StringArrayAttr::get(getContext(), valueParamNames),
+      loc, info->name, StringArrayAttr::get(getContext(), info->paramNames),
       TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputParameters),
+      ParamDeclArrayAttr::get(getContext(),
+                              info->metaSignature.inputParameters),
       TypeArrayAttr::get(getContext(), {}),
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   auto bodyBlock = new Block();
-  bodyBlock->addArguments(valueParamTypes, valueParamLocs);
+  bodyBlock->addArguments(info->paramTypes, info->paramLocs);
   newFunc.getRegion().push_back(bodyBlock);
 
   auto newFuncRefAttr = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(funcNameAttr), newFunc.getSignature());
+      FlatSymbolRefAttr::get(info->name), newFunc.getSignature());
 
-  currentScope->addToScope(funcNameAttr,
+  currentScope->addToScope(info->name,
                            Scope::MetaParameterValue{newFuncRefAttr, loc},
                            sharedParserState->errorOccurred);
 
@@ -817,7 +830,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // do so.
   deferredDecls.push_back({RCRef<Scope>::create(newFunc, currentScope.copy()),
                            lexer.getCursor(), curIndent,
-                           std::move(metaSignature.inputParamLocs)});
+                           std::move(info->metaSignature.inputParamLocs)});
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -873,10 +886,10 @@ void LitParser::parseDefBody(LITFuncOp defDecl, size_t defIndent,
   finalizeScopeDecl();
 }
 
+namespace {
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
-namespace {
 struct ParsedVarDecl {
   StringAttr name;
   Optional<LitLexerCursor> typeCursor;
@@ -1075,7 +1088,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   // Parse the file.
   LitLexer lexer(sourceMgr, context);
-  if (LitParser(lexer, &sharedState, *module).parseFile())
+  if (LitParser(lexer, &sharedState).parseFile(*module))
     return nullptr;
 
   // Make sure the parse module has no other structural problems detected by
