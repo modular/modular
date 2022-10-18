@@ -99,6 +99,24 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   // CHECK: = kgen.param.constant = <get_alignof(mlirType)>
   %27 = kgen.param.constant = <get_alignof(mlirType)>
 
+  // CHECK: = kgen.param.constant = <max(p1, 2)>
+  %28 = kgen.param.constant = <max(p1, 2)>
+
+  // CHECK: = kgen.param.constant = <4>
+  %29 = kgen.param.constant = <max(-2, 4)>
+
+  // = kgen.param.constant = <(p1, p2, 5)>
+  %30 = kgen.param.constant = <max(4, p1, p2, 5, p1, p2)>
+
+  // CHECK: = kgen.param.constant = <min(p1, 2)>
+  %31 = kgen.param.constant = <min(p1, 2)>
+
+  // CHECK: = kgen.param.constant = <-2>
+  %32 = kgen.param.constant = <min(-2, 4)>
+
+  // = kgen.param.constant = <(p1, p2, 4)>
+  %33 = kgen.param.constant = <min(4, p1, p2, 5, p1, p2)>
+
   kgen.return
 }
 

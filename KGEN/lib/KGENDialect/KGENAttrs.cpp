@@ -236,6 +236,8 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::And:
   case POC::Or:
   case POC::Xor:
+  case POC::Max:
+  case POC::Min:
     if (operands.empty())
       return emitError() << stringifyEnum(opcode)
                          << " operator must have at least one operand";
@@ -453,7 +455,7 @@ static IntegerAttr foldBinaryValues(
 static Attribute simplifyAssocOp(
     POC opcode, SmallVectorImpl<TypedAttr> &operands,
     llvm::function_ref<APInt(const APInt &, const APInt &)> calculateFn,
-    llvm::function_ref<bool(const APInt &)> identityConstantFn,
+    llvm::function_ref<bool(const APInt &)> identityConstantFn = {},
     llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {}) {
   auto type = operands[0].getType();
   if (operands.size() == 1)
@@ -502,7 +504,8 @@ static Attribute simplifyAssocOp(
 
     // Remove the constant back to our operand list if it is the identity
     // constant for this operator (e.g. `x*1`) and there are other operands.
-    if (identityConstantFn(resultCst.getValue()) && operands.size() != 1)
+    if (identityConstantFn && identityConstantFn(resultCst.getValue()) &&
+        operands.size() != 1)
       operands.pop_back();
   }
 
@@ -625,6 +628,28 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::Xor, operands, [](auto a, auto b) { return a ^ b; },
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
+}
+
+/// Duplicate the operands in-place for ops like `min` and `max`.
+static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
+  llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
+      uniqueOperands;
+  uniqueOperands.insert(operands.begin(), operands.end());
+  operands = uniqueOperands.takeVector();
+}
+
+static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
+  deduplicateOperands(operands);
+  return simplifyAssocOp(POC::Max, operands, [](auto a, auto b) {
+    return llvm::APIntOps::smax(a, b);
+  });
+}
+
+static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
+  deduplicateOperands(operands);
+  return simplifyAssocOp(POC::Min, operands, [](auto a, auto b) {
+    return llvm::APIntOps::smin(a, b);
+  });
 }
 
 /// Given a binary function, if the two operands are known constant integers,
@@ -919,6 +944,12 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::Xor:
     result = simplifyXor(operands);
+    break;
+  case POC::Max:
+    result = simplifyMax(operands);
+    break;
+  case POC::Min:
+    result = simplifyMin(operands);
     break;
   case POC::Shl:
     result = simplifyShl(operands);
