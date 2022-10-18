@@ -12,6 +12,7 @@
 #include "KGEN/KGENPasses.h"
 #include "Support/IndexDialect/IndexDialect.h"
 #include "Support/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -36,6 +37,7 @@ int main(int argc, char **argv) {
   mlir::registerSCCPPass();
   mlir::registerInlinerPass();
   mlir::registerCanonicalizerPass();
+  mlir::registerReconcileUnrealizedCasts();
   index::registerIndexToLLVMPass();
   KGEN::registerPasses();
   KGEN::registerLowerToLLVMPipeline();
