@@ -541,7 +541,7 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
     ```mlir
     kgen.struct.decl @Buffer<size, dtype: dtype> {
       size : index
-      ptr : !pop.pointer<!pop.scalar<dtype>>
+      ptr : !pop.pointer<scalar<dtype>>
       dtype : !kgen.dtype
     }
     ```
@@ -554,7 +554,7 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
     ```mlir
     kgen.struct.decl @SmallString<size>
         constraints [<le(size, 8), "string must be small">] {
-      data : !pop.array<size, !pop.scalar<si8>>
+      data : !pop.array<size, scalar<si8>>
     }
     ```
   }];

@@ -690,7 +690,7 @@ def POP_GlobalStringOp : ZAPOp<"global_string", [Pure]> {
     is undefined behaviour. The string is NOT null-terminated.
 
     This operation is similar to `pop.global_constant` except it uses a string
-    literal and only returns pointers to `!pop.array<N, !pop.scalar<si8>>`.
+    literal and only returns pointers to `!pop.array<N, scalar<si8>>`.
 
     Example:
 

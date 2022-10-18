@@ -16,11 +16,11 @@ kgen.func public @array_arg(%arr: !pop.array<4, i32>) {
 
 // CHECK-LABEL: llvm.func @array_in_struct
 // CHECK-SAME: %[[ARR_PTR:.*]]: !llvm.ptr<array<4 x i32>>
-kgen.func public @array_in_struct(%s: !pop.struct<!pop.array<4, i32>>) {
+kgen.func public @array_in_struct(%s: !pop.struct<array<4, i32>>) {
   // CHECK: %[[S:.*]] = llvm.mlir.undef
   // CHECK: %[[ARR:.*]] = llvm.load %[[ARR_PTR]]
   // CHECK: llvm.insertvalue %[[ARR]], %[[S]][0]
-  "use"(%s) : (!pop.struct<!pop.array<4, i32>>) -> ()
+  "use"(%s) : (!pop.struct<array<4, i32>>) -> ()
   kgen.return
 }
 

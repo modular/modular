@@ -19,9 +19,9 @@ lit.func @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
 
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
-// CHECK-NEXT: %x = lit.var.decl "x" : <!pop.scalar<ty>>
+// CHECK-NEXT: %x = lit.var.decl "x" : <scalar<ty>>
 lit.func @vardecl<ty : dtype>() {
-  %x = lit.var.decl "x": !pop.pointer<!pop.scalar<ty>>
+  %x = lit.var.decl "x": !pop.pointer<scalar<ty>>
   kgen.return
 }
 
@@ -32,8 +32,8 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 
-  // CHECK: %size = lit.var.decl "size" : <!pop.scalar<ty>>
-  %size = lit.var.decl "size" : !pop.pointer<!pop.scalar<ty>>
+  // CHECK: %size = lit.var.decl "size" : <scalar<ty>>
+  %size = lit.var.decl "size" : !pop.pointer<scalar<ty>>
 }
 
 %thing = lit.var.decl "thing" : !pop.pointer<!kgen.ref<@Int>>

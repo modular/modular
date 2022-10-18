@@ -8,16 +8,16 @@ kgen.generator @generic_offset_load_store<type: type>(%i: index, %p: !pop.pointe
 }
 
 // CHECK-LABEL: @"generic_offset_load_store,type=!pop.simd<4, f32>"
-// CHECK: pop.offset %{{.*}} : !pop.pointer<!pop.simd<4, f32>>
+// CHECK: pop.offset %{{.*}} : !pop.pointer<simd<4, f32>>
 
 // CHECK-LABEL: @"generic_offset_load_store,type=!pop.scalar<si32>"
-// CHECK: pop.offset %{{.*}} : !pop.pointer<!pop.scalar<si32>>
+// CHECK: pop.offset %{{.*}} : !pop.pointer<scalar<si32>>
 
 kgen.generator @impl(
     %i: index,
-    %p0: !pop.pointer<!pop.simd<4, f32>>,
-    %p1: !pop.pointer<!pop.scalar<si32>>) {
-  kgen.call @generic_offset_load_store<type: type = !pop.simd<4, f32>>(%i, %p0) : (index, !pop.pointer<!pop.simd<4, f32>>) -> ()
-  kgen.call @generic_offset_load_store<type: type = !pop.scalar<si32>>(%i, %p1) : (index, !pop.pointer<!pop.scalar<si32>>) -> ()
+    %p0: !pop.pointer<simd<4, f32>>,
+    %p1: !pop.pointer<scalar<si32>>) {
+  kgen.call @generic_offset_load_store<type: type = !pop.simd<4, f32>>(%i, %p0) : (index, !pop.pointer<simd<4, f32>>) -> ()
+  kgen.call @generic_offset_load_store<type: type = !pop.scalar<si32>>(%i, %p1) : (index, !pop.pointer<scalar<si32>>) -> ()
   kgen.return
 }

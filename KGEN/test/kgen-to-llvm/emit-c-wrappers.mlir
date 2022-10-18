@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>) -> !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype> {
-  kgen.return %a : !pop.struct<index, !pop.pointer<!pop.scalar<invalid>>, !kgen.dtype>
+kgen.func public @kernel(%a: !pop.struct<index, pointer<scalar<invalid>>, dtype>) -> !pop.struct<index, pointer<scalar<invalid>>, dtype> {
+  kgen.return %a : !pop.struct<index, pointer<scalar<invalid>>, !kgen.dtype>
 }
 
 // CHECK: @kernel_c_wrapper
@@ -26,7 +26,7 @@ kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<invalid
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !pop.pointer<!pop.scalar<f32>>, !kgen.dtype>) {
+kgen.func public @kernel(%i: f32, %a: !pop.struct<index, pointer<scalar<f32>>, !kgen.dtype>) {
   kgen.return
 }
 
@@ -38,7 +38,7 @@ kgen.func public @kernel(%i: f32, %a: !pop.struct<index, !pop.pointer<!pop.scala
 
 // CHECK-LABEL: llvm.func @kernel(
 // CHECK-SAME: attributes {c_wrapper = @kernel_c_wrapper}
-kgen.func public @kernel(%a: !pop.struct<index, !pop.pointer<!pop.scalar<f32>>, !kgen.dtype>) -> i64 {
+kgen.func public @kernel(%a: !pop.struct<index, pointer<scalar<f32>>, !kgen.dtype>) -> i64 {
   %0 = llvm.mlir.constant(1 : i64) : i64
   kgen.return %0 : i64
 }

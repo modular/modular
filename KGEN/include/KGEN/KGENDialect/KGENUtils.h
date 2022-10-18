@@ -141,13 +141,6 @@ void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds);
 
-/// Parse a comma-separated list of type parameter values.
-ParseResult parseArrayOfTypeExprs(AsmParser &p,
-                                  FailureOr<SmallVector<TypedAttr>> &values);
-
-/// Print a comma-separated list of type parameter values.
-void printArrayOfTypeExprs(AsmPrinter &p, ArrayRef<TypedAttr> values);
-
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//

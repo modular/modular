@@ -227,9 +227,9 @@ kgen.func @select(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<f32>, %arg2: !pop
 // -----
 
 // CHECK-LABEL: @load
-kgen.func @load(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @load(%p: !pop.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: llvm.load
-  %0 = pop.load %p : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.load %p : !pop.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
@@ -237,10 +237,10 @@ kgen.func @load(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @load_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-kgen.func @load_with_alignment(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @load_with_alignment(%p: !pop.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK: llvm.load %[[PTR]] {alignment = 128 : i64}
-  %0 = pop.load %p align 128 : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.load %p align 128 : !pop.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
@@ -248,19 +248,19 @@ kgen.func @load_with_alignment(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scala
 
 // CHECK-LABEL: @load_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-kgen.func @load_with_alignment(%p: !pop.pointer<!pop.scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @load_with_alignment(%p: !pop.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK: llvm.load %[[PTR]]  {alignment = 128 : i64}
-  %0 = pop.load %p align 128 : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.load %p align 128 : !pop.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
 // -----
 
 // CHECK-LABEL: @store
-kgen.func @store(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @store(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK: llvm.store
-  pop.store %v, %p : !pop.pointer<!pop.scalar<si32>>
+  pop.store %v, %p : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
@@ -269,11 +269,11 @@ kgen.func @store(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
 // CHECK-LABEL: @store_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @store_with_alignment(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @store_with_alignment(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
-  pop.store %v, %p align 128 : !pop.pointer<!pop.scalar<si32>>
+  pop.store %v, %p align 128 : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
@@ -282,21 +282,21 @@ kgen.func @store_with_alignment(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.sc
 // CHECK-LABEL: @store_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @store_with_alignment(%p: !pop.pointer<!pop.scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @store_with_alignment(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]]  {alignment = 128 : i64}
-  pop.store %v, %p align 128 : !pop.pointer<!pop.scalar<si32>>
+  pop.store %v, %p align 128 : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !pop.pointer<!pop.scalar<f32>>, %i: index) -> !pop.pointer<!pop.scalar<f32>> {
+kgen.func @offset(%p: !pop.pointer<scalar<f32>>, %i: index) -> !pop.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
-  %0 = pop.offset %p[%i] : !pop.pointer<!pop.scalar<f32>>
-  kgen.return %0 : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.offset %p[%i] : !pop.pointer<scalar<f32>>
+  kgen.return %0 : !pop.pointer<scalar<f32>>
 }
 
 // -----
@@ -395,12 +395,12 @@ kgen.func @cmp_simd(%lhs: !pop.simd<4, f32>, %rhs: !pop.simd<4, f32>) -> !pop.si
 // -----
 
 // CHECK-LABEL: @pointer_to_index
-kgen.func @pointer_to_index(%a: !pop.pointer<!pop.scalar<f32>>,
-                            %b: !pop.pointer<!pop.simd<4, si32>>) -> (index, index) {
+kgen.func @pointer_to_index(%a: !pop.pointer<scalar<f32>>,
+                            %b: !pop.pointer<simd<4, si32>>) -> (index, index) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.pointer_to_index %a : !pop.pointer<scalar<f32>>
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !pop.pointer<!pop.simd<4, si32>>
+  %1 = pop.pointer_to_index %b : !pop.pointer<simd<4, si32>>
   kgen.return %0, %1 : index, index
 }
 
@@ -408,13 +408,13 @@ kgen.func @pointer_to_index(%a: !pop.pointer<!pop.scalar<f32>>,
 
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer(%idx: index) -> (
-      !pop.pointer<!pop.scalar<f32>>,
-      !pop.pointer<!pop.simd<4, si32>>) {
+      !pop.pointer<scalar<f32>>,
+      !pop.pointer<simd<4, si32>>) {
   // CHECK: llvm.inttoptr
-  %0 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<f32>>
+  %0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>>
   // CHECK: llvm.inttoptr
-  %1 = pop.index_to_pointer %idx : !pop.pointer<!pop.simd<4, si32>>
-  kgen.return %0, %1 :!pop.pointer<!pop.scalar<f32>>, !pop.pointer<!pop.simd<4, si32>>
+  %1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, si32>>
+  kgen.return %0, %1 :!pop.pointer<scalar<f32>>, !pop.pointer<simd<4, si32>>
 }
 
 // -----
@@ -432,7 +432,7 @@ kgen.func @lower_raise_cast(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 // -----
 
-!var = !pop.variant<f32, i64, !pop.struct<i8, i8, f64>>
+!var = !pop.variant<f32, i64, struct<i8, i8, f64>>
 
 // CHECK-LABEL: @create
 // CHECK-SAME: %[[A:.*]]: i64
@@ -526,37 +526,37 @@ kgen.func public @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
 // -----
 
 // CHECK-LABEL: @prefetch
-kgen.func @prefetch(%p: !pop.pointer<!pop.scalar<si32>>) {
+kgen.func @prefetch(%p: !pop.pointer<scalar<si32>>) {
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
   pop.prefetch %p (NoLocality, ReadDCache)
-    : !pop.pointer<!pop.scalar<si32>>
+    : !pop.pointer<scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
   pop.prefetch %p (LowLocality, WriteDCache)
-    : !pop.pointer<!pop.scalar<si32>>
+    : !pop.pointer<scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(2 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
   pop.prefetch %p (MediumLocality, ReadICache)
-    : !pop.pointer<!pop.scalar<si32>>
+    : !pop.pointer<scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(3 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
   pop.prefetch %p (HighLocality, ReadDCache)
-    : !pop.pointer<!pop.scalar<si32>>
+    : !pop.pointer<scalar<si32>>
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: [[LOCALITY:%[0-9]+]] = llvm.mlir.constant(4 : i32) : i32
   // CHECK-DAG: [[CACHETAG:%[0-9]+]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: "llvm.intr.prefetch"(%{{[0-9]+}}, [[RW]], [[LOCALITY]], [[CACHETAG]])
   pop.prefetch %p (VeryHighLocality, ReadDCache)
-    : !pop.pointer<!pop.scalar<si32>>
+    : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
@@ -612,15 +612,15 @@ kgen.func @indirect_call(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f3
 // -----
 
 // CHECK-LABEL: @memcpy
-kgen.func @memcpy(%dest: !pop.pointer<!pop.scalar<si32>>,
-                  %src: !pop.pointer<!pop.scalar<si32>>,
+kgen.func @memcpy(%dest: !pop.pointer<scalar<si32>>,
+                  %src: !pop.pointer<scalar<si32>>,
                   %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %arg2
   // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(false) : i1
   // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, !llvm.ptr<i32>, i64, i1) -> ()
-  pop.memcpy %dest, %src, %size : !pop.pointer<!pop.scalar<si32>>
+  pop.memcpy %dest, %src, %size : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
@@ -628,29 +628,29 @@ kgen.func @memcpy(%dest: !pop.pointer<!pop.scalar<si32>>,
 // -----
 
 // CHECK-LABEL: @memcpy_volatile
-kgen.func @memcpy_volatile(%dest: !pop.pointer<!pop.scalar<si32>>,
-                           %src: !pop.pointer<!pop.scalar<si32>>,
+kgen.func @memcpy_volatile(%dest: !pop.pointer<scalar<si32>>,
+                           %src: !pop.pointer<scalar<si32>>,
                            %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %arg2
   // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(true) : i1
   // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, !llvm.ptr<i32>, i64, i1) -> ()
-  pop.memcpy volatile %dest, %src, %size : !pop.pointer<!pop.scalar<si32>>
+  pop.memcpy volatile %dest, %src, %size : !pop.pointer<scalar<si32>>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @memcpy_inline
-kgen.func @memcpy_inline(%dest: !pop.pointer<!pop.scalar<f32>>,
-                         %src: !pop.pointer<!pop.scalar<f32>>,
+kgen.func @memcpy_inline(%dest: !pop.pointer<scalar<f32>>,
+                         %src: !pop.pointer<scalar<f32>>,
                          %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %arg2
   // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(false) : i1
   // CHECK:  "llvm.intr.memcpy.inline"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<f32>, !llvm.ptr<f32>, i64, i1) -> ()
-  pop.memcpy inline %dest, %src, %size : !pop.pointer<!pop.scalar<f32>>
+  pop.memcpy inline %dest, %src, %size : !pop.pointer<scalar<f32>>
   kgen.return
 }

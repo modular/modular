@@ -530,10 +530,10 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 
     ```mlir
     %0 = pop.pointer.bitcast %arg0 : !pop.pointer<?> to
-                                     !pop.pointer<!pop.scalar<f32>>
+                                     !pop.pointer<scalar<f32>>
 
-    %1 = pop.pointer.bitcast %0 : !pop.pointer<!pop.scalar<f32>> to
-                                  !pop.pointer<!pop.simd<4, f32>>
+    %1 = pop.pointer.bitcast %0 : !pop.pointer<scalar<f32>> to
+                                  !pop.pointer<simd<4, f32>>
     ```
   }];
 
@@ -848,9 +848,9 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
     Example:
 
     ```mlir
-    %0 = pop.load %ptr0 : !pop.pointer<!pop.scalar<f32>>
-    %1 = pop.load %ptr1 : !pop.pointer<!pop.simd<4, type>>
-    %2 = pop.load %ptr0 align 8 : !pop.pointer<!pop.scalar<f32>>
+    %0 = pop.load %ptr0 : !pop.pointer<scalar<f32>>
+    %1 = pop.load %ptr1 : !pop.pointer<simd<4, type>>
+    %2 = pop.load %ptr0 align 8 : !pop.pointer<scalar<f32>>
     ```
   }];
 
@@ -881,9 +881,9 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
     Example:
 
     ```mlir
-    pop.store %0, %ptr0 : !pop.pointer<!pop.scalar<f32>>
-    pop.store %1, %ptr1 : !pop.pointer<!pop.simd<4, type>>
-    pop.store %1, %ptr1 align 8 : !pop.pointer<!pop.simd<4, type>>
+    pop.store %0, %ptr0 : !pop.pointer<scalar<f32>>
+    pop.store %1, %ptr1 : !pop.pointer<simd<4, type>>
+    pop.store %1, %ptr1 align 8 : !pop.pointer<simd<4, type>>
     ```
   }];
 
@@ -926,8 +926,8 @@ def POP_PrefetchOp : POPOp<"prefetch"> {
     Example:
 
     ```mlir
-    pop.prefetch %p (NoLocality, ReadDCache) : !pop.pointer<!pop.scalar<f32>>
-    pop.prefetch %p (HighLocality, WriteDCache) : !pop.pointer<!pop.scalar<f32>>
+    pop.prefetch %p (NoLocality, ReadDCache) : !pop.pointer<scalar<f32>>
+    pop.prefetch %p (HighLocality, WriteDCache) : !pop.pointer<scalar<f32>>
     ```
   }];
 
@@ -954,8 +954,8 @@ def POP_OffsetOp : POPOp<"offset",
     Example:
 
     ```mlir
-    %addr0 = pop.offset %ptr0[%idx] : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<!pop.simd<4, type>>
+    %addr0 = pop.offset %ptr0[%idx] : !pop.pointer<scalar<f32>>
+    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<simd<4, type>>
     ```
   }];
 
@@ -984,10 +984,10 @@ def POP_StructConstructOp : POPOp<"struct.construct", [Pure,
 
     ```mlir
     %0 = pop.struct.construct(%f32, %f64)
-      : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
+      : !pop.struct<scalar<f32>, scalar<f64>>
 
     %1 = pop.struct.construct(%arr, %ptr, %v)
-      : !pop.struct<!pop.array<size, type>, !pop.pointer<type>, type>
+      : !pop.struct<array<size, type>, pointer<type>, type>
     ```
   }];
 
@@ -1014,11 +1014,11 @@ def POP_StructGetOp : POPOp<"struct.get", [Pure,
     ```mlir
     // Extract the !pop.scalar<f32> at index 0.
     %0 = pop.struct.get %struct[0]
-      : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
+      : !pop.struct<scalar<f32>, scalar<f64>>
 
     // Extract the !pop.scalar<f64> at index 1.
     %1 = pop.struct.get %struct[1]
-      : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
+      : !pop.struct<scalar<f32>, scalar<f64>>
     ```
   }];
 
@@ -1049,11 +1049,11 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
     ```mlir
     // Insert the !pop.scalar<f32> at index 0.
     %0 = pop.struct.replace %f32, %struct[0]
-      : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
+      : !pop.struct<scalar<f32>, scalar<f64>>
 
     // Insert the !pop.scalar<f64> at index 1.
     %1 = pop.struct.replace %f64, %struct[1]
-      : !pop.struct<!pop.scalar<f32>, !pop.scalar<f64>>
+      : !pop.struct<scalar<f32>, scalar<f64>>
     ```
   }];
 
@@ -1085,10 +1085,10 @@ def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
 
     ```mlir
     // Create an array of scalar floats.
-    %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, !pop.scalar<f32>>
+    %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, scalar<f32>>
 
     // Create an array of structs.
-    %1 = pop.array.create [%arg2, %arg3] : !pop.array<2, !pop.struct<>>
+    %1 = pop.array.create [%arg2, %arg3] : !pop.array<2, struct<>>
 
     // Create an array of parametric types.
     %2 = pop.array.create [%arg4] : !pop.array<1, T>
@@ -1127,7 +1127,7 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
 
     ```mlir
     // Create a splat array.
-    %0 = pop.array.repeat [%arg0] : !pop.array<N, !pop.scalar<f32>>
+    %0 = pop.array.repeat [%arg0] : !pop.array<N, scalar<f32>>
 
     // Repeat the pair to fill the array. The last element is dropped.
     %1 = pop.array.repeat [%arg2, %arg3] : !pop.array<9, T>
@@ -1228,12 +1228,12 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
     // Create an `Optional<T>` variant.
     %none = pop.struct.construct() : !pop.struct<>
     %0 = pop.variant.create %none : !pop.struct<>
-        -> !pop.variant<!pop.struct<>, T>
+        -> !pop.variant<struct<>, T>
 
     // Create a variant of either a scalar float or integer.
     %1 = pop.constant(0.0) : !pop.scalar<f64>
     %2 = pop.variant.create %1 : !pop.scalar<f64>
-        -> !pop.variant<!pop.scalar<i64>, !pop.scalar<f64>>
+        -> !pop.variant<scalar<i64>, scalar<f64>>
     ```
   }];
 
@@ -1262,7 +1262,7 @@ def VariantIsOp : POPOp<"variant.is", [Pure]> {
     ```mlir
     %optional = ...
     %isNone = pop.variant.is !pop.struct<>, %optional
-        : !pop.variant<!pop.struct<>, T>
+        : !pop.variant<struct<>, T>
     ```
   }];
 
@@ -1292,7 +1292,7 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
     ```mlir
     %optional = ...
     %intVal = pop.variant.get %optional
-        : !pop.variant<!pop.struct<>, i32> as i32
+        : !pop.variant<struct<>, i32> as i32
     ```
   }];
 
@@ -1514,15 +1514,15 @@ def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
 
     ```mlir
     // Copy size bytes from src to dest.
-    pop.memcpy %dest, %src, %size : !pop.pointer<!pop.scalar<type>>
+    pop.memcpy %dest, %src, %size : !pop.pointer<scalar<type>>
 
     // Generate an inlined memcpy which copies size bytes from src to dest.
-    pop.memcpy inline %dest, %src, %size : !pop.pointer<!pop.scalar<i32>>
+    pop.memcpy inline %dest, %src, %size : !pop.pointer<scalar<i32>>
 
     // Generate an inlined memcpy which copies size bytes from src to dest and
     // mark the memcpy as a volatile access.
     pop.memcpy inline volatile %dest, %src, %size :
-                                           !pop.pointer<!pop.scalar<f32>>
+                                           !pop.pointer<scalar<f32>>
     ```
   }];
 
@@ -1623,8 +1623,8 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [Pure]> {
     Example:
 
     ```mlir
-    %addr0 = pop.index_to_pointer %idx : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : !pop.pointer<!pop.simd<4, type>>
+    %addr0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>>
+    %addr1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, type>>
     ```
   }];
 
@@ -1646,8 +1646,8 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure]> {
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<!pop.scalar<f32>>
-    %addr1 = pop.pointer_to_index %idx : !pop.pointer<!pop.simd<4, type>>
+    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : !pop.pointer<simd<4, type>>
     ```
   }];
 
