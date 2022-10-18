@@ -360,9 +360,9 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value
   /// and the type is always !kgen.dtype.
-  let parameters = (ins "DType":$dType, AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "KGENDType":$dType, AttributeSelfTypeParameter<"">:$type);
 
-  let builders = [AttrBuilder<(ins "DType":$dtype)>];
+  let builders = [AttrBuilder<(ins "KGENDType":$dtype)>];
 
   let assemblyFormat = "`<` $dType `>`";
   let genVerifyDecl = 1;

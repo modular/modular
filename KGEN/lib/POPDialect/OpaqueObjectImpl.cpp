@@ -14,9 +14,9 @@ using namespace POP;
 /// Resolve the dtype of a DTypeInterface Type. If the interface has `invalid`
 /// DType, then given a `tag` attribute, if it's a DTypeConstantAttr then pull
 /// out the DType and return it. Otherwise, return failure.
-static FailureOr<DType> resolveDTypeWithTag(DTypeInterface itf, Location loc,
-                                            Attribute tag) {
-  if (Optional<DType> dtype = itf.getResolvedDType())
+static FailureOr<KGENDType> resolveDTypeWithTag(DTypeInterface itf,
+                                                Location loc, Attribute tag) {
+  if (Optional<KGENDType> dtype = itf.getResolvedDType())
     return *dtype;
 
   if (auto dt = dyn_cast<DTypeConstantAttr>(tag))
@@ -64,7 +64,7 @@ FailureOr<bool> ScalarType::equals(Location loc, Attribute tag, void *lhsData,
   // are actually different (i.e. unknown statically, dynamically carried by the
   // evaluation configuration). If the dtype is statically known by the
   // ScalarType then lhsDtype and rhsDtype will be equal.
-  FailureOr<DType> dtypeOr = resolveDTypeWithTag(*this, loc, tag);
+  FailureOr<KGENDType> dtypeOr = resolveDTypeWithTag(*this, loc, tag);
   if (failed(dtypeOr))
     return failure();
 
@@ -81,7 +81,7 @@ FailureOr<bool> ScalarType::equals(Location loc, Attribute tag, void *lhsData,
 /// `obj`.
 LogicalResult SIMDType::populate(Location loc, InputGenKind kind, Attribute tag,
                                  void *obj) const {
-  Optional<DType> dtype = getResolvedDType();
+  Optional<KGENDType> dtype = getResolvedDType();
   // If the dtype is invalid, we can't do anything. Note that we aren't trying
   // to get anything from the tag here!
   assert(dtype && "SIMDType must have a valid dtype");
@@ -102,7 +102,7 @@ void SIMDType::destroy(Attribute tag, void *obj) const {}
 /// has all its elements inline, compute the size of the array needed to hold
 /// tightly-packed elements for this type.
 FailureOr<size_t> SIMDType::getSizeInBytes(Location loc, Attribute tag) const {
-  Optional<DType> dtype = getResolvedDType();
+  Optional<KGENDType> dtype = getResolvedDType();
   // If the dtype is invalid, we can't do anything. Note that we aren't trying
   // to get anything from the tag here!
   assert(dtype && "SIMDType must have a valid dtype");
@@ -119,7 +119,7 @@ FailureOr<bool> SIMDType::equals(Location loc, Attribute tag, void *lhsData,
                                  void *rhsData) const {
   // Everything in a SIMDType must be static, so we can just directly compare
   // the data.
-  Optional<DType> dtype = getResolvedDType();
+  Optional<KGENDType> dtype = getResolvedDType();
   assert(dtype && "SIMDType must have a valid dtype");
 
   Optional<int64_t> sizeOr = getResolvedSize();

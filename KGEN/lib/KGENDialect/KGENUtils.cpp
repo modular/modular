@@ -573,7 +573,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   if (succeeded(p.parseOptionalKeyword(&keyword))) {
     // Check to see if we're parsing a dtype name like 'f32'.
     if (type.isa<DTypeType>()) {
-      auto dtype = DType::getFromString(keyword);
+      auto dtype = KGENDType::getFromString(keyword);
       if (succeeded(dtype)) {
         value = DTypeConstantAttr::getChecked(
             p.getEncodedSourceLoc(loc), p.getContext(), dtype.value(), type);

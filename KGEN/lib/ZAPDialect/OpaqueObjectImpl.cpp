@@ -40,7 +40,7 @@ LogicalResult BufferType::populate(Location loc, InputGenKind kind,
   // that use case.
 
   // Resolve the dtype.
-  Optional<DType> dtype = getResolvedDType();
+  Optional<KGENDType> dtype = getResolvedDType();
   if (!dtype)
     return emitError(loc)
            << "Buffers with unbound dtype are not yet supported: " << *this;
@@ -111,7 +111,7 @@ LogicalResult NDBufferType::populate(Location loc, InputGenKind kind,
   // enables that use case.
 
   // Resolve the dtype.
-  Optional<DType> dtype = getResolvedDType();
+  Optional<KGENDType> dtype = getResolvedDType();
   if (!dtype)
     return emitError(loc) << "Types with unbound dtype are not yet supported: "
                           << *this;

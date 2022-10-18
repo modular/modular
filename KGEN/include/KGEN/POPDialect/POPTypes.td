@@ -167,7 +167,7 @@ def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "DType":$dtype)>
+    TypeBuilder<(ins "KGENDType":$dtype)>
   ];
 }
 
