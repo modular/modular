@@ -165,7 +165,7 @@ public:
   LitLexerCursor(const LitLexerCursor &cursor) = default;
   LitLexerCursor &operator=(const LitLexerCursor &cursor) = default;
 
-  void restore(LitLexer &lexer) {
+  void restore(LitLexer &lexer) const {
     lexer.curPtr = state;
     lexer.curToken = curToken;
   }
