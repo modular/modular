@@ -12,66 +12,11 @@
 #ifndef LIT_PARSER_BASE_H
 #define LIT_PARSER_BASE_H
 
-#include "LLCL/Support/RCRef.h"
 #include "LitLexer.h"
+#include "LitSharedState.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {
-class LitLexer;
-class LitToken;
-class SharedParserState;
-class Scope;
-
-//===----------------------------------------------------------------------===//
-// DeclResolver
-//===----------------------------------------------------------------------===//
-
-class DeclResolver {
-public:
-  DeclResolver(SharedParserState *state);
-  ~DeclResolver();
-
-  /// Resolve all of the declarations that are visible, processing the entire
-  /// translation unit.
-  void resolveAll();
-
-  /// Add a new declaration that needs to be resolved.
-  void addDecl(LLCL::RCRef<Scope> declScope);
-
-private:
-  void resolve(Scope &scope);
-
-private:
-  /// This is shared state across the whole parser.
-  SharedParserState *const sharedParserState;
-
-  /// This is a mapping of every declaration (module, func, struct, etc) that
-  /// we have parsed, along with the metadata for it maintained in `Scope`.
-  DenseMap<Operation *, LLCL::RCRef<Scope>> parsedDecls;
-
-  /// This array holds all of the parsed declarations in a deterministic order.
-  std::vector<Operation *> parsedDeclList;
-};
-
-//===----------------------------------------------------------------------===//
-// SharedParserState
-//===----------------------------------------------------------------------===//
-
-/// This is state shared across multiple different instances of LitParserBase
-/// which are always shared across them.
-class SharedParserState {
-public:
-  SharedParserState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
-      : sourceMgr(sourceMgr), context(context), declResolver(this) {}
-
-  llvm::SourceMgr &sourceMgr;
-  MLIRContext *const context;
-  DeclResolver declResolver;
-
-  llvm::BumpPtrAllocator exprAllocator;
-  bool hasExprParser = false;
-  bool errorOccurred = false;
-};
 
 //===----------------------------------------------------------------------===//
 // LitParserBase

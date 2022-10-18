@@ -11,6 +11,7 @@
 #include "KGEN/ParseLit.h"
 #include "LitParserBase.h"
 
+#include "LitDecls.h"
 #include "LitExprNodes.h"
 #include "LitScope.h"
 
@@ -800,7 +801,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
-  sharedParserState->declResolver.addDecl(
+  sharedParserState->declResolver->addDecl(
       RCRef<Scope>::create(newFunc, currentScope.copy(), declCursor));
 
   // Skip the body of this definition: go to a token the starts a line at the
@@ -1048,32 +1049,12 @@ void NameBindingContext::nameBind(LITStructDeclOp op, LitLexerCursor cursor) {
 // DeclResolver
 //===----------------------------------------------------------------------===//
 
-// TODO: Move to LitDeclParser.cpp, along with decl related parsing logic.
-
-DeclResolver::DeclResolver(SharedParserState *state)
-    : sharedParserState(state) {}
-DeclResolver::~DeclResolver() {}
-
-/// Add a new declaration that needs to be resolved.
-void DeclResolver::addDecl(LLCL::RCRef<Scope> declScope) {
-  Operation *op = declScope->getDecl();
-  parsedDeclList.push_back(op);
-  parsedDecls[op] = std::move(declScope);
-}
-
-/// Resolve all of the declarations that are visible.
-void DeclResolver::resolveAll() {
-  // We can do this in any order, but choose to use the order they are
-  // discovered so diagnostics are mostly top-down.  Resolving declarations may
-  // cause more entries to be added to this list.
-  for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    resolve(*parsedDecls[parsedDeclList[i]]);
-}
+// TODO: Move this to LitDecls.cpp
 
 void DeclResolver::resolve(Scope &scope) {
-  LitLexer lexer(sharedParserState->sourceMgr, sharedParserState->context,
+  LitLexer lexer(sharedParserState.sourceMgr, sharedParserState.context,
                  scope.getCursor());
-  LitParser parser(lexer, sharedParserState, RCRef<Scope>::copy(&scope));
+  LitParser parser(lexer, &sharedParserState, RCRef<Scope>::copy(&scope));
 
   parser.parseDefBody(cast<LITFuncOp>(scope.getDecl()));
 }
@@ -1081,6 +1062,11 @@ void DeclResolver::resolve(Scope &scope) {
 //===----------------------------------------------------------------------===//
 // Driver
 //===----------------------------------------------------------------------===//
+
+SharedParserState::SharedParserState(llvm::SourceMgr &sourceMgr,
+                                     MLIRContext *context)
+    : sourceMgr(sourceMgr), context(context),
+      declResolver(std::make_unique<DeclResolver>(*this)) {}
 
 // Parse the specified .lit file into the specified MLIR context.
 OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
@@ -1105,7 +1091,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
-  sharedState.declResolver.resolveAll();
+  sharedState.declResolver->resolveAll();
 
   if (sharedState.errorOccurred)
     return nullptr;

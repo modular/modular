@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(ParseLit
+  LitDecls.cpp
   LitExprNodes.cpp
   LitExprParser.cpp
   LitLexer.cpp
