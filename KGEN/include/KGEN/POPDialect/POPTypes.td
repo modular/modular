@@ -218,6 +218,8 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
 
 def BoolSIMD : AllOfType<[POP_SIMDType, BoolDType], "!pop.simd<N, bool>">;
 
+def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType], "!pop.simd<N, address>">;
+
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
     "whose element type is either unbound or a integral dtype">;
 def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
@@ -234,6 +236,22 @@ def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
 
 def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
     [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
+
+class SIMDOfSameDType<string operand, string value> : TypesMatchWith<
+    value # " type matches dtype of the " # operand # " operand", operand,
+    value, "POP::SIMDType::get($_self.cast<DTypeInterface>().getDType())">;
+
+class SIMDDType<string name> :
+    StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
+
+class SIMDSize<string name> :
+    StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getResolvedSize()">;
+
+class SIMDOfSameElementDType<string lhs, string rhs> :
+  AllMatchSameOperatorTrait<[lhs, rhs], SIMDDType<"_self">.result, "dtype">;
+
+class SIMDOfSameSize<string lhs, string rhs> :
+  AllMatchSameOperatorTrait<[lhs, rhs], SIMDSize<"_self">.result, "size">;
 
 //===----------------------------------------------------------------------===//
 // StructType

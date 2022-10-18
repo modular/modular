@@ -118,6 +118,8 @@ class ConstrainedDType<string constraint> : ConfinedType<DTypeInterface,
 
 /// A type whose data type is boolean.
 def BoolDType : ConstrainedDType<"$_self && $_self->isBool()">;
+/// A type whose data type is address.
+def AddressDType : ConstrainedDType<"$_self && $_self->isAddress()">;
 /// A type whose data type is either unbound or integral.
 def IntegerOrUnboundDType :
     ConstrainedDType<"!$_self || $_self->isInt()">;

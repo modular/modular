@@ -206,6 +206,15 @@ kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
 
 // -----
 
+kgen.generator @simd_gather(%a: !pop.simd<2, address>, %mask: !pop.simd<2, bool>, %passthrough: !pop.simd<2, f32>) -> !pop.simd<3, f32> {
+  // expected-note @below {{prior use here}}
+  %0 = pop.simd.gather %a[%mask], %passthrough : !pop.simd<2, address>, !pop.simd<2, bool>, !pop.simd<2, f32>
+  // expected-error @below {{use of value '%0' expects different type than prior uses: '!pop.simd<3, f32>' vs '!pop.simd<2, f32>'}}
+  kgen.return %0 : !pop.simd<3, f32>
+}
+
+// -----
+
 kgen.func @global_constant() {
   // expected-error @below {{cannot convert from attribute type 'f32' to dtype f64}}
   %0 = pop.global_constant(0.0 : f32) : !pop.scalar<f64>
