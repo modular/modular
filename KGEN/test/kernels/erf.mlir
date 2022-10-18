@@ -54,14 +54,18 @@ lit.func @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?
   implements @erf {
   %zero = index.constant 0
   %one = index.constant 1
+  %undef = pop.constant(0) : !pop.scalar<type>
+  %undefVec = pop.simd.splat %undef : !pop.simd<1, type>
 
   // TODO: Must assert that size of in and out buffers are the same
   %size = zap.buffer.size %in: !zap.buffer<?, type>
 
   scf.for %i = %zero to %size step %one {
-      %src  = zap.buffer.load %in[%i] : !zap.buffer<?, type>
-      %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!pop.scalar<type>) -> !pop.scalar<type>
-      zap.buffer.store %res, %out[%i] : !zap.buffer<?, type>
+      %src0  = zap.buffer.load %in[%i] : !zap.buffer<?, type>, !pop.simd<1, type>
+      %src  = pop.simd.extractelement %src0[%zero] : !pop.simd<1, type>
+      %res0  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!pop.scalar<type>) -> !pop.scalar<type>
+      %res  = pop.simd.insertelement %res0, %undefVec[%zero] : !pop.simd<1, type>
+      zap.buffer.store %res, %out[%i] : !pop.simd<1, type>, !zap.buffer<?, type>
   }
 
   kgen.return

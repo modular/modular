@@ -1,12 +1,14 @@
 // RUN: kgen -execute -func="test_print:()" %s | FileCheck %s
 
 kgen.generator @impl<lb, ub, step>(%buf: !zap.buffer<?, si64>) {
+  %zero = index.constant 0
   %lb = kgen.param.constant = <lb>
   %ub = kgen.param.constant = <ub>
   %step = kgen.param.constant = <step>
   zap.print "values:\n"()
   scf.for %i = %lb to %ub step %step {
-    %v = zap.buffer.load %buf[%i] : !zap.buffer<?, si64>
+    %v0 = zap.buffer.load %buf[%i] : !zap.buffer<?, si64>, !pop.simd<1, si64>
+    %v = pop.simd.extractelement %v0[%zero] : !pop.simd<1, si64>
     // Cast the index to i64
     %is = index.casts %i : index to si64
     zap.print "  buf[%lli] = %lli\n"(%is, %v) : si64, !pop.scalar<si64>

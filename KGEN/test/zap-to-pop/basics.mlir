@@ -212,34 +212,6 @@ kgen.generator @zap_buffer_constant<type: dtype>(%i: index) -> (
 
 // -----
 
-// CHECK-LABEL: @buffer_load
-// CHECK-SAME: %[[BUF:.*]]: !pop.struct
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.generator @buffer_load(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.scalar<f32> {
-  // CHECK: %[[BASE:.*]] = pop.struct.get %[[BUF]][0]
-  // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
-  // CHECK: %[[VAL:.*]] = pop.load %[[PTR]]
-  // CHECK: return %[[VAL]]
-  %0 = zap.buffer.load %buf[%idx] : !zap.buffer<4, f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
-// -----
-
-// CHECK-LABEL: @buffer_store
-// CHECK-SAME: %[[VAL:.*]]: !pop.scalar
-// CHECK-SAME: %[[BUF:.*]]: !pop.struct
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.generator @buffer_store(%val: !pop.scalar<f32>, %buf: !zap.buffer<4, f32>, %idx: index) -> () {
-  // CHECK: %[[BASE:.*]] = pop.struct.get %[[BUF]][0]
-  // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
-  // CHECK: pop.store %[[VAL]], %[[PTR]]
-  zap.buffer.store %val, %buf[%idx] : !zap.buffer<4, f32>
-  kgen.return
-}
-
-// -----
-
 // CHECK-LABEL: @simd_load
 // CHECK-SAME: %[[BUF:.*]]: !pop.struct
 // CHECK-SAME: %[[IDX:.*]]: index
@@ -248,7 +220,7 @@ kgen.generator @simd_load(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.simd<4
   // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
   // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.simd<4, f32>>
   // CHECK: %[[VAL:.*]] = pop.load %[[BPTR]]
-  %0 = zap.buffer.simd_load %buf[%idx] : !zap.buffer<4, f32>, !pop.simd<4, f32>
+  %0 = zap.buffer.load %buf[%idx] : !zap.buffer<4, f32>, !pop.simd<4, f32>
   kgen.return %0 : !pop.simd<4, f32>
 }
 
@@ -263,7 +235,7 @@ kgen.generator @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, 
   // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
   // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<!pop.scalar<f32>> to !pop.pointer<!pop.simd<4, f32>>
   // CHECK: pop.store %[[VAL]], %[[BPTR]]
-  zap.buffer.simd_store %val, %buf[%idx] : !pop.simd<4, f32>, !zap.buffer<4, f32>
+  zap.buffer.store %val, %buf[%idx] : !pop.simd<4, f32>, !zap.buffer<4, f32>
   kgen.return
 }
 
