@@ -215,7 +215,6 @@ kgen.generator @param_canonicalize<p1, p2>()  {
   kgen.param.constant = <div(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mod(p1, 1)>  // CHECK: kgen.param.constant = <0>
 
-
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
 
@@ -368,4 +367,14 @@ kgen.generator @mlir_builtin_types<*"index": type>(
   %1 = pop.load %arg1 : !pop.pointer<*"index">
   // CHECK: return %[[V0]], %[[V1]] : index, !kgen.paramref<*"index">
   kgen.return %0, %1 : index, !kgen.paramref<*"index">
+}
+
+kgen.struct.decl @A {}
+kgen.struct.decl @B {}
+
+// CHECK-LABEL: @symbol_exprs
+kgen.generator @symbol_exprs() {
+  // CHECK: <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
+  %0 = kgen.param.constant = <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
+  kgen.return
 }
