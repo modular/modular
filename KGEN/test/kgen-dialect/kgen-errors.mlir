@@ -649,3 +649,36 @@ kgen.generator @give_it_B<C>() {
   %0 = "a"() : () -> !kgen.ref<@ParamNamedA<B = C>>
   kgen.return
 }
+
+
+// -----
+
+kgen.func @addressof_invalid_callee() {
+  // expected-error @below {{'kgen.addressof' op @does_not_exist does not reference a valid callee}}
+  %0 = kgen.addressof @does_not_exist : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{callee declared here}}
+kgen.func @nullary() {
+  kgen.return
+}
+
+kgen.func @addressof_mismatched_signature() {
+  // expected-error @below {{caller has 1 argument but callee expects 0}}
+  %0 = kgen.addressof @nullary : (index) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator.interface @generator<size>()
+
+// expected-note @below {{within kgen.func 'addressof_parametric_in_func'}}
+kgen.func @addressof_parametric_in_func() {
+  // expected-error @below {{cannot reference generator with input arguments from concrete kgen.func}}
+  %0 = kgen.addressof @generator<size = 1> : () -> ()
+  kgen.return
+}

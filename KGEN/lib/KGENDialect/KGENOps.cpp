@@ -563,11 +563,63 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
+// AddressOfOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  auto callee = dyn_cast_if_present<KGENDeclInterface>(
+      symbolTable.lookupNearestSymbolFrom(*this, getCalleeAttr()));
+  if (!callee)
+    return emitOpError() << getCalleeAttr()
+                         << " does not reference a valid callee";
+
+  // Check the parameters and operands align with the requirements of the
+  // callee's signature.
+  if (verifyCallAndCallee(*this, getSignature(), callee.getSignature(),
+                          getParamValuesAttr(), callee->getLoc()))
+    return failure();
+
+  // Make sure we don't reference a generator with input parameters inside a
+  // `kgen.func`.
+  if (!getParamValues().empty()) {
+    if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
+      auto diag = emitError() << "cannot reference generator with input "
+                                 "arguments from concrete kgen.func";
+      diag.attachNote(funcParent->getLoc())
+          << "within kgen.func '" << funcParent.getName() << "'";
+      return failure();
+    }
+  }
+
+  return success();
+}
+
+LogicalResult AddressOfOp::verifyRegions() {
+  return verifyRegionSignatures(*this);
+}
+
+SignatureType AddressOfOp::getSignature() {
+  SmallVector<ParamDeclAttr> callerInputParamDecls;
+  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
+  llvm::append_range(callerInputParamDecls,
+                     llvm::map_range(getParamValues(), getBindDecl));
+
+  SmallVector<Type> callerResultParamTypes;
+  auto getParamType = [](auto attr) -> Type { return attr.getType(); };
+  llvm::append_range(callerResultParamTypes,
+                     llvm::map_range(getParamDecls(), getParamType));
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
+      TypeArrayAttr::get(getContext(), callerResultParamTypes), getType());
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
 SignatureType CallOp::getSignature() {
-  // Should move this to a "getSignature" method on CallOp.
   SmallVector<ParamDeclAttr> callerInputParamDecls;
   auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
   llvm::append_range(callerInputParamDecls,

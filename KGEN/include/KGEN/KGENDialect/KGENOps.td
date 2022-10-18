@@ -147,6 +147,59 @@ def GeneratorInterfaceOp
 }
 
 //===----------------------------------------------------------------------===//
+// AddressOf
+//===----------------------------------------------------------------------===//
+
+def AddressOfOp : KGENOp<"addressof",
+    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get the address of a function.";
+  let description = [{
+    The `kgen.addressof` operation references a parametric function and returns
+    an address to a concrete instance of that function.
+
+    Example:
+
+    ```mlir
+    kgen.generator.interface @foo<size>(index) -> index
+
+    // Take the address of the interface. This will be resolved to the address
+    // of the selected implemented of the interface post-elaboration.
+    %0 = kgen.addressof @foo<size = 5> : (index) -> index
+    ```
+
+    The operation accepts region parameters like `kgen.call`.
+
+    Example:
+
+    ```mlir
+    kgen.generator.interface @foo<fn: () -> ()>()
+
+    %0 = kgen.addressof @foo<fn: () -> () = region> : () -> ()
+    fn() {
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee,
+                       ParamBindArrayAttr:$paramValues,
+                       ParamDeclArrayAttr:$paramDecls);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
+  let results = (outs FunctionType:$result);
+  let assemblyFormat = [{
+    $callee `` custom<CallOpParams>($paramValues, $paramDecls) attr-dict `:`
+    type($result) custom<CallRegions>($regions, ref($paramValues))
+  }];
+
+  let hasRegionVerifier = 1;
+
+  let extraClassDeclaration = [{
+    /// Return a signature for this function reference.
+    SignatureType getSignature();
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
@@ -258,7 +311,8 @@ def CallParamOp : KGENOp<"call_param"> {
 //===----------------------------------------------------------------------===//
 
 def RegionBodyOp : KGENOp<"region.body",
-    [IsolatedFromAbove, Terminator, ParentOneOf<["CallOp", "CallParamOp"]>,
+    [IsolatedFromAbove, Terminator,
+     ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp"]>,
      SingleBlockImplicitTerminator<"ReturnOp">,
      DeclareOpInterfaceMethods<KGENDeclInterface>,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
