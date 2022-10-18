@@ -79,6 +79,16 @@ LitLexer::LitLexer(const SourceMgr &sourceMgr, MLIRContext *context)
       // Prime the first token.
       curToken(lexTokenImpl()) {}
 
+LitLexer::LitLexer(const llvm::SourceMgr &sourceMgr, mlir::MLIRContext *context,
+                   const LitLexerCursor &cursor)
+    : sourceMgr(sourceMgr),
+      bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)),
+      curBuffer(
+          sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer()),
+      curToken(LitToken::eof, {}, 0) {
+  cursor.restore(*this);
+}
+
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.
 Location LitLexer::translateLocation(llvm::SMLoc loc) {

@@ -12,7 +12,6 @@
 #define LITSCOPE_H
 
 #include "KGEN/LITDialect/LITOps.h"
-#include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
 #include "LitLexer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
