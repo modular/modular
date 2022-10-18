@@ -112,3 +112,69 @@ kgen.generator module_private @dead_code() -> !pop.variant<index> {
   // CHECK: return %{{.*}} : !pop.variant<index>
   kgen.return %1 : !pop.variant<index>
 }
+
+// -----
+
+kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+  %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
+  kgen.return %0 : !pop.variant<i32, f32>
+}
+
+// CHECK-LABEL: @variant_visit
+kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
+  %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
+  %1 = pop.variant.visit %0 : !pop.variant<i32, f32> -> !pop.variant<i64, f64>
+  case (%v: i32) {
+    %2 = pop.variant.create %b : i64 -> !pop.variant<i64, f64>
+    pop.yield %2 : !pop.variant<i64, f64>
+  }
+  case (%v: f32) {
+    %2 = pop.variant.create %c : f64 -> !pop.variant<i64, f64>
+    pop.yield %2 : !pop.variant<i64, f64>
+  }
+  kgen.return %1 : !pop.variant<i64, f64>
+}
+
+// -----
+
+// CHECK-LABEL: @always_i32
+kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+  %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
+  kgen.return %0 : !pop.variant<i32, f32>
+}
+
+// CHECK-LABEL: @variant_visit
+// CHECK-SAME: -> i64
+kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
+  %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
+  // CHECK: %[[VISIT_RESULT:.*]] = pop.variant.visit
+  %1 = pop.variant.visit %0 : !pop.variant<i32, f32> -> !pop.variant<i64, f64>
+  case (%v: i32) {
+    %2 = pop.variant.create %b : i64 -> !pop.variant<i64, f64>
+    pop.yield %2 : !pop.variant<i64, f64>
+  }
+  case (%v: f32) {
+    %2 = pop.variant.create %c : f64 -> !pop.variant<i64, f64>
+    pop.yield %2 : !pop.variant<i64, f64>
+  }
+  // CHECK: %[[RESULT:.*]] = pop.variant.get %[[VISIT_RESULT]] : !pop.variant<i64, f64> as i64
+  // CHECK: return %[[RESULT]] : i64
+  kgen.return %1 : !pop.variant<i64, f64>
+}
+
+// -----
+
+// CHECK-LABEL: @entry_state
+// CHECK-SAME: -> index
+kgen.generator public @entry_state(%a: !pop.variant<i32, f32>) -> !pop.variant<index, i1> {
+  %0 = index.constant 0
+  %1 = pop.variant.create %0 : index -> !pop.variant<index, i1>
+  %2 = pop.variant.visit %a : !pop.variant<i32, f32> -> !pop.variant<index, i1>
+  case (%v: i32) {
+    pop.yield %1 : !pop.variant<index, i1>
+  }
+  default {
+    pop.yield %1 : !pop.variant<index, i1>
+  }
+  kgen.return %2 : !pop.variant<index, i1>
+}
