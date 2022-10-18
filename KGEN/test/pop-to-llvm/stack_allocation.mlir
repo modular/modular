@@ -29,7 +29,7 @@ kgen.func @stack_allocation_insertion(%v: !pop.scalar<si32>, %lb: index, %ub: in
     %1 = pop.cast_from_builtin %0 : i32 to !pop.scalar<si32>
     // CHECK: llvm.intr.lifetime.start
     %2 = pop.stack_allocation 1 : !pop.scalar<si32>
-    pop.store %sum, %2 : !pop.pointer<!pop.scalar<si32>>
+    pop.store %sum, %2 : !pop.pointer<scalar<si32>>
     %3 = pop.add %1, %sum : !pop.scalar<si32>
     // CHECK: llvm.intr.lifetime.end
     // CHECK: scf.yield

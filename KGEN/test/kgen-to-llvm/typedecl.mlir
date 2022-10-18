@@ -10,13 +10,13 @@ kgen.struct.decl @SmallVector<N, T: type> {
 
 // CHECK-LABEL: @two_vectors
 kgen.func @two_vectors(
-  %arg0: !pop.array<2, !pop.simd<4, f32>>,
-  %arg1: !pop.array<4, !pop.scalar<f64>>
+  %arg0: !pop.array<2, simd<4, f32>>,
+  %arg1: !pop.array<4, scalar<f64>>
 ) -> (!size2, !size4) {
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<2 x vector<4xf32>>)>
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<4 x f64>)>
-  %0 = kgen.struct.create(%arg0) : (!pop.array<2, !pop.simd<4, f32>>) -> !size2
-  %1 = kgen.struct.create(%arg1) : (!pop.array<4, !pop.scalar<f64>>) -> !size4
+  %0 = kgen.struct.create(%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
+  %1 = kgen.struct.create(%arg1) : (!pop.array<4, scalar<f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
 

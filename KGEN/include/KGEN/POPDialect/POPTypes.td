@@ -33,7 +33,7 @@ def POP_ArrayType : POPType<"Array", "array"> {
 
     ```mlir
     // An array of four scalar floats.
-    !pop.array<4, !pop.scalar<f32>>
+    !pop.array<4, scalar<f32>>
 
     // A parameterized array.
     !pop.array<size, type>
@@ -43,7 +43,7 @@ def POP_ArrayType : POPType<"Array", "array"> {
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$elementType);
   let assemblyFormat = [{
     `<` custom<IndexParamValue>($size) `,` ` `
-        custom<TypeParamValue>($elementType) `>`
+        custom<PrettyType>($elementType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -90,13 +90,13 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
     ```mlir
     // A pointer to a scalar.
-    !pop.pointer<!pop.scalar<f32>>
+    !pop.pointer<scalar<f32>>
 
     // A pointer to a SIMD vector.
-    !pop.pointer<!pop.simd<4, f32>>
+    !pop.pointer<simd<4, f32>>
 
     // A parameterized scalar pointer.
-    !pop.pointer<!pop.scalar<type>>
+    !pop.pointer<scalar<type>>
 
     // A completely parameterized pointer.
     !pop.pointer<elementType>
@@ -105,7 +105,7 @@ def POP_PointerType : POPType<"Pointer", "pointer"> {
 
   let parameters = (ins "TypedAttr":$elementType);
   let assemblyFormat = [{
-    `<` custom<TypeParamValue>($elementType) `>`
+    `<` custom<PrettyType>($elementType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -267,12 +267,12 @@ def POP_StructType : POPType<"Struct", "struct"> {
 
     ```mlir
     // A struct with primitive element types.
-    !pop.struct<!pop.scalar<f32>, !pop.simd<4, ui64>>
+    !pop.struct<scalar<f32>, simd<4, ui64>>
 
     // A struct with nested types.
     !pop.struct<
-      !pop.pointer<!pop.simd<4, si8>>,
-      !pop.array<24, !pop.scalar<si64>>,
+      !pop.pointer<simd<4, si8>>,
+      !pop.array<24, scalar<si64>>,
       !pop.struct<
         !pop.scalar<f32>,
         !pop.scalar<f64>
@@ -280,12 +280,12 @@ def POP_StructType : POPType<"Struct", "struct"> {
     >
 
     // A struct with parameterized element types.
-    !pop.struct<type, !pop.array<size, !pop.scalar<dtype>>>
+    !pop.struct<type, array<size, scalar<dtype>>>
     ```
   }];
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$elementTypes);
-  let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($elementTypes) `>`";
+  let assemblyFormat = "`<` custom<ArrayOfPrettyTypes>($elementTypes) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
@@ -324,12 +324,12 @@ def POP_VariantType : POPType<"Variant", "variant",
     Example:
 
     ```mlir
-    !pop.variant<i32, !pop.scalar<dtype>, T>
+    !pop.variant<i32, scalar<dtype>, T>
     ```
   }];
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
-  let assemblyFormat = "`<` custom<ArrayOfTypeExprs>($types) `>`";
+  let assemblyFormat = "`<` custom<ArrayOfPrettyTypes>($types) `>`";
   let skipDefaultBuilders = 1;
 
   let builders = [TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>];

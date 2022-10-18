@@ -24,7 +24,7 @@ kgen.func library_private @produces_result<() -> index>() {
 
 kgen.func @convert_pop_types(
     %arg0: !pop.scalar<f32>,
-    %arg1: !pop.pointer<!pop.scalar<f32>>,
+    %arg1: !pop.pointer<scalar<f32>>,
     %arg2: !pop.simd<4, f32>) {
   kgen.return
 }

@@ -40,7 +40,7 @@ kgen.func @global_constant() {
 // CHECK-LABEL: @global_array_constant
 kgen.func @global_array_constant() {
   // CHECK: llvm.mlir.addressof @global_constant
-  %0 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, !pop.scalar<ui32>>
+  %0 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, scalar<ui32>>
   kgen.return
 }
 

@@ -312,6 +312,104 @@ SmallVector<Type> VariantType::getParameterizedElementTypes() const {
 }
 
 //===----------------------------------------------------------------------===//
+// Pretty Type Parsing and Printing
+//===----------------------------------------------------------------------===//
+
+template <typename TypeT>
+static ParseResult parsePrettyTypeImpl(AsmParser &p,
+                                       FailureOr<TypedAttr> &typeExpr) {
+  Type type = TypeT::parse(p);
+  if (!type)
+    return failure();
+  typeExpr = TypeConstantAttr::get(type);
+  return success();
+}
+
+/// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
+/// type without the dialect prefix.
+ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
+  StringRef typeName;
+  // Try to parse a keyword for a known POP type. Allow `dtype` for
+  // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
+  if (p.parseOptionalKeyword(&typeName, {"array", "pointer", "scalar", "simd",
+                                         "struct", "variant", "dtype"}))
+    return parseTypeParamValue(p, typeExpr);
+
+  if (typeName == "array")
+    return parsePrettyTypeImpl<ArrayType>(p, typeExpr);
+  if (typeName == "pointer")
+    return parsePrettyTypeImpl<PointerType>(p, typeExpr);
+  if (typeName == "scalar")
+    return parsePrettyTypeImpl<ScalarType>(p, typeExpr);
+  if (typeName == "simd")
+    return parsePrettyTypeImpl<SIMDType>(p, typeExpr);
+  if (typeName == "struct")
+    return parsePrettyTypeImpl<StructType>(p, typeExpr);
+  if (typeName == "variant")
+    return parsePrettyTypeImpl<VariantType>(p, typeExpr);
+
+  if (typeName == "dtype") {
+    typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
+    return success();
+  }
+
+  llvm_unreachable("unknown keyword");
+}
+
+template <typename TypeT>
+static StringRef getPrettyTypePrefix() {
+  if constexpr (std::is_same_v<TypeT, ArrayType>)
+    return "array";
+  if constexpr (std::is_same_v<TypeT, PointerType>)
+    return "pointer";
+  if constexpr (std::is_same_v<TypeT, ScalarType>)
+    return "scalar";
+  if constexpr (std::is_same_v<TypeT, SIMDType>)
+    return "simd";
+  if constexpr (std::is_same_v<TypeT, StructType>)
+    return "struct";
+  return "variant";
+}
+
+/// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
+/// type without the dialect prefix.
+void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
+  // If this isn't a type constant, defer to the parameter value printer.
+  auto typeCst = typeExpr.dyn_cast<TypeConstantAttr>();
+  if (!typeCst)
+    return printTypeParamValue(p, typeExpr);
+
+  // Try to print on the known types. Fallback to the generic type printer
+  // otherwise.
+  llvm::TypeSwitch<Type>(typeCst.getValue())
+      .Case<ArrayType, PointerType, ScalarType, SIMDType, StructType,
+            VariantType>([&](auto popType) {
+        p << getPrettyTypePrefix<decltype(popType)>();
+        popType.print(p);
+      })
+      .Case<DTypeType>([&](auto) { p << "dtype"; })
+      .Default([&](auto) { printTypeParamValue(p, typeExpr); });
+}
+
+static ParseResult
+parseArrayOfPrettyTypes(AsmParser &p,
+                        FailureOr<SmallVector<TypedAttr>> &values) {
+  values.emplace();
+  return p.parseCommaSeparatedList([&]() -> ParseResult {
+    FailureOr<TypedAttr> value;
+    if (failed(parsePrettyType(p, value)))
+      return failure();
+    values->push_back(*value);
+    return success();
+  });
+}
+
+static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printPrettyType(p, value); });
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

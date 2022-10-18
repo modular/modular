@@ -40,12 +40,12 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
 // -----
 
 // CHECK-LABEL: @variant_visit
-kgen.func @variant_visit(%a: !pop.variant<!pop.scalar<si32>, f32>) -> !pop.scalar<si32> {
+kgen.func @variant_visit(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si32> {
   %0 = pop.constant(1 : si32) : !pop.scalar<si32>
   // CHECK: %[[PTR:.*]] = llvm.alloca
   // CHECK: llvm.switch %{{.*}} : i1, ^bb2
   // CHECK-NEXT: 0: ^bb1
-  %1 = pop.variant.visit %a : !pop.variant<!pop.scalar<si32>, f32> -> !pop.scalar<si32>
+  %1 = pop.variant.visit %a : !pop.variant<scalar<si32>, f32> -> !pop.scalar<si32>
   // CHECK: ^bb1:
   case (%v: !pop.scalar<si32>) {
     // CHECK-NEXT: llvm.bitcast

@@ -15,15 +15,15 @@ kgen.func public @someKernel(%arg1: f32, %arg2: index) -> f32 {
 }
 // SCALAR: extern float someKernel(float, ssize_t);
 
-kgen.func public @someBufferKernel(%a: !pop.struct<!pop.pointer<!pop.scalar<invalid>>, index, !kgen.dtype>) -> index {
-  %size = pop.struct.get %a[1] : !pop.struct<!pop.pointer<!pop.scalar<invalid>>, index, !kgen.dtype>
+kgen.func public @someBufferKernel(%a: !pop.struct<pointer<scalar<invalid>>, index, !kgen.dtype>) -> index {
+  %size = pop.struct.get %a[1] : !pop.struct<pointer<scalar<invalid>>, index, !kgen.dtype>
   kgen.return %size : index
 }
 // BUFFER: extern ssize_t someBufferKernel(void *, ssize_t, uint8_t);
 
 
-kgen.func public @someNDBufferKernel(%a: !pop.struct<!pop.pointer<!pop.scalar<invalid>>, index, !pop.array<5, index>, !kgen.dtype>) -> index {
-  %size = pop.struct.get %a[1] : !pop.struct<!pop.pointer<!pop.scalar<invalid>>, index, !pop.array<5, index>, !kgen.dtype>
+kgen.func public @someNDBufferKernel(%a: !pop.struct<pointer<scalar<invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
+  %size = pop.struct.get %a[1] : !pop.struct<pointer<scalar<invalid>>, index, array<5, index>, !kgen.dtype>
   kgen.return %size : index
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);

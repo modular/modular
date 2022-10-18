@@ -1,13 +1,13 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<!pop.scalar<invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
-  %ptr: !pop.pointer<!pop.scalar<f32>>,
-  %opaque: !pop.pointer<!pop.scalar<invalid>>,
+  %ptr: !pop.pointer<scalar<f32>>,
+  %opaque: !pop.pointer<scalar<invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (
   !zap.buffer<4, f32>,
@@ -208,13 +208,13 @@ kgen.generator @zap_ndbuffer_with_params<type:dtype, size>(
 }
 
 // CHECK-LABEL: @zap_ndbuffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<!pop.scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<!pop.scalar<invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_ndbuffer_construct(
-  %ptr: !pop.pointer<!pop.scalar<f32>>,
-  %opaque: !pop.pointer<!pop.scalar<invalid>>,
+  %ptr: !pop.pointer<scalar<f32>>,
+  %opaque: !pop.pointer<scalar<invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (!zap.ndbuffer<[4, 5, 3], f32>,
                            !zap.ndbuffer<[?, 4], f32>,
@@ -463,9 +463,9 @@ kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
 }
 
 // CHECK-LABEL: @global_string
-kgen.generator @global_string() -> !pop.pointer<!pop.array<14, !pop.scalar<si8>>> {
+kgen.generator @global_string() -> !pop.pointer<array<14, scalar<si8>>> {
   // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]
   %0 = zap.global_string "hello world!!\00"[14]
-  // CHECK: return %{{.*}} : !pop.pointer<!pop.array<14, !pop.scalar<si8>>>
-  kgen.return %0 : !pop.pointer<!pop.array<14, !pop.scalar<si8>>>
+  // CHECK: return %{{.*}} : !pop.pointer<array<14, scalar<si8>>>
+  kgen.return %0 : !pop.pointer<array<14, scalar<si8>>>
 }
