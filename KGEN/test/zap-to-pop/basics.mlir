@@ -616,9 +616,9 @@ kgen.func @zap_ndbuffer_simd_load(
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
-  // CHECK: %[[POP_LOAD:.*]] = pop.pointer.bitcast %[[BASE]]
-  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[POP_LOAD]][%[[ADD2]]]
-  // CHECK: pop.load %[[POP_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
+  // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
+  // CHECK: pop.load %[[SIMD_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
   %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx0, %idx1, %idx2] : !zap.ndbuffer<[?, 5, ?], f32>, !pop.simd<4, f32>
   kgen.return
 }
@@ -645,9 +645,9 @@ kgen.func @zap_ndbuffer_simd_store(
   // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
   // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
-  // CHECK: %[[POP_LOAD:.*]] = pop.pointer.bitcast %[[BASE]]
-  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[POP_LOAD]][%[[ADD2]]]
-  // CHECK: pop.store %[[VAL]], %[[POP_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
+  // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
+  // CHECK: pop.store %[[VAL]], %[[SIMD_OFFSET]] align 1 : !pop.pointer<!pop.simd<4, f32>>
   zap.ndbuffer.simd_store %val, %ndbuffer0[%idx0, %idx1, %idx2] : !pop.simd<4, f32>, !zap.ndbuffer<[?, 5, ?], f32>
   kgen.return
 }
