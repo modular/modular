@@ -12,9 +12,8 @@
 #define LITSCOPE_H
 
 #include "KGEN/LITDialect/LITOps.h"
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "LitLexer.h"
+#include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/StringMap.h"
@@ -30,19 +29,15 @@ namespace M::KGEN::LIT {
 /// This means that we can't just use a ScopedHashTable or similar - we need to
 /// maintain our scopes until all bodies that refer to them are resolved.  As
 /// such, we heap allocate and reference count these.
-class Scope : public LLCL::NonAtomicallyReferenceCounted<Scope> {
+class Scope {
 public:
-  Scope(Operation *decl, LLCL::RCRef<Scope> parentScope, LitLexerCursor cursor)
-      : decl(decl), parentScope(std::move(parentScope)),
-        builder(decl->getContext()), cursor(cursor) {
-    if (decl->getNumRegions())
-      builder = OpBuilder::atBlockEnd(&decl->getRegion(0).front());
-  }
+  static Scope *create(Operation *decl, Scope *parentScope,
+                       LitLexerCursor cursor, LitSharedState &sharedState);
 
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
   Operation *getDecl() const { return decl; }
-  const LLCL::RCRef<Scope> &getParentScope() const { return parentScope; }
+  Scope *getParentScope() const { return parentScope; }
 
   OpBuilder &getBuilder() { return builder; }
 
@@ -91,7 +86,7 @@ public:
     while (curScope) {
       if (Optional<ScopeValue> result = curScope->lookupInCurrentScope(name))
         return result.value();
-      curScope = curScope->parentScope.getPointer();
+      curScope = curScope->parentScope;
     }
     return None;
   }
@@ -100,10 +95,20 @@ public:
   void setIsResolved() { isResolved = true; }
 
 private:
+  // Scope is created by DeclResolver.
+  friend class DeclResolver;
+  Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor)
+      : decl(decl), parentScope(std::move(parentScope)),
+        builder(decl->getContext()), cursor(cursor) {
+    if (decl->getNumRegions())
+      builder = OpBuilder::atBlockEnd(&decl->getRegion(0).front());
+  }
+
+private:
   /// This is the Module, LITStructDecl, LITFunc that this scope corresponds
   /// to.
   Operation *decl;
-  LLCL::RCRef<Scope> parentScope;
+  Scope *parentScope;
   OpBuilder builder;
 
   /// This is the cursor that points to the start of the declaration.  This is

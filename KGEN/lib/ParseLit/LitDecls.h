@@ -11,13 +11,13 @@
 #ifndef LITDECLS_H
 #define LITDECLS_H
 
-#include "LLCL/Support/RCRef.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 
 namespace M::KGEN {
 class LITFuncOp;
+class LITStructDeclOp;
 class VarDeclOp;
 } // namespace M::KGEN
 
@@ -42,7 +42,7 @@ public:
   void resolveAll();
 
   /// Add a new declaration that needs to be resolved.
-  void addDecl(LLCL::RCRef<Scope> declScope);
+  Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor);
 
   /// Given a cursor location for a type expression that correctly parsed in the
   /// first pass, reparse it into an expression and resolve it into a type by
@@ -54,6 +54,7 @@ private:
   void resolve(Scope &scope);
 
   void resolveBody(LITFuncOp op, Scope &scope);
+  void resolveBody(LITStructDeclOp op, Scope &scope);
   void resolveSignature(VarDeclOp op, Scope &scope);
 
 private:
@@ -62,7 +63,7 @@ private:
 
   /// This is a mapping of every declaration (module, func, struct, etc) that
   /// we have parsed, along with the metadata for it maintained in `Scope`.
-  DenseMap<Operation *, LLCL::RCRef<Scope>> parsedDecls;
+  DenseMap<Operation *, Scope *> parsedDecls;
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<Operation *> parsedDeclList;

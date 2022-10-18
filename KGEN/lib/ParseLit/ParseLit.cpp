@@ -33,7 +33,6 @@
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
-using namespace M::LLCL;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
@@ -99,26 +98,24 @@ private:
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
 struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, RCRef<Scope> scope = {})
-      : LitParserBase(lexer), currentScope(std::move(scope)) {}
+  LitParser(LitLexer &lexer, Scope &scope)
+      : LitParserBase(lexer), scope(scope) {}
 
   ParseResult parseFile(ModuleOp module);
 
-  void performNameBinding();
-
-  const RCRef<Scope> &getCurrentScope() const { return currentScope; }
+  const Scope &getScope() const { return scope; }
 
   // Expressions.
   // TODO: Move expression emission elsewhere!
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emitExpr(ExprNode *node) {
-    EmitterState state(*this, *currentScope);
+    EmitterState state(*this, scope);
     return node->emit(state);
   }
 
   Value emitExprAsValue(ExprNode *node) {
-    EmitterState state(*this, *currentScope);
+    EmitterState state(*this, scope);
     return node->emit(state).getAsValue(translateLocation(node->getLoc()),
                                         state.builder);
   }
@@ -138,6 +135,7 @@ struct LitParser : public LitParserBase {
   ParseResult parseDefStmt(size_t curIndent);
   void parseDefBody(LITFuncOp defDecl);
   ParseResult parseStructStmt(size_t curIndent);
+  void parseStructBody(LITStructDeclOp structDecl);
 
   // Simple statements.
   ParseResult parseVarDeclStmt();
@@ -146,24 +144,12 @@ struct LitParser : public LitParserBase {
                                   SMLoc equalsLoc);
 
 private:
-  /// This is the current context that we're parsing into.
-  RCRef<Scope> currentScope;
+  /// This is declaration scope that we're parsing into.
+  Scope &scope;
 };
 
 /// file ::= statements
 ParseResult LitParser::parseFile(ModuleOp module) {
-  // The outermost scope contains the __builtins__ function definitions.
-  // TODO: Add these:
-  // https://docs.python.org/3/library/functions.html#built-in-funcs
-  // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
-  auto builtinsScope =
-      RCRef<Scope>::create(module, RCRef<Scope>(), getLexer().getCursor());
-
-  // Create the module scope which will contain all things we parse.  These
-  // shadow the builtins module during name lookup.
-  currentScope = RCRef<Scope>::create(module, std::move(builtinsScope),
-                                      getLexer().getCursor());
-
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
@@ -352,16 +338,16 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     return success();
   }
 
-  auto builder = currentScope->getBuilder();
+  auto builder = scope.getBuilder();
   // Use this builder to place any VarDeclOps. In Python there is only one
   // scope per function and all variables belong to that scope, so builders
   // should reflect that.
-  auto funcBodyBuilder = currentScope->getDeclBuilder();
+  auto funcBodyBuilder = scope.getDeclBuilder();
 
   // Look up the name being assigned to if it already exists.
   Value lvalue;
   if (Optional<Scope::ScopeValue> decl =
-          currentScope->lookupInCurrentScope(dre->spelling)) {
+          scope.lookupInCurrentScope(dre->spelling)) {
     // Don't allow reassigning to functions and other constant parameters.
     if (std::holds_alternative<VarDeclOp>(decl.value()))
       lvalue = std::get<VarDeclOp>(decl.value());
@@ -381,7 +367,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     auto varDecl = funcBodyBuilder.create<VarDeclOp>(
         translateLocation(lhs->getLoc()), declType,
         funcBodyBuilder.getStringAttr(dre->spelling));
-    currentScope->addToScope(dre->spelling, varDecl, getSharedState());
+    scope.addToScope(dre->spelling, varDecl, getSharedState());
     lvalue = varDecl;
   }
 
@@ -454,13 +440,13 @@ struct ParsedMetaSignature {
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
 ParseResult LitParser::parseIfStmt(size_t curIndent) {
-  OpBuilder &builder = currentScope->getBuilder();
+  OpBuilder &builder = scope.getBuilder();
   Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
   auto one = builder.create<index::ConstantOp>(ifLoc, 1);
 
   // Parse the condition expression of the If statement and create a comparison
   // with the current builder.
-  // The caller should be sure to have the correct builder in currentScope to
+  // The caller should be sure to have the correct builder in scope to
   // build the conditional expression in the desired place.
   auto parseCondition = [&](index::CmpOp &cmpOp) -> ParseResult {
     // TODO: add type checking: the condition should be bool
@@ -470,7 +456,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     Value cond = emitExprAsValue(condExp);
     if (!cond)
       return failure();
-    auto cmpBuilder = currentScope->getBuilder();
+    auto cmpBuilder = scope.getBuilder();
     cmpOp = cmpBuilder.create<index::CmpOp>(loc, index::IndexCmpPredicate::EQ,
                                             cond, one);
     if (parseToken(LitToken::colon, "expected ':' after expression"))
@@ -495,14 +481,13 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     auto elseBuilder = lastIfOp.getElseBodyBuilder();
     index::CmpOp elifCmp;
     {
-      SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
-                                             elseBuilder);
+      SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(), elseBuilder);
       if (failed(parseCondition(elifCmp)))
         return failure();
     }
     lastIfOp =
         elseBuilder.create<scf::IfOp>(elifLoc, elifCmp, /*withElse=*/true);
-    SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
+    SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(),
                                            lastIfOp.getThenBodyBuilder());
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
@@ -511,7 +496,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     consumeToken(LitToken::kw_else);
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
-    SaveAndRestore<OpBuilder> builderSaver(currentScope->getBuilder(),
+    SaveAndRestore<OpBuilder> builderSaver(scope.getBuilder(),
                                            lastIfOp.getElseBodyBuilder());
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
@@ -627,7 +612,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   if (info.resultTypeCursor)
     resultTypes.push_back(IndexType::get(getContext()));
 
-  auto builder = currentScope->getBuilder();
+  auto builder = scope.getBuilder();
   auto functionType = builder.getFunctionType(paramTypes, resultTypes);
   auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
 
@@ -645,15 +630,13 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   auto funcDeclRefAttr = SymbolConstantAttr::get(
       FlatSymbolRefAttr::get(info.name), funcDecl.getSignature());
 
-  currentScope->addToScope(info.name,
-                           Scope::MetaParameterValue{funcDeclRefAttr, loc},
-                           getSharedState());
+  scope.addToScope(info.name, Scope::MetaParameterValue{funcDeclRefAttr, loc},
+                   getSharedState());
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.  Remember that we need to
   // do so.
-  getDeclResolver().addDecl(
-      RCRef<Scope>::create(funcDecl, currentScope.copy(), declCursor));
+  getDeclResolver().addDecl(funcDecl, &scope, declCursor);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -672,14 +655,13 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
   for (auto [param, loc] :
        llvm::zip(defDecl.getParamDecls(), info.metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-    currentScope->addToScope(param.getName(),
-                             Scope::MetaParameterValue{value, loc},
-                             getSharedState());
+    scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
+                     getSharedState());
   }
 
   // Set up the body of the def, creating declarations for the value parameters
   // and adding them to the symbol table.
-  auto builder = currentScope->getBuilder();
+  auto builder = scope.getBuilder();
   for (auto [arg, name] : llvm::zip(defDecl.getBody()->getArguments(),
                                     defDecl.getValueParamNames())) {
     // Create a mutable var.decl that references to the name can load from.
@@ -687,7 +669,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    currentScope->addToScope(name, varDecl, getSharedState());
+    scope.addToScope(name, varDecl, getSharedState());
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -713,7 +695,7 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
 
 void DeclResolver::resolveBody(LITFuncOp op, Scope &scope) {
   LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
+  LitParser parser(lexer, scope);
   parser.parseDefBody(op);
 }
 
@@ -754,26 +736,25 @@ ParseResult LitParser::parseVarDeclStmt() {
   if (info.initValueCursor)
     emitError(info.loc, "var initializers not supported yet");
 
-  auto builder = currentScope->getDeclBuilder();
+  auto builder = scope.getDeclBuilder();
 
   // If we are in a function, emit a variable declaration, if we are in a
   // struct, emit a field declaration.  Both have the same IR representation.
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
   auto varDecl = builder.create<VarDeclOp>(translateLocation(info.loc), varType,
                                            info.name);
-  currentScope->addToScope(info.name, varDecl, getSharedState());
+  scope.addToScope(info.name, varDecl, getSharedState());
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(
-      RCRef<Scope>::create(varDecl, currentScope.copy(), declCursor));
+  getDeclResolver().addDecl(varDecl, &scope, declCursor);
   return success();
 }
 
 void DeclResolver::resolveSignature(VarDeclOp op, Scope &scope) {
   // Set up a lexer to point to the start of the declaration so we can reparse.
   LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, RCRef<Scope>::copy(&scope));
+  LitParser parser(lexer, scope);
 
   // Reparse the var-decl signature again.  We know the initial parse succeeded.
   ParsedVarDecl info;
@@ -818,7 +799,7 @@ ParseResult LitParser::parseReturnStmt() {
   }
 
   // Check the result values match expected types.
-  LITFuncOp decl = dyn_cast<LITFuncOp>(currentScope->getDecl());
+  LITFuncOp decl = dyn_cast<LITFuncOp>(scope.getDecl());
   if (!decl) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -843,8 +824,8 @@ ParseResult LitParser::parseReturnStmt() {
   }
 
   // TODO: Support result parameters.
-  currentScope->getBuilder().create<ReturnOp>(
-      translateLocation(loc), ArrayRef<TypedAttr>(), operandValues);
+  scope.getBuilder().create<ReturnOp>(translateLocation(loc),
+                                      ArrayRef<TypedAttr>(), operandValues);
   return success();
 }
 
@@ -865,7 +846,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
       parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  auto builder = currentScope->getBuilder();
+  auto builder = scope.getBuilder();
   // TODO: Should have nicer builder.
   auto newStruct = builder.create<LITStructDeclOp>(
       loc, nameAttr,
@@ -876,26 +857,47 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   auto newRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(nameAttr),
                                             builder.getType<MLIRTypeType>());
 
-  currentScope->addToScope(nameAttr, Scope::MetaParameterValue{newRefAttr, loc},
-                           getSharedState());
+  scope.addToScope(nameAttr, Scope::MetaParameterValue{newRefAttr, loc},
+                   getSharedState());
 
-  // Switch to the struct's scope to parse things into it.
-  SaveAndRestore<RCRef<Scope>> scopeSaver(
-      currentScope,
-      RCRef<Scope>::create(newStruct, currentScope.copy(), declCursor));
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(newStruct, &scope, declCursor);
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
+  return success();
+}
+
+void LitParser::parseStructBody(LITStructDeclOp structDecl) {
+  size_t structIndent = getToken().getIndentation().value_or(0);
+
+  // TODO: Add support for decorators.
+  consumeToken(LitToken::kw_struct);
+
+  StringAttr nameAttr;
+  ParsedMetaSignature metaSignature;
+  if (parseIdentifier(nameAttr, "expected struct name") ||
+      metaSignature.parseOptionalMetaSignature(*this) ||
+      parseToken(LitToken::colon, "expected ':' in function definition"))
+    return;
 
   // Add the meta parameters to the symbol table.
   for (auto [param, loc] :
-       llvm::zip(newStruct.getParamDecls(), metaSignature.inputLocs)) {
+       llvm::zip(structDecl.getParamDecls(), metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-    currentScope->addToScope(param.getName(),
-                             Scope::MetaParameterValue{value, loc},
-                             getSharedState());
+    scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
+                     getSharedState());
   }
 
-  (void)parseSuite(curIndent, StmtContext::structBody);
+  (void)parseSuite(structIndent, StmtContext::structBody);
+}
 
-  return success();
+void DeclResolver::resolveBody(LITStructDeclOp op, Scope &scope) {
+  LitLexer lexer(sharedState, scope.getCursor());
+  LitParser parser(lexer, scope);
+  parser.parseStructBody(op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -937,10 +939,22 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                           /*column=*/0)));
 
   LitSharedState sharedState(sourceMgr, context);
+  LitLexer lexer(sharedState);
+
+  // The outermost scope contains the __builtins__ function definitions.
+  // TODO: Add these:
+  // https://docs.python.org/3/library/functions.html#built-in-funcs
+  // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
+  Scope &builtinsScope =
+      sharedState.declResolver->addDecl(*module, nullptr, lexer.getCursor());
+
+  // Create the module scope which will contain all things we parse.  These
+  // shadow the builtins module during name lookup.
+  Scope &fileScope = sharedState.declResolver->addDecl(*module, &builtinsScope,
+                                                       lexer.getCursor());
 
   // Parse the file.
-  LitLexer lexer(sharedState);
-  if (LitParser(lexer).parseFile(*module))
+  if (LitParser(lexer, fileScope).parseFile(*module))
     return nullptr;
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
