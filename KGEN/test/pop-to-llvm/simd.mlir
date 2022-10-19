@@ -922,3 +922,22 @@ kgen.func @simd_reduce_min_1xf32(%a: !pop.simd<1, f32>,
   %2 = pop.simd.reduce.min %c : !pop.simd<1, ui32>
   kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
 }
+
+// -----
+
+// CHECK-LABEL: @pop_gather
+// CHECK-SAME: %[[BASE0:.*]]: !pop.simd<2, address>
+// CHECK-SAME: %[[MASK0:.*]]: !pop.simd<2, bool>
+// CHECK-SAME: %[[PASSTHROUGH0:.*]]: !pop.simd<2, f32>
+kgen.func @pop_gather(%base: !pop.simd<2, address>,
+                      %mask: !pop.simd<2, bool>,
+                      %passthrough: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  // CHECK-DAG: %[[BASE:.*]] = builtin.unrealized_conversion_cast %[[BASE0]]
+  // CHECK-DAG: %[[MASK:.*]] = builtin.unrealized_conversion_cast %[[MASK0]]
+  // CHECK-DAG: %[[PASSTHROUGH:.*]] = builtin.unrealized_conversion_cast %[[PASSTHROUGH0]]
+  // CHECK: %[[RESULT:.*]] = llvm.intr.masked.gather %[[BASE]], %[[MASK]], %[[PASSTHROUGH]] {alignment = 4 : i32}
+  %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, address>,
+                                                    !pop.simd<2, bool>,
+                                                    !pop.simd<2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}

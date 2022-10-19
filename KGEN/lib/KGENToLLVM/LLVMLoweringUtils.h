@@ -12,7 +12,6 @@
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
-
 class KGENDType;
 
 //===----------------------------------------------------------------------===//

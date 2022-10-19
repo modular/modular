@@ -821,8 +821,8 @@ struct ConvertPOPArrayReplace
 // getAlignment
 //===----------------------------------------------------------------------===//
 
-static unsigned getAlignment(const llvm::DataLayout &dataLayout, Value ptr,
-                             Optional<TypedAttr> alignmentAttr) {
+static unsigned getAlignment(const llvm::DataLayout &dataLayout, Type ptrType,
+                             Optional<TypedAttr> alignmentAttr = {}) {
   // If we have the alignment attribute, use it.
   if (alignmentAttr)
     return alignmentAttr->cast<IntegerAttr>().getInt();
@@ -831,8 +831,7 @@ static unsigned getAlignment(const llvm::DataLayout &dataLayout, Value ptr,
   llvm::LLVMContext llvmContext;
   return LLVM::TypeToLLVMIRTranslator(llvmContext)
       .getPreferredAlignment(
-          ptr.getType().cast<LLVM::LLVMPointerType>().getElementType(),
-          dataLayout);
+          ptrType.cast<LLVM::LLVMPointerType>().getElementType(), dataLayout);
 }
 
 //===----------------------------------------------------------------------===//
@@ -847,8 +846,8 @@ struct ConvertPOPLoad : mlir::ConvertOpToLLVMPattern<LoadOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, adaptor.getPtr(),
-        getAlignment(getTypeConverter()->getDataLayout(), adaptor.getPtr(),
-                     adaptor.getAlignment()));
+        getAlignment(getTypeConverter()->getDataLayout(),
+                     adaptor.getPtr().getType(), adaptor.getAlignment()));
     return success();
   }
 };
@@ -865,8 +864,30 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(),
-        getAlignment(getTypeConverter()->getDataLayout(), adaptor.getPtr(),
-                     adaptor.getAlignment()));
+        getAlignment(getTypeConverter()->getDataLayout(),
+                     adaptor.getPtr().getType(), adaptor.getAlignment()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDGather
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDGather : mlir::ConvertOpToLLVMPattern<SIMDGatherOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDGatherOp op, SIMDGatherOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = getTypeConverter()->convertType(op.getType());
+    Type ptrType = KGEN::getLLVMPointerTo(
+        op->getContext(),
+        *op.getPassthrough().getType().cast<SIMDType>().getResolvedDType());
+    rewriter.replaceOpWithNewOp<LLVM::masked_gather>(
+        op, type, adaptor.getBase(), adaptor.getMask(),
+        adaptor.getPassthrough(),
+        getAlignment(getTypeConverter()->getDataLayout(), ptrType));
     return success();
   }
 };
@@ -1319,6 +1340,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPShl,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
+      ConvertPOPSIMDGather,
       ConvertPOPSIMDInsertElement,
       ConvertPOPSIMDReduceAdd,
       ConvertPOPSIMDReduceMax,
