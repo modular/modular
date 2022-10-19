@@ -112,26 +112,26 @@ def a():
 
 # // -----
 
-def a() -> Int:
+def a() -> index:
   return # expected-error {{expected a return value from 'def' with return type 'index'}}
 
 # // -----
 
-def a() -> Int:
+def a() -> index:
   return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}
 
 # // -----
 
 def bad[
-      dt: Int # expected-note {{previous definition here}}
-    ](dt: Int):    # expected-error {{invalid redefinition of "dt"}}
+      dt: index # expected-note {{previous definition here}}
+    ](dt: index):    # expected-error {{invalid redefinition of "dt"}}
   pass
 
 # // -----
 
 # expected-note @below {{previous definition here}}
 # expected-error @below {{invalid redefinition of "x"}}
-def bad(x: Int, x: Int):
+def bad(x: index, x: index):
   pass
 
 # // -----

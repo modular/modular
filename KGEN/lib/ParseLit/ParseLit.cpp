@@ -150,6 +150,11 @@ struct LitParser : public LitParserBase {
   ParseResult parseVarDeclStmt();
   void parseVarDeclSignature(VarDeclOp varDecl);
 
+  /// Type parsing.
+  ParseResult parseType(Type &result) {
+    return LitParserBase::parseType(result, scope);
+  }
+
 private:
   /// This is declaration scope that we're parsing into.
   Scope &scope;
@@ -604,7 +609,7 @@ struct ParsedParam {
   /// where the expressions may be re-parsed from.
   SMLoc loc;
   StringAttr name;
-  Optional<LitLexerCursor> typeCursor;
+  Type type;
   Optional<LitLexerCursor> initValueCursor;
 
   // TODO: Implement support for variadic parameter markers:
@@ -614,7 +619,7 @@ struct ParsedParam {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  ParseResult parse(LitParserBase &p) {
+  ParseResult parse(LitParser &p) {
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
@@ -622,7 +627,8 @@ struct ParsedParam {
       return failure();
 
     if (p.consumeIf(LitToken::colon)) {
-      if (p.parseOverExpression(typeCursor))
+
+      if (p.parseType(type))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
@@ -644,7 +650,7 @@ struct ParsedParam {
 void LitParser::parseDefSignature(LITFuncOp defDecl) {
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
-  Optional<LitLexerCursor> resultTypeCursor;
+  Type resultType;
 
   if (metaSignature.parseOptionalMetaSignature(*this) ||
       parseToken(LitToken::l_paren, "expected '(' for parameter list"))
@@ -665,7 +671,7 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   if (consumeIf(LitToken::minus_greater)) {
-    if (parseOverExpression(resultTypeCursor))
+    if (parseType(resultType))
       return; // TODO: Mark decl erroneous.
   }
 
@@ -676,11 +682,11 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
   // unresolved types for now.
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
-  // TODO(types): Replace index with unresolved types here.
-  SmallVector<Type> paramTypes(params.size(), IndexType::get(getContext()));
+  SmallVector<Type> paramTypes;
   for (const auto &param : params) {
     paramLocs.push_back(translateLocation(param.loc));
     paramNames.push_back(param.name);
+    paramTypes.push_back(param.type);
     // TODO: add support for default parameter expressions.
     if (param.initValueCursor)
       emitError(param.initValueCursor->getLoc(getLexer()),
@@ -688,8 +694,8 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
   }
 
   SmallVector<Type> resultTypes;
-  if (resultTypeCursor)
-    resultTypes.push_back(IndexType::get(getContext()));
+  if (resultType)
+    resultTypes.push_back(resultType);
 
   defDecl.setValueParamNamesAttr(
       StringArrayAttr::get(getContext(), paramNames));
@@ -785,7 +791,7 @@ void LitParser::parseVarDeclSignature(VarDeclOp varDecl) {
   // Parse the type if present.
   // TODO: Make type optional.
   if (parseToken(LitToken::colon, "var declaration requires a type") ||
-      parseType(type, scope))
+      parseType(type))
     return; // TODO: mark decl erroreous.
 
   varDecl.getResult().setType(POP::PointerType::get(type));

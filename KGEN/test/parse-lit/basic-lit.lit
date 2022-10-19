@@ -7,7 +7,7 @@ def empty_def():
   # Pass isn't required.
 
 # CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
-def do_math(a: Int, b: Int, c: Int) -> Int:
+def do_math(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %x = lit.var.decl "x" : <index>
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %a_0 = lit.var.decl "a"
@@ -55,10 +55,10 @@ z
   return x
 
 
-# CHECK-LABEL: lit.func public @fancy_signature<dt, size>(%x: index, %exp: index) -> index {
+# CHECK-LABEL: lit.func public @fancy_signature<dt, size>(%x: !kgen.ref<@SIMD>, %exp: !kgen.ref<@SIMD>) -> index {
 def fancy_signature[dt: DType, size: Int]
   # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
-  (x: SIMD, exp: SIMD) -> SIMD:
+  (x: SIMD, exp: SIMD) -> index:
   pass
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
@@ -102,3 +102,6 @@ def var_decls():
   z = 42
   # CHECK: %[[TMP:.*]] = index.constant 42
   # CHECK: pop.store %[[TMP]], %z
+
+struct SIMD:
+  pass

@@ -4,7 +4,7 @@ struct Int:
   pass
 
 # CHECK-LABEL: lit.func public @test_if(%a: index, %b: index, %c: index) -> index {
-def test_if(a: Int, b: Int, c: Int) -> Int:
+def test_if(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
@@ -31,7 +31,7 @@ def test_if(a: Int, b: Int, c: Int) -> Int:
   return a
 
 # CHECK-LABEL: lit.func public @test_if_nested(%a: index, %b: index, %c: index) -> index {
-def test_if_nested(a: Int, b: Int, c: Int) -> Int:
+def test_if_nested(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
