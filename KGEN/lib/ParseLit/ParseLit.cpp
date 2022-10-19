@@ -751,10 +751,18 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
   SmallVector<Type> paramTypes;
-  for (const auto &param : params) {
+  for (auto &param : params) {
     paramLocs.push_back(translateLocation(param.loc));
     paramNames.push_back(param.name);
+
+    // If the parameter is missing a type, infer object type.
+    // TODO(fn): /require/ types on parameters instead of defaulting to object.
+    // TODO: I think there are some other special cases to evaluate, e.g. "self"
+    // arguments should be containing type in methods?
+    if (!param.type)
+      param.type = builder.getType<ObjectType>();
     paramTypes.push_back(param.type);
+
     // TODO: add support for default parameter expressions.
     if (param.initValueCursor)
       emitError(param.initValueCursor->getLoc(getLexer()),
@@ -813,6 +821,9 @@ void LitParser::parseDefBody(LITFuncOp defDecl, ssize_t defIndent) {
       emitError(endLoc, "return expected at end of 'def' with results");
     }
   }
+
+  // TODO: Do more type checking: verify that functions like __add__ have the
+  // right signature.
 }
 
 void DeclResolver::resolveSignature(LITFuncOp op, LitLexer &lexer,
