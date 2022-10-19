@@ -558,3 +558,36 @@ kgen.generator @parametric_addressof() {
   %3 = kgen.addressof @baz<() -> result> : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.struct.decl @Int20 {
+  value : i20
+}
+
+kgen.struct.decl @Int40 {
+  value : i40
+}
+
+kgen.struct.decl @Pair<T1: type, T2: type> {
+  first : !kgen.paramref<T1>
+  second : !kgen.paramref<T2>
+}
+
+// CHECK-LABEL: @"struct_sizeof
+kgen.generator public @struct_sizeof<T1: type, T2: type>() {
+  // CHECK-NEXT: <4>
+  %0 = kgen.param.constant = <get_alignof(!kgen.ref<@Int20>)>
+  // CHECK-NEXT: <4>
+  %1 = kgen.param.constant = <get_sizeof(!kgen.ref<@Int20>)>
+  // CHECK-NEXT: <8>
+  %2 = kgen.param.constant = <get_alignof(!kgen.ref<@Pair<T1: type = T1, T2: type = T2>>)>
+  // CHECK-NEXT: <16>
+  %3 = kgen.param.constant = <get_sizeof(!kgen.ref<@Pair<T1: type = T1, T2: type = T2>>)>
+  kgen.return
+}
+
+kgen.generator public @elaborate() {
+  kgen.call @struct_sizeof<T1: type = !kgen.ref<@Int40>, T2: type = !kgen.ref<@Int20>>() : () -> ()
+  kgen.return
+}
