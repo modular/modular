@@ -415,7 +415,7 @@ struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
   std::vector<Location> inputLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParserBase &p) {
+  ParseResult parseOptionalMetaSignature(LitParser &p) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -428,15 +428,11 @@ struct ParsedMetaSignature {
         return failure();
       }
 
-      Type paramType = IndexType::get(p.getContext());
-      if (p.consumeIf(LitToken::colon)) {
-        ExprNode *typeExpr = nullptr;
-        if (p.parseExpression(typeExpr))
-          return failure();
-
-        // TODO (types): translate typeExpr into a type.
-        (void)typeExpr;
-      }
+      Type paramType;
+      if (p.parseToken(LitToken::colon,
+                       "meta parameters always require a type") ||
+          p.parseType(paramType))
+        return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       return success();
     };
@@ -673,12 +669,10 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
 namespace {
 struct ParsedParam {
-  /// If this parameter has a type specifier or default value, these indicates
-  /// where the expressions may be re-parsed from.
   SMLoc loc;
   StringAttr name;
   Type type;
-  Optional<LitLexerCursor> initValueCursor;
+  ExprNode *initValue = nullptr;
 
   // TODO: Implement support for variadic parameter markers:
   // Python's parameter grammar embeds checking for `/` and `*` and `**` into
@@ -700,7 +694,7 @@ struct ParsedParam {
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
-      if (p.parseOverExpression(initValueCursor))
+      if (p.parseExpression(initValue))
         return failure();
     }
     return success();
@@ -759,14 +753,14 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
     // TODO(fn): /require/ types on parameters instead of defaulting to object.
     // TODO: I think there are some other special cases to evaluate, e.g. "self"
     // arguments should be containing type in methods?
+    // TODO(default args): Get the type from the default arg when present.
     if (!param.type)
       param.type = builder.getType<ObjectType>();
     paramTypes.push_back(param.type);
 
     // TODO: add support for default parameter expressions.
-    if (param.initValueCursor)
-      emitError(param.initValueCursor->getLoc(getLexer()),
-                "TODO: No default values yet");
+    if (param.initValue)
+      emitError(param.initValue->getLoc(), "TODO: No default values yet");
   }
 
   SmallVector<Type> resultTypes;
@@ -866,7 +860,7 @@ ParseResult LitParser::parseVarDeclStmt() {
 
 void LitParser::parseVarDeclSignature(VarDeclOp varDecl) {
   Type type;
-  Optional<LitLexerCursor> initValueCursor;
+  ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.
   if (parseToken(LitToken::colon, "var declaration requires a type") ||
@@ -876,13 +870,10 @@ void LitParser::parseVarDeclSignature(VarDeclOp varDecl) {
   varDecl.getResult().setType(POP::PointerType::get(type));
 
   if (consumeIf(LitToken::equal)) {
-    if (parseOverExpression(initValueCursor))
+    emitError("var initializers not supported yet");
+    if (parseExpression(initValue))
       return; // TODO: mark decl erroreous.
   }
-
-  if (initValueCursor)
-    emitError(initValueCursor->getLoc(getLexer()),
-              "var initializers not supported yet");
 }
 
 void DeclResolver::resolveSignature(VarDeclOp op, LitLexer &lexer,
