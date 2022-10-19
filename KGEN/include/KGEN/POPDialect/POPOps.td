@@ -1358,6 +1358,13 @@ def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
     custom<VariantVisitRegions>($cases, $regions)
   }];
 
+  let extraClassDeclaration = [{
+    /// Returns true if the operation has a default region.
+    bool hasDefaultRegion();
+    /// Return the default region.
+    Region *getDefaultRegion();
+  }];
+
   let hasVerifier = 1;
 }
 

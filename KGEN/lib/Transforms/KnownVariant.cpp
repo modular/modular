@@ -91,18 +91,23 @@ struct VariantAwareDeadCodeAnalysis : public DeadCodeAnalysis {
         getOrCreateFor<VariantState>(point, visit.getVariant())->getValue();
     // Mark any case region of a known type to be live. If there is a known type
     // that does not have a case region, the default region is live.
+    auto markRegionLive = [&](Region *region) {
+      auto *executable = getOrCreate<Executable>(&region->front());
+      propagateIfChanged(executable, executable->setToLive());
+      auto *predecessors = getOrCreate<PredecessorState>(&region->front());
+      propagateIfChanged(predecessors,
+                         predecessors->join(visit, visit->getOperands()));
+    };
     unsigned casesHit = 0;
     for (auto [caseType, region] :
          llvm::zip(visit.getCases(), visit.getRegions())) {
       if (value.knownTypes.contains(caseType)) {
         ++casesHit;
-        auto *executable = getOrCreate<Executable>(&region->front());
-        propagateIfChanged(executable, executable->setToLive());
-        auto *predecessors = getOrCreate<PredecessorState>(&region->front());
-        propagateIfChanged(predecessors,
-                           predecessors->join(visit, visit->getOperands()));
+        markRegionLive(region);
       }
     }
+    if (!casesHit && visit.hasDefaultRegion())
+      markRegionLive(visit.getDefaultRegion());
     return success();
   }
 };
