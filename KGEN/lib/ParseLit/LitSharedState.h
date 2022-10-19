@@ -40,11 +40,6 @@ public:
 
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
-
-  /// We allow a single ExprParser instance to be live at a time, this gives
-  /// efficiently accessible scratch space for it to scribble into.
-  llvm::BumpPtrAllocator exprAllocator;
-  bool hasExprParser = false;
 };
 
 /// This enum indicates how much parsing and type checking has been done on
