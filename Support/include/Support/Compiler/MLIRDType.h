@@ -28,6 +28,14 @@ FloatType getEquivalentFloatType(MLIRContext *ctx, DType dtype);
 /// Given an integer dtype, return the equivalent MLIR integer type.
 IntegerType getEquivalentIntegerType(MLIRContext *ctx, DType dtype);
 
+/// Given an MLIR float type, return the equivalent dtype. Returns an
+/// invalid DType if the MLIR float type is not representable.
+DType getEquivalentDType(FloatType fpType);
+
+/// Given an MLIR integer type, return the equivalent dtype. Returns an
+/// invalid DType if the MLIR integer type is not representable.
+DType getEquivalentDType(IntegerType intType);
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDTYPE_H
