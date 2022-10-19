@@ -246,13 +246,3 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
 ParseResult LitParserBase::parseExpression(ExprNode *&result) {
   return ExprParser(getLexer()).parseExpression(result);
 }
-
-/// Parse an expression to check for syntactic validity, but throw it away
-/// immediately.  Record the starting position for the expression in the
-/// specified cursor.
-ParseResult
-LitParserBase::parseOverExpression(Optional<LitLexerCursor> &cursor) {
-  cursor = getLexer().getCursor();
-  ExprNode *result = nullptr;
-  return ExprParser(getLexer()).parseExpression(result);
-}

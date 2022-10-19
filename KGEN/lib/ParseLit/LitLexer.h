@@ -172,8 +172,6 @@ public:
     lexer.curToken = curToken;
   }
 
-  Location getLoc(LitLexer &lexer) const;
-
 private:
   const char *state;
   LitToken curToken;
