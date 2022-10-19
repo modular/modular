@@ -848,6 +848,15 @@ LogicalResult VariantVisitOp::verify() {
   return success();
 }
 
+bool VariantVisitOp::hasDefaultRegion() {
+  return getCases().size() != getNumRegions();
+}
+
+Region *VariantVisitOp::getDefaultRegion() {
+  assert(hasDefaultRegion());
+  return getRegions().back();
+}
+
 //===----------------------------------------------------------------------===//
 // RegionBranchOpInterface implementation
 
@@ -880,8 +889,7 @@ void VariantVisitOp::getSuccessorRegions(
 OperandRange
 VariantVisitOp::getSuccessorEntryOperands(Optional<unsigned> index) {
   assert(index);
-  if (getCases().size() != getVariant().getType().getTypes().size() &&
-      *index == getNumRegions() - 1)
+  if (hasDefaultRegion() && *index == getNumRegions() - 1)
     return {(*this)->operand_end(), (*this)->operand_end()};
   return (*this)->getOperands();
 }
