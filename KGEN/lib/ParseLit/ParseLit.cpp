@@ -571,6 +571,44 @@ ParseResult LitParser::parseReturnStmt() {
 // Definitions
 //===----------------------------------------------------------------------===//
 
+ParseResult LitParser::parseDefStmt(size_t curIndent) {
+  LitLexerCursor declCursor = getLexer().getCursor();
+  Location loc = getTokenLocation();
+
+  // TODO: Add support for decorators.
+  StringAttr name;
+  consumeToken(LitToken::kw_def);
+  if (parseIdentifier(name, "expected function name"))
+    return failure();
+
+  auto functionType =
+      builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
+
+  // TODO: Should have nicer builder.
+  auto funcDecl = builder.create<LITFuncOp>(
+      loc, name, StringArrayAttr::get(getContext(), {}),
+      TypeAttr::get(functionType),
+      builder.getAttr<LinkageAttr>(Linkage::Public),
+      ParamDeclArrayAttr::get(getContext(), {}),
+      TypeArrayAttr::get(getContext(), {}),
+      ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
+  funcDecl.getRegion().push_back(new Block());
+
+  auto funcDeclRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(name),
+                                                 funcDecl.getSignature());
+  scope.addToScope(name, Scope::MetaParameterValue{funcDeclRefAttr, loc},
+                   getSharedState());
+
+  // We cannot parse the current body without having parsed other declarations
+  // at the current level, so we defer parsing it.
+  getDeclResolver().addDecl(funcDecl, &scope, declCursor);
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
+  return success();
+}
+
 namespace {
 struct ParsedParam {
   /// If this parameter has a type specifier or default value, these indicates
@@ -607,7 +645,6 @@ struct ParsedParam {
 };
 } // namespace
 
-namespace {
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
@@ -615,58 +652,49 @@ namespace {
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
 /// value_parammarker ::= "/" | "*" | "**"
 ///
-struct ParsedDefSignature {
-  StringAttr name;
+void LitParser::parseDefBody(LITFuncOp defDecl) {
+  size_t defIndent = getToken().getIndentation().value_or(0);
+
+  consumeToken(LitToken::kw_def);
+  consumeToken(LitToken::identifier);
+
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
   Optional<LitLexerCursor> resultTypeCursor;
 
-  ParseResult parse(LitParserBase &p) {
-    // TODO: Add support for decorators.
-    if (p.parseToken(LitToken::kw_def, "expected 'def' declaration") ||
-        p.parseIdentifier(name, "expected function name") ||
-        metaSignature.parseOptionalMetaSignature(p) ||
-        p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
-      return failure();
+  if (metaSignature.parseOptionalMetaSignature(*this) ||
+      parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+    return; // TODO: Mark decl erroneous.
 
-    if (!p.consumeIf(LitToken::r_paren)) {
-      if (p.parseCommaSeparatedList(
-              [&]() { return params.emplace_back(ParsedParam()).parse(p); }) ||
-          p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
-        return failure();
-    }
-
-    // Parse the result type if present.
-
-    // TODO: This will be one difference between a def and fn: no result type on
-    // a def should default to returning a (default initialized) Object, whereas
-    // a fn can return void.  We can provide a guaranteed optimization to remove
-    // it though.
-    if (p.consumeIf(LitToken::minus_greater)) {
-      if (ExprParser::parseOverExpression(p, resultTypeCursor))
-        return failure();
-    }
-
-    return p.parseToken(LitToken::colon, "expected ':' in function definition");
+  if (!consumeIf(LitToken::r_paren)) {
+    if (parseCommaSeparatedList([&]() {
+          return params.emplace_back(ParsedParam()).parse(*this);
+        }) ||
+        parseToken(LitToken::r_paren, "expected ')' for parameter list"))
+      return; // TODO: Mark decl erroneous.
   }
-};
-} // namespace
 
-ParseResult LitParser::parseDefStmt(size_t curIndent) {
-  LitLexerCursor declCursor = getLexer().getCursor();
-  Location loc = getTokenLocation();
-  ParsedDefSignature info;
-  if (info.parse(*this))
-    return failure();
+  // Parse the result type if present.
+
+  // TODO: This will be one difference between a def and fn: no result type on
+  // a def should default to returning a (default initialized) Object, whereas
+  // a fn can return void.  We can provide a guaranteed optimization to remove
+  // it though.
+  if (consumeIf(LitToken::minus_greater)) {
+    if (ExprParser::parseOverExpression(*this, resultTypeCursor))
+      return; // TODO: Mark decl erroneous.
+  }
+
+  if (parseToken(LitToken::colon, "expected ':' in function definition"))
+    return; // TODO: Mark decl erroneous.
 
   // We have parsed the signature but skipped over the actual types, we use
   // unresolved types for now.
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
   // TODO(types): Replace index with unresolved types here.
-  SmallVector<Type> paramTypes(info.params.size(),
-                               IndexType::get(getContext()));
-  for (const auto &param : info.params) {
+  SmallVector<Type> paramTypes(params.size(), IndexType::get(getContext()));
+  for (const auto &param : params) {
     paramLocs.push_back(translateLocation(param.loc));
     paramNames.push_back(param.name);
     // TODO: add support for default parameter expressions.
@@ -676,50 +704,19 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
   }
 
   SmallVector<Type> resultTypes;
-  if (info.resultTypeCursor)
+  if (resultTypeCursor)
     resultTypes.push_back(IndexType::get(getContext()));
 
-  auto functionType = builder.getFunctionType(paramTypes, resultTypes);
-  auto linkage = builder.getAttr<LinkageAttr>(Linkage::Public);
-
-  // TODO: Should have nicer builder.
-  auto funcDecl = builder.create<LITFuncOp>(
-      loc, info.name, StringArrayAttr::get(getContext(), paramNames),
-      TypeAttr::get(functionType), linkage,
-      ParamDeclArrayAttr::get(getContext(), info.metaSignature.inputDecls),
-      TypeArrayAttr::get(getContext(), {}),
-      ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
-  auto bodyBlock = new Block();
-  bodyBlock->addArguments(paramTypes, paramLocs);
-  funcDecl.getRegion().push_back(bodyBlock);
-
-  auto funcDeclRefAttr = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(info.name), funcDecl.getSignature());
-
-  scope.addToScope(info.name, Scope::MetaParameterValue{funcDeclRefAttr, loc},
-                   getSharedState());
-
-  // We cannot parse the current body without having parsed other declarations
-  // at the current level, so we defer parsing it.  Remember that we need to
-  // do so.
-  getDeclResolver().addDecl(funcDecl, &scope, declCursor);
-
-  // Skip the body of this definition: go to a token the starts a line at the
-  // same indent level (or less) as the current definition.
-  skipUntilIndentation(curIndent);
-  return success();
-}
-
-/// Parse a deferred 'def' body.
-void LitParser::parseDefBody(LITFuncOp defDecl) {
-  size_t defIndent = getToken().getIndentation().value_or(0);
-
-  ParsedDefSignature info;
-  (void)info.parse(*this); // We know this will succeed parsing.
+  defDecl.setValueParamNamesAttr(
+      StringArrayAttr::get(getContext(), paramNames));
+  defDecl.setType(builder.getFunctionType(paramTypes, resultTypes));
+  defDecl.setParamDeclsAttr(
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
+  defDecl.getBody()->addArguments(paramTypes, paramLocs);
 
   // Add the meta parameters to the symbol table.
   for (auto [param, loc] :
-       llvm::zip(defDecl.getParamDecls(), info.metaSignature.inputLocs)) {
+       llvm::zip(defDecl.getParamDecls(), metaSignature.inputLocs)) {
     auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
     scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
                      getSharedState());
