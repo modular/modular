@@ -134,6 +134,7 @@ struct LitParser : public LitParserBase {
 
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
+  ParseResult parseWhileStmt(size_t curIndent);
 
   // Simple statements.
   ParseResult parseReturnStmt();
@@ -226,7 +227,7 @@ ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
 /// statement ::= compound_stmt | simple_stmt
 ///
 /// compound_stmt ::= if_stmt
-///                 | while_stmt [TODO]
+///                 | while_stmt
 ///                 | for_stmt [TODO]
 ///                 | try_stmt [TODO]
 ///                 | with_stmt [TODO]
@@ -244,6 +245,8 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
   switch (getToken().getKind()) {
   case LitToken::kw_if:
     return parseIfStmt(curIndent);
+  case LitToken::kw_while:
+    return parseWhileStmt(curIndent);
   case LitToken::kw_def:
     return parseDefStmt(curIndent);
   case LitToken::kw_struct:
@@ -280,6 +283,7 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
 ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
   switch (getToken().getKind()) {
   case LitToken::kw_if:
+  case LitToken::kw_while:
   case LitToken::kw_def:
   case LitToken::kw_struct:
     emitError() << "'" << getToken().getSpelling()
@@ -438,6 +442,52 @@ struct ParsedMetaSignature {
 };
 } // namespace
 
+/// while_stmt ::=  "while" assignment_expression ":" suite
+///                 ["else" ":" suite]
+ParseResult LitParser::parseWhileStmt(size_t curIndent) {
+  Location whileLoc =
+      translateLocation(consumeToken(LitToken::kw_while).getLoc());
+  SmallVector<Type, 0> types = {};
+  SmallVector<Value, 0> operands = {};
+  auto whileOp = builder.create<scf::WhileOp>(whileLoc, types, operands);
+  Block *before = builder.createBlock(&whileOp.getBefore(), {}, {}, {});
+  Block *after = builder.createBlock(&whileOp.getAfter(), {}, {}, {});
+  auto cmpBuilder = OpBuilder::atBlockEnd(before);
+  Value cond;
+  {
+    SaveAndRestore<OpBuilder> builderSaver(builder, cmpBuilder);
+    // TODO(types): add type checking: the condition should be bool
+    ExprParser exprParser(*this);
+    ExprNode *condExp = exprParser.parseExpression();
+    cond = emitExprAsValue(condExp);
+  }
+  if (!cond || parseToken(LitToken::colon, "expected ':' after expression"))
+    return failure();
+
+  auto one = cmpBuilder.create<index::ConstantOp>(whileLoc, 1);
+  auto cmpOp = cmpBuilder.create<index::CmpOp>(
+      whileLoc, index::IndexCmpPredicate::EQ, cond, one);
+  cmpBuilder.create<scf::ConditionOp>(whileLoc, cmpOp, operands);
+
+  auto bodyBuilder = OpBuilder::atBlockEnd(after);
+  builder.setInsertionPointAfter(whileOp);
+  {
+    SaveAndRestore<OpBuilder> builderSaver(builder, bodyBuilder);
+
+    if (failed(parseSuite(curIndent, StmtContext::normal)))
+      return failure();
+    bodyBuilder.create<scf::YieldOp>(whileLoc);
+  }
+  if (getToken().is(LitToken::kw_else) &&
+      getToken().getIndentation() == curIndent) {
+    consumeToken(LitToken::kw_else);
+    if (parseToken(LitToken::colon, "expected ':' after else") ||
+        failed(parseSuite(curIndent, StmtContext::normal)))
+      return failure();
+  }
+  return success();
+}
+
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
@@ -475,6 +525,9 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
   }
   scf::IfOp lastIfOp = ifOp;
   while (getToken().is(LitToken::kw_elif)) {
+    if (getToken().getIndentation() != curIndent)
+      return emitError(
+          "'elif' must match the indentation of the corresponding 'if'");
     Location elifLoc =
         translateLocation(consumeToken(LitToken::kw_elif).getLoc());
     auto elseBuilder = lastIfOp.getElseBodyBuilder();
@@ -491,7 +544,8 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
   }
-  if (getToken().is(LitToken::kw_else)) {
+  if (getToken().is(LitToken::kw_else) &&
+      getToken().getIndentation() == curIndent) {
     consumeToken(LitToken::kw_else);
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
@@ -955,7 +1009,6 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // the caller should not verify it.
   if (sharedState.errorOccurred)
     return nullptr;
-
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
   auto verificationTimer = ts.nest("Verify module");
