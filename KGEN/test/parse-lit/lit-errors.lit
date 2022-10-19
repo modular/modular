@@ -99,6 +99,17 @@ def fn():
 
 # // -----
 
+def fn(a: index):
+  if a:
+    pass
+   elif a: # expected-error {{'elif' must match the indentation of the corresponding 'if'}}
+    pass
+  else:
+    pass
+
+
+# // -----
+
 42 = 17 # expected-error {{cannot assign to expression}}
 
 # // -----

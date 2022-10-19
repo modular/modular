@@ -1,0 +1,55 @@
+# RUN: kgen-translate -import-lit %s | FileCheck %s
+
+# CHECK-LABEL: lit.func public @test_while(%a: index, %b: index) -> index {
+# CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
+# CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
+# CHECK:       %inside_a = lit.var.decl "inside_a" : <index>
+# CHECK:       scf.while : () -> () {
+# CHECK-NEXT:    %[[LOAD_A:.*]] = pop.load  %[[VAR_A:.*]] : !pop.pointer<index>
+# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
+# CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
+# CHECK-NEXT:    scf.condition(%[[CMP]])
+# CHECK-NEXT:  } do {
+# CHECK-NEXT:    index.constant 0
+# CHECK-NEXT:    pop.store {{.+}}, %inside_a : !pop.pointer<index>
+# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
+# CHECK-NEXT:    %[[LOAD_B:.*]] = pop.load %[[VAR_B:.*]] : !pop.pointer<index>
+# CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_B]], %[[ONE]])
+# CHECK-NEXT:    scf.if %[[CMP]] {
+# CHECK-NEXT:      {{.+}} = index.constant 1
+# CHECK-NEXT:      pop.store {{.+}}, %inside_b : !pop.pointer<index>
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:    }
+# CHECK-NEXT:    scf.yield
+# CHECK-NEXT:  }
+# CHECK-NEXT:  index.constant 2
+# CHECK-NEXT:  pop.store {{.+}}, %inside_else : !pop.pointer<index>
+# CHECK-NEXT:  pop.load
+# CHECK-NEXT:  kgen.return
+# CHECK-NEXT:  }
+
+
+def test_while(a: index, b: index) -> Int:
+  while a:
+    inside_a = 0
+    if b:
+      inside_b = 1
+  else:
+    inside_else = 2
+  return a
+
+# CHECK-LABEL: lit.func public @test_simple(%a: index)
+# CHECK:       scf.while : () -> () {
+# CHECK-NEXT:     %[[LOAD_A:.*]] = pop.load %[[VAR_A:.*]] : !pop.pointer<index>
+# CHECK-NEXT:     %[[ONE:.*]] = index.constant 1
+# CHECK-NEXT:     %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
+# CHECK-NEXT:     scf.condition(%[[CMP]])
+# CHECK-NEXT:   } do {
+# CHECK-NEXT:     scf.yield
+# CHECK-NEXT:   }
+# CHECK-NEXT:   kgen.return
+# CHECK-NEXT: }
+
+def test_simple(a: index):
+  while a:
+     pass
