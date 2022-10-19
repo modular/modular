@@ -80,8 +80,11 @@ struct OneLineStruct[size: Int]: pass; pass
 
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
-  pass
-# CHECK-NEXT: }
+  # CHECK-NEXT: lit.func public @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  def __add__(self: Int, rhs: Int) -> Int:
+    return rhs
+  # CHECK: }
+# CHECK: }
 
 # CHECK-LABEL: lit.struct.decl @Pair {
 struct Pair:
@@ -91,8 +94,8 @@ struct Pair:
   var b : Int
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.func public @var_decls
-def var_decls():
+# CHECK-LABEL:  lit.func public @var_decls(%untyped: !lit.object)
+def var_decls(untyped):
   # CHECK: %z = lit.var.decl "z" : <index>
   # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
   # CHECK: %x = lit.var.decl "x" : <index>
