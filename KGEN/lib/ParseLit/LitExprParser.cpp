@@ -22,20 +22,9 @@ namespace M::KGEN::LIT {
 /// idiom.
 class ExprParserImpl : public LitParserBase {
 public:
-  ExprParserImpl(LitParserBase &existing) : LitParserBase(existing.lexer) {
-    // Only a single expression parser can be active at a time, because we clear
-    // the bump pointer allocator when done.
-    assert(!getSharedState().hasExprParser &&
-           "Cannot create multiple expr parsers at once");
-    getSharedState().hasExprParser = true;
-  }
+  ExprParserImpl(LitParserBase &existing) : LitParserBase(existing.lexer) {}
 
-  ~ExprParserImpl() {
-    assert(getSharedState().hasExprParser);
-    getSharedState().hasExprParser = false;
-    /// Free all the expression nodes.
-    getSharedState().exprAllocator.Reset();
-  }
+  ~ExprParserImpl() {}
 
   // Expressions.  These methods always return a non-null ExprNode, but it may
   // be (or include) an Error node if parsing failed.
@@ -59,8 +48,8 @@ private:
   /// Allocate an expression node into the expression bump pointer allocator.
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
-    void *node = getSharedState().exprAllocator.Allocate(sizeof(T),
-                                                         llvm::Align::Of<T>());
+    auto &allocator = getSharedState().persistentAllocator;
+    void *node = allocator.Allocate(sizeof(T), llvm::Align::Of<T>());
     return new (node) T(std::forward<Args>(args)...);
   }
 
@@ -77,8 +66,9 @@ private:
       return elements;
 
     size_t dataSize = sizeof(T) * elements.size();
-    T *result = static_cast<T *>(getSharedState().exprAllocator.Allocate(
-        dataSize, llvm::Align::Of<T>()));
+    auto &allocator = getSharedState().persistentAllocator;
+    T *result =
+        static_cast<T *>(allocator.Allocate(dataSize, llvm::Align::Of<T>()));
     memcpy(result, elements.data(), dataSize);
     return ArrayRef<T>(result, elements.size());
   }
