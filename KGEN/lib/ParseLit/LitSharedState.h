@@ -27,6 +27,7 @@ class DeclResolver;
 class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context);
+  ~LitSharedState();
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;

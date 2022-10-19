@@ -910,6 +910,8 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
       declResolver(std::make_unique<DeclResolver>(*this)),
       bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)) {}
 
+LitSharedState::~LitSharedState() { declResolver.reset(); }
+
 //===----------------------------------------------------------------------===//
 // Driver
 //===----------------------------------------------------------------------===//
