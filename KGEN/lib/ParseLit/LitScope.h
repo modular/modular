@@ -36,7 +36,15 @@ public:
   Operation *getDecl() const { return decl; }
   Scope *getParentScope() const { return parentScope; }
 
-  const LitLexerCursor &getCursor() const { return cursor; }
+  /// This cursor holds the location the parser should resume for the next phase
+  /// of resolution.  For example, after initial scanning of a 'def', this will
+  /// be on the def token.  After processing the signature, this will be after
+  /// the colon.
+  LitLexerCursor &getCursor() { return cursor; }
+
+  /// Return the indentation of the introducer token or -1 if it wasn't on the
+  /// start of line.
+  ssize_t getIndentation() const { return indentation; }
 
   /// Return the builder associated to the declaration that introduced the
   /// Scope.
@@ -47,6 +55,11 @@ public:
     if (decl->getNumRegions() == 0)
       return OpBuilder(decl->getContext());
     return OpBuilder::atBlockBegin(&decl->getRegion(0).front());
+  }
+  OpBuilder getDeclEndBuilder() {
+    if (decl->getNumRegions() == 0)
+      return OpBuilder(decl->getContext());
+    return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
   }
 
   /// This is the value of a parameter bound to a name, attributes in MLIR don't
@@ -88,31 +101,37 @@ public:
     return None;
   }
 
-  bool getIsResolved() const { return isResolved; }
-  void setIsResolved() { isResolved = true; }
+  DeclResolvedness resolvedness = DeclResolvedness::unparsed;
 
 private:
   // Scope is created by DeclResolver.
   friend class DeclResolver;
-  Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor)
-      : decl(decl), parentScope(std::move(parentScope)), cursor(cursor) {}
+  Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
+        ssize_t indentation)
+      : decl(decl), parentScope(std::move(parentScope)), cursor(cursor),
+        indentation(indentation) {}
 
 private:
-  /// This is the Module, LITStructDecl, LITFunc that this scope corresponds
-  /// to.
+  /// This is the declaration that this scope corresponds to.
   Operation *decl;
+
+  /// This the parent scope that should continue name lookup, or null for the
+  /// top scope.
   Scope *parentScope;
 
-  /// This is the cursor that points to the start of the declaration.  This is
-  /// useful if we want to reparse the declaration.
+  /// This is the cursor that points to the next part of declaration to continue
+  /// parsing as the declaration is progressively resolved.
   LitLexerCursor cursor;
 
-  // Note: we could unique the identifiers and use a DenseMap.
-  llvm::StringMap<Optional<ScopeValue>> decls;
+  /// This is the indentation level of the introducer keyword, useful for
+  /// parsing the body of the declaration.  If the declaration was not at the
+  /// start of a line, this is set to -1.
+  ssize_t indentation;
 
-  /// This is true if this declaration is fully type checked.
-  /// TODO: Split to enum.
-  bool isResolved = false;
+  /// These are the declarations defined within this scope.
+  /// TODO: we could unique the attributes and use a DenseMap rather than
+  /// hashing the strings themselves.
+  llvm::StringMap<Optional<ScopeValue>> decls;
 };
 
 } // namespace M::KGEN::LIT

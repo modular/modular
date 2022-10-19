@@ -100,7 +100,8 @@ private:
 /// grammar.
 struct LitParser : public LitParserBase {
   LitParser(LitLexer &lexer, Scope &scope)
-      : LitParserBase(lexer), scope(scope), builder(scope.getDeclBuilder()) {}
+      : LitParserBase(lexer), scope(scope), builder(scope.getDeclEndBuilder()) {
+  }
 
   ParseResult parseFile(ModuleOp module);
 
@@ -141,11 +142,14 @@ struct LitParser : public LitParserBase {
 
   // Declarations.
   ParseResult parseDefStmt(size_t curIndent);
-  void parseDefBody(LITFuncOp defDecl);
+  void parseDefSignature(LITFuncOp defDecl);
+  void parseDefBody(LITFuncOp defDecl, ssize_t defIndent);
+
   ParseResult parseStructStmt(size_t curIndent);
-  void parseStructBody(LITStructDeclOp structDecl);
+  void parseStructSignature(LITStructDeclOp defDecl);
+  void parseStructBody(LITStructDeclOp structDecl, ssize_t structIndent);
   ParseResult parseVarDeclStmt();
-  void parseVarDeclBody(VarDeclOp varDecl);
+  void parseVarDeclSignature(VarDeclOp varDecl);
 
 private:
   /// This is declaration scope that we're parsing into.
@@ -572,7 +576,6 @@ ParseResult LitParser::parseReturnStmt() {
 //===----------------------------------------------------------------------===//
 
 ParseResult LitParser::parseDefStmt(size_t curIndent) {
-  LitLexerCursor declCursor = getLexer().getCursor();
   Location loc = getTokenLocation();
 
   // TODO: Add support for decorators.
@@ -601,7 +604,8 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.
-  getDeclResolver().addDecl(funcDecl, &scope, declCursor);
+  getDeclResolver().addDecl(funcDecl, &scope, getLexer().getCursor(),
+                            curIndent);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -652,12 +656,7 @@ struct ParsedParam {
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
 /// value_parammarker ::= "/" | "*" | "**"
 ///
-void LitParser::parseDefBody(LITFuncOp defDecl) {
-  size_t defIndent = getToken().getIndentation().value_or(0);
-
-  consumeToken(LitToken::kw_def);
-  consumeToken(LitToken::identifier);
-
+void LitParser::parseDefSignature(LITFuncOp defDecl) {
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
   Optional<LitLexerCursor> resultTypeCursor;
@@ -735,7 +734,9 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
+}
 
+void LitParser::parseDefBody(LITFuncOp defDecl, ssize_t defIndent) {
   (void)parseSuite(defIndent, StmtContext::normal);
 
   // Check to see if we have a kgen.return at the end of function.  If not,
@@ -755,18 +756,20 @@ void LitParser::parseDefBody(LITFuncOp defDecl) {
   }
 }
 
-void DeclResolver::resolveBody(LITFuncOp op, Scope &scope) {
-  LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, scope);
-  parser.parseDefBody(op);
+void DeclResolver::resolveSignature(LITFuncOp op, LitLexer &lexer,
+                                    Scope &scope) {
+  LitParser(lexer, scope).parseDefSignature(op);
+}
+
+void DeclResolver::resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope) {
+  LitParser(lexer, scope).parseDefBody(op, scope.getIndentation());
 }
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
 ParseResult LitParser::parseVarDeclStmt() {
-  size_t indent = getToken().getIndentation().value_or(~size_t(0));
-  LitLexerCursor declCursor = getLexer().getCursor();
+  ssize_t indent = getToken().getIndentation().value_or(-size_t(1));
   auto loc = getTokenLocation();
   consumeToken(LitToken::kw_var);
   StringAttr name;
@@ -783,7 +786,7 @@ ParseResult LitParser::parseVarDeclStmt() {
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, &scope, declCursor);
+  getDeclResolver().addDecl(varDecl, &scope, getLexer().getCursor(), indent);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -791,9 +794,7 @@ ParseResult LitParser::parseVarDeclStmt() {
   return success();
 }
 
-void LitParser::parseVarDeclBody(VarDeclOp varDecl) {
-  consumeToken(LitToken::kw_var);
-  consumeToken(LitToken::identifier);
+void LitParser::parseVarDeclSignature(VarDeclOp varDecl) {
   Optional<LitLexerCursor> typeCursor;
   Optional<LitLexerCursor> initValueCursor;
   if (parseToken(LitToken::colon, "var declaration requires a type") ||
@@ -816,10 +817,16 @@ void LitParser::parseVarDeclBody(VarDeclOp varDecl) {
               "var initializers not supported yet");
 }
 
-void DeclResolver::resolveSignature(VarDeclOp op, Scope &scope) {
-  // Set up a lexer to point to the start of the declaration so we can reparse.
-  LitLexer lexer(sharedState, scope.getCursor());
-  LitParser(lexer, scope).parseVarDeclBody(op);
+void DeclResolver::resolveSignature(VarDeclOp op, LitLexer &lexer,
+                                    Scope &scope) {
+  LitParser(lexer, scope).parseVarDeclSignature(op);
+}
+
+void DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope) {
+  // Nothing to do for a var decl, we parse everything as part of its signature.
+  // We could move to parsing an initializer expression lazily when a type is
+  // present if there were a reason to do that (e.g. more laziness desired) in
+  // the future.
 }
 
 /// structdef ::=
@@ -827,7 +834,6 @@ void DeclResolver::resolveSignature(VarDeclOp op, Scope &scope) {
 ///
 ParseResult LitParser::parseStructStmt(size_t curIndent) {
   auto loc = getTokenLocation();
-  auto declCursor = getLexer().getCursor();
 
   // TODO: Add support for decorators.
   consumeToken(LitToken::kw_struct);
@@ -850,7 +856,8 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, &scope, declCursor);
+  getDeclResolver().addDecl(newStruct, &scope, getLexer().getCursor(),
+                            curIndent);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -858,13 +865,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   return success();
 }
 
-void LitParser::parseStructBody(LITStructDeclOp structDecl) {
-  size_t structIndent = getToken().getIndentation().value_or(0);
-
-  // TODO: Add support for decorators.
-  consumeToken(LitToken::kw_struct);
-  consumeToken(LitToken::identifier);
-
+void LitParser::parseStructSignature(LITStructDeclOp structDecl) {
   ParsedMetaSignature metaSignature;
   if (metaSignature.parseOptionalMetaSignature(*this) ||
       parseToken(LitToken::colon, "expected ':' in struct definition"))
@@ -880,14 +881,21 @@ void LitParser::parseStructBody(LITStructDeclOp structDecl) {
     scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
                      getSharedState());
   }
+}
 
+void LitParser::parseStructBody(LITStructDeclOp structDecl,
+                                ssize_t structIndent) {
   (void)parseSuite(structIndent, StmtContext::structBody);
 }
 
-void DeclResolver::resolveBody(LITStructDeclOp op, Scope &scope) {
-  LitLexer lexer(sharedState, scope.getCursor());
-  LitParser parser(lexer, scope);
-  parser.parseStructBody(op);
+void DeclResolver::resolveSignature(LITStructDeclOp op, LitLexer &lexer,
+                                    Scope &scope) {
+  LitParser(lexer, scope).parseStructSignature(op);
+}
+
+void DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,
+                               Scope &scope) {
+  LitParser(lexer, scope).parseStructBody(op, scope.getIndentation());
 }
 
 //===----------------------------------------------------------------------===//
@@ -938,12 +946,12 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // https://docs.python.org/3/library/functions.html#built-in-funcs
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   Scope &builtinsScope =
-      sharedState.declResolver->addDecl(*module, nullptr, lexer.getCursor());
+      sharedState.declResolver->addDecl(*module, nullptr, lexer.getCursor(), 0);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
   Scope &fileScope = sharedState.declResolver->addDecl(*module, &builtinsScope,
-                                                       lexer.getCursor());
+                                                       lexer.getCursor(), 0);
 
   // Parse the file.
   if (LitParser(lexer, fileScope).parseFile(*module))

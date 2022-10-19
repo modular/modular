@@ -11,6 +11,7 @@
 #ifndef LITDECLS_H
 #define LITDECLS_H
 
+#include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -22,7 +23,7 @@ class VarDeclOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-
+class LitLexer;
 class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
@@ -42,7 +43,8 @@ public:
   void resolveAll();
 
   /// Add a new declaration that needs to be resolved.
-  Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor);
+  Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
+                 ssize_t indentation);
 
   /// Given a cursor location for a type expression that correctly parsed in the
   /// first pass, reparse it into an expression and resolve it into a type by
@@ -50,12 +52,18 @@ public:
   /// always returns a non-null type.
   Type resolveType(LitLexerCursor cursor, Scope &scope, LitParserBase &parser);
 
-private:
-  void resolve(Scope &scope);
+  /// Resolve the specified declaration to at least the specified level of
+  /// resolution, performing incremental type checking as appropriate.
+  void resolve(Scope &scope, DeclResolvedness howResolved);
 
-  void resolveBody(LITFuncOp op, Scope &scope);
-  void resolveBody(LITStructDeclOp op, Scope &scope);
-  void resolveSignature(VarDeclOp op, Scope &scope);
+private:
+  void resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);
+  void resolveSignature(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
+  void resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
+
+  void resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
+  void resolveBody(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
+  void resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope);
 
 private:
   /// This is shared state across the whole parser.

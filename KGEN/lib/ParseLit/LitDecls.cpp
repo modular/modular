@@ -48,11 +48,11 @@ DeclResolver::~DeclResolver() {
 
 /// Add a new declaration that needs to be resolved.
 Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
-                             LitLexerCursor cursor) {
+                             LitLexerCursor cursor, ssize_t indentation) {
   void *rawScopePtr =
       sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
-  Scope *scope = new (rawScopePtr) Scope(decl, parentScope, cursor);
-
+  Scope *scope =
+      new (rawScopePtr) Scope(decl, parentScope, cursor, indentation);
   parsedDeclList.push_back(decl);
   parsedDecls[decl] = scope;
   return *scope;
@@ -64,12 +64,14 @@ void DeclResolver::resolveAll() {
   // discovered so diagnostics are mostly top-down.  Resolving declarations may
   // cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    resolve(*parsedDecls[parsedDeclList[i]]);
+    resolve(*parsedDecls[parsedDeclList[i]], DeclResolvedness::fullyParsed);
 }
 
-void DeclResolver::resolve(Scope &scope) {
-  // If scope is fully resolved, we're done.
-  if (scope.getIsResolved())
+/// Resolve the specified declaration to at least the specified level of
+/// resolution, performing incremental type checking as appropriate.
+void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved) {
+  // If scope is already resolved enough, we're done.
+  if (scope.resolvedness >= howResolved)
     return;
 
   Operation *decl = scope.getDecl();
@@ -81,18 +83,40 @@ void DeclResolver::resolve(Scope &scope) {
            "FIXME: Diagnose cyclic reference when it is possible to happen");
   }
 
-  // Handle each operation that can be name bound.
-  TypeSwitch<Operation *>(decl)
-      .Case<LITFuncOp>([&](auto op) { resolveBody(op, scope); })
-      .Case<LITStructDeclOp>([&](auto op) { resolveBody(op, scope); })
-      .Case<VarDeclOp>([&](auto op) { resolveSignature(op, scope); })
-      .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
-      .Default([&](auto attr) {
-        decl->emitError("do not know how to perform name binding on this op!");
-      });
+  // If the signature hasn't been parsed, do so.
+  if (scope.resolvedness < DeclResolvedness::signatureParsed) {
+    // Handle each operation that can be name bound.
+    TypeSwitch<Operation *>(decl)
+        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+          LitLexer lexer(sharedState, scope.getCursor());
+          resolveSignature(op, lexer, scope);
+          scope.getCursor() = lexer.getCursor();
+        })
+        .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
+        .Default([&](auto attr) {
+          decl->emitError(
+              "do not know how to resolve the signature of this decl!");
+        });
+    scope.resolvedness = DeclResolvedness::signatureParsed;
+  }
+
+  // If the declaration hasn't been fully parsed and we need to, do so.
+  if (scope.resolvedness < DeclResolvedness::fullyParsed &&
+      howResolved == DeclResolvedness::fullyParsed) {
+    // Handle each operation that can be name bound.
+    TypeSwitch<Operation *>(decl)
+        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+          LitLexer lexer(sharedState, scope.getCursor());
+          resolveBody(op, lexer, scope);
+        })
+        .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
+        .Default([&](auto attr) {
+          decl->emitError("do not know how to resolve the body of this decl!");
+        });
+    scope.resolvedness = DeclResolvedness::fullyParsed;
+  }
 
   declsCurrentlyProcessing.erase(decl);
-  scope.setIsResolved();
 }
 
 /// Given a cursor location for a type expression that correctly parsed in the
