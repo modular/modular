@@ -29,7 +29,7 @@
 # CHECK-NEXT:  }
 
 
-def test_while(a: index, b: index) -> Int:
+def test_while(a: index, b: index) -> index:
   while a:
     inside_a = 0
     if b:
