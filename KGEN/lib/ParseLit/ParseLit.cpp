@@ -457,8 +457,7 @@ ParseResult LitParser::parseWhileStmt(size_t curIndent) {
   {
     SaveAndRestore<OpBuilder> builderSaver(builder, cmpBuilder);
     // TODO(types): add type checking: the condition should be bool
-    ExprParser exprParser(*this);
-    ExprNode *condExp = exprParser.parseExpression();
+    ExprNode *condExp = parseExpression();
     cond = emitExprAsValue(condExp);
   }
   if (!cond || parseToken(LitToken::colon, "expected ':' after expression"))
