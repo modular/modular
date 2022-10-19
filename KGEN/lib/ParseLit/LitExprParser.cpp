@@ -4,7 +4,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This implements the expression parser.
+// Expression parsing in Lightning is done in with a 2-phase approach where we
+// parse one or more expressions into an AST-like representation in a first
+// pass, then type check and generate operations or a type for it in a second
+// pass.  This enables a number of features:
+//
+//   1) Non-lexical variable references: `[x.strip().upper() for x in flags]`.
+//      Where we can only type check the expression after the 'for x' is type
+//      checked and resolved.
+//   2) Weird order of evaluations: `foo() if cond() else bar()`
+//   3) Parser ambiguity of the LHS of an assignment, which we don't know if it
+//      is a target until we see the equals: `x[foo()] = bar()`
+//
+// We handle this by having an expression parser distinct from the main parser
+// that builds this tree.
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,11 +33,11 @@ using namespace M;
 namespace M::KGEN::LIT {
 /// This class implements the ExprParser interface, implemented with the pImpl
 /// idiom.
-class ExprParserImpl : public LitParserBase {
+class ExprParser : public LitParserBase {
 public:
-  ExprParserImpl(LitParserBase &existing) : LitParserBase(existing.lexer) {}
+  ExprParser(LitLexer &lexer) : LitParserBase(lexer) {}
 
-  ~ExprParserImpl() {}
+  ~ExprParser() {}
 
   // Expressions.  These methods always return a non-null ExprNode, but it may
   // be (or include) an Error node if parsing failed.
@@ -80,7 +93,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// expression_list ::= expression ("," expression)* [","]
-void ExprParserImpl::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
+void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
   // TODO: Support trailing comma for singleton tuple.
   (void)parseCommaSeparatedList([&]() -> ParseResult {
     results.push_back(parseExpression());
@@ -91,13 +104,13 @@ void ExprParserImpl::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
 /// expression ::=
 ///
 ///
-ExprNode *ExprParserImpl::parseExpression() {
+ExprNode *ExprParser::parseExpression() {
   return parseBinOpRHS(parsePrimary(), Precedence::kLowest);
 }
 
 /// Return the operator precedence for the specified token or
-std::pair<ExprParserImpl::Precedence, ExprNode::Kind>
-ExprParserImpl::getBinOpTokenPrecedenceAndKind() const {
+std::pair<ExprParser::Precedence, ExprNode::Kind>
+ExprParser::getBinOpTokenPrecedenceAndKind() const {
   switch (getToken().getKind()) {
   default:
     return {Precedence::kInvalid, ExprNode::kError};
@@ -120,7 +133,7 @@ ExprParserImpl::getBinOpTokenPrecedenceAndKind() const {
 /// literal ::= [TODO]
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
-ExprNode *ExprParserImpl::parsePrimary() {
+ExprNode *ExprParser::parsePrimary() {
   ExprNode *result;
   switch (getToken().getKind()) {
   case LitToken::identifier: // primary -> atom -> identifier
@@ -189,7 +202,7 @@ ExprNode *ExprParserImpl::parsePrimary() {
 /// Parse any binary operators that have precedence of at least `minPrec`.  This
 /// stop if the current token isn't a binary operator or if it binds more
 /// loosely than the specified precedence level.
-ExprNode *ExprParserImpl::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
+ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
   while (true) {
     auto [tokPrec, binOpKind] = getBinOpTokenPrecedenceAndKind();
 
@@ -222,25 +235,19 @@ ExprNode *ExprParserImpl::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
 // ExprParser implementation
 //===----------------------------------------------------------------------===//
 
-ExprParser::ExprParser(LitParserBase &existing)
-    : pImpl(std::make_unique<ExprParserImpl>(existing)) {}
+void LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
+  return ExprParser(getLexer()).parseExpressionList(results);
+}
 
-ExprParser::~ExprParser() {}
+ExprNode *LitParserBase::parseExpression() {
+  return ExprParser(getLexer()).parseExpression();
+}
 
 /// Parse an expression to check for syntactic validity, but throw it away
 /// immediately.  Record the starting position for the expression in the
 /// specified cursor.
-ParseResult ExprParser::parseOverExpression(LitParserBase &p,
-                                            Optional<LitLexerCursor> &cursor) {
-  cursor = p.getLexer().getCursor();
-  ExprParser exprParser(p);
-  if (exprParser.parseExpression())
-    return success();
-  return failure();
+ParseResult
+LitParserBase::parseOverExpression(Optional<LitLexerCursor> &cursor) {
+  cursor = getLexer().getCursor();
+  return success(ExprParser(getLexer()).parseExpression() != nullptr);
 }
-
-void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
-  return pImpl->parseExpressionList(results);
-}
-
-ExprNode *ExprParser::parseExpression() { return pImpl->parseExpression(); }

@@ -16,6 +16,8 @@
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {
+class ExprNode;
+class Scope;
 
 //===----------------------------------------------------------------------===//
 // LitParserBase
@@ -164,6 +166,21 @@ public:
            getToken().isNot(LitToken::eof))
       consumeToken();
   }
+
+  //===--------------------------------------------------------------------===//
+  // Integration with parsers for subsets of the grammar.
+  //===--------------------------------------------------------------------===//
+
+  /// Type parsing helper.
+  ParseResult parseType(Type &result, Scope &scope);
+
+  void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
+  ExprNode *parseExpression();
+
+  /// Parse an expression to check for syntactic validity, but throw it away
+  /// immediately.  Record the starting position for the expression in the
+  /// specified cursor.
+  ParseResult parseOverExpression(Optional<LitLexerCursor> &cursor);
 
 public:
   LitLexer &lexer;
