@@ -2,7 +2,7 @@
 
 kgen.include "library.mlir"
 
-kgen.generator.interface @exp<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator.interface @exp<type: dtype>(!pop.scalar<type>) -> !pop.scalar<type>
 
 //===----------------------------------------------------------------------===//
 
