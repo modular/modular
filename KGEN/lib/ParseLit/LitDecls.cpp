@@ -58,17 +58,19 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
 }
 
 /// Resolve all of the declarations that are visible.
-void DeclResolver::resolveAll() {
+void DeclResolver::resolveAll(Location loc) {
   // We can do this in any order, but choose to use the order they are
   // discovered so diagnostics are mostly top-down.  Resolving declarations may
   // cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    resolve(*parsedDecls[parsedDeclList[i]], DeclResolvedness::fullyParsed);
+    resolve(*parsedDecls[parsedDeclList[i]], DeclResolvedness::fullyParsed,
+            loc);
 }
 
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
-void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved) {
+void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
+                           Location loc) {
   // If scope is already resolved enough, we're done.
   if (scope.resolvedness >= howResolved)
     return;
@@ -78,8 +80,8 @@ void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved) {
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (!declsCurrentlyProcessing.insert(decl).second) {
-    assert(0 &&
-           "FIXME: Diagnose cyclic reference when it is possible to happen");
+    emitError(loc, "recursive reference to declaration");
+    return;
   }
 
   // If the signature hasn't been parsed, do so.
@@ -116,4 +118,11 @@ void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved) {
   }
 
   declsCurrentlyProcessing.erase(decl);
+}
+
+void DeclResolver::resolve(Operation *decl, DeclResolvedness howResolved,
+                           Location loc) {
+  auto it = parsedDecls.find(decl);
+  assert(it != parsedDecls.end() && "not a declaration???");
+  resolve(*it->second, howResolved, loc);
 }

@@ -40,7 +40,7 @@ public:
 
   /// Resolve all of the declarations that are visible, processing the entire
   /// translation unit.
-  void resolveAll();
+  void resolveAll(Location loc);
 
   /// Add a new declaration that needs to be resolved.
   Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
@@ -48,7 +48,8 @@ public:
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
-  void resolve(Scope &scope, DeclResolvedness howResolved);
+  void resolve(Scope &scope, DeclResolvedness howResolved, Location loc);
+  void resolve(Operation *decl, DeclResolvedness howResolved, Location loc);
 
 private:
   void resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);

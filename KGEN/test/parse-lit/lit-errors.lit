@@ -179,3 +179,11 @@ def var_decl():
 x = 123
 def err():
   var y : x  # expected-error {{'x' names a value, not a type}}
+
+# // -----
+
+# expected-error @+1 {{typedef symbol use has 0 input parameters but @Rec expects 1}}
+struct Rec[param:
+                Rec  # expected-error {{recursive reference to declaration}}
+           ]:
+  pass

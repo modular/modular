@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitExprNodes.h"
+#include "LitDecls.h"
 #include "LitLexer.h"
 #include "LitScope.h"
 
@@ -115,15 +116,19 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
     Optional<Scope::ScopeValue> lookup = scope.lookup(dre->spelling);
     if (!lookup)
       return emitError("unknown type name '" + dre->spelling + "'");
-    if (std::holds_alternative<VarDeclOp>(*lookup))
+    if (!std::holds_alternative<Operation *>(*lookup))
       return emitError("'" + dre->spelling + "' names a value, not a type");
-    auto attr = dyn_cast<SymbolConstantAttr>(
-        std::get<Scope::MetaParameterValue>(*lookup).getAttr());
-    if (!attr || !isa<MLIRTypeType>(attr.getType()))
+    auto typeDecl = dyn_cast<LITStructDeclOp>(std::get<Operation *>(*lookup));
+    if (!typeDecl)
       return emitError("'" + dre->spelling + "' names a value, not a type");
 
+    // We need the signature for the struct to be resolved in order to know how
+    // to refer to it.
+    getDeclResolver().resolve(typeDecl, DeclResolvedness::signatureParsed,
+                              translateLocation(dre->getLoc()));
+
     // TODO: Handle type parameters!
-    result = RefType::get(attr.getSymbol(),
+    result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
                           ParamBindArrayAttr::get(getContext(), {}));
     return success();
   }
@@ -176,7 +181,15 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
     return std::get<Scope::MetaParameterValue>(declOrValue.value()).getAttr();
 
   // Variable references resolve to load from the variable.
-  auto var = std::get<VarDeclOp>(declOrValue.value());
+  auto *decl = std::get<Operation *>(declOrValue.value());
+
+  auto var = dyn_cast<VarDeclOp>(decl);
+  if (!var) {
+    state.emitError(getLoc(), "use of declaration \"")
+        << spelling << "\" as a value isn't supported yet";
+    return {};
+  }
+
   return state.builder
       .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
                            /*alignment*/ None)

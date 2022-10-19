@@ -72,9 +72,9 @@ public:
     TypedAttr getAttr() const { return cast<TypedAttr>(value); }
   };
 
-  /// An entry in the symbol table is either a mutable variable declaration
-  /// (VarDeclOp) or an immutable attribute (which is known to be a TypedAttr).
-  using ScopeValue = std::variant<MetaParameterValue, VarDeclOp>;
+  /// An entry in the symbol table is either declaration (var, struct, func,
+  /// etc) or an attribute (known to be a TypedAttr) for a meta value.
+  using ScopeValue = std::variant<MetaParameterValue, Operation *>;
 
   /// Add the specified declaration to the current scope, emitting an error on
   /// a name collision and setting hadError to true.
