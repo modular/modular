@@ -171,7 +171,7 @@ public:
   // Integration with parsers for subsets of the grammar.
   //===--------------------------------------------------------------------===//
 
-  /// Type parsing helper.
+  /// Type parsing.
   ParseResult parseType(Type &result, Scope &scope);
 
   void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
