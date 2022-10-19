@@ -174,8 +174,8 @@ public:
   /// Type parsing.
   ParseResult parseType(Type &result, Scope &scope);
 
-  void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
-  ExprNode *parseExpression();
+  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
+  ParseResult parseExpression(ExprNode *&expr);
 
   /// Parse an expression to check for syntactic validity, but throw it away
   /// immediately.  Record the starting position for the expression in the
