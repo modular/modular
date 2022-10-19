@@ -137,8 +137,7 @@ struct LitParser : public LitParserBase {
 
   // Simple statements.
   ParseResult parseReturnStmt();
-  ParseResult parseAssignmentStmt(ExprParser &exprParser, ExprNode *lhs,
-                                  SMLoc equalsLoc);
+  ParseResult parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc);
 
   // Declarations.
   ParseResult parseDefStmt(size_t curIndent);
@@ -161,16 +160,7 @@ private:
 
 /// file ::= statements
 ParseResult LitParser::parseFile(ModuleOp module) {
-  // We fail either if we have a non-recoverable parse error, or if we emitted
-  // an error and then recovered.  In either case, the IR will not be valid and
-  // the caller should not verify it.
-  if (parseStmts(/*indent=*/0, StmtContext::normal))
-    return failure();
-
-  if (getSharedState().errorOccurred)
-    return failure();
-
-  return success();
+  return parseStmts(/*indent=*/0, StmtContext::normal);
 }
 
 //===----------------------------------------------------------------------===//
@@ -311,14 +301,13 @@ ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
-  ExprParser exprParser(*this);
-  ExprNode *expr = exprParser.parseExpression();
+  ExprNode *expr = parseExpression();
 
   // If the expression was followed by a `=` then we have an assignment.  If not
   // then we have an expression_stmt.
   SMLoc equalsLoc;
   if (consumeIf(LitToken::equal, &equalsLoc))
-    return parseAssignmentStmt(exprParser, expr, equalsLoc);
+    return parseAssignmentStmt(expr, equalsLoc);
 
   // Materialize the expression statement in our current scope but discard the
   // result on the floor.
@@ -336,8 +325,7 @@ ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
 ///          | "(" [target_list] ")" | "[" [target_list] "]"
 ///          | attributeref | subscription | slicing | "*" target
 ///
-ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
-                                           ExprNode *lhs, SMLoc equalsLoc) {
+ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   // Resolve the parse expression on the LHS into an lvalue that we can store
   // into.
   // TODO: implement support for generalized lvalues / target_list.
@@ -381,7 +369,7 @@ ParseResult LitParser::parseAssignmentStmt(ExprParser &exprParser,
     lvalue = varDecl;
   }
 
-  ExprNode *rhs = exprParser.parseExpression();
+  ExprNode *rhs = parseExpression();
 
   // Materialize the expression statement in our current scope.
   // TODO: Should pass in contextual type if known from previous declaration.
@@ -429,8 +417,7 @@ struct ParsedMetaSignature {
 
       Type paramType = IndexType::get(p.getContext());
       if (p.consumeIf(LitToken::colon)) {
-        ExprParser exprParser(p);
-        ExprNode *typeExpr = exprParser.parseExpression();
+        ExprNode *typeExpr = p.parseExpression();
         // TODO (types): translate typeExpr into a type.
         (void)typeExpr;
       }
@@ -459,8 +446,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
   // build the conditional expression in the desired place.
   auto parseCondition = [&](index::CmpOp &cmpOp) -> ParseResult {
     // TODO: add type checking: the condition should be bool
-    ExprParser exprParser(*this);
-    ExprNode *condExp = exprParser.parseExpression();
+    ExprNode *condExp = parseExpression();
     Location loc = translateLocation(condExp->getLoc());
     Value cond = emitExprAsValue(condExp);
     if (!cond)
@@ -520,9 +506,8 @@ ParseResult LitParser::parseReturnStmt() {
 
   // If there is an expression list present, parse it.
   if (!getToken().getIndentation().has_value()) {
-    ExprParser exprParser(*this);
     SmallVector<ExprNode *> operandExprs;
-    exprParser.parseExpressionList(operandExprs);
+    parseExpressionList(operandExprs);
 
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.
@@ -637,11 +622,11 @@ struct ParsedParam {
       return failure();
 
     if (p.consumeIf(LitToken::colon)) {
-      if (ExprParser::parseOverExpression(p, typeCursor))
+      if (p.parseOverExpression(typeCursor))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
-      if (ExprParser::parseOverExpression(p, initValueCursor))
+      if (p.parseOverExpression(initValueCursor))
         return failure();
     }
     return success();
@@ -680,7 +665,7 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   if (consumeIf(LitToken::minus_greater)) {
-    if (ExprParser::parseOverExpression(*this, resultTypeCursor))
+    if (parseOverExpression(resultTypeCursor))
       return; // TODO: Mark decl erroneous.
   }
 
@@ -795,20 +780,18 @@ ParseResult LitParser::parseVarDeclStmt() {
 }
 
 void LitParser::parseVarDeclSignature(VarDeclOp varDecl) {
-  Optional<LitLexerCursor> typeCursor;
+  Type type;
   Optional<LitLexerCursor> initValueCursor;
+  // Parse the type if present.
+  // TODO: Make type optional.
   if (parseToken(LitToken::colon, "var declaration requires a type") ||
-      ExprParser::parseOverExpression(*this, typeCursor))
+      parseType(type, scope))
     return; // TODO: mark decl erroreous.
 
-  // Parse the type if present.
-  if (typeCursor)
-    varDecl.getResult().setType(
-        POP::PointerType::get(getSharedState().declResolver->resolveType(
-            typeCursor.value(), scope, *this)));
+  varDecl.getResult().setType(POP::PointerType::get(type));
 
   if (consumeIf(LitToken::equal)) {
-    if (ExprParser::parseOverExpression(*this, initValueCursor))
+    if (parseOverExpression(initValueCursor))
       return; // TODO: mark decl erroreous.
   }
 
@@ -961,6 +944,9 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // of the deferred declarations.
   sharedState.declResolver->resolveAll();
 
+  // We fail either if we have a non-recoverable parse error, or if we emitted
+  // an error and then recovered.  In either case, the IR will not be valid and
+  // the caller should not verify it.
   if (sharedState.errorOccurred)
     return nullptr;
 

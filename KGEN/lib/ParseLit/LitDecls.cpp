@@ -10,7 +10,6 @@
 
 #include "LitDecls.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LITDialect/LITTypes.h"
 #include "LitExprNodes.h"
 #include "LitParserBase.h"
 #include "LitScope.h"
@@ -117,49 +116,4 @@ void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved) {
   }
 
   declsCurrentlyProcessing.erase(decl);
-}
-
-/// Given a cursor location for a type expression that correctly parsed in the
-/// first pass, reparse it into an expression and resolve it into a type by
-/// performing name lookup and other resolution.  This can produce errors, but
-/// always returns a non-null type.
-Type DeclResolver::resolveType(LitLexerCursor cursor, Scope &scope,
-                               LitParserBase &parser) {
-  // FIXME: This is the wrong design, shouldn't be reparsing.
-
-  // Move the cursor to the specified location.
-  cursor.restore(parser.getLexer());
-  // Re-parse the expression at that location.
-  ExprParser exprParser(parser);
-  ExprNode *typeExpr = exprParser.parseExpression();
-  assert(typeExpr && "We know expr parsing will work");
-
-  auto emitError = [&](const Twine &message) -> Type {
-    parser.emitError(typeExpr->getLoc(), message);
-    return UnresolvedType::get(parser.getContext());
-  };
-
-  // TODO: Make this a recursive walk when we have more interesting types.
-  if (auto dre = dyn_cast<DeclRefNode>(typeExpr)) {
-    // TODO(types): This is a hack to unblock tests in the interim.
-    if (dre->spelling == "index")
-      return IndexType::get(parser.getContext());
-
-    // Lookup the identifier.
-    Optional<Scope::ScopeValue> lookup = scope.lookup(dre->spelling);
-    if (!lookup)
-      return emitError("unknown type name '" + dre->spelling + "'");
-    if (std::holds_alternative<VarDeclOp>(*lookup))
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-    auto attr = dyn_cast<SymbolConstantAttr>(
-        std::get<Scope::MetaParameterValue>(*lookup).getAttr());
-    if (!attr || !isa<MLIRTypeType>(attr.getType()))
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-
-    // TODO: Handle type parameters!
-    return RefType::get(attr.getSymbol(),
-                        ParamBindArrayAttr::get(parser.getContext(), {}));
-  }
-
-  return emitError("FIXME: Unsupported type kind!");
 }

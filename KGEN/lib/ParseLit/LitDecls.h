@@ -46,12 +46,6 @@ public:
   Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
                  ssize_t indentation);
 
-  /// Given a cursor location for a type expression that correctly parsed in the
-  /// first pass, reparse it into an expression and resolve it into a type by
-  /// performing name lookup and other resolution.  This can produce errors, but
-  /// always returns a non-null type.
-  Type resolveType(LitLexerCursor cursor, Scope &scope, LitParserBase &parser);
-
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
   void resolve(Scope &scope, DeclResolvedness howResolved);

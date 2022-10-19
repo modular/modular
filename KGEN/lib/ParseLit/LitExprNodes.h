@@ -61,7 +61,8 @@ public:
 /// Base class for all expression nodes.  Note that these nodes are not allowed
 /// to own memory since they are bump pointer allocated and their destructors
 /// are never run.
-struct ExprNode {
+class ExprNode {
+public:
   // This indicates the subclass.
   enum Kind {
     kError,         // `
@@ -218,47 +219,6 @@ struct BinOpNode final : public ExprNode {
     return lhs->containsError() || rhs->containsError();
   }
   MLIRValueRep emit(EmitterState &state) const override;
-};
-
-//===----------------------------------------------------------------------===//
-// ExprParser
-//===----------------------------------------------------------------------===//
-
-class ExprParserImpl;
-
-/// Expression parsing in Lightning is done in with a 2-phase approach where we
-/// parse one or more expressions into an AST-like representation in a first
-/// pass, then type check and generate IR for it in a second pass.  This enables
-/// a number of features:
-///
-///   1) Non-lexical variable references: `[x.strip().upper() for x in flags]`
-///   2) Weird order of evaluations: `foo() if cond() else bar()`
-///   3) Parser ambiguity of the LHS of an assignment, which we don't know if it
-///      is a target until we see the equals: `x[foo()] = bar()`
-///   4) Contextually sensitive type checking, e.g. x = 42 where x is known to
-///      be Int8 instead of Int.
-///
-/// We handle this by having an expression parser distinct from the main parser
-/// that builds this tree and manages the lifetime of the nodes.  Only one
-/// expression parser may be active at a time, which allows us to bump pointer
-/// allocate the notes we create for the expression tree.
-///
-class ExprParser {
-public:
-  ExprParser(LitParserBase &existing);
-  ~ExprParser();
-
-  /// Parse an expression to check for syntactic validity, but throw it away
-  /// immediately.  Record the starting position for the expression in the
-  /// specified cursor.
-  static ParseResult parseOverExpression(LitParserBase &p,
-                                         Optional<LitLexerCursor> &cursor);
-
-  void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
-  ExprNode *parseExpression();
-
-private:
-  std::unique_ptr<ExprParserImpl> pImpl;
 };
 
 //===----------------------------------------------------------------------===//
