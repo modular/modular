@@ -72,6 +72,9 @@ private:
   /// track of the declarations currently being name bound so we can diagnose
   /// cyclic dependencies.
   DenseSet<Operation *> declsCurrentlyProcessing;
+
+  DeclResolver(const DeclResolver &) = delete;
+  DeclResolver &operator=(const DeclResolver &) = delete;
 };
 
 } // namespace M::KGEN::LIT
