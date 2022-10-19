@@ -17,14 +17,17 @@
 #include "Support/IndexDialect/IndexOps.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/FunctionInterfaces.h"
-#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Rewrite/PatternApplicator.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace POP;
 using namespace ZAP;
+
+//===----------------------------------------------------------------------===//
+// Type Lowering
+//===----------------------------------------------------------------------===//
 
 /// The position of the buffer address in its struct representation.
 static constexpr int kBufferAddressPosition = 0;
@@ -35,12 +38,45 @@ static constexpr int kBufferDTypePosition = 2;
 
 /// The position of the ndbuffer address in its struct representation.
 static constexpr int kNDBufferAddressPosition = 0;
-/// The position of the ndbuffer rank in its struct representation.
-static constexpr int kNDBufferRankPosition = 1;
 /// The position of the ndbuffer shape in its struct representation.
 static constexpr int kNDBufferShapePosition = 2;
 /// The position of the ndbuffer dtype in its struct representation.
 static constexpr int kNDBufferDTypePosition = 3;
+
+/// Lower a ZAP type. Passthrough all other types.
+static Type convertType(Type type) {
+  return TypeSwitch<Type, Type>(type)
+      .Case([](BufferType buf) {
+        // Convert buffer types to a struct of (pointer, index, dtype).
+        return StructType::get({buf.getPointerType(),
+                                IndexType::get(buf.getContext()),
+                                DTypeType::get(buf.getContext())});
+      })
+      .Case([](NDBufferType ndBuffer) {
+        auto indexType = IndexType::get(ndBuffer.getContext());
+        // Convert NDBuffer types to a struct of the form
+        // {
+        //    pointer,   --- for buffer
+        //    index,     --- for rank
+        //    index[5],  --- for shape
+        //    dtype      --- for dtype
+        // }
+        return StructType::get(
+            {ndBuffer.getPointerType(), indexType,
+             POP::ArrayType::get(NDBufferType::getMaximumRank(), indexType),
+             DTypeType::get(ndBuffer.getContext())});
+      })
+      .Default([](Type type) { return type; });
+}
+
+/// Materialize a type conversion.
+static Value convertValue(Value value) {
+  Type type = convertType(value.getType());
+  assert(type != value.getType());
+  auto b = OpBuilder::atBlockBegin(value.getParentBlock());
+  return b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), type, value)
+      .getResult(0);
+}
 
 namespace {
 
@@ -50,29 +86,26 @@ namespace {
 
 /// Construct a buffer struct. If either the size or dtype are dynamic, values
 /// for them must be provided.
-static Value constructBuffer(PatternRewriter &rewriter,
-                             TypeConverter &typeConverter, Location loc,
+static Value constructBuffer(PatternRewriter &rewriter, Location loc,
                              BufferType type, Value ptr, Value size = {},
                              Value dtype = {}) {
   if (!size)
     size = rewriter.create<ParamConstantOp>(loc, type.getSize());
   if (!dtype)
     dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
-  return rewriter.create<StructConstructOp>(
-      loc, typeConverter.convertType(type), ArrayRef<Value>{ptr, size, dtype});
+  return rewriter.create<StructConstructOp>(loc, type,
+                                            ArrayRef<Value>{ptr, size, dtype});
 }
 
 /// Convert the construction of a buffer to building the underlying struct.
 struct ConvertZAPBufferConstruct
-    : public mlir::OpConversionPattern<BufferConstructOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<BufferConstructOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferConstructOp op, BufferConstructOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value buf = constructBuffer(rewriter, *getTypeConverter(), op.getLoc(),
-                                op.getType(), adaptor.getPtr(),
-                                adaptor.getSize(), adaptor.getDType());
+  LogicalResult matchAndRewrite(BufferConstructOp op,
+                                PatternRewriter &rewriter) const override {
+    Value buf = constructBuffer(rewriter, op.getLoc(), op.getType(),
+                                op.getPtr(), op.getSize(), op.getDType());
     rewriter.replaceOp(op, buf);
     return success();
   }
@@ -83,13 +116,16 @@ struct ConvertZAPBufferConstruct
 //===----------------------------------------------------------------------===//
 
 /// Extract the buffer size at element 0.
-struct ConvertZAPBufferSize : public mlir::OpConversionPattern<BufferSizeOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPBufferSize : public mlir::OpRewritePattern<BufferSizeOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferSizeOp op, BufferSizeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+  LogicalResult matchAndRewrite(BufferSizeOp op,
+                                PatternRewriter &rewriter) const override {
+    if (TypedAttr size = op.getBuffer().getType().getSize()) {
+      rewriter.replaceOpWithNewOp<ParamConstantOp>(op, size);
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getBuffer()),
                                              kBufferSizePosition);
     return success();
   }
@@ -101,13 +137,12 @@ struct ConvertZAPBufferSize : public mlir::OpConversionPattern<BufferSizeOp> {
 
 /// Extract the buffer pointer at element 1.
 struct ConvertZAPBufferAddress
-    : public mlir::OpConversionPattern<BufferAddressOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<BufferAddressOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferAddressOp op, BufferAddressOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+  LogicalResult matchAndRewrite(BufferAddressOp op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getBuffer()),
                                              kBufferAddressPosition);
     return success();
   }
@@ -118,13 +153,16 @@ struct ConvertZAPBufferAddress
 //===----------------------------------------------------------------------===//
 
 /// Extract the buffer dtype at element 2.
-struct ConvertZAPBufferDType : public mlir::OpConversionPattern<BufferDTypeOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPBufferDType : public mlir::OpRewritePattern<BufferDTypeOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferDTypeOp op, BufferDTypeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getBuffer(),
+  LogicalResult matchAndRewrite(BufferDTypeOp op,
+                                PatternRewriter &rewriter) const override {
+    if (TypedAttr dtype = op.getBuffer().getType().getDType()) {
+      rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dtype);
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getBuffer()),
                                              kBufferDTypePosition);
     return success();
   }
@@ -138,22 +176,22 @@ struct ConvertZAPBufferDType : public mlir::OpConversionPattern<BufferDTypeOp> {
 /// will overwrite the size and dtype if they were respecified in the return
 /// type.
 struct ConvertZAPBufferConvert
-    : public mlir::OpConversionPattern<BufferConvertOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<BufferConvertOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferConvertOp op, BufferConvertOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(BufferConvertOp op,
+                                PatternRewriter &rewriter) const override {
     BufferType inputType = op.getInput().getType();
     BufferType type = op.getType();
     // If the input and output types are the same, fold away the op.
     if (inputType == type) {
-      rewriter.replaceOp(op, adaptor.getInput());
+      rewriter.replaceOp(op, op.getInput());
       return success();
     }
 
     // Bitcast the pointer if needed.
-    Value ptr = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+    Value popBuf = convertValue(op.getInput());
+    Value ptr = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
                                              kBufferAddressPosition);
     if (type.getDType() != op.getInput().getType().getDType())
       ptr = rewriter.create<PointerBitcastOp>(
@@ -176,17 +214,16 @@ struct ConvertZAPBufferConvert
     if (sizeExpr)
       size = rewriter.create<ParamConstantOp>(op.getLoc(), sizeExpr);
     else
-      size = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+      size = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
                                           kBufferSizePosition);
     if (dtypeExpr)
       dtype = rewriter.create<ParamConstantOp>(op.getLoc(), dtypeExpr);
     else
-      dtype = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getInput(),
+      dtype = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
                                            kBufferDTypePosition);
 
     rewriter.replaceOpWithNewOp<StructConstructOp>(
-        op, getTypeConverter()->convertType(type),
-        ArrayRef<Value>{ptr, size, dtype});
+        op, type, ArrayRef<Value>{ptr, size, dtype});
     return success();
   }
 };
@@ -196,18 +233,16 @@ struct ConvertZAPBufferConvert
 //===----------------------------------------------------------------------===//
 
 struct ConvertZAPBufferStackAllocation
-    : mlir::OpConversionPattern<BufferStackAllocationOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : mlir::OpRewritePattern<BufferStackAllocationOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferStackAllocationOp op,
-                  BufferStackAllocationOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(BufferStackAllocationOp op,
+
+                                PatternRewriter &rewriter) const override {
     auto type = op.getType().cast<BufferType>();
     Value ptr = rewriter.create<StackAllocationOp>(
         op.getLoc(), type.getPointerType(), type.getSize());
-    Value buf = constructBuffer(rewriter, *getTypeConverter(), op.getLoc(),
-                                op.getType(), ptr);
+    Value buf = constructBuffer(rewriter, op.getLoc(), op.getType(), ptr);
     rewriter.replaceOp(op, buf);
     return success();
   }
@@ -217,12 +252,11 @@ struct ConvertZAPBufferStackAllocation
 // ConvertZAPBufferConstant
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferConstantOp op, BufferConstantOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(BufferConstantOp op,
+                                PatternRewriter &rewriter) const override {
     BufferType type = op.getType();
     auto elType = ScalarType::get(type.getDType());
     Value global = rewriter.create<GlobalConstantOp>(
@@ -231,8 +265,7 @@ struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
         op.getValues());
     Value ptr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(elType), global);
-    Value buf =
-        constructBuffer(rewriter, *getTypeConverter(), op.getLoc(), type, ptr);
+    Value buf = constructBuffer(rewriter, op.getLoc(), type, ptr);
     rewriter.replaceOp(op, buf);
     return success();
   }
@@ -242,16 +275,14 @@ struct ConvertZAPBufferConstant : mlir::OpConversionPattern<BufferConstantOp> {
 // ConvertZAPBufferLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPBufferLoad : mlir::OpConversionPattern<BufferLoadOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPBufferLoad : mlir::OpRewritePattern<BufferLoadOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferLoadOp op, BufferLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
-                                              kBufferAddressPosition);
-    Value ptr =
-        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
+  LogicalResult matchAndRewrite(BufferLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Value base = rewriter.create<StructGetOp>(
+        op.getLoc(), convertValue(op.getBuffer()), kBufferAddressPosition);
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(op.getType()), ptr);
     // We set the alignment to 1 to force LLVM to generate unaligned loads.
@@ -264,20 +295,18 @@ struct ConvertZAPBufferLoad : mlir::OpConversionPattern<BufferLoadOp> {
 // ConvertZAPBufferStore
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPBufferStore : mlir::OpConversionPattern<BufferStoreOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPBufferStore : mlir::OpRewritePattern<BufferStoreOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(BufferStoreOp op, BufferStoreOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), adaptor.getBuffer(),
-                                              kBufferAddressPosition);
-    Value ptr =
-        rewriter.create<OffsetOp>(op.getLoc(), base, adaptor.getPosition());
+  LogicalResult matchAndRewrite(BufferStoreOp op,
+                                PatternRewriter &rewriter) const override {
+    Value base = rewriter.create<StructGetOp>(
+        op.getLoc(), convertValue(op.getBuffer()), kBufferAddressPosition);
+    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, op.getPosition());
     Value bitcastPtr = rewriter.create<PointerBitcastOp>(
         op.getLoc(), PointerType::get(op.getValue().getType()), ptr);
     // We set the alignment to 1 to force LLVM to generate unaligned stores.
-    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), bitcastPtr,
+    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), bitcastPtr,
                                          /*alignment=*/1);
     return success();
   }
@@ -309,19 +338,18 @@ static Value lowerToCString(Operation *op, StringRef str, OpBuilder &b) {
       lowerStringToGlobalConstant(op, nullTerminatedStr, b));
 }
 
-struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(PrintOp op, PrintOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(PrintOp op,
+                                PatternRewriter &rewriter) const override {
     // Lower the format into the a global constant.
     Value fmt = lowerToCString(op, op.getFmt(), rewriter);
     // Create the invocation to `printf`.
     SmallVector<Value> operands;
     operands.reserve(op.getNumOperands() + 1);
     operands.push_back(fmt);
-    llvm::append_range(operands, adaptor.getOperands());
+    llvm::append_range(operands, op.getOperands());
     rewriter.replaceOpWithNewOp<ExternalCallOp>(
         op, TypeRange(), "printf", operands,
         TypeAttr::get(rewriter.getFunctionType(fmt.getType(), {})));
@@ -333,12 +361,11 @@ struct ConvertZAPPrint : mlir::OpConversionPattern<PrintOp> {
 // ConvertZAPGlobalString
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPGlobalString : mlir::OpConversionPattern<GlobalStringOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPGlobalString : mlir::OpRewritePattern<GlobalStringOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(GlobalStringOp op, GlobalStringOpAdaptor adapator,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(GlobalStringOp op,
+                                PatternRewriter &rewriter) const override {
     Value str = lowerStringToGlobalConstant(op, op.getValue(), rewriter);
     rewriter.replaceOp(op, str);
     return success();
@@ -349,12 +376,11 @@ struct ConvertZAPGlobalString : mlir::OpConversionPattern<GlobalStringOp> {
 // ConvertZAPDebugAssert
 //===----------------------------------------------------------------------===//
 
-struct ConvertZAPDebugAssert : mlir::OpConversionPattern<DebugAssertOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPDebugAssert : mlir::OpRewritePattern<DebugAssertOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(DebugAssertOp op, DebugAssertOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(DebugAssertOp op,
+                                PatternRewriter &rewriter) const override {
     // Get the function Name.
     auto functionNameStr = op->getParentOfType<mlir::FunctionOpInterface>()
                                ->getName()
@@ -386,111 +412,12 @@ struct ConvertZAPDebugAssert : mlir::OpConversionPattern<DebugAssertOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// Signature Conversion
-//===----------------------------------------------------------------------===//
-
-struct ConvertCallSignature : public mlir::OpConversionPattern<CallOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    SmallVector<Type> resultTypes;
-    resultTypes.reserve(op.getNumResults());
-    if (failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), resultTypes)))
-      return failure();
-    auto call = rewriter.create<CallOp>(
-        op.getLoc(), resultTypes, op.getCalleeAttr(), op.getParamValuesAttr(),
-        op.getParamDeclsAttr(), adaptor.getOperands(), op->getNumRegions());
-    // Move all the regions over.
-    for (auto [prev, region] : llvm::zip(op.getRegions(), call.getRegions()))
-      region->takeBody(*prev);
-    rewriter.replaceOp(op, call.getResults());
-    return success();
-  }
-};
-
-template <typename OpT>
-struct ConvertInterfaceSignature : public mlir::OpConversionPattern<OpT> {
-  using mlir::OpConversionPattern<OpT>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(OpT op, typename OpT::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    FunctionType type = op.getFunctionType();
-    TypeConverter::SignatureConversion inputs(type.getNumInputs()),
-        results(type.getNumResults());
-    if (failed(this->getTypeConverter()->convertSignatureArgs(type.getInputs(),
-                                                              inputs)) ||
-        failed(this->getTypeConverter()->convertSignatureArgs(type.getResults(),
-                                                              results)))
-      return failure();
-    rewriter.updateRootInPlace(op, [&] {
-      op.setType(rewriter.getFunctionType(inputs.getConvertedTypes(),
-                                          results.getConvertedTypes()));
-    });
-    return success();
-  }
-};
-
-template <typename Op>
-struct ConvertSignature : public mlir::OpConversionPattern<Op> {
-  using mlir::OpConversionPattern<Op>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(Op op, typename Op::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    FailureOr<Block *> result = rewriter.convertRegionTypes(
-        &op.getBodyRegion(), *this->getTypeConverter());
-    if (failed(result))
-      return failure();
-
-    TypeConverter::SignatureConversion results(op.getNumResults());
-    if (failed(this->getTypeConverter()->convertSignatureArgs(
-            op.getResultTypes(), results)))
-      return failure();
-
-    rewriter.updateRootInPlace(op, [&] {
-      op.setType(rewriter.getFunctionType(result.value()->getArgumentTypes(),
-                                          results.getConvertedTypes()));
-    });
-    return success();
-  }
-};
-
-struct ConvertResultSignature : public mlir::OpConversionPattern<ReturnOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.updateRootInPlace(op,
-                               [&] { op->setOperands(adaptor.getOperands()); });
-    return success();
-  }
-};
-
-struct ConvertRebind : public mlir::OpConversionPattern<RebindOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<RebindOp>(
-        op, getTypeConverter()->convertType(op.getType()), adaptor.getInput());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertZAPNDBufferConstruct
 //===----------------------------------------------------------------------===//
 
 /// Construct a buffer struct. If either the size or dtype are dynamic, values
 /// for them must be provided.
-static Value constructNDBuffer(PatternRewriter &rewriter,
-                               TypeConverter &typeConverter, Location loc,
+static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
                                NDBufferType type, Value ptr, size_t rank,
                                ValueRange shape = {}, Value dtype = {}) {
   IndexType indexType = rewriter.getIndexType();
@@ -525,22 +452,20 @@ static Value constructNDBuffer(PatternRewriter &rewriter,
   if (!dtype)
     dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
   return rewriter.create<StructConstructOp>(
-      loc, typeConverter.convertType(type),
-      ValueRange{ptr, rankVal, shapeArray, dtype});
+      loc, type, ValueRange{ptr, rankVal, shapeArray, dtype});
 }
 
 /// Convert the construction of a buffer to building the underlying struct.
 struct ConvertZAPNDBufferConstruct
-    : public mlir::OpConversionPattern<NDBufferConstructOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferConstructOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferConstructOp op, NDBufferConstructOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value ndbuffer = constructNDBuffer(rewriter, *getTypeConverter(),
-                                       op.getLoc(), op.getType(),
-                                       adaptor.getPtr(), op.getType().getRank(),
-                                       adaptor.getShape(), adaptor.getDType());
+  LogicalResult matchAndRewrite(NDBufferConstructOp op,
+
+                                PatternRewriter &rewriter) const override {
+    Value ndbuffer =
+        constructNDBuffer(rewriter, op.getLoc(), op.getType(), op.getPtr(),
+                          op.getType().getRank(), op.getShape(), op.getDType());
     rewriter.replaceOp(op, ndbuffer);
     return success();
   }
@@ -551,13 +476,11 @@ struct ConvertZAPNDBufferConstruct
 //===----------------------------------------------------------------------===//
 
 struct ConvertZAPNDBufferStackAllocation
-    : mlir::OpConversionPattern<NDBufferStackAllocationOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : mlir::OpRewritePattern<NDBufferStackAllocationOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferStackAllocationOp op,
-                  NDBufferStackAllocationOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(NDBufferStackAllocationOp op,
+                                PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     NDBufferType type = op.getType().cast<NDBufferType>();
     auto size =
@@ -565,8 +488,7 @@ struct ConvertZAPNDBufferStackAllocation
                                rewriter.getIndexType());
     Value ptr =
         rewriter.create<StackAllocationOp>(loc, type.getPointerType(), size);
-    Value buf = constructNDBuffer(rewriter, *getTypeConverter(), loc, type, ptr,
-                                  type.getRank());
+    Value buf = constructNDBuffer(rewriter, loc, type, ptr, type.getRank());
     rewriter.replaceOp(op, buf);
     return success();
   }
@@ -578,13 +500,13 @@ struct ConvertZAPNDBufferStackAllocation
 
 /// Extract the NDBuffer address.
 struct ConvertZAPNDBufferAddress
-    : public mlir::OpConversionPattern<NDBufferAddressOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferAddressOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferAddressOp op, NDBufferAddressOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
+  LogicalResult matchAndRewrite(NDBufferAddressOp op,
+
+                                PatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getNDBuffer()),
                                              kNDBufferAddressPosition);
     return success();
   }
@@ -595,15 +517,13 @@ struct ConvertZAPNDBufferAddress
 //===----------------------------------------------------------------------===//
 
 /// Extract the NDBuffer rank.
-struct ConvertZAPNDBufferRank
-    : public mlir::OpConversionPattern<NDBufferRankOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPNDBufferRank : public mlir::OpRewritePattern<NDBufferRankOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferRankOp op, NDBufferRankOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
-                                             kNDBufferRankPosition);
+  LogicalResult matchAndRewrite(NDBufferRankOp op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<ParamConstantOp>(
+        op, rewriter.getIndexAttr(op.getNDBuffer().getType().getRank()));
     return success();
   }
 };
@@ -613,14 +533,18 @@ struct ConvertZAPNDBufferRank
 //===----------------------------------------------------------------------===//
 
 /// Extract the buffer dimension at index provided.
-struct ConvertZAPNDBufferDim : public mlir::OpConversionPattern<NDBufferDimOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPNDBufferDim : public mlir::OpRewritePattern<NDBufferDimOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferDimOp op, NDBufferDimOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(NDBufferDimOp op,
+                                PatternRewriter &rewriter) const override {
+    if (TypedAttr dim =
+            op.getNDBuffer().getType().getShape()[op.getIndexAttr().getInt()]) {
+      rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dim);
+      return success();
+    }
     Value shape = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
+        op->getLoc(), convertValue(op.getNDBuffer()), kNDBufferShapePosition);
     rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
                                             op.getIndex());
     return success();
@@ -653,17 +577,21 @@ static Value getDimensionAtIndex(OpBuilder &builder, Location loc,
 }
 
 /// Compute the size of the ndBuffer.
-struct ConvertZAPNDBufferSize
-    : public mlir::OpConversionPattern<NDBufferSizeOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPNDBufferSize : public mlir::OpRewritePattern<NDBufferSizeOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferSizeOp op, NDBufferSizeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(NDBufferSizeOp op,
+                                PatternRewriter &rewriter) const override {
+    if (Optional<int64_t> size = op.getNDBuffer().getType().getResolvedSize()) {
+      rewriter.replaceOpWithNewOp<ParamConstantOp>(
+          op, rewriter.getIndexAttr(*size));
+      return success();
+    }
+
     Location loc = op->getLoc();
     NDBufferType ndBufferType = op.getNDBuffer().getType();
-    Value shape = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
-                                               kNDBufferShapePosition);
+    Value shape = rewriter.create<StructGetOp>(
+        loc, convertValue(op.getNDBuffer()), kNDBufferShapePosition);
     Value product = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, 0);
     for (size_t i = 1, e = ndBufferType.getRank(); i < e; ++i) {
       Value dim = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, i);
@@ -680,13 +608,16 @@ struct ConvertZAPNDBufferSize
 
 /// Extract the NDBuffer rank.
 struct ConvertZAPNDBufferDType
-    : public mlir::OpConversionPattern<NDBufferDTypeOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferDTypeOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferDTypeOp op, NDBufferDTypeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, adaptor.getNDBuffer(),
+  LogicalResult matchAndRewrite(NDBufferDTypeOp op,
+                                PatternRewriter &rewriter) const override {
+    if (TypedAttr dtype = op.getNDBuffer().getType().getDType()) {
+      rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dtype);
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getNDBuffer()),
                                              kNDBufferDTypePosition);
     return success();
   }
@@ -714,8 +645,8 @@ struct ConvertZAPNDBufferDType
 ///
 /// in 2 iterations, each iteration multiplies a number from the shape list and
 /// adds a number from the index list.
-static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
-                                        Location loc, NDBufferType ndBufferType,
+static Value linearizeContiguousIndices(PatternRewriter &rewriter, Location loc,
+                                        NDBufferType ndBufferType,
                                         Value shapeArray,
                                         ValueRange indexArray) {
   // Initialize `accumulatedOffset` with the innermost index. e.g. add the `x`
@@ -745,17 +676,16 @@ static Value linearizeContiguousIndices(ConversionPatternRewriter &rewriter,
 }
 
 /// Load a scalar value from NDBuffer given a list of position indices.
-struct ConvertZAPNDBufferLoad
-    : public mlir::OpConversionPattern<NDBufferLoadOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertZAPNDBufferLoad : public mlir::OpRewritePattern<NDBufferLoadOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferLoadOp op, NDBufferLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value shapeArray = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(
-        op.getLoc(), adaptor.getNDBuffer(), kNDBufferAddressPosition);
+  LogicalResult matchAndRewrite(NDBufferLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Value popBuf = convertValue(op.getNDBuffer());
+    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
+                                                    kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
+                                              kNDBufferAddressPosition);
     auto offset = linearizeContiguousIndices(
         rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
@@ -771,21 +701,21 @@ struct ConvertZAPNDBufferLoad
 
 /// Store a scalar value into NDBuffer given a list of position indices.
 struct ConvertZAPNDBufferStore
-    : public mlir::OpConversionPattern<NDBufferStoreOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferStoreOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferStoreOp op, NDBufferStoreOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value shapeArray = rewriter.create<StructGetOp>(
-        op->getLoc(), adaptor.getNDBuffer(), kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(
-        op.getLoc(), adaptor.getNDBuffer(), kNDBufferAddressPosition);
+  LogicalResult matchAndRewrite(NDBufferStoreOp op,
+                                PatternRewriter &rewriter) const override {
+    Value popBuf = convertValue(op.getNDBuffer());
+    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
+                                                    kNDBufferShapePosition);
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
+                                              kNDBufferAddressPosition);
     auto offset = linearizeContiguousIndices(
         rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
     Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
-    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), ptr,
+    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), ptr,
                                          /*alignment=*/None);
     return success();
   }
@@ -797,16 +727,17 @@ struct ConvertZAPNDBufferStore
 
 /// Load a simd value from NDBuffer given a list of position indices.
 struct ConvertZAPNDBufferSIMDLoad
-    : public mlir::OpConversionPattern<NDBufferSIMDLoadOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferSIMDLoadOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferSIMDLoadOp op, NDBufferSIMDLoadOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(NDBufferSIMDLoadOp op,
+
+                                PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
-    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+    Value popBuf = convertValue(op.getNDBuffer());
+    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
                                                     kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
                                               kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
@@ -826,16 +757,17 @@ struct ConvertZAPNDBufferSIMDLoad
 /// Store a simd value into the NDBuffer at the given a list of position
 /// indices.
 struct ConvertZAPNDBufferSIMDStore
-    : public mlir::OpConversionPattern<NDBufferSIMDStoreOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : public mlir::OpRewritePattern<NDBufferSIMDStoreOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(NDBufferSIMDStoreOp op, NDBufferSIMDStoreOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(NDBufferSIMDStoreOp op,
+
+                                PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
-    Value shapeArray = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+    Value popBuf = convertValue(op.getNDBuffer());
+    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
                                                     kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(loc, adaptor.getNDBuffer(),
+    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
                                               kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
@@ -843,15 +775,11 @@ struct ConvertZAPNDBufferSIMDStore
     Value ptr = rewriter.create<OffsetOp>(loc, base, offset);
     Value simdPtr = rewriter.create<PointerBitcastOp>(
         loc, PointerType::get(op.getValue().getType()), ptr);
-    rewriter.replaceOpWithNewOp<StoreOp>(op, adaptor.getValue(), simdPtr,
+    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), simdPtr,
                                          /*alignment=*/1);
     return success();
   }
 };
-
-//===----------------------------------------------------------------------===//
-// ConvertZAPNDBufferSIMDStore
-//===----------------------------------------------------------------------===//
 
 } // namespace
 
@@ -859,22 +787,9 @@ struct ConvertZAPNDBufferSIMDStore
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static void populateZAPToPOPPatterns(TypeConverter &converter,
-                                     RewritePatternSet &patterns) {
+static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
-
-      // Signature type conversions.
-      ConvertCallSignature,
-      ConvertInterfaceSignature<GeneratorInterfaceOp>,
-      ConvertInterfaceSignature<PrecompiledLLVMOp>,
-      ConvertInterfaceSignature<PrecompiledObjectOp>,
-      ConvertSignature<GeneratorOp>,
-      ConvertSignature<FuncOp>,
-      ConvertResultSignature,
-      ConvertRebind,
-
-      // Op conversions.
       ConvertZAPBufferAddress,
       ConvertZAPBufferConstant,
       ConvertZAPBufferConstruct,
@@ -898,9 +813,8 @@ static void populateZAPToPOPPatterns(TypeConverter &converter,
       ConvertZAPNDBufferStackAllocation,
       ConvertZAPNDBufferStore,
       ConvertZAPPrint
-
       // clang-format on
-      >(converter, patterns.getContext());
+      >(patterns.getContext());
 }
 
 //===----------------------------------------------------------------------===//
@@ -924,62 +838,48 @@ struct LowerZAPToPOPPass
 void LowerZAPToPOPPass::runOnOperation() {
   ModuleOp theModule = getOperation();
 
-  // Configure the type converter.
-  TypeConverter typeConverter;
-  typeConverter.addConversion([=](Type type) -> Optional<Type> {
-    return TypeSwitch<Type, Optional<Type>>(type)
-        .Case([&](BufferType buf) {
-          // Convert buffer types to a struct of (pointer, index, dtype).
-          return StructType::get({buf.getPointerType(),
-                                  IndexType::get(buf.getContext()),
-                                  DTypeType::get(buf.getContext())});
-        })
-        .Case([&](NDBufferType ndBuffer) {
-          auto indexType = IndexType::get(ndBuffer.getContext());
-          // Convert NDBuffer types to a struct of the form
-          // {
-          //    pointer,   --- for buffer
-          //    index,     --- for rank
-          //    index[5],  --- for shape
-          //    dtype      --- for dtype
-          // }
-          return StructType::get(
-              {ndBuffer.getPointerType(), indexType,
-               POP::ArrayType::get(NDBufferType::getMaximumRank(), indexType),
-               DTypeType::get(ndBuffer.getContext())});
-        })
-        .Default([&](Type type) { return type; });
-  });
-
-  // Configure dialect conversion
-  ConversionTarget target(getContext());
-  target.addIllegalDialect<ZAPDialect>();
-  target.addLegalDialect<index::IndexDialect, KGENDialect, POPDialect>();
-
-  auto isZAPType = [&](Type type) {
-    return type.isa<BufferType, NDBufferType>();
-  };
-
-  // Dynamically legalize KGEN operations that can interact with any parametric
-  // type, including ZAP types.
-  target.addDynamicallyLegalOp<GeneratorInterfaceOp, GeneratorOp, FuncOp,
-                               PrecompiledLLVMOp, PrecompiledObjectOp>(
-      [&](Operation *op) {
-        FunctionType type = cast<KGENDeclInterface>(op).getFunctionType();
-        return llvm::none_of(type.getInputs(), isZAPType) &&
-               llvm::none_of(type.getResults(), isZAPType);
-      });
-  target.addDynamicallyLegalOp<CallOp, RebindOp, ReturnOp>([&](Operation *op) {
-    return llvm::none_of(op->getOperandTypes(), isZAPType) &&
-           llvm::none_of(op->getResultTypes(), isZAPType);
-  });
-
   // Populate patterns
   RewritePatternSet patterns(&getContext());
-  populateZAPToPOPPatterns(typeConverter, patterns);
+  populateZAPToPOPPatterns(patterns);
+  mlir::FrozenRewritePatternSet set(std::move(patterns));
+  mlir::PatternApplicator applicator(set);
+  applicator.applyDefaultCostModel();
+
+  // Collect all ops to rewrite.
+  std::vector<Operation *> opsToRewrite;
+  Dialect *zapDialect = getContext().getLoadedDialect<ZAPDialect>();
+  theModule.walk([&](Operation *op) {
+    if (op->getDialect() == zapDialect)
+      opsToRewrite.push_back(op);
+  });
 
   // Run the conversion.
-  if (failed(
-          mlir::applyPartialConversion(theModule, target, std::move(patterns))))
-    return signalPassFailure();
+  struct SimplePatternRewriter : public PatternRewriter {
+    explicit SimplePatternRewriter(MLIRContext *ctx) : PatternRewriter(ctx) {}
+  };
+  SimplePatternRewriter rewriter(&getContext());
+  for (Operation *op : opsToRewrite) {
+    if (failed(applicator.matchAndRewrite(op, rewriter))) {
+      op->emitError("failed to lower ZAP operation");
+      return signalPassFailure();
+    }
+  }
+
+  // Lower all ZAP remaining types.
+  auto convertNestedTypes = [](Type type) {
+    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type))
+      return convertType(itf.replaceSubElements(convertType));
+    return convertType(type);
+  };
+  theModule.walk([&](Operation *op) {
+    op->setAttrs(cast<DictionaryAttr>(
+        op->getAttrDictionary().replaceSubElements(convertType)));
+    for (Value value : op->getResults())
+      value.setType(convertNestedTypes(value.getType()));
+    for (Region &region : op->getRegions())
+      for (Value value : region.getArguments())
+        value.setType(convertNestedTypes(value.getType()));
+    if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
+      rewriter.replaceOp(cast, cast.getInputs());
+  });
 }
