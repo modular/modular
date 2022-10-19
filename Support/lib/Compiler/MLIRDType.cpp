@@ -53,3 +53,29 @@ IntegerType M::getEquivalentIntegerType(MLIRContext *ctx, DType dtype) {
                           dtype.isSInt() ? IntegerType::Signed
                                          : IntegerType::Unsigned);
 }
+
+DType M::getEquivalentDType(FloatType fpType) {
+  if (fpType.isF16())
+    return DType(DType::f16);
+  if (fpType.isBF16())
+    return DType(DType::bf16);
+  if (fpType.isF32())
+    return DType(DType::f32);
+  if (fpType.isF64())
+    return DType(DType::f64);
+  if (fpType.isF80())
+    return DType(DType::f80);
+  if (fpType.isF128())
+    return DType(DType::f128);
+  return {}; // unrepresentable
+}
+
+DType M::getEquivalentDType(IntegerType intType) {
+  if (intType.isSignless())
+    return {}; // unrepresentable
+  FailureOr<DType> optDType =
+      DType::getInt(intType.getIntOrFloatBitWidth(), intType.isSignedInteger());
+  if (failed(optDType))
+    return {}; // unrepresentable
+  return *optDType;
+}
