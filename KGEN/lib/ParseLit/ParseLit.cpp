@@ -45,8 +45,8 @@ namespace scf = mlir::scf;
 //===----------------------------------------------------------------------===//
 
 static Location getLocationFrom(Scope::ScopeValue value) {
-  if (std::holds_alternative<VarDeclOp>(value))
-    return std::get<VarDeclOp>(value).getLoc();
+  if (std::holds_alternative<Operation *>(value))
+    return std::get<Operation *>(value)->getLoc();
   return std::get<Scope::MetaParameterValue>(value).loc;
 }
 
@@ -358,8 +358,9 @@ ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   if (Optional<Scope::ScopeValue> decl =
           scope.lookupInCurrentScope(dre->spelling)) {
     // Don't allow reassigning to functions and other constant parameters.
-    if (std::holds_alternative<VarDeclOp>(decl.value()))
-      lvalue = std::get<VarDeclOp>(decl.value());
+    if (std::holds_alternative<Operation *>(decl.value()) &&
+        isa<VarDeclOp>(std::get<Operation *>(decl.value())))
+      lvalue = std::get<Operation *>(decl.value())->getResult(0);
     else
       emitError(lhs->getLoc(), "this declaration isn't reassignable");
   } else {
@@ -907,11 +908,7 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
       TypeArrayAttr::get(getContext(), {}));
   newStruct.getRegion().push_back(new Block());
 
-  auto newRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(nameAttr),
-                                            builder.getType<MLIRTypeType>());
-
-  scope.addToScope(nameAttr, Scope::MetaParameterValue{newRefAttr, loc},
-                   getSharedState());
+  scope.addToScope(nameAttr, newStruct.getOperation(), getSharedState());
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
@@ -993,9 +990,10 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                        KGENDialect, scf::SCFDialect>();
 
   // This is the result module we are parsing into.
-  mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(
+  auto fileLoc =
       FileLineColLoc::get(context, sourceBuf->getBufferIdentifier(), /*line=*/0,
-                          /*column=*/0)));
+                          /*column=*/0);
+  mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
   LitSharedState sharedState(sourceMgr, context);
   LitLexer lexer(sharedState);
@@ -1018,7 +1016,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
-  sharedState.declResolver->resolveAll();
+  sharedState.declResolver->resolveAll(fileLoc);
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
