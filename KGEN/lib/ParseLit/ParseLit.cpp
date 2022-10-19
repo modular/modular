@@ -310,7 +310,9 @@ ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
-  ExprNode *expr = parseExpression();
+  ExprNode *expr = nullptr;
+  if (parseExpression(expr))
+    return failure();
 
   // If the expression was followed by a `=` then we have an assignment.  If not
   // then we have an expression_stmt.
@@ -378,7 +380,9 @@ ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
     lvalue = varDecl;
   }
 
-  ExprNode *rhs = parseExpression();
+  ExprNode *rhs = nullptr;
+  if (parseExpression(rhs))
+    return failure();
 
   // Materialize the expression statement in our current scope.
   // TODO: Should pass in contextual type if known from previous declaration.
@@ -426,7 +430,10 @@ struct ParsedMetaSignature {
 
       Type paramType = IndexType::get(p.getContext());
       if (p.consumeIf(LitToken::colon)) {
-        ExprNode *typeExpr = p.parseExpression();
+        ExprNode *typeExpr = nullptr;
+        if (p.parseExpression(typeExpr))
+          return failure();
+
         // TODO (types): translate typeExpr into a type.
         (void)typeExpr;
       }
@@ -453,15 +460,20 @@ ParseResult LitParser::parseWhileStmt(size_t curIndent) {
   Block *before = builder.createBlock(&whileOp.getBefore(), {}, {}, {});
   Block *after = builder.createBlock(&whileOp.getAfter(), {}, {}, {});
   auto cmpBuilder = OpBuilder::atBlockEnd(before);
+
+  ExprNode *condExp = nullptr;
+  if (parseExpression(condExp) ||
+      parseToken(LitToken::colon, "expected ':' after expression"))
+    return failure();
+
   Value cond;
   {
     SaveAndRestore<OpBuilder> builderSaver(builder, cmpBuilder);
     // TODO(types): add type checking: the condition should be bool
-    ExprNode *condExp = parseExpression();
     cond = emitExprAsValue(condExp);
+    if (!cond)
+      return failure();
   }
-  if (!cond || parseToken(LitToken::colon, "expected ':' after expression"))
-    return failure();
 
   auto one = cmpBuilder.create<index::ConstantOp>(whileLoc, 1);
   auto cmpOp = cmpBuilder.create<index::CmpOp>(
@@ -500,7 +512,9 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
   // build the conditional expression in the desired place.
   auto parseCondition = [&](index::CmpOp &cmpOp) -> ParseResult {
     // TODO: add type checking: the condition should be bool
-    ExprNode *condExp = parseExpression();
+    ExprNode *condExp = nullptr;
+    if (parseExpression(condExp))
+      return failure();
     Location loc = translateLocation(condExp->getLoc());
     Value cond = emitExprAsValue(condExp);
     if (!cond)
@@ -565,7 +579,8 @@ ParseResult LitParser::parseReturnStmt() {
   // If there is an expression list present, parse it.
   if (!getToken().getIndentation().has_value()) {
     SmallVector<ExprNode *> operandExprs;
-    parseExpressionList(operandExprs);
+    if (parseExpressionList(operandExprs))
+      return failure();
 
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.

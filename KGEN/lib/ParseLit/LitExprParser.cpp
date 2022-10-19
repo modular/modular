@@ -41,8 +41,8 @@ public:
 
   // Expressions.  These methods always return a non-null ExprNode, but it may
   // be (or include) an Error node if parsing failed.
-  void parseExpressionList(SmallVectorImpl<ExprNode *> &results);
-  ExprNode *parseExpression();
+  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
+  ParseResult parseExpression(ExprNode *&result);
 
 private:
   ExprNode *parsePrimary();
@@ -93,19 +93,20 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// expression_list ::= expression ("," expression)* [","]
-void ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
+ParseResult
+ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
   // TODO: Support trailing comma for singleton tuple.
-  (void)parseCommaSeparatedList([&]() -> ParseResult {
-    results.push_back(parseExpression());
-    return success();
+  return parseCommaSeparatedList([&]() -> ParseResult {
+    return parseExpression(results.emplace_back(nullptr));
   });
 }
 
 /// expression ::=
 ///
 ///
-ExprNode *ExprParser::parseExpression() {
-  return parseBinOpRHS(parsePrimary(), Precedence::kLowest);
+ParseResult ExprParser::parseExpression(ExprNode *&expr) {
+  expr = parseBinOpRHS(parsePrimary(), Precedence::kLowest);
+  return success(expr != nullptr);
 }
 
 /// Return the operator precedence for the specified token or
@@ -154,7 +155,9 @@ ExprNode *ExprParser::parsePrimary() {
     break;
   case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
     auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
-    ExprNode *subExpr = parseExpression();
+    ExprNode *subExpr;
+    if (parseExpression(subExpr))
+      return nullptr;
     auto rpLoc = getToken().getLoc();
     // FIXME: This is terrible error recovery.
     if (parseToken(LitToken::r_paren,
@@ -185,8 +188,8 @@ ExprNode *ExprParser::parsePrimary() {
       SmallVector<ExprNode *> argExprs;
       // TODO: Handle comprehension arguments.
       if (!consumeIf(LitToken::r_paren)) {
-        parseExpressionList(argExprs);
-        if (parseToken(LitToken::r_paren, "expected ')' in call argument list"))
+        if (parseExpressionList(argExprs) ||
+            parseToken(LitToken::r_paren, "expected ')' in call argument list"))
           return getErrorAtToken();
       }
 
@@ -235,12 +238,13 @@ ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
 // ExprParser implementation
 //===----------------------------------------------------------------------===//
 
-void LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
+ParseResult
+LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
   return ExprParser(getLexer()).parseExpressionList(results);
 }
 
-ExprNode *LitParserBase::parseExpression() {
-  return ExprParser(getLexer()).parseExpression();
+ParseResult LitParserBase::parseExpression(ExprNode *&result) {
+  return ExprParser(getLexer()).parseExpression(result);
 }
 
 /// Parse an expression to check for syntactic validity, but throw it away
@@ -249,5 +253,6 @@ ExprNode *LitParserBase::parseExpression() {
 ParseResult
 LitParserBase::parseOverExpression(Optional<LitLexerCursor> &cursor) {
   cursor = getLexer().getCursor();
-  return success(ExprParser(getLexer()).parseExpression() != nullptr);
+  ExprNode *result = nullptr;
+  return ExprParser(getLexer()).parseExpression(result);
 }

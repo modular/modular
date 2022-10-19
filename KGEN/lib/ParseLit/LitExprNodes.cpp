@@ -94,7 +94,9 @@ Value EmitterState::emitAsValue(const ExprNode *node) {
 /// performing name lookup and other resolution.  This can produce errors, but
 /// always returns a non-null type.
 ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
-  auto *typeExpr = parseExpression();
+  ExprNode *typeExpr = nullptr;
+  if (parseExpression(typeExpr))
+    return failure();
 
   auto emitError = [&](const Twine &message) -> ParseResult {
     result = UnresolvedType::get(getContext());
