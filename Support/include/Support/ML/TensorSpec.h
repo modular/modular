@@ -26,6 +26,12 @@ public:
   TensorSpec(const ShapeType &shape, DType eltType) : TensorShape(shape) {
     setEltType(eltType);
   }
+  template <typename T>
+  TensorSpec(const std::initializer_list<T> &shape, DType eltType)
+      : TensorShape(shape) {
+    static_assert(std::is_integral_v<T>, "shape dimensions must be integral");
+    setEltType(eltType);
+  }
 
   // This class stores the ElementType in the auxillary storage field of the
   // underlying TensorShape.
