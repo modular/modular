@@ -458,6 +458,18 @@ kgen.generator @pop_gather(%base: !pop.simd<2, address>,
   kgen.return %0 : !pop.simd<2, f32>
 }
 
+// CHECK-LABEL: @pop_scatter
+// CHECK-SAME: %[[VALUE:.*]]: !pop.simd<2, f32>
+// CHECK-SAME: %[[BASE:.*]]: !pop.simd<2, address>
+// CHECK-SAME: %[[MASK:.*]]: !pop.simd<2, bool>
+kgen.generator @pop_scatter(%value: !pop.simd<2, f32>,
+                            %base: !pop.simd<2, address>,
+                            %mask: !pop.simd<2, bool>) {
+  // CHECK: pop.simd.scatter %[[VALUE]], %[[BASE]][%[[MASK]]] : !pop.simd<2, f32>
+  pop.simd.scatter %value, %base[%mask] : !pop.simd<2, f32>
+  kgen.return
+}
+
 // CHECK-LABEL: @pop_load_store
 kgen.generator @pop_load_store<type: dtype>(%p0: !pop.pointer<scalar<f32>>, %p1: !pop.pointer<scalar<type>>) {
   // CHECK: %[[V0:.*]] = pop.load %{{.*}} : !pop.pointer<scalar<f32>>

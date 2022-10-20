@@ -30,6 +30,7 @@ public:
   };
 
   KGENDType(DType dtype) : DType(dtype){};
+  KGENDType(ExtraCases type) : DType(type){};
 
   constexpr bool isAddress() const { return getValue() == ExtraCases::address; }
 

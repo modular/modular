@@ -253,6 +253,16 @@ class SIMDOfSameElementDType<string lhs, string rhs> :
 class SIMDOfSameSize<string lhs, string rhs> :
   AllMatchSameOperatorTrait<[lhs, rhs], SIMDSize<"_self">.result, "size">;
 
+class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
+    value # " type matches simd type of the " # operand # " operand", operand,
+    value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGENDType::address))">;
+
+class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
+    value # " type matches simd type of the " # operand # " operand", operand,
+    value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
