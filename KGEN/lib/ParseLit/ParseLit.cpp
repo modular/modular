@@ -63,13 +63,13 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// LitParser
+// LitStmtParser
 //===----------------------------------------------------------------------===//
 
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
-struct LitParser : public LitParserBase {
-  LitParser(LitLexer &lexer, Scope &scope)
+struct LitStmtParser : public LitParserBase {
+  LitStmtParser(LitLexer &lexer, Scope &scope)
       : LitParserBase(lexer), scope(scope), builder(scope.getDeclEndBuilder()) {
   }
 
@@ -128,11 +128,6 @@ private:
   OpBuilder builder;
 };
 
-/// file ::= statements
-ParseResult LitParser::parseFile(ModuleOp module) {
-  return parseStmts(/*indent=*/0, StmtContext::normal);
-}
-
 //===----------------------------------------------------------------------===//
 // Statements
 //===----------------------------------------------------------------------===//
@@ -144,7 +139,8 @@ ParseResult LitParser::parseFile(ModuleOp module) {
 ///
 /// suite     ::=  [stmt_list NEWLINE] | NEWLINE INDENT statement+ DEDENT
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
-ParseResult LitParser::parseSuite(size_t curIndent, StmtContext stmtContext) {
+ParseResult LitStmtParser::parseSuite(size_t curIndent,
+                                      StmtContext stmtContext) {
   // Ignore empty body at end of file: a `pass` is not required.
   if (getToken().is(LitToken::eof))
     return success();
@@ -173,7 +169,8 @@ ParseResult LitParser::parseSuite(size_t curIndent, StmtContext stmtContext) {
 ///
 /// This parses statements at the current indentation level or greater, it
 /// refuses to parse things at lower indentation level.
-ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
+ParseResult LitStmtParser::parseStmts(size_t minIndent,
+                                      StmtContext stmtContext) {
   while (getToken().isNot(LitToken::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
@@ -203,7 +200,8 @@ ParseResult LitParser::parseStmts(size_t minIndent, StmtContext stmtContext) {
 ///                 | async_for_stmt [TODO]
 ///                 | async_funcdef [TODO]
 ///
-ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
+ParseResult LitStmtParser::parseStmt(size_t curIndent,
+                                     StmtContext stmtContext) {
   // Handle compound stmts here and chain to simple statements to handle the
   // whole "statement" production.
   switch (getToken().getKind()) {
@@ -244,7 +242,7 @@ ParseResult LitParser::parseStmt(size_t curIndent, StmtContext stmtContext) {
 ///               | future_stmt [TODO]
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
-ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
+ParseResult LitStmtParser::parseSimpleStmt(StmtContext stmtContext) {
   switch (getToken().getKind()) {
   case LitToken::kw_if:
   case LitToken::kw_while:
@@ -300,7 +298,7 @@ ParseResult LitParser::parseSimpleStmt(StmtContext stmtContext) {
 ///          | "(" [target_list] ")" | "[" [target_list] "]"
 ///          | attributeref | subscription | slicing | "*" target
 ///
-ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
+ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   // Resolve the parse expression on the LHS into an lvalue that we can store
   // into.
   // TODO: implement support for generalized lvalues / target_list.
@@ -381,7 +379,7 @@ struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
   std::vector<Location> inputLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParser &p) {
+  ParseResult parseOptionalMetaSignature(LitParserBase &p, Scope &scope) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -397,7 +395,7 @@ struct ParsedMetaSignature {
       Type paramType;
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.parseType(paramType))
+          p.parseType(paramType, scope))
         return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       return success();
@@ -413,7 +411,7 @@ struct ParsedMetaSignature {
 
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
-ParseResult LitParser::parseWhileStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc =
       translateLocation(consumeToken(LitToken::kw_while).getLoc());
 
@@ -463,7 +461,7 @@ ParseResult LitParser::parseWhileStmt(size_t curIndent) {
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
-ParseResult LitParser::parseIfStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
   auto one = builder.create<index::ConstantOp>(ifLoc, 1);
 
@@ -531,7 +529,7 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
 }
 
 /// return_stmt ::= "return" [expression_list]
-ParseResult LitParser::parseReturnStmt() {
+ParseResult LitStmtParser::parseReturnStmt() {
   auto loc = consumeToken(LitToken::kw_return).getLoc();
 
   SmallVector<Value> operandValues;
@@ -593,7 +591,7 @@ ParseResult LitParser::parseReturnStmt() {
 // Definitions
 //===----------------------------------------------------------------------===//
 
-ParseResult LitParser::parseDefStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   Location loc = getTokenLocation();
 
   // TODO: Add support for decorators.
@@ -640,7 +638,7 @@ struct ParsedParam {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  ParseResult parse(LitParser &p) {
+  ParseResult parse(LitParserBase &p, Scope &scope) {
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
@@ -648,8 +646,7 @@ struct ParsedParam {
       return failure();
 
     if (p.consumeIf(LitToken::colon)) {
-
-      if (p.parseType(type))
+      if (p.parseType(type, scope))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
@@ -670,19 +667,20 @@ struct ParsedParam {
 ///
 LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
                                              Scope &scope) {
-  LitParser p(lexer, scope);
+  LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
   Type resultType;
 
-  if (metaSignature.parseOptionalMetaSignature(p) ||
+  if (metaSignature.parseOptionalMetaSignature(p, scope) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
   if (!p.consumeIf(LitToken::r_paren)) {
-    if (p.parseCommaSeparatedList(
-            [&]() { return params.emplace_back(ParsedParam()).parse(p); }) ||
+    if (p.parseCommaSeparatedList([&]() {
+          return params.emplace_back(ParsedParam()).parse(p, scope);
+        }) ||
         p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
       return failure();
   }
@@ -694,14 +692,14 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   if (p.consumeIf(LitToken::minus_greater)) {
-    if (p.parseType(resultType))
+    if (p.parseType(resultType, scope))
       return failure();
   }
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  auto &builder = p.getBuilder();
+  auto builder = scope.getDeclEndBuilder();
 
   // We have parsed the signature but skipped over the actual types, we use
   // unresolved types for now.
@@ -763,9 +761,9 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
 
 void DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
                                Scope &scope) {
-  LitParser p(lexer, scope);
-
-  (void)p.parseSuite(scope.getIndentation(), LitParser::StmtContext::normal);
+  LitStmtParser p(lexer, scope);
+  (void)p.parseSuite(scope.getIndentation(),
+                     LitStmtParser::StmtContext::normal);
 
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
@@ -790,7 +788,7 @@ void DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
-ParseResult LitParser::parseVarDeclStmt() {
+ParseResult LitStmtParser::parseVarDeclStmt() {
   ssize_t indent = getToken().getIndentation().value_or(-size_t(1));
   auto loc = getTokenLocation();
   consumeToken(LitToken::kw_var);
@@ -814,13 +812,13 @@ ParseResult LitParser::parseVarDeclStmt() {
 
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
                                              Scope &scope) {
-  LitParser p(lexer, scope);
+  LitParserBase p(lexer);
   Type type;
   ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.
   if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
-      p.parseType(type))
+      p.parseType(type, scope))
     return failure();
 
   varDecl.getResult().setType(POP::PointerType::get(type));
@@ -843,7 +841,7 @@ void DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope) {
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
-ParseResult LitParser::parseStructStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseStructStmt(size_t curIndent) {
   auto loc = getTokenLocation();
 
   // TODO: Add support for decorators.
@@ -872,10 +870,10 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
 
 LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
                                              LitLexer &lexer, Scope &scope) {
-  LitParser p(lexer, scope);
+  LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
-  if (metaSignature.parseOptionalMetaSignature(p) ||
+  if (metaSignature.parseOptionalMetaSignature(p, scope) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
@@ -894,9 +892,9 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
 
 void DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,
                                Scope &scope) {
-  LitParser p(lexer, scope);
+  LitStmtParser p(lexer, scope);
   (void)p.parseSuite(scope.getIndentation(),
-                     LitParser::StmtContext::structBody);
+                     LitStmtParser::StmtContext::structBody);
 }
 
 //===----------------------------------------------------------------------===//
@@ -966,7 +964,9 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                                        lexer.getCursor(), 0);
 
   // Parse the file.
-  if (LitParser(lexer, fileScope).parseFile(*module))
+  /// file ::= statements
+  if (LitStmtParser(lexer, fileScope)
+          .parseStmts(/*indent=*/0, LitStmtParser::StmtContext::normal))
     return nullptr;
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
