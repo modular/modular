@@ -65,9 +65,18 @@ void Scope::addToScope(StringRef name, ScopeValue newValue,
   diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
   sharedState.errorOccurred = true;
 
-  // TODO: We should mark both declarations erroneous in the symbol table
-  // so reference to them get squashed as errors during name lookup,
-  // avoiding cascading errors.
+  // Mark both declarations erroneous in the symbol table so reference to them
+  // get squashed as errors during name lookup, avoiding cascading errors.
+  auto markErroneous = [&](ScopeValue value) {
+    if (!std::holds_alternative<Operation *>(value))
+      return;
+    if (Scope *scope = sharedState.declResolver->getScopeForDeclIfPresent(
+            std::get<Operation *>(value)))
+      scope->hasReferenceError = true;
+  };
+
+  markErroneous(newValue);
+  markErroneous(entry.value());
 }
 
 // FIXME(https://reviews.llvm.org/D135940): This is a clone of
@@ -651,10 +660,7 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   funcDecl.getRegion().push_back(new Block());
 
-  auto funcDeclRefAttr = SymbolConstantAttr::get(FlatSymbolRefAttr::get(name),
-                                                 funcDecl.getSignature());
-  scope.addToScope(name, Scope::MetaParameterValue{funcDeclRefAttr, loc},
-                   getSharedState());
+  scope.addToScope(name, funcDecl, getSharedState());
 
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.

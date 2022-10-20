@@ -46,10 +46,26 @@ public:
   Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
                  ssize_t indentation);
 
+  /// Return the scope for the specified declaration that is already entered
+  /// into the resolver.
+  Scope &getScopeForDecl(Operation *decl) {
+    auto *scope = getScopeForDeclIfPresent(decl);
+    assert(scope && "not a declaration???");
+    return *scope;
+  }
+
+  /// Return the scope for the specified declaration if it is in the resolver.
+  Scope *getScopeForDeclIfPresent(Operation *decl) {
+    auto it = parsedDecls.find(decl);
+    return it != parsedDecls.end() ? it->second : nullptr;
+  }
+
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
-  void resolve(Scope &scope, DeclResolvedness howResolved, Location loc);
-  void resolve(Operation *decl, DeclResolvedness howResolved, Location loc);
+  LogicalResult resolve(Scope &scope, DeclResolvedness howResolved,
+                        Location loc);
+  LogicalResult resolve(Operation *decl, DeclResolvedness howResolved,
+                        Location loc);
 
 private:
   void resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);
