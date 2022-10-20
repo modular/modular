@@ -1468,13 +1468,13 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
     memory on the stack. The operation returns a pointer to the allocated memory
-    of the specified size aligned to the dtype of the element type.
+    of count elements aligned to the element type.
 
     Example:
 
     ```mlir
-    %0 = pop.stack_allocation size : !pop.simd<4, f32>
-    %1 = pop.stack_allocation size : !pop.scalar<ui64>
+    %0 = pop.stack_allocation count x !pop.simd<4, f32>
+    %1 = pop.stack_allocation count x !pop.scalar<ui64>
     ```
 
     The allocated memory is automatically released when control tranfers back
@@ -1483,21 +1483,21 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
     Example:
 
     ```mlir
-    kgen.generator @stack_memory<size, type: type>() {
+    kgen.generator @stack_memory<count, type: type>() {
       // This memory is allocated at the start of the function call and released
       // at the end.
-      %0 = pop.stack_allocation size : type
+      %0 = pop.stack_allocation count x type
 
       scf.if %cond {
         // This memory is allocated when control flow branches into the 'then'
         // region and released when control flow transfer back.
-        %1 = pop.stack_allocation size : type
+        %1 = pop.stack_allocation count x type
       }
 
       scf.for %iv = %lb to %ub step %step {
         // This memory is allocated each time the loop iterates and released
         // at the end of each iteration.
-        %2 = pop.stack_allocation size : type
+        %2 = pop.stack_allocation count x type
       }
     }
     ```
@@ -1509,14 +1509,14 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
 
     ```mlir
     // Scoped to the enclosing region.
-    %0 = pop.stack_allocation size : type
+    %0 = pop.stack_allocation count x type
 
     %mem = scf.if %cond -> !pop.pointer<type> {
       // OK: The memory is scoped to the enclosing region.
       scf.yield %0 : !pop.pointer<type>
     } else {
       // Scoped to the 'else' region.
-      %1 = pop.stack_allocation size : type
+      %1 = pop.stack_allocation count x type
 
       // The memory is escaping its enclosed region.
       scf.yield %1 : !pop.pointer<type>
@@ -1527,13 +1527,17 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$size);
+  let arguments = (ins TypedAttrInterface:$count);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
-    custom<IndexParamValue>($size) attr-dict `:`
-    custom<PointerOf>(type($result))
+    custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
+    attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$result, "int64_t":$count)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

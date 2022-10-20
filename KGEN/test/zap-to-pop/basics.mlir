@@ -180,11 +180,11 @@ kgen.func @buffer_construct(%ptr: !pop.pointer<scalar<invalid>>, %size: index, %
 kgen.generator @buffer_stack_allocation<size, type: dtype>(%i: index) -> (
   !zap.buffer<4, f32>, !zap.buffer<size, type>
 ) {
-  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 : !pop.scalar<f32>
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 x !pop.scalar<f32>
   // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<f32>>, index, dtype>
   %0 = zap.buffer.stack_allocation : !zap.buffer<4, f32>
 
-  // CHECK: %[[PTR1:.*]] = pop.stack_allocation size : !pop.scalar<type>
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation size x !pop.scalar<type>
   // CHECK: %[[BUF1:.*]] = pop.struct.construct(%[[PTR1]], %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<type>>, index, dtype>
   %1 = zap.buffer.stack_allocation : !zap.buffer<size, type>
 
@@ -348,11 +348,11 @@ kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<scalar<invalid>>,
 kgen.generator @ndbuffer_stack_allocation<type: dtype>(%i: index) -> (
   !zap.ndbuffer<[4], f32>, !zap.ndbuffer<[42, 42], type>
 ) {
-  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 : !pop.scalar<f32>
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 x !pop.scalar<f32>
   // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<f32>>, index, array<5, index>, dtype>
   %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
 
-  // CHECK: %[[PTR1:.*]] = pop.stack_allocation 1764 : !pop.scalar<type>
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation 1764 x !pop.scalar<type>
   // CHECK: %[[BUF1:.*]] = pop.struct.construct(%[[PTR1]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<type>>, index, array<5, index>, dtype>
   %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, 42], type>
 
@@ -366,12 +366,12 @@ kgen.generator @ndbuffer_stack_allocation<type: dtype>(%i: index) -> (
 kgen.generator @ndbuffer_stack_allocation_parametric_size<type: dtype, size>(%i: index) -> (
   !zap.ndbuffer<[size], f32>, !zap.ndbuffer<[42, size, 2], type>
 ) {
-  // CHECK: %[[PTR0:.*]] = pop.stack_allocation size : !pop.scalar<f32>
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation size x !pop.scalar<f32>
   // CHECK: %[[SIZE:.*]] = kgen.param.constant = <size>
   // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<f32>>, index, array<5, index>, dtype>
   %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size], f32>
 
-  // CHECK: %[[PTR1:.*]] = pop.stack_allocation mul(size, 84) : !pop.scalar<type>
+  // CHECK: %[[PTR1:.*]] = pop.stack_allocation mul(size, 84) x !pop.scalar<type>
   // CHECK: %[[BUF1:.*]] = pop.struct.construct(%[[PTR1]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<type>>, index, array<5, index>, dtype>
   %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, size, 2], type>
 

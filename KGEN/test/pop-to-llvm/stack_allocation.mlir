@@ -7,12 +7,12 @@ kgen.func @stack_allocation(%cond: i1) {
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32
   // CHECK-DAG: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32>
   // CHECK: llvm.intr.lifetime.start 16, %[[PTR0]]
-  %0 = pop.stack_allocation 16 : !pop.scalar<f32>
+  %0 = pop.stack_allocation 16 x !pop.scalar<f32>
   // CHECK: scf.if
   scf.if %cond {
     // CHECK-NEXT: llvm.intr.lifetime.start 4, %[[PTR1]]
     // CHECK-NEXT: llvm.intr.lifetime.end 4, %[[PTR1]]
-    %1 = pop.stack_allocation 4 : !pop.simd<4, f32>
+    %1 = pop.stack_allocation 4 x !pop.simd<4, f32>
     // CHECK: }
   }
   // CHECK-NEXT: llvm.intr.lifetime.end 16, %[[PTR0]]
@@ -28,7 +28,7 @@ kgen.func @stack_allocation_insertion(%v: !pop.scalar<si32>, %lb: index, %ub: in
     %0 = index.casts %i : index to i32
     %1 = pop.cast_from_builtin %0 : i32 to !pop.scalar<si32>
     // CHECK: llvm.intr.lifetime.start
-    %2 = pop.stack_allocation 1 : !pop.scalar<si32>
+    %2 = pop.stack_allocation 1 x !pop.scalar<si32>
     pop.store %sum, %2 : !pop.pointer<scalar<si32>>
     %3 = pop.add %1, %sum : !pop.scalar<si32>
     // CHECK: llvm.intr.lifetime.end

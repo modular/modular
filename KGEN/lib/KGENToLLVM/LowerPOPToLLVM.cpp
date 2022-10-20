@@ -512,7 +512,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     StackAllocationOp op, StackAllocationOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
   IntegerAttr size =
-      rewriter.getI64IntegerAttr(op.getSize().cast<IntegerAttr>().getInt());
+      rewriter.getI64IntegerAttr(op.getCount().cast<IntegerAttr>().getInt());
   Type ptrType = getTypeConverter()->convertType(op.getType());
   if (!ptrType)
     return op.emitOpError("could not lower pointer element type");
