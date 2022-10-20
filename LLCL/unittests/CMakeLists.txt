@@ -5,6 +5,9 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_unittest(
+  TOP_LEVEL_CHECK
+  check-llcl
+
   SUITE_NAME
   LLCLUnitTests
 
