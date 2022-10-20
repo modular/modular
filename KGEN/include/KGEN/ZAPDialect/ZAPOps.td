@@ -674,8 +674,8 @@ def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
                                    !zap.ndbuffer<[?], f32>
 
     // Bitcast an ndbuffer to a dynamic size ndbuffer.
-    %2 = zap.ndbuffer.bitcast %c : !zap.buffer<[32, 5], type> to
-                                   !zap.buffer<[?, 5], f32>
+    %2 = zap.ndbuffer.bitcast %c : !zap.ndbuffer<[32, 5], type> to
+                                   !zap.ndbuffer<[?, 5], f32>
 
     // Bitcast across dtypes.
     %2 = zap.ndbuffer.bitcast %c : !zap.ndbuffer<[5], type1> to
@@ -690,11 +690,11 @@ def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
     ```mlir
     // Bitcast an ndbuffer of shape 32x2 to an ndbuffer of shape 1x64.
     %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[32, 2], f32> to
-                                   !zap.buffer<[1, 64], f32>
+                                   !zap.ndbuffer<[1, 64], f32>
 
     // Bitcast a ui32 ndbuffer to a si32 ndbuffer.
     %0 = zap.ndbuffer.bitcast %b : !zap.ndbuffer<[?], ui32> to
-                                   !zap.buffer<[?], si32>
+                                   !zap.ndbuffer<[?], si32>
     ```
 
     If the shape or dtype is concrete in the result type, it overwrites the
