@@ -39,19 +39,18 @@ static void markErroneous(Scope::NameEntry value) {
 /// a name collision.
 void Scope::addToScope(StringAttr name, MetaParameterValue newValue,
                        LitSharedState &sharedState) {
-  Optional<Scope::NameEntry> &entry = decls[name];
-  if (!entry) {
-    entry = newValue;
+  auto [it, inserted] = decls.insert({name, newValue});
+  if (inserted)
     return;
-  }
+  Scope::NameEntry &entry = it->second;
 
   auto diag = emitError(newValue.loc, "invalid redefinition of ") << name;
-  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
+  diag.attachNote(getLocationFrom(entry)) << "previous definition here";
   sharedState.errorOccurred = true;
 
   // If the existing entry was a declaration, mark it as erroneous so uses of it
   // don't create confusing errors.
-  markErroneous(entry.value());
+  markErroneous(entry);
 }
 
 void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
@@ -68,20 +67,19 @@ void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
     return;
   }
 
-  Optional<Scope::NameEntry> &entry = decls[name];
-  if (!entry) {
-    entry = newDeclScope;
+  auto [it, inserted] = decls.insert({name, newDeclScope});
+  if (inserted)
     return;
-  }
+  Scope::NameEntry &entry = it->second;
 
   auto diag = emitError(newDecl->getLoc(), "invalid redefinition of ") << name;
-  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
+  diag.attachNote(getLocationFrom(entry)) << "previous definition here";
   sharedState.errorOccurred = true;
 
   // If the existing entry was a declaration, mark it as erroneous so uses of it
   // don't create confusing errors.
   newDeclScope->hasReferenceError = true;
-  markErroneous(entry.value());
+  markErroneous(entry);
 }
 
 //===----------------------------------------------------------------------===//
@@ -128,7 +126,7 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
 
 Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
   auto &scope = addDecl(decl, parentScope, LitLexerCursor(), 0);
-  scope.resolvedness = DeclResolvedness::fullyParsed;
+  scope.resolvedness = DeclResolvedness::fullyResolved;
   return scope;
 }
 
@@ -139,7 +137,7 @@ void DeclResolver::resolveAll(Location loc) {
   // cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
     (void)resolve(*parsedDecls[parsedDeclList[i]],
-                  DeclResolvedness::fullyParsed, loc);
+                  DeclResolvedness::fullyResolved, loc);
 }
 
 /// Resolve the specified declaration to at least the specified level of
@@ -160,7 +158,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   }
 
   // If the signature hasn't been parsed, do so.
-  if (scope.resolvedness < DeclResolvedness::signatureParsed) {
+  if (scope.resolvedness < DeclResolvedness::signatureResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<Operation *>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
@@ -173,12 +171,12 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
           decl->emitError(
               "do not know how to resolve the signature of this decl!");
         });
-    scope.resolvedness = DeclResolvedness::signatureParsed;
+    scope.resolvedness = DeclResolvedness::signatureResolved;
   }
 
   // If the declaration hasn't been fully parsed and we need to, do so.
-  if (scope.resolvedness < DeclResolvedness::fullyParsed &&
-      howResolved == DeclResolvedness::fullyParsed) {
+  if (scope.resolvedness < DeclResolvedness::fullyResolved &&
+      howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<Operation *>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
@@ -189,7 +187,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
         .Default([&](auto attr) {
           decl->emitError("do not know how to resolve the body of this decl!");
         });
-    scope.resolvedness = DeclResolvedness::fullyParsed;
+    scope.resolvedness = DeclResolvedness::fullyResolved;
   }
 
   declsCurrentlyProcessing.erase(decl);
