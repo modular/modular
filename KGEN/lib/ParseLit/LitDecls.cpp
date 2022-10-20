@@ -11,6 +11,7 @@
 #include "LitDecls.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "LitExprNodes.h"
+#include "LitLexer.h"
 #include "LitParserBase.h"
 #include "LitScope.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -18,6 +19,70 @@
 
 using namespace M;
 using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// Scope
+//===----------------------------------------------------------------------===//
+
+static Location getLocationFrom(Scope::NameEntry entry) {
+  if (std::holds_alternative<Scope *>(entry))
+    return std::get<Scope *>(entry)->getDecl()->getLoc();
+  return std::get<Scope::MetaParameterValue>(entry).loc;
+}
+
+static void markErroneous(Scope::NameEntry value) {
+  if (std::holds_alternative<Scope *>(value))
+    std::get<Scope *>(value)->hasReferenceError = true;
+}
+
+/// Add the specified declaration to the current scope, emitting an error on
+/// a name collision.
+void Scope::addToScope(StringAttr name, MetaParameterValue newValue,
+                       LitSharedState &sharedState) {
+  Optional<Scope::NameEntry> &entry = decls[name];
+  if (!entry) {
+    entry = newValue;
+    return;
+  }
+
+  auto diag = emitError(newValue.loc, "invalid redefinition of ") << name;
+  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
+  sharedState.errorOccurred = true;
+
+  // If the existing entry was a declaration, mark it as erroneous so uses of it
+  // don't create confusing errors.
+  markErroneous(entry.value());
+}
+
+void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
+  StringAttr name;
+  Operation *newDecl = newDeclScope->getDecl();
+  if (auto var = dyn_cast<VarDeclOp>(newDecl))
+    name = var.getNameAttr();
+  else if (auto fn = dyn_cast<LITFuncOp>(newDecl))
+    name = fn.getNameAttr();
+  else if (auto str = dyn_cast<LITStructDeclOp>(newDecl))
+    name = str.getNameAttr();
+  else {
+    assert(isa<ModuleOp>(newDecl) && "Unknown declaration kind");
+    return;
+  }
+
+  Optional<Scope::NameEntry> &entry = decls[name];
+  if (!entry) {
+    entry = newDeclScope;
+    return;
+  }
+
+  auto diag = emitError(newDecl->getLoc(), "invalid redefinition of ") << name;
+  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
+  sharedState.errorOccurred = true;
+
+  // If the existing entry was a declaration, mark it as erroneous so uses of it
+  // don't create confusing errors.
+  newDeclScope->hasReferenceError = true;
+  markErroneous(entry.value());
+}
 
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -54,7 +119,17 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
       new (rawScopePtr) Scope(decl, parentScope, cursor, indentation);
   parsedDeclList.push_back(decl);
   parsedDecls[decl] = scope;
+
+  if (parentScope)
+    parentScope->addToScope(scope, sharedState);
+
   return *scope;
+}
+
+Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
+  auto &scope = addDecl(decl, parentScope, LitLexerCursor(), 0);
+  scope.resolvedness = DeclResolvedness::fullyParsed;
+  return scope;
 }
 
 /// Resolve all of the declarations that are visible.
@@ -119,10 +194,4 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
 
   declsCurrentlyProcessing.erase(decl);
   return success();
-}
-
-LogicalResult DeclResolver::resolve(Operation *decl,
-                                    DeclResolvedness howResolved,
-                                    Location loc) {
-  return resolve(getScopeForDecl(decl), howResolved, loc);
 }

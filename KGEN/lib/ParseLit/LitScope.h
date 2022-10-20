@@ -16,7 +16,6 @@
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
-#include "llvm/ADT/StringMap.h"
 
 namespace M::KGEN::LIT {
 
@@ -72,17 +71,19 @@ public:
     TypedAttr getAttr() const { return cast<TypedAttr>(value); }
   };
 
-  /// An entry in the symbol table is either declaration (var, struct, func,
-  /// etc) or an attribute (known to be a TypedAttr) for a meta value.
-  using ScopeValue = std::variant<MetaParameterValue, Operation *>;
+  /// An entry in the symbol table is either the Scope for a declaration (var,
+  /// struct, func, etc) or an attribute (known to be a TypedAttr) for a meta
+  /// value.
+  using NameEntry = std::variant<MetaParameterValue, Scope *>;
 
   /// Add the specified declaration to the current scope, emitting an error on
   /// a name collision and setting hadError to true.
-  void addToScope(StringRef name, ScopeValue newValue,
+  void addToScope(StringAttr name, MetaParameterValue newValue,
                   LitSharedState &sharedState);
+  void addToScope(Scope *newDeclScope, LitSharedState &sharedState);
 
   /// Look up a name in the current scope only.
-  Optional<ScopeValue> lookupInCurrentScope(StringRef name) {
+  Optional<NameEntry> lookupInCurrentScope(StringAttr name) {
     auto it = decls.find(name);
     if (it != decls.end())
       return it->second;
@@ -91,10 +92,10 @@ public:
 
   /// Perform a lookup in this scope list, returning the nearest target or None
   /// if nothing is found.
-  Optional<ScopeValue> lookup(StringRef name) {
+  Optional<NameEntry> lookup(StringAttr name) {
     Scope *curScope = this;
     while (curScope) {
-      if (Optional<ScopeValue> result = curScope->lookupInCurrentScope(name))
+      if (Optional<NameEntry> result = curScope->lookupInCurrentScope(name))
         return result.value();
       curScope = curScope->parentScope;
     }
@@ -137,9 +138,7 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  /// TODO: we could unique the attributes and use a DenseMap rather than
-  /// hashing the strings themselves.
-  llvm::StringMap<Optional<ScopeValue>> decls;
+  DenseMap<StringAttr, Optional<NameEntry>> decls;
 };
 
 } // namespace M::KGEN::LIT

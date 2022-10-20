@@ -46,6 +46,9 @@ public:
   Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
                  ssize_t indentation);
 
+  /// Add a declaration that is already fully resolved.
+  Scope &addFullyResolvedDecl(Operation *decl, Scope *parentScope);
+
   /// Return the scope for the specified declaration that is already entered
   /// into the resolver.
   Scope &getScopeForDecl(Operation *decl) {
@@ -63,8 +66,6 @@ public:
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
   LogicalResult resolve(Scope &scope, DeclResolvedness howResolved,
-                        Location loc);
-  LogicalResult resolve(Operation *decl, DeclResolvedness howResolved,
                         Location loc);
 
 private:

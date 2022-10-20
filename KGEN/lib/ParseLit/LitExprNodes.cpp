@@ -114,19 +114,22 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
     }
 
     // Lookup the identifier.
-    Optional<Scope::ScopeValue> lookup = scope.lookup(dre->spelling);
+    Optional<Scope::NameEntry> lookup =
+        scope.lookup(StringAttr::get(getContext(), dre->spelling));
     if (!lookup)
       return emitError("unknown type name '" + dre->spelling + "'");
-    if (!std::holds_alternative<Operation *>(*lookup))
+    if (!std::holds_alternative<Scope *>(*lookup))
       return emitError("'" + dre->spelling + "' names a value, not a type");
-    auto typeDecl = dyn_cast<LITStructDeclOp>(std::get<Operation *>(*lookup));
+
+    Scope &scope = *std::get<Scope *>(*lookup);
+    auto typeDecl = dyn_cast<LITStructDeclOp>(scope.getDecl());
     if (!typeDecl)
       return emitError("'" + dre->spelling + "' names a value, not a type");
 
     // We need the signature for the struct to be resolved in order to know how
     // to refer to it.
     auto resolveResult =
-        getDeclResolver().resolve(typeDecl, DeclResolvedness::signatureParsed,
+        getDeclResolver().resolve(scope, DeclResolvedness::signatureParsed,
                                   translateLocation(dre->getLoc()));
 
     // If the decl was erroneous somehow, then don't form a reference to it.
@@ -178,7 +181,8 @@ MLIRValueRep StringLiteralNode::emit(EmitterState &state) const {
 }
 
 MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
-  Optional<Scope::ScopeValue> declOrValue = state.scope.lookup(spelling);
+  Optional<Scope::NameEntry> declOrValue =
+      state.scope.lookup(state.builder.getStringAttr(spelling));
   if (!declOrValue) {
     state.emitError(getLoc(), "use of unknown declaration \"")
         << spelling << '"';
@@ -192,11 +196,12 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   // References to decls have different access paths.  If the decl was marked
   // invalid for references, then implicitly quash this to avoid downstream
   // errors.
-  auto *decl = std::get<Operation *>(declOrValue.value());
-  // TODO handle: hasReferenceError
+  auto &scope = *std::get<Scope *>(declOrValue.value());
+  if (scope.hasReferenceError)
+    return {};
 
   // Variable references resolve to load from the variable.
-  if (auto var = dyn_cast<VarDeclOp>(decl)) {
+  if (auto var = dyn_cast<VarDeclOp>(scope.getDecl())) {
     return state.builder
         .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
                              /*alignment*/ None)
@@ -204,7 +209,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   }
 
   // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(decl))
+  if (auto fnDecl = dyn_cast<LITFuncOp>(scope.getDecl()))
     return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
                                    fnDecl.getSignature());
 
