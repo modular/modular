@@ -21,6 +21,21 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// TypeCheckErrorType
+//===----------------------------------------------------------------------===//
+
+def TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
+  let summary = "Type used for values and decls that can't be type checked";
+  let description = [{
+    This type is assigned to values and declarations when their signature cannot
+    be type checked or there is some other problem that might make references to
+    it produce spurious downstream errors.  Because the presence of this type
+    silences downstream errors, it should only be used when a primary error has
+    already been emitted (about whatever is wrong with the decl).
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ObjectType
 //===----------------------------------------------------------------------===//
 

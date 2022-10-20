@@ -63,17 +63,17 @@ void DeclResolver::resolveAll(Location loc) {
   // discovered so diagnostics are mostly top-down.  Resolving declarations may
   // cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    resolve(*parsedDecls[parsedDeclList[i]], DeclResolvedness::fullyParsed,
-            loc);
+    (void)resolve(*parsedDecls[parsedDeclList[i]],
+                  DeclResolvedness::fullyParsed, loc);
 }
 
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
-void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
-                           Location loc) {
+LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
+                                    Location loc) {
   // If scope is already resolved enough, we're done.
   if (scope.resolvedness >= howResolved)
-    return;
+    return success();
 
   Operation *decl = scope.getDecl();
 
@@ -81,7 +81,7 @@ void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   // it with an error.
   if (!declsCurrentlyProcessing.insert(decl).second) {
     emitError(loc, "recursive reference to declaration");
-    return;
+    return failure();
   }
 
   // If the signature hasn't been parsed, do so.
@@ -118,11 +118,11 @@ void DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   }
 
   declsCurrentlyProcessing.erase(decl);
+  return success();
 }
 
-void DeclResolver::resolve(Operation *decl, DeclResolvedness howResolved,
-                           Location loc) {
-  auto it = parsedDecls.find(decl);
-  assert(it != parsedDecls.end() && "not a declaration???");
-  resolve(*it->second, howResolved, loc);
+LogicalResult DeclResolver::resolve(Operation *decl,
+                                    DeclResolvedness howResolved,
+                                    Location loc) {
+  return resolve(getScopeForDecl(decl), howResolved, loc);
 }

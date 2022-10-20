@@ -100,8 +100,9 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
     return failure();
 
   auto emitError = [&](const Twine &message) -> ParseResult {
-    result = UnresolvedType::get(getContext());
-    return this->emitError(typeExpr->getLoc(), message);
+    result = TypeCheckErrorType::get(getContext());
+    this->emitError(typeExpr->getLoc(), message);
+    return success(); // Semantic error, but the parse succeeded.
   };
 
   // TODO: Make this a recursive walk when we have more interesting types.
@@ -124,8 +125,16 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
 
     // We need the signature for the struct to be resolved in order to know how
     // to refer to it.
-    getDeclResolver().resolve(typeDecl, DeclResolvedness::signatureParsed,
-                              translateLocation(dre->getLoc()));
+    auto resolveResult =
+        getDeclResolver().resolve(typeDecl, DeclResolvedness::signatureParsed,
+                                  translateLocation(dre->getLoc()));
+
+    // If the decl was erroneous somehow, then don't form a reference to it.
+    // Just return an TypeCheckError instead so we don't get downstream errors.
+    if (failed(resolveResult)) {
+      result = TypeCheckErrorType::get(getContext());
+      return success();
+    }
 
     // TODO: Handle type parameters!
     result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
@@ -180,20 +189,28 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   if (std::holds_alternative<Scope::MetaParameterValue>(declOrValue.value()))
     return std::get<Scope::MetaParameterValue>(declOrValue.value()).getAttr();
 
-  // Variable references resolve to load from the variable.
+  // References to decls have different access paths.  If the decl was marked
+  // invalid for references, then implicitly quash this to avoid downstream
+  // errors.
   auto *decl = std::get<Operation *>(declOrValue.value());
+  // TODO handle: hasReferenceError
 
-  auto var = dyn_cast<VarDeclOp>(decl);
-  if (!var) {
-    state.emitError(getLoc(), "use of declaration \"")
-        << spelling << "\" as a value isn't supported yet";
-    return {};
+  // Variable references resolve to load from the variable.
+  if (auto var = dyn_cast<VarDeclOp>(decl)) {
+    return state.builder
+        .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
+                             /*alignment*/ None)
+        .getResult();
   }
 
-  return state.builder
-      .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
-                           /*alignment*/ None)
-      .getResult();
+  // Functions form an address.
+  if (auto fnDecl = dyn_cast<LITFuncOp>(decl))
+    return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
+                                   fnDecl.getSignature());
+
+  state.emitError(getLoc(), "use of declaration \"")
+      << spelling << "\" as a value isn't supported yet";
+  return {};
 }
 
 MLIRValueRep CallNode::emit(EmitterState &state) const {

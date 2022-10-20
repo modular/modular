@@ -101,7 +101,15 @@ public:
     return None;
   }
 
+  /// This keeps track of what level of type checking this declaration has been
+  /// through.  It is maintained by DeclResolver.
   DeclResolvedness resolvedness = DeclResolvedness::unparsed;
+
+  /// This is set to true when an error is detected and reported about this
+  /// declaration that could cause references to it to cause spurious downstream
+  /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
+  /// every reference to 'x' because the type will be bogus.
+  bool hasReferenceError = false;
 
 private:
   // Scope is created by DeclResolver.
