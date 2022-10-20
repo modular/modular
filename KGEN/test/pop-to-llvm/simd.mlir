@@ -936,8 +936,6 @@ kgen.func @pop_gather(%base: !pop.simd<2, address>,
   // CHECK-DAG: %[[MASK:.*]] = builtin.unrealized_conversion_cast %[[MASK0]]
   // CHECK-DAG: %[[PASSTHROUGH:.*]] = builtin.unrealized_conversion_cast %[[PASSTHROUGH0]]
   // CHECK: %[[RESULT:.*]] = llvm.intr.masked.gather %[[BASE]], %[[MASK]], %[[PASSTHROUGH]] {alignment = 4 : i32}
-  %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, address>,
-                                                    !pop.simd<2, bool>,
-                                                    !pop.simd<2, f32>
+  %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, f32>
   kgen.return %0 : !pop.simd<2, f32>
 }

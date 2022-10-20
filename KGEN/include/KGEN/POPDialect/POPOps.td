@@ -759,8 +759,9 @@ def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDGatherOp : POPOp<"simd.gather", [
-    SIMDOfSameSize<"mask", "result">,
-    AllTypesMatch<["result", "passthrough"]>]> {
+    AllTypesMatch<["result", "passthrough"]>,
+    AddressSIMDOfSameSize<"passthrough", "base">,
+    BoolSIMDOfSameSize<"passthrough", "mask">]> {
   let summary = "gathers values from the SIMD vector using the mask";
   let description = [{
     The `pop.simd.gather` reads scalar values from a SIMD vector of memory
@@ -787,10 +788,7 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
     is [d0, d1, d2, d3] then the following op:
 
     ```mlir
-    %0 = pop.simd.gather %base[%mask], %passthrough :
-                                        !pop.simd<4, address>,
-                                        !pop.simd<4, bool>,
-                                        !pop.simd<4, type>
+    %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<4, type>
     ```
 
     is equivalent to the following sequence of scalar loads:
@@ -809,10 +807,7 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
     %pass instructions of the form:
 
     ```mlir
-    %0 = pop.simd.gather %base[%mask], %passthrough :
-                                        !pop.simd<N, address>,
-                                        !pop.simd<N, bool>,
-                                        !pop.simd<N, type>
+    %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<N, type>
     ```
 
     is equivalent to the following sequence of scalar loads in C++:
@@ -829,8 +824,8 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
-    $base `[` $mask `]` `,` $passthrough attr-dict `:` qualified(type($base))
-    `,` qualified(type($mask)) `,` qualified(type($passthrough))
+    $base `[` $mask `]` `,` $passthrough attr-dict `:`
+    qualified(type($passthrough))
   }];
 }
 
@@ -839,8 +834,6 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDScatterOp : POPOp<"simd.scatter", [
-    SIMDOfSameSize<"base", "mask">,
-    SIMDOfSameSize<"value", "mask">,
     AddressSIMDOfSameSize<"value", "base">,
     BoolSIMDOfSameSize<"value", "mask">]> {
   let summary = "scatters values from the SIMD vector using the mask";
