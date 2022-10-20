@@ -447,6 +447,43 @@ kgen.func @zap_ndbuffer_size(
   kgen.return
 }
 
+
+// CHECK-LABEL: @zap_ndbuffer_bitcast
+// CHECK-SAME: %[[ARG0:.*]]:
+kgen.generator @zap_ndbuffer_bitcast<size, size2, dt: dtype>(%arg0: !zap.ndbuffer<[?, ?], f32>) {
+  // CHECK: %[[V0:.*]] = zap.ndbuffer.bitcast %[[ARG0]] : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[?, 42], f32>
+  %0 = zap.ndbuffer.bitcast %arg0 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[?, 42], f32>
+  // CHECK: %[[V1:.*]] = zap.ndbuffer.bitcast %[[V0]] : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[?, ?], si64>
+  %1 = zap.ndbuffer.bitcast %0 : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[?, ?], si64>
+  // CHECK: %[[V2:.*]] = zap.ndbuffer.bitcast %[[ARG0]] : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[42, ?], f32>
+  %2 = zap.ndbuffer.bitcast %arg0 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[42, ?], f32>
+  // CHECK: %[[V3:.*]] = zap.ndbuffer.bitcast %[[ARG0]] : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[42, 42], si64>
+  %3 = zap.ndbuffer.bitcast %arg0 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[42, 42], si64>
+  // CHECK: %[[V4:.*]] = zap.ndbuffer.bitcast %[[V2]] : !zap.ndbuffer<[42, ?], f32> to !zap.ndbuffer<[10, 42], f32>
+  %4 = zap.ndbuffer.bitcast %2 : !zap.ndbuffer<[42, ?], f32> to !zap.ndbuffer<[10, 42], f32>
+  // CHECK: %[[V5:.*]] = zap.ndbuffer.bitcast %[[V3]] : !zap.ndbuffer<[42, 42], si64> to !zap.ndbuffer<[42, 42], f32>
+  %5 = zap.ndbuffer.bitcast %3 : !zap.ndbuffer<[42, 42], si64> to !zap.ndbuffer<[42, 42], f32>
+  // CHECK: %[[V6:.*]] = zap.ndbuffer.bitcast %[[V0]] : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[42, 42], f32>
+  %6 = zap.ndbuffer.bitcast %0 : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[42, 42], f32>
+
+
+  // Conversions between different unknown parameters are ok.
+  // CHECK: %[[V7:.*]] = zap.ndbuffer.bitcast %[[V0]] : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[size, ?], f32>
+  %7 = zap.ndbuffer.bitcast %0 : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[size, ?], f32>
+
+  // CHECK: %[[V8:.*]] = zap.ndbuffer.bitcast %[[V0]] : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[size, size], dt>
+  %8 = zap.ndbuffer.bitcast %0 : !zap.ndbuffer<[?, 42], f32> to !zap.ndbuffer<[size, size], dt>
+
+  // CHECK: %[[V9:.*]] = zap.ndbuffer.bitcast %[[V8]] : !zap.ndbuffer<[size, size], dt> to !zap.ndbuffer<[size2, size], dt>
+  %9 = zap.ndbuffer.bitcast %8 : !zap.ndbuffer<[size, size], dt> to !zap.ndbuffer<[size2, size], dt>
+
+  // Reinterpretations of the contains of the buffer are ok.
+  // CHECK: %[[V10:.*]] = zap.ndbuffer.bitcast %[[V4]] : !zap.ndbuffer<[10, 42], f32> to !zap.ndbuffer<[1, 1], f64>
+  %10 = zap.ndbuffer.bitcast %4 : !zap.ndbuffer<[10, 42], f32> to !zap.ndbuffer<[1, 1], f64>
+
+  kgen.return
+}
+
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
