@@ -176,10 +176,10 @@ struct ConvertZAPBufferDType : public mlir::OpRewritePattern<BufferDTypeOp> {
 /// will overwrite the size and dtype if they were respecified in the return
 /// type.
 struct ConvertZAPBufferConvert
-    : public mlir::OpRewritePattern<BufferConvertOp> {
+    : public mlir::OpRewritePattern<BufferBitCastOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(BufferConvertOp op,
+  LogicalResult matchAndRewrite(BufferBitCastOp op,
                                 PatternRewriter &rewriter) const override {
     BufferType inputType = op.getInput().getType();
     BufferType type = op.getType();

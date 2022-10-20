@@ -136,14 +136,14 @@ def ZAP_BufferAddressOp : ZAPOp<"buffer.address", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// BufferConvertOp
+// BufferBitCastOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferConvertOp : ZAPOp<"buffer.bitcast", [Pure,
+def ZAP_BufferBitCastOp : ZAPOp<"buffer.bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
-  let summary = "cast a buffer type";
+  let summary = "bitcasts a buffer type";
   let description = [{
-    The `zap.buffer.convert` operation converts a buffer type to another buffer
+    The `zap.buffer.bitcast` operation bitcasts a buffer type to another buffer
     type. It can convert between buffers with static sizes and dynamic sizes and
     between those of static dtypes and dynamic dtypes.
 
