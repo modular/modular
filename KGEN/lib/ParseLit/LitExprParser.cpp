@@ -45,7 +45,7 @@ public:
   ParseResult parseExpression(ExprNode *&result);
 
 private:
-  ExprNode *parsePrimary();
+  ParseResult parsePrimary(ExprNode *&result);
 
   enum class Precedence {
     kInvalid, // Not a binary operator token.
@@ -55,7 +55,7 @@ private:
   };
   std::pair<Precedence, ExprNode::Kind> getBinOpTokenPrecedenceAndKind() const;
 
-  ExprNode *parseBinOpRHS(ExprNode *lhs, Precedence minPrec);
+  ParseResult parseBinOpRHS(ExprNode *&lhs, Precedence minPrec);
 
 private:
   /// Allocate an expression node into the expression bump pointer allocator.
@@ -105,8 +105,9 @@ ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
 ///
 ///
 ParseResult ExprParser::parseExpression(ExprNode *&expr) {
-  expr = parseBinOpRHS(parsePrimary(), Precedence::kLowest);
-  return success(expr != nullptr);
+  if (parsePrimary(expr) || parseBinOpRHS(expr, Precedence::kLowest))
+    return failure();
+  return success();
 }
 
 /// Return the operator precedence for the specified token or
@@ -134,8 +135,7 @@ ExprParser::getBinOpTokenPrecedenceAndKind() const {
 /// literal ::= [TODO]
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
-ExprNode *ExprParser::parsePrimary() {
-  ExprNode *result;
+ParseResult ExprParser::parsePrimary(ExprNode *&result) {
   switch (getToken().getKind()) {
   case LitToken::identifier: // primary -> atom -> identifier
     result = alloc<DeclRefNode>(getToken().getSpelling());
@@ -155,28 +155,21 @@ ExprNode *ExprParser::parsePrimary() {
     break;
   case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
     auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
-    ExprNode *subExpr;
-    if (parseExpression(subExpr))
-      return nullptr;
+    if (parseExpression(result))
+      return failure();
     auto rpLoc = getToken().getLoc();
     // FIXME: This is terrible error recovery.
     if (parseToken(LitToken::r_paren,
                    "expected ')' in parenthesized expression"))
-      return getErrorAtToken();
-    result = alloc<ParenExprNode>(lpLoc, subExpr, rpLoc);
+      return failure();
+    result = alloc<ParenExprNode>(lpLoc, result, rpLoc);
     break;
   }
 
   default:
     emitError("unexpected token in expression");
     result = getErrorAtToken();
-
-    // TODO: Probably shouldn't consume this token in all cases, this could be
-    // the introducer of another statement etc.  We should check to see what it
-    // looks like and be smarter about this: consuming to end of paren, or to
-    // introducer keyword.
-    consumeToken();
-    break;
+    return failure();
   }
 
   // Parse postfix productions.
@@ -189,8 +182,10 @@ ExprNode *ExprParser::parsePrimary() {
       // TODO: Handle comprehension arguments.
       if (!consumeIf(LitToken::r_paren)) {
         if (parseExpressionList(argExprs) ||
-            parseToken(LitToken::r_paren, "expected ')' in call argument list"))
-          return getErrorAtToken();
+            parseToken(LitToken::r_paren,
+                       "expected ')' in call argument list")) {
+          return failure();
+        }
       }
 
       result = alloc<CallNode>(result, loc, copyArrayRef<ExprNode *>(argExprs));
@@ -199,13 +194,13 @@ ExprNode *ExprParser::parsePrimary() {
     break;
   }
 
-  return result;
+  return success();
 }
 
 /// Parse any binary operators that have precedence of at least `minPrec`.  This
 /// stop if the current token isn't a binary operator or if it binds more
 /// loosely than the specified precedence level.
-ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
+ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
   while (true) {
     auto [tokPrec, binOpKind] = getBinOpTokenPrecedenceAndKind();
 
@@ -213,7 +208,7 @@ ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
     // successfully with what we ate already.  This also handles invalid tokens,
     // since they are treated as lower precedence than we ever allow.
     if (unsigned(tokPrec) < unsigned(minPrec))
-      return lhs;
+      return success();
 
     SMLoc opLoc = getToken().getLoc();
     consumeToken();
@@ -221,16 +216,20 @@ ExprNode *ExprParser::parseBinOpRHS(ExprNode *lhs, Precedence minPrec) {
     // Eat the next primary expression.
     // TODO: Need to decide how to handle syntactic errors, should propagate up
     // to the caller?
-    ExprNode *rhs = parsePrimary();
+    ExprNode *rhs = nullptr;
+    if (parsePrimary(rhs))
+      return failure();
 
     // If the operator we parse bind looser with the RHS than the operator after
     // the RHS, then give the RHS primary to the RHS.
     auto [nextTokPrec, nextBinOpKind] = getBinOpTokenPrecedenceAndKind();
-    if (unsigned(tokPrec) < unsigned(nextTokPrec))
-      rhs = parseBinOpRHS(rhs, Precedence(unsigned(tokPrec) + 1));
+    if (unsigned(tokPrec) < unsigned(nextTokPrec)) {
+      if (parseBinOpRHS(rhs, Precedence(unsigned(tokPrec) + 1)))
+        return failure();
+    }
 
     // Merge LHS and RHS according to operator.
-    lhs = alloc<BinOpNode>(binOpKind, lhs, opLoc, rhs);
+    expr = alloc<BinOpNode>(binOpKind, expr, opLoc, rhs);
   }
 }
 

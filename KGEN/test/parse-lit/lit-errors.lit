@@ -189,3 +189,10 @@ struct Rec[param:
                 Rec  # expected-error {{recursive reference to declaration}}
            ]:
   pass
+
+# // -----
+
+def f():
+  var abc :
+  pass # expected-error {{unexpected token in expression}}
+  abc+abc
