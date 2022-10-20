@@ -177,6 +177,9 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
   ParseResult parseExpression(ExprNode *&expr);
 
+  /// Parse a 'suite' production into the declaration specified by `Scope`.
+  static ParseResult parseSuite(Scope &scope, LitLexer &lexer);
+
 public:
   LitLexer &lexer;
 
