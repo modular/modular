@@ -785,8 +785,8 @@ def ZAP_DebugAssertOp : ZAPOp<"debug_assert"> {
     Asserts that the boolean value is true. If the value is false, the
     optional message is printed to `stderr` and the program aborts.
 
-    Note: Unlike the `assert` operation in C, this operation is fully
-    removed if assertions are disabled. Therefore, production code should
+    Note: Unlike the `assert` operation in C, this operation is not fully
+    removed when assertions are disabled. Therefore, production code should
     not use this operation. This operation is meant for debugging and
     verification purposes only.
 
