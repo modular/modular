@@ -145,8 +145,10 @@ void DeclResolver::resolveAll(SMLoc loc) {
 LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
                                     SMLoc loc) {
   // If scope is already resolved enough, we're done.
-  if (scope.resolvedness >= howResolved)
-    return success();
+  if (scope.resolvedness >= howResolved) {
+    // If decl is busted, then return failure.
+    return success(!scope.hasReferenceError);
+  }
 
   Operation *decl = scope.getDecl();
 
@@ -160,11 +162,19 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
 
   // If the signature hasn't been parsed, do so.
   if (scope.resolvedness < DeclResolvedness::signatureResolved) {
-    // Handle each operation that can be name bound.
+    // Handle each operation that can be name bound.  We handle this by
+    // restoring the lexer to the position where parsing can continue, calling
+    // the `resolveSignature` method for the op, and re-saving the new cursor
+    // for the next stage of resolution.
     TypeSwitch<Operation *>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           LitLexer lexer(sharedState, scope.getCursor());
-          resolveSignature(op, lexer, scope);
+
+          // Resolve the signature: on a parse error, we note that the decl is
+          // malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, lexer, scope)))
+            scope.hasReferenceError = true;
           scope.getCursor() = lexer.getCursor();
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
@@ -192,5 +202,6 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   }
 
   declsCurrentlyProcessing.erase(decl);
-  return success();
+  // If decl is busted, then return failure.
+  return success(!scope.hasReferenceError);
 }

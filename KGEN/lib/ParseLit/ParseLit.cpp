@@ -668,8 +668,8 @@ struct ParsedParam {
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
 /// value_parammarker ::= "/" | "*" | "**"
 ///
-void DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
-                                    Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
+                                             Scope &scope) {
   LitParser p(lexer, scope);
 
   ParsedMetaSignature metaSignature;
@@ -678,13 +678,13 @@ void DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
 
   if (metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
-    return; // TODO: Mark decl erroneous.
+    return failure();
 
   if (!p.consumeIf(LitToken::r_paren)) {
     if (p.parseCommaSeparatedList(
             [&]() { return params.emplace_back(ParsedParam()).parse(p); }) ||
         p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
-      return; // TODO: Mark decl erroneous.
+      return failure();
   }
 
   // Parse the result type if present.
@@ -695,11 +695,11 @@ void DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // it though.
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType))
-      return; // TODO: Mark decl erroneous.
+      return failure();
   }
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
-    return; // TODO: Mark decl erroneous.
+    return failure();
 
   auto &builder = p.getBuilder();
 
@@ -758,6 +758,7 @@ void DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
+  return success();
 }
 
 void DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
@@ -811,8 +812,8 @@ ParseResult LitParser::parseVarDeclStmt() {
   return success();
 }
 
-void DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
-                                    Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
+                                             Scope &scope) {
   LitParser p(lexer, scope);
   Type type;
   ExprNode *initValue = nullptr;
@@ -820,15 +821,16 @@ void DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
   // TODO: Make type optional.
   if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
       p.parseType(type))
-    return; // TODO: mark decl erroreous.
+    return failure();
 
   varDecl.getResult().setType(POP::PointerType::get(type));
 
   if (p.consumeIf(LitToken::equal)) {
     p.emitError("var initializers not supported yet");
     if (p.parseExpression(initValue))
-      return; // TODO: mark decl erroreous.
+      return failure();
   }
+  return success();
 }
 
 void DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope) {
@@ -868,14 +870,14 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
   return success();
 }
 
-void DeclResolver::resolveSignature(LITStructDeclOp structDecl, LitLexer &lexer,
-                                    Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
+                                             LitLexer &lexer, Scope &scope) {
   LitParser p(lexer, scope);
 
   ParsedMetaSignature metaSignature;
   if (metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
-    return;
+    return failure();
 
   structDecl.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
@@ -887,6 +889,7 @@ void DeclResolver::resolveSignature(LITStructDeclOp structDecl, LitLexer &lexer,
     scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
                      sharedState);
   }
+  return success();
 }
 
 void DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,

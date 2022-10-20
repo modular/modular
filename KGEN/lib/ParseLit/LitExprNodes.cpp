@@ -137,6 +137,13 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
     return success();
   }
 
+  // Parse errors always resolve as TypeCheckErrorType since they have already
+  // been diagnosed.
+  if (isa<ErrorNode>(typeExpr)) {
+    result = TypeCheckErrorType::get(getContext());
+    return success();
+  }
+
   return emitError("FIXME: Unsupported type kind!");
 }
 
@@ -185,11 +192,16 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   if (std::holds_alternative<Scope::MetaParameterValue>(declOrValue.value()))
     return std::get<Scope::MetaParameterValue>(declOrValue.value()).getAttr();
 
-  // References to decls have different access paths.  If the decl was marked
-  // invalid for references, then implicitly quash this to avoid downstream
-  // errors.
-  auto &scope = *std::get<Scope *>(declOrValue.value());
-  if (scope.hasReferenceError)
+  // References to decls have different access paths.
+  Scope &scope = *std::get<Scope *>(declOrValue.value());
+
+  // We need the signature for the struct to be resolved in order to know how
+  // to refer to it.
+  auto resolveResult = state.parser.getDeclResolver().resolve(
+      scope, DeclResolvedness::signatureResolved, getLoc());
+
+  // If the decl was erroneous somehow, then don't form a reference to it.
+  if (failed(resolveResult))
     return {};
 
   // Variable references resolve to load from the variable.
@@ -249,9 +261,8 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
   auto rhsRep = rhs->emit(state);
   if (!lhsRep || !rhsRep)
     return {};
-
-  auto lhsType = lhsRep.getType();
-  if (lhsType != rhsRep.getType() || !lhsType.isIndex()) {
+  auto lhsType = lhsRep.getType(), rhsType = rhsRep.getType();
+  if (lhsType != rhsType || !lhsType.isIndex()) {
     state.emitError(getLoc(),
                     "binary operator with interesting types not implemented");
     return {};

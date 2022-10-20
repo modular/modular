@@ -71,9 +71,14 @@ public:
                         llvm::SMLoc loc);
 
 private:
-  void resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);
-  void resolveSignature(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
-  void resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
+  /// The resolveSignature methods are invoked on an operation to parse and type
+  /// check the signature for the operation.  On parse failure, these should
+  /// return a failure, which will cause the driver to mark the decl as invalid
+  /// for further references.
+  LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);
+  LogicalResult resolveSignature(LITStructDeclOp op, LitLexer &lexer,
+                                 Scope &scope);
+  LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
 
   void resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
   void resolveBody(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
