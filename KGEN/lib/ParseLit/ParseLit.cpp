@@ -40,45 +40,6 @@ using namespace M::KGEN::LIT;
 using llvm::SourceMgr;
 namespace scf = mlir::scf;
 
-//===----------------------------------------------------------------------===//
-// Scope
-//===----------------------------------------------------------------------===//
-
-static Location getLocationFrom(Scope::ScopeValue value) {
-  if (std::holds_alternative<Operation *>(value))
-    return std::get<Operation *>(value)->getLoc();
-  return std::get<Scope::MetaParameterValue>(value).loc;
-}
-
-/// Add the specified declaration to the current scope, emitting an error on
-/// a name collision.
-void Scope::addToScope(StringRef name, ScopeValue newValue,
-                       LitSharedState &sharedState) {
-  Optional<Scope::ScopeValue> &entry = decls[name];
-  if (!entry) {
-    entry = newValue;
-    return;
-  }
-
-  auto diag = emitError(getLocationFrom(newValue), "invalid redefinition of \"")
-              << name << '"';
-  diag.attachNote(getLocationFrom(entry.value())) << "previous definition here";
-  sharedState.errorOccurred = true;
-
-  // Mark both declarations erroneous in the symbol table so reference to them
-  // get squashed as errors during name lookup, avoiding cascading errors.
-  auto markErroneous = [&](ScopeValue value) {
-    if (!std::holds_alternative<Operation *>(value))
-      return;
-    if (Scope *scope = sharedState.declResolver->getScopeForDeclIfPresent(
-            std::get<Operation *>(value)))
-      scope->hasReferenceError = true;
-  };
-
-  markErroneous(newValue);
-  markErroneous(entry.value());
-}
-
 // FIXME(https://reviews.llvm.org/D135940): This is a clone of
 // llvm::SaveAndRestore that is updated to work with non-copyable values. Remove
 // this when fixed upstream.
@@ -363,13 +324,15 @@ ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   auto funcBodyBuilder = scope.getDeclBuilder();
 
   // Look up the name being assigned to if it already exists.
+  auto nameAttr = builder.getStringAttr(dre->spelling);
   Value lvalue;
-  if (Optional<Scope::ScopeValue> decl =
-          scope.lookupInCurrentScope(dre->spelling)) {
+  if (Optional<Scope::NameEntry> decl = scope.lookupInCurrentScope(nameAttr)) {
     // Don't allow reassigning to functions and other constant parameters.
-    if (std::holds_alternative<Operation *>(decl.value()) &&
-        isa<VarDeclOp>(std::get<Operation *>(decl.value())))
-      lvalue = std::get<Operation *>(decl.value())->getResult(0);
+    VarDeclOp var;
+    if (std::holds_alternative<Scope *>(decl.value()))
+      var = dyn_cast<VarDeclOp>(std::get<Scope *>(decl.value())->getDecl());
+    if (var)
+      lvalue = var.getResult();
     else
       emitError(lhs->getLoc(), "this declaration isn't reassignable");
   } else {
@@ -384,9 +347,8 @@ ParseResult LitParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
     // could just emit all these in the entry to the enclosing function/module
     // to maintain SSA.
     auto varDecl = funcBodyBuilder.create<VarDeclOp>(
-        translateLocation(lhs->getLoc()), declType,
-        funcBodyBuilder.getStringAttr(dre->spelling));
-    scope.addToScope(dre->spelling, varDecl, getSharedState());
+        translateLocation(lhs->getLoc()), declType, nameAttr);
+    getDeclResolver().addFullyResolvedDecl(varDecl, &scope);
     lvalue = varDecl;
   }
 
@@ -660,8 +622,6 @@ ParseResult LitParser::parseDefStmt(size_t curIndent) {
       ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
   funcDecl.getRegion().push_back(new Block());
 
-  scope.addToScope(name, funcDecl, getSharedState());
-
   // We cannot parse the current body without having parsed other declarations
   // at the current level, so we defer parsing it.
   getDeclResolver().addDecl(funcDecl, &scope, getLexer().getCursor(),
@@ -797,7 +757,7 @@ void LitParser::parseDefSignature(LITFuncOp defDecl) {
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    scope.addToScope(name, varDecl, getSharedState());
+    getDeclResolver().addFullyResolvedDecl(varDecl, &scope);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -852,7 +812,6 @@ ParseResult LitParser::parseVarDeclStmt() {
   // struct, emit a field declaration.  Both have the same IR representation.
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
   auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
-  scope.addToScope(name, varDecl, getSharedState());
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
@@ -912,8 +871,6 @@ ParseResult LitParser::parseStructStmt(size_t curIndent) {
       loc, nameAttr, ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), {}));
   newStruct.getRegion().push_back(new Block());
-
-  scope.addToScope(nameAttr, newStruct.getOperation(), getSharedState());
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
