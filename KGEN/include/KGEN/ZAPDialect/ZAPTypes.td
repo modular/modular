@@ -166,4 +166,11 @@ class NDBufferElementType<string lhs, string rhs>
   : TypesMatchWith<"scalar of the same dtype", lhs, rhs,
                    "$_self.cast<ZAP::NDBufferType>().getElementType()">;
 
+
+class NDBufferRank<string name> :
+    StrFunc<"$" # name # ".getType().cast<ZAP::NDBufferType>().getRank()">;
+
+class SameNDBufferRank<string lhs, string rhs> :
+  AllMatchSameOperatorTrait<[lhs, rhs], NDBufferRank<"_self">.result, "rank">;
+
 #endif // ZAPTYPES_TD

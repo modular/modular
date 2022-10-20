@@ -101,3 +101,24 @@ kgen.func @ndbuffer_rank_folds(%arg0: !zap.ndbuffer<[42], f32>,
   // CHECK: kgen.return %[[V0]], %[[V1]], %[[V2]]
   kgen.return %0, %1, %2 : index, index, index
 }
+
+
+// CHECK-LABEL: kgen.func @ndbuffer_bitcast_folds
+// CHECK-SAME: %[[ARG0:.*]]: !zap.ndbuffer<{{.*}}>, %[[ARG1:.*]]: !zap.ndbuffer<{{.*}}
+kgen.func @ndbuffer_bitcast_folds(%arg0: !zap.ndbuffer<[?, ?], f32>, %arg1: !zap.ndbuffer<[10, 42], f32>)
+ -> (!zap.ndbuffer<[?, ?], f32>, !zap.ndbuffer<[?, ?], f32>, !zap.ndbuffer<[?, ?], si64>) {
+  // Noop casts get folded away.
+  %0 = zap.ndbuffer.bitcast %arg0 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[?, ?], f32>
+
+  // A-B-A cast.
+  %1 = zap.ndbuffer.bitcast %arg0 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[?, ?], si64>
+  %2 = zap.ndbuffer.bitcast %1 : !zap.ndbuffer<[?, ?], si64> to !zap.ndbuffer<[?, ?], f32>
+
+  // A-B-C cast.
+  // CHECK:  %[[V0:.*]] = zap.ndbuffer.bitcast %[[ARG1]] : !zap.ndbuffer<[10, 42], f32> to !zap.ndbuffer<[?, ?], si64>
+  %3 = zap.ndbuffer.bitcast %arg1 : !zap.ndbuffer<[10, 42], f32> to !zap.ndbuffer<[?, ?], f32>
+  %4 = zap.ndbuffer.bitcast %3 : !zap.ndbuffer<[?, ?], f32> to !zap.ndbuffer<[?, ?], si64>
+
+  // CHECK: kgen.return %[[ARG0]], %[[ARG0]], %[[V0]]
+  kgen.return %0, %2, %4 : !zap.ndbuffer<[?, ?], f32>, !zap.ndbuffer<[?, ?], f32>, !zap.ndbuffer<[?, ?], si64>
+}

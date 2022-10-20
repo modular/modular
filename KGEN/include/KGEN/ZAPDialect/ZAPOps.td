@@ -536,8 +536,8 @@ def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
 
   let hasVerifier = 1;
 }
-//===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
 // NDBufferSIMDStoreOp
 //===----------------------------------------------------------------------===//
 
@@ -645,6 +645,69 @@ def ZAP_NDBufferAddressOp : ZAPOp<"ndbuffer.address", [Pure,
   let arguments = (ins ZAP_NDBufferType:$nDBuffer);
   let results = (outs POP_PointerType:$ptr);
   let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
+}
+
+//===----------------------------------------------------------------------===//
+// NDBufferBitCastOp
+//===----------------------------------------------------------------------===//
+
+def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
+    DeclareOpInterfaceMethods<CastOpInterface>,
+    SameNDBufferRank<"input", "output">]> {
+  let summary = "bitcasts an ndbuffer type";
+  let description = [{
+    The `zap.ndbuffer.bitcast` operation bitcasts an ndbuffer type to another
+    ndbuffer type. It can convert between ndbuffers with static shape or
+    dynamic shape. The rank of the source ndbuffer type and the destination
+    ndbuffer type must match. The dtype of the ndbuffer must be also statically
+    known.
+
+    Example:
+
+    ```mlir
+    // Bitcast a dynamic ndbuffer to a dynamic size ndbuffer.
+    %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[?], f64> to
+                                   !zap.ndbuffer<[?], f32>
+
+    // Bitcast a static buffer to a dynamic size buffer.
+    %1 = zap.ndbuffer.bitcast %b : !zap.ndbuffer<[1024], f32> to
+                                   !zap.ndbuffer<[?], f32>
+
+    // Bitcast an ndbuffer to a dynamic size ndbuffer.
+    %2 = zap.ndbuffer.bitcast %c : !zap.buffer<[32, 5], type> to
+                                   !zap.buffer<[?, 5], f32>
+
+    // Bitcast across dtypes.
+    %2 = zap.ndbuffer.bitcast %c : !zap.ndbuffer<[5], type1> to
+                                   !zap.ndbuffer<[5], type2>
+    ```
+
+    The operation can bitcast between ndbuffer types of the same rank with
+    different sizes or dtypes.
+
+    Example:
+
+    ```mlir
+    // Bitcast an ndbuffer of shape 32x2 to an ndbuffer of shape 1x64.
+    %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[32, 2], f32> to
+                                   !zap.buffer<[1, 64], f32>
+
+    // Bitcast a ui32 ndbuffer to a si32 ndbuffer.
+    %0 = zap.ndbuffer.bitcast %b : !zap.ndbuffer<[?], ui32> to
+                                   !zap.buffer<[?], si32>
+    ```
+
+    If the shape or dtype is concrete in the result type, it overwrites the
+    shape or dtype in the input ndbuffer.
+  }];
+
+  let arguments = (ins NDBufferKnownDType:$input);
+  let results = (outs NDBufferKnownDType:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

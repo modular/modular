@@ -304,6 +304,34 @@ OpFoldResult NDBufferSizeOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// NDBufferBitCastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult NDBufferBitCastOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.size() == 1 && "ndbuffer convert expected 1 operand");
+  // Fold cast x to same type.
+  if (getOperand().getType() == getType())
+    return getOperand();
+
+  // Fold A->B->C casts into a cast of the original cast's operand.
+  if (auto castOperand = getOperand().getDefiningOp<NDBufferBitCastOp>()) {
+    // A->B->A doesn't need a cast at all.
+    if (castOperand.getOperand().getType() == getType())
+      return castOperand.getOperand();
+    setOperand(castOperand.getOperand());
+    return getResult();
+  }
+
+  return {};
+}
+
+bool NDBufferBitCastOp::areCastCompatible(TypeRange lhs, TypeRange rhs) {
+  if (lhs.size() != 1 || rhs.size() != 1)
+    return false;
+  return lhs.front().isa<NDBufferType>() && rhs.front().isa<NDBufferType>();
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalStringOp
 //===----------------------------------------------------------------------===//
 
