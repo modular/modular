@@ -66,7 +66,7 @@ public:
   /// Encode the specified source location information into an attribute for
   /// attachment to the IR.
   Location translateLocation(llvm::SMLoc loc) {
-    return lexer.translateLocation(loc);
+    return getSharedState().translateLocation(loc);
   }
 
   /// Return the location for the current token.

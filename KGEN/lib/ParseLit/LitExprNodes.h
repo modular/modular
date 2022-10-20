@@ -51,11 +51,6 @@ public:
   /// Return the type for the contained TypedAttr or Value, or null if they are
   /// both null.
   Type getType() const;
-
-  /// This helper emits this MLIRValueRep as an SSA value, materializing
-  /// it as a parameter constant if it is a parameter.  This returns null if
-  /// emission fails.
-  Value getAsValue(Location loc, OpBuilder &builder) const;
 };
 
 /// Base class for all expression nodes.  Note that these nodes are not allowed

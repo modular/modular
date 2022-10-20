@@ -77,8 +77,7 @@ struct LitParser : public LitParserBase {
 
   const Scope &getScope() const { return scope; }
 
-  // Expressions.
-  // TODO: Move expression emission elsewhere!
+  // Expression emission.
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emitExpr(ExprNode *node) {
@@ -88,8 +87,7 @@ struct LitParser : public LitParserBase {
 
   Value emitExprAsValue(ExprNode *node) {
     EmitterState state(*this, scope, builder);
-    return node->emit(state).getAsValue(translateLocation(node->getLoc()),
-                                        state.builder);
+    return state.emitAsValue(node);
   }
 
   // Statements.
@@ -97,6 +95,7 @@ struct LitParser : public LitParserBase {
     normal,     // All normal statements are supported.
     structBody, // Only statements in a struct body supported.
   };
+
   ParseResult parseSuite(size_t curIndent, StmtContext stmtContext);
   ParseResult parseStmts(size_t minIndent, StmtContext stmtContext);
   ParseResult parseStmt(size_t curIndent, StmtContext stmtContext);
@@ -482,12 +481,11 @@ ParseResult LitParser::parseIfStmt(size_t curIndent) {
     ExprNode *condExp = nullptr;
     if (parseExpression(condExp))
       return failure();
-    Location loc = translateLocation(condExp->getLoc());
     Value cond = emitExprAsValue(condExp);
     if (!cond)
       return failure();
-    cmpOp = builder.create<index::CmpOp>(loc, index::IndexCmpPredicate::EQ,
-                                         cond, one);
+    cmpOp = builder.create<index::CmpOp>(
+        cond.getLoc(), index::IndexCmpPredicate::EQ, cond, one);
     if (parseToken(LitToken::colon, "expected ':' after expression"))
       return failure();
     return success();
@@ -938,6 +936,15 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
 
+/// Encode the specified source location information into a Location object
+/// for attachment to the IR or error reporting.
+Location LitSharedState::translateLocation(SMLoc loc) {
+  unsigned mainFileID = sourceMgr.getMainFileID();
+  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, mainFileID);
+  return FileLineColLoc::get(bufferNameIdentifier, lineAndColumn.first,
+                             lineAndColumn.second);
+}
+
 //===----------------------------------------------------------------------===//
 // Driver
 //===----------------------------------------------------------------------===//
@@ -959,6 +966,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   LitSharedState sharedState(sourceMgr, context);
   LitLexer lexer(sharedState);
+  auto startSMLoc = lexer.getToken().getLoc();
 
   // The outermost scope contains the __builtins__ function definitions.
   // TODO: Add these:
@@ -978,7 +986,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
-  sharedState.declResolver->resolveAll(fileLoc);
+  sharedState.declResolver->resolveAll(startSMLoc);
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and

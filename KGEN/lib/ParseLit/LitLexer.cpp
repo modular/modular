@@ -73,13 +73,10 @@ LitLexer::LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor)
   cursor.restore(*this);
 }
 
-/// Encode the specified source location information into a Location object
-/// for attachment to the IR or error reporting.
+/// Inflate a lightweight SMLoc into an MLIR Location object for addition
+/// into the IR.
 Location LitLexer::translateLocation(llvm::SMLoc loc) {
-  unsigned mainFileID = getSourceMgr().getMainFileID();
-  auto lineAndColumn = getSourceMgr().getLineAndColumn(loc, mainFileID);
-  return FileLineColLoc::get(sharedState.bufferNameIdentifier,
-                             lineAndColumn.first, lineAndColumn.second);
+  return sharedState.translateLocation(loc);
 }
 
 /// Emit an error message and return a LitToken::error token.
