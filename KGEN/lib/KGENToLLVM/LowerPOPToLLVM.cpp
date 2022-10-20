@@ -881,12 +881,30 @@ struct ConvertPOPSIMDGather : mlir::ConvertOpToLLVMPattern<SIMDGatherOp> {
   matchAndRewrite(SIMDGatherOp op, SIMDGatherOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type type = getTypeConverter()->convertType(op.getType());
-    Type ptrType = KGEN::getLLVMPointerTo(
-        op->getContext(),
-        *op.getPassthrough().getType().cast<SIMDType>().getResolvedDType());
+    Type ptrType = LLVM::LLVMPointerType::get(
+        adaptor.getPassthrough().getType().cast<VectorType>().getElementType());
     rewriter.replaceOpWithNewOp<LLVM::masked_gather>(
         op, type, adaptor.getBase(), adaptor.getMask(),
         adaptor.getPassthrough(),
+        getAlignment(getTypeConverter()->getDataLayout(), ptrType));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDScatter
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDScatter : mlir::ConvertOpToLLVMPattern<SIMDScatterOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDScatterOp op, SIMDScatterOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type ptrType = LLVM::LLVMPointerType::get(
+        adaptor.getValue().getType().cast<VectorType>().getElementType());
+    rewriter.replaceOpWithNewOp<LLVM::masked_scatter>(
+        op, adaptor.getValue(), adaptor.getBase(), adaptor.getMask(),
         getAlignment(getTypeConverter()->getDataLayout(), ptrType));
     return success();
   }
@@ -1346,6 +1364,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDReduceMax,
       ConvertPOPSIMDReduceMin,
       ConvertPOPSIMDReduceMul,
+      ConvertPOPSIMDScatter,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,

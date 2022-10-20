@@ -939,3 +939,20 @@ kgen.func @pop_gather(%base: !pop.simd<2, address>,
   %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, f32>
   kgen.return %0 : !pop.simd<2, f32>
 }
+
+// -----
+
+// CHECK-LABEL: @pop_scatter
+// CHECK-SAME: %[[VALUE0:.*]]: !pop.simd<2, f32>
+// CHECK-SAME: %[[BASE0:.*]]: !pop.simd<2, address>
+// CHECK-SAME: %[[MASK0:.*]]: !pop.simd<2, bool>
+kgen.func @pop_scatter(%value: !pop.simd<2, f32>,
+                       %base: !pop.simd<2, address>,
+                       %mask: !pop.simd<2, bool>) {
+  // CHECK-DAG: %[[VALUE:.*]] = builtin.unrealized_conversion_cast %[[VALUE0]]
+  // CHECK-DAG: %[[BASE:.*]] = builtin.unrealized_conversion_cast %[[BASE0]]
+  // CHECK-DAG: %[[MASK:.*]] = builtin.unrealized_conversion_cast %[[MASK0]]
+  // CHECK: llvm.intr.masked.scatter %[[VALUE]], %[[BASE]], %[[MASK]]
+  pop.simd.scatter %value, %base[%mask] : !pop.simd<2, f32>
+  kgen.return
+}
