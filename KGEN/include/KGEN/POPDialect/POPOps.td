@@ -759,8 +759,8 @@ def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDGatherOp : POPOp<"simd.gather", [
-                  SIMDOfSameSize<"mask", "result">,
-                  AllTypesMatch<["result", "passthrough"]>]> {
+    SIMDOfSameSize<"mask", "result">,
+    AllTypesMatch<["result", "passthrough"]>]> {
   let summary = "gathers values from the SIMD vector using the mask";
   let description = [{
     The `pop.simd.gather` reads scalar values from a SIMD vector of memory
@@ -833,6 +833,59 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
     `,` qualified(type($mask)) `,` qualified(type($passthrough))
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// SIMDScatterOp
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDScatterOp : POPOp<"simd.scatter", [
+    SIMDOfSameSize<"base", "mask">,
+    SIMDOfSameSize<"value", "mask">,
+    AddressSIMDOfSameSize<"value", "base">,
+    BoolSIMDOfSameSize<"value", "mask">]> {
+  let summary = "scatters values from the SIMD vector using the mask";
+  let description = [{
+    The `pop.simd.scatter` stores scalar values from a SIMD vector of memory
+    locations and scatters them into a vector of pointers. The memory locations
+    are provided in the vector of pointers `base` as addresses. The memory is
+    stored according to the provided mask. The mask holds a bit for each vector
+    lane, and is used to prevent memory accesses to the masked-off lanes.
+
+    The `value` operand is a vector value to be written to memory. The `base`
+    operand is a vector of pointers, pointing to where the value elements
+    should be stored. It has the same underlying type as the value operand. The
+    `mask` operand, mask, is a vector of boolean values. The types of the
+    `mask` and the `value` operand must have the same number of vector
+    elements.
+
+    The behavior of the `pop.simd.scatter` is undefined if the op stores into
+    the same memory location more than once.
+
+    In general, for some vector %value, vector of pointers %base, and mask
+    %mask instructions of the form:
+
+    ```mlir
+    %0 = pop.simd.gather %value, %base[%mask] : !pop.simd<N, type>
+    ```
+
+    is equivalent to the following sequence of scalar loads in C++:
+
+    ```cpp
+    for (int i = 0; i < N; i++)
+      if (mask[i])
+        base[i] = value[i];
+    ```
+  }];
+
+  let arguments = (ins POP_SIMDType:$value,
+                       Arg<AddressSIMD, "", [MemWrite]>:$base,
+                       BoolSIMD:$mask);
+
+  let assemblyFormat = [{
+    $value `,` $base `[` $mask `]` attr-dict `:` qualified(type($value))
+  }];
+}
+
 
 //===----------------------------------------------------------------------===//
 // LoadOp
