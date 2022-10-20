@@ -654,7 +654,9 @@ static Value linearizeContiguousIndices(PatternRewriter &rewriter, Location loc,
   Value accumulatedOffset = *indexArray.begin();
 
   // Initialize the index used to access the shape array.
-  size_t indexPosition = 0;
+  // Start at position one as the highest order term of the shape array is not
+  // used in computing indices. See e.g. above, term `a` is skipped.
+  size_t indexPosition = 1;
 
   // Iterate through indices and create the multiply and add in each iteration.
   for (auto indexValue : llvm::drop_begin(indexArray)) {
