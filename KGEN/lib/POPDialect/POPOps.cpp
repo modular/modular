@@ -734,6 +734,12 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
   printTypeParamValue(p, result.cast<PointerType>().getElementType());
 }
 
+void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
+                              int64_t count) {
+  auto countAttr = b.getIndexAttr(count);
+  build(b, state, result, countAttr);
+}
+
 //===----------------------------------------------------------------------===//
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//

@@ -569,10 +569,10 @@ kgen.generator @parametricAdd<ty: type>
 
 // CHECK-LABEL: @stack_allocation
 kgen.generator @stack_allocation<size, type: type>() {
-  // CHECK: pop.stack_allocation size : type
-  %0 = pop.stack_allocation size : type
-  // CHECK: pop.stack_allocation 16 : !pop.simd<4, f32>
-  %1 = pop.stack_allocation 16 : !pop.simd<4, f32>
+  // CHECK: pop.stack_allocation size x type
+  %0 = pop.stack_allocation size x type
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32>
+  %1 = pop.stack_allocation 16 x !pop.simd<4, f32>
   kgen.return
 }
 
