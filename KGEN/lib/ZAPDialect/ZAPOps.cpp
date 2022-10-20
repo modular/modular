@@ -98,17 +98,17 @@ OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
 }
 
 //===----------------------------------------------------------------------===//
-// BufferConvertOp
+// BufferBitCastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult BufferConvertOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult BufferBitCastOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 1 && "buffer convert expected 1 operand");
   // Fold cast x to same type.
   if (getOperand().getType() == getType())
     return getOperand();
 
   // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = getOperand().getDefiningOp<BufferConvertOp>()) {
+  if (auto castOperand = getOperand().getDefiningOp<BufferBitCastOp>()) {
     // A->B->A doesn't need a cast at all.
     if (castOperand.getOperand().getType() == getType())
       return castOperand.getOperand();
@@ -119,7 +119,7 @@ OpFoldResult BufferConvertOp::fold(ArrayRef<Attribute> operands) {
   return {};
 }
 
-bool BufferConvertOp::areCastCompatible(TypeRange lhs, TypeRange rhs) {
+bool BufferBitCastOp::areCastCompatible(TypeRange lhs, TypeRange rhs) {
   if (lhs.size() != 1 || rhs.size() != 1)
     return false;
   return lhs.front().isa<BufferType>() && rhs.front().isa<BufferType>();
