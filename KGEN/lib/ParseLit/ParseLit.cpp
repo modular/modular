@@ -451,46 +451,45 @@ struct ParsedMetaSignature {
 ParseResult LitParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc =
       translateLocation(consumeToken(LitToken::kw_while).getLoc());
-  SmallVector<Type, 0> types = {};
-  SmallVector<Value, 0> operands = {};
-  auto whileOp = builder.create<scf::WhileOp>(whileLoc, types, operands);
-  Block *before = builder.createBlock(&whileOp.getBefore(), {}, {}, {});
-  Block *after = builder.createBlock(&whileOp.getAfter(), {}, {}, {});
-  auto cmpBuilder = OpBuilder::atBlockEnd(before);
 
   ExprNode *condExp = nullptr;
   if (parseExpression(condExp) ||
       parseToken(LitToken::colon, "expected ':' after expression"))
     return failure();
 
+  ArrayRef<Type> types;
+  ArrayRef<Value> operands;
+  auto whileOp = builder.create<scf::WhileOp>(whileLoc, types, operands);
+  Block *before = builder.createBlock(&whileOp.getBefore());
+  Block *after = builder.createBlock(&whileOp.getAfter());
   Value cond;
   {
-    SaveAndRestore<OpBuilder> builderSaver(builder, cmpBuilder);
+    SaveAndRestore<OpBuilder> builderSaver(builder,
+                                           OpBuilder::atBlockEnd(before));
     // TODO(types): add type checking: the condition should be bool
     cond = emitExprAsValue(condExp);
     if (!cond)
       return failure();
+
+    auto one = builder.create<index::ConstantOp>(whileLoc, 1);
+    auto cmpOp = builder.create<index::CmpOp>(
+        whileLoc, index::IndexCmpPredicate::EQ, cond, one);
+    builder.create<scf::ConditionOp>(whileLoc, cmpOp, operands);
   }
-
-  auto one = cmpBuilder.create<index::ConstantOp>(whileLoc, 1);
-  auto cmpOp = cmpBuilder.create<index::CmpOp>(
-      whileLoc, index::IndexCmpPredicate::EQ, cond, one);
-  cmpBuilder.create<scf::ConditionOp>(whileLoc, cmpOp, operands);
-
-  auto bodyBuilder = OpBuilder::atBlockEnd(after);
   builder.setInsertionPointAfter(whileOp);
   {
-    SaveAndRestore<OpBuilder> builderSaver(builder, bodyBuilder);
+    SaveAndRestore<OpBuilder> builderSaver(builder,
+                                           OpBuilder::atBlockEnd(after));
 
     if (failed(parseSuite(curIndent, StmtContext::normal)))
       return failure();
-    bodyBuilder.create<scf::YieldOp>(whileLoc);
+    builder.create<scf::YieldOp>(whileLoc);
   }
   if (getToken().is(LitToken::kw_else) &&
       getToken().getIndentation() == curIndent) {
     consumeToken(LitToken::kw_else);
     if (parseToken(LitToken::colon, "expected ':' after else") ||
-        failed(parseSuite(curIndent, StmtContext::normal)))
+        parseSuite(curIndent, StmtContext::normal))
       return failure();
   }
   return success();
