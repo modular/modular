@@ -40,6 +40,10 @@ public:
 
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
+
+  /// Inflate a light weight SMLoc into an MLIR Location object for addition
+  /// into the IR.
+  Location translateLocation(llvm::SMLoc loc);
 };
 
 /// This enum indicates how much parsing and type checking has been done on

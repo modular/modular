@@ -131,7 +131,7 @@ Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
 }
 
 /// Resolve all of the declarations that are visible.
-void DeclResolver::resolveAll(Location loc) {
+void DeclResolver::resolveAll(SMLoc loc) {
   // We can do this in any order, but choose to use the order they are
   // discovered so diagnostics are mostly top-down.  Resolving declarations may
   // cause more entries to be added to this list.
@@ -143,7 +143,7 @@ void DeclResolver::resolveAll(Location loc) {
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
 LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
-                                    Location loc) {
+                                    SMLoc loc) {
   // If scope is already resolved enough, we're done.
   if (scope.resolvedness >= howResolved)
     return success();
@@ -153,7 +153,8 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (!declsCurrentlyProcessing.insert(decl).second) {
-    emitError(loc, "recursive reference to declaration");
+    emitError(sharedState.translateLocation(loc),
+              "recursive reference to declaration");
     return failure();
   }
 

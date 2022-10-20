@@ -31,7 +31,7 @@ using namespace M::KGEN::LIT;
 /// performs the conversion.  This returns null if this contains a value.
 TypedAttr MLIRValueRep::dyn_castTypedAttr() const {
   if (auto attr = (*this).dyn_cast<Attribute>())
-    return attr.cast<TypedAttr>();
+    return cast<TypedAttr>(attr);
   return {};
 }
 
@@ -43,30 +43,6 @@ Type MLIRValueRep::getType() const {
   return cast<Value>(*this).getType();
 }
 
-/// This helper emits this MLIRValueRep as an SSA value, materializing
-/// it as a parameter constant if it is a parameter.  This returns null if
-/// emission fails.
-Value MLIRValueRep::getAsValue(Location loc, OpBuilder &builder) const {
-  if (!*this)
-    return {};
-
-  // If this is a parameter, we need to materialize it, either as an
-  // index.constant or as a parameter expression.
-  if (auto attr = this->dyn_castTypedAttr()) {
-    // Materialize index integer constants as a special case.
-    if (auto intAttr = attr.dyn_cast<IntegerAttr>())
-      if (intAttr.getType().isIndex())
-        // TODO: This shouldn't require passing in the type.
-        return builder.create<index::ConstantOp>(loc, intAttr.getType(),
-                                                 intAttr);
-
-    // Otherwise, emit a generalized parameter constant.
-    return builder.create<ParamConstantOp>(loc, attr);
-  }
-
-  return cast<Value>(*this);
-}
-
 //===----------------------------------------------------------------------===//
 // EmitterState Implementation
 //===----------------------------------------------------------------------===//
@@ -75,7 +51,24 @@ Value MLIRValueRep::getAsValue(Location loc, OpBuilder &builder) const {
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
 Value EmitterState::emitAsValue(MLIRValueRep rep, SMLoc loc) {
-  return rep.getAsValue(translateLocation(loc), builder);
+  if (!rep)
+    return {};
+
+  // If this is a parameter, we need to materialize it, either as an
+  // index.constant or as a parameter expression.
+  if (auto attr = rep.dyn_castTypedAttr()) {
+    auto location = translateLocation(loc);
+    // Materialize index integer constants as a special case.
+    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+      if (intAttr.getType().isIndex())
+        return builder.create<index::ConstantOp>(
+            location, intAttr.getValue().getSExtValue());
+
+    // Otherwise, emit a generalized parameter constant.
+    return builder.create<ParamConstantOp>(location, attr);
+  }
+
+  return cast<Value>(rep);
 }
 
 /// This helper emits the specified value rep as an SSA value, materializing
@@ -128,9 +121,8 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
 
     // We need the signature for the struct to be resolved in order to know how
     // to refer to it.
-    auto resolveResult =
-        getDeclResolver().resolve(scope, DeclResolvedness::signatureResolved,
-                                  translateLocation(dre->getLoc()));
+    auto resolveResult = getDeclResolver().resolve(
+        scope, DeclResolvedness::signatureResolved, dre->getLoc());
 
     // If the decl was erroneous somehow, then don't form a reference to it.
     // Just return an TypeCheckError instead so we don't get downstream errors.
@@ -286,16 +278,14 @@ MLIRValueRep BinOpNode::emit(EmitterState &state) const {
 
   auto lhsVal = state.emitAsValue(lhsRep, lhs->getLoc());
   auto rhsVal = state.emitAsValue(rhsRep, rhs->getLoc());
+  auto loc = state.translateLocation(getLoc());
 
   switch (kind) {
   default:
     llvm_unreachable("unknown binary operator");
   case kAdd:
-    return (Value)state.builder.create<index::AddOp>(
-        state.translateLocation(getLoc()), lhsVal, rhsVal);
-
+    return (Value)state.builder.create<index::AddOp>(loc, lhsVal, rhsVal);
   case kMul:
-    return (Value)state.builder.create<index::MulOp>(
-        state.translateLocation(getLoc()), lhsVal, rhsVal);
+    return (Value)state.builder.create<index::MulOp>(loc, lhsVal, rhsVal);
   }
 }
