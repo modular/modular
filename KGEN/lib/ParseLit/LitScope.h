@@ -138,7 +138,7 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, Optional<NameEntry>> decls;
+  DenseMap<StringAttr, NameEntry> decls;
 };
 
 } // namespace M::KGEN::LIT

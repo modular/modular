@@ -129,7 +129,7 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
     // We need the signature for the struct to be resolved in order to know how
     // to refer to it.
     auto resolveResult =
-        getDeclResolver().resolve(scope, DeclResolvedness::signatureParsed,
+        getDeclResolver().resolve(scope, DeclResolvedness::signatureResolved,
                                   translateLocation(dre->getLoc()));
 
     // If the decl was erroneous somehow, then don't form a reference to it.
