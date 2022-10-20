@@ -134,7 +134,7 @@ private:
 
   /// This is the indentation level of the introducer keyword, useful for
   /// parsing the body of the declaration.  If the declaration was not at the
-  /// start of a line, this is set to -1.
+  /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
