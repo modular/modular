@@ -38,6 +38,8 @@ public:
   DeclResolver(LitSharedState &state);
   ~DeclResolver();
 
+  MLIRContext *getContext() const { return sharedState.context; }
+
   /// Resolve all of the declarations that are visible, processing the entire
   /// translation unit.
   void resolveAll(llvm::SMLoc loc);
