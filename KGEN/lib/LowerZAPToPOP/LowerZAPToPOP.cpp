@@ -169,13 +169,13 @@ struct ConvertZAPBufferDType : public mlir::OpRewritePattern<BufferDTypeOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPBufferConvert
+// ConvertZAPBufferBitCast
 //===----------------------------------------------------------------------===//
 
 /// When converting an buffer, we have to bitcast the pointer type. Moreover, we
 /// will overwrite the size and dtype if they were respecified in the return
 /// type.
-struct ConvertZAPBufferConvert
+struct ConvertZAPBufferBitCast
     : public mlir::OpRewritePattern<BufferBitCastOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -430,7 +430,7 @@ static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
   for (size_t i = 0, shapeParamOffset = 0; i < rank; ++i) {
     TypedAttr dim = type.getShape()[i];
     // If the dimension is not statically known, then we query the dimension
-    // from the user-specified shape values.
+    // from the user-specified shape values (if available).
     if (!dim) {
       shapeValues[i] = shape[shapeParamOffset++];
       continue;
@@ -783,6 +783,47 @@ struct ConvertZAPNDBufferSIMDStore
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertZAPNDBufferBitCast
+//===----------------------------------------------------------------------===//
+
+struct ConvertZAPNDBufferBitCast
+    : public mlir::OpRewritePattern<NDBufferBitCastOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(NDBufferBitCastOp op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = op.getInput().getType().cast<NDBufferType>();
+    auto type = op.getType().cast<NDBufferType>();
+
+    // Bitcast the pointer if needed.
+    Value ndBuffer = convertValue(op.getInput());
+    Value ptr = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
+                                             kNDBufferAddressPosition);
+    if (type.getDType() != inputType.getDType())
+      ptr = rewriter.create<PointerBitcastOp>(
+          op.getLoc(), op.getType().getPointerType(), ptr);
+
+    // Query the source ndbuffer for the dynamic shape information.
+    Value shapeArray;
+    SmallVector<Value, 4> dynamicShapeValues;
+    for (auto [idx, shape] : llvm::enumerate(type.getShape())) {
+      if (shape)
+        continue;
+      if (!shapeArray)
+        shapeArray = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
+                                                  kNDBufferShapePosition);
+      dynamicShapeValues.emplace_back(
+          rewriter.create<ArrayGetOp>(op.getLoc(), shapeArray, idx));
+    }
+
+    rewriter.replaceOp(op,
+                       constructNDBuffer(rewriter, op.getLoc(), type, ptr,
+                                         type.getRank(), dynamicShapeValues));
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -793,9 +834,9 @@ static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
       ConvertZAPBufferAddress,
+      ConvertZAPBufferBitCast,
       ConvertZAPBufferConstant,
       ConvertZAPBufferConstruct,
-      ConvertZAPBufferConvert,
       ConvertZAPBufferDType,
       ConvertZAPBufferLoad,
       ConvertZAPBufferSize,
@@ -804,6 +845,7 @@ static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
       ConvertZAPDebugAssert,
       ConvertZAPGlobalString,
       ConvertZAPNDBufferAddress,
+      ConvertZAPNDBufferBitCast,
       ConvertZAPNDBufferConstruct,
       ConvertZAPNDBufferDim,
       ConvertZAPNDBufferDType,
