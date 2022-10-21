@@ -118,22 +118,22 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
 
 // Base class for unary arithmetic pop operations.
 class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
+      POPOp<mnemonic, traits # [
+        Pure,
+        SameOperandsAndResultType,
+        DeclareOpInterfaceMethods<InferTypeOpInterface>
+      ]> {
+  let arguments = (ins ScalarOrSIMD:$operand);
+  let results = (outs ScalarOrSIMD:$result);
+
   let assemblyFormat = "$operand attr-dict `:` type($result)";
 }
-
-// Base class for unary operations.
-class POP_MetaArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
-    POP_ArithmeticUnaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
-    Arguments<(ins ScalarOrSIMD:$operand)>,
-    Results<(outs ScalarOrSIMD:$result)>;
 
 //===----------------------------------------------------------------------===//
 // AbsOp
 //===----------------------------------------------------------------------===//
 
-def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
+def POP_AbsOp : POP_ArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
     The `pop.abs` operation takes a `!pop.scalar` or `!pop.simd` type and
@@ -153,7 +153,7 @@ def POP_AbsOp : POP_MetaArithmeticUnaryOp<"abs"> {
 // NegOp
 //===----------------------------------------------------------------------===//
 
-def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
+def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
     The `pop.neg` operation takes a `!pop.scalar` or `!pop.simd` type and
@@ -174,22 +174,22 @@ def POP_NegOp : POP_MetaArithmeticUnaryOp<"neg"> {
 
 // Base class for binary arithmetic pop operations.
 class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
+      POPOp<mnemonic, traits # [
+        Pure,
+        SameOperandsAndResultType,
+        DeclareOpInterfaceMethods<InferTypeOpInterface>
+      ]> {
+  let arguments = (ins ScalarOrSIMD:$lhs, ScalarOrSIMD:$rhs);
+  let results = (outs ScalarOrSIMD:$result);
+
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
 }
-
-// Base class for binary operations.
-class POP_MetaArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
-    POP_ArithmeticBinaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
-    Arguments<(ins ScalarOrSIMD:$lhs, ScalarOrSIMD:$rhs)>,
-    Results<(outs ScalarOrSIMD:$result)>;
 
 //===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
+def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
     The `pop.add` operation takes two `!pop.scalar` or `!pop.simd` types
@@ -209,7 +209,7 @@ def POP_AddOp : POP_MetaArithmeticBinaryOp<"add", [Commutative]> {
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def POP_SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
+def POP_SubOp : POP_ArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
     The `pop.sub` operation takes two `!pop.scalar` or `!pop.simd` types
@@ -228,7 +228,7 @@ def POP_SubOp : POP_MetaArithmeticBinaryOp<"sub"> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def POP_MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
+def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
     The `mul` operation takes two `!pop.scalar` or `!pop.simd` types and returns
@@ -247,7 +247,7 @@ def POP_MulOp : POP_MetaArithmeticBinaryOp<"mul", [Commutative]> {
 // DivOp
 //===----------------------------------------------------------------------===//
 
-def POP_DivOp : POP_MetaArithmeticBinaryOp<"div"> {
+def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
   let summary = "divide";
   let description = [{
     The `div` operation takes two `!pop.scalar` or `!pop.simd` types and divdes
@@ -266,7 +266,7 @@ def POP_DivOp : POP_MetaArithmeticBinaryOp<"div"> {
 // MaxOp
 //===----------------------------------------------------------------------===//
 
-def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
+def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative]> {
   let summary = "max";
   let description = [{
     The `pop.max` operation takes two `!pop.scalar` or `!pop.simd` types
@@ -286,7 +286,7 @@ def POP_MaxOp : POP_MetaArithmeticBinaryOp<"max", [Commutative]> {
 // MinOp
 //===----------------------------------------------------------------------===//
 
-def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
+def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative]> {
   let summary = "min";
   let description = [{
     The `pop.min` operation takes two `!pop.scalar` or `!pop.simd` types
@@ -306,7 +306,7 @@ def POP_MinOp : POP_MetaArithmeticBinaryOp<"min", [Commutative]> {
 // ShlOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
+def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
   let summary = "shift left";
   let description = [{
     The `pop.shl` instruction returns the first operand shifted to the left a
@@ -335,7 +335,7 @@ def POP_ShlOp : POP_MetaArithmeticBinaryOp<"shl"> {
 // ShrOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShrOp : POP_MetaArithmeticBinaryOp<"shr"> {
+def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
   let summary = "shift right";
   let description = [{
     The `pop.shr` op returns the first operand shifted to the right a specified
@@ -366,7 +366,7 @@ def POP_ShrOp : POP_MetaArithmeticBinaryOp<"shr"> {
 // CopySignOp
 //===----------------------------------------------------------------------===//
 
-def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
+def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
     The `pop.copysign` operation takes two `!pop.scalar` or `!pop.simd` types (a
@@ -391,22 +391,21 @@ def POP_CopySignOp : POP_MetaArithmeticBinaryOp<"copysign"> {
 
 // Base class for ternary arithmetic pop operations.
 class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
-       POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
+      POPOp<mnemonic, traits # [
+        Pure,
+        SameOperandsAndResultType,
+        DeclareOpInterfaceMethods<InferTypeOpInterface>
+      ]> {
+  let arguments = (ins ScalarOrSIMD:$a, ScalarOrSIMD:$b, ScalarOrSIMD:$c);
+  let results = (outs ScalarOrSIMD:$result);
+
   let assemblyFormat = "$a `,` $b `,` $c attr-dict `:` type($result)";
 }
-
-// Base class for ternary operations.
-class POP_MetaArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
-    POP_ArithmeticTernaryOp<mnemonic, traits # [
-                      DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
-    Arguments<(ins ScalarOrSIMD:$a, ScalarOrSIMD:$b, ScalarOrSIMD:$c)>,
-    Results<(outs ScalarOrSIMD:$result)>;
-
 //===----------------------------------------------------------------------===//
 // FMAOp
 //===----------------------------------------------------------------------===//
 
-def POP_FMAOp : POP_MetaArithmeticTernaryOp<"fma"> {
+def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
     The `pop.fma` operation takes three `!pop.scalar` or `!pop.simd` types (`a`,
