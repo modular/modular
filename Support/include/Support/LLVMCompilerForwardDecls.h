@@ -85,6 +85,7 @@ class Pass;
 class PatternRewriter;
 class RankedTensorType;
 class Region;
+class RegionRange;
 template <typename HandleT>
 class ResourceBlobManagerDialectInterfaceBase;
 class RewritePattern;
@@ -210,6 +211,7 @@ using mlir::PatternRewriter;
 using mlir::RankedTensorType;
 using mlir::Region;
 using mlir::RegionKind;
+using mlir::RegionRange;
 using mlir::RewritePattern;
 using mlir::RewritePatternSet;
 using mlir::ShapedType;

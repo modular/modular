@@ -447,3 +447,19 @@ kgen.func @variant_asm_missing_default(%a: !pop.variant<i32, f32>) {
   }
   kgen.return
 }
+
+// -----
+
+kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
+  // expected-error @below {{'pop.struct.gep' op element index 1 out of bounds (>=1)}}
+  %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
+  // expected-error @below {{'pop.struct.gep' op result type 'i64' does not match struct element type at index 0: #kgen.concretetype.constant<i32> : !kgen.mlirtype}}
+  %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i64>
+  kgen.return
+}

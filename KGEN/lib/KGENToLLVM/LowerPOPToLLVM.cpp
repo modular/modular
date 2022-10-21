@@ -761,6 +761,26 @@ struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPStructGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<StructGEPOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type ptrType = getTypeConverter()->convertType(op.getType());
+    if (!ptrType)
+      return op.emitError("failed to convert result type");
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, ptrType, adaptor.getContainer(),
+        ArrayRef<LLVM::GEPArg>{0, op.getIndexAttr().getInt()});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPArrayCreate
 //===----------------------------------------------------------------------===//
 
@@ -845,6 +865,26 @@ struct ConvertPOPArrayReplace
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
         op, adaptor.getArray(), adaptor.getValue(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPArrayGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPArrayGEP : public mlir::ConvertOpToLLVMPattern<ArrayGEPOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ArrayGEPOp op, ArrayGEPOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type ptrType = getTypeConverter()->convertType(op.getType());
+    if (!ptrType)
+      return op.emitError("failed to convert result type");
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, ptrType, adaptor.getArray(),
+        ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()});
     return success();
   }
 };
@@ -1381,6 +1421,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPArrayCreate,
+      ConvertPOPArrayGEP,
       ConvertPOPArrayGet,
       ConvertPOPArrayRepeat,
       ConvertPOPArrayReplace,
@@ -1421,6 +1462,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
       ConvertPOPStructConstruct,
+      ConvertPOPStructGEP,
       ConvertPOPStructGet,
       ConvertPOPStructReplace,
       ConvertPOPSub,

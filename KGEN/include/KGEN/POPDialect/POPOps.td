@@ -1113,6 +1113,34 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "struct get element pointer";
+  let description = [{
+    The `pop.struct.gep` operation takes a pointer to a `!pop.struct` and a
+    constant index and returns a pointer to the struct element at that index.
+
+    Example:
+
+    ```mlir
+    %struct = pop.stack_allocation 1 : !pop.struct<i32, i64>
+    %i64Ptr = pop.struct.gep %struct[2] : <struct<i32, i64>>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<POP_StructType>:$container, IndexAttr:$index);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = [{
+    $container `[` $index `]` attr-dict `:` type($container)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -1253,6 +1281,32 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
   }];
 
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayGEPOp
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
+    TypesMatchWith<"pointer to array element type", "array", "result",
+                   "getPointerToArrayElementType($_self)">]> {
+  let summary = "array get element pointer";
+  let description = [{
+    The `pop.array.gep` operation takes a pointer to a `!pop.array` and an index
+    and returns a pointer to the array element at that index.
+
+    Example:
+
+    ```mlir
+    %arr = pop.stack_allocation 1 : !pop.array<4, i32>
+    %two = index.constant 2
+    %v2 = pop.array.gep %arr[%two] : <array<4, i32>>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<POP_ArrayType>:$array, Index:$index);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array)";
 }
 
 //===----------------------------------------------------------------------===//
