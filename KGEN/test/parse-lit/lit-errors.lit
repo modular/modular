@@ -102,11 +102,10 @@ def fn():
 def fn(a: index):
   if a:
     pass
-   elif a: # expected-error {{'elif' must match the indentation of the corresponding 'if'}}
+ elif a: # expected-error {{unexpected token in expression}}
     pass
   else:
     pass
-
 
 # // -----
 

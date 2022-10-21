@@ -128,7 +128,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
     // then the body is empty.  We don't require a pass.
     if (ssize_t(indent.value()) <= curIndent)
       return success();
-    return parseStmts(indent.value());
+    return parseStmts(curIndent + 1);
   }
 
   // Otherwise, parse a stmt_list.
@@ -420,20 +420,35 @@ ParseResult LitStmtParser::parseReturnStmt() {
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
+static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
+                                       LitStmtParser &parser) {
+  // TODO(types): add type checking: the condition should be bool.
+  // TODO(parameters): If the condition is a meta constant, don't emit dead code
+  // to test it.
+  Value cond = parser.emitExprAsValue(condExp);
+  if (!cond)
+    return failure();
+  auto &builder = parser.getBuilder();
+  auto one = builder.create<index::ConstantOp>(cond.getLoc(), 1);
+  condValue = builder.create<index::CmpOp>(
+      cond.getLoc(), index::IndexCmpPredicate::EQ, cond, one);
+  return success();
+}
+
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
 ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc =
       translateLocation(consumeToken(LitToken::kw_while).getLoc());
 
-  // We will be moving the builder into sub-regions that are created, make sure
-  // we end up after it when this is done.
-  SaveAndRestore<OpBuilder> builderSaver(builder);
-
   ExprNode *condExp = nullptr;
   if (parseExpression(condExp) ||
       parseToken(LitToken::colon, "expected ':' after expression"))
     return failure();
+
+  // We will be moving the builder into sub-regions that are created, make sure
+  // we end up after it when this is done.
+  SaveAndRestore<OpBuilder> builderSaver(builder);
 
   auto whileOp = builder.create<scf::WhileOp>(whileLoc, ArrayRef<Type>(),
                                               ArrayRef<Value>());
@@ -442,16 +457,12 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // Create the condition block.
   builder = OpBuilder::atBlockEnd(before);
-  // TODO(types): add type checking: the condition should be bool.
-  // TODO(parameters): If the condition is a meta constant, don't emit dead code
-  // to test it.
-  Value cond = emitExprAsValue(condExp);
-  if (!cond)
-    return failure();
-  auto one = builder.create<index::ConstantOp>(whileLoc, 1);
-  auto cmpOp = builder.create<index::CmpOp>(
-      whileLoc, index::IndexCmpPredicate::EQ, cond, one);
-  builder.create<scf::ConditionOp>(whileLoc, cmpOp, ArrayRef<Value>());
+
+  Value condVal;
+  if (emitExprAsCondition(condExp, condVal, *this))
+    return success(); // IRGen error already emitted; parse succeeded!
+
+  builder.create<scf::ConditionOp>(whileLoc, condVal, ArrayRef<Value>());
 
   // Create the after block.
   builder = OpBuilder::atBlockEnd(after);
@@ -460,7 +471,8 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   builder.create<scf::YieldOp>(whileLoc);
 
   // If there is an else block, emit it after the while op.
-  if (getToken().getIndentation() == curIndent &&
+  if (getToken().getIndentation().has_value() &&
+      getToken().getIndentation().value() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
     builder.setInsertionPointAfter(whileOp);
     if (parseToken(LitToken::colon, "expected ':' after else") ||
@@ -480,54 +492,41 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   // we end up after it when this is done.
   SaveAndRestore<OpBuilder> builderSaver(builder);
 
-  auto one = builder.create<index::ConstantOp>(ifLoc, 1);
-
-  // Parse the condition expression of the If statement and create a comparison
-  // with the current builder.  The returned condition is known to have MLIR i1
-  // type on success. The caller should be sure to have the correct builder in
-  // scope to build the conditional expression in the desired place.
-  auto parseCondition = [&](Value &cmpOp) -> ParseResult {
-    // TODO: add type checking: the condition should be bool.
-    // TODO(parameters): If the condition is a meta constant, don't emit dead
-    // code to test it.
-    ExprNode *condExp = nullptr;
-    if (parseExpression(condExp))
-      return failure();
-    Value cond = emitExprAsValue(condExp);
-    if (!cond)
-      return failure();
-    cmpOp = builder.create<index::CmpOp>(
-        cond.getLoc(), index::IndexCmpPredicate::EQ, cond, one);
-    if (parseToken(LitToken::colon, "expected ':' after expression"))
-      return failure();
-    return success();
-  };
-
+  ExprNode *condExp = nullptr;
   Value cond;
-  if (failed(parseCondition(cond)))
+  if (parseExpression(condExp) ||
+      parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
+  if (emitExprAsCondition(condExp, cond, *this))
+    return success();
+
+  // Create the 'if' and parse the body into its "then" region.
   auto ifOp = builder.create<scf::IfOp>(ifLoc, cond, /*withElse=*/true);
   builder = ifOp.getThenBodyBuilder();
   if (failed(parseSuite(curIndent)))
     return failure();
 
-  while (getToken().is(LitToken::kw_elif)) {
-    if (getToken().getIndentation() != curIndent)
-      return emitError(
-          "'elif' must match the indentation of the corresponding 'if'");
+  while (getToken().is(LitToken::kw_elif) &&
+         getToken().getIndentation().has_value() &&
+         getToken().getIndentation().value() >= curIndent) {
     Location elifLoc =
         translateLocation(consumeToken(LitToken::kw_elif).getLoc());
-    builder = ifOp.getElseBodyBuilder();
-    if (failed(parseCondition(cond)))
+    if (parseExpression(condExp) ||
+        parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
       return failure();
+
+    builder = ifOp.getElseBodyBuilder();
+    if (emitExprAsCondition(condExp, cond, *this))
+      return success();
     ifOp = builder.create<scf::IfOp>(elifLoc, cond, /*withElse=*/true);
     builder = ifOp.getThenBodyBuilder();
     if (failed(parseSuite(curIndent)))
       return failure();
   }
 
-  if (getToken().getIndentation() == curIndent &&
+  if (getToken().getIndentation().has_value() &&
+      getToken().getIndentation().value() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
