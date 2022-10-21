@@ -103,10 +103,6 @@ OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
 
 OpFoldResult BufferBitCastOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 1 && "buffer convert expected 1 operand");
-  // Fold cast x to same type.
-  if (getOperand().getType() == getType())
-    return getOperand();
-
   // Fold A->B->C casts into a cast of the original cast's operand.
   if (auto castOperand = getOperand().getDefiningOp<BufferBitCastOp>()) {
     // A->B->A doesn't need a cast at all.
@@ -309,10 +305,6 @@ OpFoldResult NDBufferSizeOp::fold(ArrayRef<Attribute> operands) {
 
 OpFoldResult NDBufferBitCastOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 1 && "ndbuffer convert expected 1 operand");
-  // Fold cast x to same type.
-  if (getOperand().getType() == getType())
-    return getOperand();
-
   // Fold A->B->C casts into a cast of the original cast's operand.
   if (auto castOperand = getOperand().getDefiningOp<NDBufferBitCastOp>()) {
     // A->B->A doesn't need a cast at all.
