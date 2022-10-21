@@ -1381,6 +1381,9 @@ struct ConvertPOPMemset : mlir::ConvertOpToLLVMPattern<MemsetOp> {
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
+using ConvertPOPAnd = mlir::OneToOneConvertToLLVMPattern<AndOp, LLVM::AndOp>;
+using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<OrOp, LLVM::OrOp>;
+using ConvertPOPXOr = mlir::OneToOneConvertToLLVMPattern<XOrOp, LLVM::XOrOp>;
 using ConvertPOPCopySign =
     mlir::OneToOneConvertToLLVMPattern<CopySignOp, LLVM::CopySignOp>;
 using ConvertPOPAdd =
@@ -1419,6 +1422,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertPOPAbs,
       ConvertPOPAdd,
+      ConvertPOPAnd,
       ConvertPOPArrayCreate,
       ConvertPOPArrayGEP,
       ConvertPOPArrayGet,
@@ -1443,6 +1447,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
+      ConvertPOPOr,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPPrefetch,
@@ -1468,7 +1473,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPVariantCreate,
       ConvertPOPVariantGet,
       ConvertPOPVariantIs,
-      ConvertPOPVariantVisit
+      ConvertPOPVariantVisit,
+      ConvertPOPXOr
       // clang-format on
       >(typeConverter);
 }

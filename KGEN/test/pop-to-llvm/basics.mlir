@@ -382,6 +382,143 @@ kgen.func @cmp_fp(%lhs: !pop.scalar<f32>, %rhs: !pop.scalar<f32>) {
   kgen.return
 }
 
+
+// -----
+
+// CHECK-LABEL: @and
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
+kgen.func @and(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : i1
+  %0 = pop.and %lhs, %rhs : !pop.scalar<bool>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// -----
+
+// CHECK-LABEL: @and
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
+kgen.func @and(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : i8
+  %0 = pop.and %lhs, %rhs : !pop.scalar<si8>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<si8>
+}
+
+// -----
+
+// CHECK-LABEL: @and
+// CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
+kgen.func @and(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]] : vector<4xi32>
+  %0 = pop.and %lhs, %rhs : !pop.simd<4, si32>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+// -----
+
+// CHECK-LABEL: @or
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
+kgen.func @or(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : i1
+  %0 = pop.or %lhs, %rhs : !pop.scalar<bool>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// -----
+
+// CHECK-LABEL: @or
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
+kgen.func @or(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : i8
+  %0 = pop.or %lhs, %rhs : !pop.scalar<si8>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<si8>
+}
+
+// -----
+
+// CHECK-LABEL: @or
+// CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
+kgen.func @or(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]] : vector<4xi32>
+  %0 = pop.or %lhs, %rhs : !pop.simd<4, si32>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+// -----
+
+// CHECK-LABEL: @xor
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
+kgen.func @xor(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : i1
+  %0 = pop.xor %lhs, %rhs : !pop.scalar<bool>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// -----
+
+// CHECK-LABEL: @xor
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<si8>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<si8>
+kgen.func @xor(%lhs: !pop.scalar<si8>, %rhs: !pop.scalar<si8>) -> !pop.scalar<si8> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : i8
+  %0 = pop.xor %lhs, %rhs : !pop.scalar<si8>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<si8>
+}
+
+// -----
+
+// CHECK-LABEL: @xor
+// CHECK-SAME: %[[LHS0:.*]]: !pop.simd<4, si32>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.simd<4, si32>
+kgen.func @xor(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]] : vector<4xi32>
+  %0 = pop.xor %lhs, %rhs : !pop.simd<4, si32>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+
 // -----
 
 // CHECK-LABEL: @cmp_simd
