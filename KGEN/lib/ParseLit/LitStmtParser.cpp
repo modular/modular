@@ -428,6 +428,12 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
   Value cond = parser.emitExprAsValue(condExp);
   if (!cond)
     return failure();
+
+  // TODO(types): we only support 'index' values as a hack right now.
+  if (!cond.getType().isIndex())
+    return parser.emitError(condExp->getLoc(), "value of type ")
+           << cond.getType() << " isn't convertible to Bool";
+
   auto &builder = parser.getBuilder();
   auto one = builder.create<index::ConstantOp>(cond.getLoc(), 1);
   condValue = builder.create<index::CmpOp>(

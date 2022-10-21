@@ -196,10 +196,17 @@ def f():
   pass # expected-error {{unexpected token in expression}}
   abc+abc
 
-
 # // -----
 
 struct Int:
 
 def f(a: Int, b: index):
   a = b+1 # expected-error {{cannot convert value of type 'index' to '!kgen.ref<@Int>'}}
+
+# // -----
+
+struct NotBoolConvertible:
+
+def f(a: NotBoolConvertible):
+  if a: # expected-error {{value of type '!kgen.ref<@NotBoolConvertible>' isn't convertible to Bool}}
+     pass
