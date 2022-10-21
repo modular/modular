@@ -5,12 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/Invoke.h"
-#include "LLCL/Runtime/CompactRuntimePtr.h"
 
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace M::LLCL;
 
 TEST(KGENInvokeTest, testinvokeKGENFunction) {
   auto noOp = [](void *, ssize_t, uint8_t, void *, ssize_t, uint8_t) {};
@@ -60,20 +58,4 @@ TEST(KGENInvokeTest, testinvokeSecondAddress) {
                    llvm::makeArrayRef<int32_t>(arry0, std::size(arry0)),
                    llvm::makeArrayRef<int32_t>(arry1, std::size(arry1))),
       reinterpret_cast<uintptr_t>(arry1));
-}
-
-TEST(KGENInvokeTest, testinvokeWithTensor) {
-  Tensor tensor = Tensor::getImmortal(
-      nullptr, TensorSpec({1, 2, 3}, DType::f32), CompactRuntimePtr());
-  EXPECT_EQ(KGEN::invoke([](void *ptr0, ssize_t, size_t shape0, size_t shape1,
-                            size_t shape2, size_t shape3, size_t shape4,
-                            uint8_t) { return shape1; },
-                         std::forward<Tensor>(tensor)),
-            2);
-
-  EXPECT_EQ(KGEN::invoke([](void *ptr0, ssize_t, size_t shape0, size_t shape1,
-                            size_t shape2, size_t shape3, size_t shape4,
-                            uint8_t, size_t val) { return val; },
-                         std::forward<Tensor>(tensor), 42),
-            42);
 }
