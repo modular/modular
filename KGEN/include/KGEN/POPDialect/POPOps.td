@@ -451,6 +451,82 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
   let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)";
 }
 
+//===----------------------------------------------------------------------===//
+// BitwiseOp
+//===----------------------------------------------------------------------===//
+
+// Base class for bitwise arithmetic pop operations.
+class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
+      POPOp<mnemonic, traits # [
+        Pure,
+        Commutative,
+        Idempotent,
+        SameOperandsAndResultType
+      ]> {
+
+  let arguments = (ins BoolOrIntegerScalarOrSIMD:$lhs,
+                       BoolOrIntegerScalarOrSIMD:$rhs);
+  let results = (outs BoolOrIntegerScalarOrSIMD:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
+}
+
+//===----------------------------------------------------------------------===//
+// AndOp
+//===----------------------------------------------------------------------===//
+
+def POP_AndOp : POP_BitwiseOp<"and"> {
+  let summary = "bitwise logical and";
+  let description = [{
+    The `pop.and` returns the bitwise logical and of its two operands. The dtype
+    of the operands must be boolean or integral.
+
+    Example:
+
+    ```mlir
+    %c = pop.and %a, %b : !pop.scalar<type>
+    %c = pop.and %a, %b : !pop.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// OrOp
+//===----------------------------------------------------------------------===//
+
+def POP_OrOp : POP_BitwiseOp<"or"> {
+  let summary = "bitwise logical or";
+  let description = [{
+    The `pop.or` returns the bitwise logical or of its two operands. The dtype
+    of the operands must be boolean or integral.
+
+    Example:
+
+    ```mlir
+    %c = pop.or %a, %b : !pop.scalar<type>
+    %c = pop.or %a, %b : !pop.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// XOrOp
+//===----------------------------------------------------------------------===//
+
+def POP_XOrOp : POP_BitwiseOp<"xor"> {
+  let summary = "bitwise logical xor";
+  let description = [{
+    The `pop.xor` returns the bitwise logical exclusive or of its two operands.
+    The dtype of the operands must be boolean or integral.
+
+    Example:
+
+    ```mlir
+    %c = pop.xor %a, %b : !pop.scalar<type>
+    %c = pop.xor %a, %b : !pop.simd<size, type>
+    ```
+  }];
+}
 
 //===----------------------------------------------------------------------===//
 // SelectOp

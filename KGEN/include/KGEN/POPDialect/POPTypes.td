@@ -176,6 +176,9 @@ def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
 
 def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
 
+def IntegerScalar : AllOfType<[POP_ScalarType, IntegerDType],
+                              "!pop.scalar<integral>">;
+
 def UI8Scalar : AllOfType<[POP_ScalarType, UI8DType], "!pop.scalar<ui8>">,
                 BuildableType<"POP::ScalarType::get($_builder.getContext(), "
                               "KGENDType::ui8)">;
@@ -223,6 +226,9 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
 
 def BoolSIMD : AllOfType<[POP_SIMDType, BoolDType], "!pop.simd<N, bool>">;
 
+def IntegerSIMD : AllOfType<[POP_SIMDType, IntegerDType],
+                            "!pop.simd<N, integral>">;
+
 def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType], "!pop.simd<N, address>">;
 
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
@@ -235,6 +241,12 @@ def ScalarOrSIMD : AnyTypeOf<
 
 def BoolScalarOrSIMD : AnyTypeOf<
     [BoolScalar, BoolSIMD, ParamRefType]>;
+
+def IntegerScalarOrSIMD : AnyTypeOf<
+    [IntegerScalar, IntegerSIMD, ParamRefType]>;
+
+def BoolOrIntegerScalarOrSIMD : AnyTypeOf<
+    [BoolScalar, IntegerScalar, BoolSIMD, IntegerSIMD, ParamRefType]>;
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
     [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
