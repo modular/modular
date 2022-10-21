@@ -357,7 +357,7 @@ static Type getBoolOfSameParentType(Type type) {
 
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
                                       ValueRange operands, DictionaryAttr attrs,
-                                      mlir::RegionRange regions,
+                                      RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
   Type argType = operands[0].getType();
   types.push_back(getBoolOfSameParentType(argType));
@@ -526,11 +526,11 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 //===----------------------------------------------------------------------===//
 
 /// Verify the value type matches the struct element type at the given index.
-static LogicalResult
-verifyStructValueType(Operation *op, mlir::TypedValue<StructType> container,
-                      IntegerAttr indexAttr, Type valueType,
-                      StringRef valueKind) {
-  ArrayRef<TypedAttr> elementTypes = container.getType().getElementTypes();
+static LogicalResult verifyStructValueType(Operation *op, StructType container,
+                                           IntegerAttr indexAttr,
+                                           Type valueType,
+                                           StringRef valueKind) {
+  ArrayRef<TypedAttr> elementTypes = container.getElementTypes();
   size_t index = indexAttr.getInt();
   if (index >= elementTypes.size())
     return op->emitOpError("element index ")
@@ -544,16 +544,30 @@ verifyStructValueType(Operation *op, mlir::TypedValue<StructType> container,
 }
 
 LogicalResult StructGetOp::verify() {
-  return verifyStructValueType(*this, getContainer(), getIndexAttr(), getType(),
-                               "result");
+  return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
+                               getType(), "result");
 }
 
-LogicalResult StructGetOp::inferReturnTypes(MLIRContext *context,
-                                            Optional<Location> loc,
-                                            ValueRange operands,
-                                            DictionaryAttr attrs,
-                                            mlir::RegionRange regions,
-                                            SmallVectorImpl<Type> &types) {
+template <typename OpT>
+static FailureOr<TypedAttr>
+inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
+                       StructType structType, DictionaryAttr attrs) {
+  if (!structType)
+    return emitError("expected struct operand");
+  mlir::OperationName name(OpT::getOperationName(), attrs.getContext());
+  auto indexAttr =
+      dyn_cast_if_present<IntegerAttr>(attrs.get(OpT::getIndexAttrName(name)));
+  if (!indexAttr)
+    return emitError("expected an integer index attribute");
+  size_t index = indexAttr.getInt();
+  if (index >= structType.getNumElements())
+    return emitError("struct element index out of bounds");
+  return structType.getElementTypes()[index];
+}
+
+LogicalResult StructGetOp::inferReturnTypes(
+    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     if (loc)
       return mlir::emitError(*loc, msg);
@@ -562,18 +576,11 @@ LogicalResult StructGetOp::inferReturnTypes(MLIRContext *context,
   if (operands.size() != 1)
     return emitError("expected 1 operand");
   auto structType = dyn_cast<StructType>(operands.front().getType());
-  if (!structType)
-    return emitError("expected struct operand");
-  mlir::OperationName name(getOperationName(), context);
-  auto indexAttr =
-      dyn_cast_if_present<IntegerAttr>(attrs.get(getIndexAttrName(name)));
-  if (!indexAttr)
-    return emitError("expected an integer index attribute");
-  size_t index = indexAttr.getInt();
-  if (index >= structType.getNumElements())
-    return emitError("struct element index out of bounds");
-  types.push_back(ParamRefType::get(structType.getElementTypes()[index]));
-  return success();
+  FailureOr<TypedAttr> type =
+      inferStructElementType<StructGetOp>(emitError, structType, attrs);
+  if (succeeded(type))
+    types.push_back(ParamRefType::get(*type));
+  return type;
 }
 
 void StructGetOp::build(OpBuilder &b, OperationState &state, Value container,
@@ -601,8 +608,40 @@ static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
                                  Type structType, IntegerAttr index) {}
 
 LogicalResult StructReplaceOp::verify() {
-  return verifyStructValueType(*this, getContainer(), getIndexAttr(),
+  return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getValue().getType(), "operand");
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult StructGEPOp::verify() {
+  return verifyStructValueType(
+      *this,
+      cast<StructType>(getContainer().getType().getResolvedElementType()),
+      getIndexAttr(), ParamRefType::get(getType().getElementType()), "result");
+}
+
+LogicalResult StructGEPOp::inferReturnTypes(
+    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    if (loc)
+      return mlir::emitError(*loc, msg);
+    return failure();
+  };
+  if (operands.size() != 1)
+    return emitError("expected 1 operand");
+  auto pointerType = dyn_cast<PointerType>(operands.front().getType());
+  if (!pointerType)
+    return emitError("expected pointer operand");
+  auto structType = dyn_cast<StructType>(pointerType.getResolvedElementType());
+  FailureOr<TypedAttr> type =
+      inferStructElementType<StructGetOp>(emitError, structType, attrs);
+  if (succeeded(type))
+    types.push_back(PointerType::get(*type));
+  return type;
 }
 
 //===----------------------------------------------------------------------===//
@@ -674,6 +713,16 @@ LogicalResult ArrayGetOp::verify() {
 
 LogicalResult ArrayReplaceOp::verify() {
   return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayGEPOp
+//===----------------------------------------------------------------------===//
+
+static Type getPointerToArrayElementType(Type arrayPtr) {
+  return PointerType::get(
+      cast<POP::ArrayType>(cast<PointerType>(arrayPtr).getResolvedElementType())
+          .getElementType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -793,8 +842,7 @@ parseVariantVisitRegions(OpAsmParser &p, TypeArrayAttr &cases,
 }
 
 static void printVariantVisitRegions(OpAsmPrinter &p, Operation *op,
-                                     TypeArrayAttr cases,
-                                     mlir::RegionRange regions) {
+                                     TypeArrayAttr cases, RegionRange regions) {
   for (auto [caseType, region] : llvm::zip(cases, regions)) {
     p.printNewline();
     p << "case (";

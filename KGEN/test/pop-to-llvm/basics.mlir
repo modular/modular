@@ -597,6 +597,13 @@ kgen.func @array_get_replace(%a: !pop.array<2, i32>) -> !pop.array<2, i32> {
   kgen.return %1 : !pop.array<2, i32>
 }
 
+// CHECK-LABEL: @array_gep
+kgen.func @array_gep(%a: !pop.pointer<array<2, i32>>, %i: index) -> !pop.pointer<i32> {
+  // CHECK: llvm.getelementptr %{{.*}}[0, %{{.*}}] : (!llvm.ptr<array<2 x i32>>, {{.*}}) -> !llvm.ptr<i32>
+  %0 = pop.array.gep %a[%i] : <array<2, i32>>
+  kgen.return %0 : !pop.pointer<i32>
+}
+
 // -----
 
 kgen.func @indirect_call(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f32, f64) {

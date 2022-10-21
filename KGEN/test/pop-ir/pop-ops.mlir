@@ -674,7 +674,7 @@ kgen.generator @struct<type: type, dtype: dtype>(
   %a: !kgen.paramref<type>,
   // CHECK-SAME: %[[B:.*]]: !pop.scalar
   %b: !pop.scalar<dtype>
-) -> (!kgen.paramref<type>, !pop.scalar<dtype>) {
+) -> (!kgen.paramref<type>, !pop.scalar<dtype>, !pop.pointer<type>) {
   // CHECK: %[[S0:.*]] = pop.struct.construct(%[[A]], %[[B]]) : !pop.struct<type, scalar<dtype>>
   %0 = pop.struct.construct(%a, %b) : !pop.struct<type, scalar<dtype>>
   // CHECK: %[[V0:.*]] = pop.struct.get %[[S0]][0] : !pop.struct<type, scalar<dtype>>
@@ -685,8 +685,14 @@ kgen.generator @struct<type: type, dtype: dtype>(
   %3 = pop.struct.replace %1, %0[0] : !pop.struct<type, scalar<dtype>>
   // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1] : !pop.struct<type, scalar<dtype>>
   %4 = pop.struct.replace %2, %3[1] : !pop.struct<type, scalar<dtype>>
-  // CHECK: return %[[V0]], %[[V1]] : !kgen.paramref<type>, !pop.scalar<dtype>
-  kgen.return %1, %2 : !kgen.paramref<type>, !pop.scalar<dtype>
+
+  // CHECK: %[[STRUCT_PTR:.*]] = pop.stack_allocation
+  %struct = pop.stack_allocation 1 : !pop.struct<i32, type>
+  // CHECK: %[[EL_PTR:.*]] = pop.struct.gep %[[STRUCT_PTR]][1] : <struct<i32, type>>
+  %el = pop.struct.gep %struct[1] : <struct<i32, type>>
+
+  // CHECK: return %[[V0]], %[[V1]], %[[EL_PTR]] : !kgen.paramref<type>, !pop.scalar<dtype>, !pop.pointer<type>
+  kgen.return %1, %2, %el : !kgen.paramref<type>, !pop.scalar<dtype>, !pop.pointer<type>
 }
 
 // CHECK-LABEL: @pointer_types
@@ -726,7 +732,8 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !pop.simd<1, f32> {
 }
 
 // CHECK-LABEL: @array_ops
-kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>) -> !pop.array<2, T> {
+kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
+    -> (!pop.array<2, T>, !pop.pointer<T>) {
   // CHECK: pop.array.create [%arg0, %arg0] : !pop.array<2, T>
   %0 = pop.array.create [%arg0, %arg0] : !pop.array<2, T>
   // CHECK: pop.array.get %0[1] : !pop.array<2, T>
@@ -737,7 +744,15 @@ kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>) ->
   %3 = pop.constant(0) : !pop.array<N, scalar<dtype>>
   // CHECK: pop.constant(#M.dense_array<0.{{0+}}e+00, 1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<3xf64>) : !pop.array<3, scalar<f64>>
   %4 = pop.constant(#M.dense_array<0.0, 1.0, 2.0> : !M.array<3xf64>) : !pop.array<3, scalar<f64>>
-  kgen.return %2 : !pop.array<2, T>
+
+  // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 : !pop.array<4, T>
+  %5 = pop.stack_allocation 1 : !pop.array<4, T>
+  // CHECK: %[[IDX:.*]] = index.constant
+  %6 = index.constant 2
+  // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
+  %7 = pop.array.gep %5[%6] : <array<4, T>>
+
+  kgen.return %2, %7 : !pop.array<2, T>, !pop.pointer<T>
 }
 
 // CHECK-LABEL: @variant_type
