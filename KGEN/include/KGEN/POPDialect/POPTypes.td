@@ -176,6 +176,10 @@ def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
 
 def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
 
+def UI8Scalar : AllOfType<[POP_ScalarType, UI8DType], "!pop.scalar<ui8>">,
+                BuildableType<"POP::ScalarType::get($_builder.getContext(), "
+                              "KGENDType::ui8)">;
+
 def UnboundOrIntegerScalar : AllOfType<[POP_ScalarType, IntegerOrUnboundDType],
     "whose value is either unbound or a integral dtype">;
 def UnboundOrFloatScalar : AllOfType<[POP_ScalarType, FloatOrUnboundDType],
