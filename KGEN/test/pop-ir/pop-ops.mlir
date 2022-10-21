@@ -19,6 +19,10 @@ kgen.func @pop_constant_simd() {
   %1 = pop.constant(#M.dense_array<32., 64.> : vector<2xf64>) : !pop.simd<2, f64>
   // CHECK: pop.constant(#M.dense_array<32, 64>
   %2 = pop.constant(#M.dense_array<32, 64> : vector<2xui32>) : !pop.simd<2, ui32>
+  // CHECK: pop.constant(42 : ui32)
+  %3 = pop.constant(42 : ui32) : !pop.simd<2, ui32>
+  // CHECK: pop.constant(7 : si32)
+  %4 = pop.constant(7 : si32) : !pop.simd<1, si32>
   kgen.return
 }
 

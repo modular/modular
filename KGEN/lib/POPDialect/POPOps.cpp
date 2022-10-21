@@ -284,21 +284,22 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
 
   // Verify vector constant.
   auto simd = type.cast<SIMDType>();
-  // If the size is specified, require an attribute of the same shape.
-  if (Optional<int64_t> size = simd.getResolvedSize()) {
-    auto elements = dyn_cast<ArrayElementsAttr>(value);
-    if (!elements)
-      return emitError("expected array elements attribute for vector "
-                       "constant with known size");
-    auto type = dyn_cast<VectorType>(elements.getType());
-    if (!type || type.getRank() != 1 || type.getShape().front() != *size)
-      return emitError("expected attribute type to be vector<")
-             << *size << "xT>";
-  } else if (!value.isa<IntegerAttr, FloatAttr>()) {
+  // If the attribute is scalar, we only need to check its dtype.
+  if (value.isa<IntegerAttr, FloatAttr>())
+    return checkDType(simd.cast<DTypeInterface>());
+
+  // The attribute is array, and its size needs to match the simd size.
+  Optional<int64_t> size = simd.getResolvedSize();
+  if (!size)
     return emitError("expected integer or float attribute for vector "
                      "constant of unspecified size");
-  }
-  // If the dtype is specified, ensure it matches the attribute type.
+  auto elements = dyn_cast<ArrayElementsAttr>(value);
+  if (!elements)
+    return emitError("expected array elements attribute for vector constant "
+                     "with known size");
+  auto vtype = dyn_cast<VectorType>(elements.getType());
+  if (!vtype || vtype.getRank() != 1 || vtype.getShape().front() != *size)
+    return emitError("expected attribute type to be vector<") << *size << "xT>";
   return checkDType(simd.cast<DTypeInterface>());
 }
 

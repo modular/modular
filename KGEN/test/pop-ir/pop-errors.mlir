@@ -25,14 +25,6 @@ kgen.func @pop_constant() {
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{expected array elements attribute for vector constant with known size}}
-  %0 = pop.constant(0 : i32) : !pop.simd<2, si32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @pop_constant() {
   // expected-error @below {{expected attribute type to be vector<2xT>}}
   %0 = pop.constant(#M.dense_array<0.0, 0.0> : tensor<2xf32>) : !pop.simd<2, f32>
   kgen.return
