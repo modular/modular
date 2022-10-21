@@ -572,6 +572,26 @@ kgen.func @array_create(%a: i32) -> !pop.array<2, i32> {
   kgen.return %0 : !pop.array<2, i32>
 }
 
+// -----
+
+// CHECK-LABEL: @array_create_issue_4004
+kgen.func @array_create_issue_4004() -> !pop.array<3, index> {
+  // CHECK: %[[VAL0:.*]] = index.constant 64
+  // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[VAL0]]
+  %val = index.constant 64
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.array<3 x i64>
+  // CHECK: %[[A0:.*]] = llvm.insertvalue %[[VAL]], %[[UNDEF]][0] : !llvm.array<3 x i64>
+  // CHECK: %[[A1:.*]] = llvm.insertvalue %[[VAL]], %[[A0]][1] : !llvm.array<3 x i64>
+  // CHECK: %[[A2:.*]] = llvm.insertvalue %[[VAL]], %[[A1]][2] : !llvm.array<3 x i64>
+  %arry = pop.array.create [%val, %val, %val] : !pop.array<3, index>
+  // CHECK: %[[ARRY:.*]] = builtin.unrealized_conversion_cast %[[A2]]
+  // CHECK: kgen.return %[[ARRY]]
+  kgen.return %arry : !pop.array<3, index>
+}
+
+
+// -----
+
 // CHECK-LABEL: @array_repeat0
 kgen.func @array_repeat0(%a: i32, %b: i32) -> !pop.array<3, i32> {
   // CHECK: llvm.insertvalue %arg0, %{{.*}}[0]
@@ -581,12 +601,16 @@ kgen.func @array_repeat0(%a: i32, %b: i32) -> !pop.array<3, i32> {
   kgen.return %0 : !pop.array<3, i32>
 }
 
+// -----
+
 // CHECK-LABEL: @array_repeat1
 kgen.func @array_repeat1(%a: i32, %b: i32) -> !pop.array<1, i32> {
   // CHECK: llvm.insertvalue %arg0, %{{.*}}[0]
   %0 = pop.array.repeat [%a, %b] : !pop.array<1, i32>
   kgen.return %0 : !pop.array<1, i32>
 }
+
+// -----
 
 // CHECK-LABEL: @array_get_replace
 kgen.func @array_get_replace(%a: !pop.array<2, i32>) -> !pop.array<2, i32> {
