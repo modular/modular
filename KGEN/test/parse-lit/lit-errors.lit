@@ -196,3 +196,11 @@ def f():
   var abc :
   pass # expected-error {{unexpected token in expression}}
   abc+abc
+
+
+# // -----
+
+struct Int:
+
+def f(a: Int, b: index):
+  a = b+1 # expected-error {{cannot convert value of type 'index' to '!kgen.ref<@Int>'}}

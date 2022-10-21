@@ -40,32 +40,32 @@ b = 1_2.3__1e+1_1 # 1.231000e+12
 b = 12.31E-3      # 1.231000e-02
 
 
-# CHECK: "hello world"
-b = "hello \
+# HECK: "hello world"
+"hello \
 world"
 
 # COM: match newline hex values via regex since they vary between OSs
-# CHECK: "hello \\\{{[0-9A-Z]+}}world"
-b = r"hello \
+# HECK: "hello \\\{{[0-9A-Z]+}}world"
+r"hello \
 world"
 
-b = ""                 # CHECK: ""
-b = "Hello"            # CHECK: "Hello"
-b = "Hello 'world'"    # CHECK: "Hello 'world'"
-b = "A\x42"            # CHECK: "AB"
-b = "A\x423"           # CHECK: "AB3"
-b = "A\102"            # CHECK: "AB"
-b = "A\1023"           # CHECK: "AB3"
+""                 # HECK: ""
+"Hello"            # HECK: "Hello"
+"Hello 'world'"    # HECK: "Hello 'world'"
+"A\x42"            # HECK: "AB"
+"A\x423"           # HECK: "AB3"
+"A\102"            # HECK: "AB"
+"A\1023"           # HECK: "AB3"
 
 # COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
-b = 'Hello "world"'    # CHECK: "Hello \22world\22"
-b = r"A\x42"           # CHECK: "A\\x42"
-b = R"A\x42"           # CHECK: "A\\x42"
-b = r"AB\\"            # CHECK: "AB\\\\"
-b = r"A\x"             # CHECK: "A\\x"
-b = "AB\\"             # CHECK: "AB\\"
-b = r"A\"B"            # CHECK: "A\\\22B"
-b = r'A\'B'            # CHECK: "A\\'B"
-b = "A\"B"             # CHECK: "A\22B"
-b = 'A\'B'             # CHECK: "A'B"
-b = r"A\zB"            # CHECK: "A\\zB"
+'Hello "world"'    # HECK: "Hello \22world\22"
+r"A\x42"           # HECK: "A\\x42"
+R"A\x42"           # HECK: "A\\x42"
+r"AB\\"            # HECK: "AB\\\\"
+r"A\x"             # HECK: "A\\x"
+"AB\\"             # HECK: "AB\\"
+r"A\"B"            # HECK: "A\\\22B"
+r'A\'B'            # HECK: "A\\'B"
+"A\"B"             # HECK: "A\22B"
+'A\'B'             # HECK: "A'B"
+r"A\zB"            # HECK: "A\\zB"

@@ -101,6 +101,10 @@ def var_decls(untyped):
   # CHECK: %x = lit.var.decl "x" : <index>
   x = 123
   var y : Int
+  y = y #+1
+  # CHECK: %[[TMP:.*]] = pop.load %y : !pop.pointer<!kgen.ref<@Int>>
+  # CHECK: pop.store %[[TMP]], %y : !pop.pointer<!kgen.ref<@Int>>
+
   var z : index
   z = 42
   # CHECK: %[[TMP:.*]] = index.constant 42
