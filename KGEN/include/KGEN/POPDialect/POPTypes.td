@@ -204,7 +204,8 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
+    TypeBuilderWithInferredContext<(ins "int64_t":$size, "TypedAttr":$dtype)>
   ];
 
   let extraClassDeclaration = [{
