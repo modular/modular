@@ -654,3 +654,34 @@ kgen.func @memcpy_inline(%dest: !pop.pointer<scalar<f32>>,
   pop.memcpy inline %dest, %src, %size : !pop.pointer<scalar<f32>>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @memset
+kgen.func @memset(%dest: !pop.pointer<scalar<si32>>,
+                  %val: !pop.scalar<ui8>,
+                  %size: index) {
+  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: %[[VAL_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %arg2
+  // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(false) : i1
+  // CHECK:  "llvm.intr.memset"(%[[DEST_CAST]], %[[VAL_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, i8, i64, i1) -> ()
+  pop.memset %dest, %val, %size : !pop.pointer<scalar<si32>>
+  kgen.return
+}
+
+
+// -----
+
+// CHECK-LABEL: @memset_volatile
+kgen.func @memset_volatile(%dest: !pop.pointer<scalar<si32>>,
+                           %val: !pop.scalar<ui8>,
+                           %size: index) {
+  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: %[[VAL_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %arg2
+  // CHECK: %[[VOLATILE:.*]] = llvm.mlir.constant(true) : i1
+  // CHECK:  "llvm.intr.memset"(%[[DEST_CAST]], %[[VAL_CAST]], %[[SIZE_CAST]], %[[VOLATILE]]) : (!llvm.ptr<i32>, i8, i64, i1) -> ()
+  pop.memset volatile %dest, %val, %size : !pop.pointer<scalar<si32>>
+  kgen.return
+}
