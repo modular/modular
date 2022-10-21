@@ -12,8 +12,8 @@
 # CHECK-NEXT:  } do {
 # CHECK-NEXT:    index.constant 0
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a : !pop.pointer<index>
-# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
 # CHECK-NEXT:    %[[LOAD_B:.*]] = pop.load %[[VAR_B:.*]] : !pop.pointer<index>
+# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
 # CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_B]], %[[ONE]])
 # CHECK-NEXT:    scf.if %[[CMP]] {
 # CHECK-NEXT:      {{.+}} = index.constant 1
@@ -27,16 +27,15 @@
 # CHECK-NEXT:  pop.load
 # CHECK-NEXT:  kgen.return
 # CHECK-NEXT:  }
-
-
 def test_while(a: index, b: index) -> index:
-  while a:
-    inside_a = 0
-    if b:
-      inside_b = 1
-  else:
-    inside_else = 2
-  return a
+    while a:
+        inside_a = 0
+        if b:
+            inside_b = 1
+    else:
+        inside_else = 2
+    return a
+
 
 # CHECK-LABEL: lit.func public @test_simple(%a: index)
 # CHECK:       scf.while : () -> () {
@@ -49,7 +48,26 @@ def test_while(a: index, b: index) -> index:
 # CHECK-NEXT:   }
 # CHECK-NEXT:   kgen.return
 # CHECK-NEXT: }
-
 def test_simple(a: index):
-  while a:
-     pass
+    while a:
+        pass
+
+
+# CHECK-LABEL: lit.func public @test_else_outside_while
+def test_else_outside_while(a: index, b: index) -> index:
+    # CHECK: scf.if {{.+}} {
+    if b:
+        # CHECK: scf.while :
+        # CHECK: {{.+}} = pop.load %a
+        # CHECK: } do {
+        while a:
+            # CHECK: pop.store {{.+}}, %inside_a
+            inside_a = 0
+            # CHECK: scf.yield
+    # CHECK: } else {
+    else:
+        # CHECK: pop.store {{.+}}, %inside_else
+        inside_else = 2
+    # CHECK: }
+    # CHECK: kgen.return
+    return a
