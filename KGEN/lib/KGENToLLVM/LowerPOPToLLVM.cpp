@@ -796,10 +796,9 @@ struct ConvertPOPArrayCreate
       return op.emitError("failed to convert array type");
 
     Value array = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
-    for (auto &operand : llvm::enumerate(op.getOperands())) {
-      array = rewriter.create<LLVM::InsertValueOp>(
-          op.getLoc(), array, operand.value(), operand.index());
-    }
+    for (auto [idx, val] : llvm::enumerate(adaptor.getOperands()))
+      array =
+          rewriter.create<LLVM::InsertValueOp>(op.getLoc(), array, val, idx);
     rewriter.replaceOp(op, array);
     return success();
   }
