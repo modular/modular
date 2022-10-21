@@ -74,8 +74,6 @@ static Value convertValue(Value value) {
   Type type = convertType(value.getType());
   assert(type != value.getType());
   auto b = OpBuilder::atBlockBegin(value.getParentBlock());
-  if (Operation *op = value.getDefiningOp())
-    b.setInsertionPointAfter(op);
   return b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), type, value)
       .getResult(0);
 }
@@ -735,7 +733,6 @@ struct ConvertZAPNDBufferSIMDLoad
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(NDBufferSIMDLoadOp op,
-
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value popBuf = convertValue(op.getNDBuffer());
@@ -917,7 +914,7 @@ void LowerZAPToPOPPass::runOnOperation() {
       return convertType(itf.replaceSubElements(convertType));
     return convertType(type);
   };
-  theModule.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+  theModule.walk([&](Operation *op) {
     op->setAttrs(cast<DictionaryAttr>(
         op->getAttrDictionary().replaceSubElements(convertType)));
     for (Value value : op->getResults())
@@ -926,7 +923,9 @@ void LowerZAPToPOPPass::runOnOperation() {
       for (Value value : region.getArguments())
         value.setType(convertNestedTypes(value.getType()));
     if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
-      if (cast.getOperandTypes() == cast.getResultTypes())
+      if (llvm::any_of(cast.getOperandTypes(), [&](Type type) {
+            return &type.getDialect() == zapDialect;
+          }))
         rewriter.replaceOp(cast, cast.getInputs());
   });
 }
