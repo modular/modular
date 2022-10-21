@@ -39,8 +39,7 @@ void ZAPDialect::registerTypes() {
 
 template <typename Op>
 static Optional<KGENDType> getResolvedDType(Op *op) {
-  if (auto dtype =
-          op->getDType().template dyn_cast_or_null<DTypeConstantAttr>())
+  if (auto dtype = dyn_cast_if_present<DTypeConstantAttr>(op->getDType()))
     return dtype.getDType();
   return {};
 }

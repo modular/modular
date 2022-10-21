@@ -296,7 +296,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_dtype' operand should be a !kgen.mlirtype";
     if (!type.isa<DTypeType>())
       return emitError() << "'get_dtype' should return a !kgen.dtype";
-    if (auto typeCst = operands[0].dyn_cast<TypeConstantAttr>()) {
+    if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(operands[0])) {
       if (!typeCst.getValue().isa<DTypeInterface>())
         return emitError() << "'get_dtype' constant type operand does not "
                               "implement DTypeInterface";
@@ -325,7 +325,7 @@ LogicalResult ParamOperatorAttr::verify(
 /// If the specified attribute is a ParamOperatorAttr with the specified opcode,
 /// return it.  Otherwise return null.
 static ParamOperatorAttr dyn_castPE(POC opcode, Attribute value) {
-  if (auto expr = value.dyn_cast<ParamOperatorAttr>())
+  if (auto expr = dyn_cast<ParamOperatorAttr>(value))
     if (expr.getOpcode() == opcode)
       return expr;
   return {};
@@ -737,7 +737,7 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
   // Implement support for identities like `x/1 = x`.
-  if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isOne())
       return operands[0];
 
@@ -748,7 +748,7 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
   // Implement support for identities like `x%1 = 0`.
-  if (auto rhs = operands[1].dyn_cast<IntegerAttr>())
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isOne())
       return IntegerAttr::get(rhs.getType(), 0);
 
@@ -771,8 +771,8 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
   // We only support signed arithmetic so far.
   assert(operands[0].getType().isIndex());
 
-  auto rhs = operands[1].dyn_cast<IntegerAttr>();
-  auto lhs = operands[0].dyn_cast<IntegerAttr>();
+  auto rhs = dyn_cast<IntegerAttr>(operands[1]);
+  auto lhs = dyn_cast<IntegerAttr>(operands[0]);
 
   if (rhs && !lhs) {
     // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
@@ -1013,7 +1013,7 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   assert(!replAttrs.empty() && replTypes.empty());
   SmallVector<TypedAttr> castedAttrs;
   for (auto attr : replAttrs) {
-    castedAttrs.push_back(attr.dyn_cast<TypedAttr>());
+    castedAttrs.push_back(llvm::dyn_cast<TypedAttr>(attr));
     // Reject attempts to change an operand to something that isn't a TypedAttr.
     if (!castedAttrs.back())
       return {};
@@ -1099,7 +1099,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
   // un-opposing signedness; signed integer dtypes can be converted to signless
   // and signed MLIR integer types but not unsigned.
   if (dtype.isInt()) {
-    auto intType = type.dyn_cast<IntegerType>();
+    auto intType = llvm::dyn_cast<IntegerType>(type);
     if (!intType || intType.getWidth() != dtype.getWidthInBits())
       return false;
     return intType.isSignless() || intType.isSigned() == dtype.isSInt();
@@ -1107,7 +1107,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
 
   // Floating point dtypes can be converted to equivalent MLIR float types.
   if (dtype.isFloat()) {
-    if (auto fpType = type.dyn_cast<FloatType>())
+    if (auto fpType = llvm::dyn_cast<FloatType>(type))
       return areEquivalentFloatTypes(dtype, fpType);
     return false;
   }
@@ -1127,13 +1127,13 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     return false;
 
   // Integers can be converted to dtypes of the same width and signedness.
-  if (auto intType = type.dyn_cast<IntegerType>()) {
+  if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
     return dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
            dtype.isSInt() == intType.isSigned();
   }
 
   // Floating point types can be converted to equivalent dtypes.
-  if (auto fpType = type.dyn_cast<FloatType>())
+  if (auto fpType = llvm::dyn_cast<FloatType>(type))
     return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
 
   return false;

@@ -58,7 +58,7 @@ Type ArrayType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
 }
 
 Optional<int64_t> ArrayType::getResolvedSize() const {
-  if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
+  if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
 }
@@ -116,7 +116,7 @@ Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 Type PointerType::getResolvedElementType() const {
-  if (auto typeCst = getElementType().dyn_cast<TypeConstantAttr>())
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
     return typeCst.getValue();
   return nullptr;
 }
@@ -189,7 +189,7 @@ Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 Optional<int64_t> SIMDType::getResolvedSize() const {
-  if (auto intAttr = getSize().dyn_cast<IntegerAttr>())
+  if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
 }
@@ -233,7 +233,7 @@ Type StructType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
 LogicalResult
 StructType::resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const {
   for (TypedAttr elementType : getElementTypes()) {
-    if (auto type = elementType.dyn_cast<TypeConstantAttr>())
+    if (auto type = llvm::dyn_cast<TypeConstantAttr>(elementType))
       elementTypes.push_back(type.getValue());
     else
       return failure();
@@ -292,7 +292,7 @@ Type VariantType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   SmallVector<TypedAttr> variantTypes;
   variantTypes.reserve(replAttrs.size());
   for (Attribute attr : replAttrs)
-    variantTypes.push_back(attr.cast<TypedAttr>());
+    variantTypes.push_back(llvm::cast<TypedAttr>(attr));
   return get(getContext(), variantTypes);
 }
 
@@ -363,7 +363,7 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
 /// type without the dialect prefix.
 void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
   // If this isn't a type constant, defer to the parameter value printer.
-  auto typeCst = typeExpr.dyn_cast<TypeConstantAttr>();
+  auto typeCst = dyn_cast<TypeConstantAttr>(typeExpr);
   if (!typeCst)
     return printTypeParamValue(p, typeExpr);
 
