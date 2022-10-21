@@ -274,6 +274,11 @@ ParseResult LitStmtParser::parseSimpleStmt() {
 ///          | attributeref | subscription | slicing | "*" target
 ///
 ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
+  // Finish parsing the assignment.
+  ExprNode *rhs = nullptr;
+  if (parseExpression(rhs))
+    return failure();
+
   // Resolve the parse expression on the LHS into an lvalue that we can store
   // into.
   // TODO: implement support for generalized lvalues / target_list.
@@ -285,10 +290,11 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
     return success();
   }
 
-  // Use this builder to place any VarDeclOps. In Python there is only one
-  // scope per function and all variables belong to that scope, so builders
-  // should reflect that.
-  auto funcBodyBuilder = scope.getDeclBuilder();
+  // Materialize the expression statement in our current scope.
+  auto rhsValue = emitExprAsValue(rhs);
+  // If IR generation failed, return success since we have a fine parse.
+  if (!rhsValue)
+    return success();
 
   // Look up the name being assigned to if it already exists.
   auto nameAttr = builder.getStringAttr(dre->spelling);
@@ -296,45 +302,46 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   if (Optional<Scope::NameEntry> decl = scope.lookupInCurrentScope(nameAttr)) {
     // Don't allow reassigning to functions and other constant parameters.
     VarDeclOp var;
-    if (std::holds_alternative<Scope *>(decl.value()))
-      var = dyn_cast<VarDeclOp>(std::get<Scope *>(decl.value())->getDecl());
-    if (var)
+    if (std::holds_alternative<Scope *>(decl.value())) {
+      Scope &varScope = *std::get<Scope *>(decl.value());
+      var = dyn_cast<VarDeclOp>(varScope.getDecl());
+      // Make sure the destination is resolved, an error will be diagnosed so
+      // we can just return parse success.
+      if (failed(getDeclResolver().resolve(
+              varScope, DeclResolvedness::signatureResolved, lhs->getLoc())))
+        return success();
+    }
+
+    if (var) {
       lvalue = var.getResult();
-    else
+    } else {
       emitError(lhs->getLoc(), "this declaration isn't reassignable");
+      return success();
+    }
   } else {
-    // Otherwise, introduce a new lit.var.decl node.
+    // Otherwise, introduce a new lit.var.decl node whose type matches the
+    // initializer expression.
+    //
+    // TODO(autopromotions): turn infinite integers into concrete ones as
+    // needed.
+    auto declType = POP::PointerType::get(rhsValue.getType());
 
-    // TODO(types): Add types instead of hard coding to index type!
-    auto declType = POP::PointerType::get(builder.getIndexType());
-
-    // TODO: This will emit it on first use, which can be in weird places (e.g.
-    // inside of the branch of an if statement).  We want to use dataflow
-    // analysis to do definitive analysis of the accesses to the declaration. We
-    // could just emit all these in the entry to the enclosing function/module
-    // to maintain SSA.
-    auto varDecl = funcBodyBuilder.create<VarDeclOp>(
+    // Use this builder to place any VarDeclOps. In Python there is only one
+    // scope per function and all variables belong to that scope, so builders
+    // should reflect that.
+    auto varDecl = scope.getDeclBuilder().create<VarDeclOp>(
         translateLocation(lhs->getLoc()), declType, nameAttr);
     getDeclResolver().addFullyResolvedDecl(varDecl, &scope);
     lvalue = varDecl;
   }
 
-  ExprNode *rhs = nullptr;
-  if (parseExpression(rhs))
-    return failure();
-
-  // Materialize the expression statement in our current scope.
-  // TODO: Should pass in contextual type if known from previous declaration.
-  auto rhsValue = emitExprAsValue(rhs);
-
-  // If IR generation failed, return success since we have a fine parse.
-  if (!lvalue || !rhsValue)
-    return success();
-
-  // TODO(types): this is incorrect for index types, need to coerce to the
-  // destination type.
-  if (!rhsValue.getType().isIndex()) {
-    // emitError(rhs->getLoc(), "TODO: don't support non-index types yet");
+  // Check to see if the destination type and the source type are compatible.
+  auto destEltType =
+      cast<POP::PointerType>(lvalue.getType()).getResolvedElementType();
+  // TODO: Implement implicit conversions.
+  if (destEltType && destEltType != rhsValue.getType()) {
+    emitError(rhs->getLoc(), "cannot convert value of type ")
+        << rhsValue.getType() << " to " << destEltType;
     return success();
   }
 
