@@ -687,7 +687,7 @@ kgen.generator @struct<type: type, dtype: dtype>(
   %4 = pop.struct.replace %2, %3[1] : !pop.struct<type, scalar<dtype>>
 
   // CHECK: %[[STRUCT_PTR:.*]] = pop.stack_allocation
-  %struct = pop.stack_allocation 1 : !pop.struct<i32, type>
+  %struct = pop.stack_allocation 1 x !pop.struct<i32, type>
   // CHECK: %[[EL_PTR:.*]] = pop.struct.gep %[[STRUCT_PTR]][1] : <struct<i32, type>>
   %el = pop.struct.gep %struct[1] : <struct<i32, type>>
 
@@ -745,8 +745,8 @@ kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
   // CHECK: pop.constant(#M.dense_array<0.{{0+}}e+00, 1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<3xf64>) : !pop.array<3, scalar<f64>>
   %4 = pop.constant(#M.dense_array<0.0, 1.0, 2.0> : !M.array<3xf64>) : !pop.array<3, scalar<f64>>
 
-  // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 : !pop.array<4, T>
-  %5 = pop.stack_allocation 1 : !pop.array<4, T>
+  // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x !pop.array<4, T>
+  %5 = pop.stack_allocation 1 x !pop.array<4, T>
   // CHECK: %[[IDX:.*]] = index.constant
   %6 = index.constant 2
   // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
