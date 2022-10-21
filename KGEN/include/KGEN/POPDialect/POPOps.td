@@ -17,6 +17,7 @@ include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1540,7 +1541,9 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
+def POP_MemcpyOp : POPOp<"memcpy", [
+    CopyOpInterface,
+    AllTypesMatch<["dest", "src"]>,]> {
   let summary = "copies memory from one location to another";
   let description = [{
     The `pop.memcpy` operation copies memory from the src operand to the
@@ -1578,11 +1581,16 @@ def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
     ```
   }];
 
-  let arguments = (ins POP_PointerType:$dest,
-                       POP_PointerType:$src,
+  let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
+                       Arg<POP_PointerType, "", [MemRead]>:$src,
                        Index:$size,
                        OptionalAttr<UnitAttr>:$isInlined,
                        OptionalAttr<UnitAttr>:$isVolatile);
+
+  let extraClassDeclaration = [{
+    Value getSource() { return getSrc(); }
+    Value getTarget() { return getDest(); }
+  }];
 
   let assemblyFormat = [{
     (`inline` $isInlined^)? (`volatile` $isVolatile^)? operands attr-dict `:`
@@ -1625,7 +1633,7 @@ def POP_MemsetOp : POPOp<"memset"> {
     ```
   }];
 
-  let arguments = (ins POP_PointerType:$dest,
+  let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
                        UI8Scalar:$value,
                        Index:$size,
                        OptionalAttr<UnitAttr>:$isVolatile);
