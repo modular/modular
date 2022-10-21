@@ -74,6 +74,8 @@ static Value convertValue(Value value) {
   Type type = convertType(value.getType());
   assert(type != value.getType());
   auto b = OpBuilder::atBlockBegin(value.getParentBlock());
+  if (Operation *op = value.getDefiningOp())
+    b.setInsertionPointAfter(op);
   return b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), type, value)
       .getResult(0);
 }
@@ -915,7 +917,7 @@ void LowerZAPToPOPPass::runOnOperation() {
       return convertType(itf.replaceSubElements(convertType));
     return convertType(type);
   };
-  theModule.walk([&](Operation *op) {
+  theModule.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     op->setAttrs(cast<DictionaryAttr>(
         op->getAttrDictionary().replaceSubElements(convertType)));
     for (Value value : op->getResults())
@@ -924,6 +926,7 @@ void LowerZAPToPOPPass::runOnOperation() {
       for (Value value : region.getArguments())
         value.setType(convertNestedTypes(value.getType()));
     if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
-      rewriter.replaceOp(cast, cast.getInputs());
+      if (cast.getOperandTypes() == cast.getResultTypes())
+        rewriter.replaceOp(cast, cast.getInputs());
   });
 }
