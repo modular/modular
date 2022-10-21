@@ -369,7 +369,7 @@ auto IntArrayElementsAttr::end() const -> Iterator {
 }
 
 bool IntArrayElementsAttr::classof(Attribute attr) {
-  if (auto arr = attr.dyn_cast<ArrayElementsAttr>())
+  if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
     return arr.getElementType().isa<IntegerType>();
   return false;
 }
@@ -449,7 +449,7 @@ auto FloatArrayElementsAttr::end() const -> Iterator {
 }
 
 bool FloatArrayElementsAttr::classof(Attribute attr) {
-  if (auto arr = attr.dyn_cast<ArrayElementsAttr>())
+  if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
     return arr.getElementType().isa<FloatType>();
   return false;
 }
@@ -462,7 +462,7 @@ bool FloatArrayElementsAttr::classof(Attribute attr) {
 /// other kind of attribute. This should be the only place where the splatness
 /// and bitpacked-ness of the attribute are handled.
 Attribute M::convertDenseElements(Attribute attr) {
-  auto denseElements = attr.dyn_cast<DenseElementsAttr>();
+  auto denseElements = dyn_cast<DenseElementsAttr>(attr);
   if (!denseElements || !denseElements.getElementType().isIntOrFloat())
     return attr;
   if (denseElements.getType().getElementTypeBitWidth() % 8 == 0) {
