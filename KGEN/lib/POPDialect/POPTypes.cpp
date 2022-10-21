@@ -200,8 +200,8 @@ SIMDType SIMDType::get(TypedAttr size, TypedAttr dtype) {
 
 SIMDType SIMDType::get(int64_t size, TypedAttr dtype) {
   MLIRContext *ctx = dtype.getContext();
-  TypedAttr size_attr = Builder(ctx).getIndexAttr(size);
-  return get(size_attr, dtype);
+  TypedAttr sizeAttr = Builder(ctx).getIndexAttr(size);
+  return get(sizeAttr, dtype);
 }
 
 //===----------------------------------------------------------------------===//
