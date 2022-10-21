@@ -598,6 +598,26 @@ kgen.generator @memcpy<type: type, dtype: dtype>(%a: !pop.pointer<type>,
   kgen.return
 }
 
+// CHECK-LABEL: @memset
+// CHECK-SAME: %[[A:.*]]: !pop.pointer<type>
+// CHECK-SAME: %[[B:.*]]: !pop.pointer<scalar<f32>>
+// CHECK-SAME: %[[C:.*]]: !pop.pointer<scalar<si32>>
+kgen.generator @memset<type: type, dtype: dtype>(%a: !pop.pointer<type>,
+                                                 %b: !pop.pointer<scalar<f32>>,
+                                                 %c: !pop.pointer<scalar<si32>>) {
+  // CHECK: %[[SIZE:.*]] = index.constant 1
+  %one = index.constant 1
+  // CHECK: %[[VAL:.*]] = pop.constant(0 : ui8) : !pop.scalar<ui8>
+  %val = pop.constant(0:ui8) : !pop.scalar<ui8>
+  // CHECK: pop.memset %[[A]], %[[VAL]], %[[SIZE]] : !pop.pointer<type>
+  pop.memset %a, %val, %one : !pop.pointer<type>
+  // CHECK: pop.memset %[[B]], %[[VAL]], %[[SIZE]] : !pop.pointer<scalar<f32>>
+  pop.memset %b, %val, %one : !pop.pointer<scalar<f32>>
+  // CHECK: pop.memset volatile %[[C]], %[[VAL]], %[[SIZE]] : !pop.pointer<scalar<si32>>
+  pop.memset volatile %c, %val, %one : !pop.pointer<scalar<si32>>
+  kgen.return
+}
+
 
 // CHECK-LABEL: @external_call
 kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>, %b: !pop.scalar<dtype>) {

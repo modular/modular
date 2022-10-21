@@ -1575,8 +1575,7 @@ def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
 
     // Generate an inlined memcpy which copies size bytes from src to dest and
     // mark the memcpy as a volatile access.
-    pop.memcpy inline volatile %dest, %src, %size :
-                                           !pop.pointer<scalar<f32>>
+    pop.memcpy inline volatile %dest, %src, %size : !pop.pointer<scalar<f32>>
     ```
   }];
 
@@ -1589,6 +1588,51 @@ def POP_MemcpyOp : POPOp<"memcpy", [AllTypesMatch<["dest", "src"]>]> {
   let assemblyFormat = [{
     (`inline` $isInlined^)? (`volatile` $isVolatile^)? operands attr-dict `:`
     qualified(type($src))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// MemsetOp
+//===----------------------------------------------------------------------===//
+
+def POP_MemsetOp : POPOp<"memset"> {
+  let summary = "copies memory from one location to another";
+  let description = [{
+    The `pop.memset` op will fill a block of memory with a particular byte
+    value. Note that, unlike the standard libc function, the `pop.memset` op
+    does not return a value.
+
+    The first argument is a pointer to the destination to fill, the second is a
+    byte value with which to fill it, the third argument is an integer argument
+    specifying the number of bytes to fill.
+
+    If the size is 0, this is no-op modulo the behavior of attributes attached
+    to the arguments. If size is not a well-defined value, the behavior is
+    undefined. If size is not zero, dest should be well-defined, otherwise the
+    behavior is undefined.
+
+    The op takes an optional volatile attribute. If the volatile attribute is
+    set, the `pop.memset` makes this a volatile operation. The detailed access
+    behavior is not very cleanly specified and it is unwise to depend on it.
+
+    Example:
+
+    ```mlir
+    // Memsets size bytes to %zero.
+    pop.memset %dest, %zero, %size : !pop.pointer<scalar<type>>
+
+    // Generate a memset and mark the memset as a volatile access.
+    pop.memset volatile %dest, %zero, %size : !pop.pointer<scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins POP_PointerType:$dest,
+                       UI8Scalar:$value,
+                       Index:$size,
+                       OptionalAttr<UnitAttr>:$isVolatile);
+
+  let assemblyFormat = [{
+    (`volatile` $isVolatile^)? operands attr-dict `:` qualified(type($dest))
   }];
 }
 
