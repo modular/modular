@@ -7,19 +7,19 @@
 
 kgen.include "library.mlir"
 
-kgen.generator.interface @exp<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator.interface @exp<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
 
 kgen.generator public @exp_f32(%arg0: f32) -> f32 {
-  %0 = pop.cast_from_builtin %arg0 : f32 to !pop.scalar<f32>
-  %1 = kgen.call @exp<type: dtype = f32>(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<f32> to f32
+  %0 = pop.cast_from_builtin %arg0 : f32 to !pop.simd<1, f32>
+  %1 = kgen.call @exp<type: dtype = f32>(%0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+  %2 = pop.cast_to_builtin %1 : !pop.simd<1, f32> to f32
   kgen.return %2 : f32
 }
 
 kgen.generator @exp_f64(%arg0: f64) -> f64 {
-  %0 = pop.cast_from_builtin %arg0 : f64 to !pop.scalar<f64>
-  %1 = kgen.call @exp<type: dtype = f64>(%0) : (!pop.scalar<f64>) -> !pop.scalar<f64>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<f64> to f64
+  %0 = pop.cast_from_builtin %arg0 : f64 to !pop.simd<1, f64>
+  %1 = kgen.call @exp<type: dtype = f64>(%0) : (!pop.simd<1, f64>) -> !pop.simd<1, f64>
+  %2 = pop.cast_to_builtin %1 : !pop.simd<1, f64> to f64
   kgen.return %2 : f64
 }
 

@@ -8,28 +8,27 @@
 //===----------------------------------------------------------------------===//
 
 kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>
-  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
+  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.simd<1, type>) -> !pop.simd<1, type>
 
 kgen.generator @buffer.loadOrValueImpl<isLoad: i1, type: dtype>
-  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
+  (%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.simd<1, type>) -> !pop.simd<1, type>
   implements @buffer.loadOrValue {
   %zero = index.constant 0
   %isLoad = kgen.param.constant: i1 = <isLoad>
-  %res = scf.if %isLoad -> !pop.scalar<type> {
-    %t0 = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>, !pop.simd<1, type>
-    %t1 = pop.simd.extractelement %t0[%zero] : !pop.simd<1, type>
-    scf.yield %t1 : !pop.scalar<type>
+  %res = scf.if %isLoad -> !pop.simd<1, type> {
+    %t = zap.buffer.load %buffer[%idx] : !zap.buffer<?, type>, !pop.simd<1, type>
+    scf.yield %t : !pop.simd<1, type>
   } else {
-    scf.yield %val : !pop.scalar<type>
+    scf.yield %val : !pop.simd<1, type>
   }
-  kgen.return %res : !pop.scalar<type>
+  kgen.return %res : !pop.simd<1, type>
 }
 
 //===----------------------------------------------------------------------===//
 // polynomial_evaluate
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !pop.scalar<type>, %coefficients: !zap.buffer<size, type>) -> !pop.scalar<type>
+kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !pop.simd<1, type>, %coefficients: !zap.buffer<size, type>) -> !pop.simd<1, type>
 
 /// Evaluates a polynomial using the horner scheme.
 ///
@@ -37,43 +36,42 @@ kgen.generator.interface @polynomial_evaluate<type: dtype, size>(%val: !pop.scal
 /// coefficients [c0, c1, c2, ..., cn] is defined by the following equation:
 /// horner(val, coeffs) = c0 + val * (c1 + val * (c2 + val * (... + val * cn)))
 ///                     = fma(val, horner(val, coeffs[1:]), c0)
-kgen.generator @horner<type: dtype, size>(%val: !pop.scalar<type>, %coefficients: !zap.buffer<size, type>) -> !pop.scalar<type>
+kgen.generator @horner<type: dtype, size>(%val: !pop.simd<1, type>, %coefficients: !zap.buffer<size, type>) -> !pop.simd<1, type>
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @polynomial_evaluate {
   %zero = index.constant 0
   %one = index.constant 1
-  %zerof = pop.constant(0.0) : !pop.scalar<type>
+  %zerof = pop.constant(0.0) : !pop.simd<1, type>
   %numCoeffs = zap.buffer.size %coefficients: !zap.buffer<size, type>
-  %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !pop.scalar<type> {
-    %coeff0 = zap.buffer.load %coefficients[%i] : !zap.buffer<size, type>, !pop.simd<1, type>
-    %coeff = pop.simd.extractelement %coeff0[%zero] : !pop.simd<1, type>
-    %res = pop.fma %sum, %val, %coeff : !pop.scalar<type>
-    scf.yield %res : !pop.scalar<type>
+  %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !pop.simd<1, type> {
+    %coeff = zap.buffer.load %coefficients[%i] : !zap.buffer<size, type>, !pop.simd<1, type>
+    %res = pop.fma %sum, %val, %coeff : !pop.simd<1, type>
+    scf.yield %res : !pop.simd<1, type>
   }
-  kgen.return %result : !pop.scalar<type>
+  kgen.return %result : !pop.simd<1, type>
 }
 
 //===----------------------------------------------------------------------===//
 // exp
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @exp<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator.interface @exp<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
 
 
 // Compute exp using the llvm intrinsics.
-kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
   constraints <[eq(:dtype type, f32), "incorrect element type"]> implements @exp {
-  %0 = pop.cast_to_builtin %x: !pop.scalar<type> to f32
+  %0 = pop.cast_to_builtin %x: !pop.simd<1, type> to f32
   %1 = "llvm.intr.exp"(%0) : (f32) -> f32
-  %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<type>
-  kgen.return %2 : !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1 : f32 to !pop.simd<1, type>
+  kgen.return %2 : !pop.simd<1, type>
 }
 
-kgen.generator public @exp_intrinsic_f64<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator public @exp_intrinsic_f64<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
   constraints <[eq(:dtype type, f64), "incorrect element type"]> implements @exp {
-  %0 = pop.cast_to_builtin %x: !pop.scalar<type> to f64
+  %0 = pop.cast_to_builtin %x: !pop.simd<1, type> to f64
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64
-  %2 = pop.cast_from_builtin %1 : f64 to !pop.scalar<type>
-  kgen.return %2 : !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1 : f64 to !pop.simd<1, type>
+  kgen.return %2 : !pop.simd<1, type>
 }
 
 //===----------------------------------------------------------------------===//

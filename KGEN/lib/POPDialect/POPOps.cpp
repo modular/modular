@@ -930,11 +930,25 @@ verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
 
   // Verify the SIMD size matches the vector size and the dtypes match.
   if (auto simd = dyn_cast<SIMDType>(popType)) {
+    auto size = dyn_cast<IntegerAttr>(simd.getSize());
+    if (size && size.getInt() == 1) {
+      // Scalar case
+      auto vector = dyn_cast<VectorType>(builtinType);
+      if (vector) {
+        builtinType = vector.getElementType();
+        return verifyConversionCast(emitError, popType, builtinType);
+      }
+      auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
+      if (dtype && !dtype.isConvertibleTo(builtinType))
+        return emitError("cannot convert from scalar dtype ")
+               << dtype.getDType().getAsString() << " to " << builtinType;
+      return success();
+    }
+
     auto vector = dyn_cast<VectorType>(builtinType);
     if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
       return emitError("expected a rank 1 non-scalable vector");
 
-    auto size = dyn_cast<IntegerAttr>(simd.getSize());
     if (size && size.getInt() != vector.getShape().front())
       return emitError("expected vector<") << size.getInt() << "xT>";
 

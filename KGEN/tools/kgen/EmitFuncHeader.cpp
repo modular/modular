@@ -59,7 +59,10 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       // we pass in an array.
       if (failed(printDTypeAsC(*simd.getResolvedDType())))
         return failure();
-      os << "[" << simd.getResolvedSize() << "]";
+      auto size = *simd.getResolvedSize();
+      // size == 1 is a scalar
+      if (size != 1)
+        os << "[" << size << "]";
       return success();
     }
 

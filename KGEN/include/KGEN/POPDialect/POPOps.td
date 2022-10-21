@@ -576,7 +576,7 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
-    ScalarOfSameDType<"vector", "result">]> {
+    SIMDSizeOneOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the `!pop.scalar` at
@@ -592,7 +592,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
   }];
 
   let arguments = (ins POP_SIMDType:$vector, Index:$position);
-  let results = (outs POP_ScalarType:$result);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
     $vector `[` $position `]` attr-dict `:` qualified(type($vector))
@@ -604,7 +604,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
-    ScalarOfSameDType<"vector", "value">,
+    SIMDSizeOneOfSameDType<"vector", "value">,
     AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
   let description = [{
@@ -621,7 +621,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$vector, POP_ScalarType:$value,
+  let arguments = (ins POP_SIMDType:$vector, POP_SIMDType:$value,
                        Index:$position);
   let results = (outs POP_SIMDType:$result);
 
@@ -668,7 +668,7 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
-    ScalarOfSameDType<"result", "scalar">]> {
+    SIMDSizeOneOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
     The `pop.simd.splat` operation takes a scalar value and replicates it across
@@ -676,18 +676,15 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
     `vector<4xi32>` will produce a vector valued as `[%a, %a, %a, %a]`.
 
     ```mlir
-    %a = pop.abs %arg0 : !pop.scalar<f32>
+    %a = pop.abs %arg0 : !pop.simd<1, f32>
     %v = pop.simd.splat %a : !pop.simd<4, f32>
 
-    %u = pop.neg %arg1 : !pop.scalar<type>
+    %u = pop.neg %arg1 : !pop.simd<1, type>
     %w = pop.simd.splat %u : !pop.simd<size, type>
     ```
-
-    Note that `!pop.simd<1, type>` is not the same as `!pop.scalar<type>`.
-    Hence, this operation will not fold away in those cases.
   }];
 
-  let arguments = (ins POP_ScalarType:$scalar);
+  let arguments = (ins POP_SIMDType:$scalar);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
@@ -699,10 +696,10 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 
 // Base class for SIMD reduction operations.
 class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
-    POPOp<mnemonic, traits # [ Pure,
-                               ScalarOfSameDType<"operand", "result">]>,
+    POPOp<mnemonic, traits # [Pure,
+                              SIMDSizeOneOfSameDType<"operand", "result">]>,
     Arguments<(ins POP_SIMDType:$operand)>,
-    Results<(outs POP_ScalarType:$result)> {
+    Results<(outs POP_SIMDType:$result)> {
   let assemblyFormat = "$operand attr-dict `:` qualified(type($operand))";
 }
 
