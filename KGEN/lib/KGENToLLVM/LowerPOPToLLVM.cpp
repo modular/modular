@@ -1296,7 +1296,7 @@ struct ConvertPOPCastFromBuiltin
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPCastFromBuiltin
+// ConvertPOPMemcpy
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
@@ -1315,6 +1315,25 @@ struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
     }
     rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
         op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(), isVolatile);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPMemset
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMemset : mlir::ConvertOpToLLVMPattern<MemsetOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(MemsetOp op, MemsetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto isVolatile = rewriter.create<LLVM::ConstantOp>(
+        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile().has_value()));
+    rewriter.replaceOpWithNewOp<LLVM::MemsetOp>(op, adaptor.getDest(),
+                                                adaptor.getValue(),
+                                                adaptor.getSize(), isVolatile);
     return success();
   }
 };
@@ -1379,6 +1398,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPLoad,
       ConvertPOPMax,
       ConvertPOPMemcpy,
+      ConvertPOPMemset,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
