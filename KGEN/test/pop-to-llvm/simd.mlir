@@ -689,7 +689,7 @@ kgen.func @bitcast(%a: !pop.simd<1, si32>,
 // -----
 
 // CHECK-LABEL: @simd_splat_scalar_to_2xf32
-kgen.func @simd_splat_scalar_to_2xf32(%a: !pop.scalar<f32>) -> !pop.simd<2, f32> {
+kgen.func @simd_splat_scalar_to_2xf32(%a: !pop.simd<1, f32>) -> !pop.simd<2, f32> {
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(0 :
   // CHECK: %[[VECTOR:.*]] = llvm.insertelement %[[E:.*]], %[[UNDEF]][%[[ZERO]] : i32] : vector<2xf32>
@@ -702,8 +702,8 @@ kgen.func @simd_splat_scalar_to_2xf32(%a: !pop.scalar<f32>) -> !pop.simd<2, f32>
 // -----
 
 // CHECK-LABEL: @simd_splat_scalar_to_1xf32
-kgen.func @simd_splat_scalar_to_1xf32(%a: !pop.scalar<f32>) -> !pop.simd<1, f32> {
-  // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
+kgen.func @simd_splat_scalar_to_1xf32(%a: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+  // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
   %0 = pop.simd.splat %a : !pop.simd<1, f32>
   kgen.return %0 : !pop.simd<1, f32>
@@ -712,29 +712,29 @@ kgen.func @simd_splat_scalar_to_1xf32(%a: !pop.scalar<f32>) -> !pop.simd<1, f32>
 // -----
 
 // CHECK-LABEL: @simd_extractelement
-kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.scalar<f32> {
+kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.simd<1, f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[SCALAR]]
   %0 = pop.simd.extractelement %vec[%idx] : !pop.simd<4, f32>
-  kgen.return %0 : !pop.scalar<f32>
+  kgen.return %0 : !pop.simd<1, f32>
 }
 
 // -----
 
 // CHECK-LABEL: @simd_extractelement_1xf32
-kgen.func @simd_extractelement_1xf32(%vec: !pop.simd<1, f32>, %idx: index) -> !pop.scalar<f32> {
+kgen.func @simd_extractelement_1xf32(%vec: !pop.simd<1, f32>, %idx: index) -> !pop.simd<1, f32> {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
-  // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
+  // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
   %0 = pop.simd.extractelement %vec[%idx] : !pop.simd<1, f32>
-  kgen.return %0 : !pop.scalar<f32>
+  kgen.return %0 : !pop.simd<1, f32>
 }
 
 // -----
 
 // CHECK-LABEL: @simd_insertelement
-kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !pop.simd<4, f32>, %idx: index) -> !pop.simd<4, f32> {
+kgen.func @simd_insertelement(%val: !pop.simd<1, f32>, %vec: !pop.simd<4, f32>, %idx: index) -> !pop.simd<4, f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[IDX:.*]] = builtin.unrealized_conversion_cast
@@ -747,7 +747,7 @@ kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !pop.simd<4, f32>, %
 // -----
 
 // CHECK-LABEL: @simd_insertelement_1xf32
-kgen.func @simd_insertelement_1xf32(%val: !pop.scalar<f32>, %vec: !pop.simd<1, f32>, %idx: index) -> !pop.simd<1, f32> {
+kgen.func @simd_insertelement_1xf32(%val: !pop.simd<1, f32>, %vec: !pop.simd<1, f32>, %idx: index) -> !pop.simd<1, f32> {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
   %0 = pop.simd.insertelement %val, %vec[%idx] : !pop.simd<1, f32>
@@ -804,14 +804,14 @@ kgen.func @simd_load_store(%i: index, %p0: !pop.pointer<simd<4, f32>>) {
 // CHECK-LABEL: @simd_reduce_add
 kgen.func @simd_reduce_add(%a: !pop.simd<2, f32>,
                            %b: !pop.simd<2, si32>,
-                           %c: !pop.simd<2, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                           %c: !pop.simd<2, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: llvm.intr.vector.reduce.fadd
   %0 = pop.simd.reduce.add %a : !pop.simd<2, f32>
   // CHECK: llvm.intr.vector.reduce.add
   %1 = pop.simd.reduce.add %b : !pop.simd<2, si32>
   // CHECK: llvm.intr.vector.reduce.add
   %2 = pop.simd.reduce.add %c : !pop.simd<2, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -819,17 +819,17 @@ kgen.func @simd_reduce_add(%a: !pop.simd<2, f32>,
 // CHECK-LABEL: @simd_reduce_add_1xf32
 kgen.func @simd_reduce_add_1xf32(%a: !pop.simd<1, f32>,
                                  %b: !pop.simd<1, si32>,
-                                 %c: !pop.simd<1, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                                 %c: !pop.simd<1, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[SI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, si32> to i32
   // CHECK: %[[UI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, ui32> to i32
-  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.scalar<si32>
-  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.scalar<ui32>
+  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
+  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.simd<1, si32>
+  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.simd<1, ui32>
   %0 = pop.simd.reduce.add %a : !pop.simd<1, f32>
   %1 = pop.simd.reduce.add %b : !pop.simd<1, si32>
   %2 = pop.simd.reduce.add %c : !pop.simd<1, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -837,14 +837,14 @@ kgen.func @simd_reduce_add_1xf32(%a: !pop.simd<1, f32>,
 // CHECK-LABEL: @simd_reduce_mul
 kgen.func @simd_reduce_mul(%a: !pop.simd<2, f32>,
                            %b: !pop.simd<2, si32>,
-                           %c: !pop.simd<2, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                           %c: !pop.simd<2, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: llvm.intr.vector.reduce.fmul
   %0 = pop.simd.reduce.mul %a : !pop.simd<2, f32>
   // CHECK: llvm.intr.vector.reduce.mul
   %1 = pop.simd.reduce.mul %b : !pop.simd<2, si32>
   // CHECK: llvm.intr.vector.reduce.mul
   %2 = pop.simd.reduce.mul %c : !pop.simd<2, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -852,17 +852,17 @@ kgen.func @simd_reduce_mul(%a: !pop.simd<2, f32>,
 // CHECK-LABEL: @simd_reduce_mul_1xf32
 kgen.func @simd_reduce_mul_1xf32(%a: !pop.simd<1, f32>,
                                  %b: !pop.simd<1, si32>,
-                                 %c: !pop.simd<1, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                                 %c: !pop.simd<1, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[SI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, si32> to i32
   // CHECK: %[[UI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, ui32> to i32
-  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.scalar<si32>
-  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.scalar<ui32>
+  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
+  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.simd<1, si32>
+  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.simd<1, ui32>
   %0 = pop.simd.reduce.mul %a : !pop.simd<1, f32>
   %1 = pop.simd.reduce.mul %b : !pop.simd<1, si32>
   %2 = pop.simd.reduce.mul %c : !pop.simd<1, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -870,14 +870,14 @@ kgen.func @simd_reduce_mul_1xf32(%a: !pop.simd<1, f32>,
 // CHECK-LABEL: @simd_reduce_max
 kgen.func @simd_reduce_max(%a: !pop.simd<2, f32>,
                            %b: !pop.simd<2, si32>,
-                           %c: !pop.simd<2, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                           %c: !pop.simd<2, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: llvm.intr.vector.reduce.fmax
   %0 = pop.simd.reduce.max %a : !pop.simd<2, f32>
   // CHECK: llvm.intr.vector.reduce.smax
   %1 = pop.simd.reduce.max %b : !pop.simd<2, si32>
   // CHECK: llvm.intr.vector.reduce.umax
   %2 = pop.simd.reduce.max %c : !pop.simd<2, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -885,17 +885,17 @@ kgen.func @simd_reduce_max(%a: !pop.simd<2, f32>,
 // CHECK-LABEL: @simd_reduce_max_1xf32
 kgen.func @simd_reduce_max_1xf32(%a: !pop.simd<1, f32>,
                                  %b: !pop.simd<1, si32>,
-                                 %c: !pop.simd<1, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                                 %c: !pop.simd<1, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[SI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, si32> to i32
   // CHECK: %[[UI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, ui32> to i32
-  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.scalar<si32>
-  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.scalar<ui32>
+  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
+  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.simd<1, si32>
+  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.simd<1, ui32>
   %0 = pop.simd.reduce.max %a : !pop.simd<1, f32>
   %1 = pop.simd.reduce.max %b : !pop.simd<1, si32>
   %2 = pop.simd.reduce.max %c : !pop.simd<1, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -903,14 +903,14 @@ kgen.func @simd_reduce_max_1xf32(%a: !pop.simd<1, f32>,
 // CHECK-LABEL: @simd_reduce_min
 kgen.func @simd_reduce_min(%a: !pop.simd<2, f32>,
                            %b: !pop.simd<2, si32>,
-                           %c: !pop.simd<2, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                           %c: !pop.simd<2, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: llvm.intr.vector.reduce.fmin
   %0 = pop.simd.reduce.min %a : !pop.simd<2, f32>
   // CHECK: llvm.intr.vector.reduce.smin
   %1 = pop.simd.reduce.min %b : !pop.simd<2, si32>
   // CHECK: llvm.intr.vector.reduce.umin
   %2 = pop.simd.reduce.min %c : !pop.simd<2, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----
@@ -918,17 +918,17 @@ kgen.func @simd_reduce_min(%a: !pop.simd<2, f32>,
 // CHECK-LABEL: @simd_reduce_min_1xf32
 kgen.func @simd_reduce_min_1xf32(%a: !pop.simd<1, f32>,
                                  %b: !pop.simd<1, si32>,
-                                 %c: !pop.simd<1, ui32>) -> (!pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>) {
+                                 %c: !pop.simd<1, ui32>) -> (!pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>) {
   // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, f32> to f32
   // CHECK: %[[SI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, si32> to i32
   // CHECK: %[[UI32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.simd<1, ui32> to i32
-  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.scalar<si32>
-  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.scalar<ui32>
+  // CHECK: %[[RESULT0:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.simd<1, f32>
+  // CHECK: %[[RESULT1:.*]] = builtin.unrealized_conversion_cast %[[SI32_VAL]] : i32 to !pop.simd<1, si32>
+  // CHECK: %[[RESULT2:.*]] = builtin.unrealized_conversion_cast %[[UI32_VAL]] : i32 to !pop.simd<1, ui32>
   %0 = pop.simd.reduce.min %a : !pop.simd<1, f32>
   %1 = pop.simd.reduce.min %b : !pop.simd<1, si32>
   %2 = pop.simd.reduce.min %c : !pop.simd<1, ui32>
-  kgen.return %0, %1, %2: !pop.scalar<f32>, !pop.scalar<si32>, !pop.scalar<ui32>
+  kgen.return %0, %1, %2: !pop.simd<1, f32>, !pop.simd<1, si32>, !pop.simd<1, ui32>
 }
 
 // -----

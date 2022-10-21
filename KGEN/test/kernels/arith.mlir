@@ -2,7 +2,7 @@
 
 kgen.include "library.mlir"
 
-kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>(%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator.interface @buffer.loadOrValue<isLoad: i1, type: dtype>(%buffer: !zap.buffer<?, type>, %idx: index, %val: !pop.simd<1, type>) -> !pop.simd<1, type>
 
 //===----------------------------------------------------------------------===//
 // add
@@ -23,16 +23,14 @@ kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(%in1: !zap.buffer<?, type
 
   // Using 0 as a placeholder for undefined value since we do not have optional values.
   // %undef will be eliminated after kernel elaboration and simplification.
-  %undef = pop.constant(0) : !pop.scalar<type>
-  %undefVec = pop.simd.splat %undef: !pop.simd<1, type>
+  %undef = pop.constant(0) : !pop.simd<1, type>
   kgen.param.declare no_bcst: i1 = <not(bcst)>
-  %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef) : (!zap.buffer<?, type>, index, !pop.scalar<type>) -> !pop.scalar<type>
+  %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef) : (!zap.buffer<?, type>, index, !pop.simd<1, type>) -> !pop.simd<1, type>
 
   scf.for %i = %zero to %size step %one {
-      %src1 = kgen.call @buffer.loadOrValue<isLoad:i1=no_bcst, type:dtype=type>(%in1, %i, %bcst_val) : (!zap.buffer<?, type>, index, !pop.scalar<type>) -> !pop.scalar<type>
-      %src1v = pop.simd.insertelement %src1, %undefVec[%zero] : !pop.simd<1, type>
-      %src2v = zap.buffer.load %in2[%i] : !zap.buffer<?, type>, !pop.simd<1, type>
-      %res = pop.add %src1v, %src2v : !pop.simd<1, type>
+      %src1 = kgen.call @buffer.loadOrValue<isLoad:i1=no_bcst, type:dtype=type>(%in1, %i, %bcst_val) : (!zap.buffer<?, type>, index, !pop.simd<1, type>) -> !pop.simd<1, type>
+      %src2 = zap.buffer.load %in2[%i] : !zap.buffer<?, type>, !pop.simd<1, type>
+      %res = pop.add %src1, %src2 : !pop.simd<1, type>
       zap.buffer.store %res, %out[%i] : !pop.simd<1, type>, !zap.buffer<?, type>
   }
   kgen.return

@@ -240,7 +240,7 @@ def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
 
 class SIMDOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "POP::SIMDType::get($_self.cast<DTypeInterface>().getDType())">;
+    value, "dyn_cast<POP::SIMDType>($_self)">;
 
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
@@ -248,8 +248,10 @@ class SIMDDType<string name> :
 class SIMDSize<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getResolvedSize()">;
 
-class SIMDOfSameElementDType<string lhs, string rhs> :
-  AllMatchSameOperatorTrait<[lhs, rhs], SIMDDType<"_self">.result, "dtype">;
+// Matches if Value has size=1 and same dtype as Operand
+class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
+    value # " type matches dtype of the " # operand # " operand", operand,
+    value, "POP::SIMDType::get(1, $_self.cast<DTypeInterface>().getDType())">;
 
 class SIMDOfSameSize<string lhs, string rhs> :
   AllMatchSameOperatorTrait<[lhs, rhs], SIMDSize<"_self">.result, "size">;
