@@ -11,6 +11,8 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
@@ -485,10 +487,20 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     // module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
     SymbolTable symbolTable(module);
-    for (auto func :
-         llvm::make_early_inc_range(module.getOps<KGEN::LITFuncOp>())) {
-      if (failed(lowerLITFunc(func, symbolTable)))
-        signalPassFailure();
+    for (auto &op : llvm::make_early_inc_range(module.getOps())) {
+      if (auto func = dyn_cast<KGEN::LITFuncOp>(op)) {
+        func.walk([&](KGEN::VarDeclOp varDecl) -> void {
+          OpBuilder b(varDecl);
+          Value op = b.create<POP::StackAllocationOp>(varDecl.getLoc(),
+                                                      varDecl.getType(), 1);
+          varDecl.replaceAllUsesWith(op);
+          varDecl->erase();
+        });
+        if (failed(lowerLITFunc(func, symbolTable)))
+          signalPassFailure();
+      } else if (auto structDecl = dyn_cast<KGEN::LITStructDeclOp>(op)) {
+        // TODO:
+      }
     }
   }
 };
