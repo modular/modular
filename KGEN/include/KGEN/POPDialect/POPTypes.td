@@ -255,10 +255,6 @@ def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
 def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
     [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
 
-class SIMDOfSameDType<string operand, string value> : TypesMatchWith<
-    value # " type matches dtype of the " # operand # " operand", operand,
-    value, "dyn_cast<POP::SIMDType>($_self)">;
-
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
 
