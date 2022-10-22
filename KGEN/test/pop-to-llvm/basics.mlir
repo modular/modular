@@ -327,6 +327,25 @@ kgen.func @simd_shift(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>, %arg
 
 // -----
 
+// CHECK-LABEL: @cmp_bool
+kgen.func @cmp_bool(%lhs: !pop.scalar<bool>, %rhs: !pop.scalar<bool>) {
+  // CHECK: llvm.icmp "eq"
+  %0 = pop.cmp eq(%lhs, %rhs) : !pop.scalar<bool>
+  // CHECK: llvm.icmp "ne"
+  %1 = pop.cmp ne(%lhs, %rhs) : !pop.scalar<bool>
+  // CHECK: llvm.icmp "ult"
+  %2 = pop.cmp lt(%lhs, %rhs) : !pop.scalar<bool>
+  // CHECK: llvm.icmp "ugt"
+  %3 = pop.cmp gt(%lhs, %rhs) : !pop.scalar<bool>
+  // CHECK: llvm.icmp "ule"
+  %4 = pop.cmp le(%lhs, %rhs) : !pop.scalar<bool>
+  // CHECK: llvm.icmp "uge"
+  %5 = pop.cmp ge(%lhs, %rhs) : !pop.scalar<bool>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @cmp_uint
 kgen.func @cmp_uint(%lhs: !pop.scalar<ui32>, %rhs: !pop.scalar<ui32>) {
   // CHECK: llvm.icmp "eq"

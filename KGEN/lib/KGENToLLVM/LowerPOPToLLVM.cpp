@@ -179,7 +179,7 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     DType dtype =
         *op.getLhs().getType().cast<DTypeInterface>().getResolvedDType();
-    if (dtype.isInt()) {
+    if (dtype.isBool() || dtype.isInt()) {
       rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
           op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
           adaptor.getRhs());
