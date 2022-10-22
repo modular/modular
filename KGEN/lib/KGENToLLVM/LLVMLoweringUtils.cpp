@@ -44,16 +44,6 @@ Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype) {
   return LLVM::LLVMPointerType::get(ctx);
 }
 
-bool M::KGEN::isSIMDSizeOneType(Type type) {
-  if (auto simd = dyn_cast<POP::SIMDType>(type)) {
-    auto resolvedSize = simd.getResolvedSize();
-    assert(resolvedSize.has_value() &&
-           "parametric types should be gone in LLVM lowering");
-    return *resolvedSize == 1;
-  }
-  return false;
-}
-
 POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     mlir::Location loc, const mlir::LowerToLLVMOptions &options)
     : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
