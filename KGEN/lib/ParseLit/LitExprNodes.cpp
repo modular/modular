@@ -11,7 +11,7 @@
 
 #include "LitExprNodes.h"
 #include "LitDecls.h"
-#include "LitLexer.h"
+#include "LitParserBase.h"
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -44,13 +44,13 @@ Type MLIRValueRep::getType() const {
 }
 
 //===----------------------------------------------------------------------===//
-// EmitterState Implementation
+// IREmitter Implementation
 //===----------------------------------------------------------------------===//
 
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-Value EmitterState::emitAsValue(MLIRValueRep rep, SMLoc loc) {
+Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
   if (!rep)
     return {};
 
@@ -74,7 +74,7 @@ Value EmitterState::emitAsValue(MLIRValueRep rep, SMLoc loc) {
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-Value EmitterState::emitAsValue(const ExprNode *node) {
+Value IREmitter::emitAsValue(const ExprNode *node) {
   assert(node && "cannot emit a null node");
   return emitAsValue(node->emit(*this), node->getLoc());
 }
@@ -154,11 +154,9 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 /// Error nodes cannot be emitted.
-MLIRValueRep ErrorNode::emit(EmitterState &state) const {
-  return MLIRValueRep();
-}
+MLIRValueRep ErrorNode::emit(IREmitter &state) const { return MLIRValueRep(); }
 
-MLIRValueRep IntLiteralNode::emit(EmitterState &state) const {
+MLIRValueRep IntLiteralNode::emit(IREmitter &state) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -168,18 +166,18 @@ MLIRValueRep IntLiteralNode::emit(EmitterState &state) const {
   return IntegerAttr::get(state.builder.getIndexType(), value);
 }
 
-MLIRValueRep FloatLiteralNode::emit(EmitterState &state) const {
+MLIRValueRep FloatLiteralNode::emit(IREmitter &state) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   return state.builder.getF64FloatAttr(value.convertToDouble());
 }
 
-MLIRValueRep StringLiteralNode::emit(EmitterState &state) const {
+MLIRValueRep StringLiteralNode::emit(IREmitter &state) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return state.builder.getStringAttr(value);
 }
 
-MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
+MLIRValueRep DeclRefNode::emit(IREmitter &state) const {
   Optional<Scope::NameEntry> declOrValue =
       state.scope.lookup(state.builder.getStringAttr(spelling));
   if (!declOrValue) {
@@ -197,7 +195,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
-  auto resolveResult = state.parser.getDeclResolver().resolve(
+  auto resolveResult = state.shared.declResolver->resolve(
       scope, DeclResolvedness::signatureResolved, getLoc());
 
   // If the decl was erroneous somehow, then don't form a reference to it.
@@ -222,7 +220,7 @@ MLIRValueRep DeclRefNode::emit(EmitterState &state) const {
   return {};
 }
 
-MLIRValueRep CallNode::emit(EmitterState &state) const {
+MLIRValueRep CallNode::emit(IREmitter &state) const {
   auto calleeVal = callee->emit(state);
   if (!calleeVal)
     return {};
@@ -252,11 +250,11 @@ MLIRValueRep CallNode::emit(EmitterState &state) const {
   return {};
 }
 
-MLIRValueRep ParenExprNode::emit(EmitterState &state) const {
+MLIRValueRep ParenExprNode::emit(IREmitter &state) const {
   return subExpr->emit(state);
 }
 
-MLIRValueRep BinOpNode::emit(EmitterState &state) const {
+MLIRValueRep BinOpNode::emit(IREmitter &state) const {
   auto lhsRep = lhs->emit(state);
   auto rhsRep = rhs->emit(state);
   if (!lhsRep || !rhsRep)
