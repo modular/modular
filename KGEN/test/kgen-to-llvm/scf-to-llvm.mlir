@@ -64,3 +64,10 @@ kgen.func @while(%init: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: return %[[V]]
   kgen.return %result : !pop.scalar<f32>
 }
+
+// CHECK-LABEL: @arith_select
+kgen.func @arith_select(%c: i1, %a: !pop.scalar<si64>, %b: !pop.scalar<si64>) -> !pop.scalar<si64> {
+  // CHECK: llvm.select {{.*}} : i1, i64
+  %0 = arith.select %c, %a, %b : !pop.scalar<si64>
+  kgen.return %0 : !pop.scalar<si64>
+}

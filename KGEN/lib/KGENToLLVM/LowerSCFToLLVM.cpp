@@ -9,6 +9,7 @@
 #include "LLVMLoweringUtils.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -261,6 +262,26 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// ConvertArithSelectOp
+//===----------------------------------------------------------------------===//
+
+/// The `scf.if` canonicalizer produces `arith.select` operations.
+struct ConvertArithSelectOp
+    : public mlir::ConvertOpToLLVMPattern<mlir::arith::SelectOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(mlir::arith::SelectOp op,
+                  mlir::arith::SelectOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::SelectOp>(op, adaptor.getCondition(),
+                                                adaptor.getTrueValue(),
+                                                adaptor.getFalseValue());
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -269,8 +290,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
 
 static void populateSCFToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
-  patterns.insert<ConvertSCFForOp, ConvertSCFIfOp, ConvertSCFWhileOp>(
-      typeConverter);
+  patterns.insert<ConvertSCFForOp, ConvertSCFIfOp, ConvertSCFWhileOp,
+                  ConvertArithSelectOp>(typeConverter);
 }
 
 //===----------------------------------------------------------------------===//
