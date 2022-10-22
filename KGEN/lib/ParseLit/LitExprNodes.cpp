@@ -22,6 +22,8 @@
 using namespace M;
 using namespace M::KGEN::LIT;
 
+static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
+
 //===----------------------------------------------------------------------===//
 // MLIRValueRep Implementation
 //===----------------------------------------------------------------------===//
@@ -83,6 +85,23 @@ Value IREmitter::emitAsValue(const ExprNode *node) {
   return emitAsValue(node->emitIR(*this), node->getLoc());
 }
 
+/// This helper emits the specified value rep as a meta value, diagnosing the
+/// problem if the expression is only valid as a runtime value.  This returns
+/// null if emission fails.
+TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node) {
+  auto valueRep = node->emitIR(*this);
+  if (!valueRep)
+    return {};
+
+  // If this is a parameter, return it.
+  if (auto attr = valueRep.dyn_castTypedAttr())
+    return attr;
+
+  emitError(node->getLoc(),
+            "context only permits a meta value, not a dynamic one");
+  return {};
+}
+
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
@@ -91,6 +110,30 @@ Type IREmitter::emitAsType(const ExprNode *node) {
   // The emitType methods return null on failure, we return a TypeCheckErrorType
   // to simplify clients.
   return result ? result : TypeCheckErrorType::get(getContext());
+}
+
+/// Perform a name lookup in the current scope and return the named
+/// declaration.  This emits an error and returns null on error.
+Scope *IREmitter::lookupDecl(StringRef name, SMLoc loc) {
+  Optional<Scope::NameEntry> lookupResult =
+      scope.lookup(StringAttr::get(getContext(), name));
+  if (!lookupResult)
+    return emitError(loc, "unknown type name '" + name + "'"), nullptr;
+  if (!std::holds_alternative<Scope *>(*lookupResult))
+    return emitError(loc, "'" + name + "' names a value, not a type"), nullptr;
+
+  Scope &scope = *std::get<Scope *>(*lookupResult);
+
+  // We need the signature for the struct to be resolved in order to know how
+  // to refer to it.
+  auto resolveResult = shared.declResolver->resolve(
+      scope, DeclResolvedness::signatureResolved, loc);
+
+  // If the decl was erroneous somehow, then don't form a reference to it, the
+  // error has already been diagnosed.
+  if (failed(resolveResult))
+    return nullptr;
+  return &scope;
 }
 
 //===----------------------------------------------------------------------===//
@@ -199,37 +242,24 @@ Type DeclRefNode::emitType(IREmitter &state) const {
   if (spelling == "index")
     return IndexType::get(context);
 
-  auto emitError = [&](const Twine &message) -> Type {
-    state.emitError(getLoc(), message);
-    return Type();
-  };
-
   // Lookup the identifier.
-  Optional<Scope::NameEntry> lookup =
-      state.scope.lookup(StringAttr::get(context, spelling));
-  if (!lookup)
-    return emitError("unknown type name '" + spelling + "'");
-  if (!std::holds_alternative<Scope *>(*lookup))
-    return emitError("'" + spelling + "' names a value, not a type");
-
-  Scope &scope = *std::get<Scope *>(*lookup);
-  auto typeDecl = dyn_cast<LITStructDeclOp>(scope.getDecl());
-  if (!typeDecl)
-    return emitError("'" + spelling + "' names a value, not a type");
-
-  // We need the signature for the struct to be resolved in order to know how
-  // to refer to it.
-  auto resolveResult = state.shared.declResolver->resolve(
-      scope, DeclResolvedness::signatureResolved, getLoc());
-
-  // If the decl was erroneous somehow, then don't form a reference to it, the
-  // error has already been diagnosed.
-  if (failed(resolveResult))
+  Scope *declScope = state.lookupDecl(spelling, getLoc());
+  if (!declScope)
     return Type();
+  auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
+  if (!typeDecl) {
+    state.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
+    return Type();
+  }
 
-  // TODO: Handle type parameters!
-  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
-                      ParamBindArrayAttr::get(context, {}));
+  auto numParams = typeDecl.getParamDecls().size();
+  if (numParams != 0) {
+    state.emitError(getLoc(), "'" + spelling + "' requires ")
+        << numParams << " meta parameter" << plural(numParams);
+    return Type();
+  }
+
+  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
 MLIRValueRep CallNode::emitIR(IREmitter &state) const {
@@ -271,6 +301,65 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
 Type CallNode::emitType(IREmitter &state) const {
   state.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
+}
+
+MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
+  state.emitError(getLoc(), "TODO: Subscript irgen not implemented yet");
+  return {};
+}
+
+Type SubscriptNode::emitType(IREmitter &state) const {
+  // KGEN doesn't support unbound parametric types (e.g. "SIMD" with unbound
+  // size/dtype) as a stand-alone type, so we handle name resolution here.
+  auto baseDRE = dyn_cast<DeclRefNode>(base);
+  if (!baseDRE) {
+    if (Type baseType = base->emitType(state))
+      state.emitError(getLoc(), "unknown parameterized type ") << baseType;
+    return Type();
+  }
+
+  // Lookup the identifier.
+  Scope *declScope = state.lookupDecl(baseDRE->spelling, getLoc());
+  if (!declScope)
+    return Type();
+
+  auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
+  if (!typeDecl) {
+    state.emitError(getLoc(),
+                    "'" + baseDRE->spelling + "' names a value, not a type");
+    return Type();
+  }
+
+  auto numParams = typeDecl.getParamDecls().size();
+  if (numParams != indices.size()) {
+    state.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
+        << numParams << " meta parameter" << plural(numParams) << " but "
+        << indices.size() << " were specified";
+    return Type();
+  }
+
+  // Emit each of the indices as parameter expressions.
+  SmallVector<ParamBindAttr> exprs;
+  for (auto [indexExpr, decl] : llvm::zip(indices, typeDecl.getParamDecls())) {
+    // TODO: Slice syntax is the obvious way to support named parameter
+    // arguments.
+    auto value = state.emitAsMetaValue(indexExpr);
+    if (!value)
+      return {};
+
+    // TODO: Support conversions.
+    if (value.getType() != decl.getType()) {
+      state.emitError(indexExpr->getLoc(), "parameter of type ")
+          << value.getType() << " cannot be converted to expected type "
+          << decl.getType();
+      return {};
+    }
+
+    exprs.push_back(ParamBindAttr::get(decl, value));
+  }
+
+  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
+                      ParamBindArrayAttr::get(state.getContext(), exprs));
 }
 
 MLIRValueRep ParenExprNode::emitIR(IREmitter &state) const {

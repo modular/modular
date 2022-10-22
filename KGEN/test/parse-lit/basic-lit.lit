@@ -54,11 +54,12 @@ z
   # CHECK-NEXT: kgen.return %[[TMP]]
   return x
 
-
-# CHECK-LABEL: lit.func public @fancy_signature<dt: !kgen.ref<@DType>, size>(%x: !kgen.ref<@SIMD>, %exp: !kgen.ref<@SIMD>) -> index {
+# CHECK-LABEL: lit.func public @fancy_signature
+# CHECK-SAME: <dt: !kgen.ref<@DType>, size>
+# CHECK-SAME: (%x: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>,
+# CHECK-SAME:  %exp: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>) -> index {
 def fancy_signature[dt: DType, size: index]
-  # TODO: (x: SIMD[size, dt], exp: SIMD[size, dt]) -> SIMD[size, dt]:
-  (x: SIMD, exp: SIMD) -> index:
+  (x: SIMD[size, dt], exp: SIMD[size, dt]) -> index:
   pass
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
@@ -110,8 +111,10 @@ def var_decls(untyped):
   # CHECK: %[[TMP:.*]] = index.constant 42
   # CHECK: pop.store %[[TMP]], %z
 
-struct SIMD:
+# CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.ref<@DType>> {
+struct SIMD[size: index, dt: DType]:
   pass
+
 
 struct DType:
   pass
