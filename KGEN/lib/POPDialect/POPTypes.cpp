@@ -92,6 +92,32 @@ ArrayType ArrayType::get(ValueRange elements) {
   return get(elements.size(), firstElement.getType());
 }
 
+/// The size of the array is the number of elements times the size of each
+/// aligned element.
+Optional<int64_t> ArrayType::getTypeSize(TargetInfoAttr target) const {
+  Type elementType = getResolvedElementType();
+  Optional<int64_t> size = getResolvedSize();
+  if (!elementType || !size)
+    return {};
+
+  Optional<int64_t> elementAlign =
+      DataLayoutInterface::getTypeAlignInBytes(target, elementType);
+  Optional<int64_t> elementSize =
+      DataLayoutInterface::getTypeSizeInBytes(target, elementType);
+  if (!elementAlign || !elementSize)
+    return {};
+
+  return *size * llvm::alignTo(*elementSize, *elementAlign);
+}
+
+/// The alignment of the array is the alignment of the element type.
+Optional<int64_t> ArrayType::getTypeAlign(TargetInfoAttr target) const {
+  Type elementType = getResolvedElementType();
+  if (!elementType)
+    return {};
+  return DataLayoutInterface::getTypeAlignInBytes(target, elementType);
+}
+
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
@@ -129,6 +155,14 @@ PointerType PointerType::get(Type elementType) {
   return PointerType::get(TypeConstantAttr::get(elementType));
 }
 
+Optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
+  return target.getPointerSize();
+}
+
+Optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getPointerSize();
+}
+
 //===----------------------------------------------------------------------===//
 // ScalarType
 //===----------------------------------------------------------------------===//
@@ -158,6 +192,48 @@ ScalarType ScalarType::get(TypedAttr dtype) {
 
 ScalarType ScalarType::get(MLIRContext *ctx, KGENDType dtype) {
   return get(ctx, DTypeConstantAttr::get(ctx, dtype));
+}
+
+/// Get the size in bytes of a KGEN dtype.
+static Optional<int64_t> getDTypeByteSize(TargetInfoAttr target,
+                                          KGENDType dtype) {
+  // KGEN dtypes.
+  if (dtype.getValue() == KGENDType::address)
+    return target.getPointerSize();
+
+  // Generic DType.
+  int64_t size = dtype.getWidthInBits();
+  if (size == -1)
+    return {};
+  return llvm::divideCeil(size, CHAR_BIT);
+}
+
+Optional<int64_t> ScalarType::getTypeSize(TargetInfoAttr target) const {
+  if (Optional<KGENDType> dtype = getResolvedDType())
+    return getDTypeByteSize(target, *dtype);
+  return {};
+}
+
+/// Get the alignment in bytes of a KGEN dtype.
+static Optional<int64_t> getDTypeByteAlign(TargetInfoAttr target,
+                                           KGENDType dtype) {
+  // KGEN dtypes.
+  if (dtype.getValue() == KGENDType::address)
+    return target.getPointerSize();
+
+  // Generic DType.
+  int64_t size = dtype.getWidthInBits();
+  if (size == -1)
+    return {};
+  int64_t align = llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
+  // Cap the alignment to the pointer size.
+  return std::min(align, target.getPointerSize());
+}
+
+Optional<int64_t> ScalarType::getTypeAlign(TargetInfoAttr target) const {
+  if (Optional<KGENDType> dtype = getResolvedDType())
+    return getDTypeByteAlign(target, *dtype);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -202,6 +278,24 @@ SIMDType SIMDType::get(int64_t size, TypedAttr dtype) {
   MLIRContext *ctx = dtype.getContext();
   TypedAttr sizeAttr = Builder(ctx).getIndexAttr(size);
   return get(sizeAttr, dtype);
+}
+
+Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
+  Optional<KGENDType> dtype = getResolvedDType();
+  Optional<int64_t> size = getResolvedSize();
+  if (!dtype || !size)
+    return {};
+
+  Optional<int64_t> elSize = getDTypeByteSize(target, *dtype);
+  Optional<int64_t> elAlign = getDTypeByteAlign(target, *dtype);
+  if (!elSize || !elAlign)
+    return {};
+  // Take the next power of 2 of the SIMD size.
+  return llvm::PowerOf2Ceil(*size) * llvm::alignTo(*elSize, *elAlign);
+}
+
+Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
+  return getTypeSize(target);
 }
 
 //===----------------------------------------------------------------------===//
@@ -264,6 +358,40 @@ StructType StructType::get(ArrayRef<Type> elementTypes) {
   return get(elementTypes.front().getContext(), elementTypeExprs);
 }
 
+Optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+  SmallVector<Type> types;
+  if (failed(resolveElementTypes(types)))
+    return {};
+  int64_t size = 0;
+  int64_t strictest = 1;
+  for (Type type : types) {
+    Optional<int64_t> typeAlign =
+        DataLayoutInterface::getTypeAlignInBytes(target, type);
+    Optional<int64_t> typeSize =
+        DataLayoutInterface::getTypeSizeInBytes(target, type);
+    if (!typeAlign || !typeSize)
+      return {};
+    size = llvm::alignTo(size, *typeAlign) + *typeSize;
+    strictest = std::max(strictest, *typeAlign);
+  }
+  return llvm::alignTo(size, strictest);
+}
+
+Optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
+  SmallVector<Type> types;
+  if (failed(resolveElementTypes(types)))
+    return {};
+  int64_t strictest = 1;
+  for (Type type : types) {
+    Optional<int64_t> typeAlign =
+        DataLayoutInterface::getTypeAlignInBytes(target, type);
+    if (!typeAlign)
+      return {};
+    strictest = std::max(strictest, *typeAlign);
+  }
+  return strictest;
+}
+
 //===----------------------------------------------------------------------===//
 // VariantType
 //===----------------------------------------------------------------------===//
@@ -315,6 +443,16 @@ SmallVector<Type> VariantType::getParameterizedElementTypes() const {
   for (TypedAttr type : getTypes())
     types.push_back(ParamRefType::get(type));
   return types;
+}
+
+Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+Optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
 }
 
 //===----------------------------------------------------------------------===//
