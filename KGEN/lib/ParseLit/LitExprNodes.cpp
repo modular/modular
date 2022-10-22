@@ -11,7 +11,6 @@
 
 #include "LitExprNodes.h"
 #include "LitDecls.h"
-#include "LitParserBase.h"
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -81,75 +80,17 @@ Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
 /// emission fails.
 Value IREmitter::emitAsValue(const ExprNode *node) {
   assert(node && "cannot emit a null node");
-  return emitAsValue(node->emit(*this), node->getLoc());
+  return emitAsValue(node->emitIR(*this), node->getLoc());
 }
 
-//===----------------------------------------------------------------------===//
-// Type Parsing implementations
-//===----------------------------------------------------------------------===//
-
-/// Given a cursor location for a type expression that correctly parsed in the
-/// first pass, reparse it into an expression and resolve it into a type by
-/// performing name lookup and other resolution.  This can produce errors, but
-/// always returns a non-null type.
-ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
-  ExprNode *typeExpr = nullptr;
-  if (parseExpression(typeExpr))
-    return failure();
-
-  auto emitError = [&](const Twine &message) -> ParseResult {
-    result = TypeCheckErrorType::get(getContext());
-    this->emitError(typeExpr->getLoc(), message);
-    return success(); // Semantic error, but the parse succeeded.
-  };
-
-  // TODO: Make this a recursive walk when we have more interesting types.
-  if (auto dre = dyn_cast<DeclRefNode>(typeExpr)) {
-    // TODO(types): This is a hack to unblock tests in the interim.
-    if (dre->spelling == "index") {
-      result = IndexType::get(getContext());
-      return success();
-    }
-
-    // Lookup the identifier.
-    Optional<Scope::NameEntry> lookup =
-        scope.lookup(StringAttr::get(getContext(), dre->spelling));
-    if (!lookup)
-      return emitError("unknown type name '" + dre->spelling + "'");
-    if (!std::holds_alternative<Scope *>(*lookup))
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-
-    Scope &scope = *std::get<Scope *>(*lookup);
-    auto typeDecl = dyn_cast<LITStructDeclOp>(scope.getDecl());
-    if (!typeDecl)
-      return emitError("'" + dre->spelling + "' names a value, not a type");
-
-    // We need the signature for the struct to be resolved in order to know how
-    // to refer to it.
-    auto resolveResult = getDeclResolver().resolve(
-        scope, DeclResolvedness::signatureResolved, dre->getLoc());
-
-    // If the decl was erroneous somehow, then don't form a reference to it.
-    // Just return an TypeCheckError instead so we don't get downstream errors.
-    if (failed(resolveResult)) {
-      result = TypeCheckErrorType::get(getContext());
-      return success();
-    }
-
-    // TODO: Handle type parameters!
-    result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
-                          ParamBindArrayAttr::get(getContext(), {}));
-    return success();
-  }
-
-  // Parse errors always resolve as TypeCheckErrorType since they have already
-  // been diagnosed.
-  if (isa<ErrorNode>(typeExpr)) {
-    result = TypeCheckErrorType::get(getContext());
-    return success();
-  }
-
-  return emitError("FIXME: Unsupported type kind!");
+/// This helper emits the specified expression tree as a type, e.g. turning
+/// "Int" into the type for it.  This never returns null - if the expression
+/// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
+Type IREmitter::emitAsType(const ExprNode *node) {
+  Type result = node->emitType(*this);
+  // The emitType methods return null on failure, we return a TypeCheckErrorType
+  // to simplify clients.
+  return result ? result : TypeCheckErrorType::get(getContext());
 }
 
 //===----------------------------------------------------------------------===//
@@ -158,10 +99,14 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
 
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
-/// Error nodes cannot be emitted.
-MLIRValueRep ErrorNode::emit(IREmitter &state) const { return MLIRValueRep(); }
+/// Error nodes cannot be emitted and have already been diagnosed.
+MLIRValueRep ErrorNode::emitIR(IREmitter &state) const {
+  return MLIRValueRep();
+}
 
-MLIRValueRep IntLiteralNode::emit(IREmitter &state) const {
+Type ErrorNode::emitType(IREmitter &state) const { return Type(); }
+
+MLIRValueRep IntLiteralNode::emitIR(IREmitter &state) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -171,19 +116,34 @@ MLIRValueRep IntLiteralNode::emit(IREmitter &state) const {
   return IntegerAttr::get(IndexType::get(state.getContext()), value);
 }
 
-MLIRValueRep FloatLiteralNode::emit(IREmitter &state) const {
+Type IntLiteralNode::emitType(IREmitter &state) const {
+  state.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
+}
+
+MLIRValueRep FloatLiteralNode::emitIR(IREmitter &state) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   return FloatAttr::get(FloatType::getF64(state.getContext()),
                         APFloat(value.convertToDouble()));
 }
 
-MLIRValueRep StringLiteralNode::emit(IREmitter &state) const {
+Type FloatLiteralNode::emitType(IREmitter &state) const {
+  state.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
+}
+
+MLIRValueRep StringLiteralNode::emitIR(IREmitter &state) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return StringAttr::get(state.getContext(), value);
 }
 
-MLIRValueRep DeclRefNode::emit(IREmitter &state) const {
+Type StringLiteralNode::emitType(IREmitter &state) const {
+  state.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
+}
+
+MLIRValueRep DeclRefNode::emitIR(IREmitter &state) const {
   Optional<Scope::NameEntry> declOrValue =
       state.scope.lookup(StringAttr::get(state.getContext(), spelling));
   if (!declOrValue) {
@@ -232,14 +192,54 @@ MLIRValueRep DeclRefNode::emit(IREmitter &state) const {
   return {};
 }
 
-MLIRValueRep CallNode::emit(IREmitter &state) const {
-  auto calleeVal = callee->emit(state);
+Type DeclRefNode::emitType(IREmitter &state) const {
+  auto *context = state.getContext();
+
+  // TODO(types): This is a hack to unblock tests in the interim.
+  if (spelling == "index")
+    return IndexType::get(context);
+
+  auto emitError = [&](const Twine &message) -> Type {
+    state.emitError(getLoc(), message);
+    return Type();
+  };
+
+  // Lookup the identifier.
+  Optional<Scope::NameEntry> lookup =
+      state.scope.lookup(StringAttr::get(context, spelling));
+  if (!lookup)
+    return emitError("unknown type name '" + spelling + "'");
+  if (!std::holds_alternative<Scope *>(*lookup))
+    return emitError("'" + spelling + "' names a value, not a type");
+
+  Scope &scope = *std::get<Scope *>(*lookup);
+  auto typeDecl = dyn_cast<LITStructDeclOp>(scope.getDecl());
+  if (!typeDecl)
+    return emitError("'" + spelling + "' names a value, not a type");
+
+  // We need the signature for the struct to be resolved in order to know how
+  // to refer to it.
+  auto resolveResult = state.shared.declResolver->resolve(
+      scope, DeclResolvedness::signatureResolved, getLoc());
+
+  // If the decl was erroneous somehow, then don't form a reference to it, the
+  // error has already been diagnosed.
+  if (failed(resolveResult))
+    return Type();
+
+  // TODO: Handle type parameters!
+  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
+                      ParamBindArrayAttr::get(context, {}));
+}
+
+MLIRValueRep CallNode::emitIR(IREmitter &state) const {
+  auto calleeVal = callee->emitIR(state);
   if (!calleeVal)
     return {};
 
   // Emit all the arguments. TODO: Handle contextual types.
   for (auto arg : args) {
-    auto argVal = arg->emit(state);
+    auto argVal = arg->emitIR(state);
     if (!argVal)
       return {};
   }
@@ -268,13 +268,22 @@ MLIRValueRep CallNode::emit(IREmitter &state) const {
   return {};
 }
 
-MLIRValueRep ParenExprNode::emit(IREmitter &state) const {
-  return subExpr->emit(state);
+Type CallNode::emitType(IREmitter &state) const {
+  state.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
 }
 
-MLIRValueRep BinOpNode::emit(IREmitter &state) const {
-  auto lhsRep = lhs->emit(state);
-  auto rhsRep = rhs->emit(state);
+MLIRValueRep ParenExprNode::emitIR(IREmitter &state) const {
+  return subExpr->emitIR(state);
+}
+
+Type ParenExprNode::emitType(IREmitter &state) const {
+  return subExpr->emitType(state);
+}
+
+MLIRValueRep BinOpNode::emitIR(IREmitter &state) const {
+  auto lhsRep = lhs->emitIR(state);
+  auto rhsRep = rhs->emitIR(state);
   if (!lhsRep || !rhsRep)
     return {};
   auto lhsType = lhsRep.getType(), rhsType = rhsRep.getType();
@@ -317,4 +326,9 @@ MLIRValueRep BinOpNode::emit(IREmitter &state) const {
   case kMul:
     return (Value)state.builder->create<index::MulOp>(loc, lhsVal, rhsVal);
   }
+}
+
+Type BinOpNode::emitType(IREmitter &state) const {
+  state.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
 }
