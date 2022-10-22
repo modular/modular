@@ -250,7 +250,15 @@ LogicalResult ParamOperatorAttr::verify(
       break; // i1 types only support xor.
     // TODO: Can support signful fixed width types as needed.
     return emitError() << "operator requires an index type";
-
+  // Unary expressions.
+  case POC::Neg:
+    if (operands.size() != 1)
+      return emitError() << stringifyEnum(opcode) << " must have one operand";
+    if (type != operands[0].getType())
+      return emitError() << "result type should match operand types";
+    if (!operands[0].getType().isIndex())
+      return emitError() << "operator requires an index type";
+    break;
   // Binary expressions.
   case POC::Shl:
   case POC::Shr:
@@ -655,6 +663,12 @@ static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
   });
 }
 
+static Attribute simplifyNeg(SmallVectorImpl<TypedAttr> &operands) {
+  if (auto val = dyn_cast<IntegerAttr>(operands[0]))
+    return IntegerAttr::get(val.getType(), -val.getValue());
+  return {};
+}
+
 /// Given a binary function, if the two operands are known constant integers,
 /// use the specified fold functions to compute the result.
 static Attribute
@@ -953,6 +967,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::Min:
     result = simplifyMin(operands);
+    break;
+  case POC::Neg:
+    result = simplifyNeg(operands);
     break;
   case POC::Shl:
     result = simplifyShl(operands);
