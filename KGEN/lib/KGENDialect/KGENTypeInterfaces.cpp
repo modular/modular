@@ -30,7 +30,7 @@ KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
       return llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT);
 
     // Return the target pointer width.
-    if (type.isIndex())
+    if (type.isa<FunctionType>() || type.isIndex())
       return target.getPointerSize();
 
     // Return the element type size multiplied by the size.
@@ -64,7 +64,7 @@ KGEN::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target,
           llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT));
 
     // Return the pointer size.
-    if (type.isIndex())
+    if (type.isa<FunctionType>() || type.isIndex())
       return target.getPointerSize();
 
     // Round the vector size up to the nearest power of 2.
