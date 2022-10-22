@@ -113,11 +113,14 @@ def GeneratorOp
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
 
-def GeneratorInterfaceOp
-  : KGENOp<"generator.interface",
-           [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
-            IsolatedFromAbove, DeclareOpInterfaceMethods<KGENDeclInterface>,
-            DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def GeneratorInterfaceOp : KGENOp<"generator.interface", [
+    HasParent<"mlir::ModuleOp">,
+    FunctionOpInterface,
+    Symbol,
+    IsolatedFromAbove,
+    DeclareOpInterfaceMethods<CallableOpInterface>,
+    DeclareOpInterfaceMethods<KGENDeclInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
@@ -705,7 +708,10 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
 
 class PrecompiledOpBase<string mnemonic, dag additionalArgs>
   : KGENOp<"precompiled." # mnemonic,
-    [HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol,
+    [HasParent<"mlir::ModuleOp">,
+     FunctionOpInterface,
+     Symbol,
+     DeclareOpInterfaceMethods<CallableOpInterface>,
      DeclareOpInterfaceMethods<KGENDeclInterface>]> {
 
   let arguments = !con((ins SymbolNameAttr:$sym_name,
@@ -737,6 +743,12 @@ class PrecompiledOpBase<string mnemonic, dag additionalArgs>
     void $cppClass::print(::mlir::OpAsmPrinter &p) {
       printPrecompiledOp(p, *this);
     }
+
+    /// Return null to indicate an external callable.
+    Region *$cppClass::getCallableRegion() { return nullptr; }
+
+    /// Return the results of calling this operation.
+    ArrayRef<Type> $cppClass::getCallableResults() { return getResultTypes(); }
   }];
 
   let hasCustomAssemblyFormat = 1;

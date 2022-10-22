@@ -456,6 +456,13 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
 }
 
+/// Return null to indicate that this is an "external" callable.
+Region *GeneratorInterfaceOp::getCallableRegion() { return nullptr; }
+
+ArrayRef<Type> GeneratorInterfaceOp::getCallableResults() {
+  return getResultTypes();
+}
+
 //===----------------------------------------------------------------------===//
 // Common CallOp / CallParamOp logic
 //===----------------------------------------------------------------------===//
