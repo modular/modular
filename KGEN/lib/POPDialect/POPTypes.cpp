@@ -298,6 +298,14 @@ Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
   return getTypeSize(target);
 }
 
+bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
+  if (auto simd = dyn_cast<POP::SIMDType>(type)) {
+    auto resolvedSize = simd.getResolvedSize();
+    return (resolvedSize && *resolvedSize == 1);
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
