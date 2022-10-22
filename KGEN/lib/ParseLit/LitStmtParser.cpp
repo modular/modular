@@ -59,6 +59,16 @@ namespace {
 struct LitStmtParser : public LitParserBase {
   LitStmtParser(LitLexer &lexer, Scope &scope)
       : LitParserBase(lexer), scope(scope), builder(scope.getDeclEndBuilder()) {
+
+    // Create the varDeclCursor with an arbitrary op.  We delete it on
+    // destruction of this statement parser.
+    varDeclCursor =
+        builder.create<index::ConstantOp>(scope.getDecl()->getLoc(), 1234567);
+  }
+
+  ~LitStmtParser() {
+    // The varDeclCursor operation is no longer needed.
+    varDeclCursor->erase();
   }
 
   ParseResult parseFile(ModuleOp module);
@@ -108,6 +118,12 @@ private:
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
+
+  /// This is the operation we should install VarDecl's ahead of.  This ensures
+  /// they are emitted ahead of anything else in the region for the decl, and
+  /// in decls with multiple regions (e.g. function bodies with if statements)
+  /// it ensures the decl dominates the whole body.
+  Operation *varDeclCursor;
 };
 } // namespace
 
@@ -333,8 +349,9 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
-    auto varDecl = scope.getDeclBuilder().create<VarDeclOp>(
-        translateLocation(lhs->getLoc()), declType, nameAttr);
+    auto varDecl = OpBuilder(varDeclCursor)
+                       .create<VarDeclOp>(translateLocation(lhs->getLoc()),
+                                          declType, nameAttr);
     getDeclResolver().addFullyResolvedDecl(varDecl, &scope);
     lvalue = varDecl;
   }
@@ -588,9 +605,8 @@ ParseResult LitStmtParser::parseVarDeclStmt() {
   if (parseIdentifier(name, "expected name for 'var' declaration"))
     return failure();
 
-  auto builder = scope.getDeclBuilder();
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
-  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
+  auto varDecl = OpBuilder(varDeclCursor).create<VarDeclOp>(loc, varType, name);
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.

@@ -1,9 +1,9 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
 # CHECK-LABEL: lit.func public @test_while(%a: index, %b: index) -> index {
-# CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
-# CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
 # CHECK:       %inside_a = lit.var.decl "inside_a" : <index>
+# CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
+# CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
 # CHECK:       scf.while : () -> () {
 # CHECK-NEXT:    %[[LOAD_A:.*]] = pop.load  %[[VAR_A:.*]] : !pop.pointer<index>
 # CHECK-NEXT:    %[[ONE:.*]] = index.constant 1

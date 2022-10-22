@@ -8,14 +8,14 @@ def empty_def():
 
 # CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: index, b: index, c: index) -> index:
-  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
-  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: %a_0 = lit.var.decl "a"
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %b_1 = lit.var.decl "b"
   # CHECK-NEXT: pop.store %b, %b_1
   # CHECK-NEXT:  %c_2 = lit.var.decl "c"
   # CHECK-NEXT: pop.store %c, %c_2
+  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
+  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
 
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store %[[TMP]], %c_2
@@ -60,7 +60,7 @@ z
 # CHECK-SAME:  %exp: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>) -> index {
 def fancy_signature[dt: DType, size: index]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> index:
-  pass
+
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
   return size+42
@@ -87,19 +87,19 @@ struct Int:
   # CHECK: }
 # CHECK: }
 
-# CHECK-LABEL: lit.struct.decl @Pair {
-struct Pair:
+# CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.ref<@DType>> {
+struct Pair[dt: DType]:
+ # CHECK: %a = lit.var.decl "a" : <!kgen.ref<@SIMD<size = 42, dt: !kgen.ref<@DType> = dt>>>
  # CHECK: %b = lit.var.decl "b" : <!kgen.ref<@Int>>
- # CHECK: %a = lit.var.decl "a" : <!kgen.ref<@Int>>
-  var a : Int
+  var a : SIMD[42, dt]
   var b : Int
 # CHECK-NEXT: }
 
 # CHECK-LABEL:  lit.func public @var_decls(%untyped: !lit.object)
 def var_decls(untyped):
-  # CHECK: %z = lit.var.decl "z" : <index>
-  # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
   # CHECK: %x = lit.var.decl "x" : <index>
+  # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
+  # CHECK: %z = lit.var.decl "z" : <index>
   x = 123
   var y : Int
   y = y #+1
