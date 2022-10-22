@@ -141,6 +141,11 @@ void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds);
 
+/// Parse an align parameter if present.
+ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
+void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
+                                      TypedAttr alignment);
+
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
