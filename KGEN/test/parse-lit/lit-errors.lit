@@ -1,105 +1,29 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics -split-input-file %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s
 
-# expected-error @+1 {{unexpected character}}
-`
+# "Standard library"
+struct Float:
+struct Int:
 
-# // -----
-
-# expected-error @+1 {{unexpected character}}
-!
-
-# // -----
-
-# expected-error @+1 {{leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers}}
-0123
-
-# // -----
-
-# expected-error @+1 {{no digits specified for octal literal}}
-0o_
-
-# // -----
-
-# expected-error @+1 {{expecting a digit after the exponent}}
-1e+*
-
-# // -----
-
-# expected-error @+1 {{expecting a digit after the exponent}}
-1e*
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-"Hello'
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-'Hello"
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-"Hello
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-'Hello
-
-# // -----
-
-# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
-"A\x4"
-
-# // -----
-
-# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
-"A\x"
-
-# // -----
-
-# expected-error @+1 {{invalid escape sequence}}
-"A\zB"
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-"AB\"
-
-# // -----
-
-# expected-error @+1 {{unterminated string}}
-r"AB\"
-
-# // -----
+# Tests
 
 def foo():
 # expected-error @+1 {{unexpected token in expression}}
   return pass
 
-# // -----
-
 # expected-note @+1 {{previous definition here}}
-def redecl():
+def fn_redecl():
   pass
 
-# expected-error @+1 {{invalid redefinition of "redecl"}}
-def redecl():
+# expected-error @+1 {{invalid redefinition of "fn_redecl"}}
+def fn_redecl():
   pass
-
-
-# // -----
 
 def fn():
-  foo() # expected-error {{use of unknown declaration "foo"}}
+  never_declared_fn() # expected-error {{use of unknown declaration "never_declared_fn"}}
   pass
 
 
-# // -----
-
-def fn(a: index):
+def elif_parse_error(a: index):
   if a:
     pass
  elif a: # expected-error {{unexpected token in expression}}
@@ -107,127 +31,88 @@ def fn(a: index):
   else:
     pass
 
-# // -----
-
 42 = 17 # expected-error {{cannot assign to expression}}
-
-# // -----
 
 return 32 # expected-error {{cannot return from this context}}
 
-# // -----
-
-def a():
+def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
-# // -----
-
-def a() -> index:
+def missing_ret_val() -> index:
   return # expected-error {{expected a return value from 'def' with return type 'index'}}
 
-# // -----
-
-def a() -> index:
+def ret_type_mismatch() -> index:
   return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}
 
-# // -----
-
-def bad[
+def meta_param_then_param_redef[
       dt: index # expected-note {{previous definition here}}
     ](dt: index):    # expected-error {{invalid redefinition of "dt"}}
   pass
 
-# // -----
-
 # expected-note @below {{previous definition here}}
 # expected-error @below {{invalid redefinition of "x"}}
-def bad(x: index, x: index):
+def param_redef(x: index, x: index):
   pass
-
-# // -----
 
 # expected-error @+1 {{'def' statement must be on its own line}}
 struct Struct: def foo(): pass
 
-# // -----
-
-struct Pair:
+struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
   return 42
 
-# // -----
-
-def f():
+def var_decl_without_type():
   # expected-error @+1 {{var declaration requires a type}}
   var x = 42
 
-# // -----
-
-struct Str:
+struct StructMemberRedefinition:
   var x : index  # expected-note {{previous definition here}}
   var x : index  # expected-error {{invalid redefinition of "x"}}
-
-# // -----
-
-struct Float: pass
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
   var x : Float  # expected-error {{invalid redefinition of "x"}}
   x+4   # no follow-on error.
 
-# // -----
-
-x = 123
+var globalvar : index
 def err():
-  var y : x  # expected-error {{'x' names a value, not a type}}
-
-# // -----
+  var y : globalvar  # expected-error {{'globalvar' names a value, not a type}}
 
 struct Rec[param:
                 Rec  # expected-error {{recursive reference to declaration}}
            ]:
   pass
 
-# // -----
-
-def f():
+def missing_type_on_var_decl():
   var abc :
   pass # expected-error {{unexpected token in expression}}
   abc+abc
 
-# // -----
 
-struct Int:
-
-def f(a: Int, b: index):
+def invalid_conversion(a: Int, b: index):
   a = b+1 # expected-error {{cannot convert value of type 'index' to '!kgen.ref<@Int>'}}
-
-# // -----
 
 struct NotBoolConvertible:
 
-def f(a: NotBoolConvertible):
+def test_bool_context(a: NotBoolConvertible):
   if a: # expected-error {{value of type '!kgen.ref<@NotBoolConvertible>' isn't convertible to Bool}}
      pass
 
-# // -----
-
 struct Thing[a: index, b: index]:
 
-def f(a: Thing[4, 5]):
+def GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-def f1(a: Thing):  # expected-error {{'Thing' requires 2 meta parameters}}
+def MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
 # expected-error @+1 {{unknown parameterized type '!kgen.ref<@Thing<a = 1, b = 2>>'}}
-def f2(a: Thing[1,2][1]):
+def MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-def f3(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
+def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
 # expected-error @+1 {{parameter of type 'none' cannot be converted to expected type 'index'}}
-def f4(a: Thing[1, "foo"]):
+def WeirdMetaParams(a: Thing[1, "foo"]):
   pass
