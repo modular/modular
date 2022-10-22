@@ -1099,6 +1099,29 @@ void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
   }
 }
 
+/// Parse an align parameter if present.
+void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
+                                            TypedAttr alignment) {
+  if (!alignment)
+    return;
+  p << "align ";
+  printParamValue(p, alignment);
+  p << " ";
+}
+
+/// Parse a parameter value that is known to be an alignment type.
+ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
+                                                   TypedAttr &result) {
+  if (p.parseOptionalKeyword("align")) {
+    result = TypedAttr();
+    return success();
+  }
+
+  if (parseIndexParamValue(p, result))
+    return failure();
+  return success();
+}
+
 /// Compare a range of values from an "originator" to a corresponding range of
 /// values from a "target".  If the two mismatch, emit an error that tries to
 /// explain the issue in a nice way.

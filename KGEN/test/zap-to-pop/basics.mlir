@@ -226,6 +226,34 @@ kgen.generator @simd_load(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.simd<4
 
 // -----
 
+// CHECK-LABEL: @simd_aligned_load
+// CHECK-SAME: %[[BUF:.*]]: !pop.struct
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.generator @simd_aligned_load(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.simd<4, f32> {
+  // CHECK: %[[BASE:.*]] = pop.struct.get %[[BUF]][0]
+  // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
+  // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<scalar<f32>> to !pop.pointer<simd<4, f32>>
+  // CHECK: %[[VAL:.*]] = pop.load %[[BPTR]] align 64
+  %0 = zap.buffer.load %buf[%idx] align 64 : !zap.buffer<4, f32>, !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @simd_load_aligned
+// CHECK-SAME: %[[BUF:.*]]: !pop.struct
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.generator @simd_load_aligned(%buf: !zap.buffer<4, f32>, %idx: index) -> !pop.simd<4, f32> {
+  // CHECK: %[[BASE:.*]] = pop.struct.get %[[BUF]][0]
+  // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
+  // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<scalar<f32>> to !pop.pointer<simd<4, f32>>
+  // CHECK: %[[VAL:.*]] = pop.load %[[BPTR]] align 4
+  %0 = zap.buffer.load %buf[%idx] align get_alignof(f32) : !zap.buffer<4, f32>, !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// -----
+
 // CHECK-LABEL: @simd_store
 // CHECK-SAME: %[[VAL:.*]]: !pop.simd
 // CHECK-SAME: %[[BUF:.*]]: !pop.struct
@@ -236,6 +264,21 @@ kgen.generator @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, 
   // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<scalar<f32>> to !pop.pointer<simd<4, f32>>
   // CHECK: pop.store %[[VAL]], %[[BPTR]]
   zap.buffer.store %val, %buf[%idx] : !pop.simd<4, f32>, !zap.buffer<4, f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @simd_store_aligned
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd
+// CHECK-SAME: %[[BUF:.*]]: !pop.struct
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.generator @simd_store_aligned(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, %idx: index) {
+  // CHECK: %[[BASE:.*]] = pop.struct.get %[[BUF]][0]
+  // CHECK: %[[PTR:.*]] = pop.offset %[[BASE]][%[[IDX]]]
+  // CHECK: %[[BPTR:.*]] = pop.pointer.bitcast %[[PTR]] : !pop.pointer<scalar<f32>> to !pop.pointer<simd<4, f32>>
+  // CHECK: pop.store %[[VAL]], %[[BPTR]] align 8
+  zap.buffer.store %val, %buf[%idx] align 8 : !pop.simd<4, f32>, !zap.buffer<4, f32>
   kgen.return
 }
 
@@ -590,8 +633,35 @@ kgen.func @zap_ndbuffer_simd_load(
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
   // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
   // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
-  // CHECK: pop.load %[[SIMD_OFFSET]] align 1 : !pop.pointer<simd<4, f32>>
+  // CHECK: pop.load %[[SIMD_OFFSET]] : !pop.pointer<simd<4, f32>>
   %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx0, %idx1, %idx2] : !zap.ndbuffer<[?, 5, ?], f32>, !pop.simd<4, f32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @zap_ndbuffer_simd_aligned_load
+// CHECK-SAME: %[[NDBUFFER0:[a-z0-9]+]]: !pop.struct<pointer<scalar<f32>>
+// CHECK-SAME: %[[IDX0:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX1:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX2:.*]]: index)
+kgen.func @zap_ndbuffer_simd_aligned_load(
+  %ndbuffer0: !zap.ndbuffer<[?, 5, ?], f32>,
+  %idx0: index,
+  %idx1: index,
+  %idx2: index) {
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
+  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
+  // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
+  // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
+  // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
+  // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
+  // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
+  // CHECK: pop.load %[[SIMD_OFFSET]] align 64 : !pop.pointer<simd<4, f32>>
+  %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx0, %idx1, %idx2] align 64 : !zap.ndbuffer<[?, 5, ?], f32>, !pop.simd<4, f32>
   kgen.return
 }
 
@@ -619,8 +689,38 @@ kgen.func @zap_ndbuffer_simd_store(
   // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
   // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
   // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
-  // CHECK: pop.store %[[VAL]], %[[SIMD_OFFSET]] align 1 : !pop.pointer<simd<4, f32>>
+  // CHECK: pop.store %[[VAL]], %[[SIMD_OFFSET]] : !pop.pointer<simd<4, f32>>
   zap.ndbuffer.simd_store %val, %ndbuffer0[%idx0, %idx1, %idx2] : !pop.simd<4, f32>, !zap.ndbuffer<[?, 5, ?], f32>
+  kgen.return
+}
+
+
+// -----
+
+// CHECK-LABEL: @zap_ndbuffer_simd_store_aligned
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
+// CHECK-SAME: %[[NDBUFFER0:[a-z0-9]+]]: !pop.struct<pointer<scalar<f32>>
+// CHECK-SAME: %[[IDX0:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX1:arg[0-9]+]]: index,
+// CHECK-SAME: %[[IDX2:.*]]: index)
+kgen.func @zap_ndbuffer_simd_store_aligned(
+  %val : !pop.simd<4, f32>,
+  %ndbuffer0: !zap.ndbuffer<[?, 5, ?], f32>,
+  %idx0: index,
+  %idx1: index,
+  %idx2: index) {
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
+  // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
+  // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
+  // CHECK-DAG: %[[ADD1:.*]] = index.add %[[MUL1]], %[[IDX1]]
+  // CHECK-DAG: %[[MUL2:.*]] = index.mul %[[ADD1]], %[[SIZE2]]
+  // CHECK-DAG: %[[ADD2:.*]] = index.add %[[MUL2]], %[[IDX2]]
+  // CHECK: %[[POP_OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD2]]]
+  // CHECK: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
+  // CHECK: pop.store %[[VAL]], %[[SIMD_OFFSET]] align 8 : !pop.pointer<simd<4, f32>>
+  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx0, %idx1, %idx2] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[?, 5, ?], f32>
   kgen.return
 }
 
@@ -651,6 +751,37 @@ kgen.generator @zap_ndbuffer_loadstore_with_param<size, type: dtype>(
   // CHECK-DAG: %[[OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD]]]
   // CHECK-DAG: pop.store %[[VAL]], %[[OFFSET]]
   zap.ndbuffer.store %val, %buffer[%idx, %idx] : !zap.ndbuffer<[size, size], type>
+  kgen.return
+}
+
+
+// -----
+
+// CHECK-LABEL: @zap_ndbuffer_loadstore_aligned_with_param
+// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<type>,
+// CHECK-SAME: %[[BUFFER:.*]]: !pop.struct<pointer<scalar<type>>
+kgen.generator @zap_ndbuffer_loadstore_aligned_with_param<size, type: dtype>(
+    %val : !pop.scalar<type>,
+    %buffer: !zap.ndbuffer<[size, size], type>
+  ) {
+  // CHECK: %[[IDX:.*]] =  index.constant
+  %idx = index.constant 2
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
+  // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
+  // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
+  // CHECK-DAG: %[[OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD]]]
+  // CHECK-DAG: pop.load %[[OFFSET]] align size
+  %u = zap.ndbuffer.load %buffer[%idx, %idx] align size : !zap.ndbuffer<[size, size], type>
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
+  // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
+  // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
+  // CHECK-DAG: %[[OFFSET:.*]] = pop.offset %[[BASE]][%[[ADD]]]
+  // CHECK-DAG: pop.store %[[VAL]], %[[OFFSET]] align size
+  zap.ndbuffer.store %val, %buffer[%idx, %idx] align size : !zap.ndbuffer<[size, size], type>
   kgen.return
 }
 

@@ -265,17 +265,28 @@ def ZAP_BufferLoadOp : ZAPOp<"buffer.load"> {
     Example:
 
     ```mlir
-    %val = zap.buffer.load %buf[%idx]: !zap.buffer<size,dtype>, !pop.simd<4,f32>
+    %val = zap.buffer.load %buf[%idx]:
+                                !zap.buffer<size, dtype>, !pop.simd<4, f32>
+    ```
+
+    An optional `align` attribute can be specified to indicate the load
+    alignment in bytes. If not specified, the alignment is assumed to be the
+    same alignment as the element type of the buffer.
+
+    ```mlir
+    %val = zap.buffer.load %buf[%idx] align 64 :
+                                !zap.buffer<size, dtype>, !pop.simd<4, f32>
     ```
   }];
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemRead]>:$buffer,
-                       Index:$position);
+                       Index:$position,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat =  [{
-    $buffer `[` $position `]` attr-dict `:`
-        qualified(type($buffer)) `,` qualified(type($result))
+    $buffer `[` $position `]` custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($buffer)) `,` qualified(type($result))
   }];
   let hasVerifier = 1;
 }
@@ -296,14 +307,26 @@ def ZAP_BufferStoreOp : ZAPOp<"buffer.store"> {
     ```mlir
     zap.buffer.store %val, %buf[%idx]: !pop.simd<4, f32>, !zap.buffer<size, f32>
     ```
+
+    An optional `align` attribute can be specified to indicate the store
+    alignment in bytes. If not specified, the alignment is assumed to be the
+    same alignment as the element type of the buffer.
+
+    ```mlir
+    %1 = zap.buffer.load %0[%pos0] align 1 : !zap.buffer<[size], dtype>
+    %2 = zap.buffer.load %1[%pos0] align 64 : !zap.buffer<[size], dtype>
+
+    ```
   }];
 
   let arguments = (ins Arg<BufferKnownDType, "", [MemWrite]>:$buffer,
-                       POP_SIMDType:$value, Index:$position);
+                       POP_SIMDType:$value, Index:$position,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
 
   let assemblyFormat = [{
-    $value `,` $buffer `[` $position `]` attr-dict `:`
-            qualified(type($value)) `,` qualified(type($buffer))
+    $value `,` $buffer `[` $position `]`
+    custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($value)) `,` qualified(type($buffer))
   }];
   let hasVerifier = 1;
 }
@@ -458,14 +481,27 @@ def ZAP_NDBufferLoadOp : ZAPOp<"ndbuffer.load",
     %1 = zap.ndbuffer.load %0[%pos0] : !zap.ndbuffer<[size], dtype>
     %2 = zap.ndbuffer.load %1[%pos0, %pos1]:!zap.ndbuffer<[size0, size1], dtype>
     ```
+
+    An optional `align` attribute can be specified to indicate the load
+    alignment in bytes. If not specified, the alignment is assumed to be the
+    same alignment as the element type of the ndbuffer.
+
+    ```mlir
+    %1 = zap.ndbuffer.load %0[%pos0] align 1 : !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.load %1[%pos0, %pos1] align 64 :
+                                        !zap.ndbuffer<[size0, size1], dtype>
+
+    ```
   }];
 
   let arguments = (ins Arg<NDBufferKnownDType, "", [MemRead]>:$nDBuffer,
-                       Variadic<Index>:$positions);
+                       Variadic<Index>:$positions,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs POP_ScalarType:$result);
 
   let assemblyFormat = [{
-    $nDBuffer `[` $positions `]` attr-dict `:` qualified(type($nDBuffer))
+    $nDBuffer `[` $positions `]` custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
@@ -491,13 +527,29 @@ def ZAP_NDBufferStoreOp : ZAPOp<"ndbuffer.store",
     %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] :
                                       !zap.ndbuffer<[size0, size1], dtype>
     ```
+
+    An optional `align` attribute can be specified to indicate the store
+    alignment in bytes. If not specified, the alignment is assumed to be the
+    same alignment as the element type of the ndbuffer.
+
+    ```mlir
+    %1 = zap.ndbuffer.store %val, %0[%pos0] align 1 :
+                                      !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] align 64 :
+                                      !zap.ndbuffer<[size0, size1], dtype>
+
+    ```
   }];
 
   let arguments = (ins Arg<NDBufferKnownDType, "", [MemWrite]>:$nDBuffer,
-                       POP_ScalarType:$value, Variadic<Index>:$positions);
+                       POP_ScalarType:$value,
+                       Variadic<Index>:$positions,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
 
   let assemblyFormat = [{
-    $value `,` $nDBuffer `[` $positions `]` attr-dict `:` qualified(type($nDBuffer))
+    $value `,` $nDBuffer `[` $positions `]`
+    custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
@@ -523,15 +575,27 @@ def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
     %2 = zap.ndbuffer.simd_load %1[%pos0, %pos1]:!zap.ndbuffer<[s0, s1], dtype>,
                                                  !pop.simd<simd_width, dtype>
     ```
+
+    An optional `align` attribute can be specified to indicate the load
+    alignment in bytes. If not specified, the alignment is assumed to be 1.
+
+    ```mlir
+    %1 = zap.ndbuffer.simd_load %0[%pos0] align get_alignof(f32):
+                      !zap.ndbuffer<[size], dtype>, !pop.simd<simd_width, dtype>
+    %2 = zap.ndbuffer.simd_load %1[%pos0, %pos1] align 64 :
+                                                 !zap.ndbuffer<[s0, s1], dtype>,
+                                                 !pop.simd<simd_width, dtype>
+    ```
   }];
 
   let arguments = (ins Arg<NDBufferKnownDType, "", [MemRead]>:$nDBuffer,
-                       Variadic<Index>:$positions);
+                       Variadic<Index>:$positions,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
-    $nDBuffer `[` $positions `]` attr-dict `:`
-      qualified(type($nDBuffer)) `,` qualified(type($result))
+    $nDBuffer `[` $positions `]` custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($nDBuffer)) `,` qualified(type($result))
   }];
 
   let hasVerifier = 1;
@@ -558,14 +622,29 @@ def ZAP_NDBufferSIMDStoreOp : ZAPOp<"ndbuffer.simd_store"> {
                                         !pop.simd<simd_width, dtype>,
                                         !zap.ndbuffer<[size0, size1], dtype>
     ```
+
+    An optional `align` attribute can be specified to indicate the store
+    alignment in bytes. If not specified, the alignment is assumed to be 1.
+
+    ```mlir
+    %1 = zap.ndbuffer.simd_store %val, %0[%pos0] align 4 :
+                                                 !pop.simd<simd_width, dtype>,
+                                                 !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.simd_store %val, %1[%pos0, %pos1] align 1 :
+                                        !pop.simd<simd_width, dtype>,
+                                        !zap.ndbuffer<[size0, size1], dtype>
+    ```
   }];
 
   let arguments = (ins Arg<NDBufferKnownDType, "", [MemWrite]>:$nDBuffer,
-                       POP_SIMDType:$value, Variadic<Index>:$positions);
+                       POP_SIMDType:$value,
+                       Variadic<Index>:$positions,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
 
   let assemblyFormat = [{
-    $value `,` $nDBuffer `[` $positions `]` attr-dict `:`
-      qualified(type($value)) `,` qualified(type($nDBuffer))
+    $value `,` $nDBuffer `[` $positions `]`
+    custom<OptionalAlignmentParamValue>($alignment)
+    attr-dict `:` qualified(type($value)) `,` qualified(type($nDBuffer))
   }];
 
   let hasVerifier = 1;
