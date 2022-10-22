@@ -444,8 +444,7 @@ struct ConvertPOPConstant : public mlir::ConvertOpToLLVMPattern<ConstantOp> {
           });
       return success();
     }
-    auto vectype = dyn_cast<VectorType>(type);
-    if (vectype) {
+    if (auto vectorType = dyn_cast<VectorType>(type)) {
       // Special handling for cases where pop.constant is represented by a
       // single number, e.g.
       //   %1 = pop.constant(0 : ui32) : !pop.simd<8, ui32>
@@ -456,16 +455,16 @@ struct ConvertPOPConstant : public mlir::ConvertOpToLLVMPattern<ConstantOp> {
           })
           // Scalar to vector translation
           .Case([&](FloatAttr attr) {
-            SmallVector<APFloat> values(vectype.getNumElements(),
+            SmallVector<APFloat> values(vectorType.getNumElements(),
                                         attr.getValue());
-            auto xx = FloatArrayElementsAttr::get(vectype, values);
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type, xx);
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+                op, type, FloatArrayElementsAttr::get(vectorType, values));
           })
           .Case([&](IntegerAttr attr) {
-            SmallVector<APInt> values(vectype.getNumElements(),
+            SmallVector<APInt> values(vectorType.getNumElements(),
                                       attr.getValue());
-            auto xx = IntArrayElementsAttr::get(vectype, values);
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type, xx);
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+                op, type, IntArrayElementsAttr::get(vectorType, values));
           })
           .Default([&](Attribute attr) {
             llvm_unreachable("unknown constant type");
