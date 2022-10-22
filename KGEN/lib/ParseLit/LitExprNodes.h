@@ -65,6 +65,7 @@ public:
     kStringLiteral, // "Hello"
     kDeclRef,       // x
     kCall,          // thing(a, b)
+    kSubscript,     // thing[a, b:c]
     kParenExprNode, // (x+y)
 
     // Binary expressions.
@@ -190,6 +191,28 @@ struct CallNode final : public ExprNode {
   Type emitType(IREmitter &state) const override;
 };
 
+/// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
+/// slice will be represented with a subexpression.
+struct SubscriptNode final : public ExprNode {
+  SubscriptNode(ExprNode *base, SMLoc lsquareLoc, ArrayRef<ExprNode *> indices)
+      : ExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
+        indices(indices) {}
+
+  ExprNode *const base;
+  const SMLoc lsquareLoc;
+  const ArrayRef<ExprNode *> indices;
+
+  static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
+  SMLoc getLoc() const override { return lsquareLoc; }
+  bool containsError() const override {
+    return base->containsError() || llvm::any_of(indices, [&](ExprNode *exp) {
+             return exp->containsError();
+           });
+  }
+  MLIRValueRep emitIR(IREmitter &state) const override;
+  Type emitType(IREmitter &state) const override;
+};
+
 struct ParenExprNode final : public ExprNode {
   ParenExprNode(SMLoc lparenLoc, ExprNode *subExpr, SMLoc rparenLoc)
       : ExprNode(kParenExprNode), lparenLoc(lparenLoc), subExpr(subExpr),
@@ -258,10 +281,19 @@ struct IREmitter {
   /// emission fails.
   Value emitAsValue(const ExprNode *node);
 
+  /// This helper emits the specified value rep as a meta value, diagnosing the
+  /// problem if the expression is only valid as a runtime value.  This returns
+  /// null if emission fails.
+  TypedAttr emitAsMetaValue(const ExprNode *node);
+
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null - if the expression
   /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
   Type emitAsType(const ExprNode *node);
+
+  /// Perform a name lookup in the current scope and return the named
+  /// declaration.  This emits an error and returns null on error.
+  Scope *lookupDecl(StringRef name, SMLoc loc);
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {

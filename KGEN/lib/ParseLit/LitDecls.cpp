@@ -250,7 +250,15 @@ struct ParsedMetaSignature {
         p.parseToken(LitToken::r_square, "expected ']' for parameter list"))
       return failure();
     return success();
-  };
+  }
+
+  void addToScope(LitSharedState &sharedState, Scope &scope) {
+    for (auto [param, loc] : llvm::zip(inputDecls, inputLocs)) {
+      auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
+      scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
+                       sharedState);
+    }
+  }
 };
 } // namespace
 
@@ -306,6 +314,12 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   if (metaSignature.parseOptionalMetaSignature(p, scope) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
+
+  // Add the meta parameters to the symbol table.  We add all of these after
+  // generic signature parsing so types used in the signature list resolve to
+  // enclosing scopes, and we add them before the value signature list so the
+  // types and parameters can resolve to the bound values.
+  metaSignature.addToScope(sharedState, scope);
 
   if (!p.consumeIf(LitToken::r_paren)) {
     if (p.parseCommaSeparatedList([&]() {
@@ -364,14 +378,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   defDecl.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
   defDecl.getBody()->addArguments(paramTypes, paramLocs);
-
-  // Add the meta parameters to the symbol table.
-  for (auto [param, loc] :
-       llvm::zip(defDecl.getParamDecls(), metaSignature.inputLocs)) {
-    auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-    scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
-                     sharedState);
-  }
 
   // Set up the body of the def, creating declarations for the value parameters
   // and adding them to the symbol table.
@@ -460,12 +466,7 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
 
   // Add the meta parameters to the struct's symbol table.
-  for (auto [param, loc] :
-       llvm::zip(structDecl.getParamDecls(), metaSignature.inputLocs)) {
-    auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-    scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
-                     sharedState);
-  }
+  metaSignature.addToScope(sharedState, scope);
   return success();
 }
 

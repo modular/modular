@@ -210,3 +210,24 @@ struct NotBoolConvertible:
 def f(a: NotBoolConvertible):
   if a: # expected-error {{value of type '!kgen.ref<@NotBoolConvertible>' isn't convertible to Bool}}
      pass
+
+# // -----
+
+struct Thing[a: index, b: index]:
+
+def f(a: Thing[4, 5]):
+  pass
+
+def f1(a: Thing):  # expected-error {{'Thing' requires 2 meta parameters}}
+  pass
+
+# expected-error @+1 {{unknown parameterized type '!kgen.ref<@Thing<a = 1, b = 2>>'}}
+def f2(a: Thing[1,2][1]):
+  pass
+
+def f3(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
+  pass
+
+# expected-error @+1 {{parameter of type 'none' cannot be converted to expected type 'index'}}
+def f4(a: Thing[1, "foo"]):
+  pass

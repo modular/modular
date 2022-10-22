@@ -46,6 +46,8 @@ public:
 
 private:
   ParseResult parsePrimary(ExprNode *&result);
+  ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
+  ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
 
   enum class Precedence {
     kInvalid, // Not a binary operator token.
@@ -178,22 +180,69 @@ ParseResult ExprParser::parsePrimary(ExprNode *&result) {
 
     // Handle calls.
     if (consumeIf(LitToken::l_paren)) {
-      SmallVector<ExprNode *> argExprs;
-      // TODO: Handle comprehension arguments.
-      if (!consumeIf(LitToken::r_paren)) {
-        if (parseExpressionList(argExprs) ||
-            parseToken(LitToken::r_paren,
-                       "expected ')' in call argument list")) {
-          return failure();
-        }
-      }
-
-      result = alloc<CallNode>(result, loc, copyArrayRef<ExprNode *>(argExprs));
+      if (parseCallSuffix(result, loc))
+        return failure();
       continue;
     }
+
+    // Handle "subscription" and "slicing" array subscripts and slicing.
+    if (consumeIf(LitToken::l_square)) {
+      if (parseSubscriptSuffix(result, loc))
+        return failure();
+      continue;
+    }
+
     break;
   }
 
+  return success();
+}
+
+/// call ::=  primary "(" [argument_list [","] | comprehension] ")"
+///
+/// argument_list        ::=  positional_arguments ["," starred_and_keywords]
+///                             ["," keywords_arguments]
+///                           | starred_and_keywords ["," keywords_arguments]
+///                           | keywords_arguments
+/// positional_arguments ::=  positional_item ("," positional_item)*
+/// positional_item      ::=  assignment_expression | "*" expression
+/// starred_and_keywords ::=  ("*" expression | keyword_item)
+///                           ("," "*" expression | "," keyword_item)*
+/// keywords_arguments   ::=  (keyword_item | "**" expression)
+///                           ("," keyword_item | "," "**" expression)*
+/// keyword_item         ::=  identifier "=" expression
+ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
+  SmallVector<ExprNode *> args;
+  // TODO: Handle comprehension arguments, stars, etc.
+  if (!consumeIf(LitToken::r_paren)) {
+    if (parseExpressionList(args) ||
+        parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
+      return failure();
+    }
+  }
+  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<ExprNode *>(args));
+  return success();
+}
+
+/// subscription ::=  primary "[" expression_list "]"
+///
+/// slicing      ::=  primary "[" slice_list "]"  [TODO]
+/// slice_list   ::=  slice_item ("," slice_item)* [","]
+/// slice_item   ::=  expression | proper_slice
+/// proper_slice ::=  [lower_bound] ":" [upper_bound] [ ":" [stride] ]
+/// lower_bound  ::=  expression
+/// upper_bound  ::=  expression
+/// stride       ::=  expression
+ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
+                                             SMLoc lsquareLoc) {
+  // TODO: Add support for slices.
+  SmallVector<ExprNode *> indices;
+  if (parseExpressionList(indices) ||
+      parseToken(LitToken::r_square, "expected ']' in call argument list"))
+    return failure();
+
+  result = alloc<SubscriptNode>(result, lsquareLoc,
+                                copyArrayRef<ExprNode *>(indices));
   return success();
 }
 
