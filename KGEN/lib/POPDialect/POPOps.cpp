@@ -544,9 +544,7 @@ LogicalResult StructGetOp::inferReturnTypes(
     MLIRContext *context, Optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
-    if (loc)
-      return mlir::emitError(*loc, msg);
-    return failure();
+    return mlir::emitOptionalError(loc, msg);
   };
   if (operands.size() != 1)
     return emitError("expected 1 operand");
@@ -602,9 +600,7 @@ LogicalResult StructGEPOp::inferReturnTypes(
     MLIRContext *context, Optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
-    if (loc)
-      return mlir::emitError(*loc, msg);
-    return failure();
+    return mlir::emitOptionalError(loc, msg);
   };
   if (operands.size() != 1)
     return emitError("expected 1 operand");
