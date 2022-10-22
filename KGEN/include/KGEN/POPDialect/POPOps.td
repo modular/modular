@@ -599,22 +599,30 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "pointer bitcast";
   let description = [{
-    The `pop.pointer.bitcast` operation reinterprets a pointer as a pointer to
-    a different element type.
+    The `pop.pointer.bitcast` operation reinterprets a pointer or function
+    pointer as a pointer to a different element or function type.
 
     Example:
 
     ```mlir
-    %0 = pop.pointer.bitcast %arg0 : !pop.pointer<?> to
+    // Bitcast an opaque pointer to an f32 pointer.
+    %0 = pop.pointer.bitcast %arg0 : !pop.pointer<scalar<invalid>> to
                                      !pop.pointer<scalar<f32>>
 
+    // Bitcast a scalar pointer to a SIMD pointer.
     %1 = pop.pointer.bitcast %0 : !pop.pointer<scalar<f32>> to
                                   !pop.pointer<simd<4, f32>>
+
+    // Bitcast an opaque pointer to a function pointer.
+    %2 = pop.pointer.bitcast %arg0 : !pop.pointer<scalar<invalid>> to
+                                     (i32, i32) -> (f32, f32)
     ```
   }];
 
-  let arguments = (ins POP_PointerType:$input);
-  let results = (outs POP_PointerType:$output);
+  let arguments = (ins AnyTypeOf<[ParamRefType, POP_PointerType,
+                                  FunctionType]>:$input);
+  let results = (outs AnyTypeOf<[ParamRefType, POP_PointerType,
+                                 FunctionType]>:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];
