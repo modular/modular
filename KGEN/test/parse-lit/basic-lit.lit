@@ -61,6 +61,14 @@ z
 def fancy_signature[dt: DType, size: index]
   (x: SIMD[size, dt], exp: SIMD[size, dt]) -> index:
 
+  # CHECK: %local = lit.var.decl "local" : <index>
+  # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[TMP2:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[TMP3:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[RES:.*]] = kgen.call_param[(index, index, index) -> index: @do_math](%[[TMP1]], %[[TMP2]], %[[TMP3]])
+  # CHECK: pop.store %[[RES]], %local : !pop.pointer<index>
+  local = do_math(size, size, size)
+
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
   return size+42
@@ -81,7 +89,15 @@ struct OneLineStruct[size: Int]: pass; pass
 
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
-  # CHECK-NEXT: lit.func public @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  # CHECK-NEXT: %value = lit.var.decl "value" : <index>
+  var value : index
+
+  # CHECK-NEXT: lit.func public @__init__(%self: !kgen.ref<@Int>, %value_0: index) {
+  def __init__(self: Int, value: index):
+    # TODO: self.value = index
+  # CHECK: }
+
+  # CHECK: lit.func public @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
   def __add__(self: Int, rhs: Int) -> Int:
     return rhs
   # CHECK: }

@@ -264,20 +264,57 @@ Type DeclRefNode::emitType(IREmitter &state) const {
 
 MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   auto calleeVal = callee->emitIR(state);
-  if (!calleeVal)
+  if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
 
-  // Emit all the arguments. TODO: Handle contextual types.
-  for (auto arg : args) {
-    auto argVal = arg->emitIR(state);
+  // The only callable thing we have right now are functions.
+  // TODO: Support struct initialization.
+  auto calleeType = dyn_cast<SignatureType>(calleeVal.getType());
+  if (!calleeType) {
+    state.emitError(getLoc(), "unable to call value of type ")
+        << calleeVal.getType();
+    return {};
+  }
+
+  // If there are any unbound parameters then we cannot call it.
+  // TODO: infer the parameters from the types of the operands.
+  if (!calleeType.getInputParams().empty()) {
+    state.emitError(getLoc(), "unable to parameterized value that expects ")
+        << calleeType.getInputParams().size() << " bound parameters";
+    return {};
+  }
+
+  assert(calleeType.getResultParamTypes().empty() &&
+         "TODO: meta results not implemented yet");
+
+  size_t numArgs = calleeType.getValues().getNumInputs();
+  if (numArgs != args.size()) {
+    state.emitError(getLoc(), "callee expects ")
+        << numArgs << " argument" << plural(numArgs);
+    return {};
+  }
+
+  // Emit all the arguments.
+  SmallVector<Value> valueArguments;
+  for (auto [arg, expectedType] :
+       llvm::zip(args, calleeType.getValues().getInputs())) {
+    auto argVal = state.emitAsValue(arg);
     if (!argVal)
       return {};
+
+    if (argVal.getType() != expectedType) {
+      // TODO: Handle implicit conversions.
+      state.emitError(arg->getLoc(), "value of type ")
+          << argVal.getType() << " cannot be converted to expected type "
+          << expectedType;
+      return {};
+    }
+    valueArguments.push_back(argVal);
   }
-  // TODO: Pass arguments.
 
   auto calleeParam = calleeVal.dyn_castTypedAttr();
-  if (!calleeParam || !args.empty()) {
-    state.emitError(getLoc(), "TODO: value call not supported yet");
+  if (!calleeParam) {
+    state.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};
   }
 
@@ -287,12 +324,16 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
     return {};
   }
 
-  state.builder->create<CallParamOp>(state.translateLocation(getLoc()),
-                                     /*resultTypes*/ ArrayRef<Type>(),
-                                     calleeParam,
-                                     /*inputParams*/ ArrayRef<ParamBindAttr>(),
-                                     /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-                                     /*operands*/ ArrayRef<Value>());
+  auto call = state.builder->create<CallParamOp>(
+      state.translateLocation(getLoc()),
+      /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
+      /*inputParams*/ ArrayRef<ParamBindAttr>(),
+      /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+      /*operands*/ valueArguments);
+
+  // Value returning call returns its result.
+  if (calleeType.getValues().getNumResults())
+    return call.getResult(0);
 
   // FIXME: Need a correct representation for a non-error void return.
   return {};
