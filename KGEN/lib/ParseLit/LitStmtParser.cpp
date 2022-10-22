@@ -70,12 +70,12 @@ struct LitStmtParser : public LitParserBase {
 
   /// Emit the specified expression tree to MLIR in the current context.
   MLIRValueRep emitExpr(ExprNode *node) {
-    EmitterState state(*this, scope, builder);
+    IREmitter state(getSharedState(), scope, builder);
     return node->emit(state);
   }
 
   Value emitExprAsValue(ExprNode *node) {
-    EmitterState state(*this, scope, builder);
+    IREmitter state(getSharedState(), scope, builder);
     return state.emitAsValue(node);
   }
 

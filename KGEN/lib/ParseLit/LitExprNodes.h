@@ -20,7 +20,7 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
-#include "LitParserBase.h"
+#include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -31,9 +31,7 @@
 
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
-struct EmitterState;
-class LitLexerCursor;
-class LitParserBase;
+struct IREmitter;
 class Scope;
 
 /// When emitting an expression to MLIR as an rvalue, we get a value back that
@@ -86,7 +84,7 @@ public:
   virtual bool containsError() const = 0;
 
   /// Emit this expression to MLIR, returning a (possibly null!) MLIRValueRep.
-  virtual MLIRValueRep emit(EmitterState &state) const = 0;
+  virtual MLIRValueRep emit(IREmitter &state) const = 0;
 };
 
 /// This node is created to represent erroneous parses, but the diagnostic has
@@ -99,7 +97,7 @@ struct ErrorNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kError; }
   SMLoc getLoc() const override { return loc; }
   bool containsError() const override { return true; }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct IntLiteralNode final : public ExprNode {
@@ -115,7 +113,7 @@ struct IntLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct FloatLiteralNode final : public ExprNode {
@@ -131,7 +129,7 @@ struct FloatLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct StringLiteralNode final : public ExprNode {
@@ -147,7 +145,7 @@ struct StringLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct DeclRefNode final : public ExprNode {
@@ -160,7 +158,7 @@ struct DeclRefNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -178,7 +176,7 @@ struct CallNode final : public ExprNode {
              return exp->containsError();
            });
   }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct ParenExprNode final : public ExprNode {
@@ -195,7 +193,7 @@ struct ParenExprNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lparenLoc; }
   bool containsError() const override { return subExpr->containsError(); }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 struct BinOpNode final : public ExprNode {
@@ -213,16 +211,16 @@ struct BinOpNode final : public ExprNode {
   bool containsError() const override {
     return lhs->containsError() || rhs->containsError();
   }
-  MLIRValueRep emit(EmitterState &state) const override;
+  MLIRValueRep emit(IREmitter &state) const override;
 };
 
 //===----------------------------------------------------------------------===//
-// EmitterState
+// IREmitter
 //===----------------------------------------------------------------------===//
 
-struct EmitterState {
-  /// This is the parser we are working on behalf of.
-  LitParserBase &parser;
+struct IREmitter {
+  /// This is the shared state for the parser overall.
+  LitSharedState &shared;
 
   /// This is scope to resolve declaration references against.
   Scope &scope;
@@ -231,8 +229,8 @@ struct EmitterState {
   /// expressions that require internal control flow.
   OpBuilder &builder;
 
-  EmitterState(LitParserBase &parser, Scope &scope, OpBuilder &builder)
-      : parser(parser), scope(scope), builder(builder) {}
+  IREmitter(LitSharedState &shared, Scope &scope, OpBuilder &builder)
+      : shared(shared), scope(scope), builder(builder) {}
 
   /// This helper emits the specified value rep as an SSA value, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
@@ -246,12 +244,13 @@ struct EmitterState {
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
-    return parser.emitError(loc, twine);
+    shared.errorOccurred = true;
+    return mlir::emitError(translateLocation(loc), twine);
   }
 
   /// Translate an SMLoc into an MLIR Location.
   Location translateLocation(SMLoc loc) const {
-    return parser.translateLocation(loc);
+    return shared.translateLocation(loc);
   }
 };
 
