@@ -1,13 +1,13 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<simd<1, f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<simd<1, invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
-  %ptr: !pop.pointer<scalar<f32>>,
-  %opaque: !pop.pointer<scalar<invalid>>,
+  %ptr: !pop.pointer<simd<1, f32>>,
+  %opaque: !pop.pointer<simd<1, invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (
   !zap.buffer<4, f32>,
@@ -256,13 +256,13 @@ kgen.generator @zap_ndbuffer_with_params<type:dtype, size>(
 }
 
 // CHECK-LABEL: @zap_ndbuffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<simd<1, f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<simd<1, invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_ndbuffer_construct(
-  %ptr: !pop.pointer<scalar<f32>>,
-  %opaque: !pop.pointer<scalar<invalid>>,
+  %ptr: !pop.pointer<simd<1, f32>>,
+  %opaque: !pop.pointer<simd<1, invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (!zap.ndbuffer<[4, 5, 3], f32>,
                            !zap.ndbuffer<[?, 4], f32>,
@@ -386,17 +386,41 @@ kgen.func @zap_ndbuffer_load(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>
-  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>
-  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>
-  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>
-  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
+  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
+  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<1, f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<1, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.simd<1, f32>
+  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.simd<1, f32>
   kgen.return
 }
 
+// CHECK-LABEL: @zap.ndbuffer.load
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap.ndbuffer.load(
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  kgen.return
+}
 
 // CHECK-LABEL: @zap_ndbuffer_load_aligned
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
@@ -412,74 +436,26 @@ kgen.func @zap_ndbuffer_load_aligned(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 8 : !zap.ndbuffer<[4, 5, 3], f32>
-  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] align 8 : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 16 : !zap.ndbuffer<[4, 5, 3], f32>
-  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] align 16 : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 1 : !zap.ndbuffer<[4, ?], f32>
-  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] align 1 : !zap.ndbuffer<[4, ?], f32>
-  kgen.return
-}
-
-// CHECK-LABEL: @zap_ndbuffer_simd_load
-// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
-// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_ndbuffer_simd_load(
-  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
-  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
-  %ndbuffer2: !zap.ndbuffer<[?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
-  %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
-  %1 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
-  %2 = zap.ndbuffer.simd_load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
-  %3 = zap.ndbuffer.simd_load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
-  kgen.return
-}
-
-// CHECK-LABEL: @zap_ndbuffer_simd_load_aligned
-// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
-// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_ndbuffer_simd_load_aligned(
-  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
-  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
-  %ndbuffer2: !zap.ndbuffer<[?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 1 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
-  %0 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idxZero, %idxOne] align 1 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
-  %1 = zap.ndbuffer.simd_load %ndbuffer0[%idx, %idx, %idx] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
-  %2 = zap.ndbuffer.simd_load %ndbuffer1[%idx, %idx] align get_alignof(f32) : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
-  // CHECK: zap.ndbuffer.simd_load %[[NDBUFFER2]][%[[IDX]]] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
-  %3 = zap.ndbuffer.simd_load %ndbuffer2[%idx] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 1 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] align 1 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<4, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] align get_alignof(f32) : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
+  %3 = zap.ndbuffer.load %ndbuffer2[%idx] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
   kgen.return
 }
 
 
 // CHECK-LABEL: @zap_ndbuffer_store
-// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<f32>
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd<1, f32>
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
 // CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
 kgen.func @zap_ndbuffer_store(
-  %val : !pop.scalar<f32>,
+  %val : !pop.simd<1, f32>,
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
   %ndbuffer2: !zap.ndbuffer<[?], f32>,
@@ -488,52 +464,51 @@ kgen.func @zap_ndbuffer_store(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !pop.simd<1, f32>, !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !pop.simd<1, f32>, !zap.ndbuffer<[?], f32>
   kgen.return
 }
 
+// CHECK-LABEL: @zap.ndbuffer.store
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
+// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
+// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
+// CHECK-SAME: %[[IDX:.*]]: index
+kgen.func @zap.ndbuffer.store(
+  %val : !pop.simd<4, f32>,
+  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
+  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
+  %ndbuffer2: !zap.ndbuffer<[?], f32>,
+  %idx: index) {
+  // CHECK: %[[IDXZERO:.*]] =  index.constant
+  %idxZero = index.constant 0
+  // CHECK: %[[IDXONE:.*]] =  index.constant
+  %idxOne = index.constant 1
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  kgen.return
+}
 
 // CHECK-LABEL: @zap_ndbuffer_store_aligned
-// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<f32>
+// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
 // CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
 kgen.func @zap_ndbuffer_store_aligned(
-  %val : !pop.scalar<f32>,
-  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
-  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
-  %ndbuffer2: !zap.ndbuffer<[?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 8 : !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] align 8 : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 1 : !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] align 1 : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 2 : !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] align 2 : !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] align 9 : !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.store %val, %ndbuffer2[%idx] align 9 : !zap.ndbuffer<[?], f32>
-  kgen.return
-}
-
-// CHECK-LABEL: @zap_ndbuffer_simd_store
-// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
-// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
-// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_ndbuffer_simd_store(
   %val : !pop.simd<4, f32>,
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
@@ -543,41 +518,14 @@ kgen.func @zap_ndbuffer_simd_store(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer1[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer2[%idx] : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
-  kgen.return
-}
-
-// CHECK-LABEL: @zap_ndbuffer_simd_store_aligned
-// CHECK-SAME: %[[VAL:.*]]: !pop.simd<4, f32>
-// CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
-// CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
-// CHECK-SAME: %[[IDX:.*]]: index
-kgen.func @zap_ndbuffer_simd_store_aligned(
-  %val : !pop.simd<4, f32>,
-  %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
-  %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
-  %ndbuffer2: !zap.ndbuffer<[?], f32>,
-  %idx: index) {
-  // CHECK: %[[IDXZERO:.*]] =  index.constant
-  %idxZero = index.constant 0
-  // CHECK: %[[IDXONE:.*]] =  index.constant
-  %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 1 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idxZero, %idxOne] align 1 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer0[%idx, %idx, %idx] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer1[%idx, %idx] align get_alignof(f32) : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.simd_store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.simd_store %val, %ndbuffer2[%idx] align get_alignof(f64) : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] align 1 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] align 1 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] align get_alignof(f32) : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] align get_alignof(f64) : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
   kgen.return
 }
 

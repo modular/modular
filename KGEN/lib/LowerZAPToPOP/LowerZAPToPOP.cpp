@@ -258,7 +258,7 @@ struct ConvertZAPBufferConstant : mlir::OpRewritePattern<BufferConstantOp> {
   LogicalResult matchAndRewrite(BufferConstantOp op,
                                 PatternRewriter &rewriter) const override {
     BufferType type = op.getType();
-    auto elType = ScalarType::get(type.getDType());
+    auto elType = SIMDType::get(1, type.getDType());
     Value global = rewriter.create<GlobalConstantOp>(
         op.getLoc(),
         PointerType::get(POP::ArrayType::get(type.getSize(), elType)),
@@ -676,63 +676,11 @@ static Value linearizeContiguousIndices(PatternRewriter &rewriter, Location loc,
   return accumulatedOffset;
 }
 
-/// Load a scalar value from NDBuffer given a list of position indices.
+/// Load a simd value from NDBuffer given a list of position indices.
 struct ConvertZAPNDBufferLoad : public mlir::OpRewritePattern<NDBufferLoadOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(NDBufferLoadOp op,
-                                PatternRewriter &rewriter) const override {
-    Value popBuf = convertValue(op.getNDBuffer());
-    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
-                                                    kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
-                                              kNDBufferAddressPosition);
-    auto offset = linearizeContiguousIndices(
-        rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
-        shapeArray, op.getPositions());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
-    rewriter.replaceOpWithNewOp<LoadOp>(op, op.getType(), ptr,
-                                        op.getAlignmentAttr());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertZAPNDBufferStore
-//===----------------------------------------------------------------------===//
-
-/// Store a scalar value into NDBuffer given a list of position indices.
-struct ConvertZAPNDBufferStore
-    : public mlir::OpRewritePattern<NDBufferStoreOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(NDBufferStoreOp op,
-                                PatternRewriter &rewriter) const override {
-    Value popBuf = convertValue(op.getNDBuffer());
-    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
-                                                    kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
-                                              kNDBufferAddressPosition);
-    auto offset = linearizeContiguousIndices(
-        rewriter, op->getLoc(), op.getNDBuffer().getType().cast<NDBufferType>(),
-        shapeArray, op.getPositions());
-    Value ptr = rewriter.create<OffsetOp>(op.getLoc(), base, offset);
-    rewriter.replaceOpWithNewOp<StoreOp>(op, op.getValue(), ptr,
-                                         op.getAlignmentAttr());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertZAPNDBufferSIMDLoad
-//===----------------------------------------------------------------------===//
-
-/// Load a simd value from NDBuffer given a list of position indices.
-struct ConvertZAPNDBufferSIMDLoad
-    : public mlir::OpRewritePattern<NDBufferSIMDLoadOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(NDBufferSIMDLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value popBuf = convertValue(op.getNDBuffer());
@@ -753,16 +701,16 @@ struct ConvertZAPNDBufferSIMDLoad
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPNDBufferSIMDStore
+// ConvertZAPNDBufferStore
 //===----------------------------------------------------------------------===//
 
 /// Store a simd value into the NDBuffer at the given a list of position
 /// indices.
-struct ConvertZAPNDBufferSIMDStore
-    : public mlir::OpRewritePattern<NDBufferSIMDStoreOp> {
+struct ConvertZAPNDBufferStore
+    : public mlir::OpRewritePattern<NDBufferStoreOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(NDBufferSIMDStoreOp op,
+  LogicalResult matchAndRewrite(NDBufferStoreOp op,
 
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
@@ -847,12 +795,10 @@ static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
       ConvertZAPNDBufferAddress,
       ConvertZAPNDBufferBitCast,
       ConvertZAPNDBufferConstruct,
-      ConvertZAPNDBufferDim,
       ConvertZAPNDBufferDType,
+      ConvertZAPNDBufferDim,
       ConvertZAPNDBufferLoad,
       ConvertZAPNDBufferRank,
-      ConvertZAPNDBufferSIMDLoad,
-      ConvertZAPNDBufferSIMDStore,
       ConvertZAPNDBufferSize,
       ConvertZAPNDBufferStackAllocation,
       ConvertZAPNDBufferStore,

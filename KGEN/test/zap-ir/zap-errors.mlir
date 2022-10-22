@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -verify-diagnostics -split-input-file -o /dev/null
 
-kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<f32>>) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<simd<1, f32>>) {
   // expected-error @below {{either a size operand or a buffer type with static size}}
   %0 = zap.buffer.construct %ptr : !zap.buffer<?, f32>
   kgen.return
@@ -8,7 +8,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<f32>>) {
 
 // -----
 
-kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<f32>>, %size: index) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<simd<1, f32>>, %size: index) {
   // expected-error @below {{either a size operand or a buffer type with static size}}
   %0 = zap.buffer.construct %ptr[%size] : !zap.buffer<4, f32>
   kgen.return
@@ -16,7 +16,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<f32>>, %size: index) {
 
 // -----
 
-kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<invalid>>) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<simd<1, invalid>>) {
   // expected-error @below {{either a dtype operand or a buffer type with static dtype}}
   %0 = zap.buffer.construct %ptr : !zap.buffer<4, ?>
   kgen.return
@@ -24,7 +24,7 @@ kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<invalid>>) {
 
 // -----
 
-kgen.func @zap_buffer_construct(%ptr: !pop.pointer<scalar<f32>>, %dtype: !kgen.dtype) {
+kgen.func @zap_buffer_construct(%ptr: !pop.pointer<simd<1, f32>>, %dtype: !kgen.dtype) {
   // expected-error @below {{either a dtype operand or a buffer type with static dtype}}
   %0 = zap.buffer.construct %ptr of %dtype : !zap.buffer<4, f32>
   kgen.return
@@ -100,54 +100,54 @@ kgen.generator @zap_ndbuffer(%arg0 : !zap.ndbuffer<[1,2,3,4,5,6], f32>) {
 
 kgen.generator @zap_ndbuffer_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
   // expected-error @below {{'zap.ndbuffer.load' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
-  %val = zap.ndbuffer.load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>
+  %val = zap.ndbuffer.load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<1, f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_ndbuffer_store(%val : !pop.scalar<f32>,
+kgen.generator @zap_ndbuffer_store(%val : !pop.simd<1, f32>,
                                 %arg0 : !zap.ndbuffer<[3], f32>,
                                 %idx : index) {
   // expected-error @below {{'zap.ndbuffer.store' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
-  zap.ndbuffer.store %val, %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>
+  zap.ndbuffer.store %val, %arg0[%idx, %idx] : !pop.simd<1, f32>, !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_ndbuffer_simd_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
-  // expected-error @below {{'zap.ndbuffer.simd_load' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
-  %val = zap.ndbuffer.simd_load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, si32>
+kgen.generator @zap.ndbuffer.load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.ndbuffer.load' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  %val = zap.ndbuffer.load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, si32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_ndbuffer_simd_load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
-  // expected-error @below {{'zap.ndbuffer.simd_load' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
-  %val = zap.ndbuffer.simd_load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, f32>
+kgen.generator @zap.ndbuffer.load(%arg0 : !zap.ndbuffer<[3], f32>, %idx : index) {
+  // expected-error @below {{'zap.ndbuffer.load' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  %val = zap.ndbuffer.load %arg0[%idx, %idx] : !zap.ndbuffer<[3], f32>, !pop.simd<4, f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @zap_ndbuffer_simd_store(%val : !pop.simd<4, si32>,
+kgen.generator @zap.ndbuffer.store(%val : !pop.simd<4, si32>,
                                       %arg0 : !zap.ndbuffer<[3], f32>,
                                       %idx : index) {
-  // expected-error @below {{'zap.ndbuffer.simd_store' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
-  zap.ndbuffer.simd_store %val, %arg0[%idx] : !pop.simd<4, si32>, !zap.ndbuffer<[3], f32>
+  // expected-error @below {{'zap.ndbuffer.store' op the type ('!zap.ndbuffer<[3], f32>') must have the same element type as the simd type ('!pop.simd<4, si32>')}}
+  zap.ndbuffer.store %val, %arg0[%idx] : !pop.simd<4, si32>, !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
 
 // -----
 
-kgen.generator @zap_ndbuffer_simd_store(%val : !pop.simd<4, f32>,
+kgen.generator @zap.ndbuffer.store(%val : !pop.simd<4, f32>,
                                       %arg0 : !zap.ndbuffer<[3], f32>,
                                       %idx : index) {
-  // expected-error @below {{'zap.ndbuffer.simd_store' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
-  zap.ndbuffer.simd_store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[3], f32>
+  // expected-error @below {{'zap.ndbuffer.store' op requires the number of input positions (2) to match the rank of the ndbuffer type (1)}}
+  zap.ndbuffer.store %val, %arg0[%idx, %idx] : !pop.simd<4, f32>, !zap.ndbuffer<[3], f32>
   kgen.return
 }
 
