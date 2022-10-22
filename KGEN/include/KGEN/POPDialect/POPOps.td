@@ -1213,6 +1213,15 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
     %struct = pop.stack_allocation 1 : !pop.struct<i32, i64>
     %i64Ptr = pop.struct.gep %struct[2] : <struct<i32, i64>>
     ```
+
+    To get a pointer to a struct from a value-semantic struct, the struct value
+    must be stored into a block of allocated memory first.
+
+    ```mlir
+    ^bb0(%struct: !pop.struct<i32, i64>):
+      %mem = pop.stack_allocation 1 : !pop.struct<i32, i64>
+      pop.store %struct, %mem : !pop.pointer<struct<i32, i64>>
+    ```
   }];
 
   let arguments = (ins PointerOf<POP_StructType>:$container, IndexAttr:$index);
