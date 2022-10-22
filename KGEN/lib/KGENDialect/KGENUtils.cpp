@@ -411,6 +411,7 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 enum class POCAliases : uint32_t {
   // The builtin opcodes have 0...127.
   FIRST_PSEUDO = 128,
+  SUB, // subtraction
   NOT,
   NE, // !(==)
   GT, // !(<)
@@ -521,6 +522,8 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
   if (opcode.has_value())
     return (uint32_t)*opcode;
 
+  if (keyword == "sub")
+    return (uint32_t)POCAliases::SUB;
   if (keyword == "not")
     return (uint32_t)POCAliases::NOT;
   if (keyword == "ne")
@@ -612,6 +615,10 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // opcode in question.
     if (!operandType) {
       switch (opcode) {
+      case (uint32_t)POCAliases::SUB:
+        // The subtraction operation defaults to index type for its operands.
+        operandType = p.getBuilder().getIndexType();
+        break;
       case (uint32_t)POC::EQ:
       case (uint32_t)POC::LT:
       case (uint32_t)POC::LE:
@@ -642,6 +649,15 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       if (parseOperatorOperands(p, opcode, operands, operandType) ||
           p.parseRParen())
         return failure();
+    }
+
+    // Desugar the subtract operator from `sub(a, b0, b1, ..., bn)` to the add
+    // operator where all but the first operand is negated i.e. `add(x, neg(b0),
+    // neg(b1), ..., neg(bn))`
+    if (opcode == (uint32_t)POCAliases::SUB) {
+      for (size_t i = 1, e = operands.size(); i != e; ++i)
+        operands[i] = ParamOperatorAttr::get(POC::Neg, {operands[i]});
+      opcode = (uint32_t)POC::Add;
     }
 
     // If these are aliases for inverted i1 value, build the correct nodes.
