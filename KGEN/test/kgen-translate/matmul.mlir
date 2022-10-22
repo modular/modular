@@ -18,16 +18,16 @@ kgen.func public @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,
 
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
-      %init = pop.constant(0.0 : f32) : !pop.scalar<f32>
+      %init = pop.constant(0.0 : f32) : !pop.simd<1, f32>
       %cij = scf.for %k = %zero to %K step %one
-                    iter_args(%sum = %init) -> (!pop.scalar<f32>) {
-        %aik = zap.ndbuffer.load %a[%i, %k] : !zap.ndbuffer<[?, ?], f32>
-        %bkj = zap.ndbuffer.load %b[%k, %j] : !zap.ndbuffer<[?, ?], f32>
-        %aikbkj = pop.mul %aik, %bkj : !pop.scalar<f32>
-        %cij = pop.add %sum, %aikbkj : !pop.scalar<f32>
-        scf.yield %cij : !pop.scalar<f32>
+                    iter_args(%sum = %init) -> (!pop.simd<1, f32>) {
+        %aik = zap.ndbuffer.load %a[%i, %k] : !zap.ndbuffer<[?, ?], f32>, !pop.simd<1, f32>
+        %bkj = zap.ndbuffer.load %b[%k, %j] : !zap.ndbuffer<[?, ?], f32>, !pop.simd<1, f32>
+        %aikbkj = pop.mul %aik, %bkj : !pop.simd<1, f32>
+        %cij = pop.add %sum, %aikbkj : !pop.simd<1, f32>
+        scf.yield %cij : !pop.simd<1, f32>
       }
-      zap.ndbuffer.store %cij, %c[%i, %j] : !zap.ndbuffer<[?, ?], f32>
+      zap.ndbuffer.store %cij, %c[%i, %j] : !pop.simd<1, f32>, !zap.ndbuffer<[?, ?], f32>
     }
   }
 

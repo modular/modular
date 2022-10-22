@@ -210,22 +210,6 @@ static LogicalResult verifyNDBufferLoadStoreOp(Operation op) {
 }
 
 LogicalResult NDBufferLoadOp::verify() {
-  return verifyNDBufferLoadStoreOp(*this);
-}
-
-//===----------------------------------------------------------------------===//
-// NDBufferStoreOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult NDBufferStoreOp::verify() {
-  return verifyNDBufferLoadStoreOp(*this);
-}
-
-//===----------------------------------------------------------------------===//
-// NDBufferSIMDLoadOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult NDBufferSIMDLoadOp::verify() {
   if (failed(verifyHasSameUnderlyingDType(*this, getNDBuffer(), getResult())))
     return failure();
   return verifyNDBufferLoadStoreOp(*this);
@@ -235,7 +219,7 @@ LogicalResult NDBufferSIMDLoadOp::verify() {
 // NDBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult NDBufferSIMDStoreOp::verify() {
+LogicalResult NDBufferStoreOp::verify() {
   if (failed(verifyHasSameUnderlyingDType(*this, getNDBuffer(), getValue())))
     return failure();
   return verifyNDBufferLoadStoreOp(*this);

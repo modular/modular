@@ -466,103 +466,10 @@ def ZAP_NDBufferSizeOp : ZAPOp<"ndbuffer.size", [Pure]> {
 // NDBufferLoadOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_NDBufferLoadOp : ZAPOp<"ndbuffer.load",
-    [NDBufferElementType<"nDBuffer", "result">]> {
+def ZAP_NDBufferLoadOp : ZAPOp<"ndbuffer.load"> {
   let summary = "ndbuffer load operation";
   let description = [{
     The `zap.ndbuffer.load` operation takes a ndbuffer and a list of index
-    positions and extracts the `!pop.scalar` value at that position. The
-    positions must be of type index and their length must be of the same rank
-    as the NDBuffer.
-
-    Example:
-
-    ```mlir
-    %1 = zap.ndbuffer.load %0[%pos0] : !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.load %1[%pos0, %pos1]:!zap.ndbuffer<[size0, size1], dtype>
-    ```
-
-    An optional `align` attribute can be specified to indicate the load
-    alignment in bytes. If not specified, the alignment is assumed to be the
-    same alignment as the element type of the ndbuffer.
-
-    ```mlir
-    %1 = zap.ndbuffer.load %0[%pos0] align 1 : !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.load %1[%pos0, %pos1] align 64 :
-                                        !zap.ndbuffer<[size0, size1], dtype>
-
-    ```
-  }];
-
-  let arguments = (ins Arg<NDBufferKnownDType, "", [MemRead]>:$nDBuffer,
-                       Variadic<Index>:$positions,
-                       OptionalAttr<TypedAttrInterface>:$alignment);
-  let results = (outs POP_ScalarType:$result);
-
-  let assemblyFormat = [{
-    $nDBuffer `[` $positions `]` custom<OptionalAlignmentParamValue>($alignment)
-    attr-dict `:` qualified(type($nDBuffer))
-  }];
-
-  let hasVerifier = 1;
-}
-//===----------------------------------------------------------------------===//
-
-// NDBufferStoreOp
-//===----------------------------------------------------------------------===//
-
-def ZAP_NDBufferStoreOp : ZAPOp<"ndbuffer.store",
-    [NDBufferElementType<"nDBuffer", "value">]> {
-  let summary = "ndbuffer store operation";
-  let description = [{
-    The `zap.ndbuffer.store` operation takes a source value, a buffer, and index
-    positions and inserts the source value into the ndbuffer at the specified
-    position. The positions must be of type index and their length must be of
-    the same rank as the NDBuffer.
-
-    Example:
-
-    ```mlir
-    %1 = zap.ndbuffer.store %val, %0[%pos0] : !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] :
-                                      !zap.ndbuffer<[size0, size1], dtype>
-    ```
-
-    An optional `align` attribute can be specified to indicate the store
-    alignment in bytes. If not specified, the alignment is assumed to be the
-    same alignment as the element type of the ndbuffer.
-
-    ```mlir
-    %1 = zap.ndbuffer.store %val, %0[%pos0] align 1 :
-                                      !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] align 64 :
-                                      !zap.ndbuffer<[size0, size1], dtype>
-
-    ```
-  }];
-
-  let arguments = (ins Arg<NDBufferKnownDType, "", [MemWrite]>:$nDBuffer,
-                       POP_ScalarType:$value,
-                       Variadic<Index>:$positions,
-                       OptionalAttr<TypedAttrInterface>:$alignment);
-
-  let assemblyFormat = [{
-    $value `,` $nDBuffer `[` $positions `]`
-    custom<OptionalAlignmentParamValue>($alignment)
-    attr-dict `:` qualified(type($nDBuffer))
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// NDBufferSIMDLoadOp
-//===----------------------------------------------------------------------===//
-
-def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
-  let summary = "ndbuffer load operation";
-  let description = [{
-    The `zap.ndbuffer.simd_load` operation takes a ndbuffer and a list of index
     positions and extracts the `!pop.simd` value at that position. The
     positions must be of type index and their length must be of the same rank
     as the NDBuffer.
@@ -570,9 +477,9 @@ def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
     Example:
 
     ```mlir
-    %1 = zap.ndbuffer.simd_load %0[%pos0] :
+    %1 = zap.ndbuffer.load %0[%pos0] :
                       !zap.ndbuffer<[size], dtype>, !pop.simd<simd_width, dtype>
-    %2 = zap.ndbuffer.simd_load %1[%pos0, %pos1]:!zap.ndbuffer<[s0, s1], dtype>,
+    %2 = zap.ndbuffer.load %1[%pos0, %pos1]:!zap.ndbuffer<[s0, s1], dtype>,
                                                  !pop.simd<simd_width, dtype>
     ```
 
@@ -580,11 +487,11 @@ def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
     alignment in bytes. If not specified, the alignment is assumed to be 1.
 
     ```mlir
-    %1 = zap.ndbuffer.simd_load %0[%pos0] align get_alignof(f32):
+    %1 = zap.ndbuffer.load %0[%pos0] align get_alignof(f32):
                       !zap.ndbuffer<[size], dtype>, !pop.simd<simd_width, dtype>
-    %2 = zap.ndbuffer.simd_load %1[%pos0, %pos1] align 64 :
-                                                 !zap.ndbuffer<[s0, s1], dtype>,
-                                                 !pop.simd<simd_width, dtype>
+    %2 = zap.ndbuffer.load %1[%pos0, %pos1] align 64 :
+                                            !zap.ndbuffer<[s0, s1], dtype>,
+                                            !pop.simd<simd_width, dtype>
     ```
   }];
 
@@ -602,13 +509,13 @@ def ZAP_NDBufferSIMDLoadOp : ZAPOp<"ndbuffer.simd_load"> {
 }
 
 //===----------------------------------------------------------------------===//
-// NDBufferSIMDStoreOp
+// NDBufferStoreOp
 //===----------------------------------------------------------------------===//
 
-def ZAP_NDBufferSIMDStoreOp : ZAPOp<"ndbuffer.simd_store"> {
+def ZAP_NDBufferStoreOp : ZAPOp<"ndbuffer.store"> {
   let summary = "ndbuffer store operation";
   let description = [{
-    The `zap.ndbuffer.simd_store` operation takes a source simd value, a
+    The `zap.ndbuffer.store` operation takes a source simd value, a
     NDBuffer, and index positions and inserts the source value into the
     ndbuffer at the specified position. The positions must be of type index and
     their length must be of the same rank as the NDBuffer.
@@ -616,23 +523,23 @@ def ZAP_NDBufferSIMDStoreOp : ZAPOp<"ndbuffer.simd_store"> {
     Example:
 
     ```mlir
-    %1 = zap.ndbuffer.simd_store %val, %0[%pos0] : !pop.simd<simd_width, dtype>,
-                                                 !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.simd_store %val, %1[%pos0, %pos1] :
-                                        !pop.simd<simd_width, dtype>,
-                                        !zap.ndbuffer<[size0, size1], dtype>
+    %1 = zap.ndbuffer.store %val, %0[%pos0] : !pop.simd<simd_width, dtype>,
+                                              !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] :
+                                    !pop.simd<simd_width, dtype>,
+                                    !zap.ndbuffer<[size0, size1], dtype>
     ```
 
     An optional `align` attribute can be specified to indicate the store
     alignment in bytes. If not specified, the alignment is assumed to be 1.
 
     ```mlir
-    %1 = zap.ndbuffer.simd_store %val, %0[%pos0] align 4 :
-                                                 !pop.simd<simd_width, dtype>,
-                                                 !zap.ndbuffer<[size], dtype>
-    %2 = zap.ndbuffer.simd_store %val, %1[%pos0, %pos1] align 1 :
-                                        !pop.simd<simd_width, dtype>,
-                                        !zap.ndbuffer<[size0, size1], dtype>
+    %1 = zap.ndbuffer.store %val, %0[%pos0] align 4 :
+                                            !pop.simd<simd_width, dtype>,
+                                            !zap.ndbuffer<[size], dtype>
+    %2 = zap.ndbuffer.store %val, %1[%pos0, %pos1] align 1 :
+                                   !pop.simd<simd_width, dtype>,
+                                   !zap.ndbuffer<[size0, size1], dtype>
     ```
   }];
 

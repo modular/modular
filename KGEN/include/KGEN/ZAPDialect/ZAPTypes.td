@@ -35,7 +35,7 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
     /// Get the pointer type for the object.
     POP::PointerType getPointerType() const;
     /// Get the scalar element type for the object.
-    POP::ScalarType getElementType() const;
+    POP::SIMDType getElementType() const;
   }];
   let extraClassDeclaration = classDeclaration # baseExtraClassDeclaration;
 }

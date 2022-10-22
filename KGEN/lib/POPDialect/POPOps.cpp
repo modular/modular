@@ -275,6 +275,9 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                        "constant of unspecified size");
     }
     // Only scalar arrays can be created.
+    if (isSIMDSizeOneType(array.getResolvedElementType())) {
+      return checkDType(array.getResolvedElementType().cast<DTypeInterface>());
+    }
     auto scalar =
         dyn_cast_if_present<ScalarType>(array.getResolvedElementType());
     if (!scalar)

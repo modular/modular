@@ -48,17 +48,21 @@ template <typename Op>
 static POP::PointerType getPointerType(Op *op) {
   Type elementType;
   if (TypedAttr dtype = op->getDType())
-    elementType = POP::ScalarType::get(dtype);
-  else
-    elementType = POP::ScalarType::get(op->getContext(), DType::invalid);
+    elementType = POP::SIMDType::get(1, dtype);
+  else {
+    MLIRContext *ctx = op->getContext();
+    elementType =
+        POP::SIMDType::get(ctx, Builder(ctx).getIndexAttr(1),
+                           DTypeConstantAttr::get(ctx, DType::invalid));
+  }
 
   return POP::PointerType::get(elementType);
 }
 
 template <typename Op>
-static POP::ScalarType getElementType(Op *op) {
+static POP::SIMDType getElementType(Op *op) {
   assert(op->getDType() && "expected buffer with known dtype");
-  return POP::ScalarType::get(op->getDType());
+  return POP::SIMDType::get(1, op->getDType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -102,7 +106,7 @@ POP::PointerType BufferType::getPointerType() const {
   return ::getPointerType(this);
 }
 
-POP::ScalarType BufferType::getElementType() const {
+POP::SIMDType BufferType::getElementType() const {
   return ::getElementType(this);
 }
 
@@ -205,7 +209,7 @@ POP::PointerType NDBufferType::getPointerType() const {
   return ::getPointerType(this);
 }
 
-POP::ScalarType NDBufferType::getElementType() const {
+POP::SIMDType NDBufferType::getElementType() const {
   return ::getElementType(this);
 }
 

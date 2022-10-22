@@ -247,14 +247,6 @@ kgen.generator @global_constant<size>() {
 // -----
 
 kgen.func @global_constant() {
-  // expected-error @below {{array constant must have scalar elements}}
-  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : !M.array<2xf32>) : !pop.array<2, simd<1, f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
   // expected-error @below {{convert from attribute type 'f64' to dtype f32}}
   %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : !M.array<2xf64>) : !pop.array<2, scalar<f32>>
   kgen.return
