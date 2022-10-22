@@ -12,6 +12,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Constants.h"
@@ -149,30 +150,33 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
     return copy;
   };
 
-  auto checkForRefType = [&](Type type) {
+  std::function<void(Type)> checkForRefType = [&](Type type) {
     if (auto ref = dyn_cast<RefType>(type)) {
       Operation *decl = extractDependency(ref.getName().getAttr());
       // Recurse on the type declaration.
       if (decl)
         sliceDependencies(decl, sliceSymtab, symtab);
+    } else if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
+      itf.walkSubTypes(checkForRefType);
     }
   };
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
     op->getAttrDictionary().walkSubTypes(checkForRefType);
-    llvm::for_each(op->getOperandTypes(), checkForRefType);
     llvm::for_each(op->getResultTypes(), checkForRefType);
+    for (Region &region : op->getRegions())
+      llvm::for_each(region.getArgumentTypes(), checkForRefType);
 
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
-    if (auto call = dyn_cast<CallOp>(op)) {
-      Operation *symbol = extractDependency(call.getCalleeAttr().getAttr());
+    llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
+      Operation *symbol = extractDependency(op.getCalleeAttr().getAttr());
       if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
         func.setLinkageAttr(
             LinkageAttr::get(op->getContext(), Linkage::ModulePrivate));
         sliceDependencies(func, sliceSymtab, symtab);
       }
-    }
+    });
   };
   op->walk(extractDependencies);
 }
