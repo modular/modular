@@ -32,6 +32,7 @@
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 struct IREmitter;
+struct TypeEmitter;
 class Scope;
 
 /// When emitting an expression to MLIR as an rvalue, we get a value back that
@@ -225,12 +226,15 @@ struct IREmitter {
   /// This is scope to resolve declaration references against.
   Scope &scope;
 
-  /// This is the current builder to emit into.  It is mutable to support
-  /// expressions that require internal control flow.
-  OpBuilder &builder;
+  /// This is the current builder to emit into if we are allowed to generate a
+  /// value.  This will be None when in a context that only allows parameters.
+  /// It is mutable to support expressions that require internal control flow.
+  Optional<OpBuilder> builder;
 
-  IREmitter(LitSharedState &shared, Scope &scope, OpBuilder &builder)
+  IREmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
       : shared(shared), scope(scope), builder(builder) {}
+
+  MLIRContext *getContext() const { return shared.context; }
 
   /// This helper emits the specified value rep as an SSA value, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if

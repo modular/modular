@@ -51,8 +51,13 @@ Type MLIRValueRep::getType() const {
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
 Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
-  if (!rep)
+  if (!rep) // Already diagnosed error.
     return {};
+
+  if (!builder) {
+    emitError(loc, "context only permits a meta value, not a dynamic one");
+    return {};
+  }
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -61,11 +66,11 @@ Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
     // Materialize index integer constants as a special case.
     if (auto intAttr = dyn_cast<IntegerAttr>(attr))
       if (intAttr.getType().isIndex())
-        return builder.create<index::ConstantOp>(
+        return builder->create<index::ConstantOp>(
             location, intAttr.getValue().getSExtValue());
 
     // Otherwise, emit a generalized parameter constant.
-    return builder.create<ParamConstantOp>(location, attr);
+    return builder->create<ParamConstantOp>(location, attr);
   }
 
   return cast<Value>(rep);
@@ -163,23 +168,24 @@ MLIRValueRep IntLiteralNode::emit(IREmitter &state) const {
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
-  return IntegerAttr::get(state.builder.getIndexType(), value);
+  return IntegerAttr::get(IndexType::get(state.getContext()), value);
 }
 
 MLIRValueRep FloatLiteralNode::emit(IREmitter &state) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
-  return state.builder.getF64FloatAttr(value.convertToDouble());
+  return FloatAttr::get(FloatType::getF64(state.getContext()),
+                        APFloat(value.convertToDouble()));
 }
 
 MLIRValueRep StringLiteralNode::emit(IREmitter &state) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  return state.builder.getStringAttr(value);
+  return StringAttr::get(state.getContext(), value);
 }
 
 MLIRValueRep DeclRefNode::emit(IREmitter &state) const {
   Optional<Scope::NameEntry> declOrValue =
-      state.scope.lookup(state.builder.getStringAttr(spelling));
+      state.scope.lookup(StringAttr::get(state.getContext(), spelling));
   if (!declOrValue) {
     state.emitError(getLoc(), "use of unknown declaration \"")
         << spelling << '"';
@@ -204,9 +210,15 @@ MLIRValueRep DeclRefNode::emit(IREmitter &state) const {
 
   // Variable references resolve to load from the variable.
   if (auto var = dyn_cast<VarDeclOp>(scope.getDecl())) {
+    if (!state.builder) {
+      state.emitError(getLoc(),
+                      "cannot load dynamic value in meta value context");
+      return {};
+    }
+
     return state.builder
-        .create<POP::LoadOp>(state.translateLocation(getLoc()), var,
-                             /*alignment*/ None)
+        ->create<POP::LoadOp>(state.translateLocation(getLoc()), var,
+                              /*alignment*/ None)
         .getResult();
   }
 
@@ -239,12 +251,18 @@ MLIRValueRep CallNode::emit(IREmitter &state) const {
     return {};
   }
 
-  state.builder.create<CallParamOp>(state.translateLocation(getLoc()),
-                                    /*resultTypes*/ ArrayRef<Type>(),
-                                    calleeParam,
-                                    /*inputParams*/ ArrayRef<ParamBindAttr>(),
-                                    /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-                                    /*operands*/ ArrayRef<Value>());
+  if (!state.builder) {
+    state.emitError(getLoc(),
+                    "TODO: cannot call function in parameter context");
+    return {};
+  }
+
+  state.builder->create<CallParamOp>(state.translateLocation(getLoc()),
+                                     /*resultTypes*/ ArrayRef<Type>(),
+                                     calleeParam,
+                                     /*inputParams*/ ArrayRef<ParamBindAttr>(),
+                                     /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+                                     /*operands*/ ArrayRef<Value>());
 
   // FIXME: Need a correct representation for a non-error void return.
   return {};
@@ -285,6 +303,8 @@ MLIRValueRep BinOpNode::emit(IREmitter &state) const {
     }
   }
 
+  assert(state.builder && "cannot have dynamic values without a builder");
+
   auto lhsVal = state.emitAsValue(lhsRep, lhs->getLoc());
   auto rhsVal = state.emitAsValue(rhsRep, rhs->getLoc());
   auto loc = state.translateLocation(getLoc());
@@ -293,8 +313,8 @@ MLIRValueRep BinOpNode::emit(IREmitter &state) const {
   default:
     llvm_unreachable("unknown binary operator");
   case kAdd:
-    return (Value)state.builder.create<index::AddOp>(loc, lhsVal, rhsVal);
+    return (Value)state.builder->create<index::AddOp>(loc, lhsVal, rhsVal);
   case kMul:
-    return (Value)state.builder.create<index::MulOp>(loc, lhsVal, rhsVal);
+    return (Value)state.builder->create<index::MulOp>(loc, lhsVal, rhsVal);
   }
 }
