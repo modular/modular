@@ -45,16 +45,7 @@ public:
   /// start of line.
   ssize_t getIndentation() const { return indentation; }
 
-  /// Return the builder associated to the declaration that introduced the
-  /// Scope.
-  /// This method must be used instead of getBuilder() when we create
-  /// variable declaration ops to make sure we honor the one scope per function
-  /// rule of Python.
-  OpBuilder getDeclBuilder() {
-    if (decl->getNumRegions() == 0)
-      return OpBuilder(decl->getContext());
-    return OpBuilder::atBlockBegin(&decl->getRegion(0).front());
-  }
+  /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
     if (decl->getNumRegions() == 0)
       return OpBuilder(decl->getContext());
