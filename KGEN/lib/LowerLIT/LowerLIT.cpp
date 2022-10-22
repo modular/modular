@@ -437,8 +437,20 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   return success();
 }
 
+/// Lower a lit.var.decl to pop.stack_allocation.
+static void lowerLITVarDecl(LITFuncOp func) {
+  func.walk([&](KGEN::VarDeclOp varDecl) -> void {
+    OpBuilder b(varDecl);
+    Value stackAlloc = b.create<POP::StackAllocationOp>(varDecl.getLoc(),
+                                                        varDecl.getType(), 1);
+    varDecl.replaceAllUsesWith(stackAlloc);
+    varDecl->erase();
+  });
+}
+
 /// Lower an lit.func to kgen.generator.
 static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
+  lowerLITVarDecl(gen);
   OpBuilder b(gen);
 
   // Directly lower since these operations are exactly identical right now.
@@ -448,7 +460,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
       gen.getResultParamTypesAttr(), gen.getConstraintsAttr(),
       gen.getImplementsAttr());
 
-  // Move over the body unmodified.
+  // Move over the body.
   auto *bodyBlock = gen.getBody();
   gen.getBodyRegion().getBlocks().remove(bodyBlock);
   result.getBodyRegion().push_back(bodyBlock);
@@ -475,6 +487,50 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   return checkInterfaceConformance(result, itf, symbolTable);
 }
 
+/// Lower a lit.struct.decl to kgen.struct.decl.
+static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
+                                        SymbolTable &symbolTable) {
+  OpBuilder b(litStructDecl);
+  auto structDecl = b.create<StructDeclOp>(
+      litStructDecl.getLoc(), litStructDecl.getSymName(),
+      litStructDecl.getParamDecls(), litStructDecl.getResultParamTypes());
+  Block &blockStuct = litStructDecl.getFields().front();
+  auto *blockKgenStruct = new Block();
+  structDecl.getFields().getBlocks().push_back(blockKgenStruct);
+  auto fieldBuilder = OpBuilder::atBlockBegin(blockKgenStruct);
+  for (Operation &field :
+       llvm::make_early_inc_range(blockStuct.getOperations())) {
+    if (auto varDecl = dyn_cast<KGEN::VarDeclOp>(field)) {
+      Type elemType = ParamRefType::get(varDecl.getType().getElementType());
+      fieldBuilder.create<KGEN::StructFieldOp>(field.getLoc(),
+                                               varDecl.getName(), elemType);
+
+    } else {
+      auto funcField = cast<KGEN::LITFuncOp>(field);
+      // Move and rename the function from a field position inside the struct
+      // to freestanding global function.
+      funcField->remove();
+      std::string genOpNewName =
+          Twine(structDecl.getSymName())
+              .concat("_")
+              .concat(funcField.getSymNameAttr().getValue())
+              .str();
+      funcField.setSymNameAttr(
+          StringAttr::get(funcField.getContext(), genOpNewName));
+      symbolTable.insert(funcField, Block::iterator(structDecl));
+
+      // Lower renamed function as usual.
+      if (failed(lowerLITFunc(funcField, symbolTable)))
+        return failure();
+    }
+  }
+  // Adjust symbol table accordingly
+  symbolTable.remove(litStructDecl);
+  symbolTable.insert(structDecl, Block::iterator(litStructDecl));
+  litStructDecl->erase();
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
@@ -489,17 +545,11 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     SymbolTable symbolTable(module);
     for (auto &op : llvm::make_early_inc_range(module.getOps())) {
       if (auto func = dyn_cast<KGEN::LITFuncOp>(op)) {
-        func.walk([&](KGEN::VarDeclOp varDecl) -> void {
-          OpBuilder b(varDecl);
-          Value op = b.create<POP::StackAllocationOp>(varDecl.getLoc(),
-                                                      varDecl.getType(), 1);
-          varDecl.replaceAllUsesWith(op);
-          varDecl->erase();
-        });
         if (failed(lowerLITFunc(func, symbolTable)))
           signalPassFailure();
-      } else if (auto structDecl = dyn_cast<KGEN::LITStructDeclOp>(op)) {
-        // TODO:
+      } else if (auto litStructDecl = dyn_cast<KGEN::LITStructDeclOp>(op)) {
+        if (failed(lowerLITStructDecl(litStructDecl, symbolTable)))
+          signalPassFailure();
       }
     }
   }
