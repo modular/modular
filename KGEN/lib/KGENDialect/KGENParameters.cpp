@@ -126,12 +126,13 @@ void ParameterCollector::collectUsesFromAttr(
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromTypes(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
-  // Signature types are effectively "isolated from above" in that they may have
-  // their own local parameter declarations that are used in their type
-  // signature, but they cannot "capture" parameters from the enclosing context.
-  // As such, they are always considered "parameterless".
-  if (llvm::isa_and_present<SignatureType>(type))
-    return;
+  // Signature types with input parameters are effectively "isolated from above"
+  // in that they may have their own local parameter declarations that are used
+  // in their type signature, but they cannot "capture" parameters from the
+  // enclosing context. As such, they are always considered "parameterless".
+  if (auto signature = dyn_cast_if_present<SignatureType>(type))
+    if (!signature.getInputParams().empty())
+      return;
 
   // Ignore types we have already scanned.
   if (!type)
@@ -176,6 +177,24 @@ void ParameterCollector::collectUsesFromTypes(
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess SignatureType::checkSelfContained() {
+  // Check the input parameters for conflicts.
+  SmallDenseMap<StringAttr, Type> paramsMap;
+  for (auto inputParam : getInputParams()) {
+    auto &entry = paramsMap[inputParam.getName()];
+    if (entry)
+      return Error("signature parameter \"" + inputParam.getName().strref() +
+                   "\" redefined");
+    entry = inputParam.getType();
+  }
+
+  // If the signature has no input parameters, then it isn't "isolated" within
+  // itself, it may use contextual types.  The normal parameter scanner will
+  // handle it.
+  if (getInputParams().empty())
+    return success();
+
+  // Otherwise, we need to check that any input/output value types only use
+  // parameters defined in the signature itself.
   bool hadSymbolConstantReferences = false;
   struct SignatureTypeCollector : public ParameterCollector {
     SignatureTypeCollector(bool &hadSymbolConstantReferences)
@@ -197,16 +216,6 @@ ErrorOrSuccess SignatureType::checkSelfContained() {
   // changes in the future.
   if (hadSymbolConstantReferences)
     return Error("signature type cannot use an @symbol reference");
-
-  // Check the input parameters for conflicts.
-  SmallDenseMap<StringAttr, Type> paramsMap;
-  for (auto inputParam : getInputParams()) {
-    auto &entry = paramsMap[inputParam.getName()];
-    if (entry)
-      return Error("signature parameter \"" + inputParam.getName().strref() +
-                   "\" redefined");
-    entry = inputParam.getType();
-  }
 
   // Check that each of the uses is to a defined input parameter.
   for (ParamDeclRefAttr use : uses) {

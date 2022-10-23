@@ -591,3 +591,26 @@ kgen.generator public @elaborate() {
   kgen.call @struct_sizeof<T1: type = !kgen.ref<@Int40>, T2: type = !kgen.ref<@Int20>>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// This takes a parameter function that uses a contextual type instead of
+// to-be-bound types.
+// CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index {
+// CHECK:  %0 = kgen.call @sillyFn() : () -> index
+kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+  %0 = kgen.call_param[()->!kgen.paramref<ty>: fn]()
+  kgen.return %0: !kgen.paramref<ty>
+}
+
+kgen.func @sillyFn() -> index {
+  %0 = kgen.param.constant = <42>
+  kgen.return %0: index
+}
+
+// CHECK-LABEL:  kgen.func public @elaborateFnWithContextualType() -> index {
+// CHECK:   %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"() : () -> index
+kgen.generator public @elaborateFnWithContextualType() -> index {
+  %0 = kgen.call @takeFnContextualType<ty: type = index, fn: ()->index = @sillyFn>() : () -> index
+  kgen.return %0 : index
+}
