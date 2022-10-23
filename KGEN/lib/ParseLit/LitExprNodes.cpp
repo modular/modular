@@ -14,6 +14,7 @@
 #include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -335,8 +336,12 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   if (calleeType.getValues().getNumResults())
     return call.getResult(0);
 
-  // FIXME: Need a correct representation for a non-error void return.
-  return {};
+  // On null return we return a UnitAttr to represent that this function
+  // returned void - returning a nullptr indicates that there was an error on
+  // emission.
+  // TODO: We should replace this with an empty tuple when we support tuples.
+  return VoidAttr::get(state.getContext(),
+                       mlir::TupleType::get(state.getContext()));
 }
 
 Type CallNode::emitType(IREmitter &state) const {

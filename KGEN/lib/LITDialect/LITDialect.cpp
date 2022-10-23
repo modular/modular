@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -30,14 +31,16 @@ using namespace KGEN;
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/LITDialect/LITTypes.cpp.inc"
 
-void LITDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
-  llvm_unreachable("no lit dialect attrs");
-}
-Attribute LITDialect::parseAttribute(DialectAsmParser &p, Type type) const {
-  llvm_unreachable("no lit dialect attrs");
-}
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/LITDialect/LITAttrs.cpp.inc"
 
 void LITDialect::initialize() {
+  // Register attributes.
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "KGEN/LITDialect/LITAttrs.cpp.inc"
+      >();
+
   // Register types.
   addTypes<
 #define GET_TYPEDEF_LIST
