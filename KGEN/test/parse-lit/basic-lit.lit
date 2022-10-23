@@ -134,3 +134,11 @@ struct SIMD[size: index, dt: DType]:
 
 struct DType:
   pass
+
+def generic_fn[a: DType, b: index](c : index):
+
+# CHECK:  @call_generic<dt: !kgen.ref<@DType>>()
+def call_generic[dt: DType]():
+  # CHECK: %0 = index.constant 57
+  # CHECK: kgen.call_param[(index) -> (): @generic_fn<a: !kgen.ref<@DType> = dt, b = 42>](%0)
+  generic_fn[dt, 42](57)
