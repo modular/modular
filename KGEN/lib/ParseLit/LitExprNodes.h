@@ -282,9 +282,9 @@ struct IREmitter {
   Value emitAsValue(const ExprNode *node);
 
   /// This helper emits the specified value rep as a meta value, diagnosing the
-  /// problem if the expression is only valid as a runtime value.  This returns
-  /// null if emission fails.
-  TypedAttr emitAsMetaValue(const ExprNode *node);
+  /// problem if the expression is only valid as a runtime value (using the
+  /// specified message).  This returns null if emission fails.
+  TypedAttr emitAsMetaValue(const ExprNode *node, const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null - if the expression

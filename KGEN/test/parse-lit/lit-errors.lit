@@ -3,6 +3,7 @@
 # "Standard library"
 struct Float:
 struct Int:
+struct DType:
 
 # Tests
 
@@ -117,9 +118,14 @@ def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 
 def WeirdMetaParams(a: Thing[1, "foo"]):
   pass
 
-
 def voidReturningFn(): pass
-
 def badCall():
   # expected-error @+1 {{value of type 'tuple<>' cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
   test_bool_context(voidReturningFn())
+
+
+def generic_fn[a: DType, b: index](c : index):
+
+def call_generic[dt: DType]():
+  generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
+  generic_fn[1, dt](57) # expected-error {{index has type 'index' but declaration expects '!kgen.ref<@DType>'}}

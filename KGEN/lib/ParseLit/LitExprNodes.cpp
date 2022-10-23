@@ -89,7 +89,8 @@ Value IREmitter::emitAsValue(const ExprNode *node) {
 /// This helper emits the specified value rep as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
-TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node) {
+TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node,
+                                     const Twine &message) {
   auto valueRep = node->emitIR(*this);
   if (!valueRep)
     return {};
@@ -98,8 +99,7 @@ TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node) {
   if (auto attr = valueRep.dyn_castTypedAttr())
     return attr;
 
-  emitError(node->getLoc(),
-            "context only permits a meta value, not a dynamic one");
+  emitError(node->getLoc(), message);
   return {};
 }
 
@@ -280,7 +280,8 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
   if (!calleeType.getInputParams().empty()) {
-    state.emitError(getLoc(), "unable to parameterized value that expects ")
+    state.emitError(getLoc(),
+                    "unable to call parameterized value that expects ")
         << calleeType.getInputParams().size() << " bound parameters";
     return {};
   }
@@ -350,7 +351,60 @@ Type CallNode::emitType(IREmitter &state) const {
 }
 
 MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
-  state.emitError(getLoc(), "TODO: Subscript irgen not implemented yet");
+  // Subscripting a generic function binds the parameter expressions.
+  auto subValue = base->emitIR(state);
+  if (!subValue)
+    return {};
+
+  // If we have a value of signature type, we can bind parameters to it.
+  if (auto signature = dyn_cast<SignatureType>(subValue.getType())) {
+    size_t numParams = signature.getInputParams().size();
+    if (numParams != indices.size()) {
+      state.emitError(getLoc(), "signature expects ")
+          << numParams << " parameter value" << plural(numParams);
+      return {};
+    }
+
+    auto declParam = subValue.dyn_castTypedAttr();
+    if (!declParam) {
+      state.emitError(getLoc(), "cannot parameterize dynamic value");
+      return {};
+    }
+
+    // Emit each index as a meta value and type check it.
+    SmallVector<TypedAttr> bindOperands;
+    bindOperands.push_back(declParam);
+    for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
+      auto val = state.emitAsMetaValue(
+          idx, "declaration parameters may not be a run-time value");
+      if (!val)
+        return {};
+
+      // Check the type matches what is expected.
+      // TODO: Do implicit conversions.
+      // TODO: Handle signatures like (T, scalar<T>) where early bound
+      // parameters changes the types of later ones.
+      if (val.getType() != decl.getType()) {
+        state.emitError(idx->getLoc(), "index has type ")
+            << val.getType() << " but declaration expects " << decl.getType();
+        return {};
+      }
+      bindOperands.push_back(val);
+    }
+    // Okay, everything checks out, form the bind operation.
+    return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+  }
+
+  // Emit each of the index values.
+  SmallVector<MLIRValueRep> indexValues;
+  for (ExprNode *index : indices) {
+    indexValues.push_back(index->emitIR(state));
+    if (!indexValues.back())
+      return {};
+  }
+
+  state.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
+      << subValue.getType();
   return {};
 }
 
@@ -389,7 +443,8 @@ Type SubscriptNode::emitType(IREmitter &state) const {
   for (auto [indexExpr, decl] : llvm::zip(indices, typeDecl.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto value = state.emitAsMetaValue(indexExpr);
+    auto value = state.emitAsMetaValue(
+        indexExpr, "type parameters may not be a run-time value");
     if (!value)
       return {};
 
