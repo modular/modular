@@ -77,7 +77,7 @@ Type SignatureType::replaceImmediateSubElements(
 /// If an error occurs making the substitution, report it with emitErrorFn
 /// and return null.
 SignatureType SignatureType::getSpecializedSignature(
-    ParamBindArrayAttr inputParamValues,
+    ArrayRef<ParamBindAttr> inputParamValues,
     llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
@@ -89,7 +89,6 @@ SignatureType SignatureType::getSpecializedSignature(
   // This can also occur in parameter types, e.g. for region types (dt vs f32):
   //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...
   //     call @g<dt: dtype = f32, region: () -> !pop.scalar<f32>(...
-
   if (inputParamValues.size() != getInputParams().size()) {
     emitErrorFn() << "caller has " << inputParamValues.size()
                   << " input parameters but callee expects "
@@ -144,6 +143,12 @@ SignatureType SignatureType::getSpecializedSignature(
       ParamDeclArrayAttr::get(getContext(), newInputParams),
       TypeArrayAttr::get(getContext(), newParamResultTypes),
       FunctionType::get(getContext(), inputTypes, resultTypes));
+}
+
+SignatureType SignatureType::getSpecializedSignature(
+    ParamBindArrayAttr inputParams,
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
+  return getSpecializedSignature(inputParams.getValue(), emitErrorFn);
 }
 
 //===----------------------------------------------------------------------===//

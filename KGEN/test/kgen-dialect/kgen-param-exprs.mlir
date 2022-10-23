@@ -125,7 +125,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
 
   // CHECK: = kgen.param.constant = <neg(p1)>
   %36 = kgen.param.constant = <neg(p1)>
- 
+
   // CHECK: = kgen.param.constant = <p1>
   %37 = kgen.param.constant = <sub(p1)>
 
@@ -134,7 +134,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
 
   // CHECK: = kgen.param.constant = <add(neg(p2), p1)>
   %39 = kgen.param.constant = <sub(p1, p2)>
-  
+
   kgen.return
 }
 
@@ -395,4 +395,35 @@ kgen.generator @symbol_exprs() {
   // CHECK: <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
   %0 = kgen.param.constant = <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
   kgen.return
+}
+
+kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+  %0 = kgen.call_param[()->!kgen.paramref<ty>: fn]()
+  kgen.return %0: !kgen.paramref<ty>
+}
+
+kgen.func @sillyFn() -> index {
+  %0 = kgen.param.constant = <42>
+  kgen.return %0: index
+}
+
+// CHECK-LABEL:  kgen.generator public @elaborateFnWithContextualType() -> index {
+// CHECK:  kgen.call @takeFnContextualType<ty: type = index, fn: () -> index = @sillyFn>() : () -> index
+kgen.generator public @elaborateFnWithContextualType() -> index {
+  %0 = kgen.call @takeFnContextualType<ty: type = index, fn: ()->index = @sillyFn>() : () -> index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @elaborateFnWithContextualType2()
+kgen.generator public @elaborateFnWithContextualType2() -> index {
+  kgen.param.declare fn: <ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> = <@takeFnContextualType>
+
+  // CHECK: kgen.param.declare boundFn: () -> index =
+  // CHECK-SAME: <bind_signature(:<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, :type index, :() -> index @sillyFn)>
+  kgen.param.declare boundFn: ()->index =
+    <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> fn,
+                    :type index, :()->index @sillyFn)>
+  %0 = kgen.call_param[()->index: boundFn]()
+
+  kgen.return %0 : index
 }

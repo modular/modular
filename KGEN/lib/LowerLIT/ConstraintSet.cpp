@@ -36,7 +36,7 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
 
         // TODO: Handle linear expressions of relational values, e.g. x = y+4.
       }
-    } else if (oper.getOpcode() == POC::IN) {
+    } else if (oper.getOpcode() == POC::In) {
       // 'param in {1,2,3}' is equality comparable.
       if (auto param = dyn_cast<ParamDeclRefAttr>(oper.getOperand(0))) {
         if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
@@ -174,7 +174,7 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
     SmallVector<TypedAttr> operands;
     operands.push_back(param);
     llvm::append_range(operands, valueArray);
-    expr = ParamOperatorAttr::get(POC::IN, operands);
+    expr = ParamOperatorAttr::get(POC::In, operands);
   } else {
     assert(isEquivalence() || isSimpleConstant(value));
     // We add pointwise equality constraints and equivalence constraints with
