@@ -386,7 +386,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
 // -----
 
-// expected-error @below {{"dt" parameter not defined in signature}}
+// expected-error @below {{invalid use of parameter with no declaration "dt"}}
 kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
   kgen.return
 }

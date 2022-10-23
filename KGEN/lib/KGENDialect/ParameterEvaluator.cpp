@@ -146,9 +146,11 @@ Type ParameterEvaluator::getReboundType(Type type) {
   Type result = type;
 
   // Rebind types in aggregates that implement SubElementTypeInterface.
-  // Signature types are special because they are "isolated from above" with
-  // respect to their contexts, so we don't rebind within them.
-  if (!type.isa<SignatureType>()) {
+  auto signature = dyn_cast<SignatureType>(type);
+  // Signature types with input parameters are special because they are
+  // "isolated from above" with respect to their contexts, so we don't rebind
+  // within them.
+  if (!signature || signature.getInputParams().empty()) {
     if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
       SmallVector<Attribute> newAttrs;
       SmallVector<Type> newTypes;
