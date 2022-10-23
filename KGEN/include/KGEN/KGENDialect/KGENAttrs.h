@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENATTRIBUTES_H
-#define KGEN_KGENATTRIBUTES_H
+#ifndef KGEN_KGENDIALECT_KGENATTRS_H
+#define KGEN_KGENDIALECT_KGENATTRS_H
 
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "Support/ForwardDecls.h"
@@ -77,4 +77,4 @@ public:
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.h.inc"
 
-#endif // KGEN_KGENATTRIBUTES_H
+#endif // KGEN_KGENDIALECT_KGENATTRS_H

@@ -116,3 +116,10 @@ def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 
 # expected-error @+1 {{parameter of type 'none' cannot be converted to expected type 'index'}}
 def WeirdMetaParams(a: Thing[1, "foo"]):
   pass
+
+
+def voidReturningFn(): pass
+
+def badCall():
+  # expected-error @+1 {{value of type 'tuple<>' cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
+  test_bool_context(voidReturningFn())
