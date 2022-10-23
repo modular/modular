@@ -1206,9 +1206,7 @@ ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
     return success();
   }
 
-  if (parseIndexParamValue(p, result))
-    return failure();
-  return success();
+  return parseIndexParamValue(p, result);
 }
 
 /// Compare a range of values from an "originator" to a corresponding range of
