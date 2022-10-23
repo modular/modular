@@ -46,13 +46,13 @@ Type MLIRValueRep::getType() const {
 }
 
 //===----------------------------------------------------------------------===//
-// IREmitter Implementation
+// ExprEmitter Implementation
 //===----------------------------------------------------------------------===//
 
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
+Value ExprEmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
   if (!rep) // Already diagnosed error.
     return {};
 
@@ -81,7 +81,7 @@ Value IREmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-Value IREmitter::emitAsValue(const ExprNode *node) {
+Value ExprEmitter::emitAsValue(const ExprNode *node) {
   assert(node && "cannot emit a null node");
   return emitAsValue(node->emitIR(*this), node->getLoc());
 }
@@ -89,8 +89,8 @@ Value IREmitter::emitAsValue(const ExprNode *node) {
 /// This helper emits the specified value rep as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
-TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node,
-                                     const Twine &message) {
+TypedAttr ExprEmitter::emitAsMetaValue(const ExprNode *node,
+                                       const Twine &message) {
   auto valueRep = node->emitIR(*this);
   if (!valueRep)
     return {};
@@ -106,7 +106,7 @@ TypedAttr IREmitter::emitAsMetaValue(const ExprNode *node,
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-Type IREmitter::emitAsType(const ExprNode *node) {
+Type ExprEmitter::emitAsType(const ExprNode *node) {
   Type result = node->emitType(*this);
   // The emitType methods return null on failure, we return a TypeCheckErrorType
   // to simplify clients.
@@ -115,7 +115,7 @@ Type IREmitter::emitAsType(const ExprNode *node) {
 
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
-Scope *IREmitter::lookupDecl(StringRef name, SMLoc loc) {
+Scope *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
   Optional<Scope::NameEntry> lookupResult =
       scope.lookup(StringAttr::get(getContext(), name));
   if (!lookupResult)
@@ -144,54 +144,54 @@ Scope *IREmitter::lookupDecl(StringRef name, SMLoc loc) {
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 /// Error nodes cannot be emitted and have already been diagnosed.
-MLIRValueRep ErrorNode::emitIR(IREmitter &state) const {
+MLIRValueRep ErrorNode::emitIR(ExprEmitter &emitter) const {
   return MLIRValueRep();
 }
 
-Type ErrorNode::emitType(IREmitter &state) const { return Type(); }
+Type ErrorNode::emitType(ExprEmitter &emitter) const { return Type(); }
 
-MLIRValueRep IntLiteralNode::emitIR(IREmitter &state) const {
+MLIRValueRep IntLiteralNode::emitIR(ExprEmitter &emitter) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
-  return IntegerAttr::get(IndexType::get(state.getContext()), value);
+  return IntegerAttr::get(IndexType::get(emitter.getContext()), value);
 }
 
-Type IntLiteralNode::emitType(IREmitter &state) const {
-  state.emitError(getLoc(), "cannot emit this expression as a type");
+Type IntLiteralNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
 
-MLIRValueRep FloatLiteralNode::emitIR(IREmitter &state) const {
+MLIRValueRep FloatLiteralNode::emitIR(ExprEmitter &emitter) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
-  return FloatAttr::get(FloatType::getF64(state.getContext()),
+  return FloatAttr::get(FloatType::getF64(emitter.getContext()),
                         APFloat(value.convertToDouble()));
 }
 
-Type FloatLiteralNode::emitType(IREmitter &state) const {
-  state.emitError(getLoc(), "cannot emit this expression as a type");
+Type FloatLiteralNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
 
-MLIRValueRep StringLiteralNode::emitIR(IREmitter &state) const {
+MLIRValueRep StringLiteralNode::emitIR(ExprEmitter &emitter) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  return StringAttr::get(state.getContext(), value);
+  return StringAttr::get(emitter.getContext(), value);
 }
 
-Type StringLiteralNode::emitType(IREmitter &state) const {
-  state.emitError(getLoc(), "cannot emit this expression as a type");
+Type StringLiteralNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
 
-MLIRValueRep DeclRefNode::emitIR(IREmitter &state) const {
+MLIRValueRep DeclRefNode::emitIR(ExprEmitter &emitter) const {
   Optional<Scope::NameEntry> declOrValue =
-      state.scope.lookup(StringAttr::get(state.getContext(), spelling));
+      emitter.scope.lookup(StringAttr::get(emitter.getContext(), spelling));
   if (!declOrValue) {
-    state.emitError(getLoc(), "use of unknown declaration \"")
+    emitter.emitError(getLoc(), "use of unknown declaration \"")
         << spelling << '"';
     return {};
   }
@@ -205,7 +205,7 @@ MLIRValueRep DeclRefNode::emitIR(IREmitter &state) const {
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
-  auto resolveResult = state.shared.declResolver->resolve(
+  auto resolveResult = emitter.shared.declResolver->resolve(
       scope, DeclResolvedness::signatureResolved, getLoc());
 
   // If the decl was erroneous somehow, then don't form a reference to it.
@@ -214,14 +214,14 @@ MLIRValueRep DeclRefNode::emitIR(IREmitter &state) const {
 
   // Variable references resolve to load from the variable.
   if (auto var = dyn_cast<VarDeclOp>(scope.getDecl())) {
-    if (!state.builder) {
-      state.emitError(getLoc(),
-                      "cannot load dynamic value in meta value context");
+    if (!emitter.builder) {
+      emitter.emitError(getLoc(),
+                        "cannot load dynamic value in meta value context");
       return {};
     }
 
-    return state.builder
-        ->create<POP::LoadOp>(state.translateLocation(getLoc()), var,
+    return emitter.builder
+        ->create<POP::LoadOp>(emitter.translateLocation(getLoc()), var,
                               /*alignment*/ None)
         .getResult();
   }
@@ -231,31 +231,31 @@ MLIRValueRep DeclRefNode::emitIR(IREmitter &state) const {
     return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
                                    fnDecl.getSignature());
 
-  state.emitError(getLoc(), "use of declaration \"")
+  emitter.emitError(getLoc(), "use of declaration \"")
       << spelling << "\" as a value isn't supported yet";
   return {};
 }
 
-Type DeclRefNode::emitType(IREmitter &state) const {
-  auto *context = state.getContext();
+Type DeclRefNode::emitType(ExprEmitter &emitter) const {
+  auto *context = emitter.getContext();
 
   // TODO(types): This is a hack to unblock tests in the interim.
   if (spelling == "index")
     return IndexType::get(context);
 
   // Lookup the identifier.
-  Scope *declScope = state.lookupDecl(spelling, getLoc());
+  Scope *declScope = emitter.lookupDecl(spelling, getLoc());
   if (!declScope)
     return Type();
   auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
   if (!typeDecl) {
-    state.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
+    emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
     return Type();
   }
 
   auto numParams = typeDecl.getParamDecls().size();
   if (numParams != 0) {
-    state.emitError(getLoc(), "'" + spelling + "' requires ")
+    emitter.emitError(getLoc(), "'" + spelling + "' requires ")
         << numParams << " meta parameter" << plural(numParams);
     return Type();
   }
@@ -263,8 +263,8 @@ Type DeclRefNode::emitType(IREmitter &state) const {
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
-MLIRValueRep CallNode::emitIR(IREmitter &state) const {
-  auto calleeVal = callee->emitIR(state);
+MLIRValueRep CallNode::emitIR(ExprEmitter &emitter) const {
+  auto calleeVal = callee->emitIR(emitter);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
 
@@ -272,7 +272,7 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   // TODO: Support struct initialization.
   auto calleeType = dyn_cast<SignatureType>(calleeVal.getType());
   if (!calleeType) {
-    state.emitError(getLoc(), "unable to call value of type ")
+    emitter.emitError(getLoc(), "unable to call value of type ")
         << calleeVal.getType();
     return {};
   }
@@ -280,8 +280,8 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
   if (!calleeType.getInputParams().empty()) {
-    state.emitError(getLoc(),
-                    "unable to call parameterized value that expects ")
+    emitter.emitError(getLoc(),
+                      "unable to call parameterized value that expects ")
         << calleeType.getInputParams().size() << " bound parameters";
     return {};
   }
@@ -291,7 +291,7 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
 
   size_t numArgs = calleeType.getValues().getNumInputs();
   if (numArgs != args.size()) {
-    state.emitError(getLoc(), "callee expects ")
+    emitter.emitError(getLoc(), "callee expects ")
         << numArgs << " argument" << plural(numArgs);
     return {};
   }
@@ -300,13 +300,13 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   SmallVector<Value> valueArguments;
   for (auto [arg, expectedType] :
        llvm::zip(args, calleeType.getValues().getInputs())) {
-    auto argVal = state.emitAsValue(arg);
+    auto argVal = emitter.emitAsValue(arg);
     if (!argVal)
       return {};
 
     if (argVal.getType() != expectedType) {
       // TODO: Handle implicit conversions.
-      state.emitError(arg->getLoc(), "value of type ")
+      emitter.emitError(arg->getLoc(), "value of type ")
           << argVal.getType() << " cannot be converted to expected type "
           << expectedType;
       return {};
@@ -316,18 +316,18 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
 
   auto calleeParam = calleeVal.dyn_castTypedAttr();
   if (!calleeParam) {
-    state.emitError(getLoc(), "TODO: indirect value call not supported yet");
+    emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};
   }
 
-  if (!state.builder) {
-    state.emitError(getLoc(),
-                    "TODO: cannot call function in parameter context");
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(),
+                      "TODO: cannot call function in parameter context");
     return {};
   }
 
-  auto call = state.builder->create<CallParamOp>(
-      state.translateLocation(getLoc()),
+  auto call = emitter.builder->create<CallParamOp>(
+      emitter.translateLocation(getLoc()),
       /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
       /*inputParams*/ ArrayRef<ParamBindAttr>(),
       /*resultParams*/ ArrayRef<ParamDeclAttr>(),
@@ -341,18 +341,18 @@ MLIRValueRep CallNode::emitIR(IREmitter &state) const {
   // returned void - returning a nullptr indicates that there was an error on
   // emission.
   // TODO: We should replace this with an empty tuple when we support tuples.
-  return VoidAttr::get(state.getContext(),
-                       mlir::TupleType::get(state.getContext()));
+  return VoidAttr::get(emitter.getContext(),
+                       mlir::TupleType::get(emitter.getContext()));
 }
 
-Type CallNode::emitType(IREmitter &state) const {
-  state.emitError(getLoc(), "cannot emit this expression as a type");
+Type CallNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
 
-MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
+MLIRValueRep SubscriptNode::emitIR(ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitIR(state);
+  auto subValue = base->emitIR(emitter);
   if (!subValue)
     return {};
 
@@ -360,14 +360,14 @@ MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
   if (auto signature = dyn_cast<SignatureType>(subValue.getType())) {
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
-      state.emitError(getLoc(), "signature expects ")
+      emitter.emitError(getLoc(), "signature expects ")
           << numParams << " parameter value" << plural(numParams);
       return {};
     }
 
     auto declParam = subValue.dyn_castTypedAttr();
     if (!declParam) {
-      state.emitError(getLoc(), "cannot parameterize dynamic value");
+      emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
     }
 
@@ -375,7 +375,7 @@ MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
     SmallVector<TypedAttr> bindOperands;
     bindOperands.push_back(declParam);
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
-      auto val = state.emitAsMetaValue(
+      auto val = emitter.emitAsMetaValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val)
         return {};
@@ -385,7 +385,7 @@ MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
       // TODO: Handle signatures like (T, scalar<T>) where early bound
       // parameters changes the types of later ones.
       if (val.getType() != decl.getType()) {
-        state.emitError(idx->getLoc(), "index has type ")
+        emitter.emitError(idx->getLoc(), "index has type ")
             << val.getType() << " but declaration expects " << decl.getType();
         return {};
       }
@@ -398,41 +398,41 @@ MLIRValueRep SubscriptNode::emitIR(IREmitter &state) const {
   // Emit each of the index values.
   SmallVector<MLIRValueRep> indexValues;
   for (ExprNode *index : indices) {
-    indexValues.push_back(index->emitIR(state));
+    indexValues.push_back(index->emitIR(emitter));
     if (!indexValues.back())
       return {};
   }
 
-  state.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
+  emitter.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
       << subValue.getType();
   return {};
 }
 
-Type SubscriptNode::emitType(IREmitter &state) const {
+Type SubscriptNode::emitType(ExprEmitter &emitter) const {
   // KGEN doesn't support unbound parametric types (e.g. "SIMD" with unbound
   // size/dtype) as a stand-alone type, so we handle name resolution here.
   auto baseDRE = dyn_cast<DeclRefNode>(base);
   if (!baseDRE) {
-    if (Type baseType = base->emitType(state))
-      state.emitError(getLoc(), "unknown parameterized type ") << baseType;
+    if (Type baseType = base->emitType(emitter))
+      emitter.emitError(getLoc(), "unknown parameterized type ") << baseType;
     return Type();
   }
 
   // Lookup the identifier.
-  Scope *declScope = state.lookupDecl(baseDRE->spelling, getLoc());
+  Scope *declScope = emitter.lookupDecl(baseDRE->spelling, getLoc());
   if (!declScope)
     return Type();
 
   auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
   if (!typeDecl) {
-    state.emitError(getLoc(),
-                    "'" + baseDRE->spelling + "' names a value, not a type");
+    emitter.emitError(getLoc(),
+                      "'" + baseDRE->spelling + "' names a value, not a type");
     return Type();
   }
 
   auto numParams = typeDecl.getParamDecls().size();
   if (numParams != indices.size()) {
-    state.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
+    emitter.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
         << numParams << " meta parameter" << plural(numParams) << " but "
         << indices.size() << " were specified";
     return Type();
@@ -443,14 +443,14 @@ Type SubscriptNode::emitType(IREmitter &state) const {
   for (auto [indexExpr, decl] : llvm::zip(indices, typeDecl.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto value = state.emitAsMetaValue(
+    auto value = emitter.emitAsMetaValue(
         indexExpr, "type parameters may not be a run-time value");
     if (!value)
       return {};
 
     // TODO: Support conversions.
     if (value.getType() != decl.getType()) {
-      state.emitError(indexExpr->getLoc(), "parameter of type ")
+      emitter.emitError(indexExpr->getLoc(), "parameter of type ")
           << value.getType() << " cannot be converted to expected type "
           << decl.getType();
       return {};
@@ -460,26 +460,26 @@ Type SubscriptNode::emitType(IREmitter &state) const {
   }
 
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
-                      ParamBindArrayAttr::get(state.getContext(), exprs));
+                      ParamBindArrayAttr::get(emitter.getContext(), exprs));
 }
 
-MLIRValueRep ParenExprNode::emitIR(IREmitter &state) const {
-  return subExpr->emitIR(state);
+MLIRValueRep ParenExprNode::emitIR(ExprEmitter &emitter) const {
+  return subExpr->emitIR(emitter);
 }
 
-Type ParenExprNode::emitType(IREmitter &state) const {
-  return subExpr->emitType(state);
+Type ParenExprNode::emitType(ExprEmitter &emitter) const {
+  return subExpr->emitType(emitter);
 }
 
-MLIRValueRep BinOpNode::emitIR(IREmitter &state) const {
-  auto lhsRep = lhs->emitIR(state);
-  auto rhsRep = rhs->emitIR(state);
+MLIRValueRep BinOpNode::emitIR(ExprEmitter &emitter) const {
+  auto lhsRep = lhs->emitIR(emitter);
+  auto rhsRep = rhs->emitIR(emitter);
   if (!lhsRep || !rhsRep)
     return {};
   auto lhsType = lhsRep.getType(), rhsType = rhsRep.getType();
   if (lhsType != rhsType || !lhsType.isIndex()) {
-    state.emitError(getLoc(),
-                    "binary operator with interesting types not implemented");
+    emitter.emitError(getLoc(),
+                      "binary operator with interesting types not implemented");
     return {};
   }
 
@@ -502,23 +502,23 @@ MLIRValueRep BinOpNode::emitIR(IREmitter &state) const {
     }
   }
 
-  assert(state.builder && "cannot have dynamic values without a builder");
+  assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto lhsVal = state.emitAsValue(lhsRep, lhs->getLoc());
-  auto rhsVal = state.emitAsValue(rhsRep, rhs->getLoc());
-  auto loc = state.translateLocation(getLoc());
+  auto lhsVal = emitter.emitAsValue(lhsRep, lhs->getLoc());
+  auto rhsVal = emitter.emitAsValue(rhsRep, rhs->getLoc());
+  auto loc = emitter.translateLocation(getLoc());
 
   switch (kind) {
   default:
     llvm_unreachable("unknown binary operator");
   case kAdd:
-    return (Value)state.builder->create<index::AddOp>(loc, lhsVal, rhsVal);
+    return (Value)emitter.builder->create<index::AddOp>(loc, lhsVal, rhsVal);
   case kMul:
-    return (Value)state.builder->create<index::MulOp>(loc, lhsVal, rhsVal);
+    return (Value)emitter.builder->create<index::MulOp>(loc, lhsVal, rhsVal);
   }
 }
 
-Type BinOpNode::emitType(IREmitter &state) const {
-  state.emitError(getLoc(), "cannot emit this expression as a type");
+Type BinOpNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
