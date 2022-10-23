@@ -11,7 +11,7 @@
 #include "KGEN/ParseLit.h"
 
 #include "LitDecls.h"
-#include "LitExprNodes.h"
+#include "LitExprs.h"
 #include "LitParserBase.h"
 #include "LitScope.h"
 #include "LitSharedState.h"
