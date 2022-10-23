@@ -133,6 +133,9 @@ def SignatureType
     /// If an error occurs making the substitution, report it with emitErrorFn
     /// and return null.
     SignatureType
+    getSpecializedSignature(ArrayRef<ParamBindAttr> inputParams,
+      llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
+    SignatureType
     getSpecializedSignature(ParamBindArrayAttr inputParams,
       llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
   }];

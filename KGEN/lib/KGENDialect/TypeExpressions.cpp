@@ -101,7 +101,7 @@ static Optional<int64_t> computeSizeof(SymbolTable &symtab,
 
 Optional<TypedAttr>
 ParameterEvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
-  if (op.getOpcode() != POC::GET_SIZEOF && op.getOpcode() != POC::GET_ALIGNOF)
+  if (op.getOpcode() != POC::GetSizeOf && op.getOpcode() != POC::GetAlignOf)
     return {op};
   auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
   if (!typeCst)
@@ -112,7 +112,7 @@ ParameterEvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   // FIXME: Target info should be passed through the operator.
   auto target = TargetInfoAttr::getForHost(op.getContext());
   Optional<int64_t> indexResult;
-  if (op.getOpcode() == POC::GET_SIZEOF)
+  if (op.getOpcode() == POC::GetSizeOf)
     indexResult = computeStructSizeof(*symtab, target, ref);
   else
     indexResult = computeStructAlignof(*symtab, target, ref);

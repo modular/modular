@@ -215,11 +215,46 @@ ParamBindAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
+static Type
+verifyBindSignature(ArrayRef<TypedAttr> operands,
+                    llvm::function_ref<mlir::InFlightDiagnostic()> emitError) {
+  if (operands.size() == 0) {
+    emitError() << "'bind_signature' requires a function parameter";
+    return {};
+  }
+  auto signature = dyn_cast<SignatureType>(operands[0].getType());
+  if (!signature) {
+    emitError() << "first operand of 'bind_signature' must have signature type";
+    return {};
+  }
+
+  // Convert the input operands into a ParamBindAttr's for
+  // getSpecializedSignature.
+  SmallVector<ParamBindAttr> inputParams;
+  for (auto [decl, value] :
+       llvm::zip(signature.getInputParams(), operands.drop_front())) {
+    inputParams.push_back(ParamBindAttr::get(decl.getName(), value));
+  }
+
+  // Get the specialized version of the signature with all the parameters
+  // substituted in.
+  auto result = signature.getSpecializedSignature(inputParams, emitError);
+  if (!result)
+    return {};
+
+  // The signature we just got back has all the parameter we just substituted in
+  // as part of the signature.  These are now fully bound, so we don't need them
+  // anymore.
+  return SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
+                            result.getResultParamTypes(), result.getValues());
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
-  // All the operand types must match.
-  if (!llvm::all_of(operands, [&](auto operand) {
+  // All the operand types must match except for bind_signature.
+  if (opcode != POC::BindSignature &&
+      !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
     return emitError() << "operand type mismatch";
@@ -288,7 +323,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "relational comparisons only allowed on index values";
     break;
-  case POC::IN:
+  case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
     if (!isEqualityComparableType(operands[0].getType()))
@@ -297,7 +332,7 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
-  case POC::GET_DTYPE:
+  case POC::GetDType:
     if (operands.size() != 1)
       return emitError() << "'get_dtype' operator requires one operand";
     if (!operands[0].getType().isa<MLIRTypeType>())
@@ -310,7 +345,7 @@ LogicalResult ParamOperatorAttr::verify(
                               "implement DTypeInterface";
     }
     break;
-  case POC::GET_SIZEOF:
+  case POC::GetSizeOf:
     if (operands.size() != 1)
       return emitError() << "'get_sizeof' operator requires one operand";
     if (!operands.front().getType().isa<MLIRTypeType>())
@@ -318,7 +353,7 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isa<IndexType>())
       return emitError() << "'get_sizeof' should return an index";
     break;
-  case POC::GET_ALIGNOF:
+  case POC::GetAlignOf:
     if (operands.size() != 1)
       return emitError() << "'get_alignof' operator requires one operand";
     if (!operands.front().getType().isa<MLIRTypeType>())
@@ -326,6 +361,15 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isa<IndexType>())
       return emitError() << "'get_alignof' should return an index";
     break;
+  case POC::BindSignature: {
+    Type actualType = verifyBindSignature(operands, emitError);
+    if (!actualType)
+      return failure();
+    if (actualType != type)
+      return emitError() << "bind_signature expected to return " << type
+                         << " but actually returns " << actualType;
+    break;
+  }
   }
   return success();
 }
@@ -870,12 +914,12 @@ static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
       newOperands.push_back(operand);
   if (newOperands == operands)
     return {};
-  return ParamOperatorAttr::get(POC::IN, newOperands);
+  return ParamOperatorAttr::get(POC::In, newOperands);
 }
 
 /// Simplifies a `get_dtype` operator. Try to narrow the operand to a type
 /// constant. If it does, the type must implement `DTypeInterface`.
-static Attribute simplifyGET_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGetDType(SmallVectorImpl<TypedAttr> &operands) {
   if (auto typeCst = dyn_cast<TypeConstantAttr>(operands.front()))
     return typeCst.getValue().cast<DTypeInterface>().getDType();
   return {};
@@ -883,7 +927,7 @@ static Attribute simplifyGET_DTYPE(SmallVectorImpl<TypedAttr> &operands) {
 
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
-static Attribute simplifyGET_SIZEOF(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
   // FIXME: The target info attribute should be passed through the operator.
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
   if (!typeCst)
@@ -897,7 +941,7 @@ static Attribute simplifyGET_SIZEOF(SmallVectorImpl<TypedAttr> &operands) {
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
-static Attribute simplifyGET_ALIGNOF(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   // FIXME: The target info attribute should be passed through the operator.
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
   if (!typeCst)
@@ -907,6 +951,19 @@ static Attribute simplifyGET_ALIGNOF(SmallVectorImpl<TypedAttr> &operands) {
   if (!size)
     return {};
   return Builder(typeCst.getContext()).getIndexAttr(*size);
+}
+
+static Attribute simplifyBindSignature(SmallVectorImpl<TypedAttr> &operands,
+                                       Type &resultType) {
+  // If there is only a single operand, then nothing is bound.
+  if (operands.size() == 1)
+    return operands[0];
+
+  // Otherwise, compute the result type. If an error is producted, just abort.
+  resultType = verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
+    llvm_unreachable("invalid bind_signature operator");
+  });
+  return {};
 }
 
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
@@ -937,7 +994,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(llvm::all_of(operandsIn.drop_front(),
+  assert(opcode == POC::BindSignature ||
+         llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
@@ -992,21 +1050,24 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(context, 1);
     break;
-  case POC::IN:
+  case POC::In:
     result = simplifyIN(operands);
     resultType = IntegerType::get(context, 1);
     break;
-  case POC::GET_DTYPE:
-    result = simplifyGET_DTYPE(operands);
+  case POC::GetDType:
+    result = simplifyGetDType(operands);
     resultType = DTypeType::get(context);
     break;
-  case POC::GET_SIZEOF:
-    result = simplifyGET_SIZEOF(operands);
+  case POC::GetSizeOf:
+    result = simplifyGetSizeOf(operands);
     resultType = IndexType::get(context);
     break;
-  case POC::GET_ALIGNOF:
-    result = simplifyGET_ALIGNOF(operands);
+  case POC::GetAlignOf:
+    result = simplifyGetAlignOf(operands);
     resultType = IndexType::get(context);
+    break;
+  case POC::BindSignature:
+    result = simplifyBindSignature(operands, resultType);
     break;
   }
 

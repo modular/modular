@@ -502,7 +502,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     // operand-list ::= expr (`,` expr)*
     return p.parseCommaSeparatedList(
         [&] { return parseParamValue(p, operands.emplace_back(), type); });
-  case (uint32_t)POC::IN:
+  case (uint32_t)POC::In:
   case (uint32_t)POCAliases::NOT_IN:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
@@ -510,6 +510,21 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
           return parseParamValue(p, operands.emplace_back(), type);
         }))
       return failure();
+    return success();
+  case (uint32_t)POC::BindSignature:
+    // Parse each operand with a type.  TODO: We could do better here by using
+    // the signature to infer the types of the parameters.
+    if (parseParamValue(p, operands.emplace_back(), type))
+      return failure();
+    if (failed(p.parseOptionalComma()))
+      return success();
+
+    return p.parseCommaSeparatedList([&]() -> LogicalResult {
+      if (parseColonTypeOrIndex(p, type) ||
+          parseParamValue(p, operands.emplace_back(), type))
+        return failure();
+      return success();
+    });
 
     return success();
   }
@@ -626,14 +641,14 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       case (uint32_t)POCAliases::GE:
       case (uint32_t)POCAliases::GT:
       case (uint32_t)POCAliases::NOT_IN:
-      case (uint32_t)POC::IN:
+      case (uint32_t)POC::In:
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
         break;
-      case (uint32_t)POC::GET_DTYPE:
-      case (uint32_t)POC::GET_SIZEOF:
-      case (uint32_t)POC::GET_ALIGNOF:
+      case (uint32_t)POC::GetDType:
+      case (uint32_t)POC::GetSizeOf:
+      case (uint32_t)POC::GetAlignOf:
         // The `get_dtype` and `get_sizeof` operand is always an MLIR type.
         operandType = MLIRTypeType::get(p.getContext());
         break;
@@ -676,7 +691,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       needsInvert = true;
       break;
     case (uint32_t)POCAliases::NOT_IN:
-      opcode = (uint32_t)POC::IN;
+      opcode = (uint32_t)POC::In;
       needsInvert = true;
       break;
     case (uint32_t)POCAliases::NOT:
@@ -728,7 +743,7 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (opcode == POC::IN || opcode == POC::EQ || opcode == POC::LT ||
+  if (opcode == POC::In || opcode == POC::EQ || opcode == POC::LT ||
       opcode == POC::LE)
     printColonTypeOrIndexPrefix(os, operands[0].getType());
 
@@ -738,7 +753,7 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
     llvm::interleaveComma(
         operands, os, [&](TypedAttr operand) { printParamValue(operand, os); });
     break;
-  case POC::IN:
+  case POC::In:
     // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
     printParamValue(operands[0], os);
     os << ", [";
@@ -746,6 +761,14 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
       printParamValue(operand, os);
     });
     os << "]";
+    break;
+
+  case POC::BindSignature:
+    // Print types on all operands.
+    llvm::interleaveComma(operands, os, [&](TypedAttr operand) {
+      printColonTypeOrIndexPrefix(os, operand.getType());
+      printParamValue(operand, os);
+    });
     break;
   }
 }
