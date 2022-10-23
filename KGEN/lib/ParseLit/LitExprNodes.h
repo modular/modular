@@ -31,7 +31,7 @@
 
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
-struct IREmitter;
+struct ExprEmitter;
 struct TypeEmitter;
 class Scope;
 
@@ -86,11 +86,11 @@ public:
   virtual bool containsError() const = 0;
 
   /// Emit this expression to MLIR, returning a (possibly null!) MLIRValueRep.
-  virtual MLIRValueRep emitIR(IREmitter &state) const = 0;
+  virtual MLIRValueRep emitIR(ExprEmitter &state) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
-  /// unlike the corresponding IREmitter method.
-  virtual Type emitType(IREmitter &state) const = 0;
+  /// unlike the corresponding ExprEmitter method.
+  virtual Type emitType(ExprEmitter &state) const = 0;
 };
 
 /// This node is created to represent erroneous parses, but the diagnostic has
@@ -103,8 +103,8 @@ struct ErrorNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kError; }
   SMLoc getLoc() const override { return loc; }
   bool containsError() const override { return true; }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct IntLiteralNode final : public ExprNode {
@@ -120,8 +120,8 @@ struct IntLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct FloatLiteralNode final : public ExprNode {
@@ -137,8 +137,8 @@ struct FloatLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct StringLiteralNode final : public ExprNode {
@@ -154,8 +154,8 @@ struct StringLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct DeclRefNode final : public ExprNode {
@@ -168,8 +168,8 @@ struct DeclRefNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -187,8 +187,8 @@ struct CallNode final : public ExprNode {
              return exp->containsError();
            });
   }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
@@ -209,8 +209,8 @@ struct SubscriptNode final : public ExprNode {
              return exp->containsError();
            });
   }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct ParenExprNode final : public ExprNode {
@@ -227,8 +227,8 @@ struct ParenExprNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lparenLoc; }
   bool containsError() const override { return subExpr->containsError(); }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 struct BinOpNode final : public ExprNode {
@@ -246,15 +246,15 @@ struct BinOpNode final : public ExprNode {
   bool containsError() const override {
     return lhs->containsError() || rhs->containsError();
   }
-  MLIRValueRep emitIR(IREmitter &state) const override;
-  Type emitType(IREmitter &state) const override;
+  MLIRValueRep emitIR(ExprEmitter &state) const override;
+  Type emitType(ExprEmitter &state) const override;
 };
 
 //===----------------------------------------------------------------------===//
-// IREmitter
+// ExprEmitter
 //===----------------------------------------------------------------------===//
 
-struct IREmitter {
+struct ExprEmitter {
   /// This is the shared state for the parser overall.
   LitSharedState &shared;
 
@@ -266,7 +266,7 @@ struct IREmitter {
   /// It is mutable to support expressions that require internal control flow.
   Optional<OpBuilder> builder;
 
-  IREmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
+  ExprEmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
       : shared(shared), scope(scope), builder(builder) {}
 
   MLIRContext *getContext() const { return shared.context; }

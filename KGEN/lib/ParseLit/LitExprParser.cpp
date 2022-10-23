@@ -299,6 +299,6 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
   ExprNode *expr = nullptr;
   if (parseExpression(expr))
     return failure();
-  result = IREmitter(getSharedState(), scope, None).emitAsType(expr);
+  result = ExprEmitter(getSharedState(), scope, None).emitAsType(expr);
   return success();
 }
