@@ -321,7 +321,7 @@ def ParameterizedTypeConstantAttr
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
-    `TypeAttr` in that it is an attribute referrs to a type.  The difference is
+    `TypeAttr` in that it is an attribute refers to a type.  The difference is
     that it is a `TypedAttr` so it can be a parameter expression, and has
     'kgen.type' itself.
 
@@ -383,20 +383,30 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
-    This is a value of !kgen.region type, which refers to a func or generator.
-    We cannot directly use FlatSymbolRefAttr because it isn't a TypedAttr.
+    This is a value of !kgen.signature type, which refers to a func or
+    generator.  This may optionally bind the input parameter values at time of
+    formation - when this happens, the result type is non-parametric.
   }];
 
   let parameters = (ins "FlatSymbolRefAttr":$symbol,
+                        "ParamBindArrayAttr":$paramValues,
                         AttributeSelfTypeParameter<"">:$type);
 
-  let builders =
-    [AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
-                                         "Type":$type), [{
-      return get(symbol.getContext(), symbol, type);
-    }]>];
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
+                                        "Type":$type), [{
+      auto *context = symbol.getContext();
+      return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
+                                        "ParamBindArrayAttr":$paramValues,
+                                        "Type":$type), [{
+      return get(symbol.getContext(), symbol, paramValues, type);
+    }]>,
+  ];
 
-  let assemblyFormat = "`<` $symbol `>`";
+  let assemblyFormat =
+     "`<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`";
 }
 
 //===----------------------------------------------------------------------===//

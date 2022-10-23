@@ -435,15 +435,36 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
   }
 
-  auto signatureType = symbolConstant.getType().cast<SignatureType>();
+  auto declSignature = decl.getSignature();
+
+  // If this SymbolConstant binds the parameters for the symbol, then remap its
+  // signature to include the substitutions.
+  if (!symbolConstant.getParamValues().empty()) {
+    auto result = declSignature.getSpecializedSignature(
+        symbolConstant.getParamValues(), [&]() {
+          hadError = true;
+          return emitError(curLocationCollecting.value());
+        });
+    if (!result)
+      return;
+
+    // The signature we just got back has all the parameter we just substituted
+    // in as part of the signature.  These are now fully bound, so we don't need
+    // them anymore.
+    declSignature =
+        SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
+                           result.getResultParamTypes(), result.getValues());
+  }
+
+  auto symbolSignature = cast<SignatureType>(symbolConstant.getType());
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
   SmallString<32> paramName("@");
   paramName.append(symbol.getLeafReference());
   if (failed(verifyDeclSignaturesMatch(
-          "symbol use", signatureType, curLocationCollecting.value(),
-          paramName.c_str(), decl.getSignature(), decl->getLoc())))
+          "symbol use", symbolSignature, curLocationCollecting.value(),
+          paramName.c_str(), declSignature, decl->getLoc())))
     hadError = true;
 }
 

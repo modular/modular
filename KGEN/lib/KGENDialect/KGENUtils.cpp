@@ -140,8 +140,8 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
         signature.getResultParamTypes().empty())
       os << signature.getValues();
     else { // Otherwise print it as "p1, p2 -> r3, () -> ())"
-      printOptionalParameterSpec(os, signature.getInputParams(),
-                                 signature.getResultParamTypes());
+      printOptionalParameterSpec(signature.getInputParams(),
+                                 signature.getResultParamTypes(), os);
       os << signature.getValues();
     }
   } else
@@ -311,10 +311,10 @@ ParseResult KGEN::parseParamDecl(AsmParser &p, ParamDeclAttr &result) {
 }
 
 void KGEN::printParamDecl(AsmPrinter &p, ParamDeclAttr decl) {
-  printParamDecl(p.getStream(), decl);
+  printParamDecl(decl, p.getStream());
 }
 
-void KGEN::printParamDecl(raw_ostream &os, ParamDeclAttr decl) {
+void KGEN::printParamDecl(ParamDeclAttr decl, raw_ostream &os) {
   printParamName(decl.getName().getValue(), os);
   printColonTypeOrIndex(os, decl.getType());
 }
@@ -343,12 +343,12 @@ ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
 }
 
 /// Print a comma separated parameter declaration list.
-void KGEN::printParamDecls(raw_ostream &os, ParamDeclArrayAttr decls) {
+void KGEN::printParamDecls(ParamDeclArrayAttr decls, raw_ostream &os) {
   if (decls.empty()) {
     os << "()";
   } else {
     llvm::interleaveComma(
-        decls, os, [&](ParamDeclAttr decl) { printParamDecl(os, decl); });
+        decls, os, [&](ParamDeclAttr decl) { printParamDecl(decl, os); });
   }
 }
 
@@ -375,14 +375,14 @@ KGEN::parseOptionalParameterSpec(AsmParser &parser,
 }
 
 /// Print a parameter list for a generator, func or interface.
-void KGEN::printOptionalParameterSpec(raw_ostream &os,
-                                      ParamDeclArrayAttr inputParamDecls,
-                                      TypeArrayAttr resultParamTypes) {
+void KGEN::printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
+                                      TypeArrayAttr resultParamTypes,
+                                      raw_ostream &os) {
   if (inputParamDecls.empty() && resultParamTypes.empty())
     return;
 
   os << '<';
-  printParamDecls(os, inputParamDecls);
+  printParamDecls(inputParamDecls, os);
 
   if (!resultParamTypes.empty()) {
     os << " -> ";
@@ -395,7 +395,7 @@ void KGEN::printOptionalParameterSpec(raw_ostream &os,
 void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                       ParamDeclArrayAttr paramDecls,
                                       TypeArrayAttr resultParamTypes) {
-  printOptionalParameterSpec(p.getStream(), paramDecls, resultParamTypes);
+  printOptionalParameterSpec(paramDecls, resultParamTypes, p.getStream());
 }
 
 //===----------------------------------------------------------------------===//
@@ -716,14 +716,28 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
-  // If this is a SignatureType, we expect a symbol name.  We need special
-  // parsing logic here because FlatSymbolRefAttr isn't a TypedAttr.
-  if (auto signatureType = dyn_cast<SignatureType>(type)) {
-    FlatSymbolRefAttr symbol;
-    if (p.parseAttribute(symbol, Type()))
+  // If this is a SignatureType, we expect a symbol name or a
+  // SymbolConstantAttr.  We need special parsing logic here because
+  // FlatSymbolRefAttr isn't a TypedAttr.
+  if (isa<SignatureType>(type)) {
+    Attribute attr;
+    if (p.parseAttribute(attr, type))
       return failure();
-    value = SymbolConstantAttr::get(symbol, signatureType);
-    return success();
+
+    if (auto symbol = dyn_cast<FlatSymbolRefAttr>(attr)) {
+      // Parse any trailing parameter bindings.
+      FailureOr<ParamBindArrayAttr> paramValues;
+      if (parseOptionalParamBindSpec(p, paramValues))
+        return failure();
+      value = SymbolConstantAttr::get(symbol, paramValues.value(), type);
+      return success();
+    }
+
+    if (auto typedAttr = dyn_cast<TypedAttr>(attr)) {
+      value = typedAttr;
+      return success();
+    }
+    return p.emitError(loc, "invalid signature parameter attribute");
   }
 
   // Otherwise, we support other typed attributes as well, including dialect
@@ -804,9 +818,10 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
     }
   }
 
-  // Symbol constants print as just the symbol.
+  // Symbol constants print as just the symbol followed by parameter bindings.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
     os << symbolConstant.getSymbol();
+    printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
     return;
   }
 
@@ -1061,8 +1076,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
     if (linkage.getValue() != Linkage::ModulePrivate)
       p << stringifyLinkage(linkage.getValue()) << ' ';
   p.printSymbolName(funcName);
-  printOptionalParameterSpec(p.getStream(), opDecl.getParamDeclsAttr(),
-                             opDecl.getResultParamTypesAttr());
+  printOptionalParameterSpec(opDecl.getParamDeclsAttr(),
+                             opDecl.getResultParamTypesAttr(), p.getStream());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
@@ -1126,16 +1141,51 @@ ParseResult KGEN::parseParamBinds(AsmParser &p,
   return success();
 }
 
-void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
+void KGEN::printParamBinds(ParamBindArrayAttr paramBinds, raw_ostream &os) {
   if (paramBinds.empty()) {
-    p << "()";
+    os << "()";
   } else {
-    llvm::interleaveComma(paramBinds, p, [&](ParamBindAttr bind) {
-      printParamDecl(p, bind.getDecl());
-      p << " = ";
-      printParamValue(p, bind.getValue());
+    llvm::interleaveComma(paramBinds, os, [&](ParamBindAttr bind) {
+      printParamDecl(bind.getDecl(), os);
+      os << " = ";
+      printParamValue(bind.getValue(), os);
     });
   }
+}
+
+void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
+  printParamBinds(paramBinds, p.getStream());
+}
+
+/// Parse a list of parameter bindings without result parameters in <>'s
+ParseResult
+KGEN::parseOptionalParamBindSpec(AsmParser &p,
+                                 FailureOr<ParamBindArrayAttr> &paramValues) {
+  // If there are no parameter declarations, return an empty array.
+  if (p.parseOptionalLess()) {
+    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+
+  ParamBindArrayAttr result;
+  if (parseParamBinds(p, result))
+    return failure();
+  paramValues = result;
+  return p.parseGreater();
+}
+
+void KGEN::printOptionalParamBindSpec(ParamBindArrayAttr paramValues,
+                                      raw_ostream &os) {
+  if (paramValues.empty())
+    return;
+  os << '<';
+  printParamBinds(paramValues, os);
+  os << '>';
+}
+
+void KGEN::printOptionalParamBindSpec(AsmPrinter &p,
+                                      ParamBindArrayAttr paramValues) {
+  printOptionalParamBindSpec(paramValues, p.getStream());
 }
 
 /// Parse an align parameter if present.
