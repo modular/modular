@@ -907,10 +907,20 @@ LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
   OpBuilder b(call);
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(errorOrValue.get())) {
     // Replace the kgen.call_param with a kgen.call to the target.
-    auto newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
-                                    symbolCst.getSymbol().getLeafReference(),
-                                    call.getParamValues(), call.getParamDecls(),
-                                    call.getOperands(), call.getNumRegions());
+    CallOp newCall;
+    // If there are no bound parameters on the call, use the one on the
+    // CallParam.  TODO: Remove.
+    if (symbolCst.getParamValues().empty())
+      newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
+                                 symbolCst.getSymbol().getLeafReference(),
+                                 call.getParamValues(), call.getParamDecls(),
+                                 call.getOperands(), call.getNumRegions());
+    else // Otherwise use the ones from the symbol.
+      newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
+                                 symbolCst.getSymbol().getLeafReference(),
+                                 symbolCst.getParamValues().getValue(),
+                                 call.getParamDecls(), call.getOperands(),
+                                 call.getNumRegions());
 
     auto newRegions = newCall->getRegions(), oldRegions = call->getRegions();
     for (size_t i = 0, e = call.getNumRegions(); i != e; ++i)

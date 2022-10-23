@@ -277,7 +277,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
   printParamBinds(p, paramValues);
   if (!paramDecls.empty()) {
     p << " -> ";
-    printParamDecls(p.getStream(), paramDecls);
+    printParamDecls(paramDecls, p.getStream());
   }
   p << ">";
 }

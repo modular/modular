@@ -215,6 +215,16 @@ ParamBindAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
+/// Given a list of decls and values, produce an array of ParamBindAttrs.
+static SmallVector<ParamBindAttr>
+getBindAttrsForDeclsAndValues(ParamDeclArrayAttr decls,
+                              ArrayRef<TypedAttr> values) {
+  SmallVector<ParamBindAttr> binds;
+  for (auto [decl, value] : llvm::zip(decls, values))
+    binds.push_back(ParamBindAttr::get(decl.getName(), value));
+  return binds;
+}
+
 static Type
 verifyBindSignature(ArrayRef<TypedAttr> operands,
                     llvm::function_ref<mlir::InFlightDiagnostic()> emitError) {
@@ -230,11 +240,8 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
 
   // Convert the input operands into a ParamBindAttr's for
   // getSpecializedSignature.
-  SmallVector<ParamBindAttr> inputParams;
-  for (auto [decl, value] :
-       llvm::zip(signature.getInputParams(), operands.drop_front())) {
-    inputParams.push_back(ParamBindAttr::get(decl.getName(), value));
-  }
+  SmallVector<ParamBindAttr> inputParams = getBindAttrsForDeclsAndValues(
+      signature.getInputParams(), operands.drop_front());
 
   // Get the specialized version of the signature with all the parameters
   // substituted in.
@@ -866,7 +873,7 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
 
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
 /// operands have the same type.
-static Attribute simplifyIN(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
   MutableArrayRef<TypedAttr> trailing =
       llvm::makeMutableArrayRef(operands).drop_front();
@@ -963,6 +970,25 @@ static Attribute simplifyBindSignature(SmallVectorImpl<TypedAttr> &operands,
   resultType = verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
     llvm_unreachable("invalid bind_signature operator");
   });
+
+  // If the actual operand is a SymbolConstantAttr operand, then we can simplify
+  // the bind_signature by folding the parameter values into it directly.
+  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands[0])) {
+    assert(symbolConstant.getParamValues().empty() &&
+           "cannot have already bound the input parmaeter, because we'd end up "
+           "with a nongeneric signature that would fail verif");
+
+    auto symbolSignature = cast<SignatureType>(symbolConstant.getType());
+    SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
+        symbolSignature.getInputParams(),
+        ArrayRef<TypedAttr>(operands).drop_front());
+
+    return SymbolConstantAttr::get(
+        symbolConstant.getSymbol(),
+        ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
+        resultType);
+  }
+
   return {};
 }
 
@@ -1051,7 +1077,7 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = IntegerType::get(context, 1);
     break;
   case POC::In:
-    result = simplifyIN(operands);
+    result = simplifyIn(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::GetDType:

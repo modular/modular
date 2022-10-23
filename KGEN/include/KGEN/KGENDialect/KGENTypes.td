@@ -161,7 +161,7 @@ def RefType : KGENType<"Ref", "ref",
 
   let parameters = (ins "FlatSymbolRefAttr":$name,
                         "ParamBindArrayAttr":$paramValues);
-  let assemblyFormat = "`<` $name custom<OptionalParamBinds>($paramValues) `>`";
+  let assemblyFormat = "`<` $name custom<OptionalParamBindSpec>($paramValues) `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name,
