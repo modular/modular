@@ -411,6 +411,7 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 enum class POCAliases : uint32_t {
   // The builtin opcodes have 0...127.
   FIRST_PSEUDO = 128,
+  NEG, // negation
   SUB, // subtraction
   NOT,
   NE, // !(==)
@@ -537,6 +538,8 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
   if (opcode.has_value())
     return (uint32_t)*opcode;
 
+  if (keyword == "neg")
+    return (uint32_t)POCAliases::NEG;
   if (keyword == "sub")
     return (uint32_t)POCAliases::SUB;
   if (keyword == "not")
@@ -630,6 +633,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // opcode in question.
     if (!operandType) {
       switch (opcode) {
+      case (uint32_t)POCAliases::NEG:
       case (uint32_t)POCAliases::SUB:
         // The subtraction operation defaults to index type for its operands.
         operandType = p.getBuilder().getIndexType();
@@ -666,12 +670,20 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         return failure();
     }
 
-    // Desugar the subtract operator from `sub(a, b0, b1, ..., bn)` to the add
-    // operator where all but the first operand is negated i.e. `add(x, neg(b0),
-    // neg(b1), ..., neg(bn))`
+    // Desugar the negation operator from `neg(a)` to `mul(a, -1)`
+    if (opcode == (uint32_t)POCAliases::NEG) {
+      if (operands.size() != 1)
+        return p.emitError(loc, "neg operator expects a single operand");
+      operands.emplace_back(p.getBuilder().getIndexAttr(-1));
+      opcode = (uint32_t)POC::Mul;
+    }
+
+    // Desugar the subtract operator from `sub(a, b)` to `add(a, mul(b, -1))`
     if (opcode == (uint32_t)POCAliases::SUB) {
-      for (size_t i = 1, e = operands.size(); i != e; ++i)
-        operands[i] = ParamOperatorAttr::get(POC::Neg, {operands[i]});
+      if (operands.size() != 2)
+        return p.emitError(loc, "sub operator expects two operands");
+      operands[1] = ParamOperatorAttr::get(
+          POC::Mul, {operands[1], p.getBuilder().getIndexAttr(-1)});
       opcode = (uint32_t)POC::Add;
     }
 
