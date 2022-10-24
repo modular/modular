@@ -264,7 +264,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   for (CallOp call : calls) {
     auto it = rewrites.find(call.getCalleeAttr().getAttr());
     if (it == rewrites.end())
-      return;
+      continue;
     OpBuilder b(&getContext());
     b.setInsertionPointAfter(call);
     // Wrap rewritten results and change their type.
