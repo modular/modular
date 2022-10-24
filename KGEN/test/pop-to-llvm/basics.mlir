@@ -846,7 +846,7 @@ kgen.func @memcpy_inline(%dest: !pop.pointer<scalar<f32>>,
 
 // CHECK-LABEL: @memset
 kgen.func @memset(%dest: !pop.pointer<scalar<si32>>,
-                  %val: !pop.scalar<ui8>,
+                  %val: !pop.simd<1, ui8>,
                   %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[VAL_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
@@ -862,7 +862,7 @@ kgen.func @memset(%dest: !pop.pointer<scalar<si32>>,
 
 // CHECK-LABEL: @memset_volatile
 kgen.func @memset_volatile(%dest: !pop.pointer<scalar<si32>>,
-                           %val: !pop.scalar<ui8>,
+                           %val: !pop.simd<1, ui8>,
                            %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[VAL_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
