@@ -11,6 +11,7 @@
 
 #include "KGEN/Elaborator.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -784,6 +785,15 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
                                      calleeAttr.getLeafReference().strref() +
                                      "'");
 
+  // If the callee is an interface that provides an evaluator, resolve the
+  // evaluator first.
+  if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee))
+    if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr())
+      if (failed(processGeneratorUserImpl(itf, {},
+                                          evaluator.getParamValues().getValue(),
+                                          evaluator.getSymbol(), rewriters)))
+        return failure();
+
   DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
   // If we already have a binding for this decl/inputParam set, then reuse the
@@ -821,12 +831,18 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
       continue;
 
     // If this is the first viable candidates, then we will pursue it locally.
-    if (!thisCallee.func)
+    if (!thisCallee.func) {
       thisCallee = calleeCandidate;
-    else
-      /// All other callees gets spawned as sub-evaluators.
+    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(user)) {
+      // Prohibit interface evaluators from having multiple implementations.
+      return error(itf.getLoc(),
+                   Twine("interface @") + itf.getSymName() +
+                       " evaluator must resolve to a single implementation");
+    } else {
+      // All other callees gets spawned as sub-evaluators.
       spawnNewFuncClone(user, decls, calleeDeclAndInputParams, calleeCandidate,
                         rewriters);
+    }
   }
 
   // If all the expansions failed, then this call fails overall.
@@ -869,12 +885,20 @@ void ParameterRewriter::completeGeneratorUserProcessing(
         ArrayRef<ParamBindAttr>(), decls, user->getOperands());
     newUser = newCall;
     newDecls = newCall.getParamDecls();
-  } else {
+  } else if (isa<AddressOfOp>(user)) {
     auto newAddressof = b.create<AddressOfOp>(
         user->getLoc(), resultTypes.front(), newCalleeFunc.getNameAttr(),
         ArrayRef<ParamBindAttr>(), decls);
     newUser = newAddressof;
     newDecls = newAddressof.getParamDecls();
+  } else {
+    // Update the interface in-place.
+    auto itf = cast<GeneratorInterfaceOp>(user);
+    itf.setEvaluatorAttr(SymbolConstantAttr::get(
+        FlatSymbolRefAttr::get(newCalleeFunc.getSymNameAttr()),
+        NoneType::get(itf.getContext())));
+    // Nothing else to do. Return here.
+    return;
   }
 
   // The SSA results of the old call go directly to the new call and remove it.
@@ -1320,11 +1344,6 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
       }))
     return result;
 
-  auto evalCfgsOr = itf.getEvalConfigs();
-  // Nothing to be evaluated, return the full vector.
-  if (!evalCfgsOr.has_value() || evalCfgsOr->empty())
-    return result;
-
   // Move the expansion errors to the end of the vector.
   auto newEnd =
       llvm::remove_if(result, [&](ElaboratedGeneratorOrCalleeError funcOr) {
@@ -1335,6 +1354,13 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
   if (newEnd == result.begin() + 1)
     return {*result.begin()};
 
+  Optional<ArrayRef<EvalConfigurationAttr>> evalCfgsOr = itf.getEvalConfigs();
+  SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
+
+  // Nothing to be evaluated, return the full vector.
+  if (!evaluator && (!evalCfgsOr.has_value() || evalCfgsOr->empty()))
+    return result;
+
   // Truncate the result vector to contain only the successful implementations.
   result.erase(newEnd, result.end());
 
@@ -1344,8 +1370,18 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
   for (const auto &r : result)
     searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
 
-  ErrorOr<size_t> bestSpecializationIdxOr =
-      selectFastestFunction(itf, symtab, searchInputs);
+  ErrorOr<size_t> bestSpecializationIdxOr = 0;
+
+  // If an evalutor was specified, use it to pick an implementation.
+  if (evaluator) {
+    auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
+    bestSpecializationIdxOr =
+        evaluateSpecializations(evalFunc, symtab, searchInputs);
+
+    // Otherwise, use the evaluation config search.
+  } else {
+    bestSpecializationIdxOr = selectFastestFunction(itf, symtab, searchInputs);
+  }
 
   if (failed(bestSpecializationIdxOr))
     return {
@@ -1478,12 +1514,18 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   bool failed = false;
   op->walk([&](Operation *op) {
     FlatSymbolRefAttr calleeAttr;
-    if (auto call = dyn_cast<CallOp>(op))
+    if (auto call = dyn_cast<CallOp>(op)) {
       calleeAttr = call.getCalleeAttr();
-    else if (auto addressof = dyn_cast<AddressOfOp>(op))
+    } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
       calleeAttr = addressof.getCalleeAttr();
-    else
+    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
+      if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr())
+        calleeAttr = evaluator.getSymbol();
+      else
+        return;
+    } else {
       return;
+    }
 
     auto callee = elaborator.lookupCallee(calleeAttr);
     assert(callee && "couldn't resolve callee?");
@@ -1493,6 +1535,10 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
       if (checkRecursively(callee))
         failed = true;
     } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(callee)) {
+      // Check that interface evaluator doesn't lead to a cycle.
+      if (checkRecursively(itf))
+        failed = true;
+
       // For generator interfaces, we resolve to all the implementations.
       for (auto gen : elaborator.getGeneratorsImplementing(itf)) {
         // Make sure we keep track of the current module we're scanning.

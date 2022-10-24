@@ -18,6 +18,11 @@ namespace M::KGEN {
 ErrorOr<size_t> selectFastestFunction(GeneratorInterfaceOp itf,
                                       SymbolTable &symtab,
                                       ArrayRef<FuncOp> specializations);
+
+/// Given a list of valid specializations for an interface, select the best
+/// specialization according to a user-defined evaluator function.
+ErrorOr<size_t> evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
+                                        ArrayRef<FuncOp> specializations);
 } // namespace M::KGEN
 
 #endif // SEARCH_IMPL_H

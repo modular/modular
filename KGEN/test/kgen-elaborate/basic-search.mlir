@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators -allow-unregistered-dialect | FileCheck %s
 
 kgen.generator.interface @addOne(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> attributes {
   evalConfigs = #kgen.eval.configurations<[
@@ -60,5 +60,46 @@ kgen.generator public @find_even() {
   kgen.param.search seventy_two = <72>
   kgen.param.search value = <3, 16, 1, 72, seventy_two>
   kgen.call @even_only<param=value>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+/// This evaluator returns a constant index.
+kgen.generator public @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+  %0 = kgen.param.constant = <N>
+  kgen.return %0 : index
+}
+
+/// Always pick the first implementation of this interface.
+kgen.generator.interface @pickFirst()
+  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
+
+/// Always pick the second implementation of this interface.
+kgen.generator.interface @pickSecond()
+  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=1, FN:type=()->()>
+
+kgen.generator @pickFirstA() implements @pickFirst {
+  kgen.return
+}
+
+kgen.generator @pickFirstB() implements @pickFirst {
+  kgen.return
+}
+
+kgen.generator @pickSecondA() implements @pickSecond {
+  kgen.return
+}
+
+kgen.generator @pickSecondB() implements @pickSecond {
+  kgen.return
+}
+
+// CHECK-LABEL: @test
+kgen.generator public @test() {
+  // CHECK-NEXT: kgen.call @pickFirstA
+  kgen.call @pickFirst() : () -> ()
+  // CHECK-NEXT: kgen.call @pickSecondB
+  kgen.call @pickSecond() : () -> ()
   kgen.return
 }

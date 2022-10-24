@@ -712,3 +712,19 @@ kgen.func @addressof_parametric_in_func() {
   %0 = kgen.addressof @generator<size = 1> : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{'@evaluator' does not reference a KGEN declaration}}
+kgen.generator.interface @evaluateMe(index) -> index
+  evaluator (!pop.pointer<(index) -> index>, index) -> index = @evaluator<N=4>
+
+// -----
+
+// expected-note @below {{referenced evaluator declared here}}
+kgen.generator.interface public @evaluator<N>(
+    %funcs: (index) -> index, %size: index) -> index
+
+// expected-error @below {{interface evaluator argument #0 has type '!pop.pointer<(index) -> index>' but referenced evaluator expected type '(index) -> index'}}
+kgen.generator.interface @evaluateMe(index) -> index
+  evaluator ((index) -> index, index) -> index = @evaluator<N=4>

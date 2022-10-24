@@ -163,3 +163,18 @@ kgen.generator @test_region_constraints() {
     }
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{declaration involved in recursive elaboration cycle}}
+// expected-note @below {{back to this declaration}}
+kgen.generator public @recursiveEvaluator(%funcs: !pop.pointer<() -> index>, %size: index) -> index {
+  // expected-note @below {{through this call}}
+  %0 = kgen.call @itf() : () -> index
+  kgen.return %0 : index
+}
+
+// expected-note @below {{to this declaration}}
+// expected-note @below {{through this call}}
+kgen.generator.interface @itf() -> index
+  evaluator (!pop.pointer<() -> index>, index) -> index = @recursiveEvaluator
