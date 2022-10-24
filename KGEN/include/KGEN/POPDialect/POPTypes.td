@@ -279,6 +279,13 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
 
+def SIMDSizeOne : ConfinedType<POP_SIMDType,
+    [CPred<"$_self.cast<POP::SIMDType>().getResolvedSize() && "
+           "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
+    "SIMD with size 1">;
+
+def BoolSIMDSizeOne : AllOfType<[BoolSIMD, SIMDSizeOne], "!pop.simd<1, bool>">;
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//

@@ -586,17 +586,17 @@ kgen.generator @zap_ndbuffer_bitcast<size, size2, dt: dtype>(%arg0: !zap.ndbuffe
 }
 
 // CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
-  zap.print "foo %f"(%a) : !pop.scalar<f32>
+kgen.generator @zap_print(%a: !pop.simd<1, f32>) {
+  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.simd<1, f32>
+  zap.print "foo %f"(%a) : !pop.simd<1, f32>
   kgen.return
 }
 
 // CHECK-LABEL: @zap_assert
 // CHECK-SAME: %[[V0:[a-z0-9]+]]:
-kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
+kgen.generator @zap_assert(%a: !pop.simd<1, bool>) {
   // CHECK: zap.debug_assert %[[V0]], "my message"
-  zap.debug_assert %a, "my message" : !pop.scalar<bool>
+  zap.debug_assert %a, "my message" : !pop.simd<1, bool>
   kgen.return
 }
 

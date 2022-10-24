@@ -785,7 +785,7 @@ def ZAP_DebugAssertOp : ZAPOp<"debug_assert"> {
     TODO: This Op should be removed in production builds.
   }];
 
-  let arguments = (ins BoolScalar:$cond, StrAttr:$msg);
+  let arguments = (ins BoolSIMDSizeOne:$cond, StrAttr:$msg);
 
   let assemblyFormat = "$cond `,` $msg attr-dict `:` type($cond)";
 }

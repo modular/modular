@@ -271,23 +271,23 @@ kgen.generator @simd_store_aligned(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4
 // -----
 
 // CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !pop.scalar<f32>) {
+kgen.generator @zap_print(%a: !pop.simd<1, f32>) {
   // CHECK: %[[FMT:.*]] = pop.global_constant(#M.dense_array<102, 111, 111{{.*}}> : !M.array<7xsi8>)
   // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<scalar<si8>>
   // CHECK: pop.external_call @printf(%[[C_STR]], %{{.*}}) (!pop.pointer<scalar<si8>>) -> ()
-  zap.print "foo %f"(%a) : !pop.scalar<f32>
+  zap.print "foo %f"(%a) : !pop.simd<1, f32>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: @zap_debug_assert
-kgen.generator @zap_debug_assert(%cond: !pop.scalar<bool>) {
+kgen.generator @zap_debug_assert(%cond: !pop.simd<1, bool>) {
   // CHECK: pop.global_constant(#M.dense_array
   // CHECK: pop.global_constant(#M.dense_array
   // CHECK: pop.global_constant(#M.dense_array
   // CHECK: pop.external_call @KGEN_CompilerRT_DebugAssert
-  zap.debug_assert %cond, "my message" : !pop.scalar<bool>
+  zap.debug_assert %cond, "my message" : !pop.simd<1, bool>
   kgen.return
 }
 
