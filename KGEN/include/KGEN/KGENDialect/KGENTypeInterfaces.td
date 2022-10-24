@@ -150,6 +150,8 @@ class ConstrainedDType<string constraint> : ConfinedType<DTypeInterface,
 def BoolDType : ConstrainedDType<"$_self && $_self->isBool()">;
 /// A type whose data type is integral.
 def IntegerDType : ConstrainedDType<"$_self && $_self->isInt()">;
+/// A type whose data type is floating point.
+def FloatDType : ConstrainedDType<"$_self && $_self->isFloat()">;
 /// A type whose data type is ui8.
 def UI8DType : ConstrainedDType<"$_self && *$_self == KGENDType::ui8">;
 /// A type whose data type is address.

@@ -58,6 +58,42 @@ kgen.func @neg(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 
 // -----
 
+// CHECK-LABEL: @floor
+kgen.func @floor(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  // CHECK: llvm.intr.floor
+  %0 = pop.floor %arg0 : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// -----
+
+// CHECK-LABEL: @floor
+kgen.func @floor(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // CHECK: llvm.intr.floor
+  %0 = pop.floor %arg0 : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// -----
+
+// CHECK-LABEL: @ceil
+kgen.func @ceil(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  // CHECK: llvm.intr.ceil
+  %0 = pop.ceil %arg0 : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// -----
+
+// CHECK-LABEL: @ceil
+kgen.func @ceil(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // CHECK: llvm.intr.ceil
+  %0 = pop.ceil %arg0 : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// -----
+
 // CHECK-LABEL: @add
 kgen.func @add(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
   // CHECK: llvm.add
