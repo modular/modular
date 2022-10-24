@@ -406,16 +406,25 @@ private:
 
   // Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
-  LogicalResult
-  processCallOp(OpT call,
-                SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
-  template <typename OpT>
-  void completeCallOpProcessing(OpT call,
-                                DeclAndInputParamsPair calleeAndInputParams,
-                                const ElaboratedGenerator &newCallee);
-  template <typename OpT>
+  LogicalResult processGeneratorUser(
+      OpT user,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
+    return processGeneratorUserImpl(user, user.getParamDecls(),
+                                    user.getParamValues(), user.getCalleeAttr(),
+                                    rewriters);
+  }
+  LogicalResult processGeneratorUserImpl(
+      Operation *user, ArrayRef<ParamDeclAttr> decls,
+      ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
+  void
+  completeGeneratorUserProcessing(Operation *user,
+                                  ArrayRef<ParamDeclAttr> decls,
+                                  DeclAndInputParamsPair calleeAndInputParams,
+                                  const ElaboratedGenerator &newCallee);
   void spawnNewFuncClone(
-      OpT call, DeclAndInputParamsPair calleeAndInputParams,
+      Operation *user, ArrayRef<ParamDeclAttr> decls,
+      DeclAndInputParamsPair calleeAndInputParams,
       const ElaboratedGenerator &callee,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
@@ -518,9 +527,9 @@ LogicalResult ParameterRewriter::rewriteOps(
       else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
         result = processParamAssertOp(assertOp);
       else if (auto addressof = dyn_cast<AddressOfOp>(op))
-        result = processCallOp(addressof, rewriterWorklist);
+        result = processGeneratorUser(addressof, rewriterWorklist);
       else if (auto call = dyn_cast<CallOp>(op))
-        result = processCallOp(call, rewriterWorklist);
+        result = processGeneratorUser(call, rewriterWorklist);
       else if (auto call = dyn_cast<CallParamOp>(op))
         result = processCallParamOp(call);
       else
@@ -757,22 +766,23 @@ ParameterRewriter::resolveCallInputParams(Operation *call,
   return ArrayAttr::get(call->getContext(), boundInputParams);
 }
 
-template <typename OpT>
-LogicalResult ParameterRewriter::processCallOp(
-    OpT call, SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
+LogicalResult ParameterRewriter::processGeneratorUserImpl(
+    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Evaluate any input parameters.
-  auto inputParamKey = resolveCallInputParams(call, call.getParamValues());
+  auto inputParamKey = resolveCallInputParams(user, paramValues);
   if (!inputParamKey)
     return failure();
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
   auto callee = dyn_cast_if_present<KGENDeclInterface>(
-      elaborator.lookupCallee(call.getCalleeAttr()));
+      elaborator.lookupCallee(calleeAttr));
   if (!callee)
-    return error(call->getLoc(),
-                 Twine("could not find callee '@") +
-                     call.getCalleeAttr().getLeafReference().strref() + "'");
+    return error(user->getLoc(), Twine("could not find callee '") +
+                                     calleeAttr.getLeafReference().strref() +
+                                     "'");
 
   DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 
@@ -780,8 +790,8 @@ LogicalResult ParameterRewriter::processCallOp(
   // consistent callee.
   if (FuncOp callee =
           elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
-    completeCallOpProcessing(call, calleeDeclAndInputParams,
-                             ElaboratedGenerator(callee));
+    completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
+                                    ElaboratedGenerator(callee));
     return success();
   }
 
@@ -815,7 +825,7 @@ LogicalResult ParameterRewriter::processCallOp(
       thisCallee = calleeCandidate;
     else
       /// All other callees gets spawned as sub-evaluators.
-      spawnNewFuncClone(call, calleeDeclAndInputParams, calleeCandidate,
+      spawnNewFuncClone(user, decls, calleeDeclAndInputParams, calleeCandidate,
                         rewriters);
   }
 
@@ -824,17 +834,18 @@ LogicalResult ParameterRewriter::processCallOp(
     SmallVector<CalleeExpansionError> errors;
     for (const auto &value : newCallees)
       errors.push_back(std::get<CalleeExpansionError>(value));
-    return errorCalling(call->getLoc(), errors);
+    return errorCalling(user->getLoc(), errors);
   }
 
   // Finally, we can handle the first viable one as our continued progress here.
-  completeCallOpProcessing(call, calleeDeclAndInputParams, thisCallee);
+  completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
+                                  thisCallee);
   return success();
 }
 
-template <typename OpT>
-void ParameterRewriter::completeCallOpProcessing(
-    OpT call, DeclAndInputParamsPair calleeAndInputParams,
+void ParameterRewriter::completeGeneratorUserProcessing(
+    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &newCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
@@ -844,31 +855,35 @@ void ParameterRewriter::completeCallOpProcessing(
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
-  for (auto result : call->getResultTypes())
+  for (auto result : user->getResultTypes())
     resultTypes.push_back(getEvaluator().getReboundType(result));
 
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
-  OpBuilder b(call);
-  Operation *newCall;
-  if constexpr (std::is_same_v<OpT, CallOp>) {
-    newCall = b.create<CallOp>(
-        call.getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), call.getParamDecls(), call.getOperands());
+  OpBuilder b(user);
+  Operation *newUser;
+  ArrayRef<ParamDeclAttr> newDecls;
+  if (isa<CallOp>(user)) {
+    auto newCall = b.create<CallOp>(
+        user->getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
+        ArrayRef<ParamBindAttr>(), decls, user->getOperands());
+    newUser = newCall;
+    newDecls = newCall.getParamDecls();
   } else {
-    newCall = b.create<AddressOfOp>(
-        call.getLoc(), resultTypes.front(), newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), call.getParamDecls());
+    auto newAddressof = b.create<AddressOfOp>(
+        user->getLoc(), resultTypes.front(), newCalleeFunc.getNameAttr(),
+        ArrayRef<ParamBindAttr>(), decls);
+    newUser = newAddressof;
+    newDecls = newAddressof.getParamDecls();
   }
 
   // The SSA results of the old call go directly to the new call and remove it.
-  call->getResults().replaceAllUsesWith(newCall);
-  call->erase();
+  user->getResults().replaceAllUsesWith(newUser);
+  user->erase();
 
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
-       llvm::zip(cast<OpT>(newCall).getParamDecls(),
-                 newCalleeFunc.getReturnOp().getParameters()))
+       llvm::zip(newDecls, newCalleeFunc.getReturnOp().getParameters()))
     getEvaluator().setParameterValue(decl, bindValue);
 }
 
@@ -877,9 +892,9 @@ void ParameterRewriter::completeCallOpProcessing(
 /// rewriters with state copied from the current one, but which resolve the call
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
-template <typename OpT>
 void ParameterRewriter::spawnNewFuncClone(
-    OpT call, DeclAndInputParamsPair calleeAndInputParams,
+    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
@@ -897,8 +912,9 @@ void ParameterRewriter::spawnNewFuncClone(
 
   // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
-  auto newCall = cast<OpT>(operationMap[call]);
-  newRewriter->completeCallOpProcessing(newCall, calleeAndInputParams, callee);
+  Operation *newUser = operationMap[user];
+  newRewriter->completeGeneratorUserProcessing(newUser, decls,
+                                               calleeAndInputParams, callee);
 }
 
 LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
