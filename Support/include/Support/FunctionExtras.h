@@ -10,6 +10,7 @@
 #include "ErrorOr.h"
 #include <functional>
 #include <type_traits>
+#include <utility>
 
 namespace M {
 /// This wraps a callable that may return a type or may return void, and allows
@@ -46,6 +47,20 @@ struct DefaultSuccess {
   operator ErrorOrSuccess() { return success(); }
   static DefaultSuccess get() { return DefaultSuccess{}; }
 };
+
+/// Generate a forwarding call wrapper for the function `f`. Calling this
+/// wrapper is equivalent to invoking f with its last `sizeof...(Args)`
+/// parameters bound to args. I.e. `bind_back(f, bound_args...)(call_args...)`
+/// is equivalent to `std::invoke(f, call_args..., bound_args...)`.
+/// This function is meant to emulate the std::bind_back in C++23.
+template <class F, class... TBoundArgs>
+[[nodiscard]] constexpr auto bind_back(F &&fn, TBoundArgs &&...back_args) {
+  static_assert((std::is_move_constructible_v<TBoundArgs> && ...));
+  return [=, f = std::forward<F>(fn)](auto &&...front_args) {
+    return std::invoke(f, front_args..., back_args...);
+  };
+};
+
 } // namespace M
 
 #endif // SUPPORT_FUNCTION_EXTRAS_H
