@@ -28,30 +28,27 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"Max", 5, "max">,
   I32EnumAttrCase<"Min", 6, "min">,
 
-  // Unary expressions.
-  I32EnumAttrCase<"Neg", 7, "neg">,
-
   // Binary expressions.
-  I32EnumAttrCase<"Shl", 8, "shl">,
-  I32EnumAttrCase<"Shr", 9, "shr">,
-  I32EnumAttrCase<"Div", 10, "div">,
-  I32EnumAttrCase<"Mod", 11, "mod">,
+  I32EnumAttrCase<"Shl", 7, "shl">,
+  I32EnumAttrCase<"Shr", 8, "shr">,
+  I32EnumAttrCase<"Div", 9, "div">,
+  I32EnumAttrCase<"Mod", 10, "mod">,
 
   // Compares.
-  I32EnumAttrCase<"EQ", 12, "eq">,
-  I32EnumAttrCase<"LT", 13, "lt">,
-  I32EnumAttrCase<"LE", 14, "le">,
+  I32EnumAttrCase<"EQ", 11, "eq">,
+  I32EnumAttrCase<"LT", 12, "lt">,
+  I32EnumAttrCase<"LE", 13, "le">,
 
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 15, "in">,
+  I32EnumAttrCase<"In", 14, "in">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetDType",   16, "get_dtype">,
-  I32EnumAttrCase<"GetSizeOf",  17, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 18, "get_alignof">,
+  I32EnumAttrCase<"GetDType",   15, "get_dtype">,
+  I32EnumAttrCase<"GetSizeOf",  16, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 17, "get_alignof">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 19, "bind_signature">,
+  I32EnumAttrCase<"BindSignature", 18, "bind_signature">,
 
   // TODO: Can add concat_string, etc as needed.
 ]>;
