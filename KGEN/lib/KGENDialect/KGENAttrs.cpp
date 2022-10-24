@@ -31,20 +31,6 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-/// Parse an opcode.
-template <>
-struct FieldParser<POC> {
-  static FailureOr<POC> parse(AsmParser &parser) {
-    StringRef value;
-    if (parser.parseKeyword(&value))
-      return failure();
-    auto result = symbolizePOC(value);
-    if (result.has_value())
-      return *result;
-    return failure();
-  }
-};
-
 /// Parse a dtype.
 template <>
 struct FieldParser<KGENDType> {
@@ -1296,30 +1282,6 @@ ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   return get(replAttrs[0].cast<TypedAttr>(), replAttrs[1].cast<StringAttr>(),
              replAttrs[2].cast<mlir::LocationAttr>());
 }
-
-//===----------------------------------------------------------------------===//
-// InputGenKind(Attr)
-//===----------------------------------------------------------------------===//
-
-namespace mlir {
-template <>
-struct FieldParser<InputGenKind> {
-  static FailureOr<InputGenKind> parse(AsmParser &p) {
-    // Stash the current location for caret diagnostics.
-    llvm::SMLoc currentLoc = p.getCurrentLocation();
-
-    StringRef kw;
-    if (p.parseKeyword(&kw))
-      return failure();
-
-    auto inputGenKindOr = symbolizeInputGenKind(kw);
-    if (!inputGenKindOr)
-      return p.emitError(currentLoc) << "unknown InputGenKind '" << kw << "'";
-
-    return *inputGenKindOr;
-  }
-};
-} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // EvalConfigurationAttr
