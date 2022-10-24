@@ -21,33 +21,12 @@
 #include "Support/IndexDialect/IndexAttrs.h"
 #include "Support/IndexDialect/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
 using namespace M;
 namespace scf = mlir::scf;
-
-// FIXME(https://reviews.llvm.org/D135940): This is a clone of
-// llvm::SaveAndRestore that is updated to work with non-copyable values. Remove
-// this when fixed upstream.
-namespace {
-/// A utility class that uses RAII to save and restore the value of a variable.
-template <typename T>
-struct SaveAndRestore {
-  SaveAndRestore(T &X) : X(X), OldValue(X) {}
-  SaveAndRestore(T &X, const T &NewValue) : X(X), OldValue(X) { X = NewValue; }
-  SaveAndRestore(T &X, T &&NewValue) : X(X), OldValue(std::move(X)) {
-    X = std::move(NewValue);
-  }
-  ~SaveAndRestore() { X = std::move(OldValue); }
-  const T &get() { return OldValue; }
-
-private:
-  T &X;
-  T OldValue;
-};
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // LitStmtParser
@@ -471,7 +450,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
-  SaveAndRestore<OpBuilder> builderSaver(builder);
+  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
 
   auto whileOp = builder.create<scf::WhileOp>(whileLoc, ArrayRef<Type>(),
                                               ArrayRef<Value>());
@@ -513,7 +492,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
-  SaveAndRestore<OpBuilder> builderSaver(builder);
+  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
 
   ExprNode *condExp = nullptr;
   Value cond;
