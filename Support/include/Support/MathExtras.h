@@ -7,7 +7,7 @@
 #ifndef SUPPORT_MATHEXTRAS_H
 #define SUPPORT_MATHEXTRAS_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 
