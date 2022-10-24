@@ -139,6 +139,7 @@ lit.func @impl<ty: dtype>(%arg0: !pop.scalar<f64>) -> !pop.scalar<f64>
   kgen.return %arg0: !pop.scalar<f64>
 }
 
+
 // -----
 
 // expected-note @+1 {{interface defined here}}
@@ -151,10 +152,22 @@ lit.func @impl<ty: i32>() implements @itf {
   kgen.return
 }
 
+
+// -----
+
+// expected-note @+1 {{interface defined here}}
+kgen.generator.interface @itf<ty: dtype>()
+
 // expected-error @+1 {{input parameter "size" is unexpected by interface}}
 lit.func @impl2<ty: dtype, size>() implements @itf {
   kgen.return
 }
+
+
+// -----
+
+// expected-note @+1 {{interface defined here}}
+kgen.generator.interface @itf<ty: dtype>()
 
 // expected-error @+1 {{missing interface input parameter "ty" of type '!kgen.dtype'}}
 lit.func @impl3() implements @itf {
