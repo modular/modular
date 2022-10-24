@@ -263,6 +263,80 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertSCFIndexSwitchOp
+//===----------------------------------------------------------------------===//
+
+struct ConvertSCFIndexSwitchOp
+    : public mlir::ConvertOpToLLVMPattern<scf::IndexSwitchOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IndexSwitchOp op, scf::IndexSwitchOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Split the block at the op.
+    Block *condBlock = rewriter.getInsertionBlock();
+    Block *continueBlock = rewriter.splitBlock(condBlock, Block::iterator(op));
+
+    // Create the arguments on the continue block with which to replace the
+    // results of the op.
+    SmallVector<Value> results;
+    results.reserve(op.getNumResults());
+    for (Type resultType : op.getResultTypes()) {
+      Type type = getTypeConverter()->convertType(resultType);
+      if (!type)
+        return rewriter.notifyMatchFailure(op.getLoc(),
+                                           "could not convert result types");
+      results.push_back(continueBlock->addArgument(type, op.getLoc()));
+    }
+
+    // Handle the regions.
+    auto convertRegion = [&](Region &region) -> FailureOr<Block *> {
+      Block *block = &region.front();
+
+      // Convert the yield terminator to a branch to the continue block.
+      auto yield = cast<scf::YieldOp>(block->getTerminator());
+      rewriter.setInsertionPoint(yield);
+      SmallVector<Value> operands;
+      operands.reserve(yield.getNumOperands());
+      if (failed(rewriter.getRemappedValues(yield.getOperands(), operands)))
+        return yield.emitError("failed to get remapped operands");
+      rewriter.replaceOpWithNewOp<LLVM::BrOp>(yield, operands, continueBlock);
+
+      // Inline the region.
+      rewriter.inlineRegionBefore(region, continueBlock);
+      return block;
+    };
+
+    // Convert the case regions.
+    SmallVector<Block *> caseSuccessors;
+    SmallVector<int32_t> caseValues;
+    caseSuccessors.reserve(op.getCases().size());
+    caseValues.reserve(op.getCases().size());
+    for (auto [region, value] : llvm::zip(op.getCaseRegions(), op.getCases())) {
+      FailureOr<Block *> block = convertRegion(region);
+      if (failed(block))
+        return failure();
+      caseSuccessors.push_back(*block);
+      caseValues.push_back(value);
+    }
+
+    // Convert the default region.
+    FailureOr<Block *> defaultBlock = convertRegion(op.getDefaultRegion());
+    if (failed(defaultBlock))
+      return failure();
+
+    // Create the LLVM switch.
+    rewriter.setInsertionPointToEnd(condBlock);
+    SmallVector<ValueRange> caseOperands(caseSuccessors.size(), {});
+    rewriter.create<LLVM::SwitchOp>(op.getLoc(), adaptor.getArg(),
+                                    *defaultBlock, ValueRange(), caseValues,
+                                    caseSuccessors, caseOperands);
+    rewriter.replaceOp(op, continueBlock->getArguments());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertArithSelectOp
 //===----------------------------------------------------------------------===//
 
@@ -291,7 +365,7 @@ struct ConvertArithSelectOp
 static void populateSCFToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<ConvertSCFForOp, ConvertSCFIfOp, ConvertSCFWhileOp,
-                  ConvertArithSelectOp>(typeConverter);
+                  ConvertSCFIndexSwitchOp, ConvertArithSelectOp>(typeConverter);
 }
 
 //===----------------------------------------------------------------------===//

@@ -1,4 +1,5 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 | FileCheck %s --check-prefix=SWITCH
 
 llvm.func @get(i32) -> i32
 
@@ -63,6 +64,32 @@ kgen.func @while(%init: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: ^bb3:
   // CHECK: return %[[V]]
   kgen.return %result : !pop.scalar<f32>
+}
+
+// SWITCH-LABEL: @scf_index_switch
+kgen.func @scf_index_switch(%i: index, %a: i32, %b: i32, %c: i32) -> i32 {
+  // SWITCH: llvm.switch %arg0 : i64, ^bb3 [
+  // SWITCH-NEXT: 0: ^bb1
+  // SWITCH-NEXT: 1: ^bb2
+  %0 = scf.index_switch %i -> i32
+  // SWITCH: ^bb1:
+  case 0 {
+    // SWITCH-NEXT: llvm.br ^bb4(%arg1
+    scf.yield %a : i32
+  }
+  // SWITCH: ^bb2:
+  case 1 {
+    // SWITCH-NEXT: llvm.br ^bb4(%arg2
+    scf.yield %b : i32
+  }
+  // SWITCH: ^bb3:
+  default {
+    // SWITCH-NEXT: llvm.br ^bb4(%arg3
+    scf.yield %c : i32
+  }
+  // SWITCH: ^bb4(%[[V:.*]]: i32
+  // SWITCH-NEXT: return %[[V]]
+  kgen.return %0 : i32
 }
 
 // CHECK-LABEL: @arith_select
