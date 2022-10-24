@@ -552,17 +552,7 @@ ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
-  auto functionType =
-      builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
-
-  // TODO: Should have nicer builder.
-  auto funcDecl = builder.create<LITFuncOp>(
-      loc, name, StringArrayAttr::get(getContext(), {}),
-      TypeAttr::get(functionType),
-      builder.getAttr<LinkageAttr>(Linkage::Public),
-      ParamDeclArrayAttr::get(getContext(), {}),
-      TypeArrayAttr::get(getContext(), {}),
-      ConstraintArrayAttr::get(getContext(), {}), FlatSymbolRefAttr());
+  auto funcDecl = builder.create<LITFuncOp>(loc, name);
   funcDecl.getRegion().push_back(new Block());
 
   // We cannot parse the current body without having parsed other declarations
@@ -607,10 +597,7 @@ ParseResult LitStmtParser::parseStructStmt(size_t curIndent) {
   if (parseIdentifier(nameAttr, "expected struct name"))
     return failure();
 
-  // TODO: Should have nicer builder.
-  auto newStruct = builder.create<LITStructDeclOp>(
-      loc, nameAttr, ParamDeclArrayAttr::get(getContext(), {}),
-      TypeArrayAttr::get(getContext(), {}));
+  auto newStruct = builder.create<LITStructDeclOp>(loc, nameAttr);
   newStruct.getRegion().push_back(new Block());
 
   // Remember that we parsed this declaration so we can finish type checking it
