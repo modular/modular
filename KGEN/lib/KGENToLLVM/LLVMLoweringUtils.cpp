@@ -110,10 +110,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   addConversion([=](POP::SIMDType simd) -> Optional<Type> {
     Optional<Type> dtype = convertDType(simd);
     Optional<uint64_t> size = convertSize(simd);
-    if (!dtype) {
-      emitError("SIMD dtype not fully specified: ") << simd;
+    if (!dtype)
       return {};
-    }
     if (!size) {
       emitError("SIMD size not fully specified: ") << simd;
       return {};
