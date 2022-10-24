@@ -58,14 +58,14 @@ struct LitStmtParser : public LitParserBase {
   // Expression emission.
 
   /// Emit the specified expression tree to MLIR in the current context.
-  MLIRValueRep emitExpr(ExprNode *node) {
+  AnyValue emitExpr(ExprNode *node) {
     ExprEmitter state(getSharedState(), scope, builder);
     return node->emitIR(state);
   }
 
-  Value emitExprAsValue(ExprNode *node) {
+  Value emitExprAsDRValue(ExprNode *node) {
     ExprEmitter state(getSharedState(), scope, builder);
-    return state.emitAsValue(node);
+    return state.emitDRValue(node);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -290,7 +290,7 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   }
 
   // Materialize the expression statement in our current scope.
-  auto rhsValue = emitExprAsValue(rhs);
+  auto rhsValue = emitExprAsDRValue(rhs);
   // If IR generation failed, return success since we have a fine parse.
   if (!rhsValue)
     return success();
@@ -368,7 +368,7 @@ ParseResult LitStmtParser::parseReturnStmt() {
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.
     for (auto expr : operandExprs) {
-      auto value = emitExprAsValue(expr);
+      auto value = emitExprAsDRValue(expr);
       if (!value)
         return failure();
       operandValues.push_back(value);
@@ -419,9 +419,9 @@ ParseResult LitStmtParser::parseReturnStmt() {
 static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
                                        LitStmtParser &parser) {
   // TODO(types): add type checking: the condition should be bool.
-  // TODO(parameters): If the condition is a meta constant, don't emit dead code
+  // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
-  Value cond = parser.emitExprAsValue(condExp);
+  Value cond = parser.emitExprAsDRValue(condExp);
   if (!cond)
     return failure();
 
