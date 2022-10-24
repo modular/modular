@@ -201,3 +201,27 @@ kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<
   // CHECK: return %[[RESULT]] : i64
   kgen.return %1 : !pop.variant<i64, f64>
 }
+
+// -----
+
+kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+  %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
+  kgen.return %0 : !pop.variant<i32, f32>
+}
+
+// Make sure all callsites are rewritten.
+
+// CHECK-LABEL: kgen.generator public @first_callsite
+kgen.generator public @first_callsite(%a: i32) {
+  // CHECK: @always_i32(%arg0) : (i32) -> i32
+  %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator public @second_callsite
+kgen.generator public @second_callsite(%a: i32) {
+  // CHECK: @always_i32(%arg0) : (i32) -> i32
+  %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
+  %1 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
+  kgen.return
+}
