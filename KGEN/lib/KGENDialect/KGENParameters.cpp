@@ -456,7 +456,13 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
                            result.getResultParamTypes(), result.getValues());
   }
 
-  auto symbolSignature = cast<SignatureType>(symbolConstant.getType());
+  auto symbolSignature = dyn_cast<SignatureType>(symbolConstant.getType());
+  if (!symbolSignature) {
+    emitError(curLocationCollecting.value(),
+              "symbol constant expected a `!kgen.signature` type");
+    hadError = true;
+    return;
+  }
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.

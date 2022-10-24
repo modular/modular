@@ -21,6 +21,10 @@
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/TypeSwitch.h"
+
+// FIXME: KGENDialect should not depend on POPDialect.
+#include "KGEN/POPDialect/POPTypes.h"
 
 using namespace M;
 using namespace KGEN;
@@ -440,12 +444,31 @@ ArrayRef<Type> FuncOp::getCallableResults() {
 /// Parses a KGEN generator interface.
 ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
                                         OperationState &result) {
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::interface);
+  if (failed(
+          parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::interface)))
+    return failure();
+
+  // Parse an optional evaluator.
+  if (parser.parseOptionalKeyword("evaluator"))
+    return success();
+  Type sigType;
+  TypedAttr evaluator;
+  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
+      parseParamValue(parser, evaluator, sigType))
+    return failure();
+  result.addAttribute(getEvaluatorAttrName(result.name), evaluator);
+  return success();
 }
 
 // Print the GeneratorInterfaceOp using the shared printing logic.
 void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
+  if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
+    p << " evaluator ";
+    printKGENType(p.getStream(), evaluator.getType());
+    p << " = ";
+    printParamValue(evaluator, p.getStream());
+  }
 }
 
 LogicalResult
@@ -453,7 +476,54 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
+    return failure();
+
+  // If an evaluator was specified, verify its signature.
+  SymbolConstantAttr evaluator = getEvaluatorAttr();
+  if (!evaluator)
+    return success();
+  auto func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
+      *this, evaluator.getSymbol().getAttr());
+  if (!func)
+    return emitOpError("evaluator ")
+           << evaluator.getSymbol() << " does not refer to a KGEN declaration";
+
+  // Build the expected evaluator signature.
+  SmallVector<ParamDeclAttr> decls;
+  decls.reserve(evaluator.getParamValues().size());
+  for (ParamBindAttr bind : evaluator.getParamValues())
+    decls.push_back(bind.getDecl());
+  auto index = IndexType::get(getContext());
+  auto evaluatorType = FunctionType::get(
+      getContext(), {POP::PointerType::get(getFunctionType()), index}, index);
+  auto expectedSignature =
+      SignatureType::get(ParamDeclArrayAttr::get(getContext(), decls),
+                         TypeArrayAttr::get(getContext(), {}), evaluatorType);
+
+  // Get the specialized callee signature.
+  SignatureType funcSignature = func.getSignature().getSpecializedSignature(
+      evaluator.getParamValues(), [&] { return emitError(); });
+  if (!funcSignature)
+    return failure();
+
+  if (failed(verifyDeclSignaturesMatch("interface evaluator", expectedSignature,
+                                       getLoc(), "referenced evaluator",
+                                       funcSignature, func.getLoc())))
+    return failure();
+
+  // Make sure the evalutator is public.
+  return llvm::TypeSwitch<Operation *, LogicalResult>(func.getOperation())
+      .Case<FuncOp, GeneratorOp, GeneratorInterfaceOp>(
+          [&](auto func) -> LogicalResult {
+            if (func.getLinkage() != Linkage::Public)
+              return emitOpError(
+                  "expected evaluator function to have public linkage");
+            return success();
+          })
+      .Default([&](Operation *op) {
+        return emitOpError("unknown evaluator operation");
+      });
 }
 
 /// Return null to indicate that this is an "external" callable.

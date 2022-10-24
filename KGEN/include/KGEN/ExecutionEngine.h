@@ -33,6 +33,9 @@ public:
     return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
   }
 
+  /// Return the pointer to the compiled function.
+  void *getFunctionPointer() const { return fn; }
+
 private:
   /// Construct a CompiledFunc object. This constructor is private because it
   /// needs a reference to the cache that the ExecutionEngine holds, so it

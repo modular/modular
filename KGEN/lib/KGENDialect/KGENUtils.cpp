@@ -1100,6 +1100,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
       GeneratorOp::getAttributeNames().end());
   // Don't print valueParamNames in lit.func.
   ignoredAttrNames.push_back(StringRef("valueParamNames"));
+  // Don't print evaluator in kgen.generator.interface.
+  ignoredAttrNames.push_back(StringRef("evaluator"));
 
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           ignoredAttrNames);
