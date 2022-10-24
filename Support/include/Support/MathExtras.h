@@ -7,12 +7,14 @@
 #ifndef SUPPORT_MATHEXTRAS_H
 #define SUPPORT_MATHEXTRAS_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <random>
 #include <type_traits>
 
 namespace M {
@@ -121,6 +123,35 @@ inline auto percentile(const Range &values, double percent)
     return value_type(0);
   return *std::next(llvm::adl_begin(values),
                     static_cast<size_t>(values.size() * percent));
+}
+
+/// Fill the buffer with random values from a distribution. Random engine seed
+/// is always zero, so this function fills the buffer with "deterministic
+/// random" values.
+template <typename EltType, typename Distribution>
+void fillWithRandomDistribution(MutableArrayRef<EltType> buffer,
+                                Distribution distibution) {
+  std::default_random_engine randEngine(/*seed=*/0);
+  std::generate(buffer.begin(), buffer.end(),
+                [&]() { return distibution(randEngine); });
+}
+
+/// Fill the provided buffer with random floating point values. This function
+/// accepts a lower and upper bound on the random values.
+template <typename EltType>
+void fillWithRandomFloats(MutableArrayRef<EltType> buffer, EltType lb,
+                          EltType ub) {
+  fillWithRandomDistribution(buffer,
+                             std::uniform_real_distribution<EltType>(lb, ub));
+}
+
+/// Fill the provided buffer with random integer values. This function accepts a
+/// lower and upper bound on the random values.
+template <typename EltType, typename DistributionT = EltType>
+void fillWithRandomInts(MutableArrayRef<EltType> buffer, EltType lb,
+                        EltType ub) {
+  fillWithRandomDistribution(
+      buffer, std::uniform_int_distribution<DistributionT>(lb, ub));
 }
 
 } // namespace M
