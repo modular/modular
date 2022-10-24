@@ -7,16 +7,6 @@
 // This file provides machinery used when emitting expressions to MLIR, either
 // as operations for runtime values or as attributes for metavalues.
 //
-// Emitting an expression to MLIR can either produce a meta-value as an rvalue,
-// may produce a runtime value as an rvalue, or may produce a metavalue as an
-// LValue.  These make up the following hierarchy of value kinds:
-//
-//   AnyValue               <- Expr emitted to MLIR
-//     LValue               <- Expr with a runtime address.
-//     RValue               <- Expr without an address
-//       MValue (TypedAttr) <- Expr with a meta-value (known at compile time)
-//       DRValue (Value)    <- Expr with a dynamic value (only known at runtime)
-//
 //===----------------------------------------------------------------------===//
 
 #ifndef LIT_EXPRS_H
@@ -29,98 +19,82 @@
 
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
-class ExprEmitter;
+class ExprNode;
 class Scope;
 
-/// Instances of LValue model a dynamic address, which will always have pointer
-/// type.  It is described with an explicit type because the type of the
-/// underlying MLIR value may be pointer type for RValues of pointer type, so we
-/// need something explicit to represent this.  This also helps avoid subtle
-/// bugs in the emission phase.
-struct LValue : public Value {
-  using Value::Value;
-  LValue(Value v) : Value(v) {}
-};
-
-/// This represents an RValue, which may be either a meta value (MValue)
-class RValue {
+/// When emitting an expression to MLIR as an rvalue, we get a value back that
+/// is either an attribute (for parameter expressions) or an SSA value.  The
+/// stored attribute is always actually a TypedAttr.
+class MLIRValueRep : public PointerUnion<Attribute, Value> {
 public:
-  RValue() : storage() {}
-  RValue(Attribute metaValue) : storage(metaValue) {
-    assert(isa<TypedAttr>(metaValue));
-  }
-  RValue(TypedAttr metaValue) : storage((Attribute)metaValue) {}
-  RValue(Value rValue) : storage(rValue) {}
-  explicit RValue(PointerUnion<Attribute, Value> storage) : storage(storage) {}
+  using Base = PointerUnion<Attribute, Value>;
+  using Base::PointerUnion;
 
-  bool isNull() const { return storage.isNull(); }
-  bool operator!() const { return isNull(); }
-  operator bool() const { return !isNull(); }
+  /// If this contains an Attribute, it is known to be a TypedAttr.  This helper
+  /// performs the conversion.  This returns null if this contains a value.
+  TypedAttr dyn_castTypedAttr() const;
 
-  /// If this contains a metavalue, return it; otherwise return null.
-  TypedAttr getIfMValue() const {
-    // Meta values are stored as Attribute because they are a single word, but
-    // we know they always hold a TypedAttr.
-    if (auto attr = storage.dyn_cast<Attribute>())
-      return cast<TypedAttr>(attr);
-    return {};
-  }
-
-  Value getIfDRValue() const { return storage.dyn_cast<Value>(); }
-
-  /// Return the type for the contained representation, or null if they are
+  /// Return the type for the contained TypedAttr or Value, or null if they are
   /// both null.
   Type getType() const;
-
-  PointerUnion<Attribute, Value> getStorage() const { return storage; }
-
-private:
-  PointerUnion<Attribute, Value> storage;
-};
-
-class AnyValue {
-public:
-  AnyValue() : storage() {}
-  AnyValue(Attribute metaValue) : storage(metaValue) {
-    assert(isa<TypedAttr>(metaValue));
-  }
-  AnyValue(TypedAttr metaValue) : storage((Attribute)metaValue) {}
-  AnyValue(Value rValue) : storage(rValue) {}
-  AnyValue(LValue lValue) : storage(lValue) {}
-
-  bool isNull() const { return storage.isNull(); }
-  bool operator!() const { return isNull(); }
-  operator bool() const { return !isNull(); }
-
-  /// If this contains a metavalue, return it; otherwise return null.
-  TypedAttr getIfMValue() const {
-    // Meta values are stored as Attribute because they are a single word, but
-    // we know they always hold a TypedAttr.
-    if (auto rvalue = storage.dyn_cast<RValue>())
-      return rvalue.getIfMValue();
-    return {};
-  }
-
-  RValue getIfRValue() const { return dyn_cast<RValue>(storage); }
-
-  Value getIfDRValue() const {
-    if (auto rvalue = getIfRValue())
-      return rvalue.getIfDRValue();
-    return {};
-  }
-  LValue getIfLValue() const { return storage.dyn_cast<LValue>(); }
-
-  /// Return the type for the contained representation, or null if they are
-  /// both null.  In the case of an LValue, this will return the PointerType.
-  Type getType() const;
-
-private:
-  PointerUnion<RValue, LValue> storage;
 };
 
 //===----------------------------------------------------------------------===//
-// ExprNode
+// ExprEmitter
 //===----------------------------------------------------------------------===//
+
+struct ExprEmitter {
+  /// This is the shared state for the parser overall.
+  LitSharedState &shared;
+
+  /// This is scope to resolve declaration references against.
+  Scope &scope;
+
+  /// This is the current builder to emit into if we are allowed to generate a
+  /// value.  This will be None when in a context that only allows parameters.
+  /// It is mutable to support expressions that require internal control flow.
+  Optional<OpBuilder> builder;
+
+  ExprEmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
+      : shared(shared), scope(scope), builder(builder) {}
+
+  MLIRContext *getContext() const { return shared.context; }
+
+  /// This helper emits the specified value rep as an SSA value, materializing
+  /// it as a parameter constant if it is a parameter.  This returns null if
+  /// emission fails.
+  Value emitAsValue(MLIRValueRep rep, SMLoc loc);
+
+  /// This helper emits the specified value rep as an SSA value, materializing
+  /// it as a parameter constant if it is a parameter.  This returns null if
+  /// emission fails.
+  Value emitAsValue(const ExprNode *node);
+
+  /// This helper emits the specified value rep as a meta value, diagnosing the
+  /// problem if the expression is only valid as a runtime value (using the
+  /// specified message).  This returns null if emission fails.
+  TypedAttr emitAsMetaValue(const ExprNode *node, const Twine &message);
+
+  /// This helper emits the specified expression tree as a type, e.g. turning
+  /// "Int" into the type for it.  This never returns null - if the expression
+  /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
+  Type emitAsType(const ExprNode *node);
+
+  /// Perform a name lookup in the current scope and return the named
+  /// declaration.  This emits an error and returns null on error.
+  Scope *lookupDecl(StringRef name, SMLoc loc);
+
+  /// Emit an error through the parser's logic.
+  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
+    shared.errorOccurred = true;
+    return mlir::emitError(translateLocation(loc), twine);
+  }
+
+  /// Translate an SMLoc into an MLIR Location.
+  Location translateLocation(SMLoc loc) const {
+    return shared.translateLocation(loc);
+  }
+};
 
 /// Base class for all expression nodes.  Note that these nodes are not allowed
 /// to own memory since they are bump pointer allocated and their destructors
@@ -155,119 +129,25 @@ public:
   /// Return true if this expression tree contains an already-reported error.
   virtual bool containsError() const = 0;
 
-  /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.
-  virtual AnyValue emitIR(ExprEmitter &state) const = 0;
+  /// Emit this expression to MLIR, returning a (possibly null!) MLIRValueRep.
+  virtual MLIRValueRep emitIR(ExprEmitter &state) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
   virtual Type emitType(ExprEmitter &state) const = 0;
 };
 
-//===----------------------------------------------------------------------===//
-// ExprEmitter
-//===----------------------------------------------------------------------===//
-
-class ExprEmitter {
-public:
-  /// This is the shared state for the parser overall.
-  LitSharedState &shared;
-
-  /// This is scope to resolve declaration references against.
-  Scope &scope;
-
-  /// This is the current builder to emit into if we are allowed to generate a
-  /// value.  This will be None when in a context that only allows parameters.
-  /// It is mutable to support expressions that require internal control flow.
-  Optional<OpBuilder> builder;
-
-  ExprEmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
-      : shared(shared), scope(scope), builder(builder) {}
-
-  MLIRContext *getContext() const { return shared.context; }
-
-  /// This helper emits the specified value rep as an RValue.
-  RValue emitRValue(const ExprNode *node) {
-    assert(node && "cannot emit a null node");
-    return emitRValue(node->emitIR(*this), node->getLoc());
-  }
-  RValue emitRValue(AnyValue rep, SMLoc loc);
-
-  /// This helper emits the specified value rep as a DRValue which has an SSA
-  /// value representation, materializing MValues and loading LValues as
-  /// needed.  This returns null if emission fails.
-  Value emitDRValue(RValue rep, SMLoc loc);
-  Value emitDRValue(AnyValue rep, SMLoc loc) {
-    return emitDRValue(emitRValue(rep, loc), loc);
-  }
-
-  /// This helper emits the specified value rep as an DRValue, materializing
-  /// it as a parameter constant if it is a parameter.  This returns null if
-  /// emission fails.
-  Value emitDRValue(const ExprNode *node) {
-    assert(node && "cannot emit a null node");
-    return emitDRValue(node->emitIR(*this), node->getLoc());
-  }
-
-  /// This helper emits the specified value rep as a meta value, diagnosing the
-  /// problem if the expression is only valid as a runtime value (using the
-  /// specified message).  This returns null if emission fails.
-  TypedAttr emitMValue(const ExprNode *node, const Twine &message);
-
-  /// This helper emits the specified expression tree as a type, e.g. turning
-  /// "Int" into the type for it.  This never returns null - if the expression
-  /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-  Type emitType(const ExprNode *node);
-
-  /// Perform a name lookup in the current scope and return the named
-  /// declaration.  This emits an error and returns null on error.
-  Scope *lookupDecl(StringRef name, SMLoc loc);
-
-  /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
-    shared.errorOccurred = true;
-    return mlir::emitError(translateLocation(loc), twine);
-  }
-
-  /// Translate an SMLoc into an MLIR Location.
-  Location translateLocation(SMLoc loc) const {
-    return shared.translateLocation(loc);
-  }
-};
-
 } // namespace M::KGEN::LIT
 
 namespace llvm {
-template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::RValue> {
-public:
-  using RValue = M::KGEN::LIT::RValue;
-  using Impl = PointerUnion<mlir::Attribute, mlir::Value>;
-  using ImplTraits = PointerLikeTypeTraits<Impl>;
-  static inline void *getAsVoidPointer(RValue value) {
-    return const_cast<void *>(ImplTraits::getAsVoidPointer(value.getStorage()));
-  }
-  static inline RValue getFromVoidPointer(void *pointer) {
-    return RValue(ImplTraits::getFromVoidPointer(pointer));
-  }
-  enum {
-    NumLowBitsAvailable = PointerLikeTypeTraits<Impl>::NumLowBitsAvailable
-  };
-};
 
-template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::LValue> {
-public:
-  using LValue = M::KGEN::LIT::LValue;
-  static inline void *getAsVoidPointer(LValue value) {
-    return const_cast<void *>(value.getAsOpaquePointer());
-  }
-  static inline LValue getFromVoidPointer(void *pointer) {
-    return LValue(mlir::Value::getFromOpaquePointer(pointer));
-  }
-  enum {
-    NumLowBitsAvailable =
-        PointerLikeTypeTraits<mlir::Value>::NumLowBitsAvailable
-  };
-};
+template <typename To>
+struct CastInfo<To, const M::KGEN::LIT::MLIRValueRep>
+    : public CastInfo<To, const M::KGEN::LIT::MLIRValueRep::Base> {};
+template <typename To>
+struct CastInfo<To, M::KGEN::LIT::MLIRValueRep>
+    : public CastInfo<To, M::KGEN::LIT::MLIRValueRep::Base> {};
+
 } // namespace llvm
+
 #endif // LIT_EXPRS_H

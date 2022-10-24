@@ -26,26 +26,23 @@ using namespace M::KGEN::LIT;
 static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
 //===----------------------------------------------------------------------===//
-// RValue / AnyValue Implementation
+// MLIRValueRep Implementation
 //===----------------------------------------------------------------------===//
 
-Type RValue::getType() const {
-  if (isNull())
-    return Type();
-  if (TypedAttr attr = getIfMValue())
-    return attr.getType();
-  return getIfDRValue().getType();
+/// If this contains an Attribute, it is known to be a TypedAttr.  This helper
+/// performs the conversion.  This returns null if this contains a value.
+TypedAttr MLIRValueRep::dyn_castTypedAttr() const {
+  if (auto attr = (*this).dyn_cast<Attribute>())
+    return cast<TypedAttr>(attr);
+  return {};
 }
 
-Type AnyValue::getType() const {
-  if (isNull())
+Type MLIRValueRep::getType() const {
+  if (!*this)
     return Type();
-  if (RValue rvalue = getIfRValue())
-    return rvalue.getType();
-
-  LValue lvalue = getIfLValue();
-  assert(lvalue && "Unknown type");
-  return lvalue.getType();
+  if (TypedAttr attr = dyn_castTypedAttr())
+    return attr.getType();
+  return cast<Value>(*this).getType();
 }
 
 //===----------------------------------------------------------------------===//
@@ -55,7 +52,7 @@ Type AnyValue::getType() const {
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-RValue ExprEmitter::emitRValue(AnyValue rep, SMLoc loc) {
+Value ExprEmitter::emitAsValue(MLIRValueRep rep, SMLoc loc) {
   if (!rep) // Already diagnosed error.
     return {};
 
@@ -64,51 +61,42 @@ RValue ExprEmitter::emitRValue(AnyValue rep, SMLoc loc) {
     return {};
   }
 
-  if (auto rvRep = rep.getIfRValue())
-    return rvRep;
-
-  auto pointer = rep.getIfLValue();
-  assert(pointer);
-
-  // Finally, if this is an LValue, emit a load.
-  return builder
-      ->create<POP::LoadOp>(translateLocation(loc), pointer,
-                            /*alignment*/ None)
-      .getResult();
-}
-
-Value ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
-  if (!rep)
-    return {};
-  // If this is already an DRValue, emit this.
-  if (auto rvalue = rep.getIfDRValue())
-    return rvalue;
-
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = rep.getIfMValue();
-  assert(attr);
-  auto location = translateLocation(loc);
-  // Materialize index integer constants as a special case.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
-    if (intAttr.getType().isIndex())
-      return builder->create<index::ConstantOp>(
-          location, intAttr.getValue().getSExtValue());
+  if (auto attr = rep.dyn_castTypedAttr()) {
+    auto location = translateLocation(loc);
+    // Materialize index integer constants as a special case.
+    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+      if (intAttr.getType().isIndex())
+        return builder->create<index::ConstantOp>(
+            location, intAttr.getValue().getSExtValue());
 
-  // Otherwise, emit a generalized parameter constant.
-  return builder->create<ParamConstantOp>(location, attr);
+    // Otherwise, emit a generalized parameter constant.
+    return builder->create<ParamConstantOp>(location, attr);
+  }
+
+  return cast<Value>(rep);
+}
+
+/// This helper emits the specified value rep as an SSA value, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+Value ExprEmitter::emitAsValue(const ExprNode *node) {
+  assert(node && "cannot emit a null node");
+  return emitAsValue(node->emitIR(*this), node->getLoc());
 }
 
 /// This helper emits the specified value rep as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
-TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
+TypedAttr ExprEmitter::emitAsMetaValue(const ExprNode *node,
+                                       const Twine &message) {
   auto valueRep = node->emitIR(*this);
   if (!valueRep)
     return {};
 
   // If this is a parameter, return it.
-  if (auto attr = valueRep.getIfMValue())
+  if (auto attr = valueRep.dyn_castTypedAttr())
     return attr;
 
   emitError(node->getLoc(), message);
@@ -118,10 +106,10 @@ TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-Type ExprEmitter::emitType(const ExprNode *node) {
+Type ExprEmitter::emitAsType(const ExprNode *node) {
   Type result = node->emitType(*this);
-  // The emitType methods return null on failure, we return a
-  // TypeCheckErrorType to simplify clients.
+  // The emitType methods return null on failure, we return a TypeCheckErrorType
+  // to simplify clients.
   return result ? result : TypeCheckErrorType::get(getContext());
 }
 
@@ -156,11 +144,13 @@ Scope *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 /// Error nodes cannot be emitted and have already been diagnosed.
-AnyValue ErrorNode::emitIR(ExprEmitter &emitter) const { return AnyValue(); }
+MLIRValueRep ErrorNode::emitIR(ExprEmitter &emitter) const {
+  return MLIRValueRep();
+}
 
 Type ErrorNode::emitType(ExprEmitter &emitter) const { return Type(); }
 
-AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep IntLiteralNode::emitIR(ExprEmitter &emitter) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -175,7 +165,7 @@ Type IntLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep FloatLiteralNode::emitIR(ExprEmitter &emitter) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   return FloatAttr::get(FloatType::getF64(emitter.getContext()),
@@ -187,7 +177,7 @@ Type FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep StringLiteralNode::emitIR(ExprEmitter &emitter) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return StringAttr::get(emitter.getContext(), value);
 }
@@ -197,7 +187,7 @@ Type StringLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep DeclRefNode::emitIR(ExprEmitter &emitter) const {
   Optional<Scope::NameEntry> declOrValue =
       emitter.scope.lookup(StringAttr::get(emitter.getContext(), spelling));
   if (!declOrValue) {
@@ -222,9 +212,19 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter) const {
   if (failed(resolveResult))
     return {};
 
-  // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(scope.getDecl()))
-    return LValue(var.getResult());
+  // Variable references resolve to load from the variable.
+  if (auto var = dyn_cast<VarDeclOp>(scope.getDecl())) {
+    if (!emitter.builder) {
+      emitter.emitError(getLoc(),
+                        "cannot load dynamic value in meta value context");
+      return {};
+    }
+
+    return emitter.builder
+        ->create<POP::LoadOp>(emitter.translateLocation(getLoc()), var,
+                              /*alignment*/ None)
+        .getResult();
+  }
 
   // Functions form an address.
   if (auto fnDecl = dyn_cast<LITFuncOp>(scope.getDecl()))
@@ -263,8 +263,8 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
-AnyValue CallNode::emitIR(ExprEmitter &emitter) const {
-  auto calleeVal = emitter.emitRValue(callee);
+MLIRValueRep CallNode::emitIR(ExprEmitter &emitter) const {
+  auto calleeVal = callee->emitIR(emitter);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
 
@@ -300,7 +300,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter) const {
   SmallVector<Value> valueArguments;
   for (auto [arg, expectedType] :
        llvm::zip(args, calleeType.getValues().getInputs())) {
-    auto argVal = emitter.emitDRValue(arg);
+    auto argVal = emitter.emitAsValue(arg);
     if (!argVal)
       return {};
 
@@ -314,7 +314,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter) const {
     valueArguments.push_back(argVal);
   }
 
-  auto calleeParam = calleeVal.getIfMValue();
+  auto calleeParam = calleeVal.dyn_castTypedAttr();
   if (!calleeParam) {
     emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};
@@ -350,7 +350,7 @@ Type CallNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue SubscriptNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep SubscriptNode::emitIR(ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
   if (!subValue)
@@ -365,7 +365,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter) const {
       return {};
     }
 
-    auto declParam = subValue.getIfMValue();
+    auto declParam = subValue.dyn_castTypedAttr();
     if (!declParam) {
       emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
@@ -375,7 +375,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter) const {
     SmallVector<TypedAttr> bindOperands;
     bindOperands.push_back(declParam);
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
-      auto val = emitter.emitMValue(
+      auto val = emitter.emitAsMetaValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val)
         return {};
@@ -396,9 +396,9 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter) const {
   }
 
   // Emit each of the index values.
-  SmallVector<RValue> indexValues;
+  SmallVector<MLIRValueRep> indexValues;
   for (ExprNode *index : indices) {
-    indexValues.push_back(emitter.emitRValue(index));
+    indexValues.push_back(index->emitIR(emitter));
     if (!indexValues.back())
       return {};
   }
@@ -443,7 +443,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
   for (auto [indexExpr, decl] : llvm::zip(indices, typeDecl.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto value = emitter.emitMValue(
+    auto value = emitter.emitAsMetaValue(
         indexExpr, "type parameters may not be a run-time value");
     if (!value)
       return {};
@@ -463,7 +463,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
                       ParamBindArrayAttr::get(emitter.getContext(), exprs));
 }
 
-AnyValue ParenExprNode::emitIR(ExprEmitter &emitter) const {
+MLIRValueRep ParenExprNode::emitIR(ExprEmitter &emitter) const {
   return subExpr->emitIR(emitter);
 }
 
@@ -471,9 +471,9 @@ Type ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter) const {
-  auto lhsRep = emitter.emitRValue(lhs);
-  auto rhsRep = emitter.emitRValue(rhs);
+MLIRValueRep BinOpNode::emitIR(ExprEmitter &emitter) const {
+  auto lhsRep = lhs->emitIR(emitter);
+  auto rhsRep = rhs->emitIR(emitter);
   if (!lhsRep || !rhsRep)
     return {};
   auto lhsType = lhsRep.getType(), rhsType = rhsRep.getType();
@@ -485,8 +485,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter) const {
 
   // If these are both parameter values, we can fold them using parameter
   // expressions.
-  if (auto lhsParam = lhsRep.getIfMValue()) {
-    if (auto rhsParam = rhsRep.getIfMValue()) {
+  if (auto lhsParam = lhsRep.dyn_castTypedAttr()) {
+    if (auto rhsParam = rhsRep.dyn_castTypedAttr()) {
       POC opcode;
       switch (kind) {
       default:
@@ -504,8 +504,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter) const {
 
   assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto lhsVal = emitter.emitDRValue(lhsRep, lhs->getLoc());
-  auto rhsVal = emitter.emitDRValue(rhsRep, rhs->getLoc());
+  auto lhsVal = emitter.emitAsValue(lhsRep, lhs->getLoc());
+  auto rhsVal = emitter.emitAsValue(rhsRep, rhs->getLoc());
   auto loc = emitter.translateLocation(getLoc());
 
   switch (kind) {
