@@ -354,8 +354,8 @@ public:
 
   /// Process all the `commandWorklist`, simplifying this func.  If new
   /// variants of this func are necessary, they are added to rewriterWorklist.
-  LogicalResult
-  rewriteOps(SmallVectorImpl<ParameterRewriter> &rewriterWorklist);
+  LogicalResult rewriteOps(
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriterWorklist);
 
   /// Return the func we're generating into, along with its bindings.
   ElaboratedGenerator takeElaboratedGenerator() {
@@ -390,11 +390,12 @@ public:
 
 private:
   LogicalResult processParamDeclareOp(ParamDeclareOp op);
-  LogicalResult
-  processParamSearchOp(ParamSearchOp op,
-                       SmallVectorImpl<ParameterRewriter> &rewriters);
-  void spawnParamSearchClone(ParamSearchOp searchOp, Attribute value,
-                             SmallVectorImpl<ParameterRewriter> &rewriters);
+  LogicalResult processParamSearchOp(
+      ParamSearchOp op,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
+  void spawnParamSearchClone(
+      ParamSearchOp searchOp, Attribute value,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
   void completeParamSearchOpProcessing(ParamSearchOp op, Attribute value);
 
   LogicalResult processParamConstantOp(ParamConstantOp op);
@@ -405,16 +406,18 @@ private:
 
   // Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
-  LogicalResult processCallOp(OpT call,
-                              SmallVectorImpl<ParameterRewriter> &rewriters);
+  LogicalResult
+  processCallOp(OpT call,
+                SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
   template <typename OpT>
   void completeCallOpProcessing(OpT call,
                                 DeclAndInputParamsPair calleeAndInputParams,
                                 const ElaboratedGenerator &newCallee);
   template <typename OpT>
-  void spawnNewFuncClone(OpT call, DeclAndInputParamsPair calleeAndInputParams,
-                         const ElaboratedGenerator &callee,
-                         SmallVectorImpl<ParameterRewriter> &rewriters);
+  void spawnNewFuncClone(
+      OpT call, DeclAndInputParamsPair calleeAndInputParams,
+      const ElaboratedGenerator &callee,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
   LogicalResult processCallParamOp(CallParamOp call);
   LogicalResult processGenericOp(Operation *op);
@@ -495,7 +498,7 @@ ParameterRewriter::ParameterRewriter(
 
 /// Work the `opsToRewrite` worklist.
 LogicalResult ParameterRewriter::rewriteOps(
-    SmallVectorImpl<ParameterRewriter> &rewriterWorklist) {
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriterWorklist) {
   /// We use a worklist for this so cloned versions of ParameterRewriter can
   /// be created and known where to pick up from.
   while (!commandWorklist.empty()) {
@@ -596,7 +599,8 @@ LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
 }
 
 LogicalResult ParameterRewriter::processParamSearchOp(
-    ParamSearchOp op, SmallVectorImpl<ParameterRewriter> &rewriters) {
+    ParamSearchOp op,
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Loop over all the possible candidates that we will search over, spawning
   // N-1 possibilities to explore.
   std::string errors;
@@ -640,7 +644,7 @@ LogicalResult ParameterRewriter::processParamSearchOp(
 
 void ParameterRewriter::spawnParamSearchClone(
     ParamSearchOp searchOp, Attribute value,
-    SmallVectorImpl<ParameterRewriter> &rewriters) {
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
   DenseMap<Operation *, Operation *> operationMap;
@@ -651,12 +655,13 @@ void ParameterRewriter::spawnParamSearchClone(
   elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
 
   // Generate the new rewriter which will process this.
-  auto &newRewriter = rewriters.emplace_back(*this, operationMap);
+  auto &newRewriter =
+      rewriters.emplace_back(new ParameterRewriter(*this, operationMap));
 
   // Change the future of this func by resolving the searchOp in the new func to
   // the specifed value.
   auto newSearch = cast<ParamSearchOp>(operationMap[searchOp]);
-  newRewriter.completeParamSearchOpProcessing(newSearch, value);
+  newRewriter->completeParamSearchOpProcessing(newSearch, value);
 }
 
 void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
@@ -754,7 +759,7 @@ ParameterRewriter::resolveCallInputParams(Operation *call,
 
 template <typename OpT>
 LogicalResult ParameterRewriter::processCallOp(
-    OpT call, SmallVectorImpl<ParameterRewriter> &rewriters) {
+    OpT call, SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Evaluate any input parameters.
   auto inputParamKey = resolveCallInputParams(call, call.getParamValues());
   if (!inputParamKey)
@@ -876,7 +881,7 @@ template <typename OpT>
 void ParameterRewriter::spawnNewFuncClone(
     OpT call, DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
-    SmallVectorImpl<ParameterRewriter> &rewriters) {
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
   DenseMap<Operation *, Operation *> operationMap;
@@ -887,12 +892,13 @@ void ParameterRewriter::spawnNewFuncClone(
   elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
 
   // Generate the new rewriter which will process this.
-  auto &newRewriter = rewriters.emplace_back(*this, operationMap);
+  auto &newRewriter =
+      rewriters.emplace_back(new ParameterRewriter(*this, operationMap));
 
   // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
   auto newCall = cast<OpT>(operationMap[call]);
-  newRewriter.completeCallOpProcessing(newCall, calleeAndInputParams, callee);
+  newRewriter->completeCallOpProcessing(newCall, calleeAndInputParams, callee);
 }
 
 LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
@@ -1177,24 +1183,27 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule) {
   // pop_back.
   std::reverse(opsToRewrite.begin(), opsToRewrite.end());
 
-  // Start by rewriting this func.
-  SmallVector<ParameterRewriter, 2> rewriterWorklist;
-  rewriterWorklist.emplace_back(*this, func, symtab, std::move(opsToRewrite));
+  // Start by rewriting this func. Use `unique_ptr` for the stack to prevent
+  // invalidation.
+  SmallVector<std::unique_ptr<ParameterRewriter>> rewriterWorklist;
+  rewriterWorklist.emplace_back(
+      new ParameterRewriter(*this, func, symtab, std::move(opsToRewrite)));
 
   // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
   SmallVector<ElaboratedGeneratorOrCalleeError> results;
   while (!rewriterWorklist.empty()) {
-    auto rewriter = rewriterWorklist.pop_back_val();
+    std::unique_ptr<ParameterRewriter> rewriter =
+        rewriterWorklist.pop_back_val();
 
     // If elaborating the func succeeded, then we have a viable candidate.
-    if (succeeded(rewriter.rewriteOps(rewriterWorklist))) {
-      results.push_back(rewriter.takeElaboratedGenerator());
+    if (succeeded(rewriter->rewriteOps(rewriterWorklist))) {
+      results.push_back(rewriter->takeElaboratedGenerator());
     } else {
       // If elaborating the func fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
       // a func that didn't make it.
-      results.push_back(rewriter.takeDiagnosticAndEraseFunc());
+      results.push_back(rewriter->takeDiagnosticAndEraseFunc());
     }
   }
   return results;
