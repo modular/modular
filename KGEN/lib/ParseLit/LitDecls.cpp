@@ -183,7 +183,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
             scope.hasReferenceError = true;
           scope.getCursor() = lexer.getCursor();
         })
-        .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
+        .Case([&](ModuleOp op) { /*Nothing*/ })
         .Default([&](auto attr) {
           decl->emitError(
               "do not know how to resolve the signature of this decl!");

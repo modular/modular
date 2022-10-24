@@ -525,7 +525,7 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
         p << decltype(popType)::getMnemonic();
         popType.print(p);
       })
-      .Case<DTypeType>([&](auto) { p << DTypeType::getMnemonic(); })
+      .Case([&](DTypeType) { p << DTypeType::getMnemonic(); })
       .Default([&](auto) { printTypeParamValue(p, typeExpr); });
 }
 
