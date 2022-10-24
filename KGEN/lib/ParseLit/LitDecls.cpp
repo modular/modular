@@ -62,16 +62,16 @@ void Scope::addToScope(StringAttr name, MetaParameterValue newValue,
 void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
   StringAttr name;
   Operation *newDecl = newDeclScope->getDecl();
-  if (auto var = dyn_cast<VarDeclOp>(newDecl))
-    name = var.getNameAttr();
-  else if (auto fn = dyn_cast<LITFuncOp>(newDecl))
-    name = fn.getNameAttr();
-  else if (auto str = dyn_cast<LITStructDeclOp>(newDecl))
-    name = str.getNameAttr();
-  else {
-    assert(isa<ModuleOp>(newDecl) && "Unknown declaration kind");
+
+  TypeSwitch<Operation *>(newDecl)
+      .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
+          [&](auto op) { name = op.getNameAttr(); })
+      .Default([&](auto attr) {
+        assert(isa<ModuleOp>(newDecl) && "Unknown declaration kind");
+      });
+
+  if (!name) // Don't add for modules.
     return;
-  }
 
   auto [it, inserted] = decls.insert({name, newDeclScope});
   if (inserted)
