@@ -675,8 +675,8 @@ kgen.generator @memset<type: type, dtype: dtype>(%a: !pop.pointer<type>,
                                                  %c: !pop.pointer<scalar<si32>>) {
   // CHECK: %[[SIZE:.*]] = index.constant 1
   %one = index.constant 1
-  // CHECK: %[[VAL:.*]] = pop.constant(0 : ui8) : !pop.scalar<ui8>
-  %val = pop.constant(0:ui8) : !pop.scalar<ui8>
+  // CHECK: %[[VAL:.*]] = pop.constant(0 : ui8) : !pop.simd<1, ui8>
+  %val = pop.constant(0:ui8) : !pop.simd<1, ui8>
   // CHECK: pop.memset %[[A]], %[[VAL]], %[[SIZE]] : !pop.pointer<type>
   pop.memset %a, %val, %one : !pop.pointer<type>
   // CHECK: pop.memset %[[B]], %[[VAL]], %[[SIZE]] : !pop.pointer<scalar<f32>>

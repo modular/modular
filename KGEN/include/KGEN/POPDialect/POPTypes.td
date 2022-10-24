@@ -180,10 +180,6 @@ def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
 def IntegerScalar : AllOfType<[POP_ScalarType, IntegerDType],
                               "!pop.scalar<integral>">;
 
-def UI8Scalar : AllOfType<[POP_ScalarType, UI8DType], "!pop.scalar<ui8>">,
-                BuildableType<"POP::ScalarType::get($_builder.getContext(), "
-                              "KGENDType::ui8)">;
-
 def UnboundOrIntegerScalar : AllOfType<[POP_ScalarType, IntegerOrUnboundDType],
     "whose value is either unbound or a integral dtype">;
 def UnboundOrFloatScalar : AllOfType<[POP_ScalarType, FloatOrUnboundDType],
@@ -285,6 +281,11 @@ def SIMDSizeOne : ConfinedType<POP_SIMDType,
     "SIMD with size 1">;
 
 def BoolSIMDSizeOne : AllOfType<[BoolSIMD, SIMDSizeOne], "!pop.simd<1, bool>">;
+
+def UI8Scalar : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
+                BuildableType<"POP::SIMDType::get(1, "
+                              "DTypeConstantAttr::get($_builder.getContext(), "
+                              "KGENDType::ui8))">;
 
 //===----------------------------------------------------------------------===//
 // StructType
