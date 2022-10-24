@@ -55,6 +55,13 @@ def LITFuncOp
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
+  let builders = [
+    // Create a func with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+
+
   let hasCustomAssemblyFormat = 1;
 }
 
@@ -81,6 +88,13 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
     attr-dict-with-keyword
     $fields
   }];
+
+  let builders = [
+    // Create a struct with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+
 
   let hasVerifier = 1;
 }

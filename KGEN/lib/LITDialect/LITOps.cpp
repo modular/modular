@@ -82,6 +82,19 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
+void LITFuncOp::build(OpBuilder &builder, OperationState &result,
+                      StringAttr name) {
+  auto context = builder.getContext();
+  auto functionType =
+      builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
+  return build(builder, result, name, StringArrayAttr::get(context, {}),
+               TypeAttr::get(functionType),
+               builder.getAttr<LinkageAttr>(Linkage::Public),
+               ParamDeclArrayAttr::get(context, {}),
+               TypeArrayAttr::get(context, {}),
+               ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());
+}
+
 //===----------------------------------------------------------------------===//
 // LITStructDeclOp
 //===----------------------------------------------------------------------===//
@@ -107,6 +120,13 @@ LogicalResult LITStructDeclOp::verify() {
 LogicalResult
 LITStructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+}
+
+void LITStructDeclOp::build(OpBuilder &builder, OperationState &result,
+                            StringAttr name) {
+  auto context = builder.getContext();
+  return build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
+               TypeArrayAttr::get(context, {}));
 }
 
 //===----------------------------------------------------------------------===//
