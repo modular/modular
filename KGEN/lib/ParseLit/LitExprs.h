@@ -61,12 +61,12 @@ public:
   TypedAttr getIfMValue() const {
     // Meta values are stored as Attribute because they are a single word, but
     // we know they always hold a TypedAttr.
-    if (auto attr = storage.dyn_cast<Attribute>())
+    if (auto attr = dyn_cast<Attribute>(storage))
       return cast<TypedAttr>(attr);
     return {};
   }
 
-  Value getIfDRValue() const { return storage.dyn_cast<Value>(); }
+  Value getIfDRValue() const { return dyn_cast<Value>(storage); }
 
   /// Return the type for the contained representation, or null if they are
   /// both null.
@@ -96,7 +96,7 @@ public:
   TypedAttr getIfMValue() const {
     // Meta values are stored as Attribute because they are a single word, but
     // we know they always hold a TypedAttr.
-    if (auto rvalue = storage.dyn_cast<RValue>())
+    if (auto rvalue = dyn_cast<RValue>(storage))
       return rvalue.getIfMValue();
     return {};
   }
@@ -108,7 +108,8 @@ public:
       return rvalue.getIfDRValue();
     return {};
   }
-  LValue getIfLValue() const { return storage.dyn_cast<LValue>(); }
+
+  LValue getIfLValue() const { return dyn_cast<LValue>(storage); }
 
   /// Return the type for the contained representation, or null if they are
   /// both null.  In the case of an LValue, this will return the PointerType.

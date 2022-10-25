@@ -152,7 +152,7 @@ static void printConstantBufferDType(AsmPrinter &p, Operation *op,
 }
 
 LogicalResult BufferConstantOp::verify() {
-  auto type = getValues().getType().dyn_cast<ArrayType>();
+  auto type = dyn_cast<ArrayType>(getValues().getType());
   if (!type)
     return emitOpError("expected an '!M.array' type");
   return success();

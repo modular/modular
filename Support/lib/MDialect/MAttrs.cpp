@@ -56,7 +56,7 @@ public:
 LogicalResult
 PrimitiveArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                            ArrayRef<uint8_t> data, Type elementType) {
-  auto intOrFp = elementType.dyn_cast<IntOrFPType>();
+  auto intOrFp = llvm::dyn_cast<IntOrFPType>(elementType);
   if (!intOrFp)
     return emitError() << "expected integer or float element type";
   // Disallow s/ui0.
@@ -164,7 +164,7 @@ public:
   /// Print the elements.
   void printElements(AsmPrinter &p) {
     unsigned size = data.size() / byteSize;
-    if (auto fpType = type.dyn_cast<FloatType>()) {
+    if (auto fpType = dyn_cast<FloatType>(type)) {
       llvm::interleaveComma(llvm::seq<unsigned>(0, size), p,
                             [&](unsigned i) { printSingleFloat(p, i); });
     } else {
@@ -254,7 +254,7 @@ Attribute ArrayElementsAttr::parse(AsmParser &p, Type attrType) {
     p.emitError(p.getCurrentLocation(), "expected a shaped type");
     return {};
   }
-  auto elementType = type.getElementType().dyn_cast<IntOrFPType>();
+  auto elementType = llvm::dyn_cast<IntOrFPType>(type.getElementType());
   if (!elementType) {
     p.emitError(p.getCurrentLocation(),
                 "expected integer or float element type");

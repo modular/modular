@@ -1055,9 +1055,8 @@ struct ConvertPOPVariantCreate
   LogicalResult
   matchAndRewrite(VariantCreateOp op, VariantCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto variantType = getTypeConverter()
-                           ->convertType(op.getType())
-                           .dyn_cast_or_null<LLVM::LLVMStructType>();
+    auto variantType = dyn_cast_if_present<LLVM::LLVMStructType>(
+        getTypeConverter()->convertType(op.getType()));
     if (!variantType)
       return failure();
 

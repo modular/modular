@@ -172,7 +172,7 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
     ShapedType shapedType;
     if (auto simd = dyn_cast<SIMDType>(type))
       shapedType = VectorType::get(*simd.getResolvedSize(), result->getType());
-    else if (auto array = type.dyn_cast<POP::ArrayType>())
+    else if (auto array = dyn_cast<POP::ArrayType>(type))
       shapedType =
           M::ArrayType::get(*array.getResolvedSize(), result->getType());
     if (shapedType) {
