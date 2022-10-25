@@ -26,6 +26,30 @@ struct OpaqueFunction {
 };
 } // namespace
 
+/// This function takes a nullary function and benchmarks it using the
+/// micrbenchmarking framework. It returns the mean runtime of the function in
+/// nanoseconds.
+extern "C" double KGEN_CompilerRT_Benchmark(OpaqueFunction func) {
+  MicroBenchmark benchmark("kgen benchmark function",
+                           [func](MicroBenchmark::State &state) {
+                             for (auto _ : state)
+                               func.invoke(nullptr);
+                           });
+
+  MicroBenchmark::RunOptions runOptions;
+  runOptions.printWarningIfDebugMode = false;
+#ifdef MODULAR_DEBUG
+  runOptions.minRuntime = 20ms;
+#else  // MODULAR_DEBUG
+  runOptions.minRuntime = 100ms;
+#endif // MODULAR_DEBUG
+
+  (void)benchmark.run(runOptions);
+  return benchmark.measurement(
+      MicroBenchmark::ReportMetric::kTrimmedMeanLatency,
+      MicroBenchmark::TimeUnit::kNanoseconds);
+}
+
 /// This function takes a list of opaque functions to evaluate and opaque
 /// configurations for which to evaluate them.
 ///
