@@ -127,6 +127,10 @@ def var_decls(untyped):
   # CHECK: %[[TMP:.*]] = index.constant 42
   # CHECK: pop.store %[[TMP]], %z
 
+  (((z2))) = 42  # Paren patterns
+  # CHECK: %[[TMP:.*]] = index.constant 42
+  # CHECK: pop.store %[[TMP]], %z2
+
 # CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.ref<@DType>> {
 struct SIMD[size: index, dt: DType]:
   pass

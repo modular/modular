@@ -171,11 +171,18 @@ public:
   // Integration with parsers for subsets of the grammar.
   //===--------------------------------------------------------------------===//
 
-  /// Type parsing.
-  ParseResult parseType(Type &result, Scope &scope);
-
-  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
-  ParseResult parseExpression(ExprNode *&expr);
+  /// Expression parsing.  Each of these take a `stmtIndent` specifier that
+  /// indicates the indentation level of the start of the statement that
+  /// contains this expression if the expression can exist at the end of the
+  /// line.  This allows the expression parser to know when to keep parsing the
+  /// expression on the next line - when it is more indented than the start of
+  /// the current statement.  This can be passed in as None when there is a
+  /// trailing punctuator that naturally terminates the expression.
+  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
+                                  Optional<size_t> stmtIndent);
+  ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
+  ParseResult parseType(Type &result, Scope &scope,
+                        Optional<size_t> stmtIndent);
 
   /// Parse a 'suite' production into the declaration specified by `Scope`.
   static ParseResult parseSuite(Scope &scope, LitLexer &lexer);

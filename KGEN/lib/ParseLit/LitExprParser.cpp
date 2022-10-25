@@ -23,6 +23,7 @@
 
 #include "LitExprNodes.h"
 #include "LitParserBase.h"
+#include "llvm/Support/SaveAndRestore.h"
 using namespace M::KGEN::LIT;
 using namespace M;
 
@@ -35,7 +36,8 @@ namespace M::KGEN::LIT {
 /// idiom.
 class ExprParser : public LitParserBase {
 public:
-  ExprParser(LitLexer &lexer) : LitParserBase(lexer) {}
+  ExprParser(LitLexer &lexer, Optional<size_t> stmtIndent)
+      : LitParserBase(lexer), stmtIndent(stmtIndent) {}
 
   ~ExprParser() {}
 
@@ -45,6 +47,10 @@ public:
   ParseResult parseExpression(ExprNode *&result);
 
 private:
+  /// Return true if the current token is the start of another statement, false
+  /// if it is part of this one.
+  bool isTokenStartOfNextStatement();
+
   ParseResult parsePrimary(ExprNode *&result);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
@@ -59,39 +65,75 @@ private:
 
   ParseResult parseBinOpRHS(ExprNode *&lhs, Precedence minPrec);
 
-private:
-  /// Allocate an expression node into the expression bump pointer allocator.
-  template <typename T, typename... Args>
-  T *alloc(Args &&...args) {
-    auto &allocator = getSharedState().persistentAllocator;
-    void *node = allocator.Allocate(sizeof(T), llvm::Align::Of<T>());
-    return new (node) T(std::forward<Args>(args)...);
-  }
-
   /// Return an error node at the specified location.
   ExprNode *getErrorAtToken() { return alloc<ErrorNode>(getToken().getLoc()); };
+
+  /// Allocate an expression node into the expression bump pointer allocator.
+  template <typename T, typename... Args>
+  T *alloc(Args &&...args);
 
   /// memcpy the specified ArrayRef into the expression allocator and return a
   /// pointer to the new data.  This cannot be used with things that have
   /// non-trivial copyctors/dtors because the expression allocator does run
   /// destructors.
   template <typename T>
-  ArrayRef<T> copyArrayRef(ArrayRef<T> elements) {
-    if (elements.empty())
-      return elements;
+  ArrayRef<T> copyArrayRef(ArrayRef<T> elements);
 
-    size_t dataSize = sizeof(T) * elements.size();
-    auto &allocator = getSharedState().persistentAllocator;
-    T *result =
-        static_cast<T *>(allocator.Allocate(dataSize, llvm::Align::Of<T>()));
-    memcpy(result, elements.data(), dataSize);
-    return ArrayRef<T>(result, elements.size());
-  }
+  /// This specifies the indentation level of the start of the statement that
+  /// contains this expression if the expression can exist at the end of the
+  /// line.  This allows the expression parser to know when to keep parsing the
+  /// expression on the next line - when it is more indented than the start of
+  /// the current statement.  This is None when there is a trailing punctuator
+  /// that naturally terminates the expression.
+  Optional<size_t> stmtIndent;
 };
 } // namespace M::KGEN::LIT
 
 //===----------------------------------------------------------------------===//
-// Expressions
+// Mechanics
+//===----------------------------------------------------------------------===//
+
+/// Return true if the current token is the start of another statement, false
+/// if it is part of this one.
+bool ExprParser::isTokenStartOfNextStatement() {
+  // If the current token is on the same line as the last or if we should always
+  // eat tokens, then keep going.
+  auto tokIndent = getToken().getIndentation();
+  if (!tokIndent.has_value() || !stmtIndent.has_value())
+    return false;
+
+  // If this token is on its own line and we care, then it is a new statement if
+  // it is as indented (or less) than the statement.
+  return tokIndent <= stmtIndent;
+}
+
+/// Allocate an expression node into the expression bump pointer allocator.
+template <typename T, typename... Args>
+T *ExprParser::alloc(Args &&...args) {
+  auto &allocator = getSharedState().persistentAllocator;
+  void *node = allocator.Allocate(sizeof(T), llvm::Align::Of<T>());
+  return new (node) T(std::forward<Args>(args)...);
+}
+
+/// memcpy the specified ArrayRef into the expression allocator and return a
+/// pointer to the new data.  This cannot be used with things that have
+/// non-trivial copyctors/dtors because the expression allocator does run
+/// destructors.
+template <typename T>
+ArrayRef<T> ExprParser::copyArrayRef(ArrayRef<T> elements) {
+  if (elements.empty())
+    return elements;
+
+  size_t dataSize = sizeof(T) * elements.size();
+  auto &allocator = getSharedState().persistentAllocator;
+  T *result =
+      static_cast<T *>(allocator.Allocate(dataSize, llvm::Align::Of<T>()));
+  memcpy(result, elements.data(), dataSize);
+  return ArrayRef<T>(result, elements.size());
+}
+
+//===----------------------------------------------------------------------===//
+// Parsing rules
 //===----------------------------------------------------------------------===//
 
 /// expression_list ::= expression ("," expression)* [","]
@@ -174,8 +216,9 @@ ParseResult ExprParser::parsePrimary(ExprNode *&result) {
     return failure();
   }
 
-  // Parse postfix productions.
-  while (1) {
+  // Parse postfix productions so long as they aren't the start of the next
+  // statement.
+  while (!isTokenStartOfNextStatement()) {
     auto loc = getToken().getLoc();
 
     // Handle calls.
@@ -215,6 +258,8 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   SmallVector<ExprNode *> args;
   // TODO: Handle comprehension arguments, stars, etc.
   if (!consumeIf(LitToken::r_paren)) {
+    // Expressions continue maximally because we are within ()'s.
+    llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
     if (parseExpressionList(args) ||
         parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
       return failure();
@@ -235,6 +280,9 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
 /// stride       ::=  expression
 ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
                                              SMLoc lsquareLoc) {
+  // Expressions continue maximally because we are within []'s.
+  llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
+
   // TODO: Add support for slices.
   SmallVector<ExprNode *> indices;
   if (parseExpressionList(indices) ||
@@ -250,7 +298,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 /// stop if the current token isn't a binary operator or if it binds more
 /// loosely than the specified precedence level.
 ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
-  while (true) {
+  // Process operators unless they are at the start of the next statement.
+  while (!isTokenStartOfNextStatement()) {
     auto [tokPrec, binOpKind] = getBinOpTokenPrecedenceAndKind();
 
     // If the next token is lower precedence than we are allowed to eat, return
@@ -263,8 +312,6 @@ ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
     consumeToken();
 
     // Eat the next primary expression.
-    // TODO: Need to decide how to handle syntactic errors, should propagate up
-    // to the caller?
     ExprNode *rhs = nullptr;
     if (parsePrimary(rhs))
       return failure();
@@ -280,6 +327,7 @@ ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
     // Merge LHS and RHS according to operator.
     expr = alloc<BinOpNode>(binOpKind, expr, opLoc, rhs);
   }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -287,17 +335,20 @@ ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
 //===----------------------------------------------------------------------===//
 
 ParseResult
-LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
-  return ExprParser(getLexer()).parseExpressionList(results);
+LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
+                                   Optional<size_t> stmtIndent) {
+  return ExprParser(getLexer(), stmtIndent).parseExpressionList(results);
 }
 
-ParseResult LitParserBase::parseExpression(ExprNode *&result) {
-  return ExprParser(getLexer()).parseExpression(result);
+ParseResult LitParserBase::parseExpression(ExprNode *&result,
+                                           Optional<size_t> stmtIndent) {
+  return ExprParser(getLexer(), stmtIndent).parseExpression(result);
 }
 
-ParseResult LitParserBase::parseType(Type &result, Scope &scope) {
+ParseResult LitParserBase::parseType(Type &result, Scope &scope,
+                                     Optional<size_t> stmtIndent) {
   ExprNode *expr = nullptr;
-  if (parseExpression(expr))
+  if (parseExpression(expr, stmtIndent))
     return failure();
   result = ExprEmitter(getSharedState(), scope, None, nullptr).emitType(expr);
   return success();

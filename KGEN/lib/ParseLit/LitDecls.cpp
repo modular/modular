@@ -240,7 +240,7 @@ struct ParsedMetaSignature {
       Type paramType;
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.parseType(paramType, scope))
+          p.parseType(paramType, scope, None))
         return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       return success();
@@ -284,11 +284,11 @@ struct ParsedParam {
       return failure();
 
     if (p.consumeIf(LitToken::colon)) {
-      if (p.parseType(type, scope))
+      if (p.parseType(type, scope, None))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
-      if (p.parseExpression(initValue))
+      if (p.parseExpression(initValue, None))
         return failure();
     }
     return success();
@@ -336,7 +336,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   if (p.consumeIf(LitToken::minus_greater)) {
-    if (p.parseType(resultType, scope))
+    if (p.parseType(resultType, scope, None))
       return failure();
   }
 
@@ -430,14 +430,14 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
   // Parse the type if present.
   // TODO: Make type optional.
   if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
-      p.parseType(type, scope))
+      p.parseType(type, scope, scope.getIndentation()))
     return failure();
 
   varDecl.getResult().setType(POP::PointerType::get(type));
 
   if (p.consumeIf(LitToken::equal)) {
     p.emitError("var initializers not supported yet");
-    if (p.parseExpression(initValue))
+    if (p.parseExpression(initValue, scope.getIndentation()))
       return failure();
   }
   return success();
