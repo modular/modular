@@ -476,8 +476,22 @@ static ParseResult parsePrettyTypeImpl(AsmParser &p,
 }
 
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix.
+/// type without the dialect prefix or a symbol reference.
 ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
+  // Try to parse a symbol name.
+  {
+    StringAttr ref;
+    NamedAttrList unused;
+    if (succeeded(p.parseOptionalSymbolName(ref, "unused", unused))) {
+      FailureOr<ParamBindArrayAttr> paramValues;
+      if (parseOptionalParamBindSpec(p, paramValues))
+        return failure();
+      typeExpr = TypeConstantAttr::get(
+          RefType::get(FlatSymbolRefAttr::get(ref), *paramValues));
+      return success();
+    }
+  }
+
   StringRef typeName;
   // Try to parse a keyword for a known POP type. Allow `dtype` for
   // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
@@ -524,6 +538,10 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
             VariantType>([&](auto popType) {
         p << decltype(popType)::getMnemonic();
         popType.print(p);
+      })
+      .Case([&](RefType ref) {
+        p << ref.getName();
+        printOptionalParamBindSpec(p, ref.getParamValues());
       })
       .Case([&](DTypeType) { p << DTypeType::getMnemonic(); })
       .Default([&](auto) { printTypeParamValue(p, typeExpr); });

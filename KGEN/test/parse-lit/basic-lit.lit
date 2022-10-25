@@ -105,8 +105,8 @@ struct Int:
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.ref<@DType>> {
 struct Pair[dt: DType]:
- # CHECK: %a = lit.var.decl "a" : <!kgen.ref<@SIMD<size = 42, dt: !kgen.ref<@DType> = dt>>>
- # CHECK: %b = lit.var.decl "b" : <!kgen.ref<@Int>>
+ # CHECK: %a = lit.var.decl "a" : <@SIMD<size = 42, dt: !kgen.ref<@DType> = dt>>
+ # CHECK: %b = lit.var.decl "b" : <@Int>
   var a : SIMD[42, dt]
   var b : Int
 # CHECK-NEXT: }
@@ -114,13 +114,13 @@ struct Pair[dt: DType]:
 # CHECK-LABEL:  lit.func public @var_decls(%untyped: !lit.object)
 def var_decls(untyped):
   # CHECK: %x = lit.var.decl "x" : <index>
-  # CHECK: %y = lit.var.decl "y" : <!kgen.ref<@Int>>
+  # CHECK: %y = lit.var.decl "y" : <@Int>
   # CHECK: %z = lit.var.decl "z" : <index>
   x = 123
   var y : Int
   y = y #+1
-  # CHECK: %[[TMP:.*]] = pop.load %y : !pop.pointer<!kgen.ref<@Int>>
-  # CHECK: pop.store %[[TMP]], %y : !pop.pointer<!kgen.ref<@Int>>
+  # CHECK: %[[TMP:.*]] = pop.load %y : !pop.pointer<@Int>
+  # CHECK: pop.store %[[TMP]], %y : !pop.pointer<@Int>
 
   var z : index
   z = 42
