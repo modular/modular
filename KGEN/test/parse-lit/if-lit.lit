@@ -6,7 +6,7 @@ struct Int:
 # CHECK-LABEL: lit.func public @test_if(%a: index, %b: index, %c: index) -> index {
 def test_if(a: index, b: index, c: index) -> index:
   # CHECK: %inside_a = lit.var.decl "inside_a" : <index>
-  # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <!kgen.ref<@Int>>
+  # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <@Int>
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
@@ -33,7 +33,7 @@ def test_if(a: index, b: index, c: index) -> index:
 # CHECK-LABEL: lit.func public @test_if_nested(%a: index, %b: index, %c: index) -> index {
 def test_if_nested(a: index, b: index, c: index) -> index:
   # CHECK: %inside_a = lit.var.decl "inside_a" : <index>
-  # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <!kgen.ref<@Int>>
+  # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <@Int>
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
