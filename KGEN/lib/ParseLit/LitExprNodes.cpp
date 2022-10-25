@@ -511,7 +511,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
 
 AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
                                Type contextualType) const {
-  return subExpr->emitIR(emitter);
+  return subExpr->emitIR(emitter, contextualType);
 }
 
 Type ParenExprNode::emitType(ExprEmitter &emitter) const {

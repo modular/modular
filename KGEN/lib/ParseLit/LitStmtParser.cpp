@@ -64,25 +64,21 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseSuite(ssize_t curIndent);
   ParseResult parseStmts(size_t minIndent);
   ParseResult parseStmt(size_t curIndent);
-  ParseResult parseSimpleStmt();
+  ParseResult parseSimpleStmt(size_t stmtIndent);
 
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
 
   // Simple statements.
-  ParseResult parseReturnStmt();
-  ParseResult parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc);
+  ParseResult parseReturnStmt(size_t returnIndent);
+  ParseResult parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
+                                  size_t stmtIndent);
 
   // Declarations.
   ParseResult parseDefStmt(size_t curIndent);
   ParseResult parseStructStmt(size_t curIndent);
-  ParseResult parseVarDeclStmt();
-
-  /// Type parsing.
-  ParseResult parseType(Type &result) {
-    return LitParserBase::parseType(result, scope);
-  }
+  ParseResult parseVarDeclStmt(size_t stmtIndent);
 
 private:
   /// This is declaration scope that we're parsing into.
@@ -121,7 +117,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
 
   // Otherwise, parse a stmt_list.
   do {
-    if (parseSimpleStmt())
+    if (parseSimpleStmt(/*NoWrapping=*/~size_t(0)))
       return failure();
     // Stop if we see a semicolon at the end of line or a missing semicolon.
   } while (consumeIf(LitToken::semi) &&
@@ -184,7 +180,7 @@ ParseResult LitStmtParser::parseStmt(size_t curIndent) {
   // as well for error recovery.
   default:
     // Otherwise must be a simple statement.
-    return parseSimpleStmt();
+    return parseSimpleStmt(curIndent);
   }
 }
 
@@ -209,7 +205,7 @@ ParseResult LitStmtParser::parseStmt(size_t curIndent) {
 ///               | future_stmt [TODO]
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
-ParseResult LitStmtParser::parseSimpleStmt() {
+ParseResult LitStmtParser::parseSimpleStmt(size_t stmtIndent) {
   switch (getToken().getKind()) {
   case LitToken::kw_if:
   case LitToken::kw_while:
@@ -224,9 +220,9 @@ ParseResult LitStmtParser::parseSimpleStmt() {
     consumeToken(LitToken::kw_pass);
     return success();
   case LitToken::kw_var:
-    return parseVarDeclStmt();
+    return parseVarDeclStmt(stmtIndent);
   case LitToken::kw_return:
-    return parseReturnStmt();
+    return parseReturnStmt(stmtIndent);
   default:
     break;
   }
@@ -240,14 +236,14 @@ ParseResult LitStmtParser::parseSimpleStmt() {
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression | yield_expression)
   ExprNode *expr = nullptr;
-  if (parseExpression(expr))
+  if (parseExpression(expr, stmtIndent))
     return failure();
 
   // If the expression was followed by a `=` then we have an assignment.  If not
   // then we have an expression_stmt.
   SMLoc equalsLoc;
   if (consumeIf(LitToken::equal, &equalsLoc))
-    return parseAssignmentStmt(expr, equalsLoc);
+    return parseAssignmentStmt(expr, equalsLoc, stmtIndent);
 
   // Materialize the expression statement in our current scope but discard the
   // result on the floor.  Note that this does not materialize an LValue, but
@@ -267,10 +263,11 @@ ParseResult LitStmtParser::parseSimpleStmt() {
 ///          | "(" [target_list] ")" | "[" [target_list] "]"
 ///          | attributeref | subscription | slicing | "*" target
 ///
-ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
+ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
+                                               size_t stmtIndent) {
   // Finish parsing the assignment.
   ExprNode *rhs = nullptr;
-  if (parseExpression(rhs))
+  if (parseExpression(rhs, stmtIndent))
     return failure();
 
   // Materialize the expression statement in our current scope.
@@ -303,7 +300,7 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
 }
 
 /// return_stmt ::= "return" [expression_list]
-ParseResult LitStmtParser::parseReturnStmt() {
+ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto loc = consumeToken(LitToken::kw_return).getLoc();
 
   SmallVector<Value> operandValues;
@@ -311,7 +308,7 @@ ParseResult LitStmtParser::parseReturnStmt() {
   // If there is an expression list present, parse it.
   if (!getToken().getIndentation().has_value()) {
     SmallVector<ExprNode *> operandExprs;
-    if (parseExpressionList(operandExprs))
+    if (parseExpressionList(operandExprs, returnIndent))
       return failure();
 
     // Materialize the expression values into our current scope.
@@ -393,7 +390,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
       translateLocation(consumeToken(LitToken::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
-  if (parseExpression(condExp) ||
+  if (parseExpression(condExp, None) ||
       parseToken(LitToken::colon, "expected ':' after expression"))
     return failure();
 
@@ -445,7 +442,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 
   ExprNode *condExp = nullptr;
   Value cond;
-  if (parseExpression(condExp) ||
+  if (parseExpression(condExp, None) ||
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
@@ -463,7 +460,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
          getToken().getIndentation().value() >= curIndent) {
     Location elifLoc =
         translateLocation(consumeToken(LitToken::kw_elif).getLoc());
-    if (parseExpression(condExp) ||
+    if (parseExpression(condExp, None) ||
         parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
       return failure();
 
@@ -515,8 +512,7 @@ ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   return success();
 }
 
-ParseResult LitStmtParser::parseVarDeclStmt() {
-  ssize_t indent = getToken().getIndentation().value_or(-size_t(1));
+ParseResult LitStmtParser::parseVarDeclStmt(size_t stmtIndent) {
   auto loc = getTokenLocation();
   consumeToken(LitToken::kw_var);
   StringAttr name;
@@ -528,11 +524,12 @@ ParseResult LitStmtParser::parseVarDeclStmt() {
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, &scope, getLexer().getCursor(), indent);
+  getDeclResolver().addDecl(varDecl, &scope, getLexer().getCursor(),
+                            stmtIndent);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  skipUntilIndentation(indent, /*stopOnSemicolon=*/true);
+  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   return success();
 }
 
