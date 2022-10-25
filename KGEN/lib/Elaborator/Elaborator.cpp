@@ -430,7 +430,9 @@ private:
       const ElaboratedGenerator &callee,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
-  LogicalResult processCallParamOp(CallParamOp call);
+  LogicalResult processCallParamOp(
+      CallParamOp call,
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriter);
   LogicalResult processGenericOp(Operation *op);
 
   /// This is maintains global information about the file we're generating
@@ -533,7 +535,9 @@ LogicalResult ParameterRewriter::rewriteOps(
       else if (auto call = dyn_cast<CallOp>(op))
         result = processGeneratorUser(call, rewriterWorklist);
       else if (auto call = dyn_cast<CallParamOp>(op))
-        result = processCallParamOp(call);
+        result = processCallParamOp(call, rewriterWorklist);
+      else if (auto call = dyn_cast<InPlaceCallOp>(op))
+        result = processInPlaceCallOp(call);
       else
         result = processGenericOp(op);
 
@@ -880,7 +884,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   OpBuilder b(user);
   Operation *newUser;
   ArrayRef<ParamDeclAttr> newDecls;
-  if (isa<CallOp>(user)) {
+  if (isa<CallOp, CallParamOp>(user)) {
     auto newCall = b.create<CallOp>(
         user->getLoc(), resultTypes, newCalleeFunc.getNameAttr(),
         ArrayRef<ParamBindAttr>(), decls, user->getOperands());
@@ -942,46 +946,28 @@ void ParameterRewriter::spawnNewFuncClone(
                                                calleeAndInputParams, callee);
 }
 
-LogicalResult ParameterRewriter::processCallParamOp(CallParamOp call) {
+LogicalResult ParameterRewriter::processCallParamOp(
+    CallParamOp call,
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
   auto errorOrValue = getEvaluator().concretizeParameterExpr(call.getCallee());
   if (errorOrValue.isError())
     return error(call->getLoc(), errorOrValue.takeError());
 
-  // If the parameter expression is resolved to a symbol, then turn this into
-  // direct call, and add the new call to the "opsToRewrite" list so it is
-  // recursively elaborated.
+  // If the parameter expression is resolved to a symbol, then treat this like a
+  // direct call.
   OpBuilder b(call);
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(errorOrValue.get())) {
-    // Replace the kgen.call_param with a kgen.call to the target.
-    CallOp newCall;
     // If there are no bound parameters on the call, use the one on the
     // CallParam.  TODO: Remove.
     if (symbolCst.getParamValues().empty())
-      newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
-                                 symbolCst.getSymbol().getLeafReference(),
-                                 call.getParamValues(), call.getParamDecls(),
-                                 call.getOperands(), call.getNumRegions());
-    else // Otherwise use the ones from the symbol.
-      newCall = b.create<CallOp>(call.getLoc(), call.getResultTypes(),
-                                 symbolCst.getSymbol().getLeafReference(),
-                                 symbolCst.getParamValues().getValue(),
-                                 call.getParamDecls(), call.getOperands(),
-                                 call.getNumRegions());
-
-    auto newRegions = newCall->getRegions(), oldRegions = call->getRegions();
-    for (size_t i = 0, e = call.getNumRegions(); i != e; ++i)
-      newRegions[i].takeBody(oldRegions[i]);
-
-    // The SSA results of the old call go directly to the new call and remove
-    // it.
-    call->getResults().replaceAllUsesWith(newCall);
-    call->erase();
-
-    // The new call may itself cause recursive elaboration, make sure to process
-    // it as a new command.
-    commandWorklist.push_back(newCall.getOperation());
-    return success();
+      return processGeneratorUserImpl(call, call.getParamDecls(),
+                                      call.getParamValues(),
+                                      symbolCst.getSymbol(), rewriters);
+    // Otherwise use the ones from the symbol.
+    return processGeneratorUserImpl(call, call.getParamDecls(),
+                                    symbolCst.getParamValues().getValue(),
+                                    symbolCst.getSymbol(), rewriters);
   }
 
   // Otherwise, the only other case we support is a call to a region, which is
