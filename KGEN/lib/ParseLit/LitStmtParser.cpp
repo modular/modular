@@ -9,7 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
-#include "LitExprNodes.h"
+#include "LitExprs.h"
 #include "LitParserBase.h"
 #include "LitScope.h"
 
@@ -57,15 +57,8 @@ struct LitStmtParser : public LitParserBase {
 
   // Expression emission.
 
-  /// Emit the specified expression tree to MLIR in the current context.
-  AnyValue emitExpr(ExprNode *node) {
-    ExprEmitter state(getSharedState(), scope, builder);
-    return node->emitIR(state);
-  }
-
-  Value emitExprAsDRValue(ExprNode *node) {
-    ExprEmitter state(getSharedState(), scope, builder);
-    return state.emitDRValue(node);
+  ExprEmitter getExprEmitter() {
+    return ExprEmitter(getSharedState(), scope, builder, varDeclCursor);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -257,8 +250,10 @@ ParseResult LitStmtParser::parseSimpleStmt() {
     return parseAssignmentStmt(expr, equalsLoc);
 
   // Materialize the expression statement in our current scope but discard the
-  // result on the floor.
-  (void)emitExpr(expr);
+  // result on the floor.  Note that this does not materialize an LValue, but
+  // does evaluate side effects.
+  ExprEmitter state(getSharedState(), scope, builder, nullptr);
+  (void)expr->emitIR(state);
   return success();
 }
 
@@ -278,68 +273,22 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
   if (parseExpression(rhs))
     return failure();
 
-  // Resolve the parse expression on the LHS into an lvalue that we can store
-  // into.
-  // TODO: implement support for generalized lvalues / target_list.
-  auto dre = dyn_cast<DeclRefNode>(lhs);
-  if (!dre) {
-    if (!lhs->containsError())
-      emitError(lhs->getLoc(), "cannot assign to expression");
-    eatToEndOfLine();
-    return success();
-  }
-
   // Materialize the expression statement in our current scope.
-  auto rhsValue = emitExprAsDRValue(rhs);
-  // If IR generation failed, return success since we have a fine parse.
+  auto rhsValue = getExprEmitter().emitDRValue(rhs);
   if (!rhsValue)
-    return success();
+    return success(); // Parse succeeded.
 
-  // Look up the name being assigned to if it already exists.
-  auto nameAttr = builder.getStringAttr(dre->spelling);
-  Value lvalue;
-  if (Optional<Scope::NameEntry> decl = scope.lookupInCurrentScope(nameAttr)) {
-    // Don't allow reassigning to functions and other constant parameters.
-    VarDeclOp var;
-    if (std::holds_alternative<Scope *>(decl.value())) {
-      Scope &varScope = *std::get<Scope *>(decl.value());
-      var = dyn_cast<VarDeclOp>(varScope.getDecl());
-      // Make sure the destination is resolved, an error will be diagnosed so
-      // we can just return parse success.
-      if (failed(getDeclResolver().resolve(
-              varScope, DeclResolvedness::signatureResolved, lhs->getLoc())))
-        return success();
-    }
-
-    if (var) {
-      lvalue = var.getResult();
-    } else {
-      emitError(lhs->getLoc(), "this declaration isn't reassignable");
-      return success();
-    }
-  } else {
-    // Otherwise, introduce a new lit.var.decl node whose type matches the
-    // initializer expression.
-    //
-    // TODO(autopromotions): turn infinite integers into concrete ones as
-    // needed.
-    auto declType = POP::PointerType::get(rhsValue.getType());
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope per function and all variables belong to that scope, so builders
-    // should reflect that.
-    auto varDecl = OpBuilder(varDeclCursor)
-                       .create<VarDeclOp>(translateLocation(lhs->getLoc()),
-                                          declType, nameAttr);
-    getDeclResolver().addFullyResolvedDecl(varDecl, &scope);
-    lvalue = varDecl;
-  }
+  // Resolve LHS expression into an lvalue that we can store into.
+  LValue lValue = getExprEmitter().emitLValue(lhs, rhsValue.getType(),
+                                              "cannot assign to expression");
+  if (!lValue)
+    return success(); // Parse succeeded.
 
   // Check to see if the destination type and the source type are compatible.
   auto destEltType =
-      cast<POP::PointerType>(lvalue.getType()).getResolvedElementType();
+      cast<POP::PointerType>(lValue.getType()).getResolvedElementType();
   // TODO: Implement implicit conversions.
-  if (destEltType && destEltType != rhsValue.getType()) {
+  if (destEltType != rhsValue.getType()) {
     emitError(rhs->getLoc(), "cannot convert value of type ")
         << rhsValue.getType() << " to " << destEltType;
     return success();
@@ -347,7 +296,7 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc) {
 
   // If everything worked out, store the resultant value into the lvalue for the
   // destination.  If things didn't work, just drop this on the floor.
-  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue, lvalue,
+  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue, lValue,
                                /*alignment*/ None);
 
   return success();
@@ -368,7 +317,7 @@ ParseResult LitStmtParser::parseReturnStmt() {
     // Materialize the expression values into our current scope.
     // TODO: Should pass in contextual type from return value.
     for (auto expr : operandExprs) {
-      auto value = emitExprAsDRValue(expr);
+      auto value = getExprEmitter().emitDRValue(expr);
       if (!value)
         return failure();
       operandValues.push_back(value);
@@ -421,7 +370,7 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
   // TODO(types): add type checking: the condition should be bool.
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
-  Value cond = parser.emitExprAsDRValue(condExp);
+  Value cond = parser.getExprEmitter().emitDRValue(condExp);
   if (!cond)
     return failure();
 

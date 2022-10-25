@@ -155,8 +155,11 @@ public:
   /// Return true if this expression tree contains an already-reported error.
   virtual bool containsError() const = 0;
 
-  /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.
-  virtual AnyValue emitIR(ExprEmitter &state) const = 0;
+  /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
+  /// contextualType (if non-null) indicates the contextual type to use for an
+  /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
+  virtual AnyValue emitIR(ExprEmitter &state,
+                          Type contextualType = {}) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
@@ -180,8 +183,14 @@ public:
   /// It is mutable to support expressions that require internal control flow.
   Optional<OpBuilder> builder;
 
-  ExprEmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder)
-      : shared(shared), scope(scope), builder(builder) {}
+  /// When non-null, implicitly declared variables are added above this
+  /// location.
+  Operation *varDeclCursor;
+
+  ExprEmitter(LitSharedState &shared, Scope &scope, Optional<OpBuilder> builder,
+              Operation *varDeclCursor)
+      : shared(shared), scope(scope), builder(builder),
+        varDeclCursor(varDeclCursor) {}
 
   MLIRContext *getContext() const { return shared.context; }
 
@@ -208,10 +217,19 @@ public:
     return emitDRValue(node->emitIR(*this), node->getLoc());
   }
 
-  /// This helper emits the specified value rep as a meta value, diagnosing the
+  /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
   TypedAttr emitMValue(const ExprNode *node, const Twine &message);
+
+  /// Emit the specified expression as an LValue which can be loaded and stored.
+  /// If contextualType is non-null, then an implicitly declared LValue will
+  /// that that type.
+  ///
+  /// This diagnoses the expression with the specified message if it isn't a
+  /// valid LValue.
+  LValue emitLValue(const ExprNode *node, Type contextualType,
+                    const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null - if the expression
