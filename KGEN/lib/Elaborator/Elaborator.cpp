@@ -536,8 +536,6 @@ LogicalResult ParameterRewriter::rewriteOps(
         result = processGeneratorUser(call, rewriterWorklist);
       else if (auto call = dyn_cast<CallParamOp>(op))
         result = processCallParamOp(call, rewriterWorklist);
-      else if (auto call = dyn_cast<InPlaceCallOp>(op))
-        result = processInPlaceCallOp(call);
       else
         result = processGenericOp(op);
 
