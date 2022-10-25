@@ -22,6 +22,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
@@ -1630,6 +1631,7 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(SymbolTable &symtab,
                                      ArrayRef<GeneratorOp> primaryGenerators) {
+  TimeTraceScope<> traceScope("elaborate-generators");
   auto primary = cast<ModuleOp>(symtab.getOp());
   Elaborator elaborator(symtab);
 
