@@ -64,43 +64,6 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
     llvm.func @slice(%a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
                      %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
     ```
-
-    Set `emit-c-wrappers` to the names of any funcs for which to emit C
-    wrappers. C wrappers contain unpacked struct arguments and results. They
-    re-pack the struct and invoke the original func. For example:
-
-    ```mlir
-    llvm.func @slice(%a: !llvm.struct<(i64, ptr<f32>)>, %i: !llvm.ptr<i64>)
-        -> !llvm.struct<(i64, ptr<f32>)>
-      attributes {c_wrapper = @slice_c_wrapper}
-
-    llvm.func @slice_c_wrapper(
-        %a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
-        %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
-    ```
-
-    The original function is tagged with a reference to the wrapper. If a
-    function is listed under both `c-call` and `emit-c-wrappers`, a
-    wrapper is still generated for the function, but since the original function
-    will have no structs, the wrapper will be a forwarding call.
-
-    If `emit-opaque-wrappers` is set, top-level funcs listed under
-    `c-call` will get an additional opaque wrapper in the form:
-
-    ```
-    llvm.func @slice_opaque_wrapper(
-        %a: !llvm.ptr<struct<packed (i64, ptr, i8)>>, %i: !llvm.ptr<i64>,
-        %res: !llvm.ptr<struct<packed (i64, ptr, i8)>>)
-    ```
-
-    Where each struct argument in the original function is replaced with a
-    pointer to a packed struct (1-byte alignment, no padding) of the same
-    element types. If the result was a struct, then a pointer to a packed result
-    struct is appended to the argument list.
-
-    The opaque wrapper can be used to generically invoke funcs with instances
-    of custom types if those custom types have some way to generically allocate
-    and populate themselves into a packed struct.
   }];
 
   // We generate the LLVM dialect.
@@ -111,11 +74,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
            /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
            "Bitwidth of the index type, 0 to use size of machine word">,
     ListOption<"topLevelFuncs", "c-call", "std::string",
-               "top-level funcs to make callable from C">,
-    Option<"emitOpaqueWrappers", "emit-opaque-wrappers", "bool",
-           /*default=*/"false", "whether to emit opaque wrappers">,
-    ListOption<"emitCWrappers", "emit-c-wrappers", "std::string",
-               "funcs for which to emit C wrappers">
+               "top-level funcs to make callable from C">
   ];
 }
 

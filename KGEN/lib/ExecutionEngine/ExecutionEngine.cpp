@@ -216,20 +216,3 @@ ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName, FuncOp func) {
 
   return CompiledFunc(addr->toPtr<void *>(), func);
 }
-
-ErrorOr<CompiledFunc> ExecutionEngine::lookupOpaqueWrapper(StringRef libName,
-                                                           KGEN::FuncOp func) {
-  // TODO: The opaque_wrapper attr is added to the llvm.func op, not the
-  //       FuncOp so we gotta have a map or something for that - we don't
-  //       currently save the LLVM-dialect IR. For now, just suffix it manually.
-  //       It'll be in the dylib for the original func.
-  auto *dylib = jit->getJITDylibByName(libName);
-  if (!dylib)
-    return Error("could not find JITDylib for " + libName);
-
-  auto addr = jit->lookup(*dylib, (func.getName() + "_opaque_wrapper").str());
-  if (!addr)
-    return M::Error(toString(addr.takeError()));
-
-  return CompiledFunc(addr->toPtr<void *>(), func);
-}
