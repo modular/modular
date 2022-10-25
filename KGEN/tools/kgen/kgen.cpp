@@ -15,6 +15,7 @@
 #include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/IndexDialect/IndexDialect.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -42,6 +43,17 @@ public:
   cl::list<std::string> inputFiles{llvm::cl::Positional,
                                    cl::desc("<input files>")};
 
+  cl::opt<bool> timeTrace{
+      "time-trace",
+      cl::desc("Turn on time profiler. Generates JSON file "
+               "called kgen.trace.json in the derived directory.")};
+
+  cl::opt<int> timeTraceGranularity{
+      "time-trace-granularity",
+      cl::desc("Minimum time granularity (in microseconds) "
+               "traced by time profiler."),
+      cl::init(0)};
+
   cl::opt<bool> ignoreFailures{
       "ignore-failure",
       cl::desc("Ignore execution failures. Any messages are still printed, but "
@@ -54,6 +66,37 @@ public:
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
   void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
+};
+
+struct TraceProfiler {
+  TraceProfiler(const CLOptions &clOptions) {
+    if (!clOptions.timeTrace)
+      return;
+    timeTraceProfilerInitialize(clOptions.timeTraceGranularity, "kgen");
+
+    std::error_code ec;
+    std::filesystem::path derived = std::filesystem::absolute(
+        llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
+    if (ec)
+      clOptions.reportError("cannot get the modular derived path: " +
+                            ec.message());
+
+    outputFilePath = derived / "kgen.trace.json";
+    isActive = true;
+  }
+
+  ~TraceProfiler() {
+    if (!isActive)
+      return;
+
+    if (auto err = timeTraceProfilerWrite(outputFilePath.string(), "-"))
+      llvm::errs() << "unable to write trace file: " << err;
+    timeTraceProfilerCleanup();
+  }
+
+private:
+  bool isActive;
+  std::filesystem::path outputFilePath;
 };
 } // namespace
 
@@ -95,6 +138,8 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
 
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
+  TimeTraceScope<> traceScope("emit-module",
+                              theModule.getSymName().value_or(""));
   auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)
     return mlir::failure();
@@ -117,6 +162,7 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      const CLOptions &clOptions) {
   DialectRegistry registry;
+  TraceProfiler tracer(clOptions);
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
@@ -207,6 +253,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Helper to execute a func.
   auto execFunc = [&](FuncOp theFunc,
                       const CommandLineFunc &clFunc) -> LogicalResult {
+    TimeTraceScope<> traceScope("execute-function", theFunc.getSymName());
     auto compiledFuncOr = engine.lookup("exec", theFunc);
     if (failed(compiledFuncOr))
       return failure(clOptions.reportError(compiledFuncOr.getError()));
@@ -227,6 +274,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Loop over the funcs and maybe emit the func as an object file or maybe
   // execute it.
   for (auto fn : theModule->getOps<FuncOp>()) {
+    TimeTraceScope<> traceScope("emit", fn.getName());
     foundFuncs.insert(fn.getName());
 
     // If we were asked to handle this func, do so.

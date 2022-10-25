@@ -7,6 +7,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LowerToObjectImpl.h"
 #include "Support/TempFile.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -238,6 +239,7 @@ constructSingleModule(Location loc, CompositeObjectCache &compositeCache,
 FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
 ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
                                         bool isJIT) {
+  TimeTraceScope<> traceScope("produce-standalone-object");
   // Grab the first one so we can use it for locations, etc.
   Location loc = module.getLoc();
   TargetInfoAttr theTarget =
@@ -322,6 +324,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
   bool worked = true;
   // TODO: We probably also want WASM
   if (triple.isOSBinFormatELF()) {
+    TimeTraceScope<> traceScope("execute-ld");
     // Add the requested AND public symbols as retained.
     auto retainOr =
         TempFile::create("kgen-standalone-object-retain-syms-%%%%%%%%%%%.txt");
@@ -376,6 +379,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
       emitError(loc) << err;
     }
   } else if (triple.isOSBinFormatMachO()) {
+    TimeTraceScope<> traceScope("execute-ld");
     // Add the requested AND public symbols as exported.
     for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
       if (llvm::is_contained(symbols, f.getName())) {
@@ -419,6 +423,7 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
       emitError(loc) << err;
     }
   } else if (triple.isOSBinFormatCOFF()) {
+    TimeTraceScope<> traceScope("execute-link.exe");
     // Add the requested AND public symbols as exported.
     for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
       if (llvm::is_contained(symbols, f.getName())) {

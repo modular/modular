@@ -9,6 +9,7 @@
 #include "LowerToObjectImpl.h"
 #include "Support/ErrorOr.h"
 #include "Support/TempFile.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -37,6 +38,7 @@ using namespace KGEN;
 LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         SmallVectorImpl<char> &buf) {
+  TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
   llvm::legacy::PassManager passManager;
@@ -123,6 +125,7 @@ std::string ObjectCacheKeyInfo::hashKey(ObjectCacheKeyInfo::KeyTy key) {
 /// object to the precompiled LLVM in `backtrackCache`.
 FailureOr<PrecompiledObjectOp>
 ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
+  TimeTraceScope<> traceScope("lower-to-object", func.getSymName());
   // So first, check if the result is already in the cache.
   CacheFindResult precompiledOr = caches.getObject().find(func);
   if (precompiledOr.hasValue()) {
@@ -207,19 +210,29 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
   llvm::raw_string_ostream stream(buf);
 
   // Cache from the func to this new op so we can skip doing this in the future.
-  mlir::writeBytecodeToFile(newOp, stream);
+  {
+    TimeTraceScope<> traceScope("write-precompiled-bytecode-to-cache",
+                                func.getSymName());
+    mlir::writeBytecodeToFile(newOp, stream);
+  }
   auto precompiledBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
   if (auto err = caches.getObject().insert(func, *precompiledBuf))
     return mlir::emitError(func->getLoc()) << err.getError();
 
   // Make sure to clear out the stream.
   stream.str().clear();
-  mlir::writeBytecodeToFile(func, stream);
+  {
+    TimeTraceScope<> traceScope("write-bytecode-to-cache", func.getSymName());
+    mlir::writeBytecodeToFile(func, stream);
+  }
   auto funcBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
 
   // Insert into the raising cache.
-  if (auto err = caches.getRaising().insert(newOp, *funcBuf))
-    return mlir::emitError(func->getLoc()) << err.getError();
+  {
+    TimeTraceScope<> traceScope("write-raising-to-cache", func.getSymName());
+    if (auto err = caches.getRaising().insert(newOp, *funcBuf))
+      return mlir::emitError(func->getLoc()) << err.getError();
+  }
 
   // RAUW (replace all uses with) and delete the original func.
   symtab.insert(newOp, ++Block::iterator(func));
@@ -236,6 +249,7 @@ ObjectCompiler::lowerToObject(PrecompiledLLVMOp func, bool isJIT) {
 /// Backtrack to a `kgen.precompiled.llvm`.
 FailureOr<PrecompiledLLVMOp>
 ObjectCompiler::raiseFromObject(PrecompiledObjectOp precompiled) {
+  TimeTraceScope<> traceScope("raise-from-object", precompiled.getSymName());
   CacheFindResult llvmBufOr = caches.getRaising().find(precompiled);
   if (llvmBufOr.isError())
     return mlir::emitError(precompiled->getLoc()) << llvmBufOr.getError();
@@ -258,6 +272,7 @@ ObjectCompiler::raiseFromObject(PrecompiledObjectOp precompiled) {
 
 LogicalResult ObjectCompiler::lowerAllFuncsToObject(TargetInfoAttr target,
                                                     bool isJIT) {
+  TimeTraceScope<> traceScope("lower-all-funcs-to-object");
   for (auto f : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
     auto llvmFuncOr = lowerToLLVM(f, target);
     if (failed(llvmFuncOr))
