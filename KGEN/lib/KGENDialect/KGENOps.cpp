@@ -507,23 +507,9 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!funcSignature)
     return failure();
 
-  if (failed(verifyDeclSignaturesMatch("interface evaluator", expectedSignature,
-                                       getLoc(), "referenced evaluator",
-                                       funcSignature, func.getLoc())))
-    return failure();
-
-  // Make sure the evalutator is public.
-  return llvm::TypeSwitch<Operation *, LogicalResult>(func.getOperation())
-      .Case<FuncOp, GeneratorOp, GeneratorInterfaceOp>(
-          [&](auto func) -> LogicalResult {
-            if (func.getLinkage() != Linkage::Public)
-              return emitOpError(
-                  "expected evaluator function to have public linkage");
-            return success();
-          })
-      .Default([&](Operation *op) {
-        return emitOpError("unknown evaluator operation");
-      });
+  return verifyDeclSignaturesMatch("interface evaluator", expectedSignature,
+                                   getLoc(), "referenced evaluator",
+                                   funcSignature, func.getLoc());
 }
 
 /// Return null to indicate that this is an "external" callable.

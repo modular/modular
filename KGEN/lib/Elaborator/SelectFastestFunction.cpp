@@ -257,11 +257,15 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   ExecutionEngine engine = std::move(*engineOr);
 
   // Make all the specializations public for now.
-  MLIRContext *ctx = evaluator.getContext();
-  SmallVector<LinkageAttr> linkage;
+  auto publicLinkage =
+      LinkageAttr::get(evaluator.getContext(), Linkage::Public);
+  SmallVector<LinkageAttr> origLinkages;
+  LinkageAttr evaluatorLinkage = evaluator.getLinkageAttr();
+
+  evaluator.setLinkageAttr(publicLinkage);
   for (auto s : specializations) {
-    linkage.push_back(s.getLinkageAttr());
-    s.setLinkageAttr(LinkageAttr::get(ctx, Linkage::Public));
+    origLinkages.push_back(s.getLinkageAttr());
+    s.setLinkageAttr(publicLinkage);
   }
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
@@ -272,7 +276,8 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
     return err.takeError();
 
   // Reset the linkages.
-  for (auto [func, linkage] : llvm::zip(specializations, linkage))
+  evaluator.setLinkageAttr(evaluatorLinkage);
+  for (auto [func, linkage] : llvm::zip(specializations, origLinkages))
     const_cast<FuncOp *>(&func)->setLinkageAttr(linkage);
 
   // Get pointers to all the candidates.
