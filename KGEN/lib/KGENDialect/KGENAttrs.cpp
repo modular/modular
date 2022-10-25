@@ -1266,52 +1266,6 @@ ConstraintAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
-// EvalConfigurationAttr
-//===----------------------------------------------------------------------===//
-
-void EvalConfigurationAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getArgBindings());
-  walkAttrsFn(getResultBindings());
-}
-
-Attribute EvalConfigurationAttr::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  assert(replTypes.empty() && "eval.configuration has no types");
-  assert(replAttrs.size() == 2 && replAttrs[0].isa<ArrayAttr>() &&
-         replAttrs[1].isa<ArrayAttr>());
-
-  return get(getContext(), getGenKind(), replAttrs[0].cast<ArrayAttr>(),
-             replAttrs[1].cast<ArrayAttr>(), getWeight());
-}
-
-//===----------------------------------------------------------------------===//
-// EvalConfigurationArrayAttr
-//===----------------------------------------------------------------------===//
-
-void EvalConfigurationArrayAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (auto attr : getValue())
-    walkAttrsFn(attr);
-}
-
-Attribute EvalConfigurationArrayAttr::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  assert(replTypes.empty() && "eval.configurations have no types");
-  assert(llvm::all_of(replAttrs,
-                      [](Attribute attr) {
-                        return attr.isa<EvalConfigurationAttr>();
-                      }) &&
-         "eval.configurations is a list of eval.configuration");
-
-  return get(getContext(),
-             {reinterpret_cast<const EvalConfigurationAttr *>(replAttrs.data()),
-              replAttrs.size()});
-}
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -1355,11 +1355,10 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
   if (newEnd == result.begin() + 1)
     return {*result.begin()};
 
-  Optional<ArrayRef<EvalConfigurationAttr>> evalCfgsOr = itf.getEvalConfigs();
   SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
 
   // Nothing to be evaluated, return the full vector.
-  if (!evaluator && (!evalCfgsOr.has_value() || evalCfgsOr->empty()))
+  if (!evaluator)
     return result;
 
   // Truncate the result vector to contain only the successful implementations.
@@ -1371,19 +1370,10 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams) {
   for (const auto &r : result)
     searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
 
-  ErrorOr<size_t> bestSpecializationIdxOr = 0;
+  auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
 
-  // If an evalutor was specified, use it to pick an implementation.
-  if (evaluator) {
-    auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
-    bestSpecializationIdxOr =
-        evaluateSpecializations(evalFunc, symtab, searchInputs);
-
-    // Otherwise, use the evaluation config search.
-  } else {
-    bestSpecializationIdxOr = selectFastestFunction(itf, symtab, searchInputs);
-  }
-
+  ErrorOr<size_t> bestSpecializationIdxOr =
+      evaluateSpecializations(evalFunc, symtab, searchInputs);
   if (failed(bestSpecializationIdxOr))
     return {
         reportCalleeExpansionError(itf, bestSpecializationIdxOr.getError())};
