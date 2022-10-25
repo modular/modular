@@ -110,7 +110,7 @@ DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
 DeclResolver::~DeclResolver() {
   // Run the destructors on all the scope objects to make sure any transitively
   // allocated data is released.
-  for (auto [op, scope] : parsedDecls)
+  for (Scope *scope : parsedDeclList)
     scope->~Scope();
 }
 
@@ -121,8 +121,12 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
       sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
   Scope *scope =
       new (rawScopePtr) Scope(decl, parentScope, cursor, indentation);
-  parsedDeclList.push_back(decl);
-  parsedDecls[decl] = scope;
+  parsedDeclList.push_back(scope);
+
+  // If this is a type definition, remember in in a special table so we can look
+  // up references from attributes.
+  if (isa<LITStructDeclOp>(decl))
+    typeSymbolScopes[SymbolTable::getSymbolName(decl)] = scope;
 
   if (parentScope)
     parentScope->addToScope(scope, sharedState);
@@ -136,14 +140,28 @@ Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
   return scope;
 }
 
+/// If the specified type is a RefType that resolves to a (possibly
+/// parameterized) type, return the scope for the type and the parameters in
+/// the reference.  This returns null on error.
+std::pair<Scope *, ParamBindArrayAttr>
+DeclResolver::getScopeAndParamsFromType(Type type) {
+  auto refType = dyn_cast<RefType>(type);
+  if (!refType)
+    return {};
+
+  auto it = typeSymbolScopes.find(refType.getName().getAttr());
+  if (it == typeSymbolScopes.end())
+    return {};
+  return {it->second, refType.getParamValues()};
+}
+
 /// Resolve all of the declarations that are visible.
 void DeclResolver::resolveAll(SMLoc loc) {
   // We can do this in any order, but choose to use the order they are
   // discovered so diagnostics are mostly top-down.  Resolving declarations may
   // cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    (void)resolve(*parsedDecls[parsedDeclList[i]],
-                  DeclResolvedness::fullyResolved, loc);
+    (void)resolve(*parsedDeclList[i], DeclResolvedness::fullyResolved, loc);
 }
 
 /// Resolve the specified declaration to at least the specified level of

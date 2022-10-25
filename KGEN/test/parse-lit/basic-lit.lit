@@ -94,7 +94,7 @@ struct Int:
 
   # CHECK-NEXT: lit.func public @__init__(%self: !kgen.ref<@Int>, %value_0: index) {
   def __init__(self: Int, value: index):
-    # TODO: self.value = index
+    #self.value = value
   # CHECK: }
 
   # CHECK: lit.func public @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
@@ -127,6 +127,8 @@ def var_decls(untyped):
   # CHECK: %[[TMP:.*]] = index.constant 42
   # CHECK: pop.store %[[TMP]], %z
 
+
+def patterns():
   (((z2))) = 42  # Paren patterns
   # CHECK: %[[TMP:.*]] = index.constant 42
   # CHECK: pop.store %[[TMP]], %z2

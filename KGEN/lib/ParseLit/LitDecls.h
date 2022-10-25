@@ -19,6 +19,7 @@
 namespace M::KGEN {
 class LITFuncOp;
 class LITStructDeclOp;
+class ParamBindArrayAttr;
 class VarDeclOp;
 } // namespace M::KGEN
 
@@ -51,19 +52,10 @@ public:
   /// Add a declaration that is already fully resolved.
   Scope &addFullyResolvedDecl(Operation *decl, Scope *parentScope);
 
-  /// Return the scope for the specified declaration that is already entered
-  /// into the resolver.
-  Scope &getScopeForDecl(Operation *decl) {
-    auto *scope = getScopeForDeclIfPresent(decl);
-    assert(scope && "not a declaration???");
-    return *scope;
-  }
-
-  /// Return the scope for the specified declaration if it is in the resolver.
-  Scope *getScopeForDeclIfPresent(Operation *decl) {
-    auto it = parsedDecls.find(decl);
-    return it != parsedDecls.end() ? it->second : nullptr;
-  }
+  /// If the specified type is a RefType that resolves to a (possibly
+  /// parameterized) type, return the scope for the type and the parameters in
+  /// the reference.  This returns null on error.
+  std::pair<Scope *, ParamBindArrayAttr> getScopeAndParamsFromType(Type type);
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
@@ -88,12 +80,11 @@ private:
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
 
-  /// This is a mapping of every declaration (module, func, struct, etc) that
-  /// we have parsed, along with the metadata for it maintained in `Scope`.
-  DenseMap<Operation *, Scope *> parsedDecls;
+  /// This is a mapping of MLIR symbol to decl scope for types.
+  DenseMap<StringAttr, Scope *> typeSymbolScopes;
 
   /// This array holds all of the parsed declarations in a deterministic order.
-  std::vector<Operation *> parsedDeclList;
+  std::vector<Scope *> parsedDeclList;
 
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose
