@@ -23,9 +23,8 @@ class ZAPType<string typeName, string typeMnemonic, list<Trait> traits = []>
 // MemoryLikeType
 //===----------------------------------------------------------------------===//
 
-class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
-        list<Trait> traits = []> : ZAPType<typeName, typeMnemonic,
-        [DeclareTypeInterfaceMethods<OpaqueObjectInterface>] # traits> {
+class ZAP_MemoryLikeType<string typeName, string typeMnemonic>
+  : ZAPType<typeName, typeMnemonic> {
   string classDeclaration = "";
   string baseExtraClassDeclaration = [{
     /// Try to narrow the size expression of the type to an integer.
@@ -44,9 +43,7 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic,
 // BufferType
 //===----------------------------------------------------------------------===//
 
-def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer", [
-    DeclareTypeInterfaceMethods<OpaqueObjectInterface>
-  ]> {
+def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer"> {
   let summary = "parameterized buffer type";
   let description = [{
     This type is a parameterized buffer type with a size and a `!kgen.dtype`.

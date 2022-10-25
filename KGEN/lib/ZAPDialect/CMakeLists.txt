@@ -5,7 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(ZAPDialect
-  OpaqueObjectImpl.cpp
   ZAPDialect.cpp
   ZAPOps.cpp
   ZAPTypes.cpp

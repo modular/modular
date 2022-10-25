@@ -141,8 +141,7 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
 // ScalarType
 //===----------------------------------------------------------------------===//
 
-def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface,
-    DeclareTypeInterfaceMethods<OpaqueObjectInterface>]> {
+def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface]> {
   let summary = "parameterized scalar type";
   let description = [{
     This type represents a parameterized scalar value. The dtype is
@@ -196,8 +195,7 @@ class ScalarOfSameDType<string operand, string value> : TypesMatchWith<
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface,
-    DeclareTypeInterfaceMethods<OpaqueObjectInterface>]> {
+def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
