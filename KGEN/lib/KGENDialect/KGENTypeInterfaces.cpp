@@ -24,7 +24,6 @@ KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
   // Check for builtin types.
   auto iface = llvm::dyn_cast<DataLayoutInterface>(type);
   if (!iface) {
-
     // Return the integer or floating point width rounded up to the next byte.
     if (type.isIntOrFloat())
       return llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT);
@@ -57,7 +56,6 @@ KGEN::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target,
 
   // Check for builtin types.
   if (!iface) {
-
     // Return the next power of 2 for integers and floats.
     if (type.isIntOrFloat())
       return llvm::PowerOf2Ceil(

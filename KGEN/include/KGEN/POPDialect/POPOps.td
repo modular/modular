@@ -1263,7 +1263,7 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
 
     ```mlir
     %struct = pop.stack_allocation 1 : !pop.struct<i32, i64>
-    %i64Ptr = pop.struct.gep %struct[2] : <struct<i32, i64>>
+    %i64Ptr = pop.struct.gep %struct[1] : <struct<i32, i64>>
     ```
 
     To get a pointer to a struct from a value-semantic struct, the struct value
@@ -1438,7 +1438,8 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
   let summary = "array get element pointer";
   let description = [{
     The `pop.array.gep` operation takes a pointer to a `!pop.array` and an index
-    and returns a pointer to the array element at that index.
+    and returns a pointer to the array element at that index. The behaviour is
+    undefined if the index is out-of-bounds.
 
     Example:
 
