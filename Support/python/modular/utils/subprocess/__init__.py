@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from subprocess import CalledProcessError, CompletedProcess, list2cmdline
+
 from ._shell_commands import (
     ShellCommand,
     get_command_output,

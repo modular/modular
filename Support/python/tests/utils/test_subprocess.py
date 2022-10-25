@@ -3,11 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from subprocess import CalledProcessError
-
 import pytest
 
 from modular.utils.subprocess import (
+    CalledProcessError,
     get_command_output,
     run_chained_commands,
     run_shell_command,
