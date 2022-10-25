@@ -135,7 +135,6 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<EvalConfigurationArrayAttr>:$evalConfigs,
                        OptionalAttr<SymbolConstantAttr>:$evaluator);
 
   // We want to work with the FunctionOpInterface, which always requires a body
