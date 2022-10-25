@@ -15,8 +15,11 @@ add_modular_unittest(
   GenericMLTests
 
   MOPContextTest.cpp
+  TensorTest.cpp
 
   LINK_LIBS PRIVATE
+  GenericMLSupport
   LLCLRuntime
   MOP
+  MSupportML
 )
