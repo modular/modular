@@ -95,7 +95,7 @@ struct TraceProfiler {
   }
 
 private:
-  bool isActive;
+  bool isActive = false;
   std::filesystem::path outputFilePath;
 };
 } // namespace
