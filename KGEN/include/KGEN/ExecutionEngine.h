@@ -76,11 +76,6 @@ public:
   /// Look up a func and return it as a CompiledFunc object if we can find it.
   ErrorOr<CompiledFunc> lookup(StringRef libName, FuncOp func);
 
-  /// Look up the opaque wrapper for a func and return it as a CompiledFunc
-  /// object.
-  ErrorOr<CompiledFunc> lookupOpaqueWrapper(StringRef libName,
-                                            KGEN::FuncOp func);
-
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
 

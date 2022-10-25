@@ -23,7 +23,7 @@ llvm.func @kernel() -> i32
 
 // -----
 
-// expected-warning@+1 {{will not emit wrappers for this function marked private}}
+// expected-warning@+1 {{will not rewrite calling convention for private functions}}
 kgen.func @kernel(%arg0 : f32) -> f32 {
   kgen.return %arg0 : f32
 }
