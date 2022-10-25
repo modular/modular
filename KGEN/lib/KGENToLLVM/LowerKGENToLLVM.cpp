@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
@@ -320,6 +321,30 @@ struct ConvertKGENStructExtract : public ConvertKGENStructOp<StructExtractOp> {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructGEP : public ConvertKGENStructOp<StructGEPOp> {
+  using ConvertKGENStructOp::ConvertKGENStructOp;
+
+  LogicalResult
+  matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type structType = op.getContainer().getType().getResolvedElementType();
+    Optional<int64_t> index =
+        getFieldIndex(op.getFieldAttr(), cast<RefType>(structType));
+    if (!index)
+      return op.emitError("could not find struct declaration");
+    Type ptrType = getTypeConverter()->convertType(op.getType());
+    if (!ptrType)
+      return op.emitError("failed to convert result type");
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, ptrType, adaptor.getContainer(), ArrayRef<LLVM::GEPArg>{0, *index});
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -344,6 +369,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENStructCreate,
       ConvertKGENStructExtract,
+      ConvertKGENStructGEP,
       ConvertKGENStructInsert
       // clang-format on
       >(typeConverter, structDecls);

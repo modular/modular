@@ -763,11 +763,11 @@ struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
 // ConvertPOPStructGEP
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<StructGEPOp> {
+struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<POP::StructGEPOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
+  matchAndRewrite(POP::StructGEPOp op, POP::StructGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type ptrType = getTypeConverter()->convertType(op.getType());
     if (!ptrType)

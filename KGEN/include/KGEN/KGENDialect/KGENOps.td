@@ -19,6 +19,9 @@ include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+// FIXME: KGENDialect should not depend on POPDialect.
+include "KGEN/POPDialect/POPTypes.td"
+
 // Base class for the operation in this dialect.
 class KGENOp<string mnemonic, list<Trait> traits = []> :
     Op<KGENDialect, mnemonic, traits>;
@@ -700,6 +703,37 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `from` qualified(type($container))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+def StructGEPOp : KGENOp<"struct.gep", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get a pointer to a struct field.";
+  let description = [{
+    The `kgen.struct.gep` operation computes a pointer to a struct field by
+    name from a parametric struct.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @MyStruct<T: dtype> {
+      a : !pop.scalar<T>
+    }
+
+    %0 = kgen.struct.gep %struct[a]
+      : <scalar<f64>> from <@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, PointerOf<RefType>:$container);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($result) `from` type($container)
   }];
 }
 

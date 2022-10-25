@@ -19,6 +19,10 @@
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+namespace M::KGEN::POP {
+class PointerType;
+} // namespace M::KGEN::POP
+
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.h.inc"
 

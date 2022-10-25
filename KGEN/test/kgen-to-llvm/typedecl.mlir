@@ -65,6 +65,13 @@ kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
   kgen.return %0 : i8
 }
 
+// CHECK-LABEL: @struct_gep
+kgen.func @struct_gep(%pair: !pop.pointer<!i8Pair>) -> !pop.pointer<i8> {
+  // CHECK: llvm.getelementptr %{{.*}}[0, 1]
+  %0 = kgen.struct.gep %pair[second] : <i8> from <!i8Pair>
+  kgen.return %0 : !pop.pointer<i8>
+}
+
 kgen.struct.decl @NestedA<T: type> {
   v: !kgen.paramref<T>
 }

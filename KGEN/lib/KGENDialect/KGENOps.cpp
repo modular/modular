@@ -1191,24 +1191,43 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  RefType type = getContainer().getType();
-  auto [structDecl, evaluator] = lookupStructDecl(symbolTable, *this, type);
+static LogicalResult
+verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
+                         RefType ref, StringAttr fieldName, Type type) {
+  auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
-    if (fieldDecl.getName() != getFieldAttr())
+    if (fieldDecl.getName() != fieldName)
       continue;
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != getValue().getType())
-      return emitOpError("cannot extract value of type ")
-             << getValue().getType() << " from struct field " << getFieldAttr()
-             << " which has type " << reboundType;
+    if (reboundType != type)
+      return op->emitOpError("cannot extract value of type ")
+             << type << " from struct field " << fieldName << " which has type "
+             << reboundType;
     return success();
   }
 
-  return emitOpError("struct ")
-         << type.getName() << " has no field named " << getFieldAttr();
+  return op->emitOpError("struct ")
+         << ref.getName() << " has no field named " << fieldName;
+}
+
+LogicalResult
+StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return verifyStructFieldAndType(symbolTable, *this, getContainer().getType(),
+                                  getFieldAttr(), getValue().getType());
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  TypedAttr refExpr = getContainer().getType().getElementType();
+  return verifyStructFieldAndType(
+      symbolTable, *this,
+      cast<RefType>(cast<TypeConstantAttr>(refExpr).getValue()), getFieldAttr(),
+      ParamRefType::get(getResult().getType().getElementType()));
 }
 
 //===----------------------------------------------------------------------===//
