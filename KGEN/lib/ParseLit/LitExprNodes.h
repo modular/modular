@@ -33,8 +33,8 @@ struct ErrorNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kError; }
   SMLoc getLoc() const override { return loc; }
   bool containsError() const override { return true; }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct IntLiteralNode final : public ExprNode {
@@ -50,8 +50,8 @@ struct IntLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct FloatLiteralNode final : public ExprNode {
@@ -67,8 +67,8 @@ struct FloatLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct StringLiteralNode final : public ExprNode {
@@ -84,8 +84,8 @@ struct StringLiteralNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct DeclRefNode final : public ExprNode {
@@ -98,8 +98,26 @@ struct DeclRefNode final : public ExprNode {
     return SMLoc::getFromPointer(spelling.data());
   }
   bool containsError() const override { return false; }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
+};
+
+struct AttributeRefNode final : public ExprNode {
+  AttributeRefNode(ExprNode *base, SMLoc dotLoc, StringRef attrSpelling)
+      : ExprNode(kAttributeRef), base(base), dotLoc(dotLoc),
+        attrSpelling(attrSpelling) {}
+
+  ExprNode *const base;
+  const SMLoc dotLoc;
+  const StringRef attrSpelling;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kAttributeRef;
+  }
+  SMLoc getLoc() const override { return dotLoc; }
+  bool containsError() const override { return false; }
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -117,8 +135,8 @@ struct CallNode final : public ExprNode {
              return exp->containsError();
            });
   }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
@@ -139,8 +157,8 @@ struct SubscriptNode final : public ExprNode {
              return exp->containsError();
            });
   }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct ParenExprNode final : public ExprNode {
@@ -157,8 +175,8 @@ struct ParenExprNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lparenLoc; }
   bool containsError() const override { return subExpr->containsError(); }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 struct BinOpNode final : public ExprNode {
@@ -176,8 +194,8 @@ struct BinOpNode final : public ExprNode {
   bool containsError() const override {
     return lhs->containsError() || rhs->containsError();
   }
-  AnyValue emitIR(ExprEmitter &state, Type contextualType) const override;
-  Type emitType(ExprEmitter &state) const override;
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
 };
 
 } // namespace M::KGEN::LIT

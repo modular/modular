@@ -308,6 +308,75 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
+AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
+                                  Type contextualType) const {
+  auto baseVal = base->emitIR(emitter);
+
+  if (LValue baseLV = baseVal.getIfLValue()) {
+    if (!emitter.builder) {
+      emitter.emitError(getLoc(),
+                        "TODO: cannot call function in parameter context");
+      return {};
+    }
+
+    auto eltType =
+        cast<POP::PointerType>(baseLV.getType()).getResolvedElementType();
+    if (!eltType) {
+      emitter.emitError(getLoc(), "cannot refer to values of type parameter")
+          << cast<POP::PointerType>(baseLV.getType()).getElementType();
+      return {};
+    }
+
+    auto [typeScope, typeParams] =
+        emitter.shared.declResolver->getScopeAndParamsFromType(eltType);
+    if (!typeScope) {
+      emitter.emitError(getLoc(), "cannot access a field in value of type ")
+          << eltType;
+      return {};
+    }
+
+    if (!typeParams.empty()) {
+      emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
+          << eltType;
+      return {};
+    }
+
+    // Figure out what field index this is.
+    assert(isa<LITStructDeclOp>(typeScope->getDecl()) && "only have one type");
+    auto structDecl = cast<LITStructDeclOp>(typeScope->getDecl());
+
+    VarDeclOp foundVarDecl;
+    size_t fieldNo = 0;
+    for (auto varDecl : structDecl.getRegion().front().getOps<VarDeclOp>()) {
+      if (varDecl.getName() == attrSpelling) {
+        foundVarDecl = varDecl;
+        break;
+      }
+      ++fieldNo;
+    }
+    if (!foundVarDecl) {
+      emitter.emitError(getLoc(), "")
+          << eltType << " object has no attribute '" << attrSpelling << "'";
+      return {};
+    }
+
+    // FIXME: This isn't the correct operator - it won't GEP into a struct field
+    // in a LITStructDeclOp.
+    return LValue(emitter.builder->create<POP::StructGEPOp>(
+        emitter.translateLocation(getLoc()), foundVarDecl.getType(), baseLV,
+        emitter.builder->getIndexAttr(fieldNo)));
+  }
+
+  // TODO: Handle parameter member references.
+  emitter.emitError(getLoc(), "cannot emit members of rvalues yet");
+  return {};
+}
+
+Type AttributeRefNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
+}
+
 AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))

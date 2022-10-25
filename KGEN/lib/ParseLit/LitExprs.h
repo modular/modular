@@ -134,6 +134,7 @@ public:
     kFloatLiteral,  // 1.1
     kStringLiteral, // "Hello"
     kDeclRef,       // x
+    kAttributeRef,  // x.y
     kCall,          // thing(a, b)
     kSubscript,     // thing[a, b:c]
     kParenExprNode, // (x+y)

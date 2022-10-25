@@ -52,6 +52,7 @@ private:
   bool isTokenStartOfNextStatement();
 
   ParseResult parsePrimary(ExprNode *&result);
+  ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
 
@@ -221,6 +222,13 @@ ParseResult ExprParser::parsePrimary(ExprNode *&result) {
   while (!isTokenStartOfNextStatement()) {
     auto loc = getToken().getLoc();
 
+    // Handle "attributeref": x.y
+    if (consumeIf(LitToken::dot)) {
+      if (parseAttributeRefSuffix(result, loc))
+        return failure();
+      continue;
+    }
+
     // Handle calls.
     if (consumeIf(LitToken::l_paren)) {
       if (parseCallSuffix(result, loc))
@@ -238,6 +246,17 @@ ParseResult ExprParser::parsePrimary(ExprNode *&result) {
     break;
   }
 
+  return success();
+}
+
+/// attributeref ::=  primary "." identifier
+ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
+                                                SMLoc dotLoc) {
+  StringRef spelling = getTokenSpelling();
+  if (parseToken(LitToken::identifier, "expected name in attribute reference"))
+    return failure();
+
+  result = alloc<AttributeRefNode>(result, dotLoc, spelling);
   return success();
 }
 
