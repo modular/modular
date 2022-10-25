@@ -99,7 +99,7 @@ Value ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
   return builder->create<ParamConstantOp>(location, attr);
 }
 
-/// This helper emits the specified value rep as a meta value, diagnosing the
+/// This helper emits the specified expression as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
 TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
@@ -111,6 +111,23 @@ TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
   if (auto attr = valueRep.getIfMValue())
     return attr;
 
+  emitError(node->getLoc(), message);
+  return {};
+}
+
+/// Emit the specified expression as an LValue which can be loaded and stored.
+/// If contextualType is non-null, then an implicitly declared LValue will
+/// that that type.
+///
+/// This diagnoses the expression with the specified message if it isn't a
+/// valid LValue.
+LValue ExprEmitter::emitLValue(const ExprNode *node, Type contextualType,
+                               const Twine &message) {
+  AnyValue anyValue = node->emitIR(*this, contextualType);
+  if (!anyValue)
+    return {}; // Error already diagnosed.
+  if (LValue lValue = anyValue.getIfLValue())
+    return lValue;
   emitError(node->getLoc(), message);
   return {};
 }
@@ -156,11 +173,14 @@ Scope *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 /// Error nodes cannot be emitted and have already been diagnosed.
-AnyValue ErrorNode::emitIR(ExprEmitter &emitter) const { return AnyValue(); }
+AnyValue ErrorNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+  return AnyValue();
+}
 
 Type ErrorNode::emitType(ExprEmitter &emitter) const { return Type(); }
 
-AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter) const {
+AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
+                                Type contextualType) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -175,7 +195,8 @@ Type IntLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter) const {
+AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
+                                  Type contextualType) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   return FloatAttr::get(FloatType::getF64(emitter.getContext()),
@@ -187,7 +208,8 @@ Type FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter) const {
+AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
+                                   Type contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return StringAttr::get(emitter.getContext(), value);
 }
@@ -197,13 +219,36 @@ Type StringLiteralNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter) const {
-  Optional<Scope::NameEntry> declOrValue =
-      emitter.scope.lookup(StringAttr::get(emitter.getContext(), spelling));
+AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+  // Look up the name.
+  auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
+  Optional<Scope::NameEntry> declOrValue = emitter.scope.lookup(nameAttr);
+
+  // Handle the case where lookup fails.
   if (!declOrValue) {
-    emitter.emitError(getLoc(), "use of unknown declaration \"")
-        << spelling << '"';
-    return {};
+    // If there is a contextual type available then this is an implicit variable
+    // definition, otherwise it is an error.
+    if (!contextualType || !emitter.varDeclCursor) {
+      emitter.emitError(getLoc(), "use of unknown declaration \"")
+          << spelling << '"';
+      return {};
+    }
+
+    // Otherwise, introduce a new lit.var.decl node whose type matches the
+    // initializer expression.
+    //
+    // TODO(autopromotions): turn infinite integers into concrete ones as
+    // needed.
+    auto declType = POP::PointerType::get(contextualType);
+
+    // Use this builder to place any VarDeclOps. In Python there is only one
+    // scope per function and all variables belong to that scope, so builders
+    // should reflect that.
+    auto varDecl = OpBuilder(emitter.varDeclCursor)
+                       .create<VarDeclOp>(emitter.translateLocation(getLoc()),
+                                          declType, nameAttr);
+    declOrValue = &emitter.shared.declResolver->addFullyResolvedDecl(
+        varDecl, &emitter.scope);
   }
 
   // Attributes always resolve to their known value.
@@ -263,7 +308,7 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
-AnyValue CallNode::emitIR(ExprEmitter &emitter) const {
+AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
@@ -350,7 +395,8 @@ Type CallNode::emitType(ExprEmitter &emitter) const {
   return Type();
 }
 
-AnyValue SubscriptNode::emitIR(ExprEmitter &emitter) const {
+AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
+                               Type contextualType) const {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
   if (!subValue)
@@ -463,7 +509,8 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
                       ParamBindArrayAttr::get(emitter.getContext(), exprs));
 }
 
-AnyValue ParenExprNode::emitIR(ExprEmitter &emitter) const {
+AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
+                               Type contextualType) const {
   return subExpr->emitIR(emitter);
 }
 
@@ -471,7 +518,7 @@ Type ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   auto lhsRep = emitter.emitRValue(lhs);
   auto rhsRep = emitter.emitRValue(rhs);
   if (!lhsRep || !rhsRep)
