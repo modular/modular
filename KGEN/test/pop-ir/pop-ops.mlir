@@ -785,6 +785,13 @@ kgen.generator @struct<type: type, dtype: dtype>(
   kgen.return %1, %2, %el : !kgen.paramref<type>, !pop.scalar<dtype>, !pop.pointer<type>
 }
 
+// CHECK-LABEL: @empty_struct_syntax
+kgen.generator @empty_struct_syntax() -> !pop.struct<> {
+  // CHECK-NEXT: pop.struct.construct() : !pop.struct<>
+  %0 = pop.struct.construct() : !pop.struct<>
+  kgen.return %0 : !pop.struct<>
+}
+
 // CHECK-LABEL: @pointer_types
 kgen.generator @pointer_types<dt: dtype>(
   // CHECK-SAME: %{{.*}}: !pop.pointer<scalar<dt>>, %{{.*}}: !pop.pointer<scalar<f32>>, %{{.*}}: !pop.pointer<scalar<invalid>>

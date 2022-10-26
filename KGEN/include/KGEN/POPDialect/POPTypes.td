@@ -325,8 +325,10 @@ def POP_StructType : POPType<"Struct", "struct"> {
     ```
   }];
 
-  let parameters = (ins ArrayRefParameter<"TypedAttr">:$elementTypes);
-  let assemblyFormat = "`<` custom<ArrayOfPrettyTypes>($elementTypes) `>`";
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$elementTypes);
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<ArrayOfPrettyTypes>($elementTypes)^ `>`)?
+  }];
   let genVerifyDecl = 1;
 
   let builders = [
