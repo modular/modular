@@ -4,11 +4,23 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import re
 import shutil
 import string
+import subprocess
 from pathlib import Path
 
-from modular.utils.subprocess import run_chained_commands
+from modular.utils.subprocess import (
+    CalledProcessError,
+    get_command_output,
+    run_chained_commands,
+    run_shell_command,
+)
+from modular.utils.typing import Optional
+
+
+class GitError(Exception):
+    pass
 
 
 def fetch_checkout_commit(repo_dir: Path, ref: str, remote: str = "origin"):
@@ -79,3 +91,101 @@ def shallow_clone(
 
     if remove_git:
         shutil.rmtree(clone_dir / ".git")
+
+
+def branch_exists(branch: str, repo_dir: Optional[Path] = None) -> bool:
+    """Returns whether a branch with the given name exists.
+
+    Args:
+        branch: branch name as a string.
+        repo_dir: path to the repo. Defaults to the current working directory.
+
+    Returns:
+        True if the branch exists, False otherwise.
+
+    Raises:
+        GitError: if called outside a git repo.
+    """
+    proc = run_shell_command(
+        ["git", "show-ref", "-q", f"refs/heads/{branch}"],
+        stderr=subprocess.DEVNULL,
+        cwd=repo_dir,
+        check=False,
+    )
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    raise GitError("Not inside a valid git repository.")
+
+
+def get_current_branch_name(repo_dir: Optional[Path] = None) -> str:
+    """Returns the name of the branch currently checked out.
+
+    Args:
+        repo_dir: path to the repo. Defaults to the current working directory.
+
+    Returns:
+        The name of the branch currently checked out, or "HEAD" if the repo is
+        in a 'detached HEAD' state
+
+    Raises:
+        GitError: if called outside a git repo, or.
+    """
+
+    try:
+        return get_command_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir
+        ).strip()
+    except CalledProcessError as e:
+        if e.returncode == 128:
+            raise GitError("Not inside a valid git repository.") from None
+        raise
+
+
+# TODO: enforce this as a module dependency
+def check_gh_installed():
+    """Check if the gh tool is installed.
+
+    Raises:
+        GitError if gh is not available.
+    """
+
+    try:
+        run_shell_command(["gh"], capture_output=True)
+    except CalledProcessError:
+        raise GitError(
+            "'gh' is not installed. Please visit https://cli.github.com/ for"
+            " installation instuctions."
+        )
+
+
+# TODO: figure out how to test this
+def get_gh_username() -> str:
+    """Return the current github username.
+
+    Returns:
+        Current github username as a string.
+
+    Raises:
+        GitError: if called outside a git repo, or.
+    """
+
+    user_query = get_command_output(
+        [
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            "owner=UserCurrent",
+            "-f",
+            "query=query{viewer{login}}",
+        ]
+    )
+
+    # Extract the login name.
+    m = re.search(r"\"login\":\"(.*?)\"", user_query)
+    if not m:
+        raise GitError("Unable to find current github user name")
+
+    return m.group(1)
