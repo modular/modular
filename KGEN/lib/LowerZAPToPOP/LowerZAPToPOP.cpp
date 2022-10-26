@@ -387,7 +387,7 @@ struct ConvertZAPDebugAssert : mlir::OpRewritePattern<DebugAssertOp> {
 
     // Get the file/line information if available.
     std::string locationStr;
-    if (auto fileLineCol = op->getLoc().dyn_cast<mlir::FileLineColLoc>()) {
+    if (auto fileLineCol = dyn_cast<mlir::FileLineColLoc>(op->getLoc())) {
       locationStr = (Twine(fileLineCol.getFilename()) + ":" +
                      Twine(fileLineCol.getLine()))
                         .str();
