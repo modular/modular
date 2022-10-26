@@ -9,6 +9,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
 
@@ -114,32 +115,22 @@ struct FilesystemBackend : public BlobCacheBackend {
     std::filesystem::create_directories(filePath.parent_path(), err);
     if (err)
       return Error(err.message());
-
     std::string filePathStr = filePath.string();
 
-    // If the file doesn't exist, just touch and close immediately. We resize in
-    // the next step, and then mmap it in as a writable buffer.
-    if (!containsImpl(filePathStr))
-      fclose(fopen(filePathStr.c_str(), "w"));
-
-    // Resize the file to contain enough bytes.
-    std::filesystem::resize_file(filePath, obj.getBufferSize() + sha256Bytes,
-                                 err);
+    // Open the file for writing.
+    auto fileBuf = std::make_unique<llvm::ToolOutputFile>(
+        filePathStr, err, llvm::sys::fs::OF_None);
     if (err)
       return Error(err.message());
 
-    auto fileOr = llvm::WritableMemoryBuffer::getFile(filePathStr);
-    if (!fileOr)
-      return Error(fileOr.getError().message());
-
-    std::unique_ptr<llvm::WritableMemoryBuffer> fileBuf = std::move(*fileOr);
-    MutableArrayRef<char> buf = fileBuf->getBuffer();
     // Copy the data into the file buffer.
-    auto outputIter =
-        std::copy(obj.getBufferStart(), obj.getBufferEnd(), buf.begin());
-    // And compute the HMAC and copy that in as well.
+    fileBuf->os().write(obj.getBufferStart(), obj.getBufferSize());
+
+    // Compute and copy the HMAC as well.
     SHA256Hash hash = hmacSHA256(obj.getBuffer(), kIntegrityKey);
-    std::copy(hash.begin(), hash.end(), outputIter);
+    fileBuf->os().write((const char *)hash.data(), hash.size());
+
+    fileBuf->keep();
     return success();
   }
 
@@ -151,7 +142,8 @@ struct FilesystemBackend : public BlobCacheBackend {
   CacheFindResult findImpl(StringRef keyHash) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
-    auto fileOr = llvm::WritableMemoryBuffer::getFile(filePath.string());
+    std::string filePathStr = filePath.string();
+    auto fileOr = llvm::MemoryBuffer::getFile(filePathStr);
 
     // If the file doesn't exist, or it's empty, return an error.
     if (!fileOr)
@@ -161,29 +153,28 @@ struct FilesystemBackend : public BlobCacheBackend {
                                     "' exists, but is empty");
 
     std::unique_ptr<llvm::MemoryBuffer> fileBuf = std::move(*fileOr);
-
     StringRef contentsAndHMAC = fileBuf->getBuffer();
 
     // Get a StringRef of the contents without the HMAC.
-    StringRef contents(contentsAndHMAC.begin(),
-                       contentsAndHMAC.size() - sha256Bytes);
-    SHA256Hash hmac = hmacSHA256(contents, kIntegrityKey);
-    auto storedHMACRange = llvm::make_range(
-        contentsAndHMAC.begin() + contents.size(), contentsAndHMAC.end());
+    StringRef contents = contentsAndHMAC.drop_back(sha256Bytes);
+    SHA256Hash computedHMAC = hmacSHA256(contents, kIntegrityKey);
+    StringRef storedHMAC = contentsAndHMAC.take_back(sha256Bytes);
 
-    // Check the computed hmac against the one in the file. This is a
-    // constant-time memcmp.
-    bool isIncorrect = false;
-    for (auto [computed, stored] : llvm::zip(storedHMACRange, hmac))
-      isIncorrect |= computed ^ stored;
-
-    if (isIncorrect)
+    // Check the computed hmac against the one in the file.
+    if (memcmp(computedHMAC.data(), storedHMAC.data(), sha256Bytes)) {
       return CacheFindResult::error(
           "corrupted file: stored hash and computed hash did not "
           "match for file '" +
           Twine(filePath.string()) + "'");
+    }
 
-    return CacheFindResult::value(std::move(fileBuf));
+    // Now that we've verified the integrity of the file, return a memory buffer
+    // that holds just the contents.
+    fileOr = llvm::MemoryBuffer::getFileSlice(filePathStr, contents.size(),
+                                              /*Offset=*/0);
+    if (!fileOr)
+      return CacheFindResult::error(Error(fileOr.getError().message()));
+    return CacheFindResult::value(std::move(*fileOr));
   }
 
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
