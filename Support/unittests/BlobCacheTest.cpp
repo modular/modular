@@ -73,3 +73,26 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
               StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
       << "buffer returned did not match the buffer inputted\n";
 }
+
+TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
+  // Get an uninitialized buffer. We don't care what's in this, as long as it
+  // goes in and comes out the same.
+  auto zerosBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(32);
+
+  auto err = cache.insert("zeros", *zerosBuf);
+  ASSERT_FALSE(failed(err)) << err.getError() << '\n';
+
+  // Reset the cache so that we are forced to look it up from the file system.
+  cache = BlobCache<StringKeyInfo>(getDefaultBackendChain(""));
+
+  // Check that the cache holds the new item, and it's the same data as before.
+  auto zerosOr = cache.find("zeros");
+  EXPECT_TRUE(zerosOr.hasValue()) << zerosOr.getError();
+
+  std::unique_ptr<llvm::MemoryBuffer> outZeros = zerosOr.takeValue();
+  ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
+      << "output buffer size did not match input buffer size\n";
+  EXPECT_TRUE(outZeros->getBuffer() ==
+              StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
+      << "buffer returned did not match the buffer inputted\n";
+}
