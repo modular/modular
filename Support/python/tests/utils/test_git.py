@@ -5,9 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 import shutil
+import tempfile
 from pathlib import Path
 
-from modular.utils.git import is_full_git_sha, shallow_clone
+import pytest
+
+from modular.utils.git import (
+    GitError,
+    branch_exists,
+    get_current_branch_name,
+    is_full_git_sha,
+    shallow_clone,
+)
+from modular.utils.subprocess import run_shell_command
 
 
 def test_is_full_git_sha():
@@ -18,6 +28,7 @@ def test_is_full_git_sha():
     assert not is_full_git_sha("acorrectlengthnothexstringthatshouldfail")
 
 
+# This is not an actual test, just a helper to reduce duplicates
 def _test_shallow_clone(ref: str):
     artifact_root = Path(__file__).parent / ".artifacts" / "shallow_clone"
     url = "https://github.com/actions/checkout.git"
@@ -36,3 +47,53 @@ def test_shallow_clone_sha():
 
 def test_shallow_clone_main():
     _test_shallow_clone("main")
+
+
+def make_dummy_repo(repo_dir: Path):
+    # Helper to set up a repo for testing
+    run_shell_command(["git", "init", "-q"], cwd=repo_dir)
+    run_shell_command(["git", "config", "user.name", "Tester"], cwd=repo_dir)
+    run_shell_command(
+        ["git", "config", "user.email", "ci@modular.com"], cwd=repo_dir
+    )
+
+
+def test_branch_exists():
+    # we have to test this outside our monorepo
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dummy_dir = Path(tmp_dir)
+
+        with pytest.raises(GitError):
+            branch_exists("some/branch", repo_dir=dummy_dir)
+
+        make_dummy_repo(dummy_dir)
+        assert not branch_exists("some/branch", repo_dir=dummy_dir)
+
+        run_shell_command(
+            ["git", "checkout", "-b", "some/branch"], cwd=dummy_dir
+        )
+        run_shell_command(
+            ["git", "commit", "--allow-empty", "-m", "Some message"],
+            cwd=dummy_dir,
+        )
+        assert branch_exists("some/branch", repo_dir=dummy_dir)
+
+
+def test_get_current_branch_name():
+    # we have to test this outside our monorepo
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dummy_dir = Path(tmp_dir)
+
+        with pytest.raises(GitError):
+            get_current_branch_name(repo_dir=dummy_dir)
+
+        make_dummy_repo(dummy_dir)
+        run_shell_command(["git", "checkout", "-b", "main"], cwd=dummy_dir)
+        with pytest.raises(GitError):
+            get_current_branch_name(repo_dir=dummy_dir)
+
+        run_shell_command(
+            ["git", "commit", "--allow-empty", "-m", "Some message"],
+            cwd=dummy_dir,
+        )
+        assert get_current_branch_name(repo_dir=dummy_dir) == "main"
