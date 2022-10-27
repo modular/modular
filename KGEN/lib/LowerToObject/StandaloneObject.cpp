@@ -151,7 +151,7 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
   LLVM_DEBUG(dbgs << "Raised to kgen.func:\n" << *funcOr << "\n");
 
   // Now for each call, slice again.
-  auto walkDependency = [&](CallOp call) -> mlir::WalkResult {
+  auto walkDependency = [&](CallOp call) -> WalkResult {
     auto callee = compiler.getSymbolTable().lookup(call.getCallee());
     if (!callee)
       return emitError(call.getLoc())
@@ -168,7 +168,7 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
     dbgs.indent();
     SliceResult res = slice(callee->getLoc(), call.getCallee());
     if (failed(res))
-      return mlir::WalkResult::interrupt();
+      return WalkResult::interrupt();
     dbgs.unindent();
     LLVM_DEBUG(
         dbgs
@@ -176,7 +176,7 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
            "===---------------------------------------------------------------"
            "-------===//\n");
 
-    return mlir::WalkResult::advance();
+    return WalkResult::advance();
   };
   if (funcOr->walk(walkDependency).wasInterrupted())
     return SliceResult::failed;
