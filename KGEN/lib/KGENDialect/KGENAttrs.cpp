@@ -274,8 +274,9 @@ LogicalResult ParamOperatorAttr::verify(
     // Check the types that are supported.
     if (type.isIndex())
       break; // Index type supported for all of these.
-    if (opcode == POC::Xor && type.isSignlessInteger(1))
-      break; // i1 types only support xor.
+    if ((opcode == POC::Xor || opcode == POC::And || opcode == POC::Or) &&
+        type.isSignlessInteger(1))
+      break; // i1 types only support and, or, and xor.
     // TODO: Can support signful fixed width types as needed.
     return emitError() << "operator requires an index type";
   // Binary expressions.
