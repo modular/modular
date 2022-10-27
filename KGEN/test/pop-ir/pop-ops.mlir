@@ -447,6 +447,14 @@ kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: () -> ()) {
   kgen.return
 }
 
+// CHECK-LABEL: @pop_bitcast_paramref
+// CHECK-SAME: %[[ARG:[a-z0-9]*]]:
+kgen.generator @pop_bitcast_paramref<type1: type, type2:type>(%arg: !kgen.paramref<type1>) {
+  // CHECK: pop.bitcast %[[ARG]] : !kgen.paramref<type1> to !kgen.paramref<type2>
+  %0 = pop.bitcast %arg : !kgen.paramref<type1> to !kgen.paramref<type2>
+  kgen.return
+}
+
 // CHECK-LABEL: @scalar_cast
 // CHECK-SAME: %[[A:.*]]:
 kgen.generator @scalar_cast<type: dtype>(%a: !pop.scalar<f32>) -> !pop.scalar<si32> {
