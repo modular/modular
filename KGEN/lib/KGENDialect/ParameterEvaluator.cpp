@@ -57,6 +57,13 @@ KGEN::collectParameterReferences(TypedAttr expr,
 LogicalResult
 KGEN::collectParameterReferences(Type type,
                                  SmallVector<ParamDeclRefAttr> &results) {
+  if (auto ref = dyn_cast<RefType>(type)) {
+    for (ParamBindAttr value : ref.getParamValues())
+      if (failed(collectParameterReferences(value.getValue(), results)))
+        return failure();
+    return success();
+  }
+
   auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
   if (!itf)
     return success();
