@@ -230,7 +230,8 @@ def IntegerSIMD : AllOfType<[POP_SIMDType, IntegerDType],
 def FloatSIMD : AllOfType<[POP_SIMDType, FloatDType],
                             "!pop.simd<N, float>">;
 
-def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType], "!pop.simd<N, address>">;
+def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType],
+                             "!pop.simd<N, address>">;
 
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
     "whose element type is either unbound or a integral dtype">;
@@ -251,6 +252,10 @@ def FloatScalarOrSIMD : AnyTypeOf<
 
 def BoolOrIntegerScalarOrSIMD : AnyTypeOf<
     [BoolScalar, IntegerScalar, BoolSIMD, IntegerSIMD, ParamRefType]>;
+
+def UnboundBoolOrIntegerScalarOrSIMD : AnyTypeOf<
+    [BoolScalar, UnboundOrIntegerScalar, BoolSIMD,
+     UnboundOrIntegerSIMD, ParamRefType]>;
 
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
     [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
