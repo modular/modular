@@ -667,7 +667,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
                                               structTy.isPacked());
     return itf.replaceImmediateSubElements(attrs, types);
   };
-  WalkResult result = getOperation()->walk([&](Operation *op) {
+  WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     // Substitute any references in attributes.
     op->setAttrs(op->getAttrDictionary()
                      .replaceSubElements(substituteRefs)
@@ -676,11 +676,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
     // Substitute the result types.
     for (OpResult result : op->getOpResults()) {
       Type replType = substituteRefs(result.getType());
-      if (!replType) {
-        op->emitError("failed to substitute result type #")
-            << result.getResultNumber();
-        return WalkResult::interrupt();
-      }
+      if (!replType)
+        return op->emitError("failed to substitute result type #")
+               << result.getResultNumber();
       result.setType(replType);
     }
 
@@ -689,11 +687,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
       for (Block &block : region) {
         for (BlockArgument arg : block.getArguments()) {
           Type replType = substituteRefs(arg.getType());
-          if (!replType) {
-            op->emitError("failed to substitute block argument type ")
-                << arg.getType();
-            return WalkResult::interrupt();
-          }
+          if (!replType)
+            return op->emitError("failed to substitute block argument type ")
+                   << arg.getType();
           arg.setType(replType);
         }
       }
