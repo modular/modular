@@ -13,9 +13,9 @@
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
-#include "Support/IndexDialect/IndexDialect.h"
-#include "Support/IndexDialect/IndexOps.h"
 #include "Support/MDialect/MTypes.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -421,7 +421,7 @@ static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
                                ValueRange shape = {}, Value dtype = {}) {
   IndexType indexType = rewriter.getIndexType();
   // Initialize the shape values with all zeros.
-  auto zeroIndex = rewriter.create<index::ConstantOp>(loc, 0);
+  auto zeroIndex = rewriter.create<mlir::index::ConstantOp>(loc, 0);
   std::array<Value, NDBufferType::getMaximumRank()> shapeValues;
   shapeValues.fill(zeroIndex);
   // Fill the shape values with the provided values or the constants specified
@@ -435,19 +435,19 @@ static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
       continue;
     }
     // Otherwise, we use the constant value from the type.
-    shapeValues[i] =
-        TypeSwitch<TypedAttr, Value>(dim)
-            .Case([&](IntegerAttr attr) {
-              return rewriter.create<index::ConstantOp>(loc, indexType, attr);
-            })
-            .Case([&](ParamDeclRefAttr attr) {
-              return rewriter.create<ParamConstantOp>(loc, attr);
-            });
+    shapeValues[i] = TypeSwitch<TypedAttr, Value>(dim)
+                         .Case([&](IntegerAttr attr) {
+                           return rewriter.create<mlir::index::ConstantOp>(
+                               loc, indexType, attr);
+                         })
+                         .Case([&](ParamDeclRefAttr attr) {
+                           return rewriter.create<ParamConstantOp>(loc, attr);
+                         });
   }
   // Create the shape array.
   auto shapeArray = rewriter.create<ArrayCreateOp>(loc, shapeValues);
 
-  auto rankVal = rewriter.create<index::ConstantOp>(loc, type.getRank());
+  auto rankVal = rewriter.create<mlir::index::ConstantOp>(loc, type.getRank());
   if (!dtype)
     dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
   return rewriter.create<StructConstructOp>(
@@ -568,7 +568,7 @@ static Value getDimensionAtIndex(OpBuilder &builder, Location loc,
   // Use constant or parameter constant if available.
   return TypeSwitch<TypedAttr, Value>(dim)
       .Case([&](IntegerAttr attr) {
-        return builder.create<index::ConstantOp>(loc, attr);
+        return builder.create<mlir::index::ConstantOp>(loc, attr);
       })
       .Case([&](ParamDeclRefAttr attr) {
         return builder.create<ParamConstantOp>(loc, attr);
@@ -594,7 +594,7 @@ struct ConvertZAPNDBufferSize : public mlir::OpRewritePattern<NDBufferSizeOp> {
     Value product = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, 0);
     for (size_t i = 1, e = ndBufferType.getRank(); i < e; ++i) {
       Value dim = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, i);
-      product = rewriter.create<index::MulOp>(loc, product, dim);
+      product = rewriter.create<mlir::index::MulOp>(loc, product, dim);
     }
     rewriter.replaceOp(op, product);
     return success();
@@ -665,12 +665,12 @@ static Value linearizeContiguousIndices(PatternRewriter &rewriter, Location loc,
                                              shapeArray, indexPosition++);
 
     // Multiply by the current size, e.g. x-> b*x from example above.
-    accumulatedOffset =
-        rewriter.create<index::MulOp>(loc, accumulatedOffset, positionSize);
+    accumulatedOffset = rewriter.create<mlir::index::MulOp>(
+        loc, accumulatedOffset, positionSize);
 
     // Add the current index, e.g. b*x -> b*x + y from example above.
     accumulatedOffset =
-        rewriter.create<index::AddOp>(loc, accumulatedOffset, indexValue);
+        rewriter.create<mlir::index::AddOp>(loc, accumulatedOffset, indexValue);
   }
 
   return accumulatedOffset;

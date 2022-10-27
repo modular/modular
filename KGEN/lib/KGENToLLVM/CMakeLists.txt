@@ -17,10 +17,10 @@ add_modular_conversion_library(KGENToLLVM
   LINK_LIBS PUBLIC
   KGENDialect
   POPDialect
-  IndexToLLVM
   MCompilerSupport
 
   MLIRIR
+  MLIRIndexToLLVM
   MLIRLLVMCommonConversion
   MLIRSCFDialect
   )

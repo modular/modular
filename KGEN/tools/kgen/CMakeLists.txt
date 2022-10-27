@@ -11,7 +11,6 @@ add_modular_tool(kgen
   LINK_LIBS PRIVATE
   KGENCLOptions
   LITDialect
-  IndexDialect
   KGENCompilerRT
   KGENDialect
   KGENElaborator
@@ -22,5 +21,6 @@ add_modular_tool(kgen
   POPDialect
 
   MLIRBytecodeWriter
+  MLIRIndexDialect
   MLIRParser
 )
