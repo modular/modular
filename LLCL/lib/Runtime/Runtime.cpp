@@ -45,7 +45,8 @@ static std::atomic<uint8_t> nextRuntimeIndex{0};
 static Runtime *allRuntimes[CompactRuntimePtr::kInvalidIndex];
 
 CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
-    : CompactRuntimePtr(runtime->getCompactPtr()) {}
+    : CompactRuntimePtr(runtime ? runtime->getCompactPtr()
+                                : CompactRuntimePtr()) {}
 
 Runtime *CompactRuntimePtr::get() const {
   assert(index != kInvalidIndex);
