@@ -118,6 +118,27 @@ lit.func @returnbufItf_impl(%a : !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
 // CHECK-LABEL: kgen.generator @returnbufItf_impl<size, ty: dtype>
 // CHECK-SAME: (%[[ARG0:.*]]: !zap.buffer<123, f32>) -> !zap.buffer<123, f32>
 
+//===----------------------------------------------------------------------===//
+// Equivalence constraints.
+//===----------------------------------------------------------------------===//
+
+kgen.generator.interface @maybeBitcast<T1:type, T2:type>(%ptr: !pop.pointer<T1>) -> !pop.pointer<T2>
+
+// This implementation infers that `T1` must be equal to `T2`.
+lit.func @maybeBitcast.not<T1:type, T2:type>(%ptr: !pop.pointer<T1>) -> !pop.pointer<T1>
+    implements @maybeBitcast {
+  kgen.return %ptr : !pop.pointer<T1>
+}
+
+// CHECK-LABEL: kgen.generator @maybeBitcast.not_thunk
+// CHECK-NEXT: constraints <[eq(:type T1, T2), "result #0 specifies 'T2' = 'T1'"
+// CHECK: call @maybeBitcast.not<T1: type = T1, T2: type = T2>(%arg0) : (!pop.pointer<T1>) -> !pop.pointer<T1>
+// CHECK: rebind %0 : !pop.pointer<T1> to !pop.pointer<T2>
+// CHECK: return %1
+
+// CHECK-LABEL: kgen.generator @maybeBitcast.not
+// CHECK-NEXT: constraints <[eq(:type T1, T2), "result #0 specifies 'T2' = 'T1'"
+// CHECK: return %arg0 : !pop.pointer<T1>
 
 //===----------------------------------------------------------------------===//
 // Simplify constraints.
