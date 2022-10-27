@@ -8,8 +8,6 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
 
-
-
 // CHECK-LABEL: kgen.generator public @varDecl
 // CHECK-SAME:  (%[[ARG0:.*]]: index) -> index {
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
