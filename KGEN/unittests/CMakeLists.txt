@@ -27,6 +27,8 @@ add_modular_unittest(
   KGENKernelTest.cpp
 
   LINK_LIBS PRIVATE
+  GenericMLSupport
+  LLCLRuntime
   MSupportML
   test_kernels
 )
