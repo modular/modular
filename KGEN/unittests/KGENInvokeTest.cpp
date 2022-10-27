@@ -63,9 +63,8 @@ TEST(KGENInvokeTest, testinvokeSecondAddress) {
 }
 
 TEST(KGENInvokeTest, testinvokeWithTensor) {
-  Tensor tensor = Tensor::getImmortal(
-      nullptr, TensorSpec(TensorShape({1, 2, 3}), DType::f32),
-      CompactRuntimePtr());
+  Tensor tensor =
+      Tensor::getImmortal(nullptr, TensorSpec({1, 2, 3}, DType::f32));
   EXPECT_EQ(KGEN::invoke([](void *ptr0, ssize_t, ssize_t shape[5],
                             uint8_t) { return shape[1]; },
                          std::forward<Tensor>(tensor)),
