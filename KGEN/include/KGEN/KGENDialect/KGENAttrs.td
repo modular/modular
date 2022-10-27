@@ -203,7 +203,7 @@ def ParamDeclRefAttr : ExprAttr<"ParamDeclRef", "param.decl.ref"> {
       "return get(StringAttr::get(type.getContext(), name), type);">,
   ];
 
-  let assemblyFormat = "`<` $name `,` $type `>`";
+  let assemblyFormat = "`<` $name `>`";
 }
 
 //===----------------------------------------------------------------------===//

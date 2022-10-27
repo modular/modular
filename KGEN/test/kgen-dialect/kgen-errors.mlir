@@ -3,7 +3,7 @@
 kgen.generator @test() {
   // expected-error @+1 {{invalid use of parameter with no declaration "p"}}
   "someop" () {
-    attr = #kgen.param.decl.ref<"p", i1>
+    attr = #kgen.param.decl.ref<"p"> : i1
   } : () -> ()
   kgen.return
 }
@@ -69,7 +69,7 @@ kgen.generator @foo() {
 
 // expected-error @+2 {{attribute type different than expected: expected '!kgen.dtype', but got 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
-           !pop.scalar<#kgen.param.decl.ref<"n", index>>) {
+           !pop.scalar<#kgen.param.decl.ref<"n"> : index>) {
   kgen.return
 }
 

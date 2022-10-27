@@ -5,17 +5,17 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   // Generic attr syntax in generic ops
   // CHECK: "someop"() {
   "someop" () {
-    // CHECK-SAME: use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1", index> : index, 42 : index>
-    use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1", index>, 42 : index> : index,
-    // CHECK-SAME: use2 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1", index> : index, 43 : index>
-    use2 = #kgen.param.expr<add, 1 : index, #kgen.param.decl.ref<"p1", index>, 42 : index> : index,
+    // CHECK-SAME: use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 42 : index>
+    use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 42 : index> : index,
+    // CHECK-SAME: use2 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 43 : index>
+    use2 = #kgen.param.expr<add, 1 : index, #kgen.param.decl.ref<"p1"> : index, 42 : index> : index,
     // CHECK-SAME: use3 = 3 : index
     use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index
   } : () -> ()
   // Generic syntax in known contexts
 
   // CHECK: = kgen.param.constant = <add(p1, 42)>
-  %0 = kgen.param.constant = <#kgen.param.expr<add, #kgen.param.decl.ref<"p1", index>, 42 : index>>
+  %0 = kgen.param.constant = <#kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 42 : index>>
 
   // CHECK: = kgen.param.constant = <add(mul(p2, p2), p1, 42)>
   %1 = kgen.param.constant = <add(p1, 42, mul(p2, p2))>
