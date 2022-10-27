@@ -35,6 +35,8 @@ public:
   LogicalResult checkExistingConstraints();
 
   ParseResult addEqualityConstraintFn(ParamDeclRefAttr param, TypedAttr value);
+  ParseResult addEquivalenceConstraint(ParamDeclRefAttr lhs,
+                                       ParamDeclRefAttr rhs);
 
   ParseResult tryUnifyingTypes(Type itfArgTy, Type genArgTy);
   ParseResult tryUnifyingTypeParameters(Attribute itfParam, Attribute genParam);
@@ -152,11 +154,22 @@ ParseResult SignatureUnifier::addEqualityConstraintFn(ParamDeclRefAttr param,
                                                       TypedAttr value) {
   auto message = StringAttr::get(value.getContext(),
                                  Twine(inferenceContext) + " specifies '" +
-                                     param.getName().str() +
+                                     param.getName().getValue() +
                                      "' = " + getParamAsString(value));
   auto constraintValue =
       PointwiseValue::getSingleValue(value, message, inferenceLoc);
   return constraints.addPointwiseParamConstraint(param, constraintValue);
+}
+
+ParseResult SignatureUnifier::addEquivalenceConstraint(ParamDeclRefAttr lhs,
+                                                       ParamDeclRefAttr rhs) {
+  auto message = StringAttr::get(lhs.getContext(),
+                                 Twine(inferenceContext) + " specifies '" +
+                                     lhs.getName().getValue() + "' = '" +
+                                     rhs.getName().getValue() + "'");
+  auto constraintValue =
+      PointwiseValue::getParamEquivalence(rhs, message, inferenceLoc);
+  return constraints.addPointwiseParamConstraint(lhs, constraintValue);
 }
 
 ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
@@ -182,11 +195,15 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
     return failure();
   }
 
-  // If one of these is a parameter, and one is concrete, then that infers a
-  // value for the parameter.
-  if (auto decl = dyn_cast<ParamDeclRefAttr>(itfParam))
+  if (auto decl = dyn_cast<ParamDeclRefAttr>(itfParam)) {
+    // If one of these is a parameter, and one is concrete, then that infers a
+    // value for the parameter.
     if (isSimpleConstant(genParam))
       return addEqualityConstraintFn(decl, genParam);
+    // If the other is a parameter, then that infers an equivalence constraint.
+    if (auto genDecl = dyn_cast<ParamDeclRefAttr>(genParam))
+      return addEquivalenceConstraint(decl, genDecl);
+  }
 
   // Otherwise we don't know how to unify this.
   // TODO: Could handle node-wise merging of expressions to find constraints
