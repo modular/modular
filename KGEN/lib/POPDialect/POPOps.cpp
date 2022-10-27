@@ -380,8 +380,11 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 
   // The input and output must be either both scalar or both SIMD. And so,
   // implement the DTypeInterface.
-  auto inputType = inputs.front().cast<DTypeInterface>();
-  auto outputType = outputs.front().cast<DTypeInterface>();
+  auto inputType = dyn_cast<DTypeInterface>(inputs.front());
+  auto outputType = dyn_cast<DTypeInterface>(outputs.front());
+
+  if (!inputType || !outputType)
+    return true;
 
   // First, check the input and output types must be of the same kind.
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.

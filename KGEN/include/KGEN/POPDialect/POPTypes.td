@@ -257,6 +257,9 @@ def UnboundBoolOrIntegerScalarOrSIMD : AnyTypeOf<
     [BoolScalar, UnboundOrIntegerScalar, BoolSIMD,
      UnboundOrIntegerSIMD, ParamRefType]>;
 
+def UnboundOrScalarOrSIMD : AnyTypeOf<
+    [POP_ScalarType, POP_SIMDType, ParamRefType]>;
+
 def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
     [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
 
