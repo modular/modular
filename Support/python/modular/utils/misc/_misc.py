@@ -38,3 +38,19 @@ def set_env_var(env_var: str, tmp_val: Optional[str]) -> Iterator[None]:
         else:
             # We reset to the original value.
             os.environ[env_var] = old_val
+
+
+def get_ordinal(n: int) -> str:
+    """Get the string ordinal for an integer.
+
+    Args:
+        n: the integer.
+
+    Returns:
+        The ordinal as a string, for example '1st'.
+    """
+    if 11 <= (n % 100) <= 13:
+        suffix = "th"
+    else:
+        suffix = ["th", "st", "nd", "rd", "th"][min(n % 10, 4)]
+    return f"{n}{suffix}"

@@ -8,7 +8,26 @@ import os
 
 import pytest
 
-from modular.utils.misc import set_env_var
+from modular.utils.misc import get_ordinal, set_env_var
+
+
+def test_get_ordinal():
+    assert get_ordinal(0) == "0th"
+    assert get_ordinal(1) == "1st"
+    assert get_ordinal(2) == "2nd"
+    assert get_ordinal(3) == "3rd"
+    assert get_ordinal(4) == "4th"
+    assert get_ordinal(11) == "11th"
+    assert get_ordinal(12) == "12th"
+    assert get_ordinal(13) == "13th"
+    assert get_ordinal(21) == "21st"
+    assert get_ordinal(102) == "102nd"
+    assert get_ordinal(1003) == "1003rd"
+
+
+# ===----------------------------------------------------------------------=== #
+# Tests for set_env_var
+# ===----------------------------------------------------------------------=== #
 
 
 @pytest.fixture
