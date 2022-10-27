@@ -197,12 +197,34 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
     if (auto genType = dyn_cast<TypeConstantAttr>(genParam))
       return tryUnifyingTypes(itfType.getValue(), genType.getValue());
 
-  // TODO: It is possible to add inferred dynamic constraints when we have an
-  // error handling model.
-  auto diag = emitError(inferenceLoc, inferenceContext)
-              << ": cannot unify : '" << genParam << "'";
-  diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
-  return failure();
+  auto itfElems = dyn_cast<mlir::SubElementAttrInterface>(itfParam);
+  if (!itfElems) {
+    auto diag = emitError(inferenceLoc, inferenceContext)
+                << ": cannot unify : '" << genParam << "'";
+    diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
+    return failure();
+  }
+  auto genElems = cast<mlir::SubElementAttrInterface>(genParam);
+
+  SmallVector<Attribute> itfParams, genParams;
+  SmallVector<Type> itfTypes, genTypes;
+  itfElems.walkImmediateSubElements(
+      [&](Attribute attr) { itfParams.push_back(attr); },
+      [&](Type type) { itfTypes.push_back(type); });
+  genElems.walkImmediateSubElements(
+      [&](Attribute attr) { genParams.push_back(attr); },
+      [&](Type type) { genTypes.push_back(type); });
+  assert(itfParams.size() == genParams.size() &&
+         itfTypes.size() == genTypes.size());
+
+  // Unify each expression.
+  for (auto [itfParam, genParam] : llvm::zip(itfParams, genParams))
+    if (failed(tryUnifyingTypeParameters(itfParam, genParam)))
+      return failure();
+  for (auto [itfType, genType] : llvm::zip(itfTypes, genTypes))
+    if (failed(tryUnifyingTypes(itfType, genType)))
+      return failure();
+  return success();
 }
 
 /// Check to see if the specified types can be merged, where the 'itfArgTy' is
@@ -238,15 +260,22 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   auto genElems = genArgTy.cast<mlir::SubElementTypeInterface>();
 
   SmallVector<Attribute> itfParams, genParams;
+  SmallVector<Type> itfTypes, genTypes;
   itfElems.walkImmediateSubElements(
-      [&](Attribute attr) { itfParams.push_back(attr); }, [](Type) {});
+      [&](Attribute attr) { itfParams.push_back(attr); },
+      [&](Type type) { itfTypes.push_back(type); });
   genElems.walkImmediateSubElements(
-      [&](Attribute attr) { genParams.push_back(attr); }, [](Type) {});
-  assert(itfParams.size() == genParams.size());
+      [&](Attribute attr) { genParams.push_back(attr); },
+      [&](Type type) { genTypes.push_back(type); });
+  assert(itfParams.size() == genParams.size() &&
+         itfTypes.size() == genTypes.size());
 
   // Unify each expression.
   for (auto [itfParam, genParam] : llvm::zip(itfParams, genParams))
     if (failed(tryUnifyingTypeParameters(itfParam, genParam)))
+      return failure();
+  for (auto [itfType, genType] : llvm::zip(itfTypes, genTypes))
+    if (failed(tryUnifyingTypes(itfType, genType)))
       return failure();
   return success();
 }
