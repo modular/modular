@@ -10,22 +10,15 @@
 #include "KGEN/LowerToObject.h"
 #include "Support/BlobCache.h"
 #include "Support/ErrorOr.h"
-#include "Support/VCSRevision.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/Block.h"
-#include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/Analysis/IRSimilarityIdentifier.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/IR/InstIterator.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
-#include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/Scalar.h"
+
 #include <filesystem>
 #include <mutex>
 
