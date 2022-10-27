@@ -805,19 +805,12 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
 namespace llvm {
 
 template <typename To>
-struct CastIsPossible<To, const ::M::LLCL::AnyAsyncValueRef> {
+struct CastInfo<To, const ::M::LLCL::AnyAsyncValueRef> {
   using From = ::M::LLCL::AnyAsyncValueRef;
 
   static inline bool isPossible(const From &f) { return f->isType<To>(); }
-};
-
-template <typename To>
-struct CastInfo<To *, const ::M::LLCL::AnyAsyncValueRef> {
-  using From = ::M::LLCL::AnyAsyncValueRef;
-
   static inline To *doCast(const From &t) { return &t->get<To>(); }
   static inline To *castFailed() { return nullptr; }
-
   static inline To *doCastIfPossible(const From &f) {
     if (isa<To>(f))
       return doCast(f);
