@@ -27,6 +27,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -589,10 +590,20 @@ LogicalResult ParameterRewriter::rewriteOps(
         return success();
       });
 
-  if (failed(verify(elaboratedGenerator.func))) {
+  // Verify the function and invoke its symbol user verifier.
+  FuncOp func = elaboratedGenerator.func;
+  SymbolTableCollection collection;
+  // Avoid recomputing the symbol table.
+  SymbolTable &localSymtab = collection.getSymbolTable(func->getParentOp());
+  localSymtab = std::move(*symtab);
+  auto cleanup =
+      llvm::make_scope_exit([&] { *symtab = std::move(localSymtab); });
+  auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
+    return user.verifySymbolUses(collection);
+  };
+  if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted())
     return error(*verificationLoc,
                  Twine("verification error: ") + verificationError.str());
-  }
 
   return success();
 }
