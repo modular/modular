@@ -636,3 +636,160 @@ kgen.generator public @elaborateFnWithContextualType2() -> (index, index) {
 
   kgen.return %0, %1 : index, index
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @top
+kgen.generator @top() {
+  // CHECK: kgen.call @"mid,fn=top_concrete_region_0,N=4"()
+  %0:2 = kgen.call @mid<fn: <fn: ()->index>() -> index = region, N=4>() : () -> (index, index)
+  fn<fn: ()->index>() {
+    %0 = kgen.call_param[()->index: fn]()
+    kgen.return %0 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"mid,fn=top_concrete_region_0,N=4"
+kgen.generator @mid<fn: <fn: ()->index>() -> index, N>() -> (index, index) {
+  // CHECK: %[[C0:.*]] = index.constant 0
+  // CHECK: %[[C1:.*]] = index.constant 1
+  // CHECK: %[[C4:.*]] = kgen.param.constant = <4>
+  // CHECK: %[[ADD:.*]] = index.add %[[C1]], %[[C4]]
+  // CHECK: return %[[C0]], %[[ADD]]
+  %c0 = index.constant 0
+  %c1 = index.constant 1
+  %1 = kgen.inlined_call[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
+  fn() {
+    kgen.return %c0 : index
+  }
+  %2 = kgen.inlined_call[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
+  fn() {
+    %3 = kgen.param.constant = <N>
+    %5 = index.add %c1, %3
+    kgen.return %5 : index
+  }
+  kgen.return %1, %2 : index, index
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @outermost
+kgen.generator @outermost() -> index{
+  // CHECK: kgen.call @"middle,outer=outermost_concrete_region_0"
+  %1 = kgen.call @middle<outer:<fn:()->index>()->index = region>() : () -> index
+  outer<fn:()->index>() {
+    %2 = kgen.call_param[()->index:fn]()
+    kgen.return %2 : index
+  }
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func @"middle,outer=outermost_concrete_region_0"
+kgen.generator @middle<outer:<fn:()->index>()->index>() -> index{
+  // CHECK: %[[X:.*]] = index.constant 1
+  %x = index.constant 1
+  %1 = kgen.inlined_call[<fn:()->index, outer:<fn:()->index>()->index>()->index : @inner]
+                        <fn: () -> index = region, outer:<fn:()->index>()->index = outer>()
+  fn() {
+    kgen.return %x : index
+  }
+  // CHECK: return %[[X]]
+  kgen.return %1 : index
+}
+
+// COM: Inlined instations of symbols get removed.
+// CHECK-NOT: kgen.func @"inner
+kgen.generator @inner<fn: ()->index, outer:<fn:()->index>()->index>() -> index {
+  %0 = kgen.call_param[<fn:()->index>()->index: outer]<fn:()->index=fn>()
+  kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: @inlined_region_return
+kgen.generator @inlined_region_return() {
+  // CHECK: kgen.param.constant = <2>
+  kgen.inlined_call[<fn: <()->index>()->()>()->(): @wants_region_return]<fn: <()->index>()->() = region>()
+  fn<()->index>() {
+    kgen.return<2>
+  }
+  kgen.return
+}
+
+// CHECK-NOT: @wants_region_return
+kgen.generator @wants_region_return<fn: <()->index>()->()>() {
+  kgen.call_param[<()->index>()->(): fn]<() -> result>()
+  %0 = kgen.param.constant = <result>
+  kgen.return
+}
+
+// -----
+
+kgen.generator.interface @iface() -> index
+
+// CHECK-LABEL: kgen.func @iface1
+kgen.generator @iface1() -> index implements @iface {
+  %0 = index.constant 0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @iface2
+kgen.generator @iface2() -> index implements @iface {
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+
+// CHECK-NOT @"two_instances
+kgen.generator @two_instances<fn: ()->index>() -> index {
+  %0 = kgen.call @iface() : () -> index
+  %1 = kgen.call_param[()->index: fn]()
+  %2 = index.add %0, %1
+  kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func @inline_call_two_instances
+kgen.generator @inline_call_two_instances(%arg0: index) -> index {
+  // CHECK-NEXT: kgen.call @iface1
+  // CHECK-NEXT: index.add %0, %arg0
+  %0 = kgen.inlined_call[<fn: ()->index>() -> index: @two_instances]<fn: ()->index = region>()
+  fn() {
+    kgen.return %arg0 : index
+  }
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @inline_call_two_instances_concrete_1
+// CHECK-NEXT: kgen.call @iface2
+// CHECK-NEXT: index.add %0, %arg0
+
+// -----
+
+kgen.generator.interface @iface<fn: ()->index>() -> index
+
+kgen.generator @iface1<fn: ()->index>() -> index implements @iface {
+  %0 = index.constant 0
+  %1 = kgen.call_param[()->index: fn]()
+  %2 = index.add %0, %1
+  kgen.return %2 : index
+}
+
+kgen.generator @iface2<fn: ()->index>() -> index implements @iface {
+  %0 = index.constant 1
+  %1 = kgen.call_param[()->index: fn]()
+  %2 = index.add %0, %1
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @inline_call_interface
+kgen.generator @inline_call_interface(%arg0: index) -> index {
+  // CHECK: index.add %0, %arg0
+  %0 = kgen.inlined_call[<fn: ()->index>()->index: @iface]<fn: ()->index = region>()
+  fn() {
+    kgen.return %arg0: index
+  }
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @inline_call_interface_concrete_0
+// CHECK: index.add %0, %arg0

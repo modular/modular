@@ -178,3 +178,27 @@ kgen.generator public @recursiveEvaluator(%funcs: !pop.pointer<() -> index>, %si
 // expected-note @below {{through this call}}
 kgen.generator.interface @itf() -> index
   evaluator (!pop.pointer<() -> index>, index) -> index = @recursiveEvaluator
+
+// -----
+
+// expected-error @below {{no viable implementations found}}
+kgen.generator @top() -> index{
+  %0 = index.constant 0
+  // expected-note @below {{call expansion failed}}
+  %1 = kgen.inlined_call[<fn: ()->index>() -> index: @mid]<fn: ()->index = region>()
+  fn() {
+    kgen.return %0 : index
+  }
+  kgen.return %1 : index
+}
+
+kgen.generator @mid<fn: ()->index>() -> index {
+  // expected-note @below {{non-inlined call to symbol instantiated with non-isolated region}}
+  %0 = kgen.call @bot<fn: ()->index = fn>() : () -> index
+  kgen.return %0 : index
+}
+
+kgen.generator @bot<fn: ()->index>() -> index {
+  %0 = kgen.call_param[()->index: fn]()
+  kgen.return %0 : index
+}
