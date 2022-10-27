@@ -107,6 +107,9 @@ struct TimeTraceProfiler {
     if (duration_cast<microseconds>(Duration).count() >= TimeTraceGranularity)
       Entries.emplace_back(E);
 
+    if (Stack.empty())
+      return;
+
     // Track total time taken by each "name", but only the topmost levels of
     // them; e.g. if there's a template instantiation that instantiates other
     // templates from within, we only want to add the topmost one. "topmost"
