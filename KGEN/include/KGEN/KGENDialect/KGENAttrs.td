@@ -23,12 +23,9 @@ def ParameterExprAttr
       CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
     >]>;
 
-def I1ParameterExprAttr
-  : ConfinedAttr<ParameterExprAttr, [AttrConstraint<
-      CPred<"$_self.cast<TypedAttr>().getType().isInteger(1)">,
-            "i1 parameter expression"
-    >]>;
-
+class TypedParameterExprAttr<Type type> : ConfinedAttr<ParameterExprAttr, [
+  AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
+                             type.predicate>, type.summary>]>;
 
 /// An attribute in the KGEN dialect.
 class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>

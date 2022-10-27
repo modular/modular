@@ -276,7 +276,8 @@ def CallParamOp : KGENOp<"call_param"> {
   let summary = "Call declaration specified by a parameter expression";
 
   let arguments =
-   (ins ParameterExprAttr:$callee, ParamBindArrayAttr:$paramValues,
+   (ins TypedParameterExprAttr<SignatureType>:$callee,
+        ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
@@ -319,6 +320,59 @@ def CallParamOp : KGENOp<"call_param"> {
 }
 
 //===----------------------------------------------------------------------===//
+// InlinedCallOp
+//===----------------------------------------------------------------------===//
+
+def InlinedCallOp : KGENOp<"inlined_call"> {
+  let summary = "Parametric call that allows implicit capture.";
+  let description = [{
+    The `kgen.inlined_call` operation is a parametric call similar to
+    `kgen.call_param` in that the callee is a parameter. However, any region
+    parameters specified by the operation do not have to be isolated from above.
+    `kgen.inlined_call` can capture values within scope of the call.
+
+    Example:
+
+    ```mlir
+    %c0 = index.constant 0
+    %0 = kgen.inlined_call[<fn: () -> index>() -> index: foo]
+                          <fn: () -> index = region>()
+    fn() {
+      kgen.return %c0 : index
+    }
+    ```
+
+    The elaborator will inline the callee and any nested calls that use these
+    region parameters.
+  }];
+
+  let arguments = (ins
+    TypedParameterExprAttr<SignatureType>:$callee,
+    ParamBindArrayAttr:$paramValues,
+    ParamDeclArrayAttr:$paramDecls,
+    Variadic<AnyType>:$operands
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
+  let assemblyFormat = [{
+    `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
+                               type($operands), type($results))
+    `(` $operands `)`
+    attr-dict
+    custom<InPlaceCallRegions>($regions, ref($paramValues))
+  }];
+
+  let hasRegionVerifier = 1;
+
+  let extraClassDeclaration = [{
+    /// Return the function type of this call.
+    FunctionType getFunctionType();
+    /// Return the signature type of this call.
+    SignatureType getSignature();
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // RegionBodyOp
 //===----------------------------------------------------------------------===//
 
@@ -328,7 +382,23 @@ def RegionBodyOp : KGENOp<"region.body",
      SingleBlockImplicitTerminator<"ReturnOp">,
      DeclareOpInterfaceMethods<KGENDeclInterface>,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Define a region parameter body";
+  let summary = "Define an isolated from above region parameter body.";
+  let description = [{
+    The `kgen.region.body` operation defines a region parameter that is isolated
+    from above. It is used by `kgen.addressof`, `kgen.call`, and
+    `kgen.call_param` to specify region parameters. The operation defines a
+    parameter signature with input and output parameters for the callable body
+    and constraints over them.
+
+    Example:
+
+    ```mlir
+    kgen.call @foreach<fn: (index) -> index = region>() : () -> ()
+    fn(%arg1: index) {
+      kgen.return %arg1 : index
+    }
+    ```
+  }];
 
   let arguments = (ins ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
@@ -345,6 +415,54 @@ def RegionBodyOp : KGENOp<"region.body",
     /// Get the terminator.
     ReturnOp getReturnOp();
   }];
+
+  let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// RegionOpenBodyOp
+//===----------------------------------------------------------------------===//
+
+def RegionOpenBodyOp : KGENOp<"region.open_body",
+    [Terminator, HasParent<"InlinedCallOp">,
+     SingleBlockImplicitTerminator<"ReturnOp">]> {
+  let summary = "Define a region parameter body.";
+  let description = [{
+    The `kgen.region.open_body` operation defines a region parameter that is not
+    isolated from above. It is used by `kgen.inlined_call` to specify region
+    parameters to the callee that will be inlined. This operation cannot define
+    input parameters or constraints, but it may define output parameters.
+
+    Example:
+
+    ```mlir
+    %0 = index.constant 0
+    %1 = kgen.inlined_call[<fn: () -> index>() -> index: @foo]
+                          <fn: () -> index = region>()
+    fn() {
+      // Return a captured value.
+      kgen.return %0 : index
+    }
+    ```
+  }];
+
+  let arguments = (ins ParamDeclArrayAttr:$paramDecls,
+                       KTypeArrayAttr:$resultParamTypes);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let assemblyFormat = [{
+    `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    `` custom<RegionBody>($bodyRegion) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    /// Get the terminator.
+    ReturnOp getReturnOp();
+    /// Get the function signature.
+    FunctionType getFunctionType();
+  }];
+
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -464,7 +582,7 @@ def ParamAssertOp : KGENOp<"param.assert", []> {
     on a generator.
   }];
 
-  let arguments = (ins I1ParameterExprAttr:$cond, StrAttr:$message);
+  let arguments = (ins TypedParameterExprAttr<I1>:$cond, StrAttr:$message);
   let assemblyFormat =
     "` ` `<` custom<ParamAssertOpValue>($cond) `>` `,` $message attr-dict";
 

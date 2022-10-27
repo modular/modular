@@ -542,10 +542,9 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
 }
 
 /// Verify that regions used as signature parameters match in signature.
-static LogicalResult verifyRegionSignatures(Operation *theCall) {
-  // TODO: We need an interface for call operations.
-  auto values = theCall->getAttrOfType<ParamBindArrayAttr>("paramValues");
-  assert(values && "expected parameter values");
+template <typename RegionBodyT>
+static LogicalResult verifyRegionSignatures(Operation *theCall,
+                                            ParamBindArrayAttr values) {
   auto regionValues = llvm::make_filter_range(values, [](ParamBindAttr value) {
     return value.getValue().isa<ParamCallRegionRefAttr>();
   });
@@ -559,9 +558,10 @@ static LogicalResult verifyRegionSignatures(Operation *theCall) {
 
   // Ensure each region parameter matches up in order with the regions.
   for (auto &it : llvm::enumerate(regionValues)) {
-    auto paramSignature = it.value().getValue().getType().cast<SignatureType>();
+    auto paramSignature =
+        it.value().getValue().getType().template cast<SignatureType>();
     Region &region = theCall->getRegion(it.index());
-    auto body = cast<RegionBodyOp>(region.front().getTerminator());
+    auto body = cast<RegionBodyT>(region.front().getTerminator());
     if (region.front().getOperations().size() != 1)
       return theCall->emitOpError("expected region #")
              << it.index() << " to contain only a `kgen.region.body` op";
@@ -577,10 +577,11 @@ static LogicalResult verifyRegionSignatures(Operation *theCall) {
   return success();
 }
 
+template <typename BodyOpT>
 static ParseResult
-parseCallRegions(OpAsmParser &p,
-                 SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
-                 ParamBindArrayAttr paramValues) {
+parseCallRegionBodies(OpAsmParser &p,
+                      SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
+                      ParamBindArrayAttr paramValues) {
   // We expect one region for each ParamCallRegionRefAttr.
   auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
     return bind.getValue().isa<ParamCallRegionRefAttr>();
@@ -589,10 +590,10 @@ parseCallRegions(OpAsmParser &p,
   auto parseFn = [&](ParamBindAttr bind) -> ParseResult {
     // Parse the region body operation in-line.
     OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
-                              RegionBodyOp::getOperationName());
+                              BodyOpT::getOperationName());
     Optional<Location> bodyLoc = regionBody.location;
     if (p.parseKeyword(bind.getName(), " region name") ||
-        RegionBodyOp::parse(p, regionBody) ||
+        BodyOpT::parse(p, regionBody) ||
         p.parseOptionalLocationSpecifier(bodyLoc))
       return failure();
     regionBody.location = *bodyLoc;
@@ -608,9 +609,9 @@ parseCallRegions(OpAsmParser &p,
   return failableInterleave(binds, parseFn, [&] { return p.parseComma(); });
 }
 
-static void printCallRegions(OpAsmPrinter &p, Operation *op,
-                             mlir::RegionRange regions,
-                             ParamBindArrayAttr paramValues) {
+template <typename RegionBodyT>
+static void printCallRegionBodies(OpAsmPrinter &p, mlir::RegionRange regions,
+                                  ParamBindArrayAttr paramValues) {
   auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
     return bind.getValue().isa<ParamCallRegionRefAttr>();
   });
@@ -619,10 +620,23 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
     p.printNewline();
     p << bind.value().getName().strref();
     Operation *body = regions[bind.index()]->front().getTerminator();
-    cast<RegionBodyOp>(body).print(p);
+    cast<RegionBodyT>(body).print(p);
     p.printOptionalLocationSpecifier(body->getLoc());
   };
   llvm::interleave(llvm::enumerate(binds), p, printFn, ",");
+}
+
+static ParseResult
+parseCallRegions(OpAsmParser &p,
+                 SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
+                 ParamBindArrayAttr paramValues) {
+  return parseCallRegionBodies<RegionBodyOp>(p, result, paramValues);
+}
+
+static void printCallRegions(OpAsmPrinter &p, Operation *op,
+                             mlir::RegionRange regions,
+                             ParamBindArrayAttr paramValues) {
+  return printCallRegionBodies<RegionBodyOp>(p, regions, paramValues);
 }
 
 //===----------------------------------------------------------------------===//
@@ -659,7 +673,7 @@ AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult AddressOfOp::verifyRegions() {
-  return verifyRegionSignatures(*this);
+  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
 }
 
 SignatureType AddressOfOp::getSignature() {
@@ -753,7 +767,7 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
 
 LogicalResult CallOp::verifyRegions() {
   // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures(*this);
+  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
 }
 
 //===----------------------------------------------------------------------===//
@@ -855,18 +869,67 @@ LogicalResult CallParamOp::verifyRegions() {
     return emitError(
         "kgen.call_param is only allowed in generators pre-elaboration");
 
-  auto calleeSignature = dyn_cast<SignatureType>(getCallee().getType());
-  if (!calleeSignature)
-    return emitError("kgen.call_param requires callee of signature type");
-
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
+  auto calleeSignature = cast<SignatureType>(getCallee().getType());
   if (failed(verifyCallAndCallee(*this, getSignature(), calleeSignature,
                                  getParamValuesAttr(), getLoc())))
     return failure();
 
   // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures(*this);
+  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
+}
+
+//===----------------------------------------------------------------------===//
+// InlinedCallOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult InlinedCallOp::verifyRegions() {
+  KGENDeclInterface parent =
+      getOperation()->getParentOfType<KGENDeclInterface>();
+  if (!parent || isa<FuncOp>(parent))
+    return emitOpError("is only allowed in generators pre-elaboration");
+
+  // Check the parameters and operands align with the requirements of the
+  // callee's signature.
+  auto calleeSignature = cast<SignatureType>(getCallee().getType());
+  if (failed(verifyCallAndCallee(*this, getSignature(), calleeSignature,
+                                 getParamValuesAttr(), getLoc())))
+    return failure();
+
+  // Verify the region signatures match region parameter signatures.
+  return verifyRegionSignatures<RegionOpenBodyOp>(*this, getParamValuesAttr());
+  return success();
+}
+
+FunctionType InlinedCallOp::getFunctionType() {
+  return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
+}
+
+SignatureType InlinedCallOp::getSignature() {
+  SmallVector<ParamDeclAttr> inputParams;
+  SmallVector<Type> outputParams;
+  inputParams.reserve(getParamValues().size());
+  outputParams.reserve(getParamDecls().size());
+  for (ParamBindAttr value : getParamValues())
+    inputParams.push_back(value.getDecl());
+  for (ParamDeclAttr result : getParamDecls())
+    outputParams.push_back(result.getType());
+  return SignatureType::get(ParamDeclArrayAttr::get(getContext(), inputParams),
+                            TypeArrayAttr::get(getContext(), outputParams),
+                            getFunctionType());
+}
+
+static ParseResult parseInPlaceCallRegions(
+    OpAsmParser &p, SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
+    ParamBindArrayAttr paramValues) {
+  return parseCallRegionBodies<RegionOpenBodyOp>(p, result, paramValues);
+}
+
+static void printInPlaceCallRegions(OpAsmPrinter &p, Operation *op,
+                                    mlir::RegionRange regions,
+                                    ParamBindArrayAttr paramValues) {
+  return printCallRegionBodies<RegionOpenBodyOp>(p, regions, paramValues);
 }
 
 //===----------------------------------------------------------------------===//
@@ -903,14 +966,31 @@ FunctionType RegionBodyOp::getFunctionType() {
                            body->getTerminator()->getOperandTypes());
 }
 
-/// Verify the parameters in the region body.
+/// Verify the parameter definitions and uses within the region body.
 LogicalResult
 RegionBodyOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(), None)))
-    return failure();
-
-  // Verify the parameter definitions and uses within the region body.
   return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+}
+
+LogicalResult RegionBodyOp::verifyRegions() {
+  return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
+}
+
+//===----------------------------------------------------------------------===//
+// RegionOpenBodyOp
+//===----------------------------------------------------------------------===//
+
+ReturnOp RegionOpenBodyOp::getReturnOp() {
+  return cast<ReturnOp>(getBody()->getTerminator());
+}
+
+FunctionType RegionOpenBodyOp::getFunctionType() {
+  return FunctionType::get(getContext(), getBodyRegion().getArgumentTypes(),
+                           getReturnOp().getOperandTypes());
+}
+
+LogicalResult RegionOpenBodyOp::verifyRegions() {
+  return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
 }
 
 //===----------------------------------------------------------------------===//
