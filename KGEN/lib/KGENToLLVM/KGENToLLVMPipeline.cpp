@@ -7,7 +7,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/ForwardDecls.h"
-#include "Support/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
@@ -32,7 +32,8 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerGlobalPOPToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVM());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(index::createIndexToLLVM());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(
+      mlir::createConvertIndexToLLVMPass());
 
   // And finally canonicalize again.
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());

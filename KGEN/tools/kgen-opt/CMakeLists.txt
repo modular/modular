@@ -8,8 +8,6 @@ add_modular_tool(kgen-opt
   kgen-opt.cpp
   LINK_LIBS PRIVATE
   LITDialect
-  IndexDialect
-  IndexToLLVM
   KGENDialect
   KGENEmitObject
   ZAPDialect
@@ -21,6 +19,8 @@ add_modular_tool(kgen-opt
   LowerZAPToPOP
 
   MLIRIR
+  MLIRIndexDialect
+  MLIRIndexToLLVM
   MLIRLLVMDialect
   MLIROptLib
   MLIRParser

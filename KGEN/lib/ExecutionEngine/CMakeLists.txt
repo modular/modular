@@ -14,12 +14,12 @@ add_modular_mlir_library(KGENExecutionEngine
   nativecodegen
 
   LINK_LIBS PUBLIC
-  IndexToLLVM
   LowerZAPToPOP
   KGENDialect
   KGENToLLVM
   KGENEmitObject
 
   MLIRLLVMToLLVMIRTranslation
+  MLIRIndexToLLVM
   MLIRTargetLLVMIRExport
   )

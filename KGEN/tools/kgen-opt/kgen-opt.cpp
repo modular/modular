@@ -10,9 +10,9 @@
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENPasses.h"
-#include "Support/IndexDialect/IndexDialect.h"
-#include "Support/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<index::IndexDialect, mlir::LLVM::LLVMDialect,
+  registry.insert<mlir::index::IndexDialect, mlir::LLVM::LLVMDialect,
                   mlir::scf::SCFDialect>();
   // The elaborator requires LLVM lowering to run the generated functions.
   mlir::registerLLVMDialectTranslation(registry);
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
   mlir::registerInlinerPass();
   mlir::registerCanonicalizerPass();
   mlir::registerReconcileUnrealizedCasts();
-  index::registerIndexToLLVMPass();
+  mlir::registerConvertIndexToLLVMPass();
   KGEN::registerPasses();
   KGEN::registerLowerToLLVMPipeline();
 

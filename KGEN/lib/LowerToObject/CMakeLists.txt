@@ -17,11 +17,11 @@ add_modular_mlir_library(KGENEmitObject
   nativecodegen
 
   LINK_LIBS PUBLIC
-  IndexToLLVM
   KGENDialect
   KGENToLLVM
   LowerZAPToPOP
 
+  MLIRIndexToLLVM
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter

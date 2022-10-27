@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/IndexDialect/IndexDialect.h"
-#include "Support/IndexToLLVM/IndexToLLVM.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -16,8 +14,7 @@ using namespace M;
 
 int main(int argc, char **argv) {
   DialectRegistry registry;
-  registry.insert<mlir::func::FuncDialect, index::IndexDialect, MDialect>();
-  M::index::registerIndexToLLVMPass();
+  registry.insert<mlir::func::FuncDialect, MDialect>();
   mlir::registerCanonicalizer();
   return failed(
       mlir::MlirOptMain(argc, argv, "index optimizer driver", registry));

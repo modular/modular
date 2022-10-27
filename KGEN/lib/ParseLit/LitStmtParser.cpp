@@ -18,8 +18,8 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/IndexDialect/IndexAttrs.h"
-#include "Support/IndexDialect/IndexOps.h"
+#include "mlir/Dialect/Index/IR/IndexAttrs.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -41,8 +41,8 @@ struct LitStmtParser : public LitParserBase {
 
     // Create the varDeclCursor with an arbitrary op.  We delete it on
     // destruction of this statement parser.
-    varDeclCursor =
-        builder.create<index::ConstantOp>(scope.getDecl()->getLoc(), 1234567);
+    varDeclCursor = builder.create<mlir::index::ConstantOp>(
+        scope.getDecl()->getLoc(), 1234567);
   }
 
   ~LitStmtParser() {
@@ -377,9 +377,9 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
            << cond.getType() << " isn't convertible to Bool";
 
   auto &builder = parser.getBuilder();
-  auto one = builder.create<index::ConstantOp>(cond.getLoc(), 1);
-  condValue = builder.create<index::CmpOp>(
-      cond.getLoc(), index::IndexCmpPredicate::EQ, cond, one);
+  auto one = builder.create<mlir::index::ConstantOp>(cond.getLoc(), 1);
+  condValue = builder.create<mlir::index::CmpOp>(
+      cond.getLoc(), mlir::index::IndexCmpPredicate::EQ, cond, one);
   return success();
 }
 

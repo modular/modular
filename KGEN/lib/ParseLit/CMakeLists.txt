@@ -18,10 +18,10 @@ add_modular_conversion_library(ParseLit
 
   LINK_LIBS PUBLIC
   LITDialect
-  MLIRSCFDialect
-  IndexDialect
   KGENDialect
   POPDialect
 
+  MLIRIndexDialect
   MLIRTranslateLib
+  MLIRSCFDialect
 )

@@ -18,7 +18,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/IndexDialect/IndexOps.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 
 using namespace M;
 using namespace M::KGEN::LIT;
@@ -92,7 +92,7 @@ Value ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
   // Materialize index integer constants as a special case.
   if (auto intAttr = dyn_cast<IntegerAttr>(attr))
     if (intAttr.getType().isIndex())
-      return builder->create<index::ConstantOp>(
+      return builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
 
   // Otherwise, emit a generalized parameter constant.
@@ -628,9 +628,11 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   default:
     llvm_unreachable("unknown binary operator");
   case kAdd:
-    return (Value)emitter.builder->create<index::AddOp>(loc, lhsVal, rhsVal);
+    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, lhsVal,
+                                                              rhsVal);
   case kMul:
-    return (Value)emitter.builder->create<index::MulOp>(loc, lhsVal, rhsVal);
+    return (Value)emitter.builder->create<mlir::index::MulOp>(loc, lhsVal,
+                                                              rhsVal);
   }
 }
 
