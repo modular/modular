@@ -32,10 +32,10 @@ def run_shell_command(
     Returns:
         A subprocess.CompletedProcess object.
     """
-    cmd = subprocess.list2cmdline(cmd)
-    logging.debug(f"Running command: {cmd}")
+    cmdline = subprocess.list2cmdline(cmd)
+    logging.debug(f"Running command: {cmdline}")
     kwargs.update({"shell": shell, "check": check})
-    return subprocess.run(cmd, **kwargs)
+    return subprocess.run(cmdline if shell else list(cmd), **kwargs)
 
 
 def run_chained_commands(

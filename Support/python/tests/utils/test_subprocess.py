@@ -34,3 +34,10 @@ def test_run_shell_command_error():
         run_shell_command(["false"])
 
     run_shell_command(["false"], check=False)
+
+
+def test_run_command_with_shell_false():
+    out = get_command_output(
+        ["echo", "`not a valid shell command`"], shell=False
+    )
+    assert out == "`not a valid shell command`"
