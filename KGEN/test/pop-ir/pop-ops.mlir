@@ -248,7 +248,7 @@ kgen.func @pop_cmp_simd(
 
 // CHECK-LABEL: @pop_and_bool
 kgen.func @pop_and_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>,
-                   %arg2: !pop.simd<4, bool>, %arg3: !pop.simd<4, bool>) {
+                        %arg2: !pop.simd<4, bool>, %arg3: !pop.simd<4, bool>) {
   // CHECK: pop.and %{{.*}}, %{{.*}} :
   %0 = pop.and %arg0, %arg1 : !pop.scalar<bool>
   // CHECK: pop.and %{{.*}}, %{{.*}} :
@@ -266,9 +266,26 @@ kgen.func @pop_and(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   kgen.return
 }
 
+kgen.generator @pop_and_parametric<size, type: dtype>(
+                   %arg0: !pop.scalar<type>, %arg1: !pop.scalar<type>,
+                   %arg2: !pop.simd<size, type>, %arg3: !pop.simd<size, type>) {
+  // CHECK: pop.and
+  %0 = pop.and %arg0, %arg1 : !pop.scalar<type>
+  // CHECK: pop.and
+  %1 = pop.and %arg2, %arg3 : !pop.simd<size, type>
+  kgen.return
+}
+
+kgen.generator @pop_and_paramref<type: type>(%arg0: !kgen.paramref<type>,
+                                             %arg1: !kgen.paramref<type>) {
+  // CHECK: pop.and
+  %0 = pop.and %arg0, %arg1 : !kgen.paramref<type>
+  kgen.return
+}
+
 // CHECK-LABEL: @pop_or_bool
 kgen.func @pop_or_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>,
-                   %arg2: !pop.simd<4, bool>, %arg3: !pop.simd<4, bool>) {
+                       %arg2: !pop.simd<4, bool>, %arg3: !pop.simd<4, bool>) {
   // CHECK: pop.or %{{.*}}, %{{.*}} :
   %0 = pop.or %arg0, %arg1 : !pop.scalar<bool>
   // CHECK: pop.or %{{.*}}, %{{.*}} :
@@ -283,6 +300,23 @@ kgen.func @pop_or(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   %0 = pop.or %arg0, %arg1 : !pop.scalar<si32>
   // CHECK: pop.or %{{.*}}, %{{.*}} :
   %1 = pop.or %arg2, %arg3 : !pop.simd<4, si32>
+  kgen.return
+}
+
+kgen.generator @pop_or_parametric<size, type: dtype>(
+                   %arg0: !pop.scalar<type>, %arg1: !pop.scalar<type>,
+                   %arg2: !pop.simd<size, type>, %arg3: !pop.simd<size, type>) {
+  // CHECK: pop.or
+  %0 = pop.or %arg0, %arg1 : !pop.scalar<type>
+  // CHECK: pop.or
+  %1 = pop.or %arg2, %arg3 : !pop.simd<size, type>
+  kgen.return
+}
+
+kgen.generator @pop_or_paramref<type: type>(%arg0: !kgen.paramref<type>,
+                                             %arg1: !kgen.paramref<type>) {
+  // CHECK: pop.or
+  %0 = pop.or %arg0, %arg1 : !kgen.paramref<type>
   kgen.return
 }
 
@@ -303,6 +337,23 @@ kgen.func @pop_xor(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   %0 = pop.xor %arg0, %arg1 : !pop.scalar<si32>
   // CHECK: pop.xor %{{.*}}, %{{.*}} :
   %1 = pop.xor %arg2, %arg3 : !pop.simd<4, si32>
+  kgen.return
+}
+
+kgen.generator @pop_xor_parametric<size, type: dtype>(
+                   %arg0: !pop.scalar<type>, %arg1: !pop.scalar<type>,
+                   %arg2: !pop.simd<size, type>, %arg3: !pop.simd<size, type>) {
+  // CHECK: pop.xor
+  %0 = pop.xor %arg0, %arg1 : !pop.scalar<type>
+  // CHECK: pop.xor
+  %1 = pop.xor %arg2, %arg3 : !pop.simd<size, type>
+  kgen.return
+}
+
+kgen.generator @pop_xor_paramref<type: type>(%arg0: !kgen.paramref<type>,
+                                             %arg1: !kgen.paramref<type>) {
+  // CHECK: pop.xor
+  %0 = pop.xor %arg0, %arg1 : !kgen.paramref<type>
   kgen.return
 }
 

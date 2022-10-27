@@ -516,9 +516,9 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType
       ]> {
 
-  let arguments = (ins BoolOrIntegerScalarOrSIMD:$lhs,
-                       BoolOrIntegerScalarOrSIMD:$rhs);
-  let results = (outs BoolOrIntegerScalarOrSIMD:$result);
+  let arguments = (ins UnboundBoolOrIntegerScalarOrSIMD:$lhs,
+                       UnboundBoolOrIntegerScalarOrSIMD:$rhs);
+  let results = (outs UnboundBoolOrIntegerScalarOrSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
 }
@@ -531,7 +531,8 @@ def POP_AndOp : POP_BitwiseOp<"and"> {
   let summary = "bitwise logical and";
   let description = [{
     The `pop.and` returns the bitwise logical and of its two operands. The dtype
-    of the operands must be boolean or integral.
+    of the operands must be a boolean, integral, or parametric type with
+    underlying boolean or integral dtype.
 
     Example:
 
@@ -550,7 +551,8 @@ def POP_OrOp : POP_BitwiseOp<"or"> {
   let summary = "bitwise logical or";
   let description = [{
     The `pop.or` returns the bitwise logical or of its two operands. The dtype
-    of the operands must be boolean or integral.
+    of the operands must be a boolean, integral, or parametric type with
+    underlying boolean or integral dtype.
 
     Example:
 
@@ -569,7 +571,8 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
   let summary = "bitwise logical xor";
   let description = [{
     The `pop.xor` returns the bitwise logical exclusive or of its two operands.
-    The dtype of the operands must be boolean or integral.
+    The dtype of the operands must be a boolean, integral, or parametric type
+    with underlying boolean or integral dtype.
 
     Example:
 
