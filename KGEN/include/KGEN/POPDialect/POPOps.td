@@ -577,6 +577,13 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
     %c = pop.xor %a, %b : !pop.scalar<type>
     %c = pop.xor %a, %b : !pop.simd<size, type>
     ```
+
+    The XOr is used to implement the `not` operation. For example:
+
+    ```mlir
+    %neg_one = pop.constant(-1) : !pop.scalar<type>
+    %not = pop.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
+    ```
   }];
 }
 
