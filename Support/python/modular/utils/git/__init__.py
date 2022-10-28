@@ -11,6 +11,7 @@ from ._git import (
     fetch_checkout_commit,
     get_current_branch_name,
     get_gh_username,
+    get_uncommitted_changes,
     is_full_git_sha,
     shallow_clone,
 )

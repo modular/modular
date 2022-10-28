@@ -16,7 +16,7 @@ from modular.utils.subprocess import (
     run_chained_commands,
     run_shell_command,
 )
-from modular.utils.typing import Optional
+from modular.utils.typing import Dict, Optional, Sequence
 
 
 class GitError(Exception):
@@ -130,7 +130,8 @@ def get_current_branch_name(repo_dir: Optional[Path] = None) -> str:
         in a 'detached HEAD' state
 
     Raises:
-        GitError: if called outside a git repo, or.
+        GitError: if called outside a git repo, or the repo doesn't have any
+        commits yet.
     """
 
     try:
@@ -141,6 +142,37 @@ def get_current_branch_name(repo_dir: Optional[Path] = None) -> str:
         if e.returncode == 128:
             raise GitError("Not inside a valid git repository.") from None
         raise
+
+
+def get_uncommitted_changes(
+    repo_dir: Optional[Path] = None,
+) -> Dict[str, Sequence[str]]:
+    """Return a dictionary of uncommitted changes.
+
+    Args:
+        repo_dir: path to the repo. Defaults to the current working directory.
+
+    Returns:
+        A dictionary with keys as described in
+        https://git-scm.com/docs/git-status#_short_format and values as lists
+        of the corresponding changes, each change either in the format "PATH",
+        or "ORIG_PATH -> PATH".
+
+    Raises:
+        GitError: if called outside a git repo.
+    """
+    try:
+        out = get_command_output(["git", "status", "--porcelain"], cwd=repo_dir)
+    except CalledProcessError as e:
+        if e.returncode == 128:
+            raise GitError("Not inside a valid git repository.") from None
+        raise
+
+    changes = {}
+    for line in out.splitlines():
+        # First two chars are the status, changed path starts at 4th character.
+        changes.setdefault(line[:2], []).append(line[3:])
+    return changes
 
 
 # TODO: enforce this as a module dependency
