@@ -630,13 +630,64 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   case kAdd:
     return (Value)emitter.builder->create<mlir::index::AddOp>(loc, lhsVal,
                                                               rhsVal);
+  case kSub:
+    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, lhsVal,
+                                                              rhsVal);
   case kMul:
     return (Value)emitter.builder->create<mlir::index::MulOp>(loc, lhsVal,
                                                               rhsVal);
+  case kDiv:
+    // TODO(types): this should be floating point division
+    return (Value)emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal,
+                                                               rhsVal);
+  case kExp:
+    // TODO(types): this should be an exponentiation op
+    // eventually we should call object.__pow__(self, other[, modulo])
+    return (Value)emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal,
+                                                               rhsVal);
   }
 }
 
 Type BinOpNode::emitType(ExprEmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
+  return Type();
+}
+
+AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+  auto exprRep = emitter.emitRValue(expr);
+  if (!exprRep)
+    return {};
+  auto exprType = exprRep.getType();
+  if (!exprType.isIndex()) {
+    emitter.emitError(getLoc(),
+                      "unary operator with interesting types not implemented");
+    return {};
+  }
+
+  assert(emitter.builder && "cannot have dynamic values without a builder");
+
+  auto exprVal = emitter.emitDRValue(exprRep, expr->getLoc());
+  auto loc = emitter.translateLocation(getLoc());
+
+  switch (kind) {
+  default:
+    llvm_unreachable("unknown unary operator");
+  case kPlus: {
+    // TODO:  this should eventually implement a call to object.__pos__(self)
+    auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
+    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, zero,
+                                                              exprVal);
+  }
+  case kMinus: {
+    // TODO:  this should eventually implement a call to object.__neg__(self)
+    auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
+    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, zero,
+                                                              exprVal);
+  }
+  }
+}
+
+Type UnaryOpNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }

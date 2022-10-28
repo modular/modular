@@ -198,6 +198,22 @@ struct BinOpNode final : public ExprNode {
   Type emitType(ExprEmitter &emitter) const override;
 };
 
+struct UnaryOpNode final : public ExprNode {
+  UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *expr)
+      : ExprNode(kind), opLoc(opLoc), expr(expr) {}
+
+  const SMLoc opLoc;
+  ExprNode *const expr;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind >= kFirstUnaryOp && node->kind <= klastUnaryOp;
+  }
+  SMLoc getLoc() const override { return opLoc; }
+  bool containsError() const override { return expr->containsError(); }
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // LIT_EXPR_NODES_H
