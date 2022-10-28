@@ -1,11 +1,11 @@
 // RUN: kgen-opt -pass-pipeline='kgen.func(lower-pop-to-llvm)' %s | FileCheck %s
 
-!struct1 = !pop.struct<struct<scalar<f32>>, array<4, scalar<f32>>>
+!struct1 = !pop.struct<struct<simd<1, f32>>, array<4, simd<1, f32>>>
 
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct(
-    %a: !pop.struct<scalar<f32>>,
-    %b: !pop.array<4, scalar<f32>>
+    %a: !pop.struct<simd<1, f32>>,
+    %b: !pop.array<4, simd<1, f32>>
 ) -> !struct1 {
   // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<(f32)>, array<4 x f32>)>
   // CHECK: %[[S1:.*]] = llvm.insertvalue %{{.*}}, %[[S0]][0]
@@ -16,19 +16,19 @@ kgen.func @struct_construct(
 
 // CHECK-LABEL: @struct_insert
 kgen.func @struct_insert(
-    %a: !pop.struct<scalar<f32>>,
-    %b: !pop.scalar<f32>
-) -> !pop.struct<scalar<f32>> {
+    %a: !pop.struct<simd<1, f32>>,
+    %b: !pop.simd<1, f32>
+) -> !pop.struct<simd<1, f32>> {
   // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[0] : !llvm.struct<(f32)>
-  %0 = pop.struct.replace %b, %a[0] : !pop.struct<scalar<f32>>
-  kgen.return %0 : !pop.struct<scalar<f32>>
+  %0 = pop.struct.replace %b, %a[0] : !pop.struct<simd<1, f32>>
+  kgen.return %0 : !pop.struct<simd<1, f32>>
 }
 
 // CHECK-LABEL: @struct_extract
-kgen.func @struct_extract(%a: !pop.struct<scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @struct_extract(%a: !pop.struct<simd<1, f32>>) -> !pop.simd<1, f32> {
   // CHECK: llvm.extractvalue %{{.*}}[0]
-  %0 = pop.struct.get %a[0] : !pop.struct<scalar<f32>>
-  kgen.return %0 : !pop.scalar<f32>
+  %0 = pop.struct.get %a[0] : !pop.struct<simd<1, f32>>
+  kgen.return %0 : !pop.simd<1, f32>
 }
 
 // CHECK-LABEL: @struct_gep

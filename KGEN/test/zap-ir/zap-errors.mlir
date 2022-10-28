@@ -180,7 +180,7 @@ kgen.func @string_wrong_array_size() {
 
 kgen.func @not_si8_array() {
   // expected-error @below {{result #0 must be pointer to array of scalar `si8`}}
-  %0 = "zap.global_string"() {value = "foobar"} : () -> (!pop.scalar<si8>)
+  %0 = "zap.global_string"() {value = "foobar"} : () -> (!pop.simd<1, si8>)
   kgen.return
 }
 
