@@ -63,8 +63,7 @@ struct LitStmtParser : public LitParserBase {
 
   ParseResult parseSuite(ssize_t curIndent);
   ParseResult parseStmts(size_t minIndent);
-  ParseResult parseStmt(size_t curIndent);
-  ParseResult parseSimpleStmt(size_t stmtIndent);
+  ParseResult parseStmt(bool isSimpleStmt, size_t curIndent);
 
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
@@ -117,7 +116,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
 
   // Otherwise, parse a stmt_list.
   do {
-    if (parseSimpleStmt(/*NoWrapping=*/~size_t(0)))
+    if (parseStmt(/*isSimpleStmt=*/true, /*NoWrapping=*/~size_t(0)))
       return failure();
     // Stop if we see a semicolon at the end of line or a missing semicolon.
   } while (consumeIf(LitToken::semi) &&
@@ -139,12 +138,16 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
     if (indent.value() < minIndent)
       break;
 
-    if (parseStmt(indent.value()))
+    if (parseStmt(/*isSimpleStmt=*/false, indent.value()))
       return failure();
   }
   return success();
 }
 
+/// When `isSimpleStmt` is true, this parses the simple_stmt production,
+/// otherwise it parses the broader `statment` production that includes compound
+/// statements.
+///
 /// statement ::= compound_stmt | simple_stmt
 ///
 /// compound_stmt ::= if_stmt
@@ -160,34 +163,6 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///                 | async_for_stmt [TODO]
 ///                 | async_funcdef [TODO]
 ///
-ParseResult LitStmtParser::parseStmt(size_t curIndent) {
-  // Handle compound stmts here and chain to simple statements to handle the
-  // whole "statement" production.
-  switch (getToken().getKind()) {
-  case LitToken::kw_if:
-    return parseIfStmt(curIndent);
-  case LitToken::kw_while:
-    return parseWhileStmt(curIndent);
-  case LitToken::kw_def:
-    return parseDefStmt(curIndent);
-  case LitToken::kw_struct:
-    // We don't support structs in structs (yet?).
-    if (isa<LITStructDeclOp>(scope.getDecl()))
-      emitError("nested struct not supported here");
-    return parseStructStmt(curIndent);
-
-  // NOTE: When adding new cases here, make sure to add them to parseSimpleStmt
-  // as well for error recovery.
-  default:
-    // Otherwise must be a simple statement.
-    return parseSimpleStmt(curIndent);
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// Simple statements.
-//===----------------------------------------------------------------------===//
-
 /// simple_stmt ::= expression_stmt
 ///               | assert_stmt [TODO]
 ///               | var_decl_stmt
@@ -205,16 +180,38 @@ ParseResult LitStmtParser::parseStmt(size_t curIndent) {
 ///               | future_stmt [TODO]
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
-ParseResult LitStmtParser::parseSimpleStmt(size_t stmtIndent) {
-  switch (getToken().getKind()) {
-  case LitToken::kw_if:
-  case LitToken::kw_while:
-  case LitToken::kw_def:
-  case LitToken::kw_struct:
-    emitError() << "'" << getToken().getSpelling()
-                << "' statement must be on its own line";
-    return parseStmt(0);
+///
+ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
+  auto rejectSimpleStmt = [&]() {
+    if (isSimpleStmt)
+      emitError() << "'" << getToken().getSpelling()
+                  << "' statement must be on its own line";
+  };
 
+  switch (getToken().getKind()) {
+    //===------------------------------------------------------------------===//
+    // Compound statements.
+    //===------------------------------------------------------------------===//
+  case LitToken::kw_if:
+    rejectSimpleStmt();
+    return parseIfStmt(stmtIndent);
+  case LitToken::kw_while:
+    rejectSimpleStmt();
+    return parseWhileStmt(stmtIndent);
+  case LitToken::kw_def:
+    rejectSimpleStmt();
+    return parseDefStmt(stmtIndent);
+  case LitToken::kw_struct:
+    rejectSimpleStmt();
+
+    // We don't support structs in structs (yet?).
+    if (isa<LITStructDeclOp>(scope.getDecl()))
+      emitError("nested struct not supported here");
+    return parseStructStmt(stmtIndent);
+
+    //===------------------------------------------------------------------===//
+    // Simple statements.
+    //===------------------------------------------------------------------===//
   case LitToken::kw_pass:
     // pass_stmt ::= "pass"
     consumeToken(LitToken::kw_pass);
@@ -252,6 +249,10 @@ ParseResult LitStmtParser::parseSimpleStmt(size_t stmtIndent) {
   (void)expr->emitIR(state);
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// Simple statements.
+//===----------------------------------------------------------------------===//
 
 /// Parse an assignment_stmt after having parsed a leading expression (which
 /// we need to resolve into a target_list) and an `=` sign.
