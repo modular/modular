@@ -139,4 +139,12 @@ def SI32ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
   let convertFromStorage = "$_self.asArrayRef<int32_t>()";
 }
 
+def SI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<CPred<
+    "$_self.cast<IntArrayElementsAttr>().getElementType().isSignedInteger(64)"
+>>]> {
+  let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Signed)";
+  let returnType = "ArrayRef<int64_t>";
+  let convertFromStorage = "$_self.asArrayRef<int64_t>()";
+}
+
 #endif // MATTRS_TD
