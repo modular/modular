@@ -13,6 +13,7 @@ add_modular_dialect_library(LITDialect
 
   DEPENDS
   KGENDialect
+  POPDialect
   MLIRKGENIncGen
   MLIRLITIncGen
 
