@@ -99,7 +99,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
     ```
   }];
   let arguments = (ins TypedAttrInterface:$value);
-  let results = (outs AnyTypeOf<[ParamRefType, POP_ScalarType, POP_SIMDType,
+  let results = (outs AnyTypeOf<[ParamRefType, POP_SIMDType,
                                  POP_ArrayType]>:$result);
 
   let extraClassDeclaration = [{

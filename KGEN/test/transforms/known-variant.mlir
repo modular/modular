@@ -61,8 +61,8 @@ kgen.generator public @entry<T:type>() -> !pop.variant<T, i32> {
     %4 = pop.variant.create %3 : !kgen.paramref<T> -> !pop.variant<T, i32>
     scf.yield %4 : !pop.variant<T, i32>
   } else {
-    %3 = pop.constant(0 : si32) : !pop.scalar<si32>
-    %4 = pop.cast_to_builtin %3 : !pop.scalar<si32> to i32
+    %3 = pop.constant(0 : si32) : !pop.simd<1, si32>
+    %4 = pop.cast_to_builtin %3 : !pop.simd<1, si32> to i32
     %5 = pop.variant.create %4 : i32 -> !pop.variant<T, i32>
     scf.yield %5 : !pop.variant<T, i32>
   }

@@ -2,12 +2,12 @@
 
 // CHECK-LABEL: kgen.func @pop_constant()
 kgen.func @pop_constant() {
-  // CHECK-NEXT: pop.constant(32 : si64) : !pop.scalar<si64>
-  %0 = pop.constant(32 : si64) : !pop.scalar<si64>
-  // CHECK-NEXT: pop.constant(3.200000e+01 : f32) : !pop.scalar<f32>
-  %1 = pop.constant(32.0 : f32) : !pop.scalar<f32>
-  // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !pop.scalar<f64>
-  %2 = pop.constant(32.0 : f64) : !pop.scalar<f64>
+  // CHECK-NEXT: pop.constant(32 : si64) : !pop.simd<1, si64>
+  %0 = pop.constant(32 : si64) : !pop.simd<1, si64>
+  // CHECK-NEXT: pop.constant(3.200000e+01 : f32) : !pop.simd<1, f32>
+  %1 = pop.constant(32.0 : f32) : !pop.simd<1, f32>
+  // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !pop.simd<1, f64>
+  %2 = pop.constant(32.0 : f64) : !pop.simd<1, f64>
   kgen.return
 }
 
@@ -26,11 +26,11 @@ kgen.func @pop_constant_simd() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @pop_constant2<type: dtype>() -> !pop.scalar<type> {
-kgen.generator @pop_constant2<type: dtype>() -> !pop.scalar<type> {
-  // CHECK-NEXT: pop.constant(32 : i64) : !pop.scalar<type>
-  %0 = pop.constant(32) : !pop.scalar<type>
-  kgen.return %0 : !pop.scalar<type>
+// CHECK-LABEL: kgen.generator @pop_constant2<type: dtype>() -> !pop.simd<1, type> {
+kgen.generator @pop_constant2<type: dtype>() -> !pop.simd<1, type> {
+  // CHECK-NEXT: pop.constant(32 : i64) : !pop.simd<1, type>
+  %0 = pop.constant(32) : !pop.simd<1, type>
+  kgen.return %0 : !pop.simd<1, type>
 }
 
 // CHECK-LABEL: kgen.func @pop_abs
