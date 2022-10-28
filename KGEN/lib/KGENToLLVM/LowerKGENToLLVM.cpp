@@ -637,35 +637,18 @@ void LowerKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Type references can be used in nested types. Walk through all the types and
-  // rewrite them in-place to use the lowered types. We need to manually walk
-  // the nested types to handle LLVM structs, which don't support
-  // `replaceSubElements`.
+  // rewrite them in-place to use the lowered types.
   std::function<Type(Type)> substituteRefs = [&](Type type) -> Type {
     if (auto ref = dyn_cast<RefType>(type))
       return substituteStructDecl(structDecls, ref, substituteRefs);
-    // LLVMPointerType::replaceImmediateSubElements is broken for opaque
-    // pointers.
-    if (auto ptr = dyn_cast<LLVM::LLVMPointerType>(type))
-      if (ptr.isOpaque())
-        return ptr;
     auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
     if (!itf)
       return type;
-    SmallVector<Attribute> attrs;
-    SmallVector<Type> types;
-    itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          if (auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(attr))
-            attrs.push_back(ConcreteTypeConstantAttr::get(
-                substituteRefs(typeCst.getValue())));
-          else
-            attrs.push_back(attr);
-        },
-        [&](Type type) { types.push_back(substituteRefs(type)); });
-    if (auto structTy = dyn_cast<LLVM::LLVMStructType>(type))
-      return LLVM::LLVMStructType::getLiteral(&getContext(), types,
-                                              structTy.isPacked());
-    return itf.replaceImmediateSubElements(attrs, types);
+    return itf.replaceSubElements([&](Type type) -> Type {
+      if (auto ref = dyn_cast<RefType>(type))
+        return substituteStructDecl(structDecls, ref, substituteRefs);
+      return type;
+    });
   };
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     // Substitute any references in attributes.
