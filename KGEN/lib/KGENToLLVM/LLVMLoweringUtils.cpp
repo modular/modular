@@ -66,9 +66,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     return value.getLimitedValue();
   };
 
-  // Convert scalar types directly to the dtype.
-  addConversion([=](POP::ScalarType scalar) { return convertDType(scalar); });
-
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](POP::PointerType pointer) -> Optional<Type> {

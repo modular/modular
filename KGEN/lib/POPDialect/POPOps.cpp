@@ -249,15 +249,6 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
     return success();
   };
 
-  // If the type is a scalar, allow only scalar constant attributes.
-  if (auto scalar = dyn_cast<ScalarType>(type)) {
-    if (!value.isa<IntegerAttr, FloatAttr>())
-      return emitError("scalar constant expected integer or float "
-                       "attribute for constant value");
-    // If the dtype is specified, ensure it matches the attribute type.
-    return checkDType(scalar.cast<DTypeInterface>());
-  }
-
   // Verify array constant.
   if (auto array = dyn_cast<POP::ArrayType>(type)) {
     // If the size is known, require an elements attribute of the same shape.
@@ -278,11 +269,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
     if (isSIMDSizeOneType(array.getResolvedElementType())) {
       return checkDType(array.getResolvedElementType().cast<DTypeInterface>());
     }
-    auto scalar =
-        dyn_cast_if_present<ScalarType>(array.getResolvedElementType());
-    if (!scalar)
-      return emitError("array constant must have scalar elements");
-    return checkDType(scalar.cast<DTypeInterface>());
+    return emitError("array constant must have scalar elements");
   }
 
   // Verify vector constant.
@@ -351,8 +338,6 @@ OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
 
 static Type getBoolOfSameParentType(Type type) {
   auto boolType = DTypeConstantAttr::get(type.getContext(), DType::kBool);
-  if (type.isa<ScalarType>())
-    return ScalarType::get(boolType);
   if (auto simd = dyn_cast<SIMDType>(type))
     return SIMDType::get(simd.getSize(), boolType);
   return nullptr;
@@ -390,9 +375,6 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.
   // f64 to a 2xf32) or vice versa. We should support this when the use case
   // arises.
-  if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
-    return false;
-
   Optional<KGENDType> inputDType = inputType.getResolvedDType();
   Optional<KGENDType> outputDType = outputType.getResolvedDType();
 
@@ -443,9 +425,6 @@ OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
 LogicalResult CastOp::verify() {
   auto inputType = getInput().getType().cast<DTypeInterface>();
   auto outputType = getOutput().getType().cast<DTypeInterface>();
-  if (inputType.isa<ScalarType>() != outputType.isa<ScalarType>())
-    return emitOpError("cannot cast between a scalar type and SIMD type");
-
   if (auto inputSimd = dyn_cast<SIMDType>(inputType);
       inputSimd && inputSimd.getSize() != outputType.cast<SIMDType>().getSize())
     return emitOpError("cannot cast between SIMD types of different sizes");
@@ -940,18 +919,6 @@ void VariantVisitOp::getRegionInvocationBounds(
 static LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      Type popType, Type builtinType) {
-  // Verify the scalar dtype matches the MLIR type.
-  if (auto scalar = dyn_cast<ScalarType>(popType)) {
-    if (!builtinType.isa<IntegerType, FloatType>())
-      return emitError("expected an integer or float type");
-
-    if (auto dtype = dyn_cast<DTypeConstantAttr>(scalar.getDType());
-        dtype && !dtype.isConvertibleTo(builtinType))
-      return emitError("cannot convert from scalar dtype ")
-             << dtype.getDType().getAsString() << " to " << builtinType;
-    return success();
-  }
-
   // Verify the SIMD size matches the vector size and the dtypes match.
   if (auto simd = dyn_cast<SIMDType>(popType)) {
     auto size = dyn_cast<IntegerAttr>(simd.getSize());

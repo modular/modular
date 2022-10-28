@@ -138,40 +138,6 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
 }
 
 //===----------------------------------------------------------------------===//
-// ScalarType
-//===----------------------------------------------------------------------===//
-
-def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface]> {
-  let summary = "parameterized scalar type";
-  let description = [{
-    This type represents a parameterized scalar value. The dtype is
-    parameterized with a `!kgen.dtype`.
-
-    Example:
-
-    ```mlir
-    // A floating point scalar.
-    !pop.scalar<f32>
-
-    // An unsigned integer scalar.
-    !pop.scalar<ui64>
-
-    // A parameterized scalar.
-    !pop.scalar<dtype>
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$dType);
-  let assemblyFormat = "`<` custom<DTypeParamValue>($dType) `>`";
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "KGENDType":$dtype)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
