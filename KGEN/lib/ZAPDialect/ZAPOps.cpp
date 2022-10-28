@@ -317,7 +317,7 @@ static ParseResult parseStringSizeArray(AsmParser &p, Type &type) {
   if (p.parseInteger(size))
     return failure();
   type = POP::PointerType::get(POP::ArrayType::get(
-      size, POP::ScalarType::get(p.getContext(), DType::si8)));
+      size, POP::SIMDType::get(p.getContext(), 1, DType::si8)));
   return success();
 }
 
@@ -332,8 +332,8 @@ static void printStringSizeArray(AsmPrinter &p, Operation *op, Type type) {
 /// Returns true if the type is an array of scalar `si8`.
 static bool isSI8Array(Type type) {
   if (auto elementType = type.cast<POP::ArrayType>().getResolvedElementType())
-    if (auto scalarType = dyn_cast<POP::ScalarType>(elementType))
-      return scalarType.getResolvedDType() == KGENDType(KGENDType::si8);
+    if (auto simdType = dyn_cast<POP::SIMDType>(elementType))
+      return simdType.getResolvedDType() == KGENDType(KGENDType::si8);
   return false;
 }
 

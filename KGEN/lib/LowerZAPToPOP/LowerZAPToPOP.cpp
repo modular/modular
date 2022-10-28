@@ -320,7 +320,7 @@ static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
                                          OpBuilder &b) {
   auto values = IntArrayElementsAttr::get<char>(
       b.getContext(), {str.data(), str.size()}, IntegerType::Signed);
-  auto charType = b.getType<ScalarType>(DType::si8);
+  auto charType = b.getType<SIMDType>(1, DType::si8);
   return b.create<GlobalConstantOp>(
       op->getLoc(), PointerType::get(POP::ArrayType::get(str.size(), charType)),
       values);
@@ -331,7 +331,7 @@ static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
 static Value lowerToCString(Operation *op, StringRef str, OpBuilder &b) {
   SmallString<256> nullTerminatedStr = str;
   nullTerminatedStr.push_back('\0');
-  auto charType = b.getType<ScalarType>(DType::si8);
+  auto charType = b.getType<SIMDType>(1, DType::si8);
   return b.create<PointerBitcastOp>(
       op->getLoc(), PointerType::get(charType),
       lowerStringToGlobalConstant(op, nullTerminatedStr, b));

@@ -775,8 +775,7 @@ ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
   Type type = getType().getResolvedElementType();
   DType dtype;
   if (auto array = dyn_cast<ArrayType>(type))
-    dtype =
-        *array.getResolvedElementType().cast<ScalarType>().getResolvedDType();
+    dtype = *array.getResolvedElementType().cast<SIMDType>().getResolvedDType();
   else
     dtype = *type.cast<DTypeInterface>().getResolvedDType();
 
