@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/BlobCache.h"
+#include "Config/Config.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/FileUtilities.h"
@@ -13,6 +14,16 @@
 #include "llvm/Support/Process.h"
 
 using namespace M;
+
+//===----------------------------------------------------------------------===//
+// Hashing
+//===----------------------------------------------------------------------===//
+
+std::string M::Detail::finalizeBlobKeyHash(StringRef hash) {
+  // Incorporate the current version into the hash.
+  return std::to_string(
+      size_t(llvm::hash_combine(hash, StringRef(MODULAR_VERSION_STRING))));
+}
 
 //===----------------------------------------------------------------------===//
 // BlobCacheBackend
