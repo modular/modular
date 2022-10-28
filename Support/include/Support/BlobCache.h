@@ -133,6 +133,12 @@ private:
   std::unique_ptr<BlobCacheBackend> delegate = nullptr;
 };
 
+namespace Detail {
+/// Finalize the key hash (provided by the user via the KeyInfo) for use by the
+/// BlobCache.
+std::string finalizeBlobKeyHash(StringRef hash);
+} // namespace Detail
+
 /// This is the thing that users will interact with. It holds onto the list of
 /// backends and calls into them, but its primary responsibility is to hash the
 /// keys passed in to normalize the way we try to access the storage backends.
@@ -162,7 +168,7 @@ public:
   /// discarded.
   ErrorOr<std::string> insert(KeyTy key, llvm::MemoryBufferRef obj) {
     std::string keyHash = KeyInfo::hashKey(key);
-    if (auto err = backendList->insert(keyHash, obj))
+    if (auto err = backendList->insert(finalizeKeyHash(keyHash), obj))
       return err.takeError();
 
     return keyHash;
@@ -170,15 +176,24 @@ public:
 
   /// Check if any of the provided backends have the item.
   bool contains(KeyTy key) const {
-    return backendList->contains(KeyInfo::hashKey(key));
+    return backendList->contains(buildFullKeyHash(key));
   }
 
   /// Get the item from any of the provided backends.
   CacheFindResult find(KeyTy key) {
-    return backendList->find(KeyInfo::hashKey(key));
+    return backendList->find(buildFullKeyHash(key));
   }
 
 private:
+  /// Finalize the user provided key hash for use by the backends.
+  std::string finalizeKeyHash(StringRef hash) const {
+    return Detail::finalizeBlobKeyHash(hash);
+  }
+  /// Build the full key hash for the given key value.
+  std::string buildFullKeyHash(KeyTy key) const {
+    return finalizeKeyHash(KeyInfo::hashKey(key));
+  }
+
   std::unique_ptr<BlobCacheBackend> backendList;
 };
 
