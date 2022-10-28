@@ -10,15 +10,15 @@ kgen.generator @pop_constant<type: type>() {
 
 kgen.func @pop_constant() {
   // expected-error @below {{cannot convert from attribute type 'f32' to dtype si64}}
-  %0 = pop.constant(32.0 : f32) : !pop.scalar<si64>
+  %0 = pop.constant(32.0 : f32) : !pop.simd<1, si64>
   kgen.return
 }
 
 // -----
 
 kgen.func @pop_constant() {
-  // expected-error @below {{scalar constant expected integer or float attribute for constant value}}
-  %0 = pop.constant(dense<0> : vector<1xi32>) : !pop.scalar<si32>
+  // expected-error @below {{expected array elements attribute for vector constant with known size}}
+  %0 = pop.constant(dense<0> : vector<1xi32>) : !pop.simd<1, si32>
   kgen.return
 }
 

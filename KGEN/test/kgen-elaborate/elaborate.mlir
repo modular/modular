@@ -232,8 +232,8 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // deleted.
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
-  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
+  %0 = pop.constant(1.0 : f32) : !pop.simd<1, ty>
+  %1 = pop.cast_to_builtin %0: !pop.simd<1, ty> to i8
   kgen.return
 }
 
@@ -494,7 +494,7 @@ kgen.generator @test_region() {
 }
 
 // CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"() {
-// CHECK:    %cst = pop.constant(1.000000e+00 : f64) : !pop.scalar<f64>
+// CHECK:    %cst = pop.constant(#M.dense_array<1.000000e+00> : vector<1xf64>) : !pop.simd<1, f64>
 // CHECK:    %0 = kgen.param.constant  = <127>
 // CHECK:    kgen.return
 kgen.generator @just_call_it_pass_it
@@ -516,7 +516,7 @@ kgen.generator @test_region_insanity() {
       kgen.return
     },
     littleFn<dt: dtype->index>() {
-      %0 = pop.constant(1) : !pop.scalar<dt>
+      %0 = pop.constant(1) : !pop.simd<1, dt>
       kgen.return<123>
     }
   kgen.return

@@ -1,19 +1,19 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='kgen.func(lower-pop-to-llvm)' %s | FileCheck %s
 
 // CHECK-LABEL: @constant
-kgen.func @constant() -> !pop.scalar<f32> {
+kgen.func @constant() -> !pop.simd<1, f32> {
   // CHECK: llvm.mlir.constant(1.{{0+}}e+00 : f32) : f32
-  %cst0 = pop.constant(1.0 : f32) : !pop.scalar<f32>
-  kgen.return %cst0 : !pop.scalar<f32>
+  %cst0 = pop.constant(1.0 : f32) : !pop.simd<1, f32>
+  kgen.return %cst0 : !pop.simd<1, f32>
 }
 
 // -----
 
 // CHECK-LABEL: @constant
-kgen.func @constant() -> !pop.scalar<si64> {
+kgen.func @constant() -> !pop.simd<1, si64> {
   // CHECK: llvm.mlir.constant(1 : si64) : i64
-  %cst0 = pop.constant(1 : si64) : !pop.scalar<si64>
-  kgen.return %cst0 : !pop.scalar<si64>
+  %cst0 = pop.constant(1 : si64) : !pop.simd<1, si64>
+  kgen.return %cst0 : !pop.simd<1, si64>
 }
 
 // -----

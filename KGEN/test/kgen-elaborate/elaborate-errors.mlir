@@ -21,10 +21,10 @@ kgen.struct.decl @FooStruct<T:type> {
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
-  %0 = pop.constant(1.0 : f32) : !pop.scalar<ty>
+  %0 = pop.constant(1.0 : f32) : !pop.simd<1, ty>
 
   // expected-note @+1 {{verification error: 'pop.cast_to_builtin' op cannot convert from scalar dtype f32 to 'i8'}}
-  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
+  %1 = pop.cast_to_builtin %0: !pop.simd<1, ty> to i8
   kgen.return
 }
 
