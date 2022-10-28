@@ -140,3 +140,12 @@ struct Issue4181IndentWeirdness[dt: DType]:
     # expected-error @+1 {{definition isn't on its own line at the correct indentation}}
     def f():
       pass
+
+@decorator # expected-error {{no struct decorators supported yet}}
+struct DecoratedStruct:
+
+@decorator # expected-error {{no var decorators supported yet}}
+var DecoratedVar: Int
+
+@staticmethod # expected-error {{no def decorators supported yet}}
+def StaticMethod(): pass

@@ -75,9 +75,11 @@ struct LitStmtParser : public LitParserBase {
                                   size_t stmtIndent);
 
   // Declarations.
-  ParseResult parseDefStmt(size_t curIndent);
-  ParseResult parseStructStmt(size_t curIndent);
-  ParseResult parseVarDeclStmt(size_t stmtIndent);
+  ParseResult parseDefStmt(ArrayRef<ExprNode *> decorators, size_t curIndent);
+  ParseResult parseStructStmt(ArrayRef<ExprNode *> decorators,
+                              size_t curIndent);
+  ParseResult parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
+                               size_t stmtIndent);
 
 private:
   /// This is declaration scope that we're parsing into.
@@ -182,6 +184,8 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///               | nonlocal_stmtParseResult [TODO]
 ///
 ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
+  // This lambda is used to generate an error when a compound statement is used
+  // in a scenario that expects simple statements.
   auto rejectSimpleStmt = [&]() {
     if (isSimpleStmt)
       emitError() << "'" << getToken().getSpelling()
@@ -193,21 +197,40 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     // Compound statements.
     //===------------------------------------------------------------------===//
   case LitToken::kw_if:
-    rejectSimpleStmt();
+    rejectSimpleStmt(); // Not a simple_stmt.
     return parseIfStmt(stmtIndent);
   case LitToken::kw_while:
-    rejectSimpleStmt();
+    rejectSimpleStmt(); // Not a simple_stmt.
     return parseWhileStmt(stmtIndent);
   case LitToken::kw_def:
-    rejectSimpleStmt();
-    return parseDefStmt(stmtIndent);
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseDefStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_struct:
-    rejectSimpleStmt();
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseStructStmt(/*decorators=*/{}, stmtIndent);
 
-    // We don't support structs in structs (yet?).
-    if (isa<LITStructDeclOp>(scope.getDecl()))
-      emitError("nested struct not supported here");
-    return parseStructStmt(stmtIndent);
+  case LitToken::at: {
+    SmallVector<ExprNode *> decorators;
+    consumeToken(LitToken::at);
+    do {
+      if (parseExpression(decorators.emplace_back(), stmtIndent))
+        return failure();
+    } while (consumeIf(LitToken::at));
+
+    switch (getToken().getKind()) {
+    case LitToken::kw_def:
+      rejectSimpleStmt(); // Not a simple_stmt.
+      return parseDefStmt(decorators, stmtIndent);
+    case LitToken::kw_struct:
+      rejectSimpleStmt(); // Not a simple_stmt.
+      return parseStructStmt(decorators, stmtIndent);
+    case LitToken::kw_var:
+      return parseVarDeclStmt(decorators, stmtIndent);
+
+    default:
+      return emitError("unknown decorated statement");
+    }
+  }
 
     //===------------------------------------------------------------------===//
     // Simple statements.
@@ -217,7 +240,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     consumeToken(LitToken::kw_pass);
     return success();
   case LitToken::kw_var:
-    return parseVarDeclStmt(stmtIndent);
+    return parseVarDeclStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_return:
     return parseReturnStmt(stmtIndent);
   default:
@@ -231,13 +254,14 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // expression_stmt ::= starred_expression
   // assignment_stmt ::=
-  //                 (target_list "=")+ (starred_expression | yield_expression)
+  //                 (target_list "=")+ (starred_expression |
+  //                 yield_expression)
   ExprNode *expr = nullptr;
   if (parseExpression(expr, stmtIndent))
     return failure();
 
-  // If the expression was followed by a `=` then we have an assignment.  If not
-  // then we have an expression_stmt.
+  // If the expression was followed by a `=` then we have an assignment.  If
+  // not then we have an expression_stmt.
   SMLoc equalsLoc;
   if (consumeIf(LitToken::equal, &equalsLoc))
     return parseAssignmentStmt(expr, equalsLoc, stmtIndent);
@@ -490,7 +514,8 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
+                                        size_t curIndent) {
   Location loc = getTokenLocation();
 
   // TODO: Add support for decorators.
@@ -502,6 +527,10 @@ ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   auto funcDecl = builder.create<LITFuncOp>(loc, name);
   funcDecl.getRegion().push_back(new Block());
 
+  // Process any decorators we will eventually want when they come up.
+  if (!decorators.empty())
+    emitError(decorators[0]->getLoc(), "no def decorators supported yet");
+
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
@@ -512,7 +541,8 @@ ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   return success();
 }
 
-ParseResult LitStmtParser::parseVarDeclStmt(size_t stmtIndent) {
+ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
+                                            size_t stmtIndent) {
   auto loc = getTokenLocation();
   consumeToken(LitToken::kw_var);
   StringAttr name;
@@ -521,6 +551,10 @@ ParseResult LitStmtParser::parseVarDeclStmt(size_t stmtIndent) {
 
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
   auto varDecl = OpBuilder(varDeclCursor).create<VarDeclOp>(loc, varType, name);
+
+  // Process any decorators we will eventually want when they come up.
+  if (!decorators.empty())
+    emitError(decorators[0]->getLoc(), "no var decorators supported yet");
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -535,7 +569,12 @@ ParseResult LitStmtParser::parseVarDeclStmt(size_t stmtIndent) {
   return success();
 }
 
-ParseResult LitStmtParser::parseStructStmt(size_t curIndent) {
+ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
+                                           size_t curIndent) {
+  // We don't support structs in structs (yet?).
+  if (isa<LITStructDeclOp>(scope.getDecl()))
+    emitError("nested struct not supported here");
+
   auto loc = getTokenLocation();
 
   // TODO: Add support for decorators.
@@ -547,6 +586,10 @@ ParseResult LitStmtParser::parseStructStmt(size_t curIndent) {
 
   auto newStruct = builder.create<LITStructDeclOp>(loc, nameAttr);
   newStruct.getRegion().push_back(new Block());
+
+  // Process any decorators we will eventually want when they come up.
+  if (!decorators.empty())
+    emitError(decorators[0]->getLoc(), "no struct decorators supported yet");
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
