@@ -395,19 +395,19 @@ kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
 
 // expected-note @+1 {{callee declared here}}
 kgen.generator @takeUnary
-  <unaryFn: <dt: dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: <dt: dtype>(!pop.simd<1, dt>) -> !pop.simd<1, dt>>() {
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
-  kgen.return %0 : !pop.scalar<si32>
+kgen.func @doubleExample(%arg0: !pop.simd<1, si32>) -> !pop.simd<1, si32> {
+  %0 = pop.add %arg0, %arg0: !pop.simd<1, si32>
+  kgen.return %0 : !pop.simd<1, si32>
 }
 
 kgen.generator @test_region() {
   // expected-error @+1 {{caller input parameter #0 has type}}
   kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>() : () -> ()
+     unaryFn : (!pop.simd<1, si32>) -> !pop.simd<1, si32> = @doubleExample>() : () -> ()
   kgen.return
 }
 
@@ -425,38 +425,38 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: <dt:dtype>(!pop.simd<1, dt>) -> !pop.simd<1, dt>>() {
   kgen.return
 }
 
 // expected-note @+1 {{@unary declared here}}
-kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  kgen.return %arg0 : !pop.scalar<f32>
+kgen.func @unary(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+  kgen.return %arg0 : !pop.simd<1, f32>
 }
 
 kgen.generator @test1() {
-  // expected-error @+1 {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
+  // expected-error @+1 {{symbol use argument #0 has type '!pop.simd<1, si32>' but @unary expected type '!pop.simd<1, f32>'}}
   kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary>() : () -> ()
+     unaryFn : (!pop.simd<1, si32>) -> !pop.simd<1, si32> = @unary>() : () -> ()
   kgen.return
 }
 
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: <dt:dtype>(!pop.simd<1, dt>) -> !pop.simd<1, dt>>() {
   kgen.return
 }
 
 // expected-note @+1 {{@unary2 declared here}}
-kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  kgen.return %arg0 : !pop.scalar<si32>
+kgen.generator @unary2<dt: dtype>(%arg0: !pop.simd<1, si32>) -> !pop.simd<1, si32> {
+  kgen.return %arg0 : !pop.simd<1, si32>
 }
 
 kgen.generator @test2() {
   // expected-error @+1 {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary2>() : () -> ()
+     unaryFn : (!pop.simd<1, si32>) -> !pop.simd<1, si32> = @unary2>() : () -> ()
   kgen.return
 }
 

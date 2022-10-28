@@ -172,26 +172,6 @@ def POP_ScalarType : POPType<"Scalar", "scalar", [DTypeInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeConstraints
-
-def BoolScalar : AllOfType<[POP_ScalarType, BoolDType], "!pop.scalar<bool>">;
-
-def IntegerScalar : AllOfType<[POP_ScalarType, IntegerDType],
-                              "!pop.scalar<integral>">;
-
-def FloatScalar : AllOfType<[POP_ScalarType, FloatDType],
-                              "!pop.scalar<float>">;
-
-def UnboundOrIntegerScalar : AllOfType<[POP_ScalarType, IntegerOrUnboundDType],
-    "whose value is either unbound or a integral dtype">;
-def UnboundOrFloatScalar : AllOfType<[POP_ScalarType, FloatOrUnboundDType],
-    "whose value is either unbound or a floating-point dtype">;
-
-class ScalarOfSameDType<string operand, string value> : TypesMatchWith<
-    value # " type matches dtype of the " # operand # " operand", operand,
-    value, "POP::ScalarType::get($_self.cast<DTypeInterface>().getDType())">;
-
-//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
@@ -235,37 +215,14 @@ def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType],
                              "!pop.simd<N, address>">;
 
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
-    "whose element type is either unbound or a integral dtype">;
+    "whose element type is either unbound or an integral dtype">;
 def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
+def UnboundOrBoolOrIntegerSIMD : AllOfType<
+    [POP_SIMDType, IntegerOrBoolOrUnboundDType],
+    "whose element type is either unbound, or integer, or bool">;
 
-def ScalarOrSIMD : AnyTypeOf<
-    [POP_ScalarType, POP_SIMDType, ParamRefType]>;
-
-def BoolScalarOrSIMD : AnyTypeOf<
-    [BoolScalar, BoolSIMD, ParamRefType]>;
-
-def IntegerScalarOrSIMD : AnyTypeOf<
-    [IntegerScalar, IntegerSIMD, ParamRefType]>;
-
-def FloatScalarOrSIMD : AnyTypeOf<
-    [FloatScalar, FloatSIMD, ParamRefType]>;
-
-def BoolOrIntegerScalarOrSIMD : AnyTypeOf<
-    [BoolScalar, IntegerScalar, BoolSIMD, IntegerSIMD, ParamRefType]>;
-
-def UnboundBoolOrIntegerScalarOrSIMD : AnyTypeOf<
-    [BoolScalar, UnboundOrIntegerScalar, BoolSIMD,
-     UnboundOrIntegerSIMD, ParamRefType]>;
-
-def UnboundOrScalarOrSIMD : AnyTypeOf<
-    [POP_ScalarType, POP_SIMDType, ParamRefType]>;
-
-def UnboundOrFloatScalarOrSIMD : AnyTypeOf<
-    [UnboundOrFloatScalar, UnboundOrFloatSIMD, ParamRefType]>;
-
-def UnboundOrIntegerScalarOrSIMD : AnyTypeOf<
-    [UnboundOrIntegerScalar, UnboundOrIntegerSIMD, ParamRefType]>;
+def ScalarOrSIMD : AnyTypeOf<[POP_SIMDType, ParamRefType]>;
 
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
@@ -298,8 +255,8 @@ def SIMDSizeOne : ConfinedType<POP_SIMDType,
 
 def BoolSIMDSizeOne : AllOfType<[BoolSIMD, SIMDSizeOne], "!pop.simd<1, bool>">;
 
-def UI8Scalar : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
-                BuildableType<"POP::SIMDType::get(1, "
+def UI8SIMDSizeOne : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
+                     BuildableType<"POP::SIMDType::get(1, "
                               "DTypeConstantAttr::get($_builder.getContext(), "
                               "KGENDType::ui8))">;
 

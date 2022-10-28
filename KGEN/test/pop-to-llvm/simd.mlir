@@ -663,9 +663,7 @@ kgen.func @select_1xf32(%arg0: !pop.simd<1, bool>,
 kgen.func @bitcast(%a: !pop.simd<1, si32>,
                    %b: !pop.simd<1, ui64>,
                    %c: !pop.simd<4, f64>,
-                   %d: !pop.simd<2, f64>,
-                   %f: !pop.scalar<si32>,
-                   %g: !pop.simd<1, f32>) {
+                   %d: !pop.simd<2, f64>) {
   // CHECK: llvm.bitcast %0 : i32 to f32
   %0 = pop.bitcast %a: !pop.simd<1, si32> to !pop.simd<1, f32>
 
@@ -680,12 +678,6 @@ kgen.func @bitcast(%a: !pop.simd<1, si32>,
 
   // CHECK: llvm.bitcast %1 : i64 to vector<2xf32>
   %4 = pop.bitcast %b: !pop.simd<1, ui64> to !pop.simd<2, f32>
-
-  // %5 = pop.bitcast %f: !pop.scalar<si32> to !pop.simd<1, f32>
-  // %6 = pop.bitcast %g: !pop.simd<1, f32> to !pop.scalar<ui32>
-
-  // CHECK: llvm.bitcast %4 : i32 to f32
-  %7 = pop.bitcast %f: !pop.scalar<si32> to !pop.scalar<f32>
 
   kgen.return
 }

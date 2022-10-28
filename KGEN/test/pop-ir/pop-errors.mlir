@@ -66,10 +66,10 @@ kgen.generator @pop_constant<size>() {
 
 // COM: copysign is not defined on non-floating point types
 
-kgen.func @pop_copysign(%arg0 : !pop.scalar<si32>, %arg1 : !pop.scalar<si32>) -> !pop.scalar<si32> {
-  // expected-error @below {{whose value is either unbound or a floating-point dtype}}
-  %0 = pop.copysign %arg0, %arg1 : !pop.scalar<si32>
-  kgen.return %0 : !pop.scalar<si32>
+kgen.func @pop_copysign(%arg0 : !pop.simd<1, si32>, %arg1 : !pop.simd<1, si32>) -> !pop.simd<1, si32> {
+  // expected-error @below {{whose element type is either unbound or a floating-point dtype}}
+  %0 = pop.copysign %arg0, %arg1 : !pop.simd<1, si32>
+  kgen.return %0 : !pop.simd<1, si32>
 }
 
 // -----
@@ -110,9 +110,9 @@ kgen.func @pop_select_simd(
 
 // -----
 
-kgen.generator @bitcast_scalar(%a: !pop.scalar<f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!pop.scalar<f32>' and result type '!pop.scalar<si8>' are cast incompatible}}
-  %0 = pop.bitcast %a : !pop.scalar<f32> to !pop.scalar<si8>
+kgen.generator @bitcast_scalar(%a: !pop.simd<1, f32>) {
+  // expected-error @below {{'pop.bitcast' op operand type '!pop.simd<1, f32>' and result type '!pop.simd<1, si8>' are cast incompatible}}
+  %0 = pop.bitcast %a : !pop.simd<1, f32> to !pop.simd<1, si8>
   kgen.return
 }
 
@@ -129,22 +129,6 @@ kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
 kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
   // expected-error @below {{'pop.bitcast' op operand type '!pop.simd<4, f32>' and result type '!pop.simd<4, f64>' are cast incompatible}}
   %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<4, f64>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @cast_scalar_to_simd<size, type: dtype>(%a: !pop.scalar<type>) {
-  // expected-error @below {{cannot cast between a scalar type and SIMD type}}
-  %0 = pop.cast %a : !pop.scalar<type> to !pop.simd<size, type>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @cast_simd_to_scalar<size, type: dtype>(%a: !pop.simd<size, type>) {
-  // expected-error @below {{cannot cast between a scalar type and SIMD type}}
-  %0 = pop.cast %a : !pop.simd<size, type> to !pop.scalar<type>
   kgen.return
 }
 
