@@ -501,14 +501,13 @@ ParseResult LitStmtParser::parseDefStmt(size_t curIndent) {
   auto funcDecl = builder.create<LITFuncOp>(loc, name);
   funcDecl.getRegion().push_back(new Block());
 
-  // We cannot parse the current body without having parsed other declarations
-  // at the current level, so we defer parsing it.
-  getDeclResolver().addDecl(funcDecl, &scope, getLexer().getCursor(),
-                            curIndent);
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
+  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
+
+  getDeclResolver().addDecl(funcDecl, &scope, startCursor,
+                            getLexer().getCursor(), curIndent);
   return success();
 }
 
@@ -522,14 +521,16 @@ ParseResult LitStmtParser::parseVarDeclStmt(size_t stmtIndent) {
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
   auto varDecl = OpBuilder(varDeclCursor).create<VarDeclOp>(loc, varType, name);
 
-  // Remember that we parsed this declaration so we can finish type checking it
-  // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, &scope, getLexer().getCursor(),
-                            stmtIndent);
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
+  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(varDecl, &scope, startCursor,
+                            getLexer().getCursor(), stmtIndent);
+
   return success();
 }
 
@@ -546,14 +547,16 @@ ParseResult LitStmtParser::parseStructStmt(size_t curIndent) {
   auto newStruct = builder.create<LITStructDeclOp>(loc, nameAttr);
   newStruct.getRegion().push_back(new Block());
 
-  // Remember that we parsed this declaration so we can finish type checking it
-  // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, &scope, getLexer().getCursor(),
-                            curIndent);
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
+  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
+
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(newStruct, &scope, startCursor,
+                            getLexer().getCursor(), curIndent);
+
   return success();
 }
 

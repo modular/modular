@@ -47,7 +47,7 @@ public:
 
   /// Add a new declaration that needs to be resolved.
   Scope &addDecl(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
-                 ssize_t indentation);
+                 LitLexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
   Scope &addFullyResolvedDecl(Operation *decl, Scope *parentScope);
@@ -72,9 +72,9 @@ private:
                                  Scope &scope);
   LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
 
-  void resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
-  void resolveBody(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
-  void resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope);
+  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
+  ParseResult resolveBody(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
+  ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope);
 
 private:
   /// This is shared state across the whole parser.
