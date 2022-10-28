@@ -179,8 +179,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<dtype: dtype>() {
-  // CHECK: pop.global_constant(#M.dense_array<1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<2xf32>) : !pop.array<2, scalar<f32>>
-  %0 = pop.global_constant(#M.dense_array<1, 2> : !M.array<2xi32>) : !pop.array<2, scalar<dtype>>
+  // CHECK: pop.global_constant(#M.dense_array<1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<2xf32>) : !pop.array<2, simd<1, f32>>
+  %0 = pop.global_constant(#M.dense_array<1, 2> : !M.array<2xi32>) : !pop.array<2, simd<1, dtype>>
   kgen.return
 }
 
@@ -193,8 +193,8 @@ kgen.generator @impl() {
 
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<size>() {
-  // CHECK: pop.global_constant(#M.dense_array<1, 1> : !M.array<2xui64>) : !pop.array<2, scalar<ui64>>
-  %0 = pop.global_constant(1 : ui64) : !pop.array<size, scalar<ui64>>
+  // CHECK: pop.global_constant(#M.dense_array<1, 1> : !M.array<2xui64>) : !pop.array<2, simd<1, ui64>>
+  %0 = pop.global_constant(1 : ui64) : !pop.array<size, simd<1, ui64>>
   kgen.return
 }
 

@@ -601,9 +601,9 @@ kgen.generator @zap_assert(%a: !pop.simd<1, bool>) {
 }
 
 // CHECK-LABEL: @global_string
-kgen.generator @global_string() -> !pop.pointer<array<14, scalar<si8>>> {
+kgen.generator @global_string() -> !pop.pointer<array<14, simd<1, si8>>> {
   // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]
   %0 = zap.global_string "hello world!!\00"[14]
-  // CHECK: return %{{.*}} : !pop.pointer<array<14, scalar<si8>>>
-  kgen.return %0 : !pop.pointer<array<14, scalar<si8>>>
+  // CHECK: return %{{.*}} : !pop.pointer<array<14, simd<1, si8>>>
+  kgen.return %0 : !pop.pointer<array<14, simd<1, si8>>>
 }

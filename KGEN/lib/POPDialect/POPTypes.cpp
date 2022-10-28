@@ -277,6 +277,9 @@ SIMDType SIMDType::get(TypedAttr size, TypedAttr dtype) {
 SIMDType SIMDType::get(int64_t size, TypedAttr dtype) {
   return get(Builder(dtype.getContext()).getIndexAttr(size), dtype);
 }
+SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
+  return get(size, DTypeConstantAttr::get(ctx, dtype));
+}
 
 Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   Optional<KGENDType> dtype = getResolvedDType();

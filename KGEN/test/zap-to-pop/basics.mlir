@@ -273,8 +273,8 @@ kgen.generator @simd_store_aligned(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.simd<1, f32>) {
   // CHECK: %[[FMT:.*]] = pop.global_constant(#M.dense_array<102, 111, 111{{.*}}> : !M.array<7xsi8>)
-  // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<scalar<si8>>
-  // CHECK: pop.external_call @printf(%[[C_STR]], %{{.*}}) (!pop.pointer<scalar<si8>>) -> ()
+  // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<simd<1, si8>>
+  // CHECK: pop.external_call @printf(%[[C_STR]], %{{.*}}) (!pop.pointer<simd<1, si8>>) -> ()
   zap.print "foo %f"(%a) : !pop.simd<1, f32>
   kgen.return
 }
@@ -294,10 +294,10 @@ kgen.generator @zap_debug_assert(%cond: !pop.simd<1, bool>) {
 // -----
 
 // CHECK-LABEL: @zap_global_string
-kgen.generator @zap_global_string() -> !pop.pointer<array<4, scalar<si8>>> {
+kgen.generator @zap_global_string() -> !pop.pointer<array<4, simd<1, si8>>> {
   // CHECK: pop.global_constant
   %0 = zap.global_string "foo!"[4]
-  kgen.return %0 : !pop.pointer<array<4, scalar<si8>>>
+  kgen.return %0 : !pop.pointer<array<4, simd<1, si8>>>
 }
 
 // -----
