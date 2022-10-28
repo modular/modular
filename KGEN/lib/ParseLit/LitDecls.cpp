@@ -116,11 +116,12 @@ DeclResolver::~DeclResolver() {
 
 /// Add a new declaration that needs to be resolved.
 Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
-                             LitLexerCursor cursor, ssize_t indentation) {
+                             LitLexerCursor cursor, LitLexerCursor endCursor,
+                             ssize_t indentation) {
   void *rawScopePtr =
       sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
-  Scope *scope =
-      new (rawScopePtr) Scope(decl, parentScope, cursor, indentation);
+  Scope *scope = new (rawScopePtr)
+      Scope(decl, parentScope, cursor, endCursor, indentation);
   parsedDeclList.push_back(scope);
 
   // If this is a type definition, remember in in a special table so we can look
@@ -135,7 +136,8 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
 }
 
 Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
-  auto &scope = addDecl(decl, parentScope, LitLexerCursor(), 0);
+  auto &scope =
+      addDecl(decl, parentScope, LitLexerCursor(), LitLexerCursor(), 0);
   scope.resolvedness = DeclResolvedness::fullyResolved;
   return scope;
 }
@@ -215,8 +217,23 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<Operation *>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, scope.getCursor());
-          resolveBody(op, lexer, scope);
+          if (resolveBody(op, lexer, scope))
+            return;
+
+          // If the final parse of the declaration didn't match the initial
+          // parse, report an error about unrecognized tokens at end of
+          // declaration.
+          if (!scope.isMatchingEndCursor(lexer.getCursor()) &&
+              !scope.hasReferenceError) {
+            if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
+                                       LitToken::kw_class, LitToken::kw_var))
+              lexer.emitError("definition isn't on its own line at the correct "
+                              "indentation");
+            else
+              lexer.emitError("unknown tokens at the end of a declaration");
+          }
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto attr) {
@@ -413,9 +430,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   return success();
 }
 
-void DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
-                               Scope &scope) {
-  (void)LitParserBase::parseSuite(scope, lexer);
+ParseResult DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
+                                      Scope &scope) {
+  if (LitParserBase::parseSuite(scope, lexer))
+    return failure();
 
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
@@ -435,6 +453,7 @@ void DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
 
   // TODO: Do more type checking: verify that functions like __add__ have the
   // right signature.
+  return success();
 }
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
@@ -461,11 +480,13 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
   return success();
 }
 
-void DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope) {
+ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
+                                      Scope &scope) {
   // Nothing to do for a var decl, we parse everything as part of its signature.
   // We could move to parsing an initializer expression lazily when a type is
   // present if there were a reason to do that (e.g. more laziness desired) in
   // the future.
+  return success();
 }
 
 /// structdef ::=
@@ -488,7 +509,7 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
   return success();
 }
 
-void DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,
-                               Scope &scope) {
-  (void)LitParserBase::parseSuite(scope, lexer);
+ParseResult DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,
+                                      Scope &scope) {
+  return LitParserBase::parseSuite(scope, lexer);
 }

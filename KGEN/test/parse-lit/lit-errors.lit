@@ -132,3 +132,11 @@ def call_generic[dt: DType]():
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{'!kgen.ref<@Int>' object has no attribute 'badField'}}
+
+
+# https://github.com/modularml/modular/issues/4181
+struct Issue4181IndentWeirdness[dt: DType]:
+  var b : Int
+    # expected-error @+1 {{definition isn't on its own line at the correct indentation}}
+    def f():
+      pass

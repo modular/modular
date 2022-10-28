@@ -93,6 +93,12 @@ public:
     return None;
   }
 
+  /// Return true if the end of the speculatively scanned decl matches the
+  /// specified cursor.
+  bool isMatchingEndCursor(const LitLexerCursor &cursor) const {
+    return endCursorState == cursor.getState();
+  }
+
   /// This keeps track of what level of type checking this declaration has been
   /// through.  It is maintained by DeclResolver.
   DeclResolvedness resolvedness = DeclResolvedness::unparsed;
@@ -107,9 +113,9 @@ private:
   // Scope is created by DeclResolver.
   friend class DeclResolver;
   Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
-        ssize_t indentation)
+        LitLexerCursor endCursor, ssize_t indentation)
       : decl(decl), parentScope(std::move(parentScope)), cursor(cursor),
-        indentation(indentation) {}
+        endCursorState(endCursor.getState()), indentation(indentation) {}
 
 private:
   /// This is the declaration that this scope corresponds to.
@@ -122,6 +128,11 @@ private:
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
   LitLexerCursor cursor;
+
+  /// This is the lexer cursor state for the first token /after/ the
+  /// declaration.  This is used to make sure that bits of a declaration are not
+  /// skipped in the early parse and not processes in the later parse.
+  const char *endCursorState;
 
   /// This is the indentation level of the introducer keyword, useful for
   /// parsing the body of the declaration.  If the declaration was not at the

@@ -126,6 +126,10 @@ public:
   /// handled. `spelling` is known to have been lexed as a string literal token.
   static std::string getStringLiteralValue(StringRef spelling);
 
+  LitToken emitError(const Twine &message) {
+    return emitError(getToken().getSpelling().data(), message);
+  }
+
 private:
   LitToken lexTokenImpl();
 
@@ -172,6 +176,10 @@ public:
     lexer.curPtr = state;
     lexer.curToken = curToken;
   }
+
+  /// Return an internal pointer that represents the cursor state without the
+  /// current token.
+  const char *getState() const { return state; }
 
 private:
   const char *state;
