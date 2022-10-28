@@ -164,35 +164,8 @@ Optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ScalarType
+// SIMDType
 //===----------------------------------------------------------------------===//
-
-LogicalResult ScalarType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 TypedAttr dtype) {
-  if (!dtype.getType().isa<DTypeType>())
-    return emitError() << "parameter for scalar type must be a !kgen.dtype";
-  return success();
-}
-
-void ScalarType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getDType());
-}
-
-Type ScalarType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                             ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 1 && replTypes.empty());
-  return ScalarType::get(replAttrs[0]);
-}
-
-ScalarType ScalarType::get(TypedAttr dtype) {
-  return get(dtype.getContext(), dtype);
-}
-
-ScalarType ScalarType::get(MLIRContext *ctx, KGENDType dtype) {
-  return get(ctx, DTypeConstantAttr::get(ctx, dtype));
-}
 
 /// Get the size in bytes of a KGEN dtype.
 static Optional<int64_t> getDTypeByteSize(TargetInfoAttr target,
@@ -206,12 +179,6 @@ static Optional<int64_t> getDTypeByteSize(TargetInfoAttr target,
   if (size == -1)
     return {};
   return llvm::divideCeil(size, CHAR_BIT);
-}
-
-Optional<int64_t> ScalarType::getTypeSize(TargetInfoAttr target) const {
-  if (Optional<KGENDType> dtype = getResolvedDType())
-    return getDTypeByteSize(target, *dtype);
-  return {};
 }
 
 /// Get the alignment in bytes of a KGEN dtype.
@@ -229,16 +196,6 @@ static Optional<int64_t> getDTypeByteAlign(TargetInfoAttr target,
   // Cap the alignment to the pointer size.
   return std::min(align, target.getPointerSize());
 }
-
-Optional<int64_t> ScalarType::getTypeAlign(TargetInfoAttr target) const {
-  if (Optional<KGENDType> dtype = getResolvedDType())
-    return getDTypeByteAlign(target, *dtype);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDType
-//===----------------------------------------------------------------------===//
 
 LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr size, TypedAttr dtype) {
@@ -500,17 +457,14 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
   // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
   if (p.parseOptionalKeyword(
           &typeName, {ArrayType::getMnemonic(), PointerType::getMnemonic(),
-                      ScalarType::getMnemonic(), SIMDType::getMnemonic(),
-                      StructType::getMnemonic(), VariantType::getMnemonic(),
-                      DTypeType::getMnemonic()}))
+                      SIMDType::getMnemonic(), StructType::getMnemonic(),
+                      VariantType::getMnemonic(), DTypeType::getMnemonic()}))
     return parseTypeParamValue(p, typeExpr);
 
   if (typeName == ArrayType::getMnemonic())
     return parsePrettyTypeImpl<ArrayType>(p, typeExpr);
   if (typeName == PointerType::getMnemonic())
     return parsePrettyTypeImpl<PointerType>(p, typeExpr);
-  if (typeName == ScalarType::getMnemonic())
-    return parsePrettyTypeImpl<ScalarType>(p, typeExpr);
   if (typeName == SIMDType::getMnemonic())
     return parsePrettyTypeImpl<SIMDType>(p, typeExpr);
   if (typeName == StructType::getMnemonic())
@@ -537,11 +491,11 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
   // Try to print on the known types. Fallback to the generic type printer
   // otherwise.
   llvm::TypeSwitch<Type>(typeCst.getValue())
-      .Case<ArrayType, PointerType, ScalarType, SIMDType, StructType,
-            VariantType>([&](auto popType) {
-        p << decltype(popType)::getMnemonic();
-        popType.print(p);
-      })
+      .Case<ArrayType, PointerType, SIMDType, StructType, VariantType>(
+          [&](auto popType) {
+            p << decltype(popType)::getMnemonic();
+            popType.print(p);
+          })
       .Case([&](RefType ref) {
         p << ref.getName();
         printOptionalParamBindSpec(p, ref.getParamValues());

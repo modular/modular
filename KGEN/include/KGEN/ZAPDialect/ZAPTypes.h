@@ -16,7 +16,6 @@ namespace M {
 class DType;
 namespace KGEN::POP {
 class PointerType;
-class ScalarType;
 class SIMDType;
 } // namespace KGEN::POP
 } // namespace M

@@ -51,9 +51,6 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   // Helper to print a function as a C type.
   std::function<LogicalResult(Type)> printTypeAsC =
       [&](Type t) -> LogicalResult {
-    if (auto scalar = dyn_cast<POP::ScalarType>(t))
-      return printDTypeAsC(*scalar.getResolvedDType());
-
     if (auto simd = dyn_cast<POP::SIMDType>(t)) {
       // Since the vector_size attribute only works on GNU and CLANG compilers,
       // we pass in an array.
