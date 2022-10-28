@@ -41,30 +41,40 @@ public:
 
   ~ExprParser() {}
 
+  enum class Precedence {
+    kInvalid, // No precedence
+    kLowest,  // Lowest precedence (most loosely bound).
+    kSum,     // infix:  + -
+    kTerm,    // infix:  * /
+    kFactor,  // prefix: + - ~
+    kPower,   // infix:  **
+    kPrimary, // prefix: foo "123" 123 1.23 True False foo(1) foo.bar foo[bar]
+    kHighest = kPrimary
+  };
+
   // Expressions.  These methods always return a non-null ExprNode, but it may
   // be (or include) an Error node if parsing failed.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
-  ParseResult parseExpression(ExprNode *&result);
+  ParseResult parseExpression(ExprNode *&result,
+                              Precedence minPrec = Precedence::kLowest);
 
 private:
   /// Return true if the current token is the start of another statement, false
   /// if it is part of this one.
   bool isTokenStartOfNextStatement();
 
-  ParseResult parsePrimary(ExprNode *&result);
+  ParseResult parsePrefixExpr(ExprNode *&result, Precedence precedence);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
 
-  enum class Precedence {
-    kInvalid, // Not a binary operator token.
-    kLowest,  // Lowest precedence (most loosely bound).
-    kAdd,
-    kMul, // Highest precedence (most tightly bound).
-  };
-  std::pair<Precedence, ExprNode::Kind> getBinOpTokenPrecedenceAndKind() const;
+  ExprParser::Precedence getInfixTokenPrecedence() const;
+  ExprParser::Precedence getPrefixTokenPrecedence() const;
+  ExprNode::Kind getBinOpKind(LitToken::Kind litKind) const;
+  ExprNode::Kind getUnaryOpKind(LitToken::Kind litKind) const;
 
-  ParseResult parseBinOpRHS(ExprNode *&lhs, Precedence minPrec);
+  ParseResult parseInfixExpr(ExprNode *&expr, ExprNode *lhs,
+                             Precedence precedence);
 
   /// Return an error node at the specified location.
   ExprNode *getErrorAtToken() { return alloc<ErrorNode>(getToken().getLoc()); };
@@ -146,28 +156,91 @@ ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
   });
 }
 
-/// expression ::=
-///
-///
-ParseResult ExprParser::parseExpression(ExprNode *&expr) {
-  if (parsePrimary(expr) || parseBinOpRHS(expr, Precedence::kLowest))
+/// Parse an expression using top-down operator precedence parsing.
+ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
+
+  // Parse any prefix expression like -1
+  if (parsePrefixExpr(expr, getPrefixTokenPrecedence()))
     return failure();
+
+  // It consumes tokens until it meets a token whose tokPrecedence is equal or
+  // lower than minPrec. This means that it collects all tokens that bind
+  // together before returning to the operator that called it.
+  ExprParser::Precedence tokPrecedence = getInfixTokenPrecedence();
+  while (unsigned(minPrec) < unsigned(tokPrecedence)) {
+    if (parseInfixExpr(expr, expr, tokPrecedence))
+      return failure();
+    tokPrecedence = getInfixTokenPrecedence();
+  }
   return success();
 }
 
-/// Return the operator precedence for the specified token or
-std::pair<ExprParser::Precedence, ExprNode::Kind>
-ExprParser::getBinOpTokenPrecedenceAndKind() const {
+/// Return the operator precedence for the specified token.
+ExprParser::Precedence ExprParser::getInfixTokenPrecedence() const {
   switch (getToken().getKind()) {
   default:
-    return {Precedence::kInvalid, ExprNode::kError};
+    return Precedence::kInvalid;
   case LitToken::plus:
-    return {Precedence::kAdd, ExprNode::kAdd};
+  case LitToken::minus:
+    return Precedence::kSum;
   case LitToken::star:
-    return {Precedence::kMul, ExprNode::kMul};
+  case LitToken::slash:
+    return Precedence::kTerm;
+  case LitToken::star_star:
+    return Precedence::kPower;
   }
 }
 
+/// Return the operator precedence for the specified token.
+ExprParser::Precedence ExprParser::getPrefixTokenPrecedence() const {
+  switch (getToken().getKind()) {
+  default:
+    return Precedence::kInvalid;
+  case LitToken::plus:
+  case LitToken::minus:
+    return Precedence::kFactor;
+  case LitToken::identifier:
+  case LitToken::string:
+  case LitToken::float_num:
+  case LitToken::integer:
+    return Precedence::kPrimary;
+  }
+}
+
+ExprNode::Kind ExprParser::getBinOpKind(LitToken::Kind litKind) const {
+  switch (litKind) {
+  default:
+    return ExprNode::kError;
+  case LitToken::plus:
+    return ExprNode::kAdd;
+  case LitToken::minus:
+    return ExprNode::kSub;
+  case LitToken::star:
+    return ExprNode::kMul;
+  case LitToken::slash:
+    return ExprNode::kDiv;
+  case LitToken::star_star:
+    return ExprNode::kExp;
+  }
+}
+
+ExprNode::Kind ExprParser::getUnaryOpKind(LitToken::Kind litKind) const {
+  switch (litKind) {
+  default:
+    return ExprNode::kError;
+  case LitToken::plus:
+    return ExprNode::kPlus;
+  case LitToken::minus:
+    return ExprNode::kMinus;
+  case LitToken::tilde:
+    return ExprNode::kInvert;
+  }
+}
+
+/// Parse the expression identified by the current token and provided
+/// `precedence`.  Store the resulting expression in `expr`.
+/// Prefix expressions supported are:
+///
 /// primary ::=  atom | attributeref | subscription | slicing | call
 ///
 /// atom    ::= identifier | literal | enclosure [TODO]
@@ -180,8 +253,22 @@ ExprParser::getBinOpTokenPrecedenceAndKind() const {
 /// literal ::= [TODO]
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
-ParseResult ExprParser::parsePrimary(ExprNode *&result) {
-  switch (getToken().getKind()) {
+/// factor ::=  "-" factor | "+" factor | "~" factor | power
+
+ParseResult ExprParser::parsePrefixExpr(ExprNode *&result,
+                                        Precedence precedence) {
+  LitToken::Kind tokKind = getToken().getKind();
+  switch (tokKind) {
+  case LitToken::plus:
+  case LitToken::minus:
+  case LitToken::tilde: { // factor
+    auto lpLoc = consumeToken(LitToken::minus).getLoc();
+    ExprNode *expr;
+    if (parseExpression(expr, precedence))
+      return failure();
+    result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), lpLoc, expr);
+    break;
+  }
   case LitToken::identifier: // primary -> atom -> identifier
     result = alloc<DeclRefNode>(getToken().getSpelling());
     consumeToken(LitToken::identifier);
@@ -313,39 +400,22 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   return success();
 }
 
-/// Parse any binary operators that have precedence of at least `minPrec`.  This
-/// stop if the current token isn't a binary operator or if it binds more
-/// loosely than the specified precedence level.
-ParseResult ExprParser::parseBinOpRHS(ExprNode *&expr, Precedence minPrec) {
-  // Process operators unless they are at the start of the next statement.
-  while (!isTokenStartOfNextStatement()) {
-    auto [tokPrec, binOpKind] = getBinOpTokenPrecedenceAndKind();
+/// Given a left hand side expression `lhs`, parse the right hand side of a
+/// infix expression identified by the current token and provided `precedence`.
+/// Store the resulting expression in `expr`.
+ParseResult ExprParser::parseInfixExpr(ExprNode *&expr, ExprNode *lhs,
+                                       Precedence precedence) {
+  LitToken oldTok = getToken();
+  consumeToken();
 
-    // If the next token is lower precedence than we are allowed to eat, return
-    // successfully with what we ate already.  This also handles invalid tokens,
-    // since they are treated as lower precedence than we ever allow.
-    if (unsigned(tokPrec) < unsigned(minPrec))
-      return success();
-
-    SMLoc opLoc = getToken().getLoc();
-    consumeToken();
-
-    // Eat the next primary expression.
-    ExprNode *rhs = nullptr;
-    if (parsePrimary(rhs))
-      return failure();
-
-    // If the operator we parse bind looser with the RHS than the operator after
-    // the RHS, then give the RHS primary to the RHS.
-    auto [nextTokPrec, nextBinOpKind] = getBinOpTokenPrecedenceAndKind();
-    if (unsigned(tokPrec) < unsigned(nextTokPrec)) {
-      if (parseBinOpRHS(rhs, Precedence(unsigned(tokPrec) + 1)))
-        return failure();
-    }
-
-    // Merge LHS and RHS according to operator.
-    expr = alloc<BinOpNode>(binOpKind, expr, opLoc, rhs);
-  }
+  // exponentiation is left associative
+  if (oldTok.getKind() == LitToken::Kind::star_star)
+    precedence = Precedence(unsigned(precedence) - 1);
+  ExprNode *rhs;
+  if (parseExpression(rhs, precedence))
+    return failure();
+  expr = alloc<BinOpNode>(getBinOpKind(oldTok.getKind()), lhs, oldTok.getLoc(),
+                          rhs);
   return success();
 }
 

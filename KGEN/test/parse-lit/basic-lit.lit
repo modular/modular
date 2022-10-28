@@ -6,6 +6,49 @@
 def empty_def():
   # Pass isn't required.
 
+# CHECK-LABEL: lit.func public @precedence_associativity(%a: index) {
+def precedence_associativity(a: index):
+  z = 0
+  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
+  # CHECK-NEXT: %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT: %[[POW0:.*]] = index.rems %[[A]], %[[Z]]
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
+  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
+  z = 2**(a**z)
+  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
+  # CHECK-NEXT: %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT: %[[POW0:.*]] = index.rems %[[A]], %[[Z]]
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
+  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
+  z = 2**a**z
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MUL]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 * -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[THREE]]
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[ADD]], %[[SUB]]
+  # CHECK-NEXT:  pop.store %[[MUL]], %z : !pop.pointer<index>
+  z = (z + 3) * -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[POW:.*]] = index.rems %[[TWO]], %[[Z]]
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[POW]]
+  # CHECK-NEXT:  pop.store %[[SUB]], %z : !pop.pointer<index>
+  z = -2**z
+
 # CHECK-LABEL: lit.func public @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %a_0 = lit.var.decl "a"

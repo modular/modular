@@ -140,11 +140,21 @@ public:
     kSubscript,     // thing[a, b:c]
     kParenExprNode, // (x+y)
 
+    // Unary expressions.
+    kMinus,
+    kPlus,
+    kInvert,
+    kFirstUnaryOp = kMinus,
+    klastUnaryOp = kInvert,
+
     // Binary expressions.
     kAdd,
+    kSub,
     kMul,
+    kDiv,
+    kExp,
     kFirstBinOp = kAdd,
-    kLastBinOp = kMul,
+    kLastBinOp = kExp,
 
   } const kind;
 
