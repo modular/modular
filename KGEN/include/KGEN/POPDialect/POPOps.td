@@ -191,8 +191,8 @@ def POP_FloorOp : POP_ArithmeticUnaryOp<"floor">  {
     ```
   }];
 
-  let arguments = (ins UnboundOrFloatScalarOrSIMD:$operand);
-  let results = (outs UnboundOrFloatScalarOrSIMD:$result);
+  let arguments = (ins UnboundOrFloatSIMD:$operand);
+  let results = (outs UnboundOrFloatSIMD:$result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -217,8 +217,8 @@ def POP_CeilOp : POP_ArithmeticUnaryOp<"ceil">  {
     ```
   }];
 
-  let arguments = (ins UnboundOrFloatScalarOrSIMD:$operand);
-  let results = (outs UnboundOrFloatScalarOrSIMD:$result);
+  let arguments = (ins UnboundOrFloatSIMD:$operand);
+  let results = (outs UnboundOrFloatSIMD:$result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -380,8 +380,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
     %0 = pop.shl %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
-                       UnboundOrIntegerScalarOrSIMD:$rhs);
+  let arguments = (ins UnboundOrIntegerSIMD:$lhs,
+                       UnboundOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -411,8 +411,8 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
     %0 = pop.shr %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrIntegerScalarOrSIMD:$lhs,
-                       UnboundOrIntegerScalarOrSIMD:$rhs);
+  let arguments = (ins UnboundOrIntegerSIMD:$lhs,
+                       UnboundOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -434,8 +434,8 @@ def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
     %c = pop.copysign %a, %b : !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrFloatScalarOrSIMD:$lhs,
-                       UnboundOrFloatScalarOrSIMD:$rhs);
+  let arguments = (ins UnboundOrFloatSIMD:$lhs,
+                       UnboundOrFloatSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -498,7 +498,7 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
 
   let arguments = (ins POP_CmpPredicateAttr:$pred, ScalarOrSIMD:$lhs,
                        ScalarOrSIMD:$rhs);
-  let results = (outs BoolScalarOrSIMD:$result);
+  let results = (outs BoolSIMD:$result);
 
   let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)";
 }
@@ -516,9 +516,9 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType
       ]> {
 
-  let arguments = (ins UnboundBoolOrIntegerScalarOrSIMD:$lhs,
-                       UnboundBoolOrIntegerScalarOrSIMD:$rhs);
-  let results = (outs UnboundBoolOrIntegerScalarOrSIMD:$result);
+  let arguments = (ins UnboundOrBoolOrIntegerSIMD:$lhs,
+                       UnboundOrBoolOrIntegerSIMD:$rhs);
+  let results = (outs UnboundOrBoolOrIntegerSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
 }
@@ -618,7 +618,7 @@ def POP_SelectOp : POPOp<"select",
     ```
   }];
 
-  let arguments = (ins BoolScalarOrSIMD:$condition, ScalarOrSIMD:$trueValue,
+  let arguments = (ins BoolSIMD:$condition, ScalarOrSIMD:$trueValue,
                        ScalarOrSIMD:$falseValue);
   let results = (outs ScalarOrSIMD:$result);
 
@@ -1844,7 +1844,7 @@ def POP_MemsetOp : POPOp<"memset"> {
   }];
 
   let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
-                       UI8Scalar:$value,
+                       UI8SIMDSizeOne:$value,
                        Index:$size,
                        OptionalAttr<UnitAttr>:$isVolatile);
 

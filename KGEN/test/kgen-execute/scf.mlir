@@ -3,32 +3,32 @@
 // RUN: kgen-execute %s -execute -func="while_accum_loop:f32()" | FileCheck %s --check-prefix=WHILE_ACCUM
 
 kgen.func public @for_loop() -> f32 {
-  %av = pop.constant(1.0 : f32) : !pop.scalar<f32>
-  %c10 = pop.constant(10.0 : f32) : !pop.scalar<f32>
+  %av = pop.constant(1.0 : f32) : !pop.simd<1, f32>
+  %c10 = pop.constant(10.0 : f32) : !pop.simd<1, f32>
   %lb = index.constant 0
   %ub = index.constant 10
   %step = index.constant 1
-  %rv = scf.for %i = %lb to %ub step %step iter_args(%v = %av) -> (!pop.scalar<f32>) {
-    %n = pop.add %c10, %v : !pop.scalar<f32>
-    scf.yield %n : !pop.scalar<f32>
+  %rv = scf.for %i = %lb to %ub step %step iter_args(%v = %av) -> (!pop.simd<1, f32>) {
+    %n = pop.add %v, %c10 : !pop.simd<1, f32>
+    scf.yield %n : !pop.simd<1, f32>
   }
-  %r = pop.cast_to_builtin %rv : !pop.scalar<f32> to f32
+  %r = pop.cast_to_builtin %rv : !pop.simd<1, f32> to f32
   kgen.return %r : f32
 }
 
 kgen.func public @while_loop() -> f32 {
-  %init = pop.constant(1.2 : f32) : !pop.scalar<f32>
-  %limit = pop.constant(10. : f32) : !pop.scalar<f32>
-  %result = scf.while (%v = %init) : (!pop.scalar<f32>) -> !pop.scalar<f32> {
-    %cmp = pop.cmp lt(%v, %limit) : !pop.scalar<f32>
-    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
-    scf.condition(%cond) %v : !pop.scalar<f32>
+  %init = pop.constant(1.2 : f32) : !pop.simd<1, f32>
+  %limit = pop.constant(10. : f32) : !pop.simd<1, f32>
+  %result = scf.while (%v = %init) : (!pop.simd<1, f32>) -> !pop.simd<1, f32> {
+    %cmp = pop.cmp lt(%v, %limit) : !pop.simd<1, f32>
+    %cond = pop.cast_to_builtin %cmp : !pop.simd<1, bool> to i1
+    scf.condition(%cond) %v : !pop.simd<1, f32>
   } do {
-  ^bb0(%u : !pop.scalar<f32>):
-    %next = pop.mul %u, %u : !pop.scalar<f32>
-    scf.yield %next : !pop.scalar<f32>
+  ^bb0(%u : !pop.simd<1, f32>):
+    %next = pop.mul %u, %u : !pop.simd<1, f32>
+    scf.yield %next : !pop.simd<1, f32>
   }
-  %res = pop.cast_to_builtin %result : !pop.scalar<f32> to f32
+  %res = pop.cast_to_builtin %result : !pop.simd<1, f32> to f32
   kgen.return %res : f32
 }
 
@@ -55,7 +55,7 @@ kgen.func public @while_accum_loop() -> f32 {
   %eight = index.constant 8
   %iter_init = index.constant 0
   %size_minus_8 = index.sub %size, %eight
-  %accum_init = pop.constant(0.0 :f32) : !pop.scalar<f32>
+  %accum_init = pop.constant(0.0 :f32) : !pop.simd<1, f32>
   // while (iter+8 < size) {
   //     int ii = iter;
   //     while (ii < iter + 8) {
@@ -64,47 +64,47 @@ kgen.func public @while_accum_loop() -> f32 {
   //     }
   //     iter += 8;
   // }
-  %new_index, %accum0 = scf.while (%iter = %iter_init, %accum = %accum_init) : (index, !pop.scalar<f32>) -> (index, !pop.scalar<f32>) {
+  %new_index, %accum0 = scf.while (%iter = %iter_init, %accum = %accum_init) : (index, !pop.simd<1, f32>) -> (index, !pop.simd<1, f32>) {
     %cond = index.cmp sle(%iter, %size_minus_8)
-    scf.condition(%cond) %iter, %accum : index, !pop.scalar<f32>
+    scf.condition(%cond) %iter, %accum : index, !pop.simd<1, f32>
   } do {
-  ^bb0(%iter1: index, %accum1: !pop.scalar<f32>):
+  ^bb0(%iter1: index, %accum1: !pop.simd<1, f32>):
     %ii_last = index.add %iter1, %eight
     //     while (ii < iter + 8) {
     //         accum += ii;
     //         ii++;
     //     }
-    %new_index, %accum2 = scf.while (%ii = %iter1, %accum = %accum1) : (index, !pop.scalar<f32>) -> (index, !pop.scalar<f32>) {
+    %new_index, %accum2 = scf.while (%ii = %iter1, %accum = %accum1) : (index, !pop.simd<1, f32>) -> (index, !pop.simd<1, f32>) {
       %cond = index.cmp slt(%ii, %ii_last)
-      scf.condition(%cond) %ii, %accum : index, !pop.scalar<f32>
+      scf.condition(%cond) %ii, %accum : index, !pop.simd<1, f32>
     } do {
-    ^bb1(%ii: index, %accum2: !pop.scalar<f32>):
+    ^bb1(%ii: index, %accum2: !pop.simd<1, f32>):
       %iiInt32 = index.casts %ii : index to i32
-      %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.scalar<si32>
-      %iiFloat32 = pop.cast %iiMetaInt32 : !pop.scalar<si32> to !pop.scalar<f32>
-      %accum3 = pop.add %accum2, %iiFloat32 : !pop.scalar<f32>
+      %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.simd<1, si32>
+      %iiFloat32 = pop.cast %iiMetaInt32 : !pop.simd<1, si32> to !pop.simd<1, f32>
+      %accum3 = pop.add %accum2, %iiFloat32 : !pop.simd<1, f32>
       %next_index = index.add %ii, %one
-      scf.yield %next_index, %accum3 : index, !pop.scalar<f32>
+      scf.yield %next_index, %accum3 : index, !pop.simd<1, f32>
     }
-    scf.yield %ii_last, %accum2 : index, !pop.scalar<f32>
+    scf.yield %ii_last, %accum2 : index, !pop.simd<1, f32>
   }
   // while (iter < size) {
   //     accum += iter;
   //     iter++;
   // }
-  %iter1, %accum = scf.while (%iter = %new_index, %accum = %accum0) : (index, !pop.scalar<f32>) -> (index, !pop.scalar<f32>) {
+  %iter1, %accum = scf.while (%iter = %new_index, %accum = %accum0) : (index, !pop.simd<1, f32>) -> (index, !pop.simd<1, f32>) {
     %cond = index.cmp slt(%iter, %size)
-    scf.condition(%cond) %iter, %accum : index, !pop.scalar<f32>
+    scf.condition(%cond) %iter, %accum : index, !pop.simd<1, f32>
   } do {
-  ^bb1(%ii: index, %accum2: !pop.scalar<f32>):
+  ^bb1(%ii: index, %accum2: !pop.simd<1, f32>):
     %iiInt32 = index.casts %ii : index to i32
-    %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.scalar<si32>
-    %iiFloat32 = pop.cast %iiMetaInt32 : !pop.scalar<si32> to !pop.scalar<f32>
-    %accum3 = pop.add %accum2, %iiFloat32 : !pop.scalar<f32>
+    %iiMetaInt32 = pop.cast_from_builtin %iiInt32 : i32 to !pop.simd<1, si32>
+    %iiFloat32 = pop.cast %iiMetaInt32 : !pop.simd<1, si32> to !pop.simd<1, f32>
+    %accum3 = pop.add %accum2, %iiFloat32 : !pop.simd<1, f32>
     %next_index = index.add %ii, %one
-    scf.yield %next_index, %accum3 : index, !pop.scalar<f32>
+    scf.yield %next_index, %accum3 : index, !pop.simd<1, f32>
   }
-  %res = pop.cast_to_builtin %accum : !pop.scalar<f32> to f32
+  %res = pop.cast_to_builtin %accum : !pop.simd<1, f32> to f32
   kgen.return %res : f32
 }
 

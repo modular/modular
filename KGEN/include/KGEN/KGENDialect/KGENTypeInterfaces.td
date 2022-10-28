@@ -93,5 +93,8 @@ def IntegerOrUnboundDType :
 /// A type whose data type is either unbound or floating point.
 def FloatOrUnboundDType :
     ConstrainedDType<"!$_self || $_self->isFloat()">;
+/// A type whose data type is either unbound, or integral, or bool.
+def IntegerOrBoolOrUnboundDType :
+    ConstrainedDType<"!$_self || $_self->isInt() || $_self->isBool()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD

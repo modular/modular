@@ -340,21 +340,21 @@ kgen.generator @region_params
   kgen.return
 }
 
-kgen.generator @takeUnary<unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
+kgen.generator @takeUnary<unaryFn: (!pop.simd<1, si32>) -> !pop.simd<1, si32>>() {
   // use unaryFn
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
-  kgen.return %0 : !pop.scalar<si32>
+kgen.func @doubleExample(%arg0: !pop.simd<1, si32>) -> !pop.simd<1, si32> {
+  %0 = pop.add %arg0, %arg0: !pop.simd<1, si32>
+  kgen.return %0 : !pop.simd<1, si32>
 }
 
 kgen.generator @test_region() {
   // CHECK: kgen.call @takeUnary<
-  // CHECK-SAME: unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>()
+  // CHECK-SAME: unaryFn: (!pop.simd<1, si32>) -> !pop.simd<1, si32> = @doubleExample>()
   kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>() : () -> ()
+     unaryFn : (!pop.simd<1, si32>) -> !pop.simd<1, si32> = @doubleExample>() : () -> ()
 
   kgen.return
 }
