@@ -6,17 +6,17 @@ kgen.struct.decl @SmallVector<N, T: type> {
 }
 
 !size2 = !kgen.ref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
-!size4 = !kgen.ref<@SmallVector<N = 4, T:type = !pop.scalar<f64>>>
+!size4 = !kgen.ref<@SmallVector<N = 4, T:type = !pop.simd<1, f64>>>
 
 // CHECK-LABEL: @two_vectors
 kgen.func @two_vectors(
   %arg0: !pop.array<2, simd<4, f32>>,
-  %arg1: !pop.array<4, scalar<f64>>
+  %arg1: !pop.array<4, simd<1, f64>>
 ) -> (!size2, !size4) {
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<2 x vector<4xf32>>)>
   // CHECK: llvm.mlir.undef : !llvm.struct<(array<4 x f64>)>
   %0 = kgen.struct.create(%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
-  %1 = kgen.struct.create(%arg1) : (!pop.array<4, scalar<f64>>) -> !size4
+  %1 = kgen.struct.create(%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
 
@@ -76,7 +76,7 @@ kgen.struct.decl @NestedA<T: type> {
   v: !kgen.paramref<T>
 }
 kgen.struct.decl @NestedB<t: dtype> {
-  a: !kgen.ref<@NestedA<T:type = !pop.scalar<t>>>
+  a: !kgen.ref<@NestedA<T:type = !pop.simd<1, t>>>
 }
 kgen.struct.decl @NestedC {
   b: !kgen.ref<@NestedB<t:dtype = f32>>

@@ -55,7 +55,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
   %2 = kgen.param.constant: f32 = <val>
 
   // Silly op so we know when something used this.
-  "genA op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<type>
+  "genA op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.simd<1, type>
 
   kgen.return<mul(size, 2)> %arg0 : si32
 }
@@ -64,7 +64,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant  = <46>
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant: dtype = <f32>
 // CHECK-NEXT:   %[[V2:.*]] = kgen.param.constant: f32 = <2.000000e+00>
-// CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !pop.scalar<f32>
+// CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !pop.simd<1, f32>
 // CHECK-NEXT:   kgen.return<84> %[[ARG0]] : si32
 // CHECK-NEXT: }
 
@@ -73,7 +73,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant  = <23>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant: dtype = <si8>
 // CHECK-NEXT:    %[[V2:.*]] = kgen.param.constant: f32 = <1.500000e+00>
-// CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !pop.scalar<si8>
+// CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !pop.simd<1, si8>
 // CHECK-NEXT:    kgen.return<38> %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
@@ -282,27 +282,27 @@ kgen.generator @track_expansions(%arg0: si32) {
 
 // Test that parameter and result argument types get rewritten and specialized.
 
-// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !pop.scalar<f32> {
+// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.5,type=f32"() -> !pop.simd<1, f32> {
 // ...
 // CHECK:    %[[V1:.*]] = llvm.fptrunc
-// CHECK:    %[[V2:.*]] = pop.cast_from_builtin %[[V1]] : f32 to !pop.scalar<f32>
-// CHECK:    kgen.return %[[V2]] : !pop.scalar<f32>
+// CHECK:    %[[V2:.*]] = pop.cast_from_builtin %[[V1]] : f32 to !pop.simd<1, f32>
+// CHECK:    kgen.return %[[V2]] : !pop.simd<1, f32>
 
-kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !pop.scalar<type>
+kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !pop.simd<1, type>
   constraints <[eq(:dtype type, f32), "float please"]>  {
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
-  %2 = pop.cast_from_builtin %1: f32 to !pop.scalar<type>
-  kgen.return %2 : !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1: f32 to !pop.simd<1, type>
+  kgen.return %2 : !pop.simd<1, type>
 }
 
 // CHECK-LABEL: kgen.func @test_f32() -> f32 {
-// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !pop.scalar<f32>
-// CHECK:    %[[V1:.*]] = pop.cast_to_builtin %[[V0]] : !pop.scalar<f32> to f32
+// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.5,type=f32"() : () -> !pop.simd<1, f32>
+// CHECK:    %[[V1:.*]] = pop.cast_to_builtin %[[V0]] : !pop.simd<1, f32> to f32
 kgen.generator @test_f32() -> f32 {
   kgen.param.declare type : dtype = <f32>
-  %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !pop.scalar<type>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<type> to f32
+  %1 = kgen.call @float_constant_f32<value: f64 = 1.5, type: dtype = type>() : () -> !pop.simd<1, type>
+  %2 = pop.cast_to_builtin %1 : !pop.simd<1, type> to f32
   kgen.return %2 : f32
 }
 

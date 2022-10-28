@@ -69,14 +69,14 @@ kgen.generator @foo() {
 
 // expected-error @+2 {{attribute type different than expected: expected '!kgen.dtype', but got 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
-           !pop.scalar<#kgen.param.decl.ref<"n"> : index>) {
+           !pop.simd<1, #kgen.param.decl.ref<"n"> : index>) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
-kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
+kgen.generator @scalar_params_verbose(%x : !pop.simd<1, abc>) {
   kgen.return
 }
 
@@ -84,7 +84,7 @@ kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
 
 kgen.generator @dtype_params() {
   // expected-error @+1 {{invalid use of parameter with no declaration "type"}}
-  %y = "someop" () {} : () -> !pop.scalar<type>
+  %y = "someop" () {} : () -> !pop.simd<1, type>
   kgen.return
 }
 
@@ -323,18 +323,18 @@ kgen.generator.interface @constrained<width, height>()
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "ty2"}}
-kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
+kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.simd<1, ty2>)
 
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @callee<type: dtype>(%x: !pop.scalar<type>) {
+kgen.generator @callee<type: dtype>(%x: !pop.simd<1, type>) {
   kgen.return
 }
 
-kgen.generator @caller<type : dtype>(%arg0: !pop.scalar<type>) {
-  // expected-error @+1 {{caller argument #0 has type '!pop.scalar<type>' but callee expected type '!pop.scalar<f64>'}}
-  kgen.call @callee<type: dtype = f64>(%arg0) : (!pop.scalar<type>) -> ()
+kgen.generator @caller<type : dtype>(%arg0: !pop.simd<1, type>) {
+  // expected-error @+1 {{caller argument #0 has type '!pop.simd<1, type>' but callee expected type '!pop.simd<1, f64>'}}
+  kgen.call @callee<type: dtype = f64>(%arg0) : (!pop.simd<1, type>) -> ()
   kgen.return
 }
 
@@ -531,17 +531,17 @@ kgen.generator @test<ty: type, p : <x,x>()->()>
 
 // -----
 
-kgen.func @rebind(%a: !pop.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type '!pop.scalar<si32>'}}
-  %0 = kgen.rebind %a : !pop.scalar<f32> to !pop.scalar<si32>
+kgen.func @rebind(%a: !pop.simd<1, f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!pop.simd<1, f32>' to different concrete output type '!pop.simd<1, si32>'}}
+  %0 = kgen.rebind %a : !pop.simd<1, f32> to !pop.simd<1, si32>
   kgen.return
 }
 
 // -----
 
-kgen.func @rebind(%a: !pop.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type 'i32'}}
-  %0 = kgen.rebind %a : !pop.scalar<f32> to i32
+kgen.func @rebind(%a: !pop.simd<1, f32>) {
+  // expected-error @below {{cannot rebind concrete input type '!pop.simd<1, f32>' to different concrete output type 'i32'}}
+  %0 = kgen.rebind %a : !pop.simd<1, f32> to i32
   kgen.return
 }
 

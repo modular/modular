@@ -124,19 +124,19 @@ lit.func @equality<a, b>()
 
 // -----
 
-kgen.generator.interface @itf<ty: dtype>(!pop.scalar<f64>) -> !pop.scalar<ty>
+kgen.generator.interface @itf<ty: dtype>(!pop.simd<1, f64>) -> !pop.simd<1, ty>
 
 // This implementation infers that the ty argument must be f32.
 
 // expected-note @+1 {{generator declared here}}
-lit.func @impl<ty: dtype>(%arg0: !pop.scalar<f64>) -> !pop.scalar<f64>
+lit.func @impl<ty: dtype>(%arg0: !pop.simd<1, f64>) -> !pop.simd<1, f64>
   // This has an explicit constraint saying it must be si32.
   // expected-note @below {{previously constrained "'ty' looks lovely as si32"}}
   constraints <[eq(:dtype ty, si32), "'ty' looks lovely as si32"]>
   implements @itf {
 
 // expected-error @+1 {{constraint contradiction detected: "result #0 specifies 'ty' = f64"}}
-  kgen.return %arg0: !pop.scalar<f64>
+  kgen.return %arg0: !pop.simd<1, f64>
 }
 
 

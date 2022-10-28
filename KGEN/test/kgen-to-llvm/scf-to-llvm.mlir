@@ -47,23 +47,23 @@ kgen.func @cond(%cond: i1, %a: i32, %b: i32) -> i32 {
 
 // CHECK-LABEL: @while
 // CHECK-SAME: %[[INIT:.*]]:
-kgen.func @while(%init: !pop.scalar<f32>) -> !pop.scalar<f32> {
+kgen.func @while(%init: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   // CHECK: llvm.br ^bb1(%[[INIT]]
-  %result = scf.while (%v = %init) : (!pop.scalar<f32>) -> !pop.scalar<f32> {
+  %result = scf.while (%v = %init) : (!pop.simd<1, f32>) -> !pop.simd<1, f32> {
     // CHECK: ^bb1(%[[V:.*]]: f32
     // CHECK: llvm.cond_br %{{.*}}, ^bb2(%[[V]] : f32), ^bb3
-    %condition = "cond"(%v) : (!pop.scalar<f32>) -> i1
-    scf.condition(%condition) %v : !pop.scalar<f32>
+    %condition = "cond"(%v) : (!pop.simd<1, f32>) -> i1
+    scf.condition(%condition) %v : !pop.simd<1, f32>
   } do {
   // CHECK: ^bb2(%[[U:.*]]: f32
-  ^bb0(%u: !pop.scalar<f32>):
+  ^bb0(%u: !pop.simd<1, f32>):
     // CHECK: llvm.br ^bb1(
-    %next = "next"(%u) : (!pop.scalar<f32>) -> !pop.scalar<f32>
-    scf.yield %next : !pop.scalar<f32>
+    %next = "next"(%u) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+    scf.yield %next : !pop.simd<1, f32>
   }
   // CHECK: ^bb3:
   // CHECK: return %[[V]]
-  kgen.return %result : !pop.scalar<f32>
+  kgen.return %result : !pop.simd<1, f32>
 }
 
 // SWITCH-LABEL: @scf_index_switch
@@ -93,8 +93,8 @@ kgen.func @scf_index_switch(%i: index, %a: i32, %b: i32, %c: i32) -> i32 {
 }
 
 // CHECK-LABEL: @arith_select
-kgen.func @arith_select(%c: i1, %a: !pop.scalar<si64>, %b: !pop.scalar<si64>) -> !pop.scalar<si64> {
+kgen.func @arith_select(%c: i1, %a: !pop.simd<1, si64>, %b: !pop.simd<1, si64>) -> !pop.simd<1, si64> {
   // CHECK: llvm.select {{.*}} : i1, i64
-  %0 = arith.select %c, %a, %b : !pop.scalar<si64>
-  kgen.return %0 : !pop.scalar<si64>
+  %0 = arith.select %c, %a, %b : !pop.simd<1, si64>
+  kgen.return %0 : !pop.simd<1, si64>
 }

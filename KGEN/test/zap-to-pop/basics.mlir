@@ -173,8 +173,8 @@ kgen.func @buffer_construct(%ptr: !pop.pointer<simd<1, invalid>>, %size: index, 
 
 // -----
 
-!pop_struct0 = !pop.struct<index, pointer<scalar<f32>>, !kgen.dtype>
-!pop_struct1 = !pop.struct<index, pointer<scalar<type>>, !kgen.dtype>
+!pop_struct0 = !pop.struct<index, pointer<simd<1, f32>>, !kgen.dtype>
+!pop_struct1 = !pop.struct<index, pointer<simd<1, type>>, !kgen.dtype>
 
 // CHECK-LABEL: @buffer_stack_allocation
 kgen.generator @buffer_stack_allocation<size, type: dtype>(%i: index) -> (

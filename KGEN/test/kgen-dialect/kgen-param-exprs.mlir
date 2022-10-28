@@ -85,10 +85,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
   %22 = kgen.param.constant: dtype = <get_dtype(mlirType)>
 
   // CHECK: = kgen.param.constant: dtype = <get_dtype(mlirType)>
-  %23 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<get_dtype(mlirType)>)>
+  %23 = kgen.param.constant: dtype = <get_dtype(!pop.simd<1, get_dtype(mlirType)>)>
 
   // CHECK: = kgen.param.constant: dtype = <f32>
-  %24 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<f32>)>
+  %24 = kgen.param.constant: dtype = <get_dtype(!pop.simd<1, f32>)>
 
   // CHECK: = kgen.param.constant: i1 = <1>
   %25 = kgen.param.constant: i1 = <le(5, 9)>
@@ -286,22 +286,22 @@ kgen.generator @dtype_params<dt: !kgen.dtype, *"f32", *"ui32">() {
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>()
-// CHECK: constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
-   constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
+// CHECK: constraints <[eq(:type typeParam, !pop.simd<1, f32>), "f32 scalarzzz", #{{.*}}]> {
+   constraints <[eq(:type typeParam, !pop.simd<1, f32>), "f32 scalarzzz"]>
  {
-  // CHECK: kgen.param.declare ty1: type = <!pop.scalar<f32>>
-  kgen.param.declare ty1: type = <!pop.scalar<f32>>
+  // CHECK: kgen.param.declare ty1: type = <!pop.simd<1, f32>>
+  kgen.param.declare ty1: type = <!pop.simd<1, f32>>
 
-  // CHECK: kgen.param.declare ty2: type = <!pop.scalar<dt>>
-  kgen.param.declare ty2: type = <!pop.scalar<dt>>
+  // CHECK: kgen.param.declare ty2: type = <!pop.simd<1, dt>>
+  kgen.param.declare ty2: type = <!pop.simd<1, dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
   // CHECK: "someop"() : () -> !kgen.paramref<ty2>
   "someop"() : () -> !kgen.paramref<ty2>
 
   // kgen.paramref auto-folds non-parameterized types on construction.
-  // CHECK: "someop"() : () -> !pop.scalar<f32>
-  "someop"() : () -> !kgen.paramref<!pop.scalar<f32>>
+  // CHECK: "someop"() : () -> !pop.simd<1, f32>
+  "someop"() : () -> !kgen.paramref<!pop.simd<1, f32>>
 
   kgen.return
 }
