@@ -95,6 +95,21 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
                ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());
 }
 
+/// If this is a special function like __init__ return the enum that
+/// identifies it, otherwise return kNormal.
+SpecialFunctionKind LITFuncOp::getSpecialFunctionKind() {
+  StringRef nameStr = getName();
+  if (nameStr.size() < 5 || !nameStr.startswith("__") ||
+      !nameStr.endswith("__"))
+    return SpecialFunctionKind::kNormal;
+  nameStr = nameStr.drop_front(2).drop_back(2);
+  if (nameStr == "init")
+    return SpecialFunctionKind::kInit;
+
+  // Otherwise, this declaration isn't known.
+  return SpecialFunctionKind::kNormal;
+}
+
 //===----------------------------------------------------------------------===//
 // LITStructDeclOp
 //===----------------------------------------------------------------------===//

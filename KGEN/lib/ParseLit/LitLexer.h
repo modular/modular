@@ -180,6 +180,7 @@ public:
   /// Return an internal pointer that represents the cursor state without the
   /// current token.
   const char *getState() const { return state; }
+  const LitToken &getToken() const { return curToken; }
 
 private:
   const char *state;

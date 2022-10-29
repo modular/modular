@@ -105,7 +105,6 @@ void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
 //     x = 42
 //     bar()
 //   foo()
-
 DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
 DeclResolver::~DeclResolver() {
   // Run the destructors on all the scope objects to make sure any transitively
@@ -248,7 +247,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
 }
 
 //===----------------------------------------------------------------------===//
-// Decl implementations
+// Function Decl implementation
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -331,6 +330,63 @@ struct ParsedParam {
 };
 } // namespace
 
+/// Perform additional type checking for a function signature that has just been
+/// parsed but that has not been installed into the specified decl.  This allows
+/// magic behavior (like __new__ being static, self getting implicitly declared)
+/// and enforcement of other invariants.
+///
+/// This returns failure after emitting an error when a type checking problem is
+/// detected.
+static ParseResult checkSpecialFunctionSignature(
+    Scope &declScope, LITFuncOp defDecl, ParsedMetaSignature &metaSignature,
+    SmallVector<ParsedParam> &params, Type &resultType) {
+
+  // This lambda is used by all special functions that are known to be instance
+  // methods.
+  auto checkInstanceMethod = [&]() -> ParseResult {
+    // Get the context of the declaration, rejecting it if it isn't nested in a
+    // structure.
+    Scope *parent = declScope.getParentScope();
+    if (!parent || !isa<LITStructDeclOp>(parent->getDecl()))
+      return defDecl.emitError("special function must be a method");
+    auto parentStruct = cast<LITStructDeclOp>(parent->getDecl());
+
+    // Figure out the expected type of self.
+    if (!parentStruct.getParamDecls().empty())
+      return defDecl.emitError(
+          "cannot (yet) compute self type in parametric struct");
+    ParamBindArrayAttr selfParams =
+        ParamBindArrayAttr::get(defDecl.getContext(), {});
+    Type selfType = RefType::get(
+        FlatSymbolRefAttr::get(parentStruct.getNameAttr()), selfParams);
+
+    // If there are no parameters, install an implicit self parameter.
+    if (params.empty()) {
+      params.push_back({declScope.getCursor().getToken().getLoc(),
+                        StringAttr::get(defDecl.getContext(), "self"), selfType,
+                        /*initPtr*/ nullptr});
+      return success();
+    }
+
+    // Check that the first method has the right type.
+    if (!params[0].type)
+      params[0].type = selfType;
+    if (params[0].type != selfType)
+      return defDecl.emitError("'self' argument must have type ") << selfType;
+
+    return success();
+  };
+
+  switch (defDecl.getSpecialFunctionKind()) {
+  case SpecialFunctionKind::kNormal:
+    return success();
+  case SpecialFunctionKind::kInit:
+    // __init__ must be a method, no other constraints.
+    return checkInstanceMethod();
+  }
+  llvm_unreachable("Unknown special function kind");
+}
+
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
@@ -377,6 +433,15 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
+
+  // Verify that functions like __add__ have the right signature, and adjust
+  // them if there are implicit declarations.
+  if (checkSpecialFunctionSignature(scope, defDecl, metaSignature, params,
+                                    resultType)) {
+    // If the special function wasn't type checked correctly, then any uses of
+    // it may be broken.
+    scope.hasReferenceError = true;
+  }
 
   auto builder = scope.getDeclEndBuilder();
 
@@ -427,6 +492,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
+
   return success();
 }
 
@@ -451,10 +517,12 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
     }
   }
 
-  // TODO: Do more type checking: verify that functions like __add__ have the
-  // right signature.
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// Variable Decl implementation
+//===----------------------------------------------------------------------===//
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
@@ -488,6 +556,10 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
   // the future.
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// Struct Decl implementation
+//===----------------------------------------------------------------------===//
 
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
