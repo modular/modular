@@ -17,8 +17,11 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/Interfaces/InferTypeOpInterface.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 namespace M::KGEN {
+class NoneType;
 class ReturnOp;
 
 namespace POP {

@@ -400,8 +400,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
 
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
-  Type resultType;
-
   if (metaSignature.parseOptionalMetaSignature(p, scope) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
@@ -426,9 +424,12 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // a def should default to returning a (default initialized) Object, whereas
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
+  Type resultType;
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, scope, None))
       return failure();
+  } else {
+    resultType = KGEN::NoneType::get(getContext());
   }
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
@@ -468,13 +469,9 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
       p.emitError(param.initValue->getLoc(), "TODO: No default values yet");
   }
 
-  SmallVector<Type> resultTypes;
-  if (resultType)
-    resultTypes.push_back(resultType);
-
   defDecl.setValueParamNamesAttr(
       StringArrayAttr::get(getContext(), paramNames));
-  defDecl.setType(builder.getFunctionType(paramTypes, resultTypes));
+  defDecl.setType(builder.getFunctionType(paramTypes, resultType));
   defDecl.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
   defDecl.getBody()->addArguments(paramTypes, paramLocs);
@@ -505,11 +502,11 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
   // complain or add one implicitly if we have no results.
   Block *bodyBlock = defDecl.getBody();
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
-    if (defDecl.getResultTypes().empty() &&
+    if (isa<KGEN::NoneType>(defDecl.getResultType()) &&
         defDecl.getResultParamTypes().empty()) {
-      // TODO: Generalize lit.func.
-      OpBuilder::atBlockEnd(bodyBlock).create<ReturnOp>(
-          defDecl->getLoc(), ArrayRef<TypedAttr>(), ArrayRef<Value>());
+      auto b = OpBuilder::atBlockEnd(bodyBlock);
+      Value noneVal = b.create<NoneValueOp>(defDecl->getLoc());
+      b.create<ReturnOp>(defDecl->getLoc(), ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
       Location endLoc =
           bodyBlock->empty() ? defDecl.getLoc() : bodyBlock->back().getLoc();

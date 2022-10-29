@@ -448,15 +448,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
       /*operands*/ valueArguments);
 
   // Value returning call returns its result.
-  if (calleeType.getValues().getNumResults())
-    return call.getResult(0);
-
-  // On null return we return a UnitAttr to represent that this function
-  // returned void - returning a nullptr indicates that there was an error on
-  // emission.
-  // TODO: We should replace this with an empty tuple when we support tuples.
-  return VoidAttr::get(emitter.getContext(),
-                       mlir::TupleType::get(emitter.getContext()));
+  return call.getResult(0);
 }
 
 Type CallNode::emitType(ExprEmitter &emitter) const {

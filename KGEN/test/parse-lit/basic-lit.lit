@@ -2,11 +2,13 @@
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.func public @empty_def() {
+# CHECK-LABEL: lit.func public @empty_def() -> !lit.none {
+# CHECK: %0 = lit.nonevalue
+# CHECK: kgen.return %0 : !lit.none
 def empty_def():
   # Pass isn't required.
 
-# CHECK-LABEL: lit.func public @precedence_associativity(%a: index) {
+# CHECK-LABEL: lit.func public @precedence_associativity(%a: index)
 def precedence_associativity(a: index):
   z = 0
   # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
@@ -90,7 +92,7 @@ def do_math(a: index, b: index, c: index) -> index:
   x = \
 z
 
-  # CHECK-NEXT: kgen.call_param[() -> (): @noop]()
+  # CHECK-NEXT: kgen.call_param[() -> !lit.none: @noop]()
   noop()
 
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
@@ -116,7 +118,7 @@ def fancy_signature[dt: DType, size: index]
   # CHECK: kgen.return %[[TMP]] : index
   return size+42
 
-# CHECK-LABEL: lit.func public @noop() {
+# CHECK-LABEL: lit.func public @noop()
 def noop():
   pass
   # CHECK-NEXT : kgen.return
@@ -135,7 +137,7 @@ struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
   var value : index
 
-  # CHECK-NEXT: lit.func public @__init__(%self: !kgen.ref<@Int>, %value_0: index) {
+  # CHECK-NEXT: lit.func public @__init__(%self: !kgen.ref<@Int>, %value_0: index)
   def __init__(self: Int, value: index):
     #self.value = value
   # CHECK: }
@@ -190,5 +192,5 @@ def generic_fn[a: DType, b: index](c : index):
 # CHECK:  @call_generic<dt: !kgen.ref<@DType>>()
 def call_generic[dt: DType]():
   # CHECK: %0 = index.constant 57
-  # CHECK: kgen.call_param[(index) -> (): @generic_fn<a: !kgen.ref<@DType> = dt, b = 42>](%0)
+  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.ref<@DType> = dt, b = 42>](%0)
   generic_fn[dt, 42](57)
