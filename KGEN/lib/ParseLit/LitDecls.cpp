@@ -330,42 +330,49 @@ struct ParsedParam {
 };
 } // namespace
 
-/// Perform additional type checking for a function signature that has just been
-/// parsed but that has not been installed into the specified decl.  This allows
-/// magic behavior (like __new__ being static, self getting implicitly declared)
-/// and enforcement of other invariants.
+/// Perform type checking for a function signature that has just been parsed but
+/// that has not been installed into the specified decl.  This allows magic
+/// behavior (like __new__ being static, self getting implicitly declared),
+/// checking of method self requirements and enforcement of other invariants.
 ///
 /// This returns failure after emitting an error when a type checking problem is
 /// detected.
-static ParseResult checkSpecialFunctionSignature(
-    Scope &declScope, LITFuncOp defDecl, ParsedMetaSignature &metaSignature,
-    SmallVector<ParsedParam> &params, Type &resultType) {
+static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
+                                          ParsedMetaSignature &metaSignature,
+                                          SmallVector<ParsedParam> &params,
+                                          Type &resultType) {
 
-  // This lambda is used by all special functions that are known to be instance
-  // methods.
-  auto checkInstanceMethod = [&]() -> ParseResult {
+  // If this definition is a struct/class member, return the self type otherwise
+  // return a null type.
+  auto getSelfTypeForMethod = [&]() -> Type {
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
     Scope *parent = declScope.getParentScope();
     if (!parent || !isa<LITStructDeclOp>(parent->getDecl()))
-      return defDecl.emitError("special function must be a method");
+      return Type();
     auto parentStruct = cast<LITStructDeclOp>(parent->getDecl());
 
     // Figure out the expected type of self.
-    if (!parentStruct.getParamDecls().empty())
-      return defDecl.emitError(
-          "cannot (yet) compute self type in parametric struct");
+    if (!parentStruct.getParamDecls().empty()) {
+      // TODO(Issue #4182)
+      defDecl.emitError("cannot (yet) compute self type in parametric struct");
+      return Type();
+    }
     ParamBindArrayAttr selfParams =
         ParamBindArrayAttr::get(defDecl.getContext(), {});
-    Type selfType = RefType::get(
-        FlatSymbolRefAttr::get(parentStruct.getNameAttr()), selfParams);
+    return RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
+                        selfParams);
+  };
 
+  auto selfType = getSelfTypeForMethod();
+
+  // If this is a method, enforce that self is declared correctly.
+  if (selfType) {
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
                         StringAttr::get(defDecl.getContext(), "self"), selfType,
                         /*initPtr*/ nullptr});
-      return success();
     }
 
     // Check that the first method has the right type.
@@ -373,7 +380,17 @@ static ParseResult checkSpecialFunctionSignature(
       params[0].type = selfType;
     if (params[0].type != selfType)
       return defDecl.emitError("'self' argument must have type ") << selfType;
+  }
 
+  // This lambda verifies the decl is a method.
+  auto checkInstanceMethod = [&]() -> ParseResult {
+    if (!selfType)
+      return defDecl.emitError("special function must be a method");
+    return success();
+  };
+  auto checkResultNoneType = [&]() -> ParseResult {
+    if (!isa<KGEN::NoneType>(resultType))
+      return defDecl.emitError("result type must be elided (or None)");
     return success();
   };
 
@@ -381,8 +398,10 @@ static ParseResult checkSpecialFunctionSignature(
   case SpecialFunctionKind::kNormal:
     return success();
   case SpecialFunctionKind::kInit:
-    // __init__ must be a method, no other constraints.
-    return checkInstanceMethod();
+    // __init__ must be a method and return NoneType.
+    if (checkInstanceMethod() || checkResultNoneType())
+      return failure();
+    return success();
   }
   llvm_unreachable("Unknown special function kind");
 }
@@ -435,12 +454,11 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  // Verify that functions like __add__ have the right signature, and adjust
-  // them if there are implicit declarations.
-  if (checkSpecialFunctionSignature(scope, defDecl, metaSignature, params,
-                                    resultType)) {
-    // If the special function wasn't type checked correctly, then any uses of
-    // it may be broken.
+  // Verify that methods and functions like __add__ have the right signature,
+  // and adjust them if there are implicit declarations.
+  if (checkFunctionSignature(scope, defDecl, metaSignature, params,
+                             resultType)) {
+    // If the function wasn't type checked correctly, uses of it may be broken.
     scope.hasReferenceError = true;
   }
 
