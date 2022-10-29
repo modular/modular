@@ -68,12 +68,13 @@ private:
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
   LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, Scope &scope);
+  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
+
   LogicalResult resolveSignature(LITStructDeclOp op, LitLexer &lexer,
                                  Scope &scope);
-  LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
-
-  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, Scope &scope);
   ParseResult resolveBody(LITStructDeclOp op, LitLexer &lexer, Scope &scope);
+
+  LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, Scope &scope);
   ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, Scope &scope);
 
 private:

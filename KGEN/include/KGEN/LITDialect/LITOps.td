@@ -53,6 +53,10 @@ def LITFuncOp
 
     /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    /// If this is a special function like __init__ return the enum that
+    /// identifies it, otherwise return kNormal.
+    SpecialFunctionKind getSpecialFunctionKind();
   }];
 
   let builders = [

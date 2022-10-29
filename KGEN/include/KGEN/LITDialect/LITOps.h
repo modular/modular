@@ -24,6 +24,15 @@ class ReturnOp;
 namespace POP {
 class PointerType;
 }
+
+enum class SpecialFunctionKind {
+  // This is not a special function.  This enumerator should always have value
+  // zero so it can be used as a false condition in an if.
+  kNormal = 0,
+
+  kInit = 1, //< __init__
+};
+
 } // namespace M::KGEN
 
 #define GET_OP_CLASSES

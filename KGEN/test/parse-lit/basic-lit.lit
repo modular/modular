@@ -152,6 +152,7 @@ struct Pair[dt: DType]:
  # CHECK: %b = lit.var.decl "b" : <@Int>
   var a : SIMD[42, dt]
   var b : Int
+
 # CHECK-NEXT: }
 
 # CHECK-LABEL:  lit.func public @var_decls(%untyped: !lit.object)

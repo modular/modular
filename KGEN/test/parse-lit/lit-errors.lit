@@ -149,3 +149,10 @@ var DecoratedVar: Int
 
 @staticmethod # expected-error {{no def decorators supported yet}}
 def StaticMethod(): pass
+
+# expected-error @+1 {{special function must be a method}}
+def __init__(): pass
+
+struct WrongInitType:
+  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongInitType>'}}
+  def __init__(self: Int): pass
