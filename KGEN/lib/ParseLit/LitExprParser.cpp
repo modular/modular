@@ -64,13 +64,12 @@ private:
   /// if it is part of this one.
   bool isTokenStartOfNextStatement();
 
-  ParseResult parsePrefixExpr(ExprNode *&result, Precedence precedence);
+  ParseResult parsePrefixExpr(ExprNode *&result);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
 
   ExprParser::Precedence getInfixTokenPrecedence() const;
-  ExprParser::Precedence getPrefixTokenPrecedence() const;
   ExprNode::Kind getBinOpKind(LitToken::Kind litKind) const;
   ExprNode::Kind getUnaryOpKind(LitToken::Kind litKind) const;
 
@@ -161,7 +160,7 @@ ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
 ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 
   // Parse any prefix expression like -1
-  if (parsePrefixExpr(expr, getPrefixTokenPrecedence()))
+  if (parsePrefixExpr(expr))
     return failure();
 
   // It consumes tokens until it meets a token whose tokPrecedence is equal or
@@ -192,22 +191,6 @@ ExprParser::Precedence ExprParser::getInfixTokenPrecedence() const {
   }
 }
 
-/// Return the operator precedence for the specified token.
-ExprParser::Precedence ExprParser::getPrefixTokenPrecedence() const {
-  switch (getToken().getKind()) {
-  default:
-    return Precedence::kInvalid;
-  case LitToken::plus:
-  case LitToken::minus:
-    return Precedence::kFactor;
-  case LitToken::identifier:
-  case LitToken::string:
-  case LitToken::float_num:
-  case LitToken::integer:
-    return Precedence::kPrimary;
-  }
-}
-
 ExprNode::Kind ExprParser::getBinOpKind(LitToken::Kind litKind) const {
   switch (litKind) {
   default:
@@ -234,7 +217,7 @@ ExprNode::Kind ExprParser::getUnaryOpKind(LitToken::Kind litKind) const {
   case LitToken::minus:
     return ExprNode::kMinus;
   case LitToken::tilde:
-    return ExprNode::kInvert;
+    return ExprNode::kComplement;
   }
 }
 
@@ -256,18 +239,17 @@ ExprNode::Kind ExprParser::getUnaryOpKind(LitToken::Kind litKind) const {
 ///
 /// factor ::=  "-" factor | "+" factor | "~" factor | power
 
-ParseResult ExprParser::parsePrefixExpr(ExprNode *&result,
-                                        Precedence precedence) {
+ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
   LitToken::Kind tokKind = getToken().getKind();
   switch (tokKind) {
   case LitToken::plus:
   case LitToken::minus:
   case LitToken::tilde: { // factor
-    auto lpLoc = consumeToken(LitToken::minus).getLoc();
+    auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
-    if (parseExpression(expr, precedence))
+    if (parseExpression(expr, Precedence::kFactor))
       return failure();
-    result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), lpLoc, expr);
+    result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), unaryLoc, expr);
     break;
   }
   case LitToken::identifier: // primary -> atom -> identifier
