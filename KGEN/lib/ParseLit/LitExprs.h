@@ -144,9 +144,9 @@ public:
     // Unary expressions.
     kMinus,
     kPlus,
-    kInvert,
+    kComplement,
     kFirstUnaryOp = kMinus,
-    klastUnaryOp = kInvert,
+    klastUnaryOp = kComplement,
 
     // Binary expressions.
     kAdd,

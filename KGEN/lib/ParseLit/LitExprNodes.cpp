@@ -697,6 +697,9 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
     return (Value)emitter.builder->create<mlir::index::SubOp>(loc, zero,
                                                               exprVal);
   }
+  case kComplement:
+    emitter.emitError(getLoc(), "TODO: cannot emit ~ operator yet");
+    return {};
   }
 }
 

@@ -39,10 +39,12 @@ def precedence_associativity(a: index):
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[THREE]]
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[TWOPLUSZERO:.*]] = index.add %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWOPLUSZERO]]
   # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[ADD]], %[[SUB]]
   # CHECK-NEXT:  pop.store %[[MUL]], %z : !pop.pointer<index>
-  z = (z + 3) * -2
+  z = (z + 3) * -+2
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[POW:.*]] = index.rems %[[TWO]], %[[Z]]
