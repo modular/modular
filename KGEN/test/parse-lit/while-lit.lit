@@ -46,7 +46,8 @@ def test_while(a: index, b: index) -> index:
 # CHECK-NEXT:   } do {
 # CHECK-NEXT:     scf.yield
 # CHECK-NEXT:   }
-# CHECK-NEXT:   kgen.return
+# CHECK-NEXT:   [[NONE:%.*]] = lit.nonevalue
+# CHECK-NEXT:   kgen.return [[NONE]]
 # CHECK-NEXT: }
 def test_simple(a: index):
     while a:

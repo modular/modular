@@ -15,6 +15,8 @@ include "KGEN/POPDialect/POPTypes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // Base class for the operation in this dialect.
 class LITOp<string mnemonic, list<Trait> traits = []> :
@@ -48,11 +50,11 @@ def LITFuncOp
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<LITFuncOp>::getBody;
     ReturnOp getReturnOp();
 
-    /// Returns the argument types of this invokable.
     ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-    /// Returns the result types of this invokable.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    /// Returns the result type, which is guaranteed to be present.
+    Type getResultType() { return getFunctionType().getResults()[0]; }
 
     /// If this is a special function like __init__ return the enum that
     /// identifies it, otherwise return kNormal.
@@ -64,7 +66,6 @@ def LITFuncOp
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name)>,
   ];
-
 
   let hasCustomAssemblyFormat = 1;
 }
@@ -99,7 +100,6 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
     OpBuilder<(ins "StringAttr":$name)>,
   ];
 
-
   let hasVerifier = 1;
 }
 
@@ -114,4 +114,17 @@ def VarDeclOp : LITOp<"var.decl",
   let arguments = (ins StrAttr:$name);
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = "$name `:` type($result) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// NoneValueOp
+//===----------------------------------------------------------------------===//
+
+def NoneValueOp : LITOp<"nonevalue",
+            [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "Produce a value of LITNoneType";
+
+  let arguments = (ins);
+  let results = (outs LITNoneType:$result);
+  let assemblyFormat = "attr-dict";
 }

@@ -36,18 +36,6 @@ def TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ObjectType
-//===----------------------------------------------------------------------===//
-
-def ObjectType : LITType<"Object", "object"> {
-  let summary = "Type used for implicit object values";
-  let description = [{
-    This type is used for implicitly dynamically typed values, e.g. parameters
-    to functions without explicit types.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // UnresolvedType
 //===----------------------------------------------------------------------===//
 
@@ -60,6 +48,31 @@ def UnresolvedType : LITType<"Unresolved", "unresolved"> {
 
     This only occurs as the root type for a declaration, it never occurs in a
     nested position.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectType
+//===----------------------------------------------------------------------===//
+
+def ObjectType : LITType<"Object", "object"> {
+  let summary = "Type used for implicit object values";
+  let description = [{
+    This type is used for implicitly dynamically typed values, e.g. parameters
+    to functions without explicit types.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// NoneType
+//===----------------------------------------------------------------------===//
+
+def LITNoneType : LITType<"None", "none"> {
+  let summary = "Type used for 'void' function results";
+  let description = [{
+    This type is nominal static type of the 'None' keyword, which is the result
+    type of functions with no declared result type.
+    TODO: This should be replaced with an empty tuple when we have variadics.
   }];
 }
 
