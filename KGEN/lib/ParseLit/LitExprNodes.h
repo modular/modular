@@ -88,6 +88,20 @@ struct StringLiteralNode final : public ExprNode {
   Type emitType(ExprEmitter &emitter) const override;
 };
 
+struct NoneLiteralNode final : public ExprNode {
+  NoneLiteralNode(SMLoc loc) : ExprNode(kNoneLiteral), loc(loc) {}
+
+  const SMLoc loc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kNoneLiteral;
+  }
+  SMLoc getLoc() const override { return loc; }
+  bool containsError() const override { return false; }
+  AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
+  Type emitType(ExprEmitter &emitter) const override;
+};
+
 struct DeclRefNode final : public ExprNode {
   DeclRefNode(StringRef spelling) : ExprNode(kDeclRef), spelling(spelling) {}
 

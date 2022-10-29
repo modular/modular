@@ -21,14 +21,13 @@ class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
-// VoidAttr
+// NoneAttr
 //===----------------------------------------------------------------------===//
 
-def VoidAttr : LITAttr<"Void", "void", [TypedAttrInterface]> {
-  let summary = "A void value";
+def NoneAttr : LITAttr<"None", "none", [TypedAttrInterface]> {
+  let summary = "A None value";
   let description = [{
-    This attribute is used as a marker for returns from calls and other
-    expressions that do not produce a value.
+    This attribute represents None values.
   }];
 
   let parameters = (ins "Type":$type);
