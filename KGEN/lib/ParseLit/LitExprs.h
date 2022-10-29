@@ -134,6 +134,7 @@ public:
     kIntLiteral,    // 42
     kFloatLiteral,  // 1.1
     kStringLiteral, // "Hello"
+    kNoneLiteral,   // None
     kDeclRef,       // x
     kAttributeRef,  // x.y
     kCall,          // thing(a, b)

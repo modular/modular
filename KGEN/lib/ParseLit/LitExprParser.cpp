@@ -22,6 +22,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitExprNodes.h"
+#include "LitLexer.h"
 #include "LitParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 using namespace M::KGEN::LIT;
@@ -284,6 +285,10 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result,
   case LitToken::string: // primary -> literal -> stringliteral
     result = alloc<StringLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::string);
+    break;
+  case LitToken::kw_None:
+    result = alloc<NoneLiteralNode>(getToken().getLoc());
+    consumeToken(LitToken::kw_None);
     break;
   case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
     auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
