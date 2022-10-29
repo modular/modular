@@ -153,6 +153,12 @@ def StaticMethod(): pass
 # expected-error @+1 {{special function must be a method}}
 def __init__(): pass
 
-struct WrongInitType:
-  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongInitType>'}}
+struct WrongSelfType:
+  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongSelfType>'}}
   def __init__(self: Int): pass
+  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongSelfType>'}}
+  def badMethod(self: Int): pass
+
+struct WrongInitResult:
+  # expected-error @+1 {{result type must be elided (or None)}}
+  def __init__(self) -> Int: pass
