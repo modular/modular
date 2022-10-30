@@ -65,6 +65,17 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 // Driver
 //===----------------------------------------------------------------------===//
 
+/// Add a declaration for an "index" struct, which is used as a transitionary
+/// thing as we bring up full type support.  This should be eliminated.
+static void makeIndexDecl(LitSharedState &sharedState, Scope &builtinsScope) {
+  auto b = builtinsScope.getDeclEndBuilder();
+  auto loc = builtinsScope.getDecl()->getLoc();
+  auto indexDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("index"));
+  indexDecl.getRegion().push_back(new Block());
+  sharedState.indexScope = &sharedState.declResolver->addFullyResolvedDecl(
+      indexDecl, &builtinsScope);
+}
+
 // Parse the specified .lit file into the specified MLIR context.
 OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              MLIRContext *context,
@@ -90,6 +101,10 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   Scope &builtinsScope = sharedState.declResolver->addDecl(
       *module, nullptr, lexer.getCursor(), lexer.getCursor(), -1);
+
+  // Add 'index' as a magic type for testing/transition.
+  // TODO: Remove this eventually.
+  makeIndexDecl(sharedState, builtinsScope);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
