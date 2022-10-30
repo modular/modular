@@ -19,6 +19,10 @@
 
 namespace M::KGEN::LIT {
 
+/// This stores the ParamDeclAttr as an Attribute, but this is always known to
+/// be a ParamDeclAttr.
+using OperationOrParamDecl = PointerUnion<Operation *, Attribute>;
+
 /// Scopes in Lightning work the same way as in Python: scopes are nested and
 /// are defined when a builtin, module, class/struct, or function definition is
 /// introduced.  Because Lightning (like Python) allows forward references to
@@ -30,9 +34,18 @@ namespace M::KGEN::LIT {
 /// such, we heap allocate and reference count these.
 class Scope {
 public:
-  /// Return the Module, StructDecl, Func/Generator that this scope corresponds
-  /// to.
-  Operation *getDecl() const { return decl; }
+  MLIRContext *getContext() const { return loc.getContext(); }
+
+  /// Return the Module, StructDecl, Func, or ParamDecl that this scope
+  /// corresponds to.
+  OperationOrParamDecl getDecl() const { return decl; }
+
+  /// If this is a ParamDecl, return it otherwise return null.
+  ParamDeclAttr getParamDecl() const {
+    auto attr = dyn_cast<Attribute>(decl);
+    return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
+  }
+
   Location getLoc() const { return loc; }
   Scope *getParentScope() const { return parentScope; }
 
@@ -48,9 +61,10 @@ public:
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
-    if (decl->getNumRegions() == 0)
-      return OpBuilder(decl->getContext());
-    return OpBuilder::atBlockEnd(&decl->getRegion(0).front());
+    if (Operation *op = dyn_cast<Operation *>(decl))
+      if (op->getNumRegions() != 0)
+        return OpBuilder::atBlockEnd(&op->getRegion(0).front());
+    return OpBuilder(getContext());
   }
 
   /// This is the value of a parameter bound to a name, attributes in MLIR don't
@@ -63,35 +77,28 @@ public:
     TypedAttr getAttr() const { return cast<TypedAttr>(value); }
   };
 
-  /// An entry in the symbol table is either the Scope for a declaration (var,
-  /// struct, func, etc) or an attribute (known to be a TypedAttr) for a meta
-  /// value.
-  using NameEntry = std::variant<MetaParameterValue, Scope *>;
-
   /// Add the specified declaration to the current scope, emitting an error on
   /// a name collision and setting hadError to true.
-  void addToScope(StringAttr name, MetaParameterValue newValue,
-                  LitSharedState &sharedState);
   void addToScope(Scope *newDeclScope, LitSharedState &sharedState);
 
-  /// Look up a name in the current scope only.
-  Optional<NameEntry> lookupInCurrentScope(StringAttr name) {
+  /// Look up a name in the current scope only, this returns null on failure.
+  Scope *lookupInCurrentScope(StringAttr name) {
     auto it = decls.find(name);
     if (it != decls.end())
       return it->second;
-    return None;
+    return nullptr;
   }
 
   /// Perform a lookup in this scope list, returning the nearest target or None
   /// if nothing is found.
-  Optional<NameEntry> lookup(StringAttr name) {
+  Scope *lookup(StringAttr name) {
     Scope *curScope = this;
     while (curScope) {
-      if (Optional<NameEntry> result = curScope->lookupInCurrentScope(name))
-        return result.value();
+      if (Scope *result = curScope->lookupInCurrentScope(name))
+        return result;
       curScope = curScope->parentScope;
     }
-    return None;
+    return nullptr;
   }
 
   /// Return true if the end of the speculatively scanned decl matches the
@@ -113,15 +120,15 @@ public:
 private:
   // Scope is created by DeclResolver.
   friend class DeclResolver;
-  Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
-        LitLexerCursor endCursor, ssize_t indentation)
-      : decl(decl), loc(decl->getLoc()), parentScope(std::move(parentScope)),
+  Scope(OperationOrParamDecl decl, Location loc, Scope *parentScope,
+        LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
+      : decl(decl), loc(loc), parentScope(std::move(parentScope)),
         cursor(cursor), endCursorState(endCursor.getState()),
         indentation(indentation) {}
 
 private:
   /// This is the declaration that this scope corresponds to.
-  Operation *decl;
+  OperationOrParamDecl decl;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
@@ -146,7 +153,7 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, NameEntry> decls;
+  DenseMap<StringAttr, Scope *> decls;
 };
 
 } // namespace M::KGEN::LIT
@@ -161,10 +168,12 @@ struct CastInfo<T, M::KGEN::LIT::Scope>
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
   static bool isPossible(M::KGEN::LIT::Scope &scope) {
-    mlir::Operation *decl = scope.getDecl();
+    auto *decl = dyn_cast<mlir::Operation *>(scope.getDecl());
     return decl && T::classof(decl);
   }
-  static T doCast(M::KGEN::LIT::Scope &scope) { return T(scope.getDecl()); }
+  static T doCast(M::KGEN::LIT::Scope &scope) {
+    return T(cast<mlir::Operation *>(scope.getDecl()));
+  }
 };
 template <typename T>
 struct CastInfo<T, const M::KGEN::LIT::Scope>

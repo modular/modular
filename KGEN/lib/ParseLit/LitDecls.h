@@ -20,6 +20,7 @@ namespace M::KGEN {
 class LITFuncOp;
 class LITStructDeclOp;
 class ParamBindArrayAttr;
+class ParamDeclAttr;
 class VarDeclOp;
 } // namespace M::KGEN
 
@@ -52,6 +53,10 @@ public:
   /// Add a declaration that is already fully resolved.
   Scope &addFullyResolvedDecl(Operation *decl, Scope *parentScope);
 
+  /// Add a declaration that is already fully resolved.
+  Scope &addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
+                              Scope *parentScope);
+
   /// If the specified type is a RefType that resolves to a (possibly
   /// parameterized) type, return the scope for the type and the parameters in
   /// the reference.  This returns null on error.
@@ -63,6 +68,10 @@ public:
                         llvm::SMLoc loc);
 
 private:
+  Scope &addDecl(PointerUnion<Operation *, Attribute> decl, Location loc,
+                 Scope *parentScope, LitLexerCursor cursor,
+                 LitLexerCursor endCursor, ssize_t indentation);
+
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
