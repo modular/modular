@@ -94,6 +94,13 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
     $fields
   }];
 
+  let extraClassDeclaration = [{
+    /// Get the field declarations.
+    auto getFieldDecls() { return getFields().getOps<VarDeclOp>(); }
+    auto field_begin() { return getFieldDecls().begin(); }
+    auto field_end() { return getFieldDecls().end(); }
+  }];
+
   let builders = [
     // Create a struct with a region but no body block. The caller must create
     // it and fill it in.
@@ -101,6 +108,26 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
   ];
 
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// LITStructGEPOp
+//===----------------------------------------------------------------------===//
+
+def LITStructGEPOp : LITOp<"struct.gep", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get a pointer to a struct field.";
+  let description = [{
+    The `lit.struct.gep` operation computes a pointer to a struct field by
+    name from a parametric struct.
+  }];
+
+  let arguments = (ins StrAttr:$field, PointerOf<RefType>:$container);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($result) `from` type($container)
+  }];
 }
 
 //===----------------------------------------------------------------------===//

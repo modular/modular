@@ -383,9 +383,9 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
 
     // FIXME: This isn't the correct operator - it won't GEP into a struct field
     // in a LITStructDeclOp.
-    return LValue(emitter.builder->create<POP::StructGEPOp>(
-        emitter.translateLocation(getLoc()), foundVarDecl.getType(), baseLV,
-        emitter.builder->getIndexAttr(fieldNo)));
+    return LValue(emitter.builder->create<LITStructGEPOp>(
+        emitter.translateLocation(getLoc()), foundVarDecl.getType(),
+        foundVarDecl.getName(), baseLV));
   }
 
   // TODO: Handle parameter member references.
