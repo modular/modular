@@ -36,36 +36,6 @@ ParamDeclAttr DeclAST::getParamDecl() const {
   return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
 }
 
-void DeclAST::addToScope(DeclAST *newDecl, LitSharedState &sharedState) {
-  StringAttr name;
-  TypeSwitch<DeclAST &>(*newDecl)
-      .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
-          [&](auto op) { name = op.getNameAttr(); })
-      .Case([&](ModuleOp attr) { /*noop*/ })
-      .Default([&](auto attr) {
-        auto decl = newDecl->getParamDecl();
-        assert(decl && "Unknown declaration kind");
-        name = decl.getName();
-      });
-
-  if (!name) // Don't add for modules / param decls.
-    return;
-
-  auto [it, inserted] = declsInScope.insert({name, newDecl});
-  if (inserted)
-    return;
-  DeclAST *entry = it->second;
-
-  auto diag = emitError(newDecl->getLoc(), "invalid redefinition of ") << name;
-  diag.attachNote(entry->getLoc()) << "previous definition here";
-  sharedState.errorOccurred = true;
-
-  // If the existing entry was a declaration, mark it as erroneous so uses of it
-  // don't create confusing errors.
-  newDecl->hasReferenceError = true;
-  entry->hasReferenceError = true;
-}
-
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
@@ -93,9 +63,9 @@ DeclResolver::~DeclResolver() {
 
 /// Add a new declaration that needs to be resolved.
 DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
-                               Location loc, DeclAST *parentDecl,
-                               LitLexerCursor cursor, LitLexerCursor endCursor,
-                               ssize_t indentation) {
+                               Location loc, StringAttr name,
+                               DeclAST *parentDecl, LitLexerCursor cursor,
+                               LitLexerCursor endCursor, ssize_t indentation) {
   void *rawDeclPtr = sharedState.persistentAllocator.Allocate(sizeof(DeclAST),
                                                               alignof(DeclAST));
   DeclAST *decl = new (rawDeclPtr)
@@ -107,9 +77,23 @@ DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
   if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl))
     typeSymbolDecls[structDecl.getNameAttr()] = decl;
 
-  if (parentDecl)
-    parentDecl->addToScope(decl, sharedState);
+  // If this has a parent and a name, insert it into the parents name table so
+  // name lookup will resolve it.
+  if (!parentDecl || !name)
+    return *decl;
 
+  auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
+  if (!inserted) {
+    DeclAST *existing = it->second;
+    auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
+    diag.attachNote(existing->getLoc()) << "previous definition here";
+    sharedState.errorOccurred = true;
+
+    // Mark the existing decl and this one as erroneous so uses of either
+    // don't create confusing errors.
+    decl->hasReferenceError = true;
+    existing->hasReferenceError = true;
+  }
   return *decl;
 }
 
@@ -117,7 +101,17 @@ DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
 DeclAST &DeclResolver::addDecl(Operation *op, DeclAST *parentDecl,
                                LitLexerCursor cursor, LitLexerCursor endCursor,
                                ssize_t indentation) {
-  return addDecl(op, op->getLoc(), parentDecl, cursor, endCursor, indentation);
+  // Get the name for the entity.
+  StringAttr name;
+  TypeSwitch<Operation *>(op)
+      .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
+          [&](auto op) { name = op.getNameAttr(); })
+      .Case([&](ModuleOp op) {})
+      .Default(
+          [&](auto attr) { llvm_unreachable("Unknown declaration kind"); });
+
+  return addDecl(op, op->getLoc(), name, parentDecl, cursor, endCursor,
+                 indentation);
 }
 
 DeclAST &DeclResolver::addFullyResolvedDecl(Operation *op,
@@ -130,8 +124,8 @@ DeclAST &DeclResolver::addFullyResolvedDecl(Operation *op,
 /// Add a declaration that is already fully resolved.
 DeclAST &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
                                             DeclAST *parentDecl) {
-  auto &decl =
-      addDecl(attr, loc, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+  auto &decl = addDecl(attr, loc, attr.getName(), parentDecl, LitLexerCursor(),
+                       LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
