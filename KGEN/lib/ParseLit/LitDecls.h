@@ -69,7 +69,7 @@ public:
 
 private:
   DeclAST &addDecl(PointerUnion<Operation *, Attribute> decl, Location loc,
-                   DeclAST *parentDecl, LitLexerCursor cursor,
+                   StringAttr name, DeclAST *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 
   /// The resolveSignature methods are invoked on an operation to parse and type
