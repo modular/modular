@@ -145,25 +145,20 @@ Type ExprEmitter::emitType(const ExprNode *node) {
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
 Scope *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
-  Optional<Scope::NameEntry> lookupResult =
-      scope.lookup(StringAttr::get(getContext(), name));
+  Scope *lookupResult = scope.lookup(StringAttr::get(getContext(), name));
   if (!lookupResult)
     return emitError(loc, "unknown type name '" + name + "'"), nullptr;
-  if (!std::holds_alternative<Scope *>(*lookupResult))
-    return emitError(loc, "'" + name + "' names a value, not a type"), nullptr;
-
-  Scope &scope = *std::get<Scope *>(*lookupResult);
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
   auto resolveResult = shared.declResolver->resolve(
-      scope, DeclResolvedness::signatureResolved, loc);
+      *lookupResult, DeclResolvedness::signatureResolved, loc);
 
   // If the decl was erroneous somehow, then don't form a reference to it, the
   // error has already been diagnosed.
   if (failed(resolveResult))
     return nullptr;
-  return &scope;
+  return lookupResult;
 }
 
 //===----------------------------------------------------------------------===//
@@ -243,10 +238,10 @@ Type NoneLiteralNode::emitType(ExprEmitter &emitter) const {
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
-  Optional<Scope::NameEntry> declOrValue = emitter.scope.lookup(nameAttr);
+  Scope *declScope = emitter.scope.lookup(nameAttr);
 
   // Handle the case where lookup fails.
-  if (!declOrValue) {
+  if (!declScope) {
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.
     if (!contextualType || !emitter.varDeclCursor) {
@@ -268,34 +263,31 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
     auto varDecl = OpBuilder(emitter.varDeclCursor)
                        .create<VarDeclOp>(emitter.translateLocation(getLoc()),
                                           declType, nameAttr);
-    declOrValue = &emitter.shared.declResolver->addFullyResolvedDecl(
+    declScope = &emitter.shared.declResolver->addFullyResolvedDecl(
         varDecl, &emitter.scope);
   }
-
-  // Attributes always resolve to their known value.
-  if (std::holds_alternative<Scope::MetaParameterValue>(declOrValue.value()))
-    return std::get<Scope::MetaParameterValue>(declOrValue.value()).getAttr();
-
-  // References to decls have different access paths.
-  Scope &scope = *std::get<Scope *>(declOrValue.value());
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
   auto resolveResult = emitter.shared.declResolver->resolve(
-      scope, DeclResolvedness::signatureResolved, getLoc());
+      *declScope, DeclResolvedness::signatureResolved, getLoc());
 
   // If the decl was erroneous somehow, then don't form a reference to it.
   if (failed(resolveResult))
     return {};
 
   // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(scope))
+  if (auto var = dyn_cast<VarDeclOp>(*declScope))
     return LValue(var.getResult());
 
   // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(scope))
+  if (auto fnDecl = dyn_cast<LITFuncOp>(*declScope))
     return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
                                    fnDecl.getSignature());
+
+  // Attributes always resolve to their known value.
+  if (auto param = declScope->getParamDecl())
+    return ParamDeclRefAttr::get(param.getName(), param.getType());
 
   emitter.emitError(getLoc(), "use of declaration \"")
       << spelling << "\" as a value isn't supported yet";

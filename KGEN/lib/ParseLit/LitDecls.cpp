@@ -30,61 +30,35 @@ using namespace M::KGEN::LIT;
 // Scope
 //===----------------------------------------------------------------------===//
 
-static Location getLocationFrom(Scope::NameEntry entry) {
-  if (std::holds_alternative<Scope *>(entry))
-    return std::get<Scope *>(entry)->getLoc();
-  return std::get<Scope::MetaParameterValue>(entry).loc;
-}
-
-static void markErroneous(Scope::NameEntry value) {
-  if (std::holds_alternative<Scope *>(value))
-    std::get<Scope *>(value)->hasReferenceError = true;
-}
-
-/// Add the specified declaration to the current scope, emitting an error on
-/// a name collision.
-void Scope::addToScope(StringAttr name, MetaParameterValue newValue,
-                       LitSharedState &sharedState) {
-  auto [it, inserted] = decls.insert({name, newValue});
-  if (inserted)
-    return;
-  Scope::NameEntry &entry = it->second;
-
-  auto diag = emitError(newValue.loc, "invalid redefinition of ") << name;
-  diag.attachNote(getLocationFrom(entry)) << "previous definition here";
-  sharedState.errorOccurred = true;
-
-  // If the existing entry was a declaration, mark it as erroneous so uses of it
-  // don't create confusing errors.
-  markErroneous(entry);
-}
-
 void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
   StringAttr name;
   TypeSwitch<Scope &>(*newDeclScope)
       .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
           [&](auto op) { name = op.getNameAttr(); })
+      .Case([&](ModuleOp attr) { /*noop*/ })
       .Default([&](auto attr) {
-        assert(isa<ModuleOp>(*newDeclScope) && "Unknown declaration kind");
+        auto decl = newDeclScope->getParamDecl();
+        assert(decl && "Unknown declaration kind");
+        name = decl.getName();
       });
 
-  if (!name) // Don't add for modules.
+  if (!name) // Don't add for modules / param decls.
     return;
 
   auto [it, inserted] = decls.insert({name, newDeclScope});
   if (inserted)
     return;
-  Scope::NameEntry &entry = it->second;
+  Scope *entry = it->second;
 
   auto diag = emitError(newDeclScope->getLoc(), "invalid redefinition of ")
               << name;
-  diag.attachNote(getLocationFrom(entry)) << "previous definition here";
+  diag.attachNote(entry->getLoc()) << "previous definition here";
   sharedState.errorOccurred = true;
 
   // If the existing entry was a declaration, mark it as erroneous so uses of it
   // don't create confusing errors.
   newDeclScope->hasReferenceError = true;
-  markErroneous(entry);
+  entry->hasReferenceError = true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -113,19 +87,20 @@ DeclResolver::~DeclResolver() {
 }
 
 /// Add a new declaration that needs to be resolved.
-Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
+Scope &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> decl,
+                             Location loc, Scope *parentScope,
                              LitLexerCursor cursor, LitLexerCursor endCursor,
                              ssize_t indentation) {
   void *rawScopePtr =
       sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
   Scope *scope = new (rawScopePtr)
-      Scope(decl, parentScope, cursor, endCursor, indentation);
+      Scope(decl, loc, parentScope, cursor, endCursor, indentation);
   parsedDeclList.push_back(scope);
 
   // If this is a type definition, remember in in a special table so we can look
   // up references from attributes.
-  if (isa<LITStructDeclOp>(decl))
-    typeSymbolScopes[SymbolTable::getSymbolName(decl)] = scope;
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(*scope))
+    typeSymbolScopes[structDecl.getNameAttr()] = scope;
 
   if (parentScope)
     parentScope->addToScope(scope, sharedState);
@@ -133,9 +108,26 @@ Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
   return *scope;
 }
 
+/// Add a new declaration that needs to be resolved.
+Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
+                             LitLexerCursor cursor, LitLexerCursor endCursor,
+                             ssize_t indentation) {
+  return addDecl(decl, decl->getLoc(), parentScope, cursor, endCursor,
+                 indentation);
+}
+
 Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
   auto &scope =
       addDecl(decl, parentScope, LitLexerCursor(), LitLexerCursor(), 0);
+  scope.resolvedness = DeclResolvedness::fullyResolved;
+  return scope;
+}
+
+/// Add a declaration that is already fully resolved.
+Scope &DeclResolver::addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
+                                          Scope *parentScope) {
+  auto &scope =
+      addDecl(decl, loc, parentScope, LitLexerCursor(), LitLexerCursor(), 0);
   scope.resolvedness = DeclResolvedness::fullyResolved;
   return scope;
 }
@@ -284,12 +276,12 @@ struct ParsedMetaSignature {
     return success();
   }
 
+  /// Add Scope objects for each declared parameter and insert them into the
+  /// specified scope for the declaration, so name lookup will find them.
   void addToScope(LitSharedState &sharedState, Scope &scope) {
-    for (auto [param, loc] : llvm::zip(inputDecls, inputLocs)) {
-      auto value = ParamDeclRefAttr::get(param.getName(), param.getType());
-      scope.addToScope(param.getName(), Scope::MetaParameterValue{value, loc},
-                       sharedState);
-    }
+    auto &declResolver = *sharedState.declResolver;
+    for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs))
+      declResolver.addFullyResolvedDecl(paramDecl, loc, &scope);
   }
 };
 } // namespace
