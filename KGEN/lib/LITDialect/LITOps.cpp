@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -109,6 +110,79 @@ SpecialFunctionKind LITFuncOp::getSpecialFunctionKind() {
 
   // Otherwise, this declaration isn't known.
   return SpecialFunctionKind::kNormal;
+}
+
+//===----------------------------------------------------------------------===//
+// LITStructGEPOp
+//===----------------------------------------------------------------------===//
+
+/// Parse the struct field name as a keyword literal.
+static ParseResult parseKeywordAsString(OpAsmParser &p, StringAttr &name) {
+  StringRef value;
+  if (p.parseKeyword(&value))
+    return failure();
+  name = p.getBuilder().getStringAttr(value);
+  return success();
+}
+
+/// Print the struct field name as a keyword literal.
+static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
+                                 StringAttr name) {
+  p << name.getValue();
+}
+
+/// Lookup the declaration for the struct. When checking field types, we can't
+/// directly compare operation types to the struct field types because they are
+/// parameterized under different domains. We have to rebind them.
+static LogicalResult
+lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
+                 RefType ref,
+                 std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
+  FlatSymbolRefAttr name = ref.getName();
+  auto structDecl = symbolTable.lookupNearestSymbolFrom<LITStructDeclOp>(
+      user, name.getAttr());
+  if (!structDecl)
+    return user->emitOpError("expected a struct declaration");
+
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : ref.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+  result = std::make_pair(structDecl, std::move(evaluator));
+  return success();
+}
+
+static LogicalResult
+verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
+                         RefType ref, StringAttr fieldName, Type type) {
+
+  std::pair<LITStructDeclOp, ParameterEvaluator> structDeclEval;
+  if (failed(lookupStructDecl(symbolTable, op, ref, structDeclEval)))
+    return failure();
+  auto [structDecl, evaluator] = structDeclEval;
+  for (VarDeclOp fieldDecl : structDecl.getFieldDecls()) {
+    if (fieldDecl.getName() != fieldName)
+      continue;
+    Type reboundType =
+        evaluator.getReboundType(fieldDecl.getType().getResolvedElementType());
+    if (reboundType != type)
+      return op->emitOpError("cannot extract value of type ")
+             << type << " from struct field " << fieldName << " which has type "
+             << reboundType;
+    return success();
+  }
+
+  return op->emitOpError("struct ")
+         << ref.getName() << " has no field named " << fieldName;
+}
+
+LogicalResult
+LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  TypedAttr refExpr = getContainer().getType().getElementType();
+  return verifyStructFieldAndType(
+      symbolTable, *this,
+      cast<RefType>(cast<TypeConstantAttr>(refExpr).getValue()), getFieldAttr(),
+      ParamRefType::get(getResult().getType().getElementType()));
 }
 
 //===----------------------------------------------------------------------===//
