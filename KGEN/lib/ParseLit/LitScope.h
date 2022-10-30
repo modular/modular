@@ -33,6 +33,7 @@ public:
   /// Return the Module, StructDecl, Func/Generator that this scope corresponds
   /// to.
   Operation *getDecl() const { return decl; }
+  Location getLoc() const { return loc; }
   Scope *getParentScope() const { return parentScope; }
 
   /// This cursor holds the location the parser should resume for the next phase
@@ -114,12 +115,17 @@ private:
   friend class DeclResolver;
   Scope(Operation *decl, Scope *parentScope, LitLexerCursor cursor,
         LitLexerCursor endCursor, ssize_t indentation)
-      : decl(decl), parentScope(std::move(parentScope)), cursor(cursor),
-        endCursorState(endCursor.getState()), indentation(indentation) {}
+      : decl(decl), loc(decl->getLoc()), parentScope(std::move(parentScope)),
+        cursor(cursor), endCursorState(endCursor.getState()),
+        indentation(indentation) {}
 
 private:
   /// This is the declaration that this scope corresponds to.
   Operation *decl;
+
+  /// This is the source location of the declaration, used for diagnostics and
+  /// debug information.
+  Location loc;
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.
@@ -144,5 +150,26 @@ private:
 };
 
 } // namespace M::KGEN::LIT
+
+namespace llvm {
+/// Cast from an (const) Scope & to a Decl operation type.
+template <typename T>
+struct CastInfo<T, M::KGEN::LIT::Scope>
+    : public NullableValueCastFailed<T>,
+      public DefaultDoCastIfPossible<T, M::KGEN::LIT::Scope &,
+                                     CastInfo<T, M::KGEN::LIT::Scope>> {
+  // Provide isPossible here because here we have the const-stripping from
+  // ConstStrippingCast.
+  static bool isPossible(M::KGEN::LIT::Scope &scope) {
+    mlir::Operation *decl = scope.getDecl();
+    return decl && T::classof(decl);
+  }
+  static T doCast(M::KGEN::LIT::Scope &scope) { return T(scope.getDecl()); }
+};
+template <typename T>
+struct CastInfo<T, const M::KGEN::LIT::Scope>
+    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::Scope,
+                                          CastInfo<T, M::KGEN::LIT::Scope>> {};
+} // namespace llvm
 
 #endif // LITSCOPE_H

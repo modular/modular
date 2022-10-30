@@ -90,7 +90,7 @@ private:
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose
   /// cyclic dependencies.
-  DenseSet<Operation *> declsCurrentlyProcessing;
+  DenseSet<Scope *> declsCurrentlyProcessing;
 
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;

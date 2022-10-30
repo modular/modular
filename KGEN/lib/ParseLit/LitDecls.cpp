@@ -32,7 +32,7 @@ using namespace M::KGEN::LIT;
 
 static Location getLocationFrom(Scope::NameEntry entry) {
   if (std::holds_alternative<Scope *>(entry))
-    return std::get<Scope *>(entry)->getDecl()->getLoc();
+    return std::get<Scope *>(entry)->getLoc();
   return std::get<Scope::MetaParameterValue>(entry).loc;
 }
 
@@ -61,13 +61,11 @@ void Scope::addToScope(StringAttr name, MetaParameterValue newValue,
 
 void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
   StringAttr name;
-  Operation *newDecl = newDeclScope->getDecl();
-
-  TypeSwitch<Operation *>(newDecl)
+  TypeSwitch<Scope &>(*newDeclScope)
       .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
           [&](auto op) { name = op.getNameAttr(); })
       .Default([&](auto attr) {
-        assert(isa<ModuleOp>(newDecl) && "Unknown declaration kind");
+        assert(isa<ModuleOp>(*newDeclScope) && "Unknown declaration kind");
       });
 
   if (!name) // Don't add for modules.
@@ -78,7 +76,8 @@ void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
     return;
   Scope::NameEntry &entry = it->second;
 
-  auto diag = emitError(newDecl->getLoc(), "invalid redefinition of ") << name;
+  auto diag = emitError(newDeclScope->getLoc(), "invalid redefinition of ")
+              << name;
   diag.attachNote(getLocationFrom(entry)) << "previous definition here";
   sharedState.errorOccurred = true;
 
@@ -175,11 +174,9 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
     return success(!scope.hasReferenceError);
   }
 
-  Operation *decl = scope.getDecl();
-
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
-  if (!declsCurrentlyProcessing.insert(decl).second) {
+  if (!declsCurrentlyProcessing.insert(&scope).second) {
     emitError(sharedState.translateLocation(loc),
               "recursive reference to declaration");
     return failure();
@@ -191,7 +188,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
     // restoring the lexer to the position where parsing can continue, calling
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
-    TypeSwitch<Operation *>(decl)
+    TypeSwitch<Scope &>(scope)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           LitLexer lexer(sharedState, scope.getCursor());
 
@@ -204,8 +201,8 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
         })
         .Case([&](ModuleOp op) { /*Nothing*/ })
         .Default([&](auto attr) {
-          decl->emitError(
-              "do not know how to resolve the signature of this decl!");
+          emitError(scope.getLoc(),
+                    "do not know how to resolve the signature of this decl!");
         });
     scope.resolvedness = DeclResolvedness::signatureResolved;
   }
@@ -214,7 +211,7 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
   if (scope.resolvedness < DeclResolvedness::fullyResolved &&
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
-    TypeSwitch<Operation *>(decl)
+    TypeSwitch<Scope &>(scope)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, scope.getCursor());
@@ -236,12 +233,13 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto attr) {
-          decl->emitError("do not know how to resolve the body of this decl!");
+          emitError(scope.getLoc(),
+                    "do not know how to resolve the body of this decl!");
         });
     scope.resolvedness = DeclResolvedness::fullyResolved;
   }
 
-  declsCurrentlyProcessing.erase(decl);
+  declsCurrentlyProcessing.erase(&scope);
   // If decl is busted, then return failure.
   return success(!scope.hasReferenceError);
 }
@@ -348,9 +346,9 @@ static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
     Scope *parent = declScope.getParentScope();
-    if (!parent || !isa<LITStructDeclOp>(parent->getDecl()))
+    if (!parent || !isa<LITStructDeclOp>(*parent))
       return Type();
-    auto parentStruct = cast<LITStructDeclOp>(parent->getDecl());
+    auto parentStruct = cast<LITStructDeclOp>(*parent);
 
     // Figure out the expected type of self.
     if (!parentStruct.getParamDecls().empty()) {

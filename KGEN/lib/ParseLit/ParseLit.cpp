@@ -69,7 +69,7 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 /// thing as we bring up full type support.  This should be eliminated.
 static void makeIndexDecl(LitSharedState &sharedState, Scope &builtinsScope) {
   auto b = builtinsScope.getDeclEndBuilder();
-  auto loc = builtinsScope.getDecl()->getLoc();
+  auto loc = builtinsScope.getLoc();
   auto indexDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("index"));
   indexDecl.getRegion().push_back(new Block());
   sharedState.indexScope = &sharedState.declResolver->addFullyResolvedDecl(

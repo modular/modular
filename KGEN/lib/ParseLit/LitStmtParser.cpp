@@ -41,8 +41,8 @@ struct LitStmtParser : public LitParserBase {
 
     // Create the varDeclCursor with an arbitrary op.  We delete it on
     // destruction of this statement parser.
-    varDeclCursor = builder.create<mlir::index::ConstantOp>(
-        scope.getDecl()->getLoc(), 1234567);
+    varDeclCursor =
+        builder.create<mlir::index::ConstantOp>(scope.getLoc(), 1234567);
   }
 
   ~LitStmtParser() {
@@ -249,7 +249,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
-  if (isa<LITStructDeclOp>(scope.getDecl()))
+  if (isa<LITStructDeclOp>(scope))
     emitError("invalid expression in this context");
 
   // expression_stmt ::= starred_expression
@@ -353,7 +353,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Check the result values match expected types.
-  LITFuncOp decl = dyn_cast<LITFuncOp>(scope.getDecl());
+  LITFuncOp decl = dyn_cast<LITFuncOp>(scope);
   if (!decl) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -572,7 +572,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
-  if (isa<LITStructDeclOp>(scope.getDecl()))
+  if (isa<LITStructDeclOp>(scope))
     emitError("nested struct not supported here");
 
   auto loc = getTokenLocation();
