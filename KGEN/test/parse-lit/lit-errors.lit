@@ -40,7 +40,7 @@ def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
 def missing_ret_val() -> index:
-  return # expected-error {{expected a return value from 'def' with return type 'index'}}
+  return # expected-error {{returned value has type '!lit.none' but 'def' expected 'index'}}
 
 def ret_type_mismatch() -> index:
   return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}
