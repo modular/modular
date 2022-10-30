@@ -143,7 +143,7 @@ struct Int:
   # CHECK:        %0 = lit.nonevalue
   # CHECK-NEXT:   kgen.return %0
   # CHECK-NEXT: }
-  def __init__(self: *Int, value: index) -> None:
+  def __init__(self: &Int, value: index) -> None:
     #self.value = value
     return None
 

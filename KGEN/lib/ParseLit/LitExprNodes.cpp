@@ -705,7 +705,7 @@ Type UnaryOpNode::emitType(ExprEmitter &emitter) const {
   if (!eltType)
     return Type();
 
-  if (kind == kUnaryStar)
+  if (kind == kUnaryAmp)
     return POP::PointerType::get(eltType);
 
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
