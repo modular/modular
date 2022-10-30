@@ -17,7 +17,7 @@
 
 namespace M::KGEN::LIT {
 class ExprNode;
-class Scope;
+class DeclAST;
 
 //===----------------------------------------------------------------------===//
 // LitParserBase
@@ -181,14 +181,14 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   Optional<size_t> stmtIndent);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
-  ParseResult parseType(Type &result, Scope &scope,
+  ParseResult parseType(Type &result, DeclAST &declScope,
                         Optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);
 
-  /// Parse a 'suite' production into the declaration specified by `Scope`.
-  static ParseResult parseSuite(Scope &scope, LitLexer &lexer);
+  /// Parse a 'suite' production into the declaration specified by `decl`.
+  static ParseResult parseSuite(DeclAST &decl, LitLexer &lexer);
 
 public:
   LitLexer &lexer;

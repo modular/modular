@@ -10,11 +10,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitExprNodes.h"
+#include "LitDeclAST.h"
 #include "LitDecls.h"
-#include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -144,8 +145,8 @@ Type ExprEmitter::emitType(const ExprNode *node) {
 
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
-Scope *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
-  Scope *lookupResult = scope.lookup(StringAttr::get(getContext(), name));
+DeclAST *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
+  DeclAST *lookupResult = declScope.lookup(StringAttr::get(getContext(), name));
   if (!lookupResult)
     return emitError(loc, "unknown type name '" + name + "'"), nullptr;
 
@@ -238,10 +239,10 @@ Type NoneLiteralNode::emitType(ExprEmitter &emitter) const {
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
-  Scope *declScope = emitter.scope.lookup(nameAttr);
+  DeclAST *decl = emitter.declScope.lookup(nameAttr);
 
   // Handle the case where lookup fails.
-  if (!declScope) {
+  if (!decl) {
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.
     if (!contextualType || !emitter.varDeclCursor) {
@@ -263,30 +264,30 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
     auto varDecl = OpBuilder(emitter.varDeclCursor)
                        .create<VarDeclOp>(emitter.translateLocation(getLoc()),
                                           declType, nameAttr);
-    declScope = &emitter.shared.declResolver->addFullyResolvedDecl(
-        varDecl, &emitter.scope);
+    decl = &emitter.shared.declResolver->addFullyResolvedDecl(
+        varDecl, &emitter.declScope);
   }
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
   auto resolveResult = emitter.shared.declResolver->resolve(
-      *declScope, DeclResolvedness::signatureResolved, getLoc());
+      *decl, DeclResolvedness::signatureResolved, getLoc());
 
   // If the decl was erroneous somehow, then don't form a reference to it.
   if (failed(resolveResult))
     return {};
 
   // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(*declScope))
+  if (auto var = dyn_cast<VarDeclOp>(*decl))
     return LValue(var.getResult());
 
   // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(*declScope))
+  if (auto fnDecl = dyn_cast<LITFuncOp>(*decl))
     return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
                                    fnDecl.getSignature());
 
   // Attributes always resolve to their known value.
-  if (auto param = declScope->getParamDecl())
+  if (auto param = decl->getParamDecl())
     return ParamDeclRefAttr::get(param.getName(), param.getType());
 
   emitter.emitError(getLoc(), "use of declaration \"")
@@ -298,10 +299,10 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
   // Lookup the identifier.
-  Scope *declScope = emitter.lookupDecl(spelling, getLoc());
-  if (!declScope)
+  DeclAST *decl = emitter.lookupDecl(spelling, getLoc());
+  if (!decl)
     return Type();
-  auto typeDecl = dyn_cast<LITStructDeclOp>(*declScope);
+  auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
     return Type();
@@ -314,10 +315,10 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
     return Type();
   }
 
-  switch (declScope->magicKind) {
+  switch (decl->magicKind) {
   default:
     return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
-  case Scope::MagicKind::kIndexType:
+  case DeclAST::MagicKind::kIndexType:
     // TODO(types): This is a hack to unblock tests in the interim.
     return IndexType::get(context);
   }
@@ -342,9 +343,9 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    auto [typeScope, typeParams] =
-        emitter.shared.declResolver->getScopeAndParamsFromType(eltType);
-    if (!typeScope) {
+    auto [typeDecl, typeParams] =
+        emitter.shared.declResolver->getDeclAndParamsFromType(eltType);
+    if (!typeDecl) {
       emitter.emitError(getLoc(), "cannot access a field in value of type ")
           << eltType;
       return {};
@@ -357,12 +358,12 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     }
 
     // Figure out what field index this is.
-    assert(isa<LITStructDeclOp>(*typeScope) && "only have one type");
-    auto structDecl = cast<LITStructDeclOp>(*typeScope);
+    assert(isa<LITStructDeclOp>(*typeDecl) && "only have one type");
+    auto structOp = cast<LITStructDeclOp>(*typeDecl);
 
     VarDeclOp foundVarDecl;
     size_t fieldNo = 0;
-    for (auto varDecl : structDecl.getRegion().front().getOps<VarDeclOp>()) {
+    for (auto varDecl : structOp.getRegion().front().getOps<VarDeclOp>()) {
       if (varDecl.getName() == attrSpelling) {
         foundVarDecl = varDecl;
         break;
@@ -541,18 +542,18 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
   }
 
   // Lookup the identifier.
-  Scope *declScope = emitter.lookupDecl(baseDRE->spelling, getLoc());
-  if (!declScope)
+  DeclAST *decl = emitter.lookupDecl(baseDRE->spelling, getLoc());
+  if (!decl)
     return Type();
 
-  auto typeDecl = dyn_cast<LITStructDeclOp>(*declScope);
-  if (!typeDecl) {
+  auto structOp = dyn_cast<LITStructDeclOp>(*decl);
+  if (!structOp) {
     emitter.emitError(getLoc(),
                       "'" + baseDRE->spelling + "' names a value, not a type");
     return Type();
   }
 
-  auto numParams = typeDecl.getParamDecls().size();
+  auto numParams = structOp.getParamDecls().size();
   if (numParams != indices.size()) {
     emitter.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
         << numParams << " meta parameter" << plural(numParams) << " but "
@@ -562,7 +563,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
 
   // Emit each of the indices as parameter expressions.
   SmallVector<ParamBindAttr> exprs;
-  for (auto [indexExpr, decl] : llvm::zip(indices, typeDecl.getParamDecls())) {
+  for (auto [indexExpr, decl] : llvm::zip(indices, structOp.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
     auto value = emitter.emitMValue(
@@ -581,7 +582,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
     exprs.push_back(ParamBindAttr::get(decl, value));
   }
 
-  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
+  return RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()),
                       ParamBindArrayAttr::get(emitter.getContext(), exprs));
 }
 

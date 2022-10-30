@@ -21,7 +21,7 @@ class SourceMgr;
 
 namespace M::KGEN::LIT {
 class DeclResolver;
-class Scope;
+class DeclAST;
 
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
@@ -36,11 +36,11 @@ public:
 
   const mlir::StringAttr bufferNameIdentifier;
 
-  /// This is the scope for the builtin 'index' type.
+  /// This is the decl for the builtin 'index' type.
   /// TODO: REMOVE THIS.
-  Scope *indexScope = nullptr;
-  /// This is the scope for the builtin 'kgen.none' type.
-  Scope *noneScope = nullptr;
+  DeclAST *indexDecl = nullptr;
+  /// This is the decl for the builtin 'kgen.none' type.
+  DeclAST *noneDecl = nullptr;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;

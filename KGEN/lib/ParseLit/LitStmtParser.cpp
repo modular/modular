@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LitDeclAST.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
 #include "LitParserBase.h"
-#include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -36,13 +36,14 @@ namespace scf = mlir::scf;
 /// grammar.
 namespace {
 struct LitStmtParser : public LitParserBase {
-  LitStmtParser(LitLexer &lexer, Scope &scope)
-      : LitParserBase(lexer), scope(scope), builder(scope.getDeclEndBuilder()) {
+  LitStmtParser(LitLexer &lexer, DeclAST &containingDecl)
+      : LitParserBase(lexer), containingDecl(containingDecl),
+        builder(containingDecl.getDeclEndBuilder()) {
 
     // Create the varDeclCursor with an arbitrary op.  We delete it on
     // destruction of this statement parser.
-    varDeclCursor =
-        builder.create<mlir::index::ConstantOp>(scope.getLoc(), 1234567);
+    varDeclCursor = builder.create<mlir::index::ConstantOp>(
+        containingDecl.getLoc(), 1234567);
   }
 
   ~LitStmtParser() {
@@ -52,13 +53,14 @@ struct LitStmtParser : public LitParserBase {
 
   ParseResult parseFile(ModuleOp module);
 
-  const Scope &getScope() const { return scope; }
+  const DeclAST &getDecl() const { return containingDecl; }
   OpBuilder &getBuilder() { return builder; }
 
   // Expression emission.
 
   ExprEmitter getExprEmitter() {
-    return ExprEmitter(getSharedState(), scope, builder, varDeclCursor);
+    return ExprEmitter(getSharedState(), containingDecl, builder,
+                       varDeclCursor);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -82,8 +84,8 @@ struct LitStmtParser : public LitParserBase {
                                size_t stmtIndent);
 
 private:
-  /// This is declaration scope that we're parsing into.
-  Scope &scope;
+  /// This is declaration / scope that we're parsing into.
+  DeclAST &containingDecl;
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
@@ -249,7 +251,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
-  if (isa<LITStructDeclOp>(scope))
+  if (isa<LITStructDeclOp>(containingDecl))
     emitError("invalid expression in this context");
 
   // expression_stmt ::= starred_expression
@@ -269,7 +271,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // Materialize the expression statement in our current scope but discard the
   // result on the floor.  Note that this does not materialize an LValue, but
   // does evaluate side effects.
-  ExprEmitter state(getSharedState(), scope, builder, nullptr);
+  ExprEmitter state(getSharedState(), containingDecl, builder, nullptr);
   (void)expr->emitIR(state);
   return success();
 }
@@ -295,7 +297,7 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
   if (parseExpression(rhs, stmtIndent))
     return failure();
 
-  // Materialize the expression statement in our current scope.
+  // Materialize the expression statement.
   auto rhsValue = getExprEmitter().emitDRValue(rhs);
   if (!rhsValue)
     return success(); // Parse succeeded.
@@ -342,7 +344,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     operandExprs.push_back(getNoneExpr(loc));
   }
 
-  // Materialize the expression values into our current scope.
+  // Materialize the expression values into IR.
   for (auto expr : operandExprs) {
     auto value = getExprEmitter().emitDRValue(expr);
     if (!value)
@@ -357,7 +359,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Check the result values match expected types.
-  LITFuncOp decl = dyn_cast<LITFuncOp>(scope);
+  LITFuncOp decl = dyn_cast<LITFuncOp>(containingDecl);
   if (!decl) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -534,7 +536,7 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(funcDecl, &scope, startCursor,
+  getDeclResolver().addDecl(funcDecl, &containingDecl, startCursor,
                             getLexer().getCursor(), curIndent);
   return success();
 }
@@ -561,7 +563,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, &scope, startCursor,
+  getDeclResolver().addDecl(varDecl, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
@@ -570,7 +572,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
-  if (isa<LITStructDeclOp>(scope))
+  if (isa<LITStructDeclOp>(containingDecl))
     emitError("nested struct not supported here");
 
   auto loc = getTokenLocation();
@@ -595,7 +597,7 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, &scope, startCursor,
+  getDeclResolver().addDecl(newStruct, &containingDecl, startCursor,
                             getLexer().getCursor(), curIndent);
 
   return success();
@@ -605,8 +607,10 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 // Entry point to this file
 //===----------------------------------------------------------------------===//
 
-/// Parse a 'suite' production into the declaration specified by `Scope`.
+/// Parse a 'suite' production into the declaration specified by `DeclAST`.
 /// This is the main entrypoint to this file.
-ParseResult LitParserBase::parseSuite(Scope &scope, LitLexer &lexer) {
-  return LitStmtParser(lexer, scope).parseSuite(scope.getIndentation());
+ParseResult LitParserBase::parseSuite(DeclAST &containingDecl,
+                                      LitLexer &lexer) {
+  return LitStmtParser(lexer, containingDecl)
+      .parseSuite(containingDecl.getIndentation());
 }

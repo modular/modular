@@ -401,12 +401,13 @@ ParseResult LitParserBase::parseExpression(ExprNode *&result,
   return ExprParser(getLexer(), stmtIndent).parseExpression(result);
 }
 
-ParseResult LitParserBase::parseType(Type &result, Scope &scope,
+ParseResult LitParserBase::parseType(Type &result, DeclAST &declScope,
                                      Optional<size_t> stmtIndent) {
   ExprNode *expr = nullptr;
   if (parseExpression(expr, stmtIndent))
     return failure();
-  result = ExprEmitter(getSharedState(), scope, None, nullptr).emitType(expr);
+  result =
+      ExprEmitter(getSharedState(), declScope, None, nullptr).emitType(expr);
   return success();
 }
 
