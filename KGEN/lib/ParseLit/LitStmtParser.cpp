@@ -583,7 +583,6 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
     return failure();
 
   auto newStruct = builder.create<LITStructDeclOp>(loc, nameAttr);
-  newStruct.getRegion().push_back(new Block());
 
   // Process any decorators we will eventually want when they come up.
   if (!decorators.empty())

@@ -314,11 +314,13 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
     return Type();
   }
 
-  // TODO(types): This is a hack to unblock tests in the interim.
-  if (spelling == "index")
+  switch (declScope->magicKind) {
+  default:
+    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
+  case Scope::MagicKind::kIndexType:
+    // TODO(types): This is a hack to unblock tests in the interim.
     return IndexType::get(context);
-
-  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
+  }
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
