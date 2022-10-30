@@ -142,11 +142,12 @@ public:
     kParenExprNode, // (x+y)
 
     // Unary expressions.
-    kMinus,
-    kPlus,
-    kComplement,
-    kFirstUnaryOp = kMinus,
-    klastUnaryOp = kComplement,
+    kUnaryMinus,
+    kUnaryPlus,
+    kUnaryTilde,
+    kUnaryStar,
+    kFirstUnaryOp = kUnaryMinus,
+    klastUnaryOp = kUnaryStar,
 
     // Binary expressions.
     kAdd,

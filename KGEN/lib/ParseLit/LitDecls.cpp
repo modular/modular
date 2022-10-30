@@ -360,8 +360,11 @@ static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
     }
     ParamBindArrayAttr selfParams =
         ParamBindArrayAttr::get(defDecl.getContext(), {});
-    return RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
-                        selfParams);
+    auto ref = RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
+                            selfParams);
+    // Methods on structs (but not classes) take the struct implicitly by
+    // pointer so they can use and mutate it.
+    return POP::PointerType::get(ref);
   };
 
   auto selfType = getSelfTypeForMethod();

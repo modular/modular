@@ -208,11 +208,13 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   default:
     return ExprNode::kError;
   case LitToken::plus:
-    return ExprNode::kPlus;
+    return ExprNode::kUnaryPlus;
   case LitToken::minus:
-    return ExprNode::kMinus;
+    return ExprNode::kUnaryMinus;
   case LitToken::tilde:
-    return ExprNode::kComplement;
+    return ExprNode::kUnaryTilde;
+  case LitToken::star:
+    return ExprNode::kUnaryStar;
   }
 }
 
@@ -229,17 +231,18 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
 ///             | generator_expression | yield_atom
 /// parenth_form ::= "(" [starred_expression] ")"
 ///
-/// literal ::= [TODO]
+/// literal ::=
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
-/// factor ::=  "-" factor | "+" factor | "~" factor | power
+/// u_expr ::=  power | "-" u_expr | "+" u_expr | "~" u_expr
 ///
 ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
   LitToken::Kind tokKind = getToken().getKind();
   switch (tokKind) {
   case LitToken::plus:
   case LitToken::minus:
-  case LitToken::tilde: { // factor
+  case LitToken::tilde:
+  case LitToken::star: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
     if (parseExpression(expr, Precedence::kFactor))
@@ -272,7 +275,6 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     if (parseExpression(result))
       return failure();
     auto rpLoc = getToken().getLoc();
-    // FIXME: This is terrible error recovery.
     if (parseToken(LitToken::r_paren,
                    "expected ')' in parenthesized expression"))
       return failure();

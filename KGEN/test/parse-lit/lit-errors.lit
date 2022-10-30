@@ -154,9 +154,9 @@ def StaticMethod(): pass
 def __init__(): pass
 
 struct WrongSelfType:
-  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongSelfType>'}}
+  # expected-error @+1 {{'self' argument must have type '!pop.pointer<@WrongSelfType>'}}
   def __init__(self: Int): pass
-  # expected-error @+1 {{'self' argument must have type '!kgen.ref<@WrongSelfType>'}}
+  # expected-error @+1 {{'self' argument must have type '!pop.pointer<@WrongSelfType>'}}
   def badMethod(self: Int): pass
 
 struct WrongInitResult:

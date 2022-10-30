@@ -213,17 +213,17 @@ struct BinOpNode final : public ExprNode {
 };
 
 struct UnaryOpNode final : public ExprNode {
-  UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *expr)
-      : ExprNode(kind), opLoc(opLoc), expr(expr) {}
+  UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *subExpr)
+      : ExprNode(kind), opLoc(opLoc), subExpr(subExpr) {}
 
   const SMLoc opLoc;
-  ExprNode *const expr;
+  ExprNode *const subExpr;
 
   static bool classof(const ExprNode *node) {
     return node->kind >= kFirstUnaryOp && node->kind <= klastUnaryOp;
   }
   SMLoc getLoc() const override { return opLoc; }
-  bool containsError() const override { return expr->containsError(); }
+  bool containsError() const override { return subExpr->containsError(); }
   AnyValue emitIR(ExprEmitter &emitter, Type contextualType) const override;
   Type emitType(ExprEmitter &emitter) const override;
 };

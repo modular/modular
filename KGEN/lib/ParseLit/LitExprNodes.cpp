@@ -667,7 +667,7 @@ Type BinOpNode::emitType(ExprEmitter &emitter) const {
 }
 
 AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
-  auto exprRep = emitter.emitRValue(expr);
+  auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
   auto exprType = exprRep.getType();
@@ -679,31 +679,35 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
 
   assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto exprVal = emitter.emitDRValue(exprRep, expr->getLoc());
+  auto exprVal = emitter.emitDRValue(exprRep, subExpr->getLoc());
   auto loc = emitter.translateLocation(getLoc());
-
   switch (kind) {
   default:
-    llvm_unreachable("unknown unary operator");
-  case kPlus: {
+    emitter.emitError(getLoc(), "TODO: cannot emit this operator yet");
+    return {};
+  case kUnaryPlus: {
     // TODO:  this should eventually implement a call to object.__pos__(self)
     auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
     return (Value)emitter.builder->create<mlir::index::AddOp>(loc, zero,
                                                               exprVal);
   }
-  case kMinus: {
+  case kUnaryMinus: {
     // TODO:  this should eventually implement a call to object.__neg__(self)
     auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
     return (Value)emitter.builder->create<mlir::index::SubOp>(loc, zero,
                                                               exprVal);
   }
-  case kComplement:
-    emitter.emitError(getLoc(), "TODO: cannot emit ~ operator yet");
-    return {};
   }
 }
 
 Type UnaryOpNode::emitType(ExprEmitter &emitter) const {
+  auto eltType = subExpr->emitType(emitter);
+  if (!eltType)
+    return Type();
+
+  if (kind == kUnaryStar)
+    return POP::PointerType::get(eltType);
+
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return Type();
 }
