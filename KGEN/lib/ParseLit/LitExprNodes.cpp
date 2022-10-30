@@ -289,11 +289,11 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
     return {};
 
   // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(scope.getDecl()))
+  if (auto var = dyn_cast<VarDeclOp>(scope))
     return LValue(var.getResult());
 
   // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(scope.getDecl()))
+  if (auto fnDecl = dyn_cast<LITFuncOp>(scope))
     return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
                                    fnDecl.getSignature());
 
@@ -309,7 +309,7 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   Scope *declScope = emitter.lookupDecl(spelling, getLoc());
   if (!declScope)
     return Type();
-  auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
+  auto typeDecl = dyn_cast<LITStructDeclOp>(*declScope);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
     return Type();
@@ -363,8 +363,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     }
 
     // Figure out what field index this is.
-    assert(isa<LITStructDeclOp>(typeScope->getDecl()) && "only have one type");
-    auto structDecl = cast<LITStructDeclOp>(typeScope->getDecl());
+    assert(isa<LITStructDeclOp>(*typeScope) && "only have one type");
+    auto structDecl = cast<LITStructDeclOp>(*typeScope);
 
     VarDeclOp foundVarDecl;
     size_t fieldNo = 0;
@@ -551,7 +551,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
   if (!declScope)
     return Type();
 
-  auto typeDecl = dyn_cast<LITStructDeclOp>(declScope->getDecl());
+  auto typeDecl = dyn_cast<LITStructDeclOp>(*declScope);
   if (!typeDecl) {
     emitter.emitError(getLoc(),
                       "'" + baseDRE->spelling + "' names a value, not a type");
