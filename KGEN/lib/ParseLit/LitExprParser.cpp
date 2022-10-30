@@ -59,6 +59,8 @@ public:
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowest);
 
+  ExprNode *getNoneExpr(SMLoc loc) { return alloc<NoneLiteralNode>(loc); };
+
 private:
   /// Return true if the current token is the start of another statement, false
   /// if it is part of this one.
@@ -267,7 +269,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     consumeToken(LitToken::string);
     break;
   case LitToken::kw_None:
-    result = alloc<NoneLiteralNode>(getToken().getLoc());
+    result = getNoneExpr(getToken().getLoc());
     consumeToken(LitToken::kw_None);
     break;
   case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
@@ -406,4 +408,9 @@ ParseResult LitParserBase::parseType(Type &result, Scope &scope,
     return failure();
   result = ExprEmitter(getSharedState(), scope, None, nullptr).emitType(expr);
   return success();
+}
+
+/// Return an expression node for None at the specified location.
+ExprNode *LitParserBase::getNoneExpr(SMLoc loc) {
+  return ExprParser(getLexer(), 0).getNoneExpr(loc);
 }

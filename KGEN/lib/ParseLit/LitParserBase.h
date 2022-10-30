@@ -184,6 +184,9 @@ public:
   ParseResult parseType(Type &result, Scope &scope,
                         Optional<size_t> stmtIndent);
 
+  /// Return an expression node for None at the specified location.
+  ExprNode *getNoneExpr(SMLoc loc);
+
   /// Parse a 'suite' production into the declaration specified by `Scope`.
   static ParseResult parseSuite(Scope &scope, LitLexer &lexer);
 

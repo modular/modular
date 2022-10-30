@@ -331,19 +331,23 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   SmallVector<Value> operandValues;
 
   // If there is an expression list present, parse it.
+  SmallVector<ExprNode *> operandExprs;
   if (!getToken().getIndentation().has_value()) {
-    SmallVector<ExprNode *> operandExprs;
     if (parseExpressionList(operandExprs, returnIndent))
       return failure();
+  } else {
+    // If there was no returned value, then default to "return None".  This
+    // allows type inference to uniformly support all the things that the None
+    // literal coerces to (e.g. an Optional type).
+    operandExprs.push_back(getNoneExpr(loc));
+  }
 
-    // Materialize the expression values into our current scope.
-    // TODO: Should pass in contextual type from return value.
-    for (auto expr : operandExprs) {
-      auto value = getExprEmitter().emitDRValue(expr);
-      if (!value)
-        return failure();
-      operandValues.push_back(value);
-    }
+  // Materialize the expression values into our current scope.
+  for (auto expr : operandExprs) {
+    auto value = getExprEmitter().emitDRValue(expr);
+    if (!value)
+      return failure();
+    operandValues.push_back(value);
   }
 
   // We don't support formation of tuples / multiple result values yet.
@@ -356,12 +360,6 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   LITFuncOp decl = dyn_cast<LITFuncOp>(scope);
   if (!decl) {
     emitError(loc, "cannot return from this context");
-    return success();
-  }
-
-  if (operandValues.empty() && !decl.getResultTypes().empty()) {
-    emitError(loc, "expected a return value from 'def' with return type ")
-        << decl.getResultTypes()[0];
     return success();
   }
 
