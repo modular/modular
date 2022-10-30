@@ -305,10 +305,6 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
 Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
-  // TODO(types): This is a hack to unblock tests in the interim.
-  if (spelling == "index")
-    return IndexType::get(context);
-
   // Lookup the identifier.
   Scope *declScope = emitter.lookupDecl(spelling, getLoc());
   if (!declScope)
@@ -325,6 +321,10 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
         << numParams << " meta parameter" << plural(numParams);
     return Type();
   }
+
+  // TODO(types): This is a hack to unblock tests in the interim.
+  if (spelling == "index")
+    return IndexType::get(context);
 
   return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
