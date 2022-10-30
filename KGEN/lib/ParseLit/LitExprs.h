@@ -145,9 +145,9 @@ public:
     kUnaryMinus,
     kUnaryPlus,
     kUnaryTilde,
-    kUnaryStar,
+    kUnaryAmp,
     kFirstUnaryOp = kUnaryMinus,
-    klastUnaryOp = kUnaryStar,
+    klastUnaryOp = kUnaryAmp,
 
     // Binary expressions.
     kAdd,
