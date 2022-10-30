@@ -215,8 +215,9 @@ LITStructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void LITStructDeclOp::build(OpBuilder &builder, OperationState &result,
                             StringAttr name) {
   auto context = builder.getContext();
-  return build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
-               TypeArrayAttr::get(context, {}));
+  build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
+        TypeArrayAttr::get(context, {}));
+  result.regions[0]->push_back(new Block());
 }
 
 //===----------------------------------------------------------------------===//

@@ -117,6 +117,15 @@ public:
   /// every reference to 'x' because the type will be bogus.
   bool hasReferenceError = false;
 
+  enum class MagicKind {
+    // This is not a magic declaration, process it as normal.
+    kNormal,
+    // This is the __builtin.mlirtype.builtin.index type.
+    kIndexType,
+    // This is the __builtin.mlirtype.lit.none type.
+    kNoneType,
+  } magicKind = MagicKind::kNormal;
+
 private:
   // Scope is created by DeclResolver.
   friend class DeclResolver;

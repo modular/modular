@@ -65,15 +65,24 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 // Driver
 //===----------------------------------------------------------------------===//
 
-/// Add a declaration for an "index" struct, which is used as a transitionary
-/// thing as we bring up full type support.  This should be eliminated.
-static void makeIndexDecl(LitSharedState &sharedState, Scope &builtinsScope) {
+/// Add declarations for magic things to the builtins scope.
+static void addBuiltinDecls(LitSharedState &sharedState, Scope &builtinsScope) {
   auto b = builtinsScope.getDeclEndBuilder();
   auto loc = builtinsScope.getLoc();
+
+  // Add a declaration for an "index" struct, which is used as a transitionary
+  // thing as we bring up full type support.  This should be eliminated.
   auto indexDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("index"));
-  indexDecl.getRegion().push_back(new Block());
   sharedState.indexScope = &sharedState.declResolver->addFullyResolvedDecl(
       indexDecl, &builtinsScope);
+  sharedState.indexScope->magicKind = Scope::MagicKind::kIndexType;
+
+  // Add a declaration for an "None" struct, which is used as a transitionary
+  // thing as we bring up full type support.  This should be eliminated.
+  auto noneDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("None"));
+  sharedState.noneScope =
+      &sharedState.declResolver->addFullyResolvedDecl(noneDecl, &builtinsScope);
+  sharedState.noneScope->magicKind = Scope::MagicKind::kNoneType;
 }
 
 // Parse the specified .lit file into the specified MLIR context.
@@ -101,10 +110,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   Scope &builtinsScope = sharedState.declResolver->addDecl(
       *module, nullptr, lexer.getCursor(), lexer.getCursor(), -1);
-
-  // Add 'index' as a magic type for testing/transition.
-  // TODO: Remove this eventually.
-  makeIndexDecl(sharedState, builtinsScope);
+  addBuiltinDecls(sharedState, builtinsScope);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.

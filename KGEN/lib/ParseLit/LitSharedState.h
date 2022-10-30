@@ -38,7 +38,9 @@ public:
 
   /// This is the scope for the builtin 'index' type.
   /// TODO: REMOVE THIS.
-  Scope *indexScope;
+  Scope *indexScope = nullptr;
+  /// This is the scope for the builtin 'kgen.none' type.
+  Scope *noneScope = nullptr;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
