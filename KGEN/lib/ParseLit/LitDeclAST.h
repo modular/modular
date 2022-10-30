@@ -4,50 +4,52 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Scope handling
+// AST representation for a declaration.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LITSCOPE_H
-#define LITSCOPE_H
+#ifndef LIT_DECL_AST_H
+#define LIT_DECL_AST_H
 
-#include "KGEN/LITDialect/LITOps.h"
 #include "LitLexer.h"
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 
+namespace M::KGEN {
+class ParamDeclAttr;
+}
+
 namespace M::KGEN::LIT {
 
 /// This stores the ParamDeclAttr as an Attribute, but this is always known to
 /// be a ParamDeclAttr.
-using OperationOrParamDecl = PointerUnion<Operation *, Attribute>;
+using IRDecl = PointerUnion<Operation *, Attribute>;
 
-/// Scopes in Lightning work the same way as in Python: scopes are nested and
-/// are defined when a builtin, module, class/struct, or function definition is
-/// introduced.  Because Lightning (like Python) allows forward references to
-/// values before they are defined, the body of declarations is parsed after the
-/// signature of its peer declarations are all parsed.
+/// This is the AST representation (as opposed to the MLIR representation) of a
+/// declaration in a program.  These maintain type checking and other
+/// information that is irrelevant by the time the parser has created a complete
+/// and correct IR for a program.  Declarations often have other declarations
+/// nested inside of them, forming "scopes" and supporting name lookup.
 ///
-/// This means that we can't just use a ScopedHashTable or similar - we need to
-/// maintain our scopes until all bodies that refer to them are resolved.  As
-/// such, we heap allocate and reference count these.
-class Scope {
+/// Declarations in Lightning work the same way as in Python: scopes are nested
+/// and are defined when a builtin, module, class/struct, or function definition
+/// is introduced.  Lightning (like Python) allows forward references to values
+/// before they are defined, so the parser works in multiple phases where it
+/// notices a declaration but does not parse its body until it is demanded.
+class DeclAST {
 public:
   MLIRContext *getContext() const { return loc.getContext(); }
 
   /// Return the Module, StructDecl, Func, or ParamDecl that this scope
   /// corresponds to.
-  OperationOrParamDecl getDecl() const { return decl; }
+  IRDecl getIRDecl() const { return irDecl; }
 
   /// If this is a ParamDecl, return it otherwise return null.
-  ParamDeclAttr getParamDecl() const {
-    auto attr = dyn_cast<Attribute>(decl);
-    return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
-  }
+  ParamDeclAttr getParamDecl() const;
 
   Location getLoc() const { return loc; }
-  Scope *getParentScope() const { return parentScope; }
+  DeclAST *getParentDecl() const { return parentDecl; }
 
   /// This cursor holds the location the parser should resume for the next phase
   /// of resolution.  For example, after initial scanning of a 'def', this will
@@ -61,42 +63,32 @@ public:
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
-    if (Operation *op = dyn_cast<Operation *>(decl))
+    if (Operation *op = dyn_cast<Operation *>(irDecl))
       if (op->getNumRegions() != 0)
         return OpBuilder::atBlockEnd(&op->getRegion(0).front());
     return OpBuilder(getContext());
   }
 
-  /// This is the value of a parameter bound to a name, attributes in MLIR don't
-  /// track locations, so we do so explicitly here.
-  struct MetaParameterValue {
-    Attribute value;
-    Location loc;
+  /// Add the specified declaration to the scope defined by this decl, emitting
+  /// an error on a name collision and setting hadError to true.
+  void addToScope(DeclAST *newDecl, LitSharedState &sharedState);
 
-    /// The value in a MetaParameterValue is always known to be a TypedAttr.
-    TypedAttr getAttr() const { return cast<TypedAttr>(value); }
-  };
-
-  /// Add the specified declaration to the current scope, emitting an error on
-  /// a name collision and setting hadError to true.
-  void addToScope(Scope *newDeclScope, LitSharedState &sharedState);
-
-  /// Look up a name in the current scope only, this returns null on failure.
-  Scope *lookupInCurrentScope(StringAttr name) {
-    auto it = decls.find(name);
-    if (it != decls.end())
+  /// Look up a name in this declaration's scope only: return null on failure.
+  DeclAST *lookupInCurrentScope(StringAttr name) {
+    auto it = declsInScope.find(name);
+    if (it != declsInScope.end())
       return it->second;
     return nullptr;
   }
 
-  /// Perform a lookup in this scope list, returning the nearest target or None
-  /// if nothing is found.
-  Scope *lookup(StringAttr name) {
-    Scope *curScope = this;
+  /// Perform a lookup in this declaration's scope and all parent scopes,
+  /// returning the nearest target or null if nothing is found.
+  DeclAST *lookup(StringAttr name) {
+    DeclAST *curScope = this;
     while (curScope) {
-      if (Scope *result = curScope->lookupInCurrentScope(name))
+      if (DeclAST *result = curScope->lookupInCurrentScope(name))
         return result;
-      curScope = curScope->parentScope;
+      curScope = curScope->parentDecl;
     }
     return nullptr;
   }
@@ -127,17 +119,17 @@ public:
   } magicKind = MagicKind::kNormal;
 
 private:
-  // Scope is created by DeclResolver.
+  // DeclAST is created by DeclResolver.
   friend class DeclResolver;
-  Scope(OperationOrParamDecl decl, Location loc, Scope *parentScope,
-        LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
-      : decl(decl), loc(loc), parentScope(std::move(parentScope)),
+  DeclAST(IRDecl irDecl, Location loc, DeclAST *parentDecl,
+          LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
+      : irDecl(irDecl), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
         indentation(indentation) {}
 
 private:
-  /// This is the declaration that this scope corresponds to.
-  OperationOrParamDecl decl;
+  /// This is the MLIR declaration that this scope corresponds to.
+  IRDecl irDecl;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
@@ -145,7 +137,7 @@ private:
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.
-  Scope *parentScope;
+  DeclAST *parentDecl;
 
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
@@ -162,32 +154,33 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, Scope *> decls;
+  DenseMap<StringAttr, DeclAST *> declsInScope;
 };
 
 } // namespace M::KGEN::LIT
 
 namespace llvm {
-/// Cast from an (const) Scope & to a Decl operation type.
+/// Cast from an (const) DeclAST & to a Decl operation type.
 template <typename T>
-struct CastInfo<T, M::KGEN::LIT::Scope>
+struct CastInfo<T, M::KGEN::LIT::DeclAST>
     : public NullableValueCastFailed<T>,
-      public DefaultDoCastIfPossible<T, M::KGEN::LIT::Scope &,
-                                     CastInfo<T, M::KGEN::LIT::Scope>> {
+      public DefaultDoCastIfPossible<T, M::KGEN::LIT::DeclAST &,
+                                     CastInfo<T, M::KGEN::LIT::DeclAST>> {
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
-  static bool isPossible(M::KGEN::LIT::Scope &scope) {
-    auto *decl = dyn_cast<mlir::Operation *>(scope.getDecl());
-    return decl && T::classof(decl);
+  static bool isPossible(M::KGEN::LIT::DeclAST &decl) {
+    auto *op = dyn_cast<mlir::Operation *>(decl.getIRDecl());
+    return op && T::classof(op);
   }
-  static T doCast(M::KGEN::LIT::Scope &scope) {
-    return T(cast<mlir::Operation *>(scope.getDecl()));
+  static T doCast(M::KGEN::LIT::DeclAST &decl) {
+    return T(cast<mlir::Operation *>(decl.getIRDecl()));
   }
 };
 template <typename T>
-struct CastInfo<T, const M::KGEN::LIT::Scope>
-    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::Scope,
-                                          CastInfo<T, M::KGEN::LIT::Scope>> {};
+struct CastInfo<T, const M::KGEN::LIT::DeclAST>
+    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::DeclAST,
+                                          CastInfo<T, M::KGEN::LIT::DeclAST>> {
+};
 } // namespace llvm
 
-#endif // LITSCOPE_H
+#endif // LIT_DECL_AST_H

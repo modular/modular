@@ -9,10 +9,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
+#include "LitDeclAST.h"
 #include "LitExprs.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
-#include "LitScope.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -27,17 +27,23 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// Scope
+// DeclAST
 //===----------------------------------------------------------------------===//
 
-void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
+/// If this is a ParamDecl, return it otherwise return null.
+ParamDeclAttr DeclAST::getParamDecl() const {
+  auto attr = dyn_cast<Attribute>(irDecl);
+  return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
+}
+
+void DeclAST::addToScope(DeclAST *newDecl, LitSharedState &sharedState) {
   StringAttr name;
-  TypeSwitch<Scope &>(*newDeclScope)
+  TypeSwitch<DeclAST &>(*newDecl)
       .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
           [&](auto op) { name = op.getNameAttr(); })
       .Case([&](ModuleOp attr) { /*noop*/ })
       .Default([&](auto attr) {
-        auto decl = newDeclScope->getParamDecl();
+        auto decl = newDecl->getParamDecl();
         assert(decl && "Unknown declaration kind");
         name = decl.getName();
       });
@@ -45,19 +51,18 @@ void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
   if (!name) // Don't add for modules / param decls.
     return;
 
-  auto [it, inserted] = decls.insert({name, newDeclScope});
+  auto [it, inserted] = declsInScope.insert({name, newDecl});
   if (inserted)
     return;
-  Scope *entry = it->second;
+  DeclAST *entry = it->second;
 
-  auto diag = emitError(newDeclScope->getLoc(), "invalid redefinition of ")
-              << name;
+  auto diag = emitError(newDecl->getLoc(), "invalid redefinition of ") << name;
   diag.attachNote(entry->getLoc()) << "previous definition here";
   sharedState.errorOccurred = true;
 
   // If the existing entry was a declaration, mark it as erroneous so uses of it
   // don't create confusing errors.
-  newDeclScope->hasReferenceError = true;
+  newDecl->hasReferenceError = true;
   entry->hasReferenceError = true;
 }
 
@@ -80,69 +85,68 @@ void Scope::addToScope(Scope *newDeclScope, LitSharedState &sharedState) {
 //   foo()
 DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
 DeclResolver::~DeclResolver() {
-  // Run the destructors on all the scope objects to make sure any transitively
-  // allocated data is released.
-  for (Scope *scope : parsedDeclList)
-    scope->~Scope();
+  // Run the destructors on all the DeclAST objects to make sure any
+  // transitively allocated data is released.
+  for (DeclAST *decl : parsedDeclList)
+    decl->~DeclAST();
 }
 
 /// Add a new declaration that needs to be resolved.
-Scope &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> decl,
-                             Location loc, Scope *parentScope,
-                             LitLexerCursor cursor, LitLexerCursor endCursor,
-                             ssize_t indentation) {
-  void *rawScopePtr =
-      sharedState.persistentAllocator.Allocate(sizeof(Scope), alignof(Scope));
-  Scope *scope = new (rawScopePtr)
-      Scope(decl, loc, parentScope, cursor, endCursor, indentation);
-  parsedDeclList.push_back(scope);
+DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
+                               Location loc, DeclAST *parentDecl,
+                               LitLexerCursor cursor, LitLexerCursor endCursor,
+                               ssize_t indentation) {
+  void *rawDeclPtr = sharedState.persistentAllocator.Allocate(sizeof(DeclAST),
+                                                              alignof(DeclAST));
+  DeclAST *decl = new (rawDeclPtr)
+      DeclAST(irDecl, loc, parentDecl, cursor, endCursor, indentation);
+  parsedDeclList.push_back(decl);
 
   // If this is a type definition, remember in in a special table so we can look
   // up references from attributes.
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(*scope))
-    typeSymbolScopes[structDecl.getNameAttr()] = scope;
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl))
+    typeSymbolDecls[structDecl.getNameAttr()] = decl;
 
-  if (parentScope)
-    parentScope->addToScope(scope, sharedState);
+  if (parentDecl)
+    parentDecl->addToScope(decl, sharedState);
 
-  return *scope;
+  return *decl;
 }
 
 /// Add a new declaration that needs to be resolved.
-Scope &DeclResolver::addDecl(Operation *decl, Scope *parentScope,
-                             LitLexerCursor cursor, LitLexerCursor endCursor,
-                             ssize_t indentation) {
-  return addDecl(decl, decl->getLoc(), parentScope, cursor, endCursor,
-                 indentation);
+DeclAST &DeclResolver::addDecl(Operation *op, DeclAST *parentDecl,
+                               LitLexerCursor cursor, LitLexerCursor endCursor,
+                               ssize_t indentation) {
+  return addDecl(op, op->getLoc(), parentDecl, cursor, endCursor, indentation);
 }
 
-Scope &DeclResolver::addFullyResolvedDecl(Operation *decl, Scope *parentScope) {
-  auto &scope =
-      addDecl(decl, parentScope, LitLexerCursor(), LitLexerCursor(), 0);
-  scope.resolvedness = DeclResolvedness::fullyResolved;
-  return scope;
+DeclAST &DeclResolver::addFullyResolvedDecl(Operation *op,
+                                            DeclAST *parentDecl) {
+  auto &decl = addDecl(op, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+  decl.resolvedness = DeclResolvedness::fullyResolved;
+  return decl;
 }
 
 /// Add a declaration that is already fully resolved.
-Scope &DeclResolver::addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
-                                          Scope *parentScope) {
-  auto &scope =
-      addDecl(decl, loc, parentScope, LitLexerCursor(), LitLexerCursor(), 0);
-  scope.resolvedness = DeclResolvedness::fullyResolved;
-  return scope;
+DeclAST &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
+                                            DeclAST *parentDecl) {
+  auto &decl =
+      addDecl(attr, loc, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+  decl.resolvedness = DeclResolvedness::fullyResolved;
+  return decl;
 }
 
 /// If the specified type is a RefType that resolves to a (possibly
-/// parameterized) type, return the scope for the type and the parameters in
+/// parameterized) type, return the decl for the type and the parameters in
 /// the reference.  This returns null on error.
-std::pair<Scope *, ParamBindArrayAttr>
-DeclResolver::getScopeAndParamsFromType(Type type) {
+std::pair<DeclAST *, ParamBindArrayAttr>
+DeclResolver::getDeclAndParamsFromType(Type type) {
   auto refType = dyn_cast<RefType>(type);
   if (!refType)
     return {};
 
-  auto it = typeSymbolScopes.find(refType.getName().getAttr());
-  if (it == typeSymbolScopes.end())
+  auto it = typeSymbolDecls.find(refType.getName().getAttr());
+  if (it == typeSymbolDecls.end())
     return {};
   return {it->second, refType.getParamValues()};
 }
@@ -158,63 +162,63 @@ void DeclResolver::resolveAll(SMLoc loc) {
 
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
-LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
+LogicalResult DeclResolver::resolve(DeclAST &decl, DeclResolvedness howResolved,
                                     SMLoc loc) {
-  // If scope is already resolved enough, we're done.
-  if (scope.resolvedness >= howResolved) {
+  // If decl is already resolved enough, we're done.
+  if (decl.resolvedness >= howResolved) {
     // If decl is busted, then return failure.
-    return success(!scope.hasReferenceError);
+    return success(!decl.hasReferenceError);
   }
 
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
-  if (!declsCurrentlyProcessing.insert(&scope).second) {
+  if (!declsCurrentlyProcessing.insert(&decl).second) {
     emitError(sharedState.translateLocation(loc),
               "recursive reference to declaration");
     return failure();
   }
 
   // If the signature hasn't been parsed, do so.
-  if (scope.resolvedness < DeclResolvedness::signatureResolved) {
+  if (decl.resolvedness < DeclResolvedness::signatureResolved) {
     // Handle each operation that can be name bound.  We handle this by
     // restoring the lexer to the position where parsing can continue, calling
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
-    TypeSwitch<Scope &>(scope)
+    TypeSwitch<DeclAST &>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
-          LitLexer lexer(sharedState, scope.getCursor());
+          LitLexer lexer(sharedState, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl is
           // malformed and should not be referenced to silence downstream
           // errors.
-          if (failed(resolveSignature(op, lexer, scope)))
-            scope.hasReferenceError = true;
-          scope.getCursor() = lexer.getCursor();
+          if (failed(resolveSignature(op, lexer, decl)))
+            decl.hasReferenceError = true;
+          decl.getCursor() = lexer.getCursor();
         })
         .Case([&](ModuleOp op) { /*Nothing*/ })
         .Default([&](auto attr) {
-          emitError(scope.getLoc(),
+          emitError(decl.getLoc(),
                     "do not know how to resolve the signature of this decl!");
         });
-    scope.resolvedness = DeclResolvedness::signatureResolved;
+    decl.resolvedness = DeclResolvedness::signatureResolved;
   }
 
   // If the declaration hasn't been fully parsed and we need to, do so.
-  if (scope.resolvedness < DeclResolvedness::fullyResolved &&
+  if (decl.resolvedness < DeclResolvedness::fullyResolved &&
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
-    TypeSwitch<Scope &>(scope)
+    TypeSwitch<DeclAST &>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
-          LitLexer lexer(sharedState, scope.getCursor());
-          if (resolveBody(op, lexer, scope))
+          LitLexer lexer(sharedState, decl.getCursor());
+          if (resolveBody(op, lexer, decl))
             return;
 
           // If the final parse of the declaration didn't match the initial
           // parse, report an error about unrecognized tokens at end of
           // declaration.
-          if (!scope.isMatchingEndCursor(lexer.getCursor()) &&
-              !scope.hasReferenceError) {
+          if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
+              !decl.hasReferenceError) {
             if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
                                        LitToken::kw_class, LitToken::kw_var))
               lexer.emitError("definition isn't on its own line at the correct "
@@ -225,15 +229,15 @@ LogicalResult DeclResolver::resolve(Scope &scope, DeclResolvedness howResolved,
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto attr) {
-          emitError(scope.getLoc(),
+          emitError(decl.getLoc(),
                     "do not know how to resolve the body of this decl!");
         });
-    scope.resolvedness = DeclResolvedness::fullyResolved;
+    decl.resolvedness = DeclResolvedness::fullyResolved;
   }
 
-  declsCurrentlyProcessing.erase(&scope);
+  declsCurrentlyProcessing.erase(&decl);
   // If decl is busted, then return failure.
-  return success(!scope.hasReferenceError);
+  return success(!decl.hasReferenceError);
 }
 
 //===----------------------------------------------------------------------===//
@@ -248,7 +252,7 @@ struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
   std::vector<Location> inputLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParserBase &p, Scope &scope) {
+  ParseResult parseOptionalMetaSignature(LitParserBase &p, DeclAST &decl) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -264,7 +268,7 @@ struct ParsedMetaSignature {
       Type paramType;
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.parseType(paramType, scope, None))
+          p.parseType(paramType, decl, None))
         return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       return success();
@@ -276,12 +280,12 @@ struct ParsedMetaSignature {
     return success();
   }
 
-  /// Add Scope objects for each declared parameter and insert them into the
+  /// Add DeclAST objects for each declared parameter and insert them into the
   /// specified scope for the declaration, so name lookup will find them.
-  void addToScope(LitSharedState &sharedState, Scope &scope) {
+  void addToScope(LitSharedState &sharedState, DeclAST &decl) {
     auto &declResolver = *sharedState.declResolver;
     for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs))
-      declResolver.addFullyResolvedDecl(paramDecl, loc, &scope);
+      declResolver.addFullyResolvedDecl(paramDecl, loc, &decl);
   }
 };
 } // namespace
@@ -300,7 +304,7 @@ struct ParsedParam {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  ParseResult parse(LitParserBase &p, Scope &scope) {
+  ParseResult parse(LitParserBase &p, DeclAST &declScope) {
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
@@ -308,7 +312,7 @@ struct ParsedParam {
       return failure();
 
     if (p.consumeIf(LitToken::colon)) {
-      if (p.parseType(type, scope, None))
+      if (p.parseType(type, declScope, None))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
@@ -327,7 +331,7 @@ struct ParsedParam {
 ///
 /// This returns failure after emitting an error when a type checking problem is
 /// detected.
-static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
+static ParseResult checkFunctionSignature(DeclAST &declScope, LITFuncOp defDecl,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           Type &resultType) {
@@ -337,7 +341,7 @@ static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
   auto getSelfTypeForMethod = [&]() -> Type {
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
-    Scope *parent = declScope.getParentScope();
+    DeclAST *parent = declScope.getParentDecl();
     if (!parent || !isa<LITStructDeclOp>(*parent))
       return Type();
     auto parentStruct = cast<LITStructDeclOp>(*parent);
@@ -406,13 +410,13 @@ static ParseResult checkFunctionSignature(Scope &declScope, LITFuncOp defDecl,
 /// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
 /// value_parammarker ::= "/" | "*" | "**"
 ///
-LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
-                                             Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
+                                             DeclAST &decl) {
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
   SmallVector<ParsedParam> params;
-  if (metaSignature.parseOptionalMetaSignature(p, scope) ||
+  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -420,11 +424,11 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // generic signature parsing so types used in the signature list resolve to
   // enclosing scopes, and we add them before the value signature list so the
   // types and parameters can resolve to the bound values.
-  metaSignature.addToScope(sharedState, scope);
+  metaSignature.addToScope(sharedState, decl);
 
   if (!p.consumeIf(LitToken::r_paren)) {
     if (p.parseCommaSeparatedList([&]() {
-          return params.emplace_back(ParsedParam()).parse(p, scope);
+          return params.emplace_back(ParsedParam()).parse(p, decl);
         }) ||
         p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
       return failure();
@@ -438,7 +442,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   // it though.
   Type resultType;
   if (p.consumeIf(LitToken::minus_greater)) {
-    if (p.parseType(resultType, scope, None))
+    if (p.parseType(resultType, decl, None))
       return failure();
   } else {
     resultType = KGEN::NoneType::get(getContext());
@@ -449,13 +453,12 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
 
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (checkFunctionSignature(scope, defDecl, metaSignature, params,
-                             resultType)) {
+  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType)) {
     // If the function wasn't type checked correctly, uses of it may be broken.
-    scope.hasReferenceError = true;
+    decl.hasReferenceError = true;
   }
 
-  auto builder = scope.getDeclEndBuilder();
+  auto builder = decl.getDeclEndBuilder();
 
   // We have parsed the signature but skipped over the actual types, we use
   // unresolved types for now.
@@ -480,23 +483,22 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
       p.emitError(param.initValue->getLoc(), "TODO: No default values yet");
   }
 
-  defDecl.setValueParamNamesAttr(
-      StringArrayAttr::get(getContext(), paramNames));
-  defDecl.setType(builder.getFunctionType(paramTypes, resultType));
-  defDecl.setParamDeclsAttr(
+  defOp.setValueParamNamesAttr(StringArrayAttr::get(getContext(), paramNames));
+  defOp.setType(builder.getFunctionType(paramTypes, resultType));
+  defOp.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
-  defDecl.getBody()->addArguments(paramTypes, paramLocs);
+  defOp.getBody()->addArguments(paramTypes, paramLocs);
 
   // Set up the body of the def, creating declarations for the value parameters
   // and adding them to the symbol table.
-  for (auto [arg, name] : llvm::zip(defDecl.getBody()->getArguments(),
-                                    defDecl.getValueParamNames())) {
+  for (auto [arg, name] :
+       llvm::zip(defOp.getBody()->getArguments(), defOp.getValueParamNames())) {
     // Create a mutable var.decl that references to the name can load from.
     // TODO: This is the wrong default, reconsider this for 'fn's when we have
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    addFullyResolvedDecl(varDecl, &scope);
+    addFullyResolvedDecl(varDecl, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -504,23 +506,23 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defDecl, LitLexer &lexer,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
-                                      Scope &scope) {
-  if (LitParserBase::parseSuite(scope, lexer))
+ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
+                                      DeclAST &decl) {
+  if (LitParserBase::parseSuite(decl, lexer))
     return failure();
 
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
-  Block *bodyBlock = defDecl.getBody();
+  Block *bodyBlock = defOp.getBody();
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
-    if (isa<KGEN::NoneType>(defDecl.getResultType()) &&
-        defDecl.getResultParamTypes().empty()) {
+    auto loc = decl.getLoc();
+    if (isa<KGEN::NoneType>(defOp.getResultType()) &&
+        defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
-      Value noneVal = b.create<NoneValueOp>(defDecl->getLoc());
-      b.create<ReturnOp>(defDecl->getLoc(), ArrayRef<TypedAttr>(), noneVal);
+      Value noneVal = b.create<NoneValueOp>(loc);
+      b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
-      Location endLoc =
-          bodyBlock->empty() ? defDecl.getLoc() : bodyBlock->back().getLoc();
+      Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
       emitError(endLoc, "return expected at end of 'def' with results");
     }
   }
@@ -535,29 +537,29 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defDecl, LitLexer &lexer,
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression [TODO]
 ///
-LogicalResult DeclResolver::resolveSignature(VarDeclOp varDecl, LitLexer &lexer,
-                                             Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
+                                             DeclAST &decl) {
   LitParserBase p(lexer);
   Type type;
   ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.
   if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
-      p.parseType(type, scope, scope.getIndentation()))
+      p.parseType(type, decl, decl.getIndentation()))
     return failure();
 
-  varDecl.getResult().setType(POP::PointerType::get(type));
+  varOp.getResult().setType(POP::PointerType::get(type));
 
   if (p.consumeIf(LitToken::equal)) {
     p.emitError("var initializers not supported yet");
-    if (p.parseExpression(initValue, scope.getIndentation()))
+    if (p.parseExpression(initValue, decl.getIndentation()))
       return failure();
   }
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
-                                      Scope &scope) {
+                                      DeclAST &decl) {
   // Nothing to do for a var decl, we parse everything as part of its signature.
   // We could move to parsing an initializer expression lazily when a type is
   // present if there were a reason to do that (e.g. more laziness desired) in
@@ -572,24 +574,24 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
-LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structDecl,
-                                             LitLexer &lexer, Scope &scope) {
+LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
+                                             LitLexer &lexer, DeclAST &decl) {
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
-  if (metaSignature.parseOptionalMetaSignature(p, scope) ||
+  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  structDecl.setParamDeclsAttr(
+  structOp.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
 
   // Add the meta parameters to the struct's symbol table.
-  metaSignature.addToScope(sharedState, scope);
+  metaSignature.addToScope(sharedState, decl);
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LITStructDeclOp op, LitLexer &lexer,
-                                      Scope &scope) {
-  return LitParserBase::parseSuite(scope, lexer);
+ParseResult DeclResolver::resolveBody(LITStructDeclOp structOp, LitLexer &lexer,
+                                      DeclAST &decl) {
+  return LitParserBase::parseSuite(decl, lexer);
 }
