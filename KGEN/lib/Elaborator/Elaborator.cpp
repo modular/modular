@@ -1519,6 +1519,19 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     return result;
   }
 
+  // If a default has been provided, then use it.
+  if (Optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl()) {
+    // If the SymbolConstant exists, then the callee must exist.
+    Operation *defaultImplCallee = lookupCallee(defaultImpl->getSymbol());
+    assert(defaultImplCallee != nullptr && "expected defaultImpl to exist");
+    // The default impl must be a generator.
+    GeneratorOp gen = cast<GeneratorOp>(defaultImplCallee);
+    auto funcs =
+        getAllInstantiations({gen, declAndInputParams.second}, inlined);
+    result.append(funcs.begin(), funcs.end());
+    return result;
+  }
+
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
