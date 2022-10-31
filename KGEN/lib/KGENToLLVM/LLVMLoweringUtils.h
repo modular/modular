@@ -47,6 +47,13 @@ private:
   mlir::DataLayout dl;
 };
 
+//===----------------------------------------------------------------------===//
+// Utility Functions
+//===----------------------------------------------------------------------===//
+
+/// Insert an alloca at the top of the function body.
+Value createAllocaAtEntry(Operation *op, Type type, PatternRewriter &rewriter);
+
 } // namespace M::KGEN
 
 #endif // KGEN_LLVM_LOWERING_UTILS_H

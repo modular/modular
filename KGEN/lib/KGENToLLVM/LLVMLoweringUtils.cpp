@@ -152,3 +152,20 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
                                             {contentType, discrType});
   });
 }
+
+//===----------------------------------------------------------------------===//
+// Utility Functions
+//===----------------------------------------------------------------------===//
+
+Value KGEN::createAllocaAtEntry(Operation *op, Type type,
+                                PatternRewriter &rewriter) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(
+      &op->getParentOfType<mlir::FunctionOpInterface>()
+           .getFunctionBody()
+           .front());
+  Value one = rewriter.create<LLVM::ConstantOp>(op->getLoc(),
+                                                rewriter.getI64IntegerAttr(1));
+  return rewriter.create<LLVM::AllocaOp>(op->getLoc(),
+                                         LLVM::LLVMPointerType::get(type), one);
+}

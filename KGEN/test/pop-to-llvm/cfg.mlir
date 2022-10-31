@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -pass-pipeline='lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm),llvm.func(reconcile-unrealized-casts)' | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -pass-pipeline='lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm,lower-scf-to-llvm),llvm.func(reconcile-unrealized-casts)' | FileCheck %s
 
 // CHECK-LABEL: @variant_visit
 // CHECK-SAME: %[[A:.*]]:
@@ -79,4 +79,26 @@ kgen.func @variant_visit(%a: !pop.variant<i1, i2, i3, i4>) {
     pop.yield
   }
   kgen.return
+}
+
+// -----
+
+// Ensure `pop.variant.visit` nested inside SCF ops can be lowered.
+
+// CHECK-LABEL: @visit_in_if
+kgen.func @visit_in_if(%cond: i1, %variant: !pop.variant<i32, i64>, %a: index, %b: index) -> index {
+  %0 = scf.if %cond -> index {
+    // CHECK-NOT: pop.variant.visit
+    %1 = pop.variant.visit %variant : !pop.variant<i32, i64> -> index
+    case (%v: i32) {
+      pop.yield %a : index
+    }
+    case (%v: i64) {
+      pop.yield %b : index
+    }
+    scf.yield %1 : index
+  } else {
+    scf.yield %a : index
+  }
+  kgen.return %0 : index
 }
