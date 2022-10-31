@@ -29,7 +29,7 @@ class LitLexer;
 class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
-class DeclAST;
+class ASTDecl;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -47,64 +47,64 @@ public:
   void resolveAll(llvm::SMLoc loc);
 
   /// Add a new declaration that needs to be resolved.
-  DeclAST &addDecl(Operation *decl, DeclAST *parentDecl, LitLexerCursor cursor,
+  ASTDecl &addDecl(Operation *decl, ASTDecl *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
-  DeclAST &addFullyResolvedDecl(Operation *decl, DeclAST *parentDecl);
+  ASTDecl &addFullyResolvedDecl(Operation *decl, ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
-  DeclAST &addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
-                                DeclAST *parentDecl);
+  ASTDecl &addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
+                                ASTDecl *parentDecl);
 
   /// Add a "magic" declaration that has special handling to this scope.  This
   /// is used for builtin machinery internal to the language.
-  DeclAST &addMagicDecl(StringRef name, MagicDeclKind kind,
-                        DeclAST *parentDecl);
+  ASTDecl &addMagicDecl(StringRef name, MagicDeclKind kind,
+                        ASTDecl *parentDecl);
 
   /// If the specified type is a RefType that resolves to a (possibly
   /// parameterized) type, return the decl for the type and the parameters in
   /// the reference.  This returns null on error.
-  std::pair<DeclAST *, ParamBindArrayAttr> getDeclAndParamsFromType(Type type);
+  std::pair<ASTDecl *, ParamBindArrayAttr> getDeclAndParamsFromType(Type type);
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
-  LogicalResult resolve(DeclAST &decl, DeclResolvedness howResolved,
+  LogicalResult resolve(ASTDecl &decl, DeclResolvedness howResolved,
                         llvm::SMLoc loc);
 
 private:
-  DeclAST &addDecl(PointerUnion<Operation *, Attribute> decl, Location loc,
-                   StringAttr name, DeclAST *parentDecl, LitLexerCursor cursor,
+  ASTDecl &addDecl(PointerUnion<Operation *, Attribute> decl, Location loc,
+                   StringAttr name, ASTDecl *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, DeclAST &decl);
-  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, DeclAST &decl);
+  LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
 
   LogicalResult resolveSignature(LITStructDeclOp op, LitLexer &lexer,
-                                 DeclAST &decl);
-  ParseResult resolveBody(LITStructDeclOp op, LitLexer &lexer, DeclAST &decl);
+                                 ASTDecl &decl);
+  ParseResult resolveBody(LITStructDeclOp op, LitLexer &lexer, ASTDecl &decl);
 
-  LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, DeclAST &decl);
-  ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, DeclAST &decl);
+  LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
 
 private:
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
 
   /// This is a mapping of MLIR symbol to decl for types.
-  DenseMap<StringAttr, DeclAST *> typeSymbolDecls;
+  DenseMap<StringAttr, ASTDecl *> typeSymbolDecls;
 
   /// This array holds all of the parsed declarations in a deterministic order.
-  std::vector<DeclAST *> parsedDeclList;
+  std::vector<ASTDecl *> parsedDeclList;
 
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose
   /// cyclic dependencies.
-  DenseSet<DeclAST *> declsCurrentlyProcessing;
+  DenseSet<ASTDecl *> declsCurrentlyProcessing;
 
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;

@@ -30,7 +30,7 @@
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ExprEmitter;
-class DeclAST;
+class ASTDecl;
 
 /// Instances of LValue model a dynamic address, which will always have pointer
 /// type.  It is described with an explicit type because the type of the
@@ -185,7 +185,7 @@ public:
   LitSharedState &shared;
 
   /// This is scope to resolve declaration references against.
-  DeclAST &declScope;
+  ASTDecl &declScope;
 
   /// This is the current builder to emit into if we are allowed to generate a
   /// value.  This will be None when in a context that only allows parameters.
@@ -196,7 +196,7 @@ public:
   /// location.
   Operation *varDeclCursor;
 
-  ExprEmitter(LitSharedState &shared, DeclAST &declScope,
+  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
               Optional<OpBuilder> builder, Operation *varDeclCursor)
       : shared(shared), declScope(declScope), builder(builder),
         varDeclCursor(varDeclCursor) {}
@@ -247,7 +247,7 @@ public:
 
   /// Perform a name lookup in the current scope and return the named
   /// declaration.  This emits an error and returns null on error.
-  DeclAST *lookupDecl(StringRef name, SMLoc loc);
+  ASTDecl *lookupDecl(StringRef name, SMLoc loc);
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {

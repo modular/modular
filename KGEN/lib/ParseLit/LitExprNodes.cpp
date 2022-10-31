@@ -10,7 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitExprNodes.h"
-#include "LitDeclAST.h"
+#include "LitASTDecl.h"
 #include "LitDecls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -145,8 +145,8 @@ Type ExprEmitter::emitType(const ExprNode *node) {
 
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
-DeclAST *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
-  DeclAST *lookupResult = declScope.lookup(StringAttr::get(getContext(), name));
+ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
+  ASTDecl *lookupResult = declScope.lookup(StringAttr::get(getContext(), name));
   if (!lookupResult)
     return emitError(loc, "unknown type name '" + name + "'"), nullptr;
 
@@ -232,7 +232,7 @@ Type NoneLiteralNode::emitType(ExprEmitter &emitter) const {
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
-  DeclAST *decl = emitter.declScope.lookup(nameAttr);
+  ASTDecl *decl = emitter.declScope.lookup(nameAttr);
 
   // Handle the case where lookup fails.
   if (!decl) {
@@ -292,7 +292,7 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
   // Lookup the identifier.
-  DeclAST *decl = emitter.lookupDecl(spelling, getLoc());
+  ASTDecl *decl = emitter.lookupDecl(spelling, getLoc());
   if (!decl)
     return Type();
   auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
@@ -541,7 +541,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
   }
 
   // Lookup the identifier.
-  DeclAST *decl = emitter.lookupDecl(baseDRE->spelling, getLoc());
+  ASTDecl *decl = emitter.lookupDecl(baseDRE->spelling, getLoc());
   if (!decl)
     return Type();
 

@@ -10,7 +10,7 @@
 
 #include "KGEN/ParseLit.h"
 
-#include "LitDeclAST.h"
+#include "LitASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
 #include "LitParserBase.h"
@@ -68,7 +68,7 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 
 /// Add declarations for magic things to the builtins decl.
 static void addBuiltinDecls(LitSharedState &sharedState,
-                            DeclAST &builtinsDecl) {
+                            ASTDecl &builtinsDecl) {
   // Add a declarations for "index" and "None" types.
   sharedState.indexDecl = &sharedState.declResolver->addMagicDecl(
       "index", MagicDeclKind::kIndexType, &builtinsDecl);
@@ -99,13 +99,13 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // TODO: Add these:
   // https://docs.python.org/3/library/functions.html#built-in-funcs
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
-  DeclAST &builtinsDecl = sharedState.declResolver->addDecl(
+  ASTDecl &builtinsDecl = sharedState.declResolver->addDecl(
       *module, nullptr, lexer.getCursor(), lexer.getCursor(), -1);
   addBuiltinDecls(sharedState, builtinsDecl);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
-  DeclAST &fileScope = sharedState.declResolver->addDecl(
+  ASTDecl &fileScope = sharedState.declResolver->addDecl(
       *module, &builtinsDecl, lexer.getCursor(), lexer.getCursor(), -1);
 
   // Parse the file.

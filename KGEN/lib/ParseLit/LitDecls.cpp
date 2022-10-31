@@ -9,7 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
-#include "LitDeclAST.h"
+#include "LitASTDecl.h"
 #include "LitExprs.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
@@ -27,11 +27,11 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// DeclAST
+// ASTDecl
 //===----------------------------------------------------------------------===//
 
 /// If this is a ParamDecl, return it otherwise return null.
-ParamDeclAttr DeclAST::getParamDecl() const {
+ParamDeclAttr ASTDecl::getParamDecl() const {
   auto attr = dyn_cast_or_null<Attribute>(irDecl);
   return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
 }
@@ -55,21 +55,21 @@ ParamDeclAttr DeclAST::getParamDecl() const {
 //   foo()
 DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
 DeclResolver::~DeclResolver() {
-  // Run the destructors on all the DeclAST objects to make sure any
+  // Run the destructors on all the ASTDecl objects to make sure any
   // transitively allocated data is released.
-  for (DeclAST *decl : parsedDeclList)
-    decl->~DeclAST();
+  for (ASTDecl *decl : parsedDeclList)
+    decl->~ASTDecl();
 }
 
 /// Add a new declaration that needs to be resolved.
-DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
+ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
                                Location loc, StringAttr name,
-                               DeclAST *parentDecl, LitLexerCursor cursor,
+                               ASTDecl *parentDecl, LitLexerCursor cursor,
                                LitLexerCursor endCursor, ssize_t indentation) {
-  void *rawDeclPtr = sharedState.persistentAllocator.Allocate(sizeof(DeclAST),
-                                                              alignof(DeclAST));
-  DeclAST *decl = new (rawDeclPtr)
-      DeclAST(irDecl, loc, parentDecl, cursor, endCursor, indentation);
+  void *rawDeclPtr = sharedState.persistentAllocator.Allocate(sizeof(ASTDecl),
+                                                              alignof(ASTDecl));
+  ASTDecl *decl = new (rawDeclPtr)
+      ASTDecl(irDecl, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this is a type definition, remember in in a special table so we can look
@@ -84,7 +84,7 @@ DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
 
   auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
   if (!inserted) {
-    DeclAST *existing = it->second;
+    ASTDecl *existing = it->second;
     auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
     diag.attachNote(existing->getLoc()) << "previous definition here";
     sharedState.errorOccurred = true;
@@ -98,7 +98,7 @@ DeclAST &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
 }
 
 /// Add a new declaration that needs to be resolved.
-DeclAST &DeclResolver::addDecl(Operation *op, DeclAST *parentDecl,
+ASTDecl &DeclResolver::addDecl(Operation *op, ASTDecl *parentDecl,
                                LitLexerCursor cursor, LitLexerCursor endCursor,
                                ssize_t indentation) {
   // Get the name for the entity.
@@ -114,16 +114,16 @@ DeclAST &DeclResolver::addDecl(Operation *op, DeclAST *parentDecl,
                  indentation);
 }
 
-DeclAST &DeclResolver::addFullyResolvedDecl(Operation *op,
-                                            DeclAST *parentDecl) {
+ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op,
+                                            ASTDecl *parentDecl) {
   auto &decl = addDecl(op, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
 
 /// Add a declaration that is already fully resolved.
-DeclAST &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
-                                            DeclAST *parentDecl) {
+ASTDecl &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
+                                            ASTDecl *parentDecl) {
   auto &decl = addDecl(attr, loc, attr.getName(), parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
@@ -132,8 +132,8 @@ DeclAST &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
 
 /// Add a "magic" declaration that has special handling to this scope.  This
 /// is used for builtin machinery internal to the language.
-DeclAST &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
-                                    DeclAST *parentDecl) {
+ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
+                                    ASTDecl *parentDecl) {
   assert(parentDecl && "top level isn't magic");
   auto &decl = addDecl(ParamDeclAttr(), parentDecl->getLoc(),
                        StringAttr::get(getContext(), name), parentDecl,
@@ -146,7 +146,7 @@ DeclAST &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
 /// If the specified type is a RefType that resolves to a (possibly
 /// parameterized) type, return the decl for the type and the parameters in
 /// the reference.  This returns null on error.
-std::pair<DeclAST *, ParamBindArrayAttr>
+std::pair<ASTDecl *, ParamBindArrayAttr>
 DeclResolver::getDeclAndParamsFromType(Type type) {
   auto refType = dyn_cast<RefType>(type);
   if (!refType)
@@ -169,7 +169,7 @@ void DeclResolver::resolveAll(SMLoc loc) {
 
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
-LogicalResult DeclResolver::resolve(DeclAST &decl, DeclResolvedness howResolved,
+LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
                                     SMLoc loc) {
   // If decl is already resolved enough, we're done.
   if (decl.resolvedness >= howResolved) {
@@ -191,7 +191,7 @@ LogicalResult DeclResolver::resolve(DeclAST &decl, DeclResolvedness howResolved,
     // restoring the lexer to the position where parsing can continue, calling
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
-    TypeSwitch<DeclAST &>(decl)
+    TypeSwitch<ASTDecl &>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
@@ -214,7 +214,7 @@ LogicalResult DeclResolver::resolve(DeclAST &decl, DeclResolvedness howResolved,
   if (decl.resolvedness < DeclResolvedness::fullyResolved &&
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
-    TypeSwitch<DeclAST &>(decl)
+    TypeSwitch<ASTDecl &>(decl)
         .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
@@ -259,7 +259,7 @@ struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
   std::vector<Location> inputLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParserBase &p, DeclAST &decl) {
+  ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -287,9 +287,9 @@ struct ParsedMetaSignature {
     return success();
   }
 
-  /// Add DeclAST objects for each declared parameter and insert them into the
+  /// Add ASTDecl objects for each declared parameter and insert them into the
   /// specified scope for the declaration, so name lookup will find them.
-  void addToScope(LitSharedState &sharedState, DeclAST &decl) {
+  void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
     for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs))
       declResolver.addFullyResolvedDecl(paramDecl, loc, &decl);
@@ -311,7 +311,7 @@ struct ParsedParam {
   //   1) Only one /, *, and ** parameter may exist in the parameter list.
   //   2) They are specified in that order.
   //   3) These do not permit default arguments.
-  ParseResult parse(LitParserBase &p, DeclAST &declScope) {
+  ParseResult parse(LitParserBase &p, ASTDecl &declScope) {
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
@@ -338,7 +338,7 @@ struct ParsedParam {
 ///
 /// This returns failure after emitting an error when a type checking problem is
 /// detected.
-static ParseResult checkFunctionSignature(DeclAST &declScope, LITFuncOp defDecl,
+static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           Type &resultType) {
@@ -348,7 +348,7 @@ static ParseResult checkFunctionSignature(DeclAST &declScope, LITFuncOp defDecl,
   auto getSelfTypeForMethod = [&]() -> Type {
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
-    DeclAST *parent = declScope.getParentDecl();
+    ASTDecl *parent = declScope.getParentDecl();
     if (!parent || !isa<LITStructDeclOp>(*parent))
       return Type();
     auto parentStruct = cast<LITStructDeclOp>(*parent);
@@ -418,7 +418,7 @@ static ParseResult checkFunctionSignature(DeclAST &declScope, LITFuncOp defDecl,
 /// value_parammarker ::= "/" | "*" | "**"
 ///
 LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
-                                             DeclAST &decl) {
+                                             ASTDecl &decl) {
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
@@ -514,7 +514,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
 }
 
 ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
-                                      DeclAST &decl) {
+                                      ASTDecl &decl) {
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
 
@@ -545,7 +545,7 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 ///                 | "var" identifier "=" expression [TODO]
 ///
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
-                                             DeclAST &decl) {
+                                             ASTDecl &decl) {
   LitParserBase p(lexer);
   Type type;
   ExprNode *initValue = nullptr;
@@ -566,7 +566,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 }
 
 ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
-                                      DeclAST &decl) {
+                                      ASTDecl &decl) {
   // Nothing to do for a var decl, we parse everything as part of its signature.
   // We could move to parsing an initializer expression lazily when a type is
   // present if there were a reason to do that (e.g. more laziness desired) in
@@ -582,7 +582,7 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
-                                             LitLexer &lexer, DeclAST &decl) {
+                                             LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
@@ -599,6 +599,6 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
 }
 
 ParseResult DeclResolver::resolveBody(LITStructDeclOp structOp, LitLexer &lexer,
-                                      DeclAST &decl) {
+                                      ASTDecl &decl) {
   return LitParserBase::parseSuite(decl, lexer);
 }
