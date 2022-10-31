@@ -60,9 +60,22 @@ public:
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
+  void setParameterValue(StringAttr name, Attribute value) {
+    assert(!paramValues.count(name) && "parameter already declared!");
+    paramValues[name] = value;
+  }
   void setParameterValue(ParamDeclAttr decl, Attribute value) {
-    assert(!paramValues.count(decl.getName()) && "parameter already declared!");
+    setParameterValue(decl.getName(), value);
+  }
+
+  /// Set or overwrite the value of a parameter.
+  void setOrOverwriteParameterValue(ParamDeclAttr decl, Attribute value) {
     paramValues[decl.getName()] = value;
+  }
+
+  /// Iterate over the current parameter values.
+  const DenseMap<StringAttr, Attribute> &getParameterValues() const {
+    return paramValues;
   }
 
   /// Given a generic parameter expression, substitute known values for

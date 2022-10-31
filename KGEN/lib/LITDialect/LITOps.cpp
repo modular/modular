@@ -60,7 +60,7 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                                               {getResultTypes()})) ||
       // See if the parameter definitions and uses within the generator are
       // structured correctly.
-      failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
+      failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they
@@ -209,7 +209,7 @@ LogicalResult LITStructDeclOp::verify() {
 /// Verify parameter uses.
 LogicalResult
 LITStructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+  return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
 }
 
 void LITStructDeclOp::build(OpBuilder &builder, OperationState &result,

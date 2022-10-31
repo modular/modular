@@ -310,7 +310,7 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
+  if (failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they
@@ -405,9 +405,8 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // See if the parameter definitions and uses within the func are
   // structured correctly.
-  FailureOr<ParameterDeclsAndUses> paramInfo =
-      ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
-  if (failed(paramInfo))
+  ParameterDeclsAndUses paramInfo;
+  if (failed(paramInfo.calculateAndVerify(*this, symbolTable)))
     return failure();
 
   // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
@@ -418,7 +417,7 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // allow-list of operations that can use parameters.  This could be useful if
   // we want something to be able to use the result parameters of a call or
   // something.  Until then, a blanket ban on parameter use is sufficient.
-  for (auto &[usingOp, uses] : paramInfo.value().usersAndDeclarers) {
+  for (auto &[usingOp, uses] : paramInfo.usersAndDeclarers) {
     if (!uses.empty()) {
       auto diag = usingOp->emitError("invalid use of parameter ")
                   << uses[0].getName() << " in kgen.func";
@@ -476,7 +475,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  if (failed(ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable)))
+  if (failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
     return failure();
 
   // If an evaluator was specified, verify its signature.
@@ -966,12 +965,6 @@ FunctionType RegionBodyOp::getFunctionType() {
                            body->getTerminator()->getOperandTypes());
 }
 
-/// Verify the parameter definitions and uses within the region body.
-LogicalResult
-RegionBodyOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
-}
-
 LogicalResult RegionBodyOp::verifyRegions() {
   return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
 }
@@ -1125,7 +1118,7 @@ LogicalResult StructDeclOp::verifyRegions() {
 /// Verify parameter uses.
 LogicalResult
 StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return ParameterDeclsAndUses::calculateAndVerify(*this, symbolTable);
+  return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
 }
 
 /// Parse a special syntax for the struct fields.

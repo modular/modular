@@ -335,10 +335,6 @@ struct RegionReturn {
   /// This is the set of declarations bound by the returned expressions when the
   /// call is popped off the evaluator stack.
   ParamDeclArrayAttr callerParamDecls;
-
-  /// This flag indicates whether processing the region return command should
-  /// pop a parameter scope.
-  bool popParamScope = false;
 };
 
 /// Commands are either operations to process or RegionReturn commands.  The
@@ -368,6 +364,7 @@ public:
   /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
+  ParameterRewriter(const ParameterRewriter &) = delete;
   ~ParameterRewriter();
 
   /// Return the evaluator currently being used for our rewrite.  This is the
@@ -430,7 +427,15 @@ private:
                                    ArrayRef<ParamBindAttr> inputValues,
                                    bool inlined);
 
-  // Process either a `kgen.addressof` op or a `kgen.call` op.
+  /// Evaluate the parameter expressions in an operation.
+  static void evaluateParameters(ParameterEvaluator &evaluator, Operation *op);
+
+  /// Partially evaluate the parameter expressions nested under this operation.
+  /// Operations in a region body need to be made parametrically "isolated"
+  /// before the bodies can be processed.
+  void partiallyEvaluateRegions(Operation *call);
+
+  /// Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
   LogicalResult processGeneratorUser(
       OpT user,
@@ -602,11 +607,9 @@ LogicalResult ParameterRewriter::rewriteOps(
         return error(rr->returnLoc, value.takeError());
       returnedParams.push_back(value.takeValue());
     }
-    if (rr->popParamScope) {
-      // Next, pop the evaluator for the now-returned region.
-      assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
-      evaluators.pop_back();
-    }
+    // Next, pop the evaluator for the now-returned region.
+    assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
+    evaluators.pop_back();
 
     // Bind each of the result parameter declarations in the callers context.
     assert(rr->callerParamDecls.size() == returnedParams.size());
@@ -844,11 +847,99 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
   return ArrayAttr::get(call->getContext(), boundInputParams);
 }
 
+void ParameterRewriter::evaluateParameters(ParameterEvaluator &evaluator,
+                                           Operation *op) {
+  // Scan all the attributes and types to look for uses of parameters.  We let
+  // the walker scan the region hierarchy.
+  SmallVector<NamedAttribute> newAttrs;
+  bool changedAttrs = false;
+  for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
+    if (namedAttr.getName() == "paramDecls") {
+      newAttrs.push_back(namedAttr);
+      continue;
+    }
+
+    newAttrs.push_back(
+        NamedAttribute(namedAttr.getName(),
+                       evaluator.getReboundAttribute(namedAttr.getValue())));
+    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  }
+  if (changedAttrs)
+    op->setAttrs(newAttrs);
+
+  // Check the types of results to find any parameters embedded in their
+  // types.  We don't have to check operands because they are always checked
+  // when being defined.
+  for (OpResult result : op->getResults())
+    result.setType(evaluator.getReboundType(result.getType()));
+
+  // Scan the region list if present.  The walker will automatically recurse
+  // for us, but we have to check the block arguments.
+  if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
+    for (auto &region : op->getRegions())
+      for (auto &block : region)
+        for (Value arg : block.getArguments())
+          arg.setType(evaluator.getReboundType(arg.getType()));
+  }
+}
+
+void ParameterRewriter::partiallyEvaluateRegions(Operation *call) {
+  // FIXME: Nested regions get specialized O(N^2) times. It would be more
+  // efficient to not partially specialize and keep folding parameter scopes
+  // until we actually need to fully evaluate everything.
+  std::function<void(KGENDeclInterface, const ParameterEvaluator &)>
+      recursivelyPartiallyEvaluate = [&](KGENDeclInterface decl,
+                                         const ParameterEvaluator &evaluator) {
+        // Clone the current parameter scope and fold it into a use list,
+        // using the call operation as the virtual root.
+        ParameterDeclsAndUses localScope;
+        for (auto [name, value] : evaluator.getParameterValues()) {
+          auto decl =
+              ParamDeclAttr::get(name, cast<TypedAttr>(value).getType());
+          localScope.decls.try_emplace(name, std::make_pair(call, decl));
+        }
+
+        // Compute the parameter uses in this region.
+        localScope.calculate(decl);
+
+        // Go ahead and process constant expressions first.
+        ParameterEvaluator localEvaluator;
+        for (auto [name, value] : evaluator.getParameterValues())
+          localEvaluator.setParameterValue(name, value);
+        for (Operation *op : localScope.constExprOps)
+          evaluateParameters(localEvaluator, op);
+
+        for (auto &[op, _] : localScope.usersAndDeclarers) {
+          // Leave any locally-declared parameters as unresolved.
+          for (ParamDeclAttr decl : getParamDecls(op)) {
+            localEvaluator.setOrOverwriteParameterValue(
+                decl, ParamDeclRefAttr::get(decl.getName(), decl.getType()));
+          }
+          evaluateParameters(localEvaluator, op);
+        }
+
+        // Recurse on any nested declarations.
+        for (KGENDeclInterface nestedDecl : localScope.nestedDecls)
+          recursivelyPartiallyEvaluate(nestedDecl, localEvaluator);
+      };
+
+  for (Region &region : call->getRegions()) {
+    auto topLevelDecl = cast<KGENDeclInterface>(region.front().front());
+    recursivelyPartiallyEvaluate(topLevelDecl, getEvaluator());
+  }
+}
+
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
     Operation *user, ArrayRef<ParamDeclAttr> decls,
     ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool inlined) {
+  if (!isa<GeneratorInterfaceOp>(user)) {
+    // Partially evaluate any nested regions.
+    partiallyEvaluateRegions(user);
+  }
+
   // Evaluate any input parameters.
   auto inputParamKey = resolveCallInputParams(user, paramValues, inlined);
   if (!inputParamKey)
@@ -1097,29 +1188,16 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
       symbolCst.getSymbol(), rewriters, /*inlined=*/false);
 }
 
-/// Compute the operations to rewrite below a top-level declaration. This
-/// searches for all parameter users and orders them according to the use graph.
-static SmallVector<Operation *> getOperationsToRewrite(Operation *top) {
-  SmallVector<Operation *> users =
-      ParameterDeclsAndUses::calculate(top).getParametricOps();
-  // Reorder the rewrite list so that calls with non-isolated-from-above regions
-  // are processed after their regions.
-  // TODO: Is there some way to do this through the parameter use-def graph?
-  for (unsigned i = 0, e = users.size() - 1; i < e; ++i) {
-    if (isa<InlinedCallOp>(users[i]) &&
-        users[i]->isProperAncestor(users[i + 1]))
-      std::swap(users[i], users[i + 1]);
-  }
-  return users;
-}
-
 LogicalResult
 ParameterRewriter::processRegionCallImpl(Operation *call, StringAttr regionName,
                                          ParamDeclArrayAttr decls,
                                          ArrayRef<ParamBindAttr> paramValues) {
   assert(regionName.getType().isa<SignatureType>() && "not a region reference");
-  Operation *region = elaborator.getRegionReferenced(regionName);
-  assert(region && "couldn't resolve region reference");
+  auto region =
+      cast<KGENDeclInterface>(elaborator.getRegionReferenced(regionName));
+
+  // Partially evaluate any nested regions.
+  partiallyEvaluateRegions(call);
 
   // Compute the binding of input parameters to concrete values.
   auto inputParamKey =
@@ -1136,35 +1214,32 @@ ParameterRewriter::processRegionCallImpl(Operation *call, StringAttr regionName,
       new RegionReturn{call->getLoc(), theRegionReturnOp.getLoc(),
                        theRegionReturnOp.getParametersAttr(), decls});
 
-  if (auto isolatedRegion = dyn_cast<RegionBodyOp>(region)) {
-    // An isolated region will have a different parameter namespace than the
-    // caller context: names will mean different things inside the region than
-    // they did in the caller.  To handle this, we push a ParameterEvaluator
-    // scope that represents the bindings within the region body and set the
-    // region return to restore back to the previous scope when operations from
-    // the region have finished their processing.
-    evaluators.push_back(ParameterEvaluator(symtab));
-    commandWorklist.back().get<RegionReturn *>()->popParamScope = true;
+  // Nested regions will have a different parameter namespace than the caller
+  // context: names will mean different things inside the region than they did
+  // in the caller.  To handle this, we push a ParameterEvaluator scope that
+  // represents the bindings within the region body and set the region return to
+  // restore back to the previous scope when operations from the region have
+  // finished their processing.
+  ParameterEvaluator &evaluator =
+      evaluators.emplace_back(ParameterEvaluator(symtab));
 
-    // Add bindings for each of the input parameters to the new scope we just
-    // pushed, so they are properly bound when the rewriter continues processing
-    // the newly cloned operations.
-    ParameterEvaluator &evaluator = getEvaluator();
-    for (auto [decl, value] :
-         llvm::zip(isolatedRegion.getInputParamDecls(), inputParamKey))
-      evaluator.setParameterValue(decl, value);
+  // Add bindings for each of the input parameters to the new scope we just
+  // pushed, so they are properly bound when the rewriter continues processing
+  // the newly cloned operations.
+  for (auto [decl, value] :
+       llvm::zip(region.getInputParamDecls(), inputParamKey))
+    evaluator.setParameterValue(decl, value);
 
-    auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
-      return error(loc, std::move(message));
-    };
+  auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
+    return error(loc, std::move(message));
+  };
 
-    // Evaluate any constraints for this declaration to see if this is a viable
-    // expansion.  If not, the expansion fails. Only isolated regions have
-    // constraints.
-    if (failed(evaluateConstraints(isolatedRegion.getConstraintsAttr(),
-                                   evaluator, emitEvaluateConstraintsError)))
-      return failure();
-  }
+  // Evaluate any constraints for this declaration to see if this is a viable
+  // expansion.  If not, the expansion fails. Only isolated regions have
+  // constraints.
+  if (failed(evaluateConstraints(region.getConstraintsAttr(), evaluator,
+                                 emitEvaluateConstraintsError)))
+    return failure();
 
   // We process the call to the region by cloning its body inline, replacing
   // the call with the newly substituted operations.  While doing this, we
@@ -1181,25 +1256,26 @@ ParameterRewriter::processRegionCallImpl(Operation *call, StringAttr regionName,
   for (auto &bodyOp : bodyBlock)
     b.insert(cloneOperation(&bodyOp, mapper, operationMap));
 
-  if (isa<RegionBodyOp>(region)) {
-    // Find all the parameter decls and uses in the body of region, we will
-    // visit all of them as the evaluator continues processing the ops we just
-    // cloned over.
-    SmallVector<Operation *> regionOpsToRewrite =
-        getOperationsToRewrite(region);
+  // Find all the parameter decls and uses in the body of region, we will
+  // visit all of them as the evaluator continues processing the ops we just
+  // cloned over.
+  ParameterDeclsAndUses uses;
+  uses.calculate(region);
 
-    // Add the parameter-using operations we cloned over from the region to the
-    // commandWorklist so we rewrite them.
-    for (Operation *op : llvm::reverse(regionOpsToRewrite)) {
-      // We don't clone over the region op itself, and will be deleting the
-      // return soon though so ignore those.
-      if (op == region || op == theRegionReturnOp)
-        continue;
-      commandWorklist.push_back(operationMap[op]);
-      assert(commandWorklist.back() &&
-             "operation wasn't cloned over correctly?");
-    }
-  }
+  // Add the parameter-using operations we cloned over from the region to
+  // the commandWorklist so we rewrite them.
+  auto remapOp = [&](Operation *op) {
+    // We don't clone over the region op itself, and will be deleting the
+    // return soon though so ignore those.
+    if (op == region || op == theRegionReturnOp)
+      return;
+    commandWorklist.push_back(operationMap[op]);
+    assert(commandWorklist.back() && "operation wasn't cloned over correctly?");
+  };
+  for (Operation *op : uses.constExprOps)
+    remapOp(op);
+  for (auto &[op, _] : llvm::reverse(uses.usersAndDeclarers))
+    remapOp(op);
 
   // Now that we've cloned all the operations over, we know what the SSA
   // results are supposed to be.  Replace all the uses of the call results
@@ -1227,41 +1303,9 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     return error(op->getLoc(),
                  "unknown parameter-defining operator in elaboration");
 
-  ParameterEvaluator &evaluator = getEvaluator();
-
-  // Scan all the attributes and types to look for uses of parameters.  We let
-  // the walker scan the region hierarchy.
-  SmallVector<NamedAttribute> newAttrs;
-  bool changedAttrs = false;
-  for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
-    if (namedAttr.getName() == "paramDecls") {
-      newAttrs.push_back(namedAttr);
-      continue;
-    }
-
-    newAttrs.push_back(
-        NamedAttribute(namedAttr.getName(),
-                       evaluator.getReboundAttribute(namedAttr.getValue())));
-    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
-  }
-  if (changedAttrs)
-    op->setAttrs(newAttrs);
-
-  // Check the types of results to find any parameters embedded in their
-  // types.  We don't have to check operands because they are always checked
-  // when being defined.
-  for (OpResult result : op->getResults())
-    result.setType(evaluator.getReboundType(result.getType()));
-
-  // Scan the region list if present.  The walker will automatically recurse
-  // for us, but we have to check the block arguments.
-  if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
-    for (auto &region : op->getRegions())
-      for (auto &block : region)
-        for (Value arg : block.getArguments())
-          arg.setType(evaluator.getReboundType(arg.getType()));
-  }
+  // Evaluate parameter expression in the operation using the current parameter
+  // scope.
+  evaluateParameters(getEvaluator(), op);
 
   // If the op implements the elaborator interface, indicate it as resolved.
   if (auto elaboratorIface = dyn_cast<ElaboratorOpInterface>(op)) {
@@ -1351,13 +1395,20 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 ///
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
-  /// Get a partial ordering of parameter definitions and uses that is listed
-  /// "top down" in our evaluation order.
-  SmallVector<Operation *> opsToRewrite = getOperationsToRewrite(func);
+  // Get a partial ordering of parameter definitions and uses that is listed
+  // "top down" in our evaluation order.
+  ParameterDeclsAndUses uses;
+  uses.calculate(func);
+  SmallVector<Operation *> opsToRewrite;
 
-  // We are going to use opsToRewrite as a worklist, so reverse it for efficient
-  // pop_back.
-  std::reverse(opsToRewrite.begin(), opsToRewrite.end());
+  // Rewrite all the parameter-using ops in this scope only. We are going to use
+  // opsToRewrite as a worklist, so reverse it for efficient pop_back.
+  opsToRewrite.reserve(uses.constExprOps.size() +
+                       uses.usersAndDeclarers.size());
+  for (auto &[op, _] : llvm::reverse(uses.usersAndDeclarers))
+    opsToRewrite.push_back(op);
+  // Rewrite ops with only constant parameter expressions too.
+  llvm::append_range(opsToRewrite, uses.constExprOps);
 
   // Start by rewriting this func. Use `unique_ptr` for the stack to prevent
   // invalidation.

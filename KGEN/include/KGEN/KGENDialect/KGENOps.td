@@ -380,8 +380,7 @@ def RegionBodyOp : KGENOp<"region.body",
     [IsolatedFromAbove, Terminator,
      ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp"]>,
      SingleBlockImplicitTerminator<"ReturnOp">,
-     DeclareOpInterfaceMethods<KGENDeclInterface>,
-     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "Define an isolated from above region parameter body.";
   let description = [{
     The `kgen.region.body` operation defines a region parameter that is isolated
@@ -425,13 +424,13 @@ def RegionBodyOp : KGENOp<"region.body",
 
 def RegionOpenBodyOp : KGENOp<"region.open_body",
     [Terminator, HasParent<"InlinedCallOp">,
-     SingleBlockImplicitTerminator<"ReturnOp">]> {
+     SingleBlockImplicitTerminator<"ReturnOp">,
+     DeclareOpInterfaceMethods<KGENDeclInterface>]> {
   let summary = "Define a region parameter body.";
   let description = [{
     The `kgen.region.open_body` operation defines a region parameter that is not
     isolated from above. It is used by `kgen.inlined_call` to specify region
-    parameters to the callee that will be inlined. This operation cannot define
-    input parameters or constraints, but it may define output parameters.
+    parameters to the callee that will be inlined.
 
     Example:
 
@@ -447,19 +446,19 @@ def RegionOpenBodyOp : KGENOp<"region.open_body",
   }];
 
   let arguments = (ins ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes);
+                       KTypeArrayAttr:$resultParamTypes,
+                       ConstraintArrayAttr:$constraints);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
     `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    `` custom<OptionalConstraints>($constraints)
     `` custom<RegionBody>($bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
     /// Get the terminator.
     ReturnOp getReturnOp();
-    /// Get the function signature.
-    FunctionType getFunctionType();
   }];
 
   let hasRegionVerifier = 1;

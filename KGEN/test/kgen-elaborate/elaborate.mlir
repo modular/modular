@@ -793,3 +793,145 @@ kgen.generator @inline_call_interface(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.func @inline_call_interface_concrete_0
 // CHECK: index.add %0, %arg0
+
+// -----
+
+// CHECK-LABEL: kgen.func @"invokeWithN,N=1
+// CHECK-NEXT: constant = <11>
+
+// CHECK-LABEL: kgen.func @"invokeWithN,N=2
+// CHECK-NEXT: constant = <20>
+
+kgen.generator @invokeWithN<N, fn: <N>() -> index>() -> index{
+  %0 = kgen.call_param[<N>() -> index: fn]<N = N>()
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"invokeTwice,M=10"
+// CHECK-NEXT: kgen.call @"invokeWithN,N=1
+// CHECK-NEXT: kgen.call @"invokeWithN,N=2
+kgen.generator @invokeTwice<M>() {
+  %0 = kgen.call @invokeWithN<N = 1, fn: <N>() -> index = region>() : () -> index
+  fn<N>() {
+    %1 = kgen.param.constant = <add(N, M)>
+    kgen.return %1 : index
+  }
+  %1 = kgen.call @invokeWithN<N = 2, fn: <N>() -> index = region>() : () -> index
+  fn<N>() {
+    %1 = kgen.param.constant = <mul(N, M)>
+    kgen.return %1 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @doIt
+// CHECK-NEXT: kgen.call @"invokeTwice,M=10"
+kgen.generator @doIt() {
+  kgen.call @invokeTwice<M = 10>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// This test case caught a tricky bug with name shadowing.
+
+// CHECK-LABEL: kgen.func @"invokeWithN,N=1
+// CHECK-NEXT: constant = <11>
+
+// CHECK-LABEL: kgen.func @"invokeWithN,N=2
+// CHECK-NEXT: constant = <20>
+
+kgen.generator @invokeWithN<N, fn: <N>() -> index>() -> index{
+  %0 = kgen.call_param[<N>() -> index: fn]<N = N>()
+  kgen.return %0 : index
+}
+
+kgen.generator @aliasN<N>() {
+  kgen.param.declare M = <N>
+  %0 = kgen.call @invokeWithN<N = 1, fn: <N>() -> index = region>() : () -> index
+  fn<N>() {
+    %1 = kgen.param.constant = <add(N, M)>
+    kgen.return %1 : index
+  }
+  %1 = kgen.call @invokeWithN<N = 2, fn: <N>() -> index = region>() : () -> index
+  fn<N>() {
+    %1 = kgen.param.constant = <mul(N, M)>
+    kgen.return %1 : index
+  }
+  kgen.return
+}
+
+kgen.generator @doIt() {
+  kgen.call @aliasN<N = 10>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @"nestMe,fn=nestMe,fn=nestMe,fn=tripleNested,A=1_region_0_region_0_region_0"
+// CHECK-NEXT: kgen.param.constant = <6>
+kgen.generator @nestMe<fn: () -> index>() -> index {
+  %0 = kgen.call_param[() -> index: fn]()
+  kgen.return %0 : index
+}
+
+kgen.generator @tripleNested<A>() -> index{
+  %0 = kgen.call @nestMe<fn: () -> index = region>() : () -> index
+  fn() {
+    kgen.param.declare B = <2>
+    %1 = kgen.call @nestMe<fn: () -> index = region>() : () -> index
+    fn() {
+      kgen.param.declare C = <3>
+      %2 = kgen.call @nestMe<fn: () -> index = region>() : () -> index
+      fn() {
+        %3 = kgen.param.constant = <add(A, B, C)>
+        kgen.return %3 : index
+      }
+      kgen.return %2 : index
+    }
+    kgen.return %1 : index
+  }
+  kgen.return %0 : index
+}
+
+kgen.generator @doIt() {
+  %0 = kgen.call @tripleNested<A=1>() : () -> index
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @"nestMe,N=6,fn=nestMe,N=4,fn=nestMe,N=2,fn=tripleNested,A=1_region_0_region_0_region_0"
+// CHECK-NEXT: kgen.param.constant = <21>
+
+kgen.generator @nestMe<N, fn: <N>() -> index>() -> index {
+  %0 = kgen.call_param[<N>() -> index: fn]<N=N>()
+  kgen.return %0 : index
+}
+
+kgen.generator @tripleNested<A>() -> index{
+  %0 = kgen.call @nestMe<N = 2, fn: <N>() -> index = region>() : () -> index
+  fn<N>() {
+    kgen.param.declare B = <N>
+    kgen.param.declare C = <3>
+    %1 = kgen.call @nestMe<N = 4, fn: <N>() -> index = region>() : () -> index
+    fn<N>() {
+      kgen.param.declare D = <N>
+      kgen.param.declare E = <5>
+      %2 = kgen.call @nestMe<N = 6, fn: <N>() -> index = region>() : () -> index
+      fn<N>() {
+      kgen.param.declare F = <N>
+        %3 = kgen.param.constant = <add(A, B, C, D, E, F)>
+        kgen.return %3 : index
+      }
+      kgen.return %2 : index
+    }
+    kgen.return %1 : index
+  }
+  kgen.return %0 : index
+}
+
+kgen.generator @doIt() {
+  %0 = kgen.call @tripleNested<A=1>() : () -> index
+  kgen.return
+}
