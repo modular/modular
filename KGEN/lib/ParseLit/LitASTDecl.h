@@ -23,7 +23,7 @@ class ParamDeclAttr;
 namespace M::KGEN::LIT {
 
 /// This stores the ParamDeclAttr as an Attribute, but this is always known to
-/// be a ParamDeclAttr.
+/// be a ParamDeclAttr.  When both are null, this is a 'magic' declaration.
 using IRDecl = PointerUnion<Operation *, Attribute>;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
@@ -37,7 +37,7 @@ using IRDecl = PointerUnion<Operation *, Attribute>;
 /// is introduced.  Lightning (like Python) allows forward references to values
 /// before they are defined, so the parser works in multiple phases where it
 /// notices a declaration but does not parse its body until it is demanded.
-class DeclAST {
+class ASTDecl {
 public:
   MLIRContext *getContext() const { return loc.getContext(); }
 
@@ -53,7 +53,7 @@ public:
   bool isMagic() const { return irDecl.isNull(); }
 
   Location getLoc() const { return loc; }
-  DeclAST *getParentDecl() const { return parentDecl; }
+  ASTDecl *getParentDecl() const { return parentDecl; }
 
   /// This cursor holds the location the parser should resume for the next phase
   /// of resolution.  For example, after initial scanning of a 'def', this will
@@ -74,7 +74,7 @@ public:
   }
 
   /// Look up a name in this declaration's scope only: return null on failure.
-  DeclAST *lookupInCurrentScope(StringAttr name) {
+  ASTDecl *lookupInCurrentScope(StringAttr name) {
     auto it = declsInScope.find(name);
     if (it != declsInScope.end())
       return it->second;
@@ -83,10 +83,10 @@ public:
 
   /// Perform a lookup in this declaration's scope and all parent scopes,
   /// returning the nearest target or null if nothing is found.
-  DeclAST *lookup(StringAttr name) {
-    DeclAST *curScope = this;
+  ASTDecl *lookup(StringAttr name) {
+    ASTDecl *curScope = this;
     while (curScope) {
-      if (DeclAST *result = curScope->lookupInCurrentScope(name))
+      if (ASTDecl *result = curScope->lookupInCurrentScope(name))
         return result;
       curScope = curScope->parentDecl;
     }
@@ -112,9 +112,9 @@ public:
   MagicDeclKind magicKind = MagicDeclKind::kNormal;
 
 private:
-  // DeclAST is created by DeclResolver.
+  // ASTDecl is created by DeclResolver.
   friend class DeclResolver;
-  DeclAST(IRDecl irDecl, Location loc, DeclAST *parentDecl,
+  ASTDecl(IRDecl irDecl, Location loc, ASTDecl *parentDecl,
           LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
       : irDecl(irDecl), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
@@ -130,7 +130,7 @@ private:
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.
-  DeclAST *parentDecl;
+  ASTDecl *parentDecl;
 
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
@@ -147,32 +147,32 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, DeclAST *> declsInScope;
+  DenseMap<StringAttr, ASTDecl *> declsInScope;
 };
 
 } // namespace M::KGEN::LIT
 
 namespace llvm {
-/// Cast from an (const) DeclAST & to a Decl operation type.
+/// Cast from an (const) ASTDecl & to a Decl operation type.
 template <typename T>
-struct CastInfo<T, M::KGEN::LIT::DeclAST>
+struct CastInfo<T, M::KGEN::LIT::ASTDecl>
     : public NullableValueCastFailed<T>,
-      public DefaultDoCastIfPossible<T, M::KGEN::LIT::DeclAST &,
-                                     CastInfo<T, M::KGEN::LIT::DeclAST>> {
+      public DefaultDoCastIfPossible<T, M::KGEN::LIT::ASTDecl &,
+                                     CastInfo<T, M::KGEN::LIT::ASTDecl>> {
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
-  static bool isPossible(M::KGEN::LIT::DeclAST &decl) {
+  static bool isPossible(M::KGEN::LIT::ASTDecl &decl) {
     auto *op = dyn_cast<mlir::Operation *>(decl.getIRDecl());
     return op && T::classof(op);
   }
-  static T doCast(M::KGEN::LIT::DeclAST &decl) {
+  static T doCast(M::KGEN::LIT::ASTDecl &decl) {
     return T(cast<mlir::Operation *>(decl.getIRDecl()));
   }
 };
 template <typename T>
-struct CastInfo<T, const M::KGEN::LIT::DeclAST>
-    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::DeclAST,
-                                          CastInfo<T, M::KGEN::LIT::DeclAST>> {
+struct CastInfo<T, const M::KGEN::LIT::ASTDecl>
+    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::ASTDecl,
+                                          CastInfo<T, M::KGEN::LIT::ASTDecl>> {
 };
 } // namespace llvm
 

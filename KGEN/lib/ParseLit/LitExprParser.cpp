@@ -397,7 +397,7 @@ ParseResult LitParserBase::parseExpression(ExprNode *&result,
   return ExprParser(getLexer(), stmtIndent).parseExpression(result);
 }
 
-ParseResult LitParserBase::parseType(Type &result, DeclAST &declScope,
+ParseResult LitParserBase::parseType(Type &result, ASTDecl &declScope,
                                      Optional<size_t> stmtIndent) {
   ExprNode *expr = nullptr;
   if (parseExpression(expr, stmtIndent))

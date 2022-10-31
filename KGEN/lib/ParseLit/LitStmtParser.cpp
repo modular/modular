@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitDeclAST.h"
+#include "LitASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
 #include "LitParserBase.h"
@@ -36,7 +36,7 @@ namespace scf = mlir::scf;
 /// grammar.
 namespace {
 struct LitStmtParser : public LitParserBase {
-  LitStmtParser(LitLexer &lexer, DeclAST &containingDecl)
+  LitStmtParser(LitLexer &lexer, ASTDecl &containingDecl)
       : LitParserBase(lexer), containingDecl(containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
@@ -53,7 +53,7 @@ struct LitStmtParser : public LitParserBase {
 
   ParseResult parseFile(ModuleOp module);
 
-  const DeclAST &getDecl() const { return containingDecl; }
+  const ASTDecl &getDecl() const { return containingDecl; }
   OpBuilder &getBuilder() { return builder; }
 
   // Expression emission.
@@ -85,7 +85,7 @@ struct LitStmtParser : public LitParserBase {
 
 private:
   /// This is declaration / scope that we're parsing into.
-  DeclAST &containingDecl;
+  ASTDecl &containingDecl;
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
@@ -607,9 +607,9 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 // Entry point to this file
 //===----------------------------------------------------------------------===//
 
-/// Parse a 'suite' production into the declaration specified by `DeclAST`.
+/// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
-ParseResult LitParserBase::parseSuite(DeclAST &containingDecl,
+ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl,
                                       LitLexer &lexer) {
   return LitStmtParser(lexer, containingDecl)
       .parseSuite(containingDecl.getIndentation());
