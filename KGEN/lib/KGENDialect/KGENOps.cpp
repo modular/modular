@@ -449,8 +449,8 @@ ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
 
   // Parse an optional evaluator.
   if (parser.parseOptionalKeyword("evaluator")) {
-    // If we don't have an evaluator, we must not have a default_impl.
-    if (succeeded(parser.parseOptionalKeyword("default_impl")))
+    // If we don't have an evaluator, we must not have a defaultImpl.
+    if (succeeded(parser.parseOptionalKeyword("defaultImpl")))
       return mlir::emitError(
           parser.getEncodedSourceLoc(parser.getCurrentLocation()),
           "cannot specify a default without an evaluator");
@@ -508,8 +508,13 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // If an evaluator was specified, verify its signature.
   SymbolConstantAttr evaluator = getEvaluatorAttr();
-  if (!evaluator)
+  if (!evaluator) {
+    if (getDefaultImplAttr())
+      return emitOpError(
+          "defaultImpl should not exist if evaluator does not exist");
     return success();
+  }
+
   auto func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
       *this, evaluator.getSymbol().getAttr());
   if (!func)
