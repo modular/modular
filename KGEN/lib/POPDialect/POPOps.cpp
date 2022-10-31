@@ -110,7 +110,7 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
       return Error("cannot coerce i" + Twine(type.getWidth()) +
                    " value to bool");
 
-    if (dtype.isInt()) {
+    if (dtype.isBool() || dtype.isInt()) {
       ErrorOr<APSInt> intValue = reifyIntToInt(value.getValue(), type, dtype);
       if (intValue.isError())
         return intValue.takeError();
