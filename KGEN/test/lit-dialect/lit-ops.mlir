@@ -34,6 +34,18 @@ lit.struct.decl @SomeStruct<ty: dtype> {
 
   // CHECK: %size = lit.var.decl "size" : <simd<1, ty>>
   %size = lit.var.decl "size" : !pop.pointer<simd<1, ty>>
-}
 
-%thing = lit.var.decl "thing" : !pop.pointer<!kgen.ref<@Int>>
+  // CHECK: lit.func @getMyType
+  // CHECK-NEXT: kgen.param.constant: dtype = <ty>
+  lit.func @getMyType() -> !kgen.dtype {
+    %dtype = kgen.param.constant: dtype = <ty>
+    kgen.return %dtype : !kgen.dtype
+  }
+
+  // CHECK: lit.func @shadowParameter<ty>
+  lit.func @shadowParameter<ty>() {
+    // CHECK-NEXT: kgen.param.constant = <ty>
+    %0 = kgen.param.constant = <ty>
+    kgen.return
+  }
+}
