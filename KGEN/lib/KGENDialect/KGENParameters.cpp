@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
@@ -238,11 +239,11 @@ ErrorOrSuccess SignatureType::checkSelfContained() {
 
 namespace {
 struct DeclParameterVerifier final : public ParameterCollector {
-  DeclParameterVerifier(KGENDeclInterface topLevelDeclOp,
+  DeclParameterVerifier(KGENDeclInterface topLevelOp,
                         ParameterDeclsAndUses &parameters,
-                        SymbolTableCollection *symbolTables)
-      : topLevelDeclOp(topLevelDeclOp), parameters(parameters),
-        symbolTables(symbolTables) {}
+                        SymbolTable *symbolTable)
+      : topLevelOp(topLevelOp), parameters(parameters),
+        symbolTable(symbolTable) {}
 
   /// Walk the operation and all the operations in its body to find the
   /// definitions and uses of parameters.  This diagnoses and rejects parameter
@@ -259,7 +260,7 @@ struct DeclParameterVerifier final : public ParameterCollector {
   LogicalResult checkAndReorderParameterUseDefGraph();
 
   /// Return the set of parameter uses for the specified operation.
-  SmallVector<ParamDeclRefAttr> &getUsesForOperation(Operation *op) const {
+  SmallVectorImpl<ParamDeclRefAttr> &getUsesForOperation(Operation *op) const {
     auto it = opIndexInUses.find(op);
     assert(op && it != opIndexInUses.end());
     return parameters.usersAndDeclarers[it->second].second;
@@ -269,15 +270,15 @@ struct DeclParameterVerifier final : public ParameterCollector {
 
   void verifyRefType(RefType typeDef) override;
 
-  // This is the top level declaration that we're analyzing.
-  KGENDeclInterface const topLevelDeclOp;
+  /// This is the top level declaration that we're analyzing.
+  KGENDeclInterface topLevelOp;
 
   /// This is the parameter information that we're building.
   ParameterDeclsAndUses &parameters;
 
-  /// If non-null, this contains a set of symbol tables that we can use to
-  /// verify the validity of SymbolConstantAttr's.
-  SymbolTableCollection *symbolTables;
+  /// If non-null, this contains a symbol table that we can use to verify the
+  /// validity of SymbolConstantAttr's.
+  SymbolTable *symbolTable;
 
   /// This is the current operation being scanned during the attribute/type
   /// collection phase.
@@ -298,11 +299,12 @@ private:
 /// definitions and uses of parameters.  This diagnoses and rejects parameter
 /// definitions in invalid positions as well.
 LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
-  topLevelDeclOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    // Walk over nested operations isolated from above.
-    if (bodyOp != topLevelDeclOp &&
-        bodyOp->hasTrait<OpTrait::IsIsolatedFromAbove>())
+  topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
+    // Defer nested parameter scopes.
+    if (bodyOp != topLevelOp && isa<KGENDeclInterface>(bodyOp)) {
+      parameters.nestedDecls.push_back(cast<KGENDeclInterface>(bodyOp));
       return WalkResult::skip();
+    }
 
     ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> uses;
@@ -361,22 +363,23 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       return WalkResult::advance();
 
     for (ParamDeclAttr param : paramDeclsAttr) {
-      // We cannot have any redefinitions.
-      auto &opAndDeclAttr = parameters.decls[param.getName()];
-      if (opAndDeclAttr.first) {
+      // We cannot have any redefinitions of parameters in this scope.
+      auto &[op, decl] = parameters.decls[param.getName()];
+      if (op && (op == topLevelOp ||
+                 op->getParentOfType<KGENDeclInterface>() == topLevelOp)) {
         auto diag = bodyOp->emitError("redeclaration of parameter ")
                     << param.getName();
-        diag.attachNote(opAndDeclAttr.first->getLoc())
-            << "previous declaration here";
+        diag.attachNote(op->getLoc()) << "previous declaration here";
         hadError = true;
         return WalkResult::advance();
       }
 
-      opAndDeclAttr = {bodyOp, param};
+      std::tie(op, decl) = {bodyOp, param};
     }
 
     return WalkResult::advance();
   });
+
   return failure(hadError);
 }
 
@@ -389,20 +392,21 @@ LogicalResult DeclParameterVerifier::checkParameterUses() {
   for (auto &[usingOp, paramRefAttrArray] : parameters.usersAndDeclarers) {
     for (auto paramRefAttr : paramRefAttrArray) {
       // Check the use is referring to a parameter that was defined.
-      auto decl = parameters.decls[paramRefAttr.getName()];
-      if (!decl.first) {
+      auto it = parameters.decls.find(paramRefAttr.getName());
+      if (it == parameters.decls.end()) {
         usingOp->emitOpError("invalid use of parameter with no declaration ")
             << paramRefAttr.getName();
         return failure();
       }
 
       // Check that the types of the uses match the defs.
-      if (decl.second.getType() != paramRefAttr.getType()) {
+      auto [op, decl] = it->second;
+      if (decl.getType() != paramRefAttr.getType()) {
         auto diag = usingOp->emitOpError("reference to parameter ")
                     << paramRefAttr.getName() << " with incorrect type "
                     << paramRefAttr.getType();
-        diag.attachNote(decl.first->getLoc())
-            << "parameter defined with type " << decl.second.getType();
+        diag.attachNote(op->getLoc())
+            << "parameter defined with type " << decl.getType();
         return failure();
       }
     }
@@ -421,12 +425,11 @@ LogicalResult DeclParameterVerifier::checkParameterUses() {
 void DeclParameterVerifier::verifySymbolConstantAttr(
     SymbolConstantAttr symbolConstant) {
   // We only check this during the op verification phase.
-  if (!symbolTables)
+  if (!symbolTable)
     return;
 
   auto symbol = symbolConstant.getSymbol();
-  auto decl = dyn_cast_if_present<KGENDeclInterface>(
-      symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, symbol));
+  auto decl = symbolTable->lookup<KGENDeclInterface>(symbol.getAttr());
 
   if (!decl) {
     hadError = true;
@@ -479,11 +482,11 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
 /// dedclaration.
 void DeclParameterVerifier::verifyRefType(RefType typeDef) {
   // We only check this during the op verification phase.
-  if (!symbolTables)
+  if (!symbolTable)
     return;
 
-  auto decl = dyn_cast_if_present<KGENDeclInterface>(
-      symbolTables->lookupNearestSymbolFrom(topLevelDeclOp, typeDef.getName()));
+  auto decl =
+      symbolTable->lookup<KGENDeclInterface>(typeDef.getName().getAttr());
   if (!decl) {
     hadError = true;
     emitError(curLocationCollecting.value())
@@ -534,7 +537,7 @@ public:
   const DeclParameterVerifier *getVerifier() const { return verifier; }
 
   /// Given a normal node (not the entry node) return the parameter uses.
-  ArrayRef<ParamDeclRefAttr> getUsesForOperation() const {
+  SmallVectorImpl<ParamDeclRefAttr> &getUsesForOperation() const {
     assert(op && "entry node doesn't have uses");
     return verifier->getUsesForOperation(op);
   }
@@ -635,6 +638,9 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
     // Handle the special case of the virtual root node: the end index is the
     // end of the array of operators using parameters.
     endIndex = verifier->parameters.usersAndDeclarers.size();
+  } else if (!verifier->topLevelOp->isAncestor(op)) {
+    // Do no traverse through ops in a higher scope.
+    return begin();
   } else {
     endIndex = getUsesForOperation().size();
   }
@@ -741,7 +747,7 @@ LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
     // If this node has a cycle detected in it, then we have an unrecoverable
     // error.  Emit the error on the containiner with notes on every problematic
     // operation.
-    if (sccIt.hasCycle() && failed(diagnoseCycle(*sccIt, topLevelDeclOp)))
+    if (sccIt.hasCycle() && failed(diagnoseCycle(*sccIt, topLevelOp)))
       return failure();
 
     assert(sccIt->size() == 1 &&
@@ -756,7 +762,7 @@ LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
       usersAndDeclarers;
   usersAndDeclarers.reserve(parameters.usersAndDeclarers.size());
   for (Operation *op : newOrder) {
-    if (op)
+    if (op && topLevelOp->isAncestor(op))
       usersAndDeclarers.push_back({op, std::move(getUsesForOperation(op))});
   }
   parameters.usersAndDeclarers = std::move(usersAndDeclarers);
@@ -769,19 +775,21 @@ LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
 
 /// Collect information about the parameter definitions and uses in the
 /// specified operation.  This assumes the IR is in a valid state.
-ParameterDeclsAndUses ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
-  auto result = calculateAndPotentiallyVerify(op, nullptr);
+void ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
+  LogicalResult result = calculateAndPotentiallyVerify(op, nullptr);
+  (void)result;
   assert(succeeded(result) && "IR should be legal here!");
-  return std::move(result.value());
 }
 
 /// Check deep invariants for a func/generator decl body, used by the
 /// verifiers for these operations.  If a problem is detected, this emits an
 /// error and returns failure.
-FailureOr<ParameterDeclsAndUses>
+LogicalResult
 ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
                                           SymbolTableCollection &symbolTables) {
-  return calculateAndPotentiallyVerify(op, &symbolTables);
+  SymbolTable *symbolTable =
+      &symbolTables.getSymbolTable(op->getParentOfType<ModuleOp>());
+  return calculateAndPotentiallyVerify(op, symbolTable);
 }
 
 /// Collect information about the parameter definitions and uses in the
@@ -790,30 +798,62 @@ ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
 /// If the SymbolTableCollection is non-null, check deep invariants for a
 /// func/generator decl body, used by the verifiers for these operations.  If a
 /// problem is detected, this emits an error and returns failure.
-FailureOr<ParameterDeclsAndUses>
+FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
 ParameterDeclsAndUses::calculateAndPotentiallyVerify(
-    KGENDeclInterface topLevelOp, SymbolTableCollection *symbolTables) {
-  ParameterDeclsAndUses result;
-  DeclParameterVerifier verifier(topLevelOp, result, symbolTables);
+    KGENDeclInterface topLevelOp, SymbolTable *symbolTable) {
+  DeclParameterVerifier verifier(topLevelOp, *this, symbolTable);
 
   // Start by doing a pass over the operation and all the operations in its
   // body to find the definitions and uses of parameters.
   if (failed(verifier.collectParameterDefsAndUses()) ||
       // Next, now that we know the set of parameters we have to process,
       // verify that the uses match up.
-      failed(verifier.checkParameterUses()) ||
-      // Verify that there are no cycles in the graph.
-      failed(verifier.checkAndReorderParameterUseDefGraph()))
+      failed(verifier.checkParameterUses()))
     return failure();
 
-  return std::move(result);
-}
+  DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedDeclUses;
+  DenseSet<Operation *> callsWithRegions;
+  for (KGENDeclInterface nestedDecl : nestedDecls) {
+    // Fold the current declarations into the nested scope.
+    ParameterDeclsAndUses &nested = nestedDeclUses[nestedDecl];
+    nested.decls = decls;
 
-SmallVector<Operation *> ParameterDeclsAndUses::getParametricOps() const {
-  SmallVector<Operation *> result;
-  result.reserve(usersAndDeclarers.size() + constExprOps.size());
-  for (const auto &elt : usersAndDeclarers)
-    result.push_back(elt.first);
-  llvm::append_range(result, constExprOps);
-  return result;
+    // Recurse into the scope.
+    FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>> result =
+        nested.calculateAndPotentiallyVerify(nestedDecl, symbolTable);
+    if (failed(result))
+      return failure();
+    // Consolidate the next level of nested uses.
+    for (auto &[decl, uses] : *result)
+      nestedDeclUses.insert({decl, std::move(uses)});
+
+    // Nested scopes can be region bodies owned by a call op. The regions are
+    // evaluated before the result of the call, so we need to prevent cycles
+    // wherein operations in region bodies use the result parameters of the
+    // enclosing call. Do this by making the enclosing call implicitly a user of
+    // all parameters used by nested scopes.
+    if (isa<RegionBodyOp, RegionOpenBodyOp>(nestedDecl))
+      callsWithRegions.insert(nestedDecl->getParentOp());
+  }
+
+  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> callUses;
+  for (Operation *call : callsWithRegions) {
+    for (Region &region : call->getRegions()) {
+      auto nestedDecl = cast<KGENDeclInterface>(&region.front().front());
+      const ParameterDeclsAndUses &uses =
+          nestedDeclUses.find(nestedDecl)->second;
+
+      // Only add references to parameters defined at or above this scope.
+      for (auto &[_, nestedUses] : uses.usersAndDeclarers)
+        for (ParamDeclRefAttr use : nestedUses)
+          if (decls.find(use.getName()) != decls.end())
+            callUses.insert(use);
+    }
+    verifier.getUsesForOperation(call) = callUses.takeVector();
+  }
+
+  // Verify that there are no cycles in the graph.
+  if (failed(verifier.checkAndReorderParameterUseDefGraph()))
+    return failure();
+  return std::move(nestedDeclUses);
 }

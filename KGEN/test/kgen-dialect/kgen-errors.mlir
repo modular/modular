@@ -728,3 +728,38 @@ kgen.generator.interface public @evaluator<N>(
 // expected-error @below {{interface evaluator argument #0 has type '!pop.pointer<(index) -> index>' but referenced evaluator expected type '(index) -> index'}}
 kgen.generator.interface @evaluateMe(index) -> index
   evaluator ((index) -> index, index) -> index = @evaluator<N=4>
+
+// -----
+
+kgen.generator @foo<fn: () -> ()>() {
+  kgen.return
+}
+
+kgen.generator @bar<F>() {
+  kgen.call @foo<fn: () -> () = region>() : () -> ()
+  fn() {
+    // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "Q"}}
+    %0 = kgen.param.constant = <Q>
+    kgen.return
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.generator @foo<fn: ()->() -> index>() {
+  kgen.return<10>
+}
+
+// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
+kgen.generator @baz<F>() {
+  // expected-note @below {{this operation uses parameter "B", which is defined by the first operation}}
+  kgen.call @foo<fn:()->()=region -> kValue>() : ()->()
+  fn() {
+    %1 = kgen.param.constant = <B>
+    kgen.return
+  }
+  // expected-note @below {{this operation uses parameter "kValue", which is defined by:}}
+  kgen.param.declare B = <add(F, kValue)>
+  kgen.return
+}

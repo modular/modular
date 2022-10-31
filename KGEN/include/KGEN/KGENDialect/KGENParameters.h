@@ -13,27 +13,30 @@
 #define KGEN_KGENPARAMETERS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDeclInterface.h"
 
 namespace M::KGEN {
 class ParamDeclAttr;
 class ParamDeclRefAttr;
-class KGENDeclInterface;
 
 /// This class holds descriptions about parameter definitions and uses in a
 /// func or generator context.
 class ParameterDeclsAndUses {
 public:
-  ParameterDeclsAndUses(ParameterDeclsAndUses &&other) = default;
+  ParameterDeclsAndUses() = default;
 
   /// Collect information about the parameter definitions and uses in the
-  /// specified operation.  This assumes the IR is in a valid state.
-  static ParameterDeclsAndUses calculate(KGENDeclInterface op);
+  /// specified operation.  This assumes the IR is in a valid state. Returns the
+  /// declarations and uses for the top-level operation and those of any nested
+  /// scopes.
+  void calculate(KGENDeclInterface op);
 
   /// Check deep invariants for a func/generator decl body, used by the
   /// verifiers for these operations.  If a problem is detected, this emits an
-  /// error and returns failure.
-  static FailureOr<ParameterDeclsAndUses>
-  calculateAndVerify(KGENDeclInterface op, SymbolTableCollection &symbolTables);
+  /// error and returns failure. Return the declarations and uses for the
+  /// top-level operation.
+  LogicalResult calculateAndVerify(KGENDeclInterface op,
+                                   SymbolTableCollection &symbolTables);
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
   /// a parameter of a specified name.
@@ -62,19 +65,12 @@ public:
   /// evaluated during elaboration.
   SmallVector<Operation *> constExprOps;
 
-  /// Return a list containing just the operations that are using and defining
-  /// parameters in the analyzed region or which contain constant parameter
-  /// expressions. Each operation appears in the list at most once.
-  SmallVector<Operation *> getParametricOps() const;
+  /// Keep track of any nested parameter scopes encountered.
+  SmallVector<KGENDeclInterface> nestedDecls;
 
 private:
-  static FailureOr<ParameterDeclsAndUses>
-  calculateAndPotentiallyVerify(KGENDeclInterface op,
-                                SymbolTableCollection *symbolTables);
-
-  ParameterDeclsAndUses() = default;
-  ParameterDeclsAndUses(const ParameterDeclsAndUses &) = delete;
-  void operator=(const ParameterDeclsAndUses &) = delete;
+  FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
+  calculateAndPotentiallyVerify(KGENDeclInterface op, SymbolTable *symbolTable);
 };
 
 } // namespace M::KGEN
