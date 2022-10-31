@@ -59,6 +59,10 @@ public:
       cl::desc("Ignore execution failures. Any messages are still printed, but "
                "failures don't mean the tool fails to execute.")};
 
+  cl::opt<bool> enableSearch{
+      "enable-search", cl::init(false),
+      cl::desc("Do search when an evaluator is provided.")};
+
   cl::list<std::string> searchPaths{
       "I", cl::desc("Path to use to search for included files.")};
 
@@ -129,6 +133,9 @@ static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
   llvm::raw_string_ostream includeStr(includes);
   for (StringRef include : clOptions.searchPaths)
     includeStr << "search-path=" << include << " ";
+
+  // Conditionally do search.
+  includeStr << "enable-search=" << (clOptions.enableSearch ? "true" : "false");
 
   if (failed(elaborate->initializeOptions(includeStr.str())))
     llvm::report_fatal_error("unable to initialize elaborator options");
