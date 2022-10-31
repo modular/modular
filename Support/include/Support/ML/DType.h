@@ -144,12 +144,10 @@ public:
   constexpr bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
   constexpr bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }
   constexpr bool isFloat() const {
-    return !isInt() & ((value & mIsFloat) != 0);
+    return !isInt() && ((value & mIsFloat) != 0);
   }
   constexpr bool isArithmetic() const { return isInt() || isFloat(); }
-  constexpr bool isOther() const {
-    return !isInt() & ((value & mIsFloat) == 0);
-  }
+  constexpr bool isOther() const { return !isArithmetic(); }
 
   // Complex number handling.
   constexpr bool isComplex() const { return value & mIsComplex; }
