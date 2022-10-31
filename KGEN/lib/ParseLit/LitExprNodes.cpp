@@ -304,6 +304,18 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
     return Type();
   auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
   if (!typeDecl) {
+    if (decl->isMagic()) {
+      switch (decl->magicKind) {
+      case MagicDeclKind::kNormal:
+        llvm_unreachable("not a magic declaration?");
+      case MagicDeclKind::kIndexType:
+        // TODO(types): This is a hack to unblock tests in the interim.
+        return IndexType::get(context);
+      case MagicDeclKind::kNoneType:
+        return KGEN::NoneType::get(context);
+      }
+    }
+
     emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
     return Type();
   }
@@ -315,13 +327,7 @@ Type DeclRefNode::emitType(ExprEmitter &emitter) const {
     return Type();
   }
 
-  switch (decl->magicKind) {
-  default:
-    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
-  case DeclAST::MagicKind::kIndexType:
-    // TODO(types): This is a hack to unblock tests in the interim.
-    return IndexType::get(context);
-  }
+  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,

@@ -71,6 +71,17 @@ enum class DeclResolvedness : int8_t {
   fullyResolved
 };
 
+/// This keeps track of specific kinds of "magic" declarations that do not have
+/// a standard AST representation.
+enum class MagicDeclKind {
+  // This is not a magic declaration, process it as normal.
+  kNormal,
+  // This is the __builtin.mlirtype.builtin.index type.
+  kIndexType,
+  // This is the __builtin.mlirtype.lit.none type.
+  kNoneType,
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // LIT_SHARED_STATE_H

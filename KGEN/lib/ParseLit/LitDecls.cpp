@@ -32,7 +32,7 @@ using namespace M::KGEN::LIT;
 
 /// If this is a ParamDecl, return it otherwise return null.
 ParamDeclAttr DeclAST::getParamDecl() const {
-  auto attr = dyn_cast<Attribute>(irDecl);
+  auto attr = dyn_cast_or_null<Attribute>(irDecl);
   return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
 }
 
@@ -127,6 +127,19 @@ DeclAST &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
   auto &decl = addDecl(attr, loc, attr.getName(), parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
+  return decl;
+}
+
+/// Add a "magic" declaration that has special handling to this scope.  This
+/// is used for builtin machinery internal to the language.
+DeclAST &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
+                                    DeclAST *parentDecl) {
+  assert(parentDecl && "top level isn't magic");
+  auto &decl = addDecl(ParamDeclAttr(), parentDecl->getLoc(),
+                       StringAttr::get(getContext(), name), parentDecl,
+                       LitLexerCursor(), LitLexerCursor(), 0);
+  decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.magicKind = kind;
   return decl;
 }
 
