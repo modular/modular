@@ -52,18 +52,6 @@ def UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ObjectType
-//===----------------------------------------------------------------------===//
-
-def ObjectType : LITType<"Object", "object"> {
-  let summary = "Type used for implicit object values";
-  let description = [{
-    This type is used for implicitly dynamically typed values, e.g. parameters
-    to functions without explicit types.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // NoneType
 //===----------------------------------------------------------------------===//
 

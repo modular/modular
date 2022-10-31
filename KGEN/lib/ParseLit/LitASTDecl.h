@@ -18,6 +18,7 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
+class RefType;
 }
 
 namespace M::KGEN::LIT {
@@ -55,15 +56,21 @@ public:
   Location getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 
+  /// Return the indentation of the introducer token or -1 if it wasn't on the
+  /// start of line.
+  ssize_t getIndentation() const { return indentation; }
+
   /// This cursor holds the location the parser should resume for the next phase
   /// of resolution.  For example, after initial scanning of a 'def', this will
   /// be on the def token.  After processing the signature, this will be after
   /// the colon.
   LitLexerCursor &getCursor() { return cursor; }
 
-  /// Return the indentation of the introducer token or -1 if it wasn't on the
-  /// start of line.
-  ssize_t getIndentation() const { return indentation; }
+  /// Return true if the end of the speculatively scanned decl matches the
+  /// specified cursor.
+  bool isMatchingEndCursor(const LitLexerCursor &cursor) const {
+    return endCursorState == cursor.getState();
+  }
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
@@ -72,6 +79,15 @@ public:
         return OpBuilder::atBlockEnd(&op->getRegion(0).front());
     return OpBuilder(getContext());
   }
+
+  /// Given a type declaration, return a RefType for a reference to this with
+  /// the specified type parameters.  This aborts if the current decl isn't a
+  /// type.
+  RefType getIRTypeReference(ParamBindArrayAttr params);
+
+  //===--------------------------------------------------------------------===//
+  // Name lookup
+  //===--------------------------------------------------------------------===//
 
   /// Look up a name in this declaration's scope only: return null on failure.
   ASTDecl *lookupInCurrentScope(StringAttr name) {
@@ -93,11 +109,9 @@ public:
     return nullptr;
   }
 
-  /// Return true if the end of the speculatively scanned decl matches the
-  /// specified cursor.
-  bool isMatchingEndCursor(const LitLexerCursor &cursor) const {
-    return endCursorState == cursor.getState();
-  }
+  //===--------------------------------------------------------------------===//
+  // Other State management.
+  //===--------------------------------------------------------------------===//
 
   /// This keeps track of what level of type checking this declaration has been
   /// through.  It is maintained by DeclResolver.

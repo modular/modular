@@ -326,9 +326,6 @@ std::pair<Type, ASTType> DeclRefNode::emitType(ExprEmitter &emitter) const {
         emitter.emitError(getLoc(),
                           "TODO: Cannot emit this until it is parameterized");
         return {};
-      case MagicDeclKind::kObjectType:
-        mlirType = ObjectType::get(context);
-        break;
       }
       return {mlirType, ASTType(decl)};
     }
