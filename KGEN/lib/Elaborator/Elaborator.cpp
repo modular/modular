@@ -1063,7 +1063,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
     // Inline the callee.
     BlockAndValueMapping bv;
     for (auto [operand, argument] :
-         llvm::zip(user->getOperands(), newCalleeFunc.getArguments()))
+         llvm::zip(newCalleeFunc.getArguments(), user->getOperands()))
       bv.map(operand, argument);
     for (Operation &op : newCalleeFunc.getBody()->without_terminator())
       b.clone(op, bv);
