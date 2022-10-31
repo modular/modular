@@ -57,9 +57,12 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Check result types match the ReturnOp.
   if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              {getResultTypes()})) ||
-      // See if the parameter definitions and uses within the generator are
-      // structured correctly.
+                                              {getResultTypes()})))
+    return failure();
+
+  // If this function is top-level, see if the parameter definitions and uses
+  // within the generator are structured correctly.
+  if (isa<ModuleOp>((*this)->getParentOp()) &&
       failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
     return failure();
 
