@@ -57,6 +57,11 @@ public:
   DeclAST &addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
                                 DeclAST *parentDecl);
 
+  /// Add a "magic" declaration that has special handling to this scope.  This
+  /// is used for builtin machinery internal to the language.
+  DeclAST &addMagicDecl(StringRef name, MagicDeclKind kind,
+                        DeclAST *parentDecl);
+
   /// If the specified type is a RefType that resolves to a (possibly
   /// parameterized) type, return the decl for the type and the parameters in
   /// the reference.  This returns null on error.

@@ -48,6 +48,10 @@ public:
   /// If this is a ParamDecl, return it otherwise return null.
   ParamDeclAttr getParamDecl() const;
 
+  /// Return true if this is a "magic" declaration that has no IR
+  /// representation.
+  bool isMagic() const { return irDecl.isNull(); }
+
   Location getLoc() const { return loc; }
   DeclAST *getParentDecl() const { return parentDecl; }
 
@@ -68,10 +72,6 @@ public:
         return OpBuilder::atBlockEnd(&op->getRegion(0).front());
     return OpBuilder(getContext());
   }
-
-  /// Add the specified declaration to the scope defined by this decl, emitting
-  /// an error on a name collision and setting hadError to true.
-  void addToScope(DeclAST *newDecl, LitSharedState &sharedState);
 
   /// Look up a name in this declaration's scope only: return null on failure.
   DeclAST *lookupInCurrentScope(StringAttr name) {
@@ -109,14 +109,7 @@ public:
   /// every reference to 'x' because the type will be bogus.
   bool hasReferenceError = false;
 
-  enum class MagicKind {
-    // This is not a magic declaration, process it as normal.
-    kNormal,
-    // This is the __builtin.mlirtype.builtin.index type.
-    kIndexType,
-    // This is the __builtin.mlirtype.lit.none type.
-    kNoneType,
-  } magicKind = MagicKind::kNormal;
+  MagicDeclKind magicKind = MagicDeclKind::kNormal;
 
 private:
   // DeclAST is created by DeclResolver.

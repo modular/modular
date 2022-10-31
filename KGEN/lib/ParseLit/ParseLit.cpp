@@ -69,22 +69,11 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 /// Add declarations for magic things to the builtins decl.
 static void addBuiltinDecls(LitSharedState &sharedState,
                             DeclAST &builtinsDecl) {
-  auto b = builtinsDecl.getDeclEndBuilder();
-  auto loc = builtinsDecl.getLoc();
-
-  // Add a declaration for an "index" struct, which is used as a transitionary
-  // thing as we bring up full type support.  This should be eliminated.
-  auto indexDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("index"));
-  sharedState.indexDecl =
-      &sharedState.declResolver->addFullyResolvedDecl(indexDecl, &builtinsDecl);
-  sharedState.indexDecl->magicKind = DeclAST::MagicKind::kIndexType;
-
-  // Add a declaration for an "None" struct, which is used as a transitionary
-  // thing as we bring up full type support.  This should be eliminated.
-  auto noneDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("None"));
-  sharedState.noneDecl =
-      &sharedState.declResolver->addFullyResolvedDecl(noneDecl, &builtinsDecl);
-  sharedState.noneDecl->magicKind = DeclAST::MagicKind::kNoneType;
+  // Add a declarations for "index" and "None" types.
+  sharedState.indexDecl = &sharedState.declResolver->addMagicDecl(
+      "index", MagicDeclKind::kIndexType, &builtinsDecl);
+  sharedState.indexDecl = &sharedState.declResolver->addMagicDecl(
+      "None", MagicDeclKind::kNoneType, &builtinsDecl);
 }
 
 // Parse the specified .lit file into the specified MLIR context.
