@@ -1029,20 +1029,6 @@ private:
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
-/// Insert an alloca at the top of the function body.
-static Value createAllocaAtEntry(Operation *op, Type type,
-                                 PatternRewriter &rewriter) {
-  OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPointToStart(
-      &op->getParentOfType<mlir::FunctionOpInterface>()
-           .getFunctionBody()
-           .front());
-  Value one = rewriter.create<LLVM::ConstantOp>(op->getLoc(),
-                                                rewriter.getI64IntegerAttr(1));
-  return rewriter.create<LLVM::AllocaOp>(op->getLoc(),
-                                         LLVM::LLVMPointerType::get(type), one);
-}
-
 /// Lower `pop.variant.create` into a series of bitcasts, loads, and stores.
 /// LLVM's `bitcast` doesn't work on aggregate types, so we need to allocate
 /// memory to play around with. The `alloca` should always be optimized away by
@@ -1153,108 +1139,6 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
         op.getLoc(), LLVM::LLVMPointerType::get(valueType), contentPtr);
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, valuePtr);
     rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPVariantVisit
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPVariantVisit : mlir::ConvertOpToLLVMPattern<VariantVisitOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariantVisitOp op, VariantVisitOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Store the contents into a block of memory.
-    auto variantType =
-        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
-    Value contentPtr =
-        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
-    Value content = rewriter.create<LLVM::ExtractValueOp>(
-        op.getLoc(), adaptor.getVariant(), 0);
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), 1, contentPtr);
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), content, contentPtr);
-
-    // Split the block at the op.
-    Block *condBlock = rewriter.getInsertionBlock();
-    Block *continueBlock = rewriter.splitBlock(condBlock, Block::iterator(op));
-
-    // Create the arguments on the continue block with which to replace the
-    // results of the op.
-    SmallVector<Value> results;
-    results.reserve(op.getNumResults());
-    for (Type resultType : op.getResultTypes()) {
-      Type type = getTypeConverter()->convertType(resultType);
-      if (!type)
-        return op.emitError("failed to convert result type");
-      results.push_back(continueBlock->addArgument(type, op.getLoc()));
-    }
-
-    // Rewrite a yield terminator.
-    auto rewriteYield = [&](Block *block) -> LogicalResult {
-      auto yield = cast<YieldOp>(block->getTerminator());
-      rewriter.setInsertionPoint(yield);
-      SmallVector<Value> operands;
-      operands.reserve(yield.getNumOperands());
-      if (failed(rewriter.getRemappedValues(yield.getOperands(), operands)))
-        return yield.emitError("failed to get remapped operands");
-      rewriter.replaceOpWithNewOp<LLVM::BrOp>(yield, operands, continueBlock);
-      return success();
-    };
-
-    // Handle the case regions.
-    SmallVector<Block *> successors;
-    successors.reserve(op.getNumRegions());
-    for (auto [caseType, region] : llvm::zip(op.getCases(), op.getRegions())) {
-      Block *block = &region->front();
-
-      // Load the content and replace the region argument with it.
-      rewriter.setInsertionPointToStart(block);
-      Type type = getTypeConverter()->convertType(caseType);
-      Value valuePtr = rewriter.create<LLVM::BitcastOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(type), contentPtr);
-      Value value = rewriter.create<LLVM::LoadOp>(op.getLoc(), valuePtr);
-      rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
-      region->getArgument(0).replaceAllUsesWith(value);
-      region->eraseArgument(0);
-
-      // Inline the region.
-      if (failed(rewriteYield(block)))
-        return failure();
-      successors.push_back(block);
-      rewriter.inlineRegionBefore(*region, continueBlock);
-    }
-
-    // Handle the trailing default region if present.
-    SmallVector<int32_t> caseValues;
-    caseValues.reserve(op.getCases().size());
-    for (Type caseType : op.getCases())
-      caseValues.push_back(*op.getVariant().getType().getTypeIndex(caseType));
-    if (op.getCases().size() != op.getNumRegions()) {
-      Block *block = &op.getRegions().back()->front();
-      // Insert a lifetime end marker on this control path.
-      rewriter.setInsertionPointToStart(block);
-      rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
-      if (failed(rewriteYield(block)))
-        return failure();
-      successors.push_back(block);
-      rewriter.inlineRegionBefore(*op.getRegions().back(), continueBlock);
-    } else {
-      caseValues.pop_back();
-    }
-
-    // Create the LLVM switch. If all cases were specified, pick the last block
-    // as the default.
-    rewriter.setInsertionPointToEnd(condBlock);
-    Value discr = rewriter.create<LLVM::ExtractValueOp>(
-        op.getLoc(), adaptor.getVariant(), 1);
-    SmallVector<ValueRange> caseOperands(successors.size(), {});
-    rewriter.create<LLVM::SwitchOp>(
-        op.getLoc(), discr, successors.back(), ValueRange(), caseValues,
-        ArrayRef<Block *>(successors).drop_back(), caseOperands);
-    rewriter.replaceOp(op, continueBlock->getArguments());
     return success();
   }
 };
@@ -1477,7 +1361,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPVariantCreate,
       ConvertPOPVariantGet,
       ConvertPOPVariantIs,
-      ConvertPOPVariantVisit,
       ConvertPOPXOr
       // clang-format on
       >(typeConverter);
@@ -1537,7 +1420,12 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<POPDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
+
+  // These ops are handled by other passes.
+  target.addLegalOp<GlobalConstantOp>();
   target.addLegalOp<ExternalCallOp>();
+  target.addLegalOp<VariantVisitOp>();
+  target.addLegalOp<YieldOp>();
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
@@ -1668,7 +1556,6 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
-  target.addIllegalOp<ExternalCallOp>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.
@@ -1681,10 +1568,12 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
 
   // Convert external calls.
+  target.addIllegalOp<ExternalCallOp>();
   patterns.insert<ConvertPOPExternalCall>(symtab, typeConverter);
 
   // Convert global constants.
   DenseMap<TypedAttr, LLVM::GlobalOp> constants;
+  target.addIllegalOp<GlobalConstantOp>();
   patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
 
   if (failed(
