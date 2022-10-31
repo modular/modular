@@ -27,6 +27,22 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
+// ASTType
+//===----------------------------------------------------------------------===//
+
+ASTType::ASTType(ASTDecl *decl) : decl(decl) {
+  assert(decl && "cannot create ASTType with null decl");
+  paramValues = ParamBindArrayAttr::get(decl->getContext(), {});
+}
+
+ASTType::ASTType(ASTDecl *decl, ParamBindArrayAttr attrs)
+    : decl(decl), paramValues(attrs) {}
+
+ParamBindArrayAttr ASTType::getParamValues() const {
+  return cast<ParamBindArrayAttr>(paramValues);
+}
+
+//===----------------------------------------------------------------------===//
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
@@ -257,6 +273,7 @@ namespace {
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
+  SmallVector<ASTType> inputASTTypes;
   std::vector<Location> inputLocs;
 
   ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
@@ -272,12 +289,13 @@ struct ParsedMetaSignature {
         return failure();
       }
 
-      Type paramType;
+      std::pair<Type, ASTType> paramType;
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
           p.parseType(paramType, decl, None))
         return failure();
-      inputDecls.push_back(ParamDeclAttr::get(name, paramType));
+      inputDecls.push_back(ParamDeclAttr::get(name, paramType.first));
+      inputASTTypes.push_back(paramType.second);
       return success();
     };
 
@@ -291,6 +309,7 @@ struct ParsedMetaSignature {
   /// specified scope for the declaration, so name lookup will find them.
   void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
+    // TODO: Use inputTypes.
     for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs))
       declResolver.addFullyResolvedDecl(paramDecl, loc, &decl);
   }
@@ -301,7 +320,7 @@ namespace {
 struct ParsedParam {
   SMLoc loc;
   StringAttr name;
-  Type type;
+  std::pair<Type, ASTType> type;
   ExprNode *initValue = nullptr;
 
   // TODO: Implement support for variadic parameter markers:
@@ -338,26 +357,25 @@ struct ParsedParam {
 ///
 /// This returns failure after emitting an error when a type checking problem is
 /// detected.
-static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
-                                          ParsedMetaSignature &metaSignature,
-                                          SmallVector<ParsedParam> &params,
-                                          Type &resultType) {
+static ParseResult checkFunctionSignature(
+    ASTDecl &declScope, LITFuncOp defDecl, ParsedMetaSignature &metaSignature,
+    SmallVector<ParsedParam> &params, std::pair<Type, ASTType> &resultType) {
 
   // If this definition is a struct/class member, return the self type otherwise
   // return a null type.
-  auto getSelfTypeForMethod = [&]() -> Type {
+  auto getSelfTypeForMethod = [&]() -> std::pair<Type, ASTType> {
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
     ASTDecl *parent = declScope.getParentDecl();
     if (!parent || !isa<LITStructDeclOp>(*parent))
-      return Type();
+      return {};
     auto parentStruct = cast<LITStructDeclOp>(*parent);
 
     // Figure out the expected type of self.
     if (!parentStruct.getParamDecls().empty()) {
       // TODO(Issue #4182)
       defDecl.emitError("cannot (yet) compute self type in parametric struct");
-      return Type();
+      return {};
     }
     ParamBindArrayAttr selfParams =
         ParamBindArrayAttr::get(defDecl.getContext(), {});
@@ -365,13 +383,13 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
                             selfParams);
     // Methods on structs (but not classes) take the struct implicitly by
     // pointer so they can use and mutate it.
-    return POP::PointerType::get(ref);
+    return {POP::PointerType::get(ref), ASTType(parent, selfParams)};
   };
 
   auto selfType = getSelfTypeForMethod();
 
   // If this is a method, enforce that self is declared correctly.
-  if (selfType) {
+  if (selfType.first) {
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
@@ -380,20 +398,23 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
     }
 
     // Check that the first method has the right type.
-    if (!params[0].type)
+    if (!params[0].type.first)
       params[0].type = selfType;
-    if (params[0].type != selfType)
-      return defDecl.emitError("'self' argument must have type ") << selfType;
+    if (params[0].type.first != selfType.first) {
+      // TODO(pretty types).
+      return defDecl.emitError("'self' argument must have type ")
+             << selfType.first;
+    }
   }
 
   // This lambda verifies the decl is a method.
   auto checkInstanceMethod = [&]() -> ParseResult {
-    if (!selfType)
+    if (!selfType.first)
       return defDecl.emitError("special function must be a method");
     return success();
   };
   auto checkResultNoneType = [&]() -> ParseResult {
-    if (!isa<KGEN::NoneType>(resultType))
+    if (!isa<KGEN::NoneType>(resultType.first))
       return defDecl.emitError("result type must be elided (or None)");
     return success();
   };
@@ -447,12 +468,13 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   // a def should default to returning a (default initialized) Object, whereas
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
-  Type resultType;
+  std::pair<Type, ASTType> resultType;
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, decl, None))
       return failure();
   } else {
-    resultType = KGEN::NoneType::get(getContext());
+    resultType = {KGEN::NoneType::get(getContext()),
+                  ASTType(sharedState.noneDecl)};
   }
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
@@ -481,9 +503,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // TODO: I think there are some other special cases to evaluate, e.g. "self"
     // arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
-    if (!param.type)
-      param.type = builder.getType<ObjectType>();
-    paramTypes.push_back(param.type);
+    if (!param.type.first)
+      param.type = {builder.getType<ObjectType>(),
+                    ASTType(sharedState.objectDecl)};
+    paramTypes.push_back(param.type.first);
 
     // TODO: add support for default parameter expressions.
     if (param.initValue)
@@ -491,7 +514,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   }
 
   defOp.setValueParamNamesAttr(StringArrayAttr::get(getContext(), paramNames));
-  defOp.setType(builder.getFunctionType(paramTypes, resultType));
+  defOp.setType(builder.getFunctionType(paramTypes, resultType.first));
   defOp.setParamDeclsAttr(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
   defOp.getBody()->addArguments(paramTypes, paramLocs);
@@ -547,7 +570,7 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
-  Type type;
+  std::pair<Type, ASTType> type;
   ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.
@@ -555,7 +578,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
       p.parseType(type, decl, decl.getIndentation()))
     return failure();
 
-  varOp.getResult().setType(POP::PointerType::get(type));
+  varOp.getResult().setType(POP::PointerType::get(type.first));
 
   if (p.consumeIf(LitToken::equal)) {
     p.emitError("var initializers not supported yet");
