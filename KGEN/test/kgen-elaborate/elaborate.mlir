@@ -935,3 +935,20 @@ kgen.generator @doIt() {
   %0 = kgen.call @tripleNested<A=1>() : () -> index
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @passArgument
+kgen.generator @passArgument(%arg0: index) -> index {
+  // CHECK: return %arg0
+  kgen.return %arg0 : index
+}
+
+// CHECK-LABEL: kgen.func @doIt
+kgen.generator @doIt() -> index {
+  // CHECK: %0 = index.constant 2
+  %0 = index.constant 2
+  %1 = kgen.inlined_call[(index) -> index: @passArgument](%0)
+  // CHECK: return %0 : index
+  kgen.return %0 : index
+}
