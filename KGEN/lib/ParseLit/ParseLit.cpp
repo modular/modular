@@ -69,11 +69,26 @@ Location LitSharedState::translateLocation(SMLoc loc) {
 /// Add declarations for magic things to the builtins decl.
 static void addBuiltinDecls(LitSharedState &sharedState,
                             ASTDecl &builtinsDecl) {
-  // Add a declarations for "index" and "None" types.
-  sharedState.indexDecl = &sharedState.declResolver->addMagicDecl(
-      "index", MagicDeclKind::kIndexType, &builtinsDecl);
-  sharedState.indexDecl = &sharedState.declResolver->addMagicDecl(
-      "None", MagicDeclKind::kNoneType, &builtinsDecl);
+  auto &resolver = *sharedState.declResolver;
+
+  // Make the error type.  Anything that references this will
+  // considering it erroneous and already declared as such.
+  sharedState.typeCheckErrorTypeDecl =
+      &resolver.addMagicDecl("<<type check error>>",
+                             MagicDeclKind::kTypeCheckErrorType, &builtinsDecl);
+  sharedState.typeCheckErrorTypeDecl->hasReferenceError = true;
+
+  // Add a declarations for builtin types.
+  sharedState.indexDecl =
+      &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
+  sharedState.noneDecl =
+      &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
+  sharedState.pointerDecl = &resolver.addMagicDecl(
+      "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
+
+  /// FIXME: This should be a user declared type in the standard library.
+  sharedState.objectDecl = &resolver.addMagicDecl(
+      "object", MagicDeclKind::kObjectType, &builtinsDecl);
 }
 
 // Parse the specified .lit file into the specified MLIR context.

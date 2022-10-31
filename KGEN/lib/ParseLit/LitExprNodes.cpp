@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "LitSharedState.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 
 using namespace M;
@@ -136,11 +137,17 @@ LValue ExprEmitter::emitLValue(const ExprNode *node, Type contextualType,
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-Type ExprEmitter::emitType(const ExprNode *node) {
-  Type result = node->emitType(*this);
+std::pair<Type, ASTType> ExprEmitter::emitType(const ExprNode *node) {
+  std::pair<Type, ASTType> result = node->emitType(*this);
+
   // The emitType methods return null on failure, we return a
   // TypeCheckErrorType to simplify clients.
-  return result ? result : TypeCheckErrorType::get(getContext());
+  if (!result.first) {
+    result.first = TypeCheckErrorType::get(getContext());
+    result.second = ASTType(shared.typeCheckErrorTypeDecl);
+  }
+  // TODO: Should this return an magic decl marked erroneous?
+  return result;
 }
 
 /// Perform a name lookup in the current scope and return the named
@@ -179,9 +186,9 @@ AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
   return IntegerAttr::get(IndexType::get(emitter.getContext()), value);
 }
 
-Type IntLiteralNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> IntLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
@@ -192,9 +199,10 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
                         APFloat(value.convertToDouble()));
 }
 
-Type FloatLiteralNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType>
+FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
@@ -203,9 +211,10 @@ AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
   return StringAttr::get(emitter.getContext(), value);
 }
 
-Type StringLiteralNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType>
+StringLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
@@ -221,12 +230,13 @@ AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
   }
 
   auto loc = emitter.translateLocation(getLoc());
-  return emitter.builder->create<NoneValueOp>(loc, emitType(emitter))
-      .getResult();
+  auto type = KGEN::NoneType::get(emitter.getContext());
+  return emitter.builder->create<NoneValueOp>(loc, type).getResult();
 }
 
-Type NoneLiteralNode::emitType(ExprEmitter &emitter) const {
-  return KGEN::NoneType::get(emitter.getContext());
+std::pair<Type, ASTType> NoneLiteralNode::emitType(ExprEmitter &emitter) const {
+  return {KGEN::NoneType::get(emitter.getContext()),
+          ASTType(emitter.shared.noneDecl)};
 }
 
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
@@ -288,39 +298,54 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   return {};
 }
 
-Type DeclRefNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
   // Lookup the identifier.
   ASTDecl *decl = emitter.lookupDecl(spelling, getLoc());
   if (!decl)
-    return Type();
+    return {};
   auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
   if (!typeDecl) {
     if (decl->isMagic()) {
+      Type mlirType;
       switch (decl->magicKind) {
       case MagicDeclKind::kNormal:
         llvm_unreachable("not a magic declaration?");
       case MagicDeclKind::kIndexType:
         // TODO(types): This is a hack to unblock tests in the interim.
-        return IndexType::get(context);
+        mlirType = IndexType::get(context);
+        break;
       case MagicDeclKind::kNoneType:
-        return KGEN::NoneType::get(context);
+        mlirType = KGEN::NoneType::get(context);
+        break;
+      case MagicDeclKind::kTypeCheckErrorType:
+        mlirType = TypeCheckErrorType::get(context);
+        break;
+      case MagicDeclKind::kPointerType:
+        emitter.emitError(getLoc(),
+                          "TODO: Cannot emit this until it is parameterized");
+        return {};
+      case MagicDeclKind::kObjectType:
+        mlirType = ObjectType::get(context);
+        break;
       }
+      return {mlirType, ASTType(decl)};
     }
 
     emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
-    return Type();
+    return {};
   }
 
   auto numParams = typeDecl.getParamDecls().size();
   if (numParams != 0) {
     emitter.emitError(getLoc(), "'" + spelling + "' requires ")
         << numParams << " meta parameter" << plural(numParams);
-    return Type();
+    return {};
   }
 
-  return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
+  return {RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr())),
+          ASTType(decl)};
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
@@ -387,9 +412,10 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-Type AttributeRefNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType>
+AttributeRefNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
@@ -466,9 +492,9 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   return call.getResult(0);
 }
 
-Type CallNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> CallNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
@@ -530,26 +556,28 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-Type SubscriptNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> SubscriptNode::emitType(ExprEmitter &emitter) const {
   // KGEN doesn't support unbound parametric types (e.g. "SIMD" with unbound
   // size/dtype) as a stand-alone type, so we handle name resolution here.
   auto baseDRE = dyn_cast<DeclRefNode>(base);
   if (!baseDRE) {
-    if (Type baseType = base->emitType(emitter))
-      emitter.emitError(getLoc(), "unknown parameterized type ") << baseType;
-    return Type();
+    auto baseType = base->emitType(emitter);
+    if (baseType.first) // TODO(type printing): print pretty name.
+      emitter.emitError(getLoc(), "unknown parameterized type ")
+          << baseType.first;
+    return {};
   }
 
   // Lookup the identifier.
   ASTDecl *decl = emitter.lookupDecl(baseDRE->spelling, getLoc());
   if (!decl)
-    return Type();
+    return {};
 
   auto structOp = dyn_cast<LITStructDeclOp>(*decl);
   if (!structOp) {
     emitter.emitError(getLoc(),
                       "'" + baseDRE->spelling + "' names a value, not a type");
-    return Type();
+    return {};
   }
 
   auto numParams = structOp.getParamDecls().size();
@@ -557,7 +585,7 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
     emitter.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
         << numParams << " meta parameter" << plural(numParams) << " but "
         << indices.size() << " were specified";
-    return Type();
+    return {};
   }
 
   // Emit each of the indices as parameter expressions.
@@ -581,8 +609,10 @@ Type SubscriptNode::emitType(ExprEmitter &emitter) const {
     exprs.push_back(ParamBindAttr::get(decl, value));
   }
 
-  return RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()),
-                      ParamBindArrayAttr::get(emitter.getContext(), exprs));
+  auto typeParams = ParamBindArrayAttr::get(emitter.getContext(), exprs);
+  return {
+      RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()), typeParams),
+      ASTType(decl, typeParams)};
 }
 
 AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
@@ -590,7 +620,7 @@ AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
   return subExpr->emitIR(emitter, contextualType);
 }
 
-Type ParenExprNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
@@ -655,9 +685,9 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   }
 }
 
-Type BinOpNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> BinOpNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }
 
 AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
@@ -694,14 +724,17 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   }
 }
 
-Type UnaryOpNode::emitType(ExprEmitter &emitter) const {
+std::pair<Type, ASTType> UnaryOpNode::emitType(ExprEmitter &emitter) const {
   auto eltType = subExpr->emitType(emitter);
-  if (!eltType)
-    return Type();
+  if (!eltType.first)
+    return {};
 
+  // FIXME: This should be a declared type in the standard library parameterized
+  // by an element type.
   if (kind == kUnaryAmp)
-    return POP::PointerType::get(eltType);
+    return {POP::PointerType::get(eltType.first),
+            ASTType(emitter.shared.pointerDecl)};
 
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return Type();
+  return {};
 }

@@ -172,7 +172,7 @@ public:
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
-  virtual Type emitType(ExprEmitter &state) const = 0;
+  virtual std::pair<Type, ASTType> emitType(ExprEmitter &state) const = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -241,9 +241,10 @@ public:
                     const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
-  /// "Int" into the type for it.  This never returns null - if the expression
-  /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-  Type emitType(const ExprNode *node);
+  /// "Int" into the type for it.  This never returns null MLIR Types - if the
+  /// expression is erroneous, it is diagnosed and a TypeCheckErrorType is
+  /// returned, along with an erroneous AST type.
+  std::pair<Type, ASTType> emitType(const ExprNode *node);
 
   /// Perform a name lookup in the current scope and return the named
   /// declaration.  This emits an error and returns null on error.
