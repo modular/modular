@@ -135,7 +135,8 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<SymbolConstantAttr>:$evaluator);
+                       OptionalAttr<SymbolConstantAttr>:$evaluator,
+                       OptionalAttr<SymbolConstantAttr>:$defaultImpl);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.

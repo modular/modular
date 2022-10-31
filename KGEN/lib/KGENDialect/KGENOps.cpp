@@ -448,14 +448,35 @@ ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
     return failure();
 
   // Parse an optional evaluator.
-  if (parser.parseOptionalKeyword("evaluator"))
+  if (parser.parseOptionalKeyword("evaluator")) {
+    // If we don't have an evaluator, we must not have a default_impl.
+    if (succeeded(parser.parseOptionalKeyword("default_impl")))
+      return mlir::emitError(
+          parser.getEncodedSourceLoc(parser.getCurrentLocation()),
+          "cannot specify a default without an evaluator");
+
     return success();
+  }
+
   Type sigType;
   TypedAttr evaluator;
   if (parseKGENType(parser, sigType) || parser.parseEqual() ||
       parseParamValue(parser, evaluator, sigType))
     return failure();
-  result.addAttribute(getEvaluatorAttrName(result.name), evaluator);
+  result.addAttribute(GeneratorInterfaceOp::getEvaluatorAttrName(result.name),
+                      evaluator);
+
+  // If it has an evaluator, the user may specify a default.
+  if (parser.parseOptionalKeyword("defaultImpl"))
+    return success();
+
+  TypedAttr defaultImpl;
+  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
+      parseParamValue(parser, defaultImpl, sigType))
+    return failure();
+  result.addAttribute(GeneratorInterfaceOp::getDefaultImplAttrName(result.name),
+                      defaultImpl);
+
   return success();
 }
 
@@ -467,6 +488,13 @@ void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
     printKGENType(p.getStream(), evaluator.getType());
     p << " = ";
     printParamValue(evaluator, p.getStream());
+  }
+
+  if (SymbolConstantAttr defaultImpl = getDefaultImplAttr()) {
+    p << " defaultImpl ";
+    printKGENType(p.getStream(), defaultImpl.getType());
+    p << " = ";
+    printParamValue(defaultImpl, p.getStream());
   }
 }
 
@@ -506,9 +534,37 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!funcSignature)
     return failure();
 
-  return verifyDeclSignaturesMatch("interface evaluator", expectedSignature,
-                                   getLoc(), "referenced evaluator",
-                                   funcSignature, func.getLoc());
+  if (failed(verifyDeclSignaturesMatch("interface evaluator", expectedSignature,
+                                       getLoc(), "referenced evaluator",
+                                       funcSignature, func.getLoc())))
+    return failure();
+
+  // If a defaultImpl was specified, verify its signature.
+  SymbolConstantAttr defaultImpl = getDefaultImplAttr();
+  if (!defaultImpl)
+    return success();
+  func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
+      *this, defaultImpl.getSymbol().getAttr());
+  if (!func)
+    return emitOpError("defaultImpl ")
+           << defaultImpl.getSymbol()
+           << " does not refer to a KGEN declaration";
+
+  if (!isa<GeneratorOp>(func))
+    return emitOpError("defaultImpl ")
+           << defaultImpl.getSymbol() << " must be a generator";
+
+  funcSignature = func.getSignature().getSpecializedSignature(
+      defaultImpl.getParamValues(), [&] { return emitError(); });
+  if (!funcSignature)
+    return failure();
+
+  if (failed(verifyDeclSignaturesMatch("interface", getSignature(), getLoc(),
+                                       "referenced defaultImpl", funcSignature,
+                                       func.getLoc())))
+    return failure();
+
+  return success();
 }
 
 /// Return null to indicate that this is an "external" callable.
