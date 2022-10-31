@@ -53,8 +53,7 @@ public:
 
   ~ExprParser() {}
 
-  // Expressions.  These methods always return a non-null ExprNode, but it may
-  // be (or include) an Error node if parsing failed.
+  // Expressions.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowest);
@@ -70,9 +69,6 @@ private:
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
-
-  /// Return an error node at the specified location.
-  ExprNode *getErrorAtToken() { return alloc<ErrorNode>(getToken().getLoc()); };
 
   /// Allocate an expression node into the expression bump pointer allocator.
   template <typename T, typename... Args>
@@ -162,7 +158,7 @@ struct InfixInfo {
   static InfixInfo get(LitToken::Kind tokKind) {
     switch (tokKind) {
     default:
-      return {Precedence::kInvalid, ExprNode::kError, false};
+      return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
     case LitToken::plus:
       return {Precedence::kSum, ExprNode::kAdd, false};
     case LitToken::minus:
@@ -208,7 +204,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   switch (tokKind) {
   default:
-    return ExprNode::kError;
+    llvm_unreachable("invalid unary token");
   case LitToken::plus:
     return ExprNode::kUnaryPlus;
   case LitToken::minus:
@@ -286,7 +282,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
 
   default:
     emitError("unexpected token in expression");
-    result = getErrorAtToken();
+    result = nullptr;
     return failure();
   }
 
