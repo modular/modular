@@ -1102,6 +1102,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   ignoredAttrNames.push_back(StringRef("valueParamNames"));
   // Don't print evaluator in kgen.generator.interface.
   ignoredAttrNames.push_back(StringRef("evaluator"));
+  // Don't print the default_impl in kgen.generator.interface.
+  ignoredAttrNames.push_back(StringRef("defaultImpl"));
 
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           ignoredAttrNames);

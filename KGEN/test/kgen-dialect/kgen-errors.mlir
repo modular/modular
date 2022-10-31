@@ -763,3 +763,31 @@ kgen.generator @baz<F>() {
   kgen.param.declare B = <add(F, kValue)>
   kgen.return
 }
+
+// -----
+
+kgen.generator public @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+  %0 = kgen.param.constant = <N>
+  kgen.return %0 : index
+}
+
+// expected-error @below {{'@doesNotExist' does not reference a KGEN declaration}}
+kgen.generator.interface @pickFirst()
+  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
+  defaultImpl () -> () = @doesNotExist
+
+// -----
+
+kgen.generator public @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+  %0 = kgen.param.constant = <N>
+  kgen.return %0 : index
+}
+
+kgen.func @defaultFunc() {
+  kgen.return
+}
+
+// expected-error @below {{defaultImpl @defaultFunc must be a generator}}
+kgen.generator.interface @pickFirst()
+  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
+  defaultImpl () -> () = @defaultFunc
