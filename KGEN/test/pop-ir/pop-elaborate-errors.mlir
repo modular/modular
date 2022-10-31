@@ -61,7 +61,7 @@ kgen.generator @impl() {
 // -----
 
 kgen.generator @invalid_bool<type: dtype>() -> !pop.simd<1, type> {
-  // expected-note @below {{cannot coerce constant value to bool}}
+  // expected-note @below {{cannot coerce i32 value to bool}}
   %0 = pop.constant(1 : i32) : !pop.simd<1, type>
   kgen.return %0 : !pop.simd<1, type>
 }

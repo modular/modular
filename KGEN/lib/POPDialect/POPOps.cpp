@@ -103,8 +103,12 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
   if (auto value = dyn_cast<IntegerAttr>(attr)) {
     auto type = value.getType().cast<IntegerType>();
 
-    if (!dtype.isInt() && !dtype.isFloat())
+    if (!dtype.isInt() && !dtype.isFloat() && !dtype.isBool())
       return Error("cannot coerce constant value to " + dtype.getAsString());
+
+    if (dtype.isBool() && type.getWidth() != 1)
+      return Error("cannot coerce i" + Twine(type.getWidth()) +
+                   " value to bool");
 
     if (dtype.isInt()) {
       ErrorOr<APSInt> intValue = reifyIntToInt(value.getValue(), type, dtype);
