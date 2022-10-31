@@ -157,6 +157,8 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
   let options = [
     ListOption<"searchPaths", "search-path", "std::string",
                "Search path for imported modules.">,
+    Option<"shouldDoSearch", "enable-search", "bool", "false",
+           "If true, benchmark implementations to find the fastest one.">,
   ];
 }
 

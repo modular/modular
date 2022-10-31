@@ -194,7 +194,8 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab) : symtab(symtab) {}
+  Elaborator(SymbolTable &symtab, bool enableSearch = false)
+      : symtab(symtab), enableSearch(enableSearch) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
@@ -303,6 +304,10 @@ private:
   /// These functions were either inlined by a parameter rewriter or are
   /// malformed. These functions need to be cleaned up at the end of the pass.
   DenseSet<FuncOp> funcsToRemove;
+
+  /// Enable search during interface elaboration. This defaults to `false`
+  /// because we want search to be opt-in.
+  bool enableSearch = false;
 };
 } // namespace
 
@@ -1519,8 +1524,9 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     return result;
   }
 
-  // If a default has been provided, then use it.
-  if (Optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl()) {
+  // If a default has been provided and we don't want to do search, then use it.
+  Optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl();
+  if (!enableSearch && defaultImpl.has_value()) {
     // If the SymbolConstant exists, then the callee must exist.
     Operation *defaultImplCallee = lookupCallee(defaultImpl->getSymbol());
     assert(defaultImplCallee != nullptr && "expected defaultImpl to exist");
@@ -1567,6 +1573,10 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
   // Truncate the result vector to contain only the successful implementations.
   result.erase(newEnd, result.end());
+
+  // If we don't want to do search, we're done.
+  if (!enableSearch)
+    return {*result.begin()};
 
   // Pull out the elaboration results that succeeded to provide to the search
   // inputs.
@@ -1825,10 +1835,11 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(SymbolTable &symtab,
-                                     ArrayRef<GeneratorOp> primaryGenerators) {
+                                     ArrayRef<GeneratorOp> primaryGenerators,
+                                     bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   auto primary = cast<ModuleOp>(symtab.getOp());
-  Elaborator elaborator(symtab);
+  Elaborator elaborator(symtab, enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -1960,7 +1971,7 @@ struct ElaborateGeneratorsPass
     if (failed(resolveIncludes(symtab, paths)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(symtab, primaryGenerators)))
+    if (failed(elaborateGenerators(symtab, primaryGenerators, shouldDoSearch)))
       return signalPassFailure();
   }
 };
