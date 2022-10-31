@@ -202,3 +202,12 @@ kgen.generator @impl() {
   kgen.call @array_constant<size = 2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @reify_i1
+kgen.generator @reify_i1() {
+  // CHECK: pop.constant(true) : !pop.simd<1, bool>
+  %0 = pop.constant(1:i1) : !pop.simd<1, bool>
+  kgen.return
+}
