@@ -118,8 +118,6 @@ enum class MagicDeclKind {
   kNoneType,
   // This is a POP::PointerType type.
   kPointerType,
-  // This is the lit.object type.
-  kObjectType,
 };
 
 } // namespace M::KGEN::LIT

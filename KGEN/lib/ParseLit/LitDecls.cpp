@@ -52,6 +52,17 @@ ParamDeclAttr ASTDecl::getParamDecl() const {
   return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
 }
 
+/// Given a type declaration, return a RefType for a reference to this with
+/// the specified type parameters.  This aborts if the current decl isn't a
+/// type.
+RefType ASTDecl::getIRTypeReference(ParamBindArrayAttr params) {
+  if (!params)
+    params = ParamBindArrayAttr::get(getContext(), {});
+  auto parentStruct = cast<LITStructDeclOp>(*this);
+  return RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
+                      params);
+}
+
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
@@ -379,8 +390,9 @@ static ParseResult checkFunctionSignature(
     }
     ParamBindArrayAttr selfParams =
         ParamBindArrayAttr::get(defDecl.getContext(), {});
-    auto ref = RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
-                            selfParams);
+
+    auto ref = parent->getIRTypeReference(selfParams);
+
     // Methods on structs (but not classes) take the struct implicitly by
     // pointer so they can use and mutate it.
     return {POP::PointerType::get(ref), ASTType(parent, selfParams)};
@@ -504,7 +516,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
     if (!param.type.first)
-      param.type = {builder.getType<ObjectType>(),
+      param.type = {sharedState.objectDecl->getIRTypeReference({}),
                     ASTType(sharedState.objectDecl)};
     paramTypes.push_back(param.type.first);
 

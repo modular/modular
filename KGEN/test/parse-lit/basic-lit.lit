@@ -162,7 +162,7 @@ struct Pair[dt: DType]:
 
 # CHECK-NEXT: }
 
-# CHECK-LABEL:  lit.func public @var_decls(%untyped: !lit.object)
+# CHECK-LABEL:  lit.func public @var_decls(%untyped: !kgen.ref<@object>)
 def var_decls(untyped):
   # CHECK: %x = lit.var.decl "x" : <index>
   # CHECK: %y = lit.var.decl "y" : <@Int>

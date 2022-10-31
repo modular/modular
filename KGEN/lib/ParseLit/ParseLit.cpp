@@ -86,9 +86,18 @@ static void addBuiltinDecls(LitSharedState &sharedState,
   sharedState.pointerDecl = &resolver.addMagicDecl(
       "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
 
-  /// FIXME: This should be a user declared type in the standard library.
-  sharedState.objectDecl = &resolver.addMagicDecl(
-      "object", MagicDeclKind::kObjectType, &builtinsDecl);
+  /// FIXME: These should be a user declared types in the standard library,
+  /// which are looked up here instead of being synthesized.
+
+  auto b = builtinsDecl.getDeclEndBuilder();
+  auto loc = builtinsDecl.getLoc();
+
+  // Add a declaration for an "index" struct, which is used as a transitionary
+  // thing as we bring up full type support.  This should be eliminated.
+  auto objectDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
+  // TODO: Add body to the object type.
+  sharedState.objectDecl =
+      &resolver.addFullyResolvedDecl(objectDecl, &builtinsDecl);
 }
 
 // Parse the specified .lit file into the specified MLIR context.
