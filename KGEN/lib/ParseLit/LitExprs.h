@@ -130,7 +130,6 @@ class ExprNode {
 public:
   // This indicates the subclass.
   enum Kind {
-    kError,         // `
     kIntLiteral,    // 42
     kFloatLiteral,  // 1.1
     kStringLiteral, // "Hello"
@@ -157,7 +156,6 @@ public:
     kExp,
     kFirstBinOp = kAdd,
     kLastBinOp = kExp,
-
   } const kind;
 
   ExprNode(Kind kind) : kind(kind) {}
@@ -165,9 +163,6 @@ public:
 
   /// Return the primary location for this node for error reporting purposes.
   virtual SMLoc getLoc() const = 0;
-
-  /// Return true if this expression tree contains an already-reported error.
-  virtual bool containsError() const = 0;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an

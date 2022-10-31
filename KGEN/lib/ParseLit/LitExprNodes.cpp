@@ -168,13 +168,6 @@ DeclAST *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
 
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
-/// Error nodes cannot be emitted and have already been diagnosed.
-AnyValue ErrorNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
-  return AnyValue();
-}
-
-Type ErrorNode::emitType(ExprEmitter &emitter) const { return Type(); }
-
 AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
                                 Type contextualType) const {
   // TODO: Handle contextual types.
