@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/KGENDialect/KGENCallInterface.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
@@ -157,8 +158,9 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
 // AddressOf
 //===----------------------------------------------------------------------===//
 
-def AddressOfOp : KGENOp<"addressof",
-    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def AddressOfOp : KGENOp<"addressof", [
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclareOpInterfaceMethods<KGENCallOpInterface, ["getFunctionType"]>]> {
   let summary = "Get the address of a function.";
   let description = [{
     The `kgen.addressof` operation references a parametric function and returns
@@ -205,51 +207,68 @@ def AddressOfOp : KGENOp<"addressof",
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams)>
   ];
-
-  let extraClassDeclaration = [{
-    /// Return a signature for this function reference.
-    SignatureType getSignature();
-  }];
 }
 
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
-def CallOp
-  : KGENOp<"call", [CallOpInterface,
-                    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-
+def CallOp : KGENOp<"call", [KGENCallOpInterface,
+    DeclareOpInterfaceMethods<CallOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
+  let description = [{
+    The `kgen.call` operation invokes a parametric function. The callee must be
+    a flat symbol reference to a KGEN function, generator, or interface. The
+    operation must bind parameter values as required by the callee. The
+    operation's operands are used as function arguments and the operation's
+    results match the return values of the function.
+
+    Example:
+
+    ```mlir
+    kgen.func @foo(%arg0: index) {
+      kgen.return %arg0 : index
+    }
+
+    %0 = kgen.call @foo(%arg0) : (index) -> index
+    ```
+
+    Specify values for the input parameters to the callee using a parameter
+    binding list and declarations for result parameters with a parameter
+    declaration list.
+
+    Example:
+
+    ```mlir
+    kgen.generator @add2<N -> index>() {
+      kgen.return<add(N, 2)>
+    }
+
+    kgen.call @add2<N = 2 -> NPlus2>() : () -> ()
+    ```
+
+    Region parameters can be specified using a special region binding attribute
+    to indicate that a parameter's value is one of the operation's regions. The
+    regions must be isolated from above.
+
+    Example:
+
+    ```mlir
+    kgen.generator.interface @passRegion<fn: <N>(index) -> index>()
+
+    kgen.call @passRegion<fn: <N>(index) = region>() : () -> ()
+    fn<N>(%arg0: index) {
+      kgen.return %arg0 : index
+    }
+    ```
+  }];
 
   let arguments =
    (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
-
-  let extraClassDeclaration = [{
-    FunctionType getFunctionType() {
-      return FunctionType::get(getContext(), getOperandTypes(),
-                               getResultTypes());
-    }
-
-    /// Get the argument operands to the called function.
-    operand_range getArgOperands() {
-      return {arg_operand_begin(), arg_operand_end()};
-    }
-
-    operand_iterator arg_operand_begin() { return operand_begin(); }
-    operand_iterator arg_operand_end() { return operand_end(); }
-
-    /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() {
-      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
-    }
-
-    /// Return a signature for this call.
-    SignatureType getSignature();
-  }];
 
   let assemblyFormat = [{
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
@@ -273,8 +292,37 @@ def CallOp
 
 // NOTE: This cannot be a CallOpInterface, because the callee is not a
 // SymbolRefAttr, it is a different kind of attribute.
-def CallParamOp : KGENOp<"call_param"> {
+def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
   let summary = "Call declaration specified by a parameter expression";
+  let description = [{
+    The `kgen.call_param` operation invokes a parametric callee. The callee is
+    a parameter expression with a signature type, which in practice is either a
+    symbol constant, so KGEN function, generator, or interface, or a region
+    body passed from higher up the call stack.
+
+    Example:
+
+    ```mlir
+    // Symbol constant callee.
+    %0 = kgen.call_param[(index) -> index: @someFn](%arg0)
+
+    // Parameter reference callee.
+    %1 = kgen.call_param[<N>() -> index: foo]<N = 4>()
+    ```
+
+    The operation can bind regions as parameters as well, but they must be
+    isolated from above.
+
+    ```mlir
+    kgen.call_param[<fn: <N>(index) -> index>(index) -> (): callee]<
+      fn: <N>(index) -> index = region>(%arg0)
+    fn<N>(%arg0: index) {
+      %0 = kgen.param.constant = <N>
+      %1 = index.add %0, %arg0
+      kgen.return %1 : index
+    }
+    ```
+  }];
 
   let arguments =
    (ins TypedParameterExprAttr<SignatureType>:$callee,
@@ -283,29 +331,10 @@ def CallParamOp : KGENOp<"call_param"> {
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
-  let extraClassDeclaration = [{
-    FunctionType getFunctionType() {
-      return FunctionType::get(getContext(), getOperandTypes(),
-                               getResultTypes());
-    }
-
-    /// Get the argument operands to the called function.
-    operand_range getArgOperands() {
-      return {arg_operand_begin(), arg_operand_end()};
-    }
-
-    operand_iterator arg_operand_begin() { return operand_begin(); }
-    operand_iterator arg_operand_end() { return operand_end(); }
-
-    /// Return a signature for this call.
-    SignatureType getSignature();
-  }];
-
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                             type($operands), type($results))
-    `(` $operands `)`
-    attr-dict
+    `(` $operands `)` attr-dict
     custom<CallRegions>($regions, ref($paramValues))
   }];
 
@@ -324,7 +353,7 @@ def CallParamOp : KGENOp<"call_param"> {
 // InlinedCallOp
 //===----------------------------------------------------------------------===//
 
-def InlinedCallOp : KGENOp<"inlined_call"> {
+def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
   let summary = "Parametric call that allows implicit capture.";
   let description = [{
     The `kgen.inlined_call` operation is a parametric call similar to
@@ -364,13 +393,6 @@ def InlinedCallOp : KGENOp<"inlined_call"> {
   }];
 
   let hasRegionVerifier = 1;
-
-  let extraClassDeclaration = [{
-    /// Return the function type of this call.
-    FunctionType getFunctionType();
-    /// Return the signature type of this call.
-    SignatureType getSignature();
-  }];
 }
 
 //===----------------------------------------------------------------------===//

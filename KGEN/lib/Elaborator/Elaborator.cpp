@@ -438,7 +438,7 @@ private:
   /// Partially evaluate the parameter expressions nested under this operation.
   /// Operations in a region body need to be made parametrically "isolated"
   /// before the bodies can be processed.
-  void partiallyEvaluateRegions(Operation *call);
+  void partiallyEvaluateRegions(KGENCallOpInterface call);
 
   /// Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
@@ -477,7 +477,8 @@ private:
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
   /// Process a call to a region.
-  LogicalResult processRegionCallImpl(Operation *call, StringAttr regionName,
+  LogicalResult processRegionCallImpl(KGENCallOpInterface call,
+                                      StringAttr regionName,
                                       ParamDeclArrayAttr decls,
                                       ArrayRef<ParamBindAttr> paramValues);
 
@@ -889,7 +890,7 @@ void ParameterRewriter::evaluateParameters(ParameterEvaluator &evaluator,
   }
 }
 
-void ParameterRewriter::partiallyEvaluateRegions(Operation *call) {
+void ParameterRewriter::partiallyEvaluateRegions(KGENCallOpInterface call) {
   // FIXME: Nested regions get specialized O(N^2) times. It would be more
   // efficient to not partially specialize and keep folding parameter scopes
   // until we actually need to fully evaluate everything.
@@ -929,10 +930,8 @@ void ParameterRewriter::partiallyEvaluateRegions(Operation *call) {
           recursivelyPartiallyEvaluate(nestedDecl, localEvaluator);
       };
 
-  for (Region &region : call->getRegions()) {
-    auto topLevelDecl = cast<KGENDeclInterface>(region.front().front());
+  for (KGENDeclInterface topLevelDecl : call.getRegionBodies())
     recursivelyPartiallyEvaluate(topLevelDecl, getEvaluator());
-  }
 }
 
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
@@ -940,9 +939,9 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
     ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool inlined) {
-  if (!isa<GeneratorInterfaceOp>(user)) {
+  if (auto call = dyn_cast<KGENCallOpInterface>(user)) {
     // Partially evaluate any nested regions.
-    partiallyEvaluateRegions(user);
+    partiallyEvaluateRegions(call);
   }
 
   // Evaluate any input parameters.
@@ -1193,10 +1192,9 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
       symbolCst.getSymbol(), rewriters, /*inlined=*/false);
 }
 
-LogicalResult
-ParameterRewriter::processRegionCallImpl(Operation *call, StringAttr regionName,
-                                         ParamDeclArrayAttr decls,
-                                         ArrayRef<ParamBindAttr> paramValues) {
+LogicalResult ParameterRewriter::processRegionCallImpl(
+    KGENCallOpInterface call, StringAttr regionName, ParamDeclArrayAttr decls,
+    ArrayRef<ParamBindAttr> paramValues) {
   assert(regionName.getType().isa<SignatureType>() && "not a region reference");
   auto region =
       cast<KGENDeclInterface>(elaborator.getRegionReferenced(regionName));

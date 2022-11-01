@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENCallInterface.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -736,21 +737,7 @@ LogicalResult AddressOfOp::verifyRegions() {
   return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
 }
 
-SignatureType AddressOfOp::getSignature() {
-  SmallVector<ParamDeclAttr> callerInputParamDecls;
-  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
-  llvm::append_range(callerInputParamDecls,
-                     llvm::map_range(getParamValues(), getBindDecl));
-
-  SmallVector<Type> callerResultParamTypes;
-  auto getParamType = [](auto attr) -> Type { return attr.getType(); };
-  llvm::append_range(callerResultParamTypes,
-                     llvm::map_range(getParamDecls(), getParamType));
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
-      TypeArrayAttr::get(getContext(), callerResultParamTypes), getType());
-}
+FunctionType AddressOfOp::getFunctionType() { return getType(); }
 
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
                         StringAttr callee, ArrayRef<ParamBindAttr> inputParams,
@@ -763,23 +750,6 @@ void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
-
-SignatureType CallOp::getSignature() {
-  SmallVector<ParamDeclAttr> callerInputParamDecls;
-  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
-  llvm::append_range(callerInputParamDecls,
-                     llvm::map_range(getParamValues(), getBindDecl));
-
-  SmallVector<Type> callerResultParamTypes;
-  auto getType = [](auto attr) -> Type { return attr.getType(); };
-  llvm::append_range(callerResultParamTypes,
-                     llvm::map_range(getParamDecls(), getType));
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
-      TypeArrayAttr::get(getContext(), callerResultParamTypes),
-      getFunctionType());
-}
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
@@ -823,6 +793,12 @@ void CallOp::build(OpBuilder &builder, OperationState &state,
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
         /*numRegions=*/0);
+}
+
+OperandRange CallOp::getArgOperands() { return getOperands(); }
+
+mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
+  return getCalleeAttr();
 }
 
 LogicalResult CallOp::verifyRegions() {
@@ -878,24 +854,6 @@ static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
   printParamValue(p, value);
   p << "]";
   printCallOpParams(p, op, paramValues, paramDecls);
-}
-
-SignatureType CallParamOp::getSignature() {
-  // Should move this to a "getSignature" method on CallOp.
-  SmallVector<ParamDeclAttr> callerInputParamDecls;
-  auto getBindDecl = [](auto bind) -> ParamDeclAttr { return bind.getDecl(); };
-  llvm::append_range(callerInputParamDecls,
-                     llvm::map_range(getParamValues(), getBindDecl));
-
-  SmallVector<Type> callerResultParamTypes;
-  auto getType = [](auto attr) -> Type { return attr.getType(); };
-  llvm::append_range(callerResultParamTypes,
-                     llvm::map_range(getParamDecls(), getType));
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), callerInputParamDecls),
-      TypeArrayAttr::get(getContext(), callerResultParamTypes),
-      getFunctionType());
 }
 
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
@@ -960,24 +918,6 @@ LogicalResult InlinedCallOp::verifyRegions() {
   // Verify the region signatures match region parameter signatures.
   return verifyRegionSignatures<RegionOpenBodyOp>(*this, getParamValuesAttr());
   return success();
-}
-
-FunctionType InlinedCallOp::getFunctionType() {
-  return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
-}
-
-SignatureType InlinedCallOp::getSignature() {
-  SmallVector<ParamDeclAttr> inputParams;
-  SmallVector<Type> outputParams;
-  inputParams.reserve(getParamValues().size());
-  outputParams.reserve(getParamDecls().size());
-  for (ParamBindAttr value : getParamValues())
-    inputParams.push_back(value.getDecl());
-  for (ParamDeclAttr result : getParamDecls())
-    outputParams.push_back(result.getType());
-  return SignatureType::get(ParamDeclArrayAttr::get(getContext(), inputParams),
-                            TypeArrayAttr::get(getContext(), outputParams),
-                            getFunctionType());
 }
 
 static ParseResult parseInPlaceCallRegions(
@@ -1412,4 +1352,5 @@ void PrecompiledObjectOp::build(OpBuilder &builder, OperationState &result,
 
 // Generated interface definitions.
 #include "KGEN/KGENDialect/ElaboratorOpInterface.cpp.inc"
+#include "KGEN/KGENDialect/KGENCallInterface.cpp.inc"
 #include "KGEN/KGENDialect/KGENDeclInterface.cpp.inc"
