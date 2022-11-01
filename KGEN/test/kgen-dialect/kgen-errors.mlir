@@ -791,3 +791,13 @@ kgen.func @defaultFunc() {
 kgen.generator.interface @pickFirst()
   evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
   defaultImpl () -> () = @defaultFunc
+
+// -----
+
+// expected-error @below {{exports must not be empty}}
+kgen.export []
+
+// -----
+
+// expected-error @below {{could not find referenced symbol '@doesNotExist'}}
+kgen.export [@doesNotExist]

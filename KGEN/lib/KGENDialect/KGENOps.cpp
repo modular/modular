@@ -1291,6 +1291,25 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ExportOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  if (getExports().empty())
+    return emitOpError("exports must not be empty");
+
+  // Just ensure we're exporting symbols we can see.
+  for (FlatSymbolRefAttr e : getExports().getAsRange<FlatSymbolRefAttr>()) {
+    auto decl =
+        symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(*this, e);
+    if (!decl)
+      return emitOpError("could not find referenced symbol '") << e << "'";
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // Precompiled*Op
 //===----------------------------------------------------------------------===//
 
