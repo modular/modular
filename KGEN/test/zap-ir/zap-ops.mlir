@@ -1,13 +1,13 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 // CHECK-LABEL: @zap_buffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<simd<1, f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<simd<1, invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_buffer_construct(
-  %ptr: !pop.pointer<simd<1, f32>>,
-  %opaque: !pop.pointer<simd<1, invalid>>,
+  %ptr: !pop.pointer<scalar<f32>>,
+  %opaque: !pop.pointer<scalar<invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (
   !zap.buffer<4, f32>,
@@ -256,13 +256,13 @@ kgen.generator @zap_ndbuffer_with_params<type:dtype, size>(
 }
 
 // CHECK-LABEL: @zap_ndbuffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<simd<1, f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<simd<1, invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_ndbuffer_construct(
-  %ptr: !pop.pointer<simd<1, f32>>,
-  %opaque: !pop.pointer<simd<1, invalid>>,
+  %ptr: !pop.pointer<scalar<f32>>,
+  %opaque: !pop.pointer<scalar<invalid>>,
   %size: index,
   %dtype: !kgen.dtype) -> (!zap.ndbuffer<[4, 5, 3], f32>,
                            !zap.ndbuffer<[?, 4], f32>,
@@ -386,14 +386,14 @@ kgen.func @zap_ndbuffer_load(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
-  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
-  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<1, f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<1, f32>
-  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.simd<1, f32>
-  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.simd<1, f32>
-  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.simd<1, f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.scalar<f32>
+  %0 = zap.ndbuffer.load %ndbuffer0[%idx, %idxZero, %idxOne] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.scalar<f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.scalar<f32>
+  %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.scalar<f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !zap.ndbuffer<[4, ?], f32>, !pop.scalar<f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] : !zap.ndbuffer<[4, ?], f32>, !pop.scalar<f32>
+  // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] : !zap.ndbuffer<[?], f32>, !pop.scalar<f32>
+  %3 = zap.ndbuffer.load %ndbuffer2[%idx] : !zap.ndbuffer<[?], f32>, !pop.scalar<f32>
   kgen.return
 }
 
@@ -449,13 +449,13 @@ kgen.func @zap_ndbuffer_load_aligned(
 
 
 // CHECK-LABEL: @zap_ndbuffer_store
-// CHECK-SAME: %[[VAL:.*]]: !pop.simd<1, f32>
+// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<f32>
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !zap.ndbuffer<[4, ?], f32>
 // CHECK-SAME: %[[NDBUFFER2:.*]]: !zap.ndbuffer<[?], f32>
 // CHECK-SAME: %[[IDX:.*]]: index
 kgen.func @zap_ndbuffer_store(
-  %val : !pop.simd<1, f32>,
+  %val : !pop.scalar<f32>,
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[4, ?], f32>,
   %ndbuffer2: !zap.ndbuffer<[?], f32>,
@@ -464,14 +464,14 @@ kgen.func @zap_ndbuffer_store(
   %idxZero = index.constant 0
   // CHECK: %[[IDXONE:.*]] =  index.constant
   %idxOne = index.constant 1
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.simd<1, f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !pop.simd<1, f32>, !zap.ndbuffer<[4, ?], f32>
-  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.simd<1, f32>, !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !pop.simd<1, f32>, !zap.ndbuffer<[?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDXZERO]], %[[IDXONE]]] : !pop.scalar<f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idxZero, %idxOne] : !pop.scalar<f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] : !pop.scalar<f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] : !pop.scalar<f32>, !zap.ndbuffer<[4, 5, 3], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] : !pop.scalar<f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] : !pop.scalar<f32>, !zap.ndbuffer<[4, ?], f32>
+  // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] : !pop.scalar<f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] : !pop.scalar<f32>, !zap.ndbuffer<[?], f32>
   kgen.return
 }
 
@@ -586,24 +586,24 @@ kgen.generator @zap_ndbuffer_bitcast<size, size2, dt: dtype>(%arg0: !zap.ndbuffe
 }
 
 // CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !pop.simd<1, f32>) {
-  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.simd<1, f32>
-  zap.print "foo %f"(%a) : !pop.simd<1, f32>
+kgen.generator @zap_print(%a: !pop.scalar<f32>) {
+  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
+  zap.print "foo %f"(%a) : !pop.scalar<f32>
   kgen.return
 }
 
 // CHECK-LABEL: @zap_assert
 // CHECK-SAME: %[[V0:[a-z0-9]+]]:
-kgen.generator @zap_assert(%a: !pop.simd<1, bool>) {
+kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
   // CHECK: zap.debug_assert %[[V0]], "my message"
-  zap.debug_assert %a, "my message" : !pop.simd<1, bool>
+  zap.debug_assert %a, "my message" : !pop.scalar<bool>
   kgen.return
 }
 
 // CHECK-LABEL: @global_string
-kgen.generator @global_string() -> !pop.pointer<array<14, simd<1, si8>>> {
+kgen.generator @global_string() -> !pop.pointer<array<14, scalar<si8>>> {
   // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]
   %0 = zap.global_string "hello world!!\00"[14]
-  // CHECK: return %{{.*}} : !pop.pointer<array<14, simd<1, si8>>>
-  kgen.return %0 : !pop.pointer<array<14, simd<1, si8>>>
+  // CHECK: return %{{.*}} : !pop.pointer<array<14, scalar<si8>>>
+  kgen.return %0 : !pop.pointer<array<14, scalar<si8>>>
 }

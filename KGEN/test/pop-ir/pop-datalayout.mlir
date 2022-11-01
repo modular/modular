@@ -16,7 +16,7 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   %5 = kgen.param.constant = <get_alignof(!pop.array<N, i8>)>
 
   // CHECK-NEXT: <8>
-  %6 = kgen.param.constant = <get_sizeof(!pop.pointer<simd<1, invalid>>)>
+  %6 = kgen.param.constant = <get_sizeof(!pop.pointer<scalar<invalid>>)>
   // CHECK-NEXT: <8>
   %7 = kgen.param.constant = <get_alignof(!pop.pointer<array<4, i32>>)>
   // CHECK-NEXT: <get_sizeof(!pop.pointer<T>)>
@@ -25,13 +25,13 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   %9 = kgen.param.constant = <get_alignof(!pop.pointer<T>)>
 
   // CHECK-NEXT: <4>
-  %10 = kgen.param.constant = <get_sizeof(!pop.simd<1, si32>)>
+  %10 = kgen.param.constant = <get_sizeof(!pop.scalar<si32>)>
   // CHECK-NEXT: <1>
-  %11 = kgen.param.constant = <get_alignof(!pop.simd<1, si4>)>
-  // CHECK-NEXT: <get_sizeof(!pop.simd<1, DT>)>
-  %12 = kgen.param.constant = <get_sizeof(!pop.simd<1, DT>)>
-  // CHECK-NEXT: <get_alignof(!pop.simd<1, DT>)>
-  %13 = kgen.param.constant = <get_alignof(!pop.simd<1, DT>)>
+  %11 = kgen.param.constant = <get_alignof(!pop.scalar<si4>)>
+  // CHECK-NEXT: <get_sizeof(!pop.scalar<DT>)>
+  %12 = kgen.param.constant = <get_sizeof(!pop.scalar<DT>)>
+  // CHECK-NEXT: <get_alignof(!pop.scalar<DT>)>
+  %13 = kgen.param.constant = <get_alignof(!pop.scalar<DT>)>
 
   // CHECK-NEXT: <16>
   %14 = kgen.param.constant = <get_sizeof(!pop.simd<4, f32>)>

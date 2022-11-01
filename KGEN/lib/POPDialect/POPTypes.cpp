@@ -435,6 +435,27 @@ static ParseResult parsePrettyTypeImpl(AsmParser &p,
   return success();
 }
 
+static Type parseScalarType(AsmParser &p) {
+  FailureOr<TypedAttr> resultDType;
+
+  // Parse literal '<' + dtype + literal '>'
+  if (p.parseLess() || failed(parseDTypeParamValue(p, resultDType)) ||
+      p.parseGreater())
+    return {};
+
+  return SIMDType::get(1, *resultDType);
+}
+
+static ParseResult parsePrettyScalarType(AsmParser &p,
+                                         FailureOr<TypedAttr> &typeExpr) {
+  Type t = parseScalarType(p);
+  if (isa<SIMDType>(t)) {
+    typeExpr = TypeConstantAttr::get(t);
+    return success();
+  }
+  return failure();
+}
+
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix or a symbol reference.
 ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
@@ -456,9 +477,10 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
   // Try to parse a keyword for a known POP type. Allow `dtype` for
   // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
   if (p.parseOptionalKeyword(
-          &typeName, {ArrayType::getMnemonic(), PointerType::getMnemonic(),
-                      SIMDType::getMnemonic(), StructType::getMnemonic(),
-                      VariantType::getMnemonic(), DTypeType::getMnemonic()}))
+          &typeName,
+          {ArrayType::getMnemonic(), PointerType::getMnemonic(),
+           SIMDType::getMnemonic(), StructType::getMnemonic(),
+           VariantType::getMnemonic(), DTypeType::getMnemonic(), "scalar"}))
     return parseTypeParamValue(p, typeExpr);
 
   if (typeName == ArrayType::getMnemonic())
@@ -471,6 +493,8 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
     return parsePrettyTypeImpl<StructType>(p, typeExpr);
   if (typeName == VariantType::getMnemonic())
     return parsePrettyTypeImpl<VariantType>(p, typeExpr);
+  if (typeName == "scalar")
+    return parsePrettyScalarType(p, typeExpr);
 
   if (typeName == DTypeType::getMnemonic()) {
     typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
@@ -491,11 +515,20 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
   // Try to print on the known types. Fallback to the generic type printer
   // otherwise.
   llvm::TypeSwitch<Type>(typeCst.getValue())
-      .Case<ArrayType, PointerType, SIMDType, StructType, VariantType>(
-          [&](auto popType) {
-            p << decltype(popType)::getMnemonic();
-            popType.print(p);
-          })
+      .Case<ArrayType, PointerType, StructType, VariantType>([&](auto popType) {
+        p << decltype(popType)::getMnemonic();
+        popType.print(p);
+      })
+      .Case([&](SIMDType popType) {
+        if (isSIMDSizeOneType(popType)) {
+          p << "scalar<";
+          printDTypeParamValue(p, popType.getDType());
+          p << ">";
+          return;
+        }
+        p << SIMDType::getMnemonic();
+        popType.print(p);
+      })
       .Case([&](RefType ref) {
         p << ref.getName();
         printOptionalParamBindSpec(p, ref.getParamValues());
@@ -528,3 +561,40 @@ static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
 
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/POPDialect/POPTypes.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// Custom parser and printer
+//===----------------------------------------------------------------------===//
+
+/// Parse a type registered to this dialect.
+/// For most cases we rely on the default `generatedTypeParser`, but we have a
+/// special handling for "scalar<t>", which is a syntactix sugar for
+/// "simd<1, t>".
+Type POPDialect::parseType(DialectAsmParser &p) const {
+  StringRef mnemonic;
+  Type genType;
+  mlir::OptionalParseResult parseResult =
+      generatedTypeParser(p, &mnemonic, genType);
+  if (parseResult.has_value())
+    return genType;
+  if (mnemonic == "scalar")
+    return parseScalarType(p);
+
+  p.emitError(p.getCurrentLocation())
+      << "unknown  type `" << mnemonic << "` in dialect `" << getNamespace()
+      << "`";
+  return {};
+}
+
+/// Print a type registered to this dialect.
+/// For most cases we rely on the default `generatedTypePrinter`, but we sugar
+/// "simd<1, t>" to "scalar<t>".
+void POPDialect::printType(Type type, DialectAsmPrinter &p) const {
+  if (isSIMDSizeOneType(type)) {
+    p << "scalar<";
+    printDTypeParamValue(p, cast<SIMDType>(type).getDType());
+    p << ">";
+    return;
+  }
+  (void)generatedTypePrinter(type, p);
+}

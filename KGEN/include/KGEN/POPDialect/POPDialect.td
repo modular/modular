@@ -20,13 +20,17 @@ def POPDialect : Dialect {
 
   let cppNamespace = "::M::KGEN::POP";
   let useDefaultAttributePrinterParser = 1;
-  let useDefaultTypePrinterParser = 1;
 
   let extraClassDeclaration = [{
     /// Register all POP attributes.
     void registerAttributes();
     /// Register all POP types.
     void registerTypes();
+    /// Custom parser for POP types. The reason we customize it is to be able
+    /// "scalar<t>" as "simd<1, t>".
+    Type parseType(DialectAsmParser &parser) const override;
+    /// Custom printer for POP types.
+    void printType(Type type, DialectAsmPrinter &p) const override;
   }];
 }
 

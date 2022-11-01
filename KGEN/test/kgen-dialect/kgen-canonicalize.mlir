@@ -2,28 +2,28 @@
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
-  %a: i32, %b: !pop.simd<1, f32>, %c: !pop.simd<1, dtype>, %d: !kgen.paramref<type>
+  %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.paramref<type>
 ) -> (
-  i32, !pop.simd<1, f32>, !pop.simd<1, dtype>, !kgen.paramref<type>
+  i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 ) {
   // CHECK-NOT: kgen.rebind
   %0 = kgen.rebind %a : i32 to i32
-  %1 = kgen.rebind %b : !pop.simd<1, f32> to !pop.simd<1, f32>
-  %2 = kgen.rebind %c : !pop.simd<1, dtype> to !pop.simd<1, dtype>
+  %1 = kgen.rebind %b : !pop.scalar<f32> to !pop.scalar<f32>
+  %2 = kgen.rebind %c : !pop.scalar<dtype> to !pop.scalar<dtype>
   %3 = kgen.rebind %d : !kgen.paramref<type> to !kgen.paramref<type>
-  kgen.return %0, %1, %2, %3 : i32, !pop.simd<1, f32>, !pop.simd<1, dtype>, !kgen.paramref<type>
+  kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 }
 
 // CHECK-LABEL: kgen.func @cast_from_folds
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
-kgen.func @cast_from_folds(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
+kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
   // A-B-A cast.
-  %1 = pop.cast_to_builtin %arg0 : !pop.simd<1, f32> to f32
-  %2 = pop.cast_from_builtin %1 : f32 to !pop.simd<1, f32>
+  %1 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
+  %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
 
   // CHECK: kgen.return %[[ARG0]]
-  kgen.return %2 : !pop.simd<1, f32>
+  kgen.return %2 : !pop.scalar<f32>
 }
 
 // CHECK-LABEL: kgen.func @cast_to_folds
@@ -31,8 +31,8 @@ kgen.func @cast_from_folds(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
 kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
-  %1 = pop.cast_from_builtin %arg0 : f32 to !pop.simd<1, f32>
-  %2 = pop.cast_to_builtin %1 : !pop.simd<1, f32> to f32
+  %1 = pop.cast_from_builtin %arg0 : f32 to !pop.scalar<f32>
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<f32> to f32
 
   // CHECK: kgen.return %[[ARG0]]
   kgen.return %2 : f32
