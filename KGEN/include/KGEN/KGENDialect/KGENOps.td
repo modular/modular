@@ -864,6 +864,29 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// ExportOp
+//===----------------------------------------------------------------------===//
+
+def ExportOp : KGENOp<"export", [
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Declare a list of exported symbols.";
+  let description = [{
+    The `kgen.export` operation specifies a list of exported symbols from a
+    given module. The list must not be empty.
+
+    Example:
+
+    ```mlir
+    kgen.export [@foo, @bar]
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefArrayAttr:$exports);
+  let results = (outs);
+  let assemblyFormat = "$exports attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // PrecompiledOpBase
 //===----------------------------------------------------------------------===//
 
