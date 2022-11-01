@@ -69,6 +69,58 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENExtern
+//===----------------------------------------------------------------------===//
+
+/// Convert `kgen.extern.func` to an extern `llvm.func`.
+struct ConvertKGENExternFunc
+    : public mlir::ConvertOpToLLVMPattern<ExternFuncOp> {
+  using mlir::ConvertOpToLLVMPattern<ExternFuncOp>::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ExternFuncOp op, typename ExternFuncOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Convert the func signature.
+    TypeConverter::SignatureConversion result(
+        op.getFunctionType().getNumInputs());
+    Type funcType = this->getTypeConverter()->convertFunctionSignature(
+        op.getFunctionType(),
+        /*isVariadic=*/false, result);
+    if (!funcType)
+      return emitError(op.getLoc(), "failed to convert func signature");
+
+    // Replace it with an LLVM function that has no body.
+    rewriter.template replaceOpWithNewOp<LLVM::LLVMFuncOp>(
+        op, op.getNameAttr(), funcType, LLVM::Linkage::External);
+
+    return success();
+  }
+};
+
+/// Convert `kgen.extern.variable` to an extern global variable.
+struct ConvertKGENExternVariable
+    : public mlir::ConvertOpToLLVMPattern<ExternVariableOp> {
+  using mlir::ConvertOpToLLVMPattern<ExternVariableOp>::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(ExternVariableOp op,
+                  typename ExternVariableOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Convert the type of the variable.
+    Type llvmType = this->getTypeConverter()->convertType(op.getType());
+    if (!llvmType)
+      return emitError(op.getLoc(), "failed to convert variable type");
+
+    // Replace it with an LLVM global variable.
+    rewriter.template replaceOpWithNewOp<LLVM::GlobalOp>(
+        op, llvmType, false, LLVM::Linkage::External, op.getName(),
+        /*value=*/nullptr);
+
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENPrecompiled
 //===----------------------------------------------------------------------===//
 
@@ -359,6 +411,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENAddressOf,
       ConvertKGENCall,
       ConvertKGENFunc,
+      ConvertKGENExternFunc,
+      ConvertKGENExternVariable,
       ConvertKGENPrecompiled<PrecompiledLLVMOp>,
       ConvertKGENParamConstant,
       ConvertKGENReturn
