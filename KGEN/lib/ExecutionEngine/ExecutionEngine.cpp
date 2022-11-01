@@ -13,7 +13,10 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
@@ -107,19 +110,38 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   if (machineOr.isError())
     return machineOr.takeError();
 
+  // Callback to create the object layer with symbol resolution to current
+  // process and dynamically linked libraries.
+  auto objectLinkingLayerCreator = [&](llvm::orc::ExecutionSession &session,
+                                       const llvm::Triple &tt) {
+    auto objectLayer =
+        std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(session, []() {
+          return std::make_unique<llvm::SectionMemoryManager>();
+        });
+
+    // Register JIT event listeners if they are enabled.
+    if (ee.gdbListener)
+      objectLayer->registerJITEventListener(*ee.gdbListener);
+    if (ee.perfListener)
+      objectLayer->registerJITEventListener(*ee.perfListener);
+
+    // Make sure the debug info sections aren't stripped.
+    objectLayer->setProcessAllSections(true);
+
+    // COFF format binaries (Windows) need special handling to deal with
+    // exported symbol visibility.
+    if (tt.isOSBinFormatCOFF()) {
+      objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+      objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+    }
+
+    return objectLayer;
+  };
+
   // Create the JIT.
-  auto jitOr =
-      llvm::orc::LLJITBuilder()
-          // TODO: The default ObjectLinkingLayer registers an eh_frame handler
-          //       that results in an undefined symbol. However, removing that
-          //       handler may break debugging for JIT'ed code, so we need to
-          //       revisit this.
-          .setObjectLinkingLayerCreator(
-              [](llvm::orc::ExecutionSession &ES, const llvm::Triple &)
-                  -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
-                return std::make_unique<llvm::orc::ObjectLinkingLayer>(ES);
-              })
-          .create();
+  auto jitOr = llvm::orc::LLJITBuilder()
+                   .setObjectLinkingLayerCreator(objectLinkingLayerCreator)
+                   .create();
   if (!jitOr)
     return M::Error(llvm::toString(jitOr.takeError()));
 
@@ -128,7 +150,16 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
 }
 
 ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
-    : ctx(std::make_unique<llvm::LLVMContext>()), jit(std::move(jit)) {}
+    : ctx(std::make_unique<llvm::LLVMContext>()), jit(std::move(jit)),
+      gdbListener(llvm::JITEventListener::createGDBRegistrationListener()),
+      perfListener(nullptr) {
+  // Attach the perf listener.
+  if (auto *listener = llvm::JITEventListener::createPerfJITEventListener())
+    perfListener = listener;
+  else if (auto *listener =
+               llvm::JITEventListener::createIntelJITEventListener())
+    perfListener = listener;
+}
 
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
