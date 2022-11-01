@@ -317,20 +317,6 @@ LogicalResult ConstantOp::verify() {
                         getValue(), getType());
 }
 
-bool ConstantOp::isBuildableWith(Attribute value, Type type) {
-  auto attr = dyn_cast<TypedAttr>(value);
-  if (!attr)
-    return false;
-  // Call the verify function without emitting any errors.
-  return succeeded(verifyConstant(
-      [](StringRef msg) {
-        InFlightDiagnostic diag;
-        diag.abandon();
-        return diag;
-      },
-      attr, type));
-}
-
 OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.empty() && "constant has no operands");
   return getValue();
