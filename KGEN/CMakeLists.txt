@@ -111,9 +111,9 @@ function(add_kgen_kernel target)
       OUTPUT "${kernel}.h"
 
       COMMAND $<TARGET_FILE:kgen> -emit
+      -func=${kernel}
       $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
       $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
-      -func=${kernel}
       -o ${object_file_name} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
 
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
