@@ -428,9 +428,9 @@ kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: () -> ()) {
 
 // CHECK-LABEL: @pop_bitcast_paramref
 // CHECK-SAME: %[[ARG:[a-z0-9]*]]:
-kgen.generator @pop_bitcast_paramref<type1: type, type2:type>(%arg: !kgen.paramref<type1>) {
-  // CHECK: pop.bitcast %[[ARG]] : !kgen.paramref<type1> to !kgen.paramref<type2>
-  %0 = pop.bitcast %arg : !kgen.paramref<type1> to !kgen.paramref<type2>
+kgen.generator @pop_bitcast_paramref<size1, dt1: dtype, size2, dt2: dtype>(%arg: !pop.simd<size1,dt1>) {
+  // CHECK: pop.bitcast %[[ARG]] : !pop.simd<size1, dt1> to !pop.simd<size2, dt2>
+  %0 = pop.bitcast %arg : !pop.simd<size1,dt1> to !pop.simd<size2,dt2>
   kgen.return
 }
 
@@ -689,14 +689,14 @@ kgen.generator @pop_generic_offset<type: type>(
 }
 
 // CHECK-LABEL: kgen.generator @parametricAdd
-// CHECK-SAME: %[[ARG0:.*]]: !kgen.paramref<ty>, %[[ARG1:.*]]: !kgen.paramref<ty>
-kgen.generator @parametricAdd<ty: type>
-  (%arg0: !kgen.paramref<ty>, %arg1: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
+// CHECK-SAME: %[[ARG0:.*]]: !pop.simd<size, dt>, %[[ARG1:.*]]: !pop.simd<size, dt>
+kgen.generator @parametricAdd<size, dt: dtype>
+  (%arg0: !pop.simd<size, dt>, %arg1: !pop.simd<size, dt>) -> !pop.simd<size, dt> {
 
   // Fully parametric operations are ok!
-  // CHECK: %{{.*}} = pop.add %[[ARG0]], %[[ARG1]] : !kgen.paramref<ty>
-  %0 = pop.add %arg0, %arg1 : !kgen.paramref<ty>
-  kgen.return %0 : !kgen.paramref<ty>
+  // CHECK: %{{.*}} = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<size, dt>
+  %0 = pop.add %arg0, %arg1 : !pop.simd<size,dt>
+  kgen.return %0 : !pop.simd<size,dt>
 }
 
 // CHECK-LABEL: @stack_allocation

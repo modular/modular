@@ -188,8 +188,6 @@ def UnboundOrBoolOrIntegerSIMD : AllOfType<
     [POP_SIMDType, IntegerOrBoolOrUnboundDType],
     "whose element type is either unbound, or integer, or bool">;
 
-def ScalarOrSIMD : AnyTypeOf<[POP_SIMDType, ParamRefType]>;
-
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
 

@@ -340,6 +340,22 @@ kgen.generator @paramAssertExample() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @"parametricAdd,sz=1,dt=ui64"
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<1, ui64>, %[[ARG1:.*]]: !pop.simd<1, ui64>) -> !pop.simd<1, ui64> {
+// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<1, ui64>
+// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<1, ui64>
+
+// CHECK-LABEL: kgen.func @"parametricAdd,sz=2,dt=f32"
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<2, f32>
+// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<2, f32>
+
+kgen.generator @parametricAdd<sz, dt: dtype>
+  (%a: !pop.simd<sz,dt>, %b: !pop.simd<sz,dt>) -> !pop.simd<sz,dt> {
+  %res = pop.add %a, %b : !pop.simd<sz,dt>
+  kgen.return %res : !pop.simd<sz,dt>
+}
+
 // CHECK-LABEL: kgen.func @parametricTypes(
 kgen.generator @parametricTypes(%arg0: !pop.simd<1, ui64>, %arg1: !pop.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
@@ -348,30 +364,14 @@ kgen.generator @parametricTypes(%arg0: !pop.simd<1, ui64>, %arg1: !pop.simd<2, f
   // CHECK-NEXT:   "impl0"() : () -> !pop.simd<1, ui32>
   "impl0"() : () -> !kgen.paramref<ty1>
 
-  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!pop.simd<1, ui64>"
+  // CHECK-NEXT: = kgen.call @"parametricAdd,sz=1,dt=ui64"
   // CHECK-SAME: (%[[ARG0:.*]], %[[ARG0:.*]]) : (!pop.simd<1, ui64>, !pop.simd<1, ui64>) -> !pop.simd<1, ui64>
-  %0 = kgen.call @parametricAdd<ty: type = !pop.simd<1, ui64>>(%arg0, %arg0) : (!pop.simd<1, ui64>, !pop.simd<1, ui64>) -> !pop.simd<1, ui64>
+  %0 = kgen.call @parametricAdd<sz=1, dt: dtype = ui64>(%arg0, %arg0) : (!pop.simd<1, ui64>, !pop.simd<1, ui64>) -> !pop.simd<1, ui64>
 
-  // CHECK-NEXT: = kgen.call @"parametricAdd,ty=!pop.simd<2, f32>"(%[[ARG1]], %[[ARG1]]) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
-  %1 = kgen.call @parametricAdd<ty: type = !pop.simd<2, f32>>(%arg1, %arg1) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
+  // CHECK-NEXT: = kgen.call @"parametricAdd,sz=2,dt=f32"(%[[ARG1]], %[[ARG1]]) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
+  %1 = kgen.call @parametricAdd<sz=2, dt: dtype = f32>(%arg1, %arg1) : (!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32>
 
   kgen.return
-}
-
-// CHECK-LABEL: kgen.func @"parametricAdd,ty=!pop.simd<1, ui64>"
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<1, ui64>, %[[ARG1:.*]]: !pop.simd<1, ui64>) -> !pop.simd<1, ui64> {
-// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<1, ui64>
-// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<1, ui64>
-
-// CHECK-LABEL: kgen.func @"parametricAdd,ty=!pop.simd<2, f32>"
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
-// CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<2, f32>
-// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<2, f32>
-
-kgen.generator @parametricAdd<ty: type>
-  (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
-  %res = pop.add %a, %b : !kgen.paramref<ty>
-  kgen.return %res : !kgen.paramref<ty>
 }
 
 // CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample"()
@@ -409,14 +409,15 @@ kgen.generator @nopExample<dt:dtype>(%arg0: !pop.simd<1, dt>) -> !pop.simd<1, dt
 }
 
 kgen.generator @takeParametricBinary
-  <dt: dtype,
-   fn: <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
+  <sz,
+   dt: dtype,
+   fn: <sz, dt: dtype>(!pop.simd<sz,dt>, !pop.simd<sz,dt>) -> !pop.simd<sz,dt>
   >() {
 
   %0 = pop.constant(1) : !pop.simd<1, dt>
 
-  %1 = kgen.call_param[<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>: fn]
-                <ty: type = !pop.simd<1, dt>>(%0, %0)
+  %1 = kgen.call_param[<sz, dt: dtype>(!pop.simd<sz,dt>, !pop.simd<sz,dt>) -> !pop.simd<sz,dt>: fn]
+                <sz=1, dt: dtype = dt>(%0, %0)
   kgen.return
 }
 
@@ -430,10 +431,13 @@ kgen.generator @test_symbol() {
   kgen.call @takeUnary<dt: dtype = f32,
      fn : <dt:dtype>(!pop.simd<1, dt>) -> !pop.simd<1, dt> = @nopExample>() : () -> ()
 
-  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricAdd"()
-  kgen.call @takeParametricBinary<dt: dtype = f32,
-      fn : <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
-      = @parametricAdd>() : () -> ()
+  // CHECK: kgen.call @"takeParametricBinary,sz=2,dt=f32,fn=parametricAdd"()
+  kgen.call @takeParametricBinary
+     <
+      sz = 2,
+      dt: dtype = f32,
+      fn : <sz, dt: dtype>(!pop.simd<sz,dt>, !pop.simd<sz,dt>) -> !pop.simd<sz,dt> = @parametricAdd
+     >() : () -> ()
 
   kgen.return
 }
@@ -519,6 +523,42 @@ kgen.generator @test_region_insanity() {
       %0 = pop.constant(1) : !pop.simd<1, dt>
       kgen.return<123>
     }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @"parametricBinOp,ty=!pop.simd<1, f32>"
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<1, f32>, %[[ARG1:.*]]: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+// CHECK-NEXT: %[[V0:.*]] = "custom_op"(%[[ARG0]], %[[ARG1]]) : (!pop.simd<1, f32>, !pop.simd<1, f32>) -> !pop.simd<1, f32>
+// CHECK-NEXT: kgen.return %[[V0]] : !pop.simd<1, f32>
+kgen.generator @parametricBinOp<ty: type>
+  (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
+  %res = "custom_op" (%a, %b) : (!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
+  kgen.return %res : !kgen.paramref<ty>
+}
+
+// CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=parametricBinOp"() {
+kgen.generator @takeParametricBinary
+  <dt: dtype,
+   fn: <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
+  >() {
+
+  %0 = pop.constant(1) : !pop.simd<1, dt>
+
+  // CHECK: kgen.call @"parametricBinOp,ty=!pop.simd<1, f32>"
+  %1 = kgen.call_param[<ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>: fn]
+                <ty: type = !pop.simd<1, dt>>(%0, %0)
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_paramref_type_rewrite() {
+kgen.generator @test_paramref_type_rewrite() {
+  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricBinOp"() : () -> ()
+  kgen.call @takeParametricBinary<dt: dtype = f32,
+      fn : <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
+      = @parametricBinOp>() : () -> ()
+
   kgen.return
 }
 
