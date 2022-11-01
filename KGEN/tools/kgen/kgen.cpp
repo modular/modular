@@ -211,8 +211,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ObjectCompiler compiler(".kgen_cache", *theModule);
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
-  if (failed(compiler.lowerAllFuncsToObject(attr, /*isJIT=*/clOptions.cmd ==
-                                                      Command::kExecute)))
+  if (failed(compiler.lowerAllFuncsToLLVM(attr)))
     return failure();
 
   // This produces a standalone object for all the objects we requested.

@@ -1331,18 +1331,6 @@ void PrecompiledLLVMOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
-// PrecompiledObjectOp
-//===----------------------------------------------------------------------===//
-
-void PrecompiledObjectOp::build(OpBuilder &builder, OperationState &result,
-                                PrecompiledLLVMOp func, StringRef object) {
-  build(builder, result, func.getSymNameAttr(), func.getFunctionTypeAttr(),
-        func.getLinkageAttr(), func.getParamDeclsAttr(),
-        func.getResultParamTypesAttr(), func.getCompiledForAttr(),
-        builder.getStringAttr(object));
-}
-
-//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

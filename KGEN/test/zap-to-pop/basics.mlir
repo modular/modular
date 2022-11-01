@@ -314,16 +314,6 @@ kgen.precompiled.llvm @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4,
 
 // -----
 
-// CHECK-LABEL: @buffer
-// CHECK-SAME: !pop.struct
-kgen.precompiled.object @buffer(%a: !zap.buffer<5, f32>) attributes {
-  compiledFor = #kgen.target<"darwin-arm64-unknown", "generic", "", 8>,
-  object = "hash key for @symbol object",
-  llvm = "hash key for @llvm_precompiled"
-}
-
-// -----
-
 // CHECK-LABEL: @zap_ndbuffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<simd<1, f32>>
 kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<simd<1, f32>>) {

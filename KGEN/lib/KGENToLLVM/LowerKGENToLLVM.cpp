@@ -360,7 +360,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENCall,
       ConvertKGENFunc,
       ConvertKGENPrecompiled<PrecompiledLLVMOp>,
-      ConvertKGENPrecompiled<PrecompiledObjectOp>,
       ConvertKGENParamConstant,
       ConvertKGENReturn
       // clang-format on

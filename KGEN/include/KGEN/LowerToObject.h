@@ -19,11 +19,10 @@ class Module;
 
 namespace M::KGEN {
 /// Provides a cache key for mapping from a `kgen.precompiled.llvm` back up to a
-/// `kgen.func`, and from a `kgen.precompiled.object` back up to a
-/// `kgen.precompiled.llvm`.
+/// `kgen.func`.
 struct RaisingCacheKeyInfo {
-  using KeyTy = std::variant<PrecompiledLLVMOp, PrecompiledObjectOp>;
-  static std::string hashKey(KeyTy key);
+  using KeyTy = PrecompiledLLVMOp;
+  static std::string hashKey(PrecompiledLLVMOp key);
 };
 
 using RaisingCache = M::BlobCache<RaisingCacheKeyInfo>;
@@ -45,21 +44,6 @@ struct LLVMCacheKeyInfo {
 /// `kgen.precompiled.llvm`, and storage for llvm::Module objects that we have
 /// already stored.
 using LLVMCache = M::BlobCache<LLVMCacheKeyInfo>;
-
-/// Provide a way to hash `kgen.precompiled.llvm` and `kgen.precompiled.object`
-/// ops to index into the object cache. If the key is a `kgen.precompiled.llvm`,
-/// then the cache key is the hash of the operation and its attributes. If the
-/// key is a `kgen.precompiled.object` then the key is the string stored in the
-/// op's attributes.
-struct ObjectCacheKeyInfo {
-  using KeyTy = std::variant<PrecompiledLLVMOp, llvm::MemoryBufferRef,
-                             PrecompiledObjectOp>;
-  static std::string hashKey(KeyTy key);
-};
-
-/// Provides a mapping from `kgen.precompiled.llvm` to a
-/// `kgen.precompiled.object`. These objects are cached on a per-op basis.
-using ObjectCache = M::BlobCache<ObjectCacheKeyInfo>;
 
 /// Provides a way to hash a composite llvm::Module. This will be used to map a
 /// compiled object for that composite. This allows us to avoid recompiling
@@ -91,13 +75,6 @@ using CompositeObjectCache = M::BlobCache<CompositeObjectCacheKeyInfo>;
 ///       `kgen.precompiled.llvm` is largely intended as a cache reference.
 ///     - llvm::Module -> llvm::Module: This is the main purpose of the cache -
 ///       to store llvm::Modules as bitcode.
-///   ObjectCache - Stores several mappings:
-///     - `kgen.precompiled.llvm` -> `kgen.precompiled.object`: This is so that
-///       we don't have to re-lower to an object.
-///     - `kgen.precompiled.object` -> MemoryBuffer: This is because
-///       `kgen.precompiled.object` is largely intended as a cache reference.
-///     - MemoryBuffer -> MemoryBuffer: This is the main purpose of the cache,
-///       to store the actual objects serialized into memory buffers.
 ///   CompositeObjectCache - Stores a mapping from a LLVM module made up of the
 ///     modules from multiple symbols to the object file produced by compiling
 ///     that composite.
@@ -108,20 +85,16 @@ public:
             (std::filesystem::path(basePath.str()) / "raising").string())),
         llvm(getDefaultBackendChain(
             (std::filesystem::path(basePath.str()) / "llvm").string())),
-        obj(getDefaultBackendChain(
-            (std::filesystem::path(basePath.str()) / "obj").string())),
         composite(getDefaultBackendChain(
             (std::filesystem::path(basePath.str()) / "composite").string())) {}
 
   RaisingCache &getRaising() { return raising; }
   LLVMCache &getLLVM() { return llvm; }
-  ObjectCache &getObject() { return obj; }
   CompositeObjectCache &getComposite() { return composite; }
 
 private:
   RaisingCache raising;
   LLVMCache llvm;
-  ObjectCache obj;
   CompositeObjectCache composite;
 };
 
@@ -141,36 +114,24 @@ public:
   /// inside `funcCache`, and store the LLVM module in LLVMCache.
   FailureOr<PrecompiledLLVMOp> lowerToLLVM(FuncOp func, TargetInfoAttr target);
 
+  /// Lower all `kgen.func` to llvm and populate them in the cache. This
+  /// modifies the compiler-held module in-place.
+  LogicalResult lowerAllFuncsToLLVM(TargetInfoAttr target);
+
   /// Backtrack up the compilation stack - given a `kgen.precompiled.llvm`,
   /// replace it with the `kgen.func` it came from if possible.
   FailureOr<FuncOp> raiseFromLLVM(PrecompiledLLVMOp precompiled);
 
-  /// Get the body of the `kgen.precompiled.llvm`, emit an object, and replace
-  /// the `kgen.precompiled.llvm` with a `kgen.precompiled.object` with the same
-  /// name.
-  FailureOr<PrecompiledObjectOp> lowerToObject(PrecompiledLLVMOp func,
-                                               bool isJIT);
-
-  /// Backtrack up the compilation stack - given a `kgen.precompiled.object`,
-  /// replace it with the `kgen.precompiled.llvm` it came from if possible.
-  FailureOr<PrecompiledLLVMOp> raiseFromObject(PrecompiledObjectOp precompiled);
-
-  /// Lower all `kgen.func` to objects and populate them in the cache. This
-  /// modifies the compiler-held module in-place.
-  LogicalResult lowerAllFuncsToObject(TargetInfoAttr target, bool isJIT);
-
   /// Slices the call graph for `which` to produce a standalone object. If
   /// slicing the call graph is not possible, it simply returns the object
-  /// already in the cache. This function will also raise any
-  /// `kgen.precompiled.object` to `kgen.func` for which the raising exists.
+  /// already in the cache.
   FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
   produceStandaloneObject(ArrayRef<StringRef> symbols, bool isJIT);
 
-  /// Collects all the `kgen.precompiled.object` in the module and slices the
+  /// Collects all of the `kgen.precompiled.llvm` in the module and slices the
   /// call graph for them to produce a single standalone object. If slicing the
   /// call graph is not possible, it simply returns the object already in the
-  /// cache. This function will also raise any `kgen.precompiled.object` to
-  /// `kgen.func` for which the raising exists.
+  /// cache.
   FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
   produceStandaloneObject(bool isJIT);
 

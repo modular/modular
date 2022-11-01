@@ -54,8 +54,7 @@ struct ProcessBuffer {
 
     // Lower the input to an object.
     KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
-    if (failed(compiler.lowerAllFuncsToObject(attr, /*isJIT=*/clOptions.cmd ==
-                                                        Command::kExecute)))
+    if (failed(compiler.lowerAllFuncsToLLVM(attr)))
       return failure();
 
     // Produce a single standalone .o

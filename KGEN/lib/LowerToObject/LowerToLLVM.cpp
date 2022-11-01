@@ -108,11 +108,7 @@ std::string LLVMCacheKeyInfo::hashKey(LLVMCacheKeyInfo::KeyTy key) {
 //===----------------------------------------------------------------------===//
 
 std::string RaisingCacheKeyInfo::hashKey(RaisingCacheKeyInfo::KeyTy key) {
-  return std::visit(
-      [](auto &&key) -> std::string {
-        return std::to_string(size_t(hashNoRegionOperation(key)));
-      },
-      key);
+  return std::to_string(size_t(hashNoRegionOperation(key)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -299,6 +295,19 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
 }
 
 //===----------------------------------------------------------------------===//
+// lowerAllFuncsToLLVM
+//===----------------------------------------------------------------------===//
+
+LogicalResult ObjectCompiler::lowerAllFuncsToLLVM(TargetInfoAttr target) {
+  for (auto f : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
+    auto llvmFuncOr = lowerToLLVM(f, target);
+    if (failed(llvmFuncOr))
+      return mlir::emitError(f->getLoc()) << "lowering to llvm failed";
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // raiseFromLLVM
 //===----------------------------------------------------------------------===//
 
@@ -343,9 +352,8 @@ void EmitLLVMPass::runOnOperation() {
   ObjectCompiler compiler(".kgen_cache", getOperation());
   TargetInfoAttr target = TargetInfoAttr::getForHost(&getContext());
   // Lower all functions to LLVM.
-  for (auto func : llvm::make_early_inc_range(getOperation().getOps<FuncOp>()))
-    if (failed(compiler.lowerToLLVM(func, target)))
-      return signalPassFailure();
+  if (failed(compiler.lowerAllFuncsToLLVM(target)))
+    return signalPassFailure();
 
   // We might have an output file.
   std::unique_ptr<llvm::ToolOutputFile> outputFile = nullptr;
