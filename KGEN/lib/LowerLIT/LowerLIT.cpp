@@ -568,15 +568,16 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
     auto funcField = dyn_cast<KGEN::LITFuncOp>(field);
     if (!funcField)
       return field.emitError("unsupported op in lit lowering");
-    // Move and rename the function from a field position inside the struct
-    // to freestanding global function.
+    // Move the function from a field position inside the struct
+    // to freestanding global function. The name is already mangled by the
+    // parser.
+    if (symbolTable.lookup(funcField.getSymNameAttr()))
+      return funcField.emitError("duplicated function name '")
+             << funcField.getSymNameAttr().getValue()
+             << "' should be uniquely mangled with '" << structDecl.getSymName()
+             << "'";
+
     funcField->remove();
-    std::string genOpNewName =
-        Twine(structDecl.getSymName())
-            .concat("_")
-            .concat(funcField.getSymNameAttr().getValue())
-            .str();
-    funcField.setSymName(genOpNewName);
     symbolTable.insert(funcField, Block::iterator(structDecl));
 
     // Lower renamed function as usual.

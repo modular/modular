@@ -524,6 +524,13 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
+  // Is this a method?
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
+    std::string mangledName =
+        (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
+    name = StringAttr::get(getContext(), mangledName);
+  }
+
   auto funcDecl = builder.create<LITFuncOp>(loc, name);
   funcDecl.getRegion().push_back(new Block());
 
