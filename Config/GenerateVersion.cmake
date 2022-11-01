@@ -8,7 +8,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-find_package(Git REQUIRED)
+find_package(Git QUIET REQUIRED)
 
 execute_process (
     COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
@@ -22,16 +22,16 @@ set(version_inc "${MODULAR_BINARY_DIR}/Config/include/Config/Version.h.inc")
 file(APPEND "${version_inc}.tmp"
   "/* Major version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
-  
+
   "/* Minor version */\n"
   "#define MODULAR_VERSION_MINOR ${MODULAR_VERSION_MINOR}\n\n"
-  
+
   "/* Patch version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
-  
+
   "/* Revision sha */\n"
   "#define MODULAR_VERSION_REVISION \"${MODULAR_VERSION_REVISION}\"\n\n"
-  
+
   "/* Version string */\n"
   "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}\"\n"
 )
