@@ -645,8 +645,8 @@ def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
     The `zap.ndbuffer.bitcast` operation bitcasts an ndbuffer type to another
     ndbuffer type. It can convert between ndbuffers with static shape or
     dynamic shape. The rank of the source ndbuffer type and the destination
-    ndbuffer type must match. The dtype of the ndbuffer must be also statically
-    known.
+    ndbuffer type must match. When the input dtype is known, but output dtype
+    is not, we propagate the input dtype to the output.
 
     Example:
 
@@ -683,12 +683,25 @@ def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
                                    !zap.ndbuffer<[?], si32>
     ```
 
+    The operation can bitcast between ndbuffers of uknown type.
+
+    ```mlir
+    // Bitcast an ndbuffer of shape 32x2 but dynamic dtype to an ndbuffer
+    // of the same shape but static dtype.
+    %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[32, 2], ?> to
+                                   !zap.ndbuffer<[32, 2], f32>
+
+    // Bitcast an f32 ndbuffer to a generic ndbuffer.
+    %0 = zap.ndbuffer.bitcast %b : !zap.ndbuffer<[?], f32> to
+                                   !zap.ndbuffer<[?], ?>
+    ```
+
     If the shape or dtype is concrete in the result type, it overwrites the
     shape or dtype in the input ndbuffer.
   }];
 
-  let arguments = (ins NDBufferKnownDType:$input);
-  let results = (outs NDBufferKnownDType:$output);
+  let arguments = (ins ZAP_NDBufferType:$input);
+  let results = (outs ZAP_NDBufferType:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];

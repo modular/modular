@@ -727,12 +727,12 @@ kgen.generator @zap_ndbuffer_loadstore_aligned_with_param<size, type: dtype>(
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[32], f32> {
-  // CHECK: %[[PTR:.*]] = pop.struct.get %[[A]][0]
-  // CHECK: %[[ZERO:.*]] = index.constant 0
-  // CHECK: %[[SIZE:.*]] = index.constant 32
-  // CHECK: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
-  // CHECK: %[[RANK:.*]] = index.constant 1
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK-DAG: %[[PTR:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[SIZE:.*]] = index.constant 32
+  // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
+  // CHECK-DAG: %[[RANK:.*]] = index.constant 1
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
   // CHECK: %[[NDBUF:.*]] = pop.struct.construct(%[[PTR]], %[[RANK]], %[[SHAPE]], %[[DTYPE]])
   %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[4], f32> to !zap.ndbuffer<[32], f32>
   // CHECK: return %[[NDBUF]]
@@ -744,16 +744,54 @@ kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[32], 
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], f64> {
-  // CHECK: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
-  // CHECK: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
-  // CHECK: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
-  // CHECK: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
-  // CHECK: %[[ZERO:.*]] = index.constant 0
-  // CHECK: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
-  // CHECK: %[[RANK:.*]] = index.constant 1
-  // CHECK: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f64>
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
+  // CHECK-DAG: %[[RANK:.*]] = index.constant 1
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f64>
   // CHECK: %[[NDBUF:.*]] = pop.struct.construct(%[[PTR]], %[[RANK]], %[[SHAPE]], %[[DTYPE]])
   %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[4], f32> to !zap.ndbuffer<[?], f64>
   // CHECK: return %[[NDBUF]]
   kgen.return %0 : !zap.ndbuffer<[?], f64>
+}
+
+// -----
+
+// CHECK-LABEL: @ndbuffer_bitcast
+// CHECK-SAME: %[[A:.*]]:
+kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], ?> {
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
+  // CHECK-DAG: %[[RANK:.*]] = index.constant 1
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK: %[[NDBUF:.*]] = pop.struct.construct(%[[PTR]], %[[RANK]], %[[SHAPE]], %[[DTYPE]])
+  %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[4], f32> to !zap.ndbuffer<[?], ?>
+  // CHECK: return %[[NDBUF]]
+  kgen.return %0 : !zap.ndbuffer<[?], ?>
+}
+
+// -----
+
+// CHECK-LABEL: @ndbuffer_bitcast
+// CHECK-SAME: %[[A:.*]]:
+kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], ?>) -> !zap.ndbuffer<[?], f32> {
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
+  // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
+  // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
+  // CHECK-DAG: %[[RANK:.*]] = index.constant 1
+  // CHECK-DAG: %[[DTYPE:.*]] = kgen.param.constant: dtype = <f32>
+  // CHECK: %[[NDBUF:.*]] = pop.struct.construct(%[[PTR]], %[[RANK]], %[[SHAPE]], %[[DTYPE]])
+  %0 = zap.ndbuffer.bitcast %a : !zap.ndbuffer<[4], ?> to !zap.ndbuffer<[?], f32>
+  // CHECK: return %[[NDBUF]]
+  kgen.return %0 : !zap.ndbuffer<[?], f32>
 }
