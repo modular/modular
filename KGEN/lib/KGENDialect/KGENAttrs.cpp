@@ -254,7 +254,8 @@ LogicalResult ParamOperatorAttr::verify(
 
   // This is the list of types we can apply == and set comparison to.
   auto isEqualityComparableType = [&](Type ty) -> bool {
-    return ty.isIndex() || ty.isa<DTypeType, MLIRTypeType, StringType>();
+    return ty.isSignlessInteger(1) || ty.isIndex() ||
+           ty.isa<DTypeType, MLIRTypeType, StringType>();
   };
 
   // Check invariants on the expression.
@@ -292,24 +293,25 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "operator requires an index type";
     break;
   case POC::EQ:
+    if (operands.size() != 2)
+      return emitError() << "comparison operators must have two operands";
+
+    if (!isEqualityComparableType(operands[0].getType()))
+      return emitError() << "unsupported comparison type "
+                         << operands[0].getType();
+    if (!type.isInteger(1))
+      return emitError() << "comparisons return i1";
+    break;
   case POC::LT:
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
 
-    // Equality check can be performed on two boolean values.
-    if (opcode == POC::EQ && operands[0].getType().isSignlessInteger(1))
-      break;
-
-    if (!isEqualityComparableType(operands[0].getType()))
-      return emitError() << "unsupported comparison type "
-                         << operands[0].getType();
-
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
 
     // Relational operations only work on index types.
-    if (opcode != POC::EQ && !operands[0].getType().isa<IndexType>())
+    if (!operands[0].getType().isa<IndexType>())
       return emitError()
              << "relational comparisons only allowed on index values";
     break;
