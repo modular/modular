@@ -23,16 +23,16 @@ file(APPEND "${version_inc}.tmp"
   "/* Major version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
 
-        "/* Minor version */\n"
+  "/* Minor version */\n"
   "#define MODULAR_VERSION_MINOR ${MODULAR_VERSION_MINOR}\n\n"
 
-        "/* Patch version */\n"
+  "/* Patch version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
 
-        "/* Revision sha */\n"
+  "/* Revision sha */\n"
   "#define MODULAR_VERSION_REVISION \"${MODULAR_VERSION_REVISION}\"\n\n"
 
-        "/* Version string */\n"
+  "/* Version string */\n"
   "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}\"\n"
 )
 

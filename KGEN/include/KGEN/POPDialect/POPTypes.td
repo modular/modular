@@ -214,22 +214,21 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
 
 def SIMDSizeOne : ConfinedType<POP_SIMDType,
     [CPred<"$_self.cast<POP::SIMDType>().getResolvedSize() && "
-                 "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
-          "SIMD with size 1">;
+           "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
+    "SIMD with size 1">;
 
 def BoolSIMDSizeOne : AllOfType<[BoolSIMD, SIMDSizeOne], "!pop.simd<1, bool>">;
 
-def UI8SIMDSizeOne
-    : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
-      BuildableType<"POP::SIMDType::get(1, "
-                    "DTypeConstantAttr::get($_builder.getContext(), "
-                    "KGENDType::ui8))">;
+def UI8SIMDSizeOne : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
+                     BuildableType<"POP::SIMDType::get(1, "
+                              "DTypeConstantAttr::get($_builder.getContext(), "
+                              "KGENDType::ui8))">;
 
-def AddressSIMDSizeOne
-    : AllOfType<[SIMDSizeOne, AddressSIMD], "!pop.simd<1, address>">;
+def AddressSIMDSizeOne : AllOfType<[SIMDSizeOne, AddressSIMD],
+                             "!pop.simd<1, address>">;
 
-def POP_PointerOrSIMDAddressType
-    : AnyTypeOf<[POP_PointerType, AddressSIMDSizeOne]>;
+def POP_PointerOrSIMDAddressType : AnyTypeOf<
+                                        [POP_PointerType, AddressSIMDSizeOne]>;
 
 //===----------------------------------------------------------------------===//
 // StructType
@@ -238,8 +237,8 @@ def POP_PointerOrSIMDAddressType
 def POP_StructType : POPType<"Struct", "struct"> {
   let summary = "parameterized struct type";
   let description = [{
-    This type represents a struct
-        .A struct contains element types arranged in their order of declaration.
+    This type represents a struct. A struct contains element types arranged in
+    their order of declaration.
 
     Example:
 
