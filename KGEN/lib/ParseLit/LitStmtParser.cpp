@@ -303,8 +303,11 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
     return success(); // Parse succeeded.
 
   // Resolve LHS expression into an lvalue that we can store into.
-  LValue lValue = getExprEmitter().emitLValue(lhs, rhsValue.getType(),
-                                              "cannot assign to expression");
+
+  LValue lValue = getExprEmitter().emitLValue(
+      lhs,
+      // FIXME: Pass a correct ASTType in here.
+      {rhsValue.getType(), ASTType()}, "cannot assign to expression");
   if (!lValue)
     return success(); // Parse succeeded.
 
