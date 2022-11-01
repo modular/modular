@@ -107,21 +107,26 @@ def SignatureType
     and results.  This is used for region parameters, among other things.
   }];
 
-  let parameters = (ins "ParamDeclArrayAttr":$inputParams,
-                        "TypeArrayAttr":$resultParamTypes,
-                        "mlir::FunctionType":$values);
+  let parameters = (ins "ParamDeclArrayAttr"
+                    : $inputParams, "TypeArrayAttr"
+                    : $resultParamTypes, "mlir::FunctionType"
+                    : $values);
   let assemblyFormat = "`<` $inputParams `,` $resultParamTypes `,` $values `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins
-        "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-        "FunctionType":$values), [{
-      return get(inputParams.getContext(), inputParams, resultParamTypes,
-                 values);
-    }]>,
-    TypeBuilderWithInferredContext<(ins
-        "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
-        "FunctionType":$values)>
+    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr"
+                                    : $inputParams, "TypeArrayAttr"
+                                    : $resultParamTypes, "FunctionType"
+                                    : $values),
+                                   [{
+                                     return get(inputParams.getContext(),
+                                                inputParams, resultParamTypes,
+                                                values);
+                                   }]>,
+    TypeBuilderWithInferredContext<(ins "ParamBindArrayAttr"
+                                    : $inputParams, "ParamDeclArrayAttr"
+                                    : $resultParams, "FunctionType"
+                                    : $values)>
   ];
 
   let extraClassDeclaration = [{

@@ -116,11 +116,10 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
     /// `ElementsAttr` implementation. Support iteration with `Attribute` to be
     /// compatible with upstream dialects.
     using NonContiguousIterableTypesT = std::tuple<Attribute>;
-    FailureOr<detail::AttrIterator>
-    try_value_begin_impl(OverloadToken<Attribute>) const;
+    FailureOr<detail::AttrIterator> try_value_begin_impl(
+        OverloadToken<Attribute>) const;
   }];
 }
-
 
 //===----------------------------------------------------------------------===//
 // AlignedBytesAttr
@@ -128,15 +127,14 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
 
 // Make sure the attribute's data argument is interned with the requested
 // alignment.
-def M_AlignedBytesData : ArrayRefParameter<"uint8_t",
-    "aligned storage for AlignedBytesAttr"> {
-  let allocator = [{
-    $_dst = copyIntoBytes($_allocator, $_self, align);
-  }];
+def M_AlignedBytesData
+    : ArrayRefParameter<"uint8_t", "aligned storage for AlignedBytesAttr"> {
+  let allocator = [{ $_dst = copyIntoBytes($_allocator, $_self, align); }];
 }
 
-def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
-    DeclareAttrInterfaceMethods<ElementsAttrInterface>] > {
+def M_AlignedBytesAttr
+    : MAttr<"AlignedBytes", "aligned_bytes",
+            [DeclareAttrInterfaceMethods<ElementsAttrInterface>]> {
   let summary = "A literal byte array with (optional) alignment.";
   let description = [{
     This attribute is the 'inline' equivalent of `dense_resource`, and describes
@@ -155,8 +153,8 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
 
     Examples:
     ```mlir
-    #M.aligned_bytes<"0x01020304">      // 4 bytes, no alignment constraint
-    #M.aligned_bytes<64: "0x01020304">  // 4 bytes, aligned on 64 byte boundary
+#M.aligned_bytes < "0x01020304">      // 4 bytes, no alignment constraint
+#M.aligned_bytes < 64 : "0x01020304"> // 4 bytes, aligned on 64 byte boundary
     ```
   }];
 
@@ -167,7 +165,8 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
   let extraClassDeclaration = [{
     /// ElementsAttr interface implementation.
     using ContiguousIterableTypesT = std::tuple<uint8_t>;
-    FailureOr<const uint8_t*> try_value_begin_impl(OverloadToken<uint8_t>) const;
+    FailureOr<const uint8_t *> try_value_begin_impl(OverloadToken<uint8_t>)
+        const;
   }];
 }
 
@@ -175,8 +174,8 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
 // IntArrayElementsAttr
 //===----------------------------------------------------------------------===//
 
-def IntArrayElementsAttr : Attr<CPred<"$_self.isa<IntArrayElementsAttr>()">,
-    "Dense integer array"> {
+def IntArrayElementsAttr
+    : Attr<CPred<"$_self.isa<IntArrayElementsAttr>()">, "Dense integer array"> {
   let storageType = "IntArrayElementsAttr";
   let returnType = "IntArrayElementsAttr";
 }

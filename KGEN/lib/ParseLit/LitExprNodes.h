@@ -162,6 +162,22 @@ struct ParenExprNode final : public ExprNode {
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
+struct TernaryOpNode final : public ExprNode {
+  TernaryOpNode(Kind kind, ExprNode *condExpr, ExprNode *trueExpr,
+                ExprNode *falseExpr, SMLoc opLoc)
+      : ExprNode(kind), condExpr(condExpr), trueExpr(trueExpr),
+        falseExpr(falseExpr), opLoc(opLoc) {}
+
+  ExprNode *const condExpr;
+  ExprNode *const trueExpr;
+  ExprNode *const falseExpr;
+  const SMLoc opLoc;
+
+  SMLoc getLoc() const override { return opLoc; }
+  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  std::pair<Type, ASTType> emitType(ExprEmitter &emitter) const override;
+};
+
 struct BinOpNode final : public ExprNode {
   BinOpNode(Kind kind, ExprNode *lhs, SMLoc opLoc, ExprNode *rhs)
       : ExprNode(kind), lhs(lhs), opLoc(opLoc), rhs(rhs) {}
