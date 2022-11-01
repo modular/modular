@@ -20,3 +20,9 @@
 
 // CHECK: dense_array<65534, 1, 4> : !M.array<3xui16>
 "M"() {a = #M.dense_array<-2, 1, 4> : !M.array<3xui16>} : () -> ()
+
+// CHECK: aligned_bytes<64 :"0x01020304">
+"M"() {a = #M.aligned_bytes<64: "0x01020304">} : () -> ()
+
+// CHECK: aligned_bytes<"0x01020304">
+"M"() {a = #M.aligned_bytes<"0x01020304">} : () -> ()
