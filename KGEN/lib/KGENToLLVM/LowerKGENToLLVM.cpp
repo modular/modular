@@ -78,7 +78,7 @@ struct ConvertKGENExternFunc
       return emitError(op.getLoc(), "failed to convert func signature");
 
     // Replace it with an LLVM function that has no body.
-    rewriter.template replaceOpWithNewOp<LLVM::LLVMFuncOp>(
+    rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
         op, op.getNameAttr(), funcType, LLVM::Linkage::External);
 
     return success();
@@ -100,7 +100,7 @@ struct ConvertKGENExternVariable
       return emitError(op.getLoc(), "failed to convert variable type");
 
     // Replace it with an LLVM global variable.
-    rewriter.template replaceOpWithNewOp<LLVM::GlobalOp>(
+    rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
         op, llvmType, false, LLVM::Linkage::External, op.getName(),
         /*value=*/nullptr);
 
