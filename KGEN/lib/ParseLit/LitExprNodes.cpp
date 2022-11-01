@@ -382,13 +382,11 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     auto structOp = cast<LITStructDeclOp>(*typeDecl);
 
     VarDeclOp foundVarDecl;
-    size_t fieldNo = 0;
     for (auto varDecl : structOp.getRegion().front().getOps<VarDeclOp>()) {
       if (varDecl.getName() == attrSpelling) {
         foundVarDecl = varDecl;
         break;
       }
-      ++fieldNo;
     }
     if (!foundVarDecl) {
       emitter.emitError(getLoc(), "")
