@@ -124,10 +124,10 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins ScalarOrSIMD:$operand);
-  let results = (outs ScalarOrSIMD:$result);
+  let arguments = (ins POP_SIMDType:$operand);
+  let results = (outs POP_SIMDType:$result);
 
-  let assemblyFormat = "$operand attr-dict `:` type($result)";
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -232,10 +232,10 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins ScalarOrSIMD:$lhs, ScalarOrSIMD:$rhs);
-  let results = (outs ScalarOrSIMD:$result);
+  let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs);
+  let results = (outs POP_SIMDType:$result);
 
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -449,10 +449,11 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins ScalarOrSIMD:$a, ScalarOrSIMD:$b, ScalarOrSIMD:$c);
-  let results = (outs ScalarOrSIMD:$result);
+  let arguments = (ins POP_SIMDType:$a, POP_SIMDType:$b, POP_SIMDType:$c);
+  let results = (outs POP_SIMDType:$result);
 
-  let assemblyFormat = "$a `,` $b `,` $c attr-dict `:` type($result)";
+  let assemblyFormat = "$a `,` $b `,` $c attr-dict `:`"
+                       " qualified(type($result))";
 }
 //===----------------------------------------------------------------------===//
 // FMAOp
@@ -496,8 +497,8 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
     ```
   }];
 
-  let arguments = (ins POP_CmpPredicateAttr:$pred, ScalarOrSIMD:$lhs,
-                       ScalarOrSIMD:$rhs);
+  let arguments = (ins POP_CmpPredicateAttr:$pred, POP_SIMDType:$lhs,
+                       POP_SIMDType:$rhs);
   let results = (outs BoolSIMD:$result);
 
   let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)";
@@ -618,9 +619,9 @@ def POP_SelectOp : POPOp<"select",
     ```
   }];
 
-  let arguments = (ins BoolSIMD:$condition, ScalarOrSIMD:$trueValue,
-                       ScalarOrSIMD:$falseValue);
-  let results = (outs ScalarOrSIMD:$result);
+  let arguments = (ins BoolSIMD:$condition, POP_SIMDType:$trueValue,
+                       POP_SIMDType:$falseValue);
+  let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
 }
@@ -648,9 +649,10 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
     ```
   }];
 
-  let arguments = (ins ScalarOrSIMD:$input);
-  let results = (outs ScalarOrSIMD:$output);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+  let arguments = (ins POP_SIMDType:$input);
+  let results = (outs POP_SIMDType:$output);
+  let assemblyFormat = "$input attr-dict `:` qualified(type($input)) `to` "
+                       "qualified(type($output))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -710,9 +712,10 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
     ```
   }];
 
-  let arguments = (ins ScalarOrSIMD:$input);
-  let results = (outs ScalarOrSIMD:$output);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+  let arguments = (ins POP_SIMDType:$input);
+  let results = (outs POP_SIMDType:$output);
+  let assemblyFormat = "$input attr-dict `:` qualified(type($input)) `to` "
+                       "qualified(type($output))";
   let hasVerifier = 1;
   let hasFolder = 1;
 }
