@@ -887,6 +887,51 @@ def ExportOp : KGENOp<"export", [
 }
 
 //===----------------------------------------------------------------------===//
+// ExternFuncOp
+//===----------------------------------------------------------------------===//
+
+def ExternFuncOp : KGENOp<"extern.func", [DeclareOpInterfaceMethods<Symbol>]> {
+  let summary = "Declare an external function.";
+  let description = [{
+    The `kgen.extern.func` operation provides a signature for an external function.
+
+    Example:
+
+    ```mlir
+    kgen.extern.func @foo(si32) -> (f32, f32)
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type);
+  let results = (outs);
+  let assemblyFormat = "$sym_name `` $function_type attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// ExternVariableOp
+//===----------------------------------------------------------------------===//
+
+def ExternVariableOp : KGENOp<"extern.variable",
+    [DeclareOpInterfaceMethods<Symbol>]> {
+  let summary = "Declare an external variable.";
+  let description = [{
+    The `kgen.extern.variable` operation provides a signature for an
+    external variable.
+
+    Example:
+
+    ```mlir
+    kgen.extern.variable @foo : !foo.someType
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
+  let results = (outs);
+  let assemblyFormat = "$sym_name `:` $type attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // PrecompiledOpBase
 //===----------------------------------------------------------------------===//
 
