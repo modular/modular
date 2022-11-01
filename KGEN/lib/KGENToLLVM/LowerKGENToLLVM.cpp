@@ -685,11 +685,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Fix up the linkage for the exported symbols.
-  for (FlatSymbolRefAttr sym : publicSymbols) {
-    if (auto llvmFunc =
-            llvm::dyn_cast<LLVM::LLVMFuncOp>(theModule.lookupSymbol(sym)))
+  SymbolTable symtab(theModule);
+  for (FlatSymbolRefAttr sym : publicSymbols)
+    if (auto llvmFunc = symtab.lookup<LLVM::LLVMFuncOp>(sym.getAttr()))
       llvmFunc.setLinkage(LLVM::Linkage::External);
-  }
 
   // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, topLevelFuncs)))
