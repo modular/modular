@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType: type>()  {
+kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type>()  {
   // Generic attr syntax in generic ops
   // CHECK: "someop"() {
   "someop" () {
@@ -131,6 +131,12 @@ kgen.generator @param_expr<p1, p2, int1: i1, type: dtype, type2: dtype, mlirType
 
   // CHECK: = kgen.param.constant = <5>
   %38 = kgen.param.constant = <sub(9, 4)>
+
+  // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int1)>
+  %39 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>
+
+  // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int2)>
+  %40 = kgen.param.constant : i1 = <eq(:i1 int1, int2)>
 
   kgen.return
 }
