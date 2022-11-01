@@ -785,14 +785,14 @@ kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
 
 // CHECK-LABEL: @address_to_index
 kgen.generator @address_to_index<type: type>(%a: !pop.simd<1, address>) {
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.simd<1, address>
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.scalar<address>
   %0 = pop.pointer_to_index %a : !pop.simd<1, address>
   kgen.return
 }
 
 // CHECK-LABEL: @index_to_address
 kgen.generator @index_to_address<type: type>(%idx: index) {
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<1, address>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<address>
   %0 = pop.index_to_pointer %idx : !pop.simd<1, address>
   kgen.return
 }
