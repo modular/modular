@@ -615,7 +615,7 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 }
 
 // CHECK-LABEL: @"struct_sizeof
-kgen.generator public @struct_sizeof<T1: type, T2: type>() {
+kgen.generator @struct_sizeof<T1: type, T2: type>() {
   // CHECK-NEXT: <4>
   %0 = kgen.param.constant = <get_alignof(!kgen.ref<@Int20>)>
   // CHECK-NEXT: <4>
@@ -627,7 +627,7 @@ kgen.generator public @struct_sizeof<T1: type, T2: type>() {
   kgen.return
 }
 
-kgen.generator public @elaborate() {
+kgen.generator @elaborate() {
   kgen.call @struct_sizeof<T1: type = !kgen.ref<@Int40>, T2: type = !kgen.ref<@Int20>>() : () -> ()
   kgen.return
 }
@@ -648,15 +648,15 @@ kgen.func @sillyFn() -> index {
   kgen.return %0: index
 }
 
-// CHECK-LABEL:  kgen.func public @elaborateFnWithContextualType() -> index {
+// CHECK-LABEL:  kgen.func @elaborateFnWithContextualType() -> index {
 // CHECK:   %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"() : () -> index
-kgen.generator public @elaborateFnWithContextualType() -> index {
+kgen.generator @elaborateFnWithContextualType() -> index {
   %0 = kgen.call @takeFnContextualType<ty: type = index, fn: ()->index = @sillyFn>() : () -> index
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @elaborateFnWithContextualType2()
-kgen.generator public @elaborateFnWithContextualType2() -> (index, index) {
+kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   // Show we can bind a generic signature to a concrete one.
   kgen.param.declare boundFn: ()->index =
     <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> @takeFnContextualType,
@@ -994,7 +994,7 @@ kgen.generator @doIt() -> index {
 }
 
 /// This evaluator returns a constant index 0.
-kgen.generator public @first<FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+kgen.generator @first<FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
   %0 = kgen.param.constant = <0>
   kgen.return %0 : index
 }
@@ -1013,7 +1013,7 @@ kgen.generator @pickFirstB() implements @pickFirst {
 }
 
 // CHECK-LABEL: @test
-kgen.generator public @test() {
+kgen.generator @test() {
   // CHECK-NEXT: kgen.call @pickFirstB
   kgen.call @pickFirst() : () -> ()
   kgen.return

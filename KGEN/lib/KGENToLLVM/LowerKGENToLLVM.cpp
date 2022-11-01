@@ -41,21 +41,9 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
-    LLVM::Linkage llvmLinkage;
-    switch (func.getLinkage()) {
-    case Linkage::Public:
-      llvmLinkage = LLVM::Linkage::External;
-      break;
-    case Linkage::ModulePrivate:
-      llvmLinkage = LLVM::Linkage::Internal;
-      break;
-    case Linkage::LibraryPrivate:
-      llvmLinkage = LLVM::Linkage::Linkonce;
-      break;
-    }
-
+    // Mark all functions as internal for now - we'll clean this up later.
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType, llvmLinkage);
+        func.getLoc(), func.getNameAttr(), funcType, LLVM::Linkage::Linkonce);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
@@ -403,6 +391,12 @@ struct ConvertKGENStructGEP : public ConvertKGENStructOp<StructGEPOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
+static LogicalResult removeExportOps(ExportOp exportOp,
+                                     PatternRewriter &rewriter) {
+  rewriter.eraseOp(exportOp);
+  return success();
+}
+
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns,
                                        StructDeclarations &structDecls) {
@@ -418,6 +412,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENReturn
       // clang-format on
       >(typeConverter);
+  // Just remove ExportOps.
+  patterns.add(removeExportOps);
   patterns.insert<
       // clang-format off
       ConvertKGENStructCreate,
@@ -599,12 +595,9 @@ static LogicalResult emitWrappers(ModuleOp theModule,
     if (!func)
       return theModule.emitError("cannot find func: @") << funcName;
     // If the function's linkage is private, don't bother creating a wrapper.
-    if (func.getLinkage() == LLVM::Linkage::Internal) {
-      mlir::emitWarning(
-          func.getLoc(),
-          "will not rewrite calling convention for private functions");
+    if (func.getLinkage() != LLVM::Linkage::External)
       continue;
-    }
+
     if (auto it = callsites.find(funcName); it != callsites.end()) {
       return func.emitError("func is not top-level")
                  .attachNote(it->second.getLoc())
@@ -649,6 +642,12 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addIllegalDialect<KGENDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
+  // Capture all the public symbols declared by kgen.export declarations.
+  SmallVector<FlatSymbolRefAttr> publicSymbols;
+  for (auto e : theModule.getOps<ExportOp>())
+    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
+      publicSymbols.push_back(sym);
+
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
@@ -684,6 +683,13 @@ void LowerKGENToLLVMPass::runOnOperation() {
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
+
+  // Fix up the linkage for the exported symbols.
+  for (FlatSymbolRefAttr sym : publicSymbols) {
+    if (auto llvmFunc =
+            llvm::dyn_cast<LLVM::LLVMFuncOp>(theModule.lookupSymbol(sym)))
+      llvmFunc.setLinkage(LLVM::Linkage::External);
+  }
 
   // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, topLevelFuncs)))

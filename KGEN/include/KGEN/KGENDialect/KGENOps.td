@@ -42,7 +42,6 @@ def FuncOp
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
-                       LinkageAttr:$linkage,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -64,12 +63,12 @@ def FuncOp
     // Create a func with a region but no body block.  The caller must create
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name,
-                   "FunctionType":$signature, "LinkageAttr":$linkage,
+                   "FunctionType":$signature,
                    "ArrayRef<Type>":$outputParamTypes)>,
     // Create a func with an empty body, `argLocs` specifies the locations for
     // all the block arguments.
     OpBuilder<(ins "StringAttr":$name,
-                   "FunctionType":$signature, "LinkageAttr":$linkage,
+                   "FunctionType":$signature,
                    "ArrayRef<Type>":$outputParamTypes,
                    "ArrayRef<Location>":$argLocs)>,
   ];
@@ -92,7 +91,6 @@ def GeneratorOp
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
-                       LinkageAttr:$linkage,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
@@ -132,7 +130,6 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
   /// and which are result parameters.
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
-                       LinkageAttr:$linkage,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
@@ -945,7 +942,6 @@ class PrecompiledOpBase<string mnemonic, dag additionalArgs>
 
   let arguments = !con((ins SymbolNameAttr:$sym_name,
                             TypeAttrOf<FunctionType>:$function_type,
-                            LinkageAttr:$linkage,
                             ParamDeclArrayAttr:$paramDecls,
                             KTypeArrayAttr:$resultParamTypes), additionalArgs);
 

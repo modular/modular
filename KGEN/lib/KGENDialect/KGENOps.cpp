@@ -345,12 +345,10 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
 /// Create a func with no body block.  The caller must create it and fill
 /// it in.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, LinkageAttr linkage,
-                   ArrayRef<Type> outputParamTypes) {
+                   FunctionType signature, ArrayRef<Type> outputParamTypes) {
   // Add an attribute for the name and function_type attributes.
   result.addAttribute(SymbolTable::getSymbolAttrName(), name);
   result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
-  result.addAttribute("linkage", linkage);
   result.addAttribute("paramDecls", builder.getAttr<ParamDeclArrayAttr>(
                                         ArrayRef<ParamDeclAttr>()));
   result.addAttribute("resultParamTypes",
@@ -361,10 +359,9 @@ void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 /// Create a func with an empty body, `argLocs` specifies the locations for
 /// all the block arguments.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, LinkageAttr linkage,
-                   ArrayRef<Type> outputParamTypes,
+                   FunctionType signature, ArrayRef<Type> outputParamTypes,
                    ArrayRef<Location> argLocs) {
-  build(builder, result, name, signature, linkage, outputParamTypes);
+  build(builder, result, name, signature, outputParamTypes);
 
   // Create a block for the body.
   auto *bodyRegion = result.regions[0].get();
@@ -1344,8 +1341,7 @@ void PrecompiledLLVMOp::build(OpBuilder &builder, OperationState &result,
                               FuncOp func, TargetInfoAttr compiledFor,
                               StringRef llvm) {
   build(builder, result, func.getSymNameAttr(), func.getFunctionTypeAttr(),
-        func.getLinkageAttr(), func.getParamDeclsAttr(),
-        func.getResultParamTypesAttr(), compiledFor,
+        func.getParamDeclsAttr(), func.getResultParamTypesAttr(), compiledFor,
         builder.getStringAttr(llvm));
 }
 

@@ -10,26 +10,26 @@
 // RUN: kgen %s -emit -func="someMetaScalarKernel" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=SCALARMETA
 
-kgen.func public @someKernel(%arg1: f32, %arg2: index) -> f32 {
+kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
 // SCALAR: extern float someKernel(float, ssize_t);
 
-kgen.func public @someBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>) -> index {
+kgen.func @someBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>) -> index {
   %size = pop.struct.get %a[1] : !pop.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>
   kgen.return %size : index
 }
 // BUFFER: extern ssize_t someBufferKernel(void *, ssize_t, uint8_t);
 
 
-kgen.func public @someNDBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
+kgen.func @someNDBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
   %size = pop.struct.get %a[1] : !pop.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>
   kgen.return %size : index
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
 
 // https://github.com/modularml/modular/issues/2636
-kgen.func public @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+kgen.func @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   kgen.return %arg0 : !pop.simd<1, f32>
 }
 

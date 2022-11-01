@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -split-input-file -prune-impossible-variants | FileCheck %s
 
 // CHECK-LABEL: @known_true_or_false
-kgen.generator public @known_true_or_false<T:type>(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
+kgen.generator @known_true_or_false<T:type>(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   %0 = pop.variant.create %arg0 : i32 -> !pop.variant<T, i32>
   // CHECK: %[[TRUE:.*]] = kgen.param.constant: i1 = <1>
   %1 = pop.variant.is i32, %0 : !pop.variant<T, i32>
@@ -19,10 +19,12 @@ kgen.generator public @known_true_or_false<T:type>(%arg0: i32, %arg1: f32, %arg2
   kgen.return %5 : i1
 }
 
+kgen.export [@known_true_or_false]
+
 // -----
 
 // CHECK-LABEL: @known_false
-kgen.generator public @known_false<T:type>(%arg0: i32, %arg1: !kgen.paramref<T>, %arg2: i1) -> i1 {
+kgen.generator @known_false<T:type>(%arg0: i32, %arg1: !kgen.paramref<T>, %arg2: i1) -> i1 {
   %0 = scf.if %arg2 -> !pop.variant<T, i32, f32> {
     %1 = pop.variant.create %arg0 : i32 -> !pop.variant<T, i32, f32>
     scf.yield %1 : !pop.variant<T, i32, f32>
@@ -35,6 +37,8 @@ kgen.generator public @known_false<T:type>(%arg0: i32, %arg1: !kgen.paramref<T>,
   // CHECK: return %[[FALSE]]
   kgen.return %2 : i1
 }
+
+kgen.export [@known_false]
 
 // -----
 
@@ -49,7 +53,7 @@ kgen.generator @always_index<T:type>() -> !pop.variant<T, index> {
 
 // CHECK-LABEL: @entry
 // CHECK-SAME: -> i32
-kgen.generator public @entry<T:type>() -> !pop.variant<T, i32> {
+kgen.generator @entry<T:type>() -> !pop.variant<T, i32> {
   // CHECK: %[[RESULT:.*]] = kgen.call
   // CHECK-SAME: -> index
   %0 = kgen.call @always_index<T:type = T>() : () -> !pop.variant<T, index>
@@ -71,11 +75,13 @@ kgen.generator public @entry<T:type>() -> !pop.variant<T, i32> {
   kgen.return %2 : !pop.variant<T, i32>
 }
 
+kgen.export [@always_index, @entry]
+
 // -----
 
-// CHECK-LABEL: public @do_not_rewrite
+// CHECK-LABEL: @do_not_rewrite
 // CHECK-SAME: -> !pop.variant<index>
-kgen.generator public @do_not_rewrite() -> !pop.variant<index> {
+kgen.generator @do_not_rewrite() -> !pop.variant<index> {
   %0 = index.constant 0
   %1 = pop.variant.create %0 : index -> !pop.variant<index>
   kgen.return %1 : !pop.variant<index>
@@ -90,23 +96,27 @@ kgen.generator @call() {
   kgen.return
 }
 
+kgen.export [@do_not_rewrite]
+
 // -----
 
 kgen.generator.interface @iface() -> !pop.variant<index>
 
-// CHECK-LABEL: public @do_not_rewrite
+// CHECK-LABEL: kgen.generator @do_not_rewrite
 // CHECK-SAME: -> !pop.variant<index>
-kgen.generator public @do_not_rewrite() -> !pop.variant<index> implements @iface {
+kgen.generator @do_not_rewrite() -> !pop.variant<index> implements @iface {
   %0 = index.constant 0
   %1 = pop.variant.create %0 : index -> !pop.variant<index>
   kgen.return %1 : !pop.variant<index>
 }
 
+kgen.export [@do_not_rewrite]
+
 // -----
 
-// CHECK-LABEL: @dead_code()
+// CHECK-LABEL: kgen.generator @dead_code
 // CHECK-SAME: -> !pop.variant<index>
-kgen.generator module_private @dead_code() -> !pop.variant<index> {
+kgen.generator @dead_code() -> !pop.variant<index> {
   %0 = index.constant 0
   %1 = pop.variant.create %0 : index -> !pop.variant<index>
   // CHECK: return %{{.*}} : !pop.variant<index>
@@ -115,13 +125,14 @@ kgen.generator module_private @dead_code() -> !pop.variant<index> {
 
 // -----
 
-kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+kgen.generator @always_i32(%a: i32) -> !pop.variant<i32, f32> {
   %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
   kgen.return %0 : !pop.variant<i32, f32>
 }
 
-// CHECK-LABEL: @variant_visit
-kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
+// CHECK-LABEL: kgen.generator @variant_visit
+// CHECK-SAME: -> i64
+kgen.generator @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   %1 = pop.variant.visit %0 : !pop.variant<i32, f32> -> !pop.variant<i64, f64>
   case (%v: i32) {
@@ -135,17 +146,19 @@ kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<
   kgen.return %1 : !pop.variant<i64, f64>
 }
 
+kgen.export [@variant_visit]
+
 // -----
 
 // CHECK-LABEL: @always_i32
-kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+kgen.generator @always_i32(%a: i32) -> !pop.variant<i32, f32> {
   %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
   kgen.return %0 : !pop.variant<i32, f32>
 }
 
-// CHECK-LABEL: @variant_visit
+// CHECK-LABEL: kgen.generator @variant_visit
 // CHECK-SAME: -> i64
-kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
+kgen.generator @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   // CHECK: %[[VISIT_RESULT:.*]] = pop.variant.visit
   %1 = pop.variant.visit %0 : !pop.variant<i32, f32> -> !pop.variant<i64, f64>
@@ -162,11 +175,13 @@ kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<
   kgen.return %1 : !pop.variant<i64, f64>
 }
 
+kgen.export [@variant_visit]
+
 // -----
 
 // CHECK-LABEL: @entry_state
 // CHECK-SAME: -> index
-kgen.generator public @entry_state(%a: !pop.variant<i32, f32>) -> !pop.variant<index, i1> {
+kgen.generator @entry_state(%a: !pop.variant<i32, f32>) -> !pop.variant<index, i1> {
   %0 = index.constant 0
   %1 = pop.variant.create %0 : index -> !pop.variant<index, i1>
   %2 = pop.variant.visit %a : !pop.variant<i32, f32> -> !pop.variant<index, i1>
@@ -179,17 +194,19 @@ kgen.generator public @entry_state(%a: !pop.variant<i32, f32>) -> !pop.variant<i
   kgen.return %2 : !pop.variant<index, i1>
 }
 
+kgen.export [@entry_state]
+
 // -----
 
 // CHECK-LABEL: @always_i32
-kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+kgen.generator @always_i32(%a: i32) -> !pop.variant<i32, f32> {
   %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
   kgen.return %0 : !pop.variant<i32, f32>
 }
 
 // CHECK-LABEL: @variant_visit
 // CHECK-SAME: -> i64
-kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
+kgen.generator @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   // CHECK: %[[VISIT_RESULT:.*]] = pop.variant.visit
   %1 = pop.variant.visit %0 : !pop.variant<i32, f32> -> !pop.variant<i64, f64>
@@ -202,26 +219,30 @@ kgen.generator public @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<
   kgen.return %1 : !pop.variant<i64, f64>
 }
 
+kgen.export [@variant_visit]
+
 // -----
 
-kgen.generator module_private @always_i32(%a: i32) -> !pop.variant<i32, f32> {
+kgen.generator @always_i32(%a: i32) -> !pop.variant<i32, f32> {
   %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
   kgen.return %0 : !pop.variant<i32, f32>
 }
 
 // Make sure all callsites are rewritten.
 
-// CHECK-LABEL: kgen.generator public @first_callsite
-kgen.generator public @first_callsite(%a: i32) {
+// CHECK-LABEL: kgen.generator @first_callsite
+kgen.generator @first_callsite(%a: i32) {
   // CHECK: @always_i32(%arg0) : (i32) -> i32
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator public @second_callsite
-kgen.generator public @second_callsite(%a: i32) {
+// CHECK-LABEL: kgen.generator @second_callsite
+kgen.generator @second_callsite(%a: i32) {
   // CHECK: @always_i32(%arg0) : (i32) -> i32
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   %1 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   kgen.return
 }
+
+kgen.export [@first_callsite, @second_callsite]

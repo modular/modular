@@ -2,7 +2,7 @@
 // RUN: kgen-execute %s -execute -func="while_loop:f32()" | FileCheck %s --check-prefix=WHILE
 // RUN: kgen-execute %s -execute -func="while_accum_loop:f32()" | FileCheck %s --check-prefix=WHILE_ACCUM
 
-kgen.func public @for_loop() -> f32 {
+kgen.func @for_loop() -> f32 {
   %av = pop.constant(1.0 : f32) : !pop.simd<1, f32>
   %c10 = pop.constant(10.0 : f32) : !pop.simd<1, f32>
   %lb = index.constant 0
@@ -16,7 +16,7 @@ kgen.func public @for_loop() -> f32 {
   kgen.return %r : f32
 }
 
-kgen.func public @while_loop() -> f32 {
+kgen.func @while_loop() -> f32 {
   %init = pop.constant(1.2 : f32) : !pop.simd<1, f32>
   %limit = pop.constant(10. : f32) : !pop.simd<1, f32>
   %result = scf.while (%v = %init) : (!pop.simd<1, f32>) -> !pop.simd<1, f32> {
@@ -49,7 +49,7 @@ kgen.func public @while_loop() -> f32 {
 //     iter++;
 // }
 // return accum;
-kgen.func public @while_accum_loop() -> f32 {
+kgen.func @while_accum_loop() -> f32 {
   %size = index.constant 13
   %one = index.constant 1
   %eight = index.constant 8
@@ -108,7 +108,7 @@ kgen.func public @while_accum_loop() -> f32 {
   kgen.return %res : f32
 }
 
-
+kgen.export [@for_loop, @while_loop, @while_accum_loop]
 
 // FOR: --- 'for_loop' returned 101.{{[0-9]+}}
 // WHILE: --- 'while_loop' returned 18.4{{[0-9]+}}

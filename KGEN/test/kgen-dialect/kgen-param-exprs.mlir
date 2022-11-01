@@ -410,15 +410,15 @@ kgen.func @sillyFn() -> index {
   kgen.return %0: index
 }
 
-// CHECK-LABEL:  kgen.generator public @elaborateFnWithContextualType() -> index {
+// CHECK-LABEL:  kgen.generator @elaborateFnWithContextualType() -> index {
 // CHECK:  kgen.call @takeFnContextualType<ty: type = index, fn: () -> index = @sillyFn>() : () -> index
-kgen.generator public @elaborateFnWithContextualType() -> index {
+kgen.generator @elaborateFnWithContextualType() -> index {
   %0 = kgen.call @takeFnContextualType<ty: type = index, fn: ()->index = @sillyFn>() : () -> index
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @elaborateFnWithContextualType2()
-kgen.generator public @elaborateFnWithContextualType2() -> index {
+kgen.generator @elaborateFnWithContextualType2() -> index {
   kgen.param.declare fn: <ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare boundFn: () -> index =

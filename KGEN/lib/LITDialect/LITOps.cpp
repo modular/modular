@@ -94,7 +94,6 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
       builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
   return build(builder, result, name, StringArrayAttr::get(context, {}),
                TypeAttr::get(functionType),
-               builder.getAttr<LinkageAttr>(Linkage::Public),
                ParamDeclArrayAttr::get(context, {}),
                TypeArrayAttr::get(context, {}),
                ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());

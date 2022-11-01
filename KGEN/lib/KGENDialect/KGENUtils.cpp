@@ -964,17 +964,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   SmallVector<Type> resultTypes;
   auto &builder = parser.getBuilder();
 
-  // Parse linkage. If none is provided, use module_private by default.
-  StringRef linkage;
-  if (succeeded(parser.parseOptionalKeyword(
-          &linkage, {"public", "module_private", "library_private"}))) {
-    result.addAttribute("linkage", parser.getBuilder().getAttr<LinkageAttr>(
-                                       *symbolizeLinkage(linkage)));
-  } else {
-    result.addAttribute("linkage", parser.getBuilder().getAttr<LinkageAttr>(
-                                       Linkage::ModulePrivate));
-  }
-
   // Parse the name as a symbol.
   StringAttr nameAttr;
   if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
@@ -1084,9 +1073,6 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
           .getValue();
   p << ' ';
 
-  if (auto linkage = op->getAttrOfType<LinkageAttr>("linkage"))
-    if (linkage.getValue() != Linkage::ModulePrivate)
-      p << stringifyLinkage(linkage.getValue()) << ' ';
   p.printSymbolName(funcName);
   printOptionalParameterSpec(opDecl.getParamDeclsAttr(),
                              opDecl.getResultParamTypesAttr(), p.getStream());

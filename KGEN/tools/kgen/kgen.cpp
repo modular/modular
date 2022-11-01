@@ -234,7 +234,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
     // And now we have to produce the header files for each requested func.
     for (auto f : theModule->getOps<FuncOp>()) {
-      if ((clOptions.funcs.empty() && f.getLinkage() == Linkage::Public) ||
+      if ((clOptions.funcs.empty() &&
+           compiler.isSymbolExported(f.getNameAttr())) ||
           clOptions.shouldHandleFunc(f.getName())) {
         if (failed(emitHeaderForFunc(f, std::filesystem::path(objPath)
                                             .replace_extension(".h")

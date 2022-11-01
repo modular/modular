@@ -168,8 +168,6 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
     llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
       Operation *symbol = extractDependency(op.getCalleeAttr().getAttr());
       if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
-        func.setLinkageAttr(
-            LinkageAttr::get(op->getContext(), Linkage::ModulePrivate));
         sliceDependencies(func, sliceSymtab, symtab);
       }
     });
@@ -186,7 +184,6 @@ static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
   if (!name.empty())
     options.topLevelKernel = name.str();
 
-  options.emitOpaqueWrappers = true;
   buildLowerToLLVMPipeline(pm, options);
   return pm.run(module);
 }
@@ -209,6 +206,14 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   mlir::OwningOpRef<mlir::ModuleOp> singleModule =
       mlir::ModuleOp::create(func->getLoc());
 
+  // If the func is exported, then re-export it.
+  auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
+  if (exportedSymbols.contains(func.getNameAttr())) {
+    builder.create<ExportOp>(
+        func->getLoc(),
+        builder.getArrayAttr({FlatSymbolRefAttr::get(func.getNameAttr())}));
+  }
+
   // Clone any symbols used by this func into the module as well.
   mlir::SymbolTable sliceSymtab(*singleModule);
 
@@ -219,10 +224,7 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
   // the current module.
   sliceSymtab.insert(func.clone());
 
-  // Only generate wrappers for the func if it's public.
-  if (failed(convertToLLVM(
-          *singleModule,
-          /*name=*/func.getLinkage() == Linkage::Public ? func.getName() : "")))
+  if (failed(convertToLLVM(*singleModule, func.getName())))
     return failure();
 
   // Turn the thing into an LLVM module.

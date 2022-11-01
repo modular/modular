@@ -68,28 +68,4 @@ def InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind", [
   let genSpecializedAttr = 0;
 }
 
-//===----------------------------------------------------------------------===//
-// LinkageAttr
-//===----------------------------------------------------------------------===//
-
-/// This defines the LinkageAttrInfo backing for the LinkageAttr enum.
-def LinkageAttrInfo : I32EnumAttr<"Linkage", "Linkage", [
-  /// Public means this symbol must be kept alive and the signature
-  /// unmodified because external consumers might use it.
-  I32EnumAttrCase<"Public", 0, "public">,
-  /// Module Private means that nobody outside this module will use this
-  /// symbol. Module in this context means mlir::ModuleOp - this will need
-  /// renaming once lightning has the concept of modules.
-  I32EnumAttrCase<"ModulePrivate", 1, "module_private">,
-  /// LibraryPrivate means that we might have a user in our current library.
-  /// It won't be visible outside the current library, but it's visible and
-  /// link-able in the current library.
-  I32EnumAttrCase<"LibraryPrivate", 2, "library_private">,
-]> {
-  let cppNamespace = "M::KGEN";
-  let genSpecializedAttr = 0;
-}
-
-def LinkageAttr : EnumAttr<KGENDialect, LinkageAttrInfo, "linkage">;
-
 #endif // KGENENUMS_TD

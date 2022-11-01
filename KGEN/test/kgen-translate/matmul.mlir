@@ -1,7 +1,7 @@
 // RUN: kgen-opt -lower-zap-to-pop -lower-kgen-to-llvm -pass-pipeline='kgen.func(lower-pop-to-llvm)' -lower-to-llvm %s | kgen-translate -mlir-to-llvmir | FileCheck %s
 
-// CHECK-LABEL: define void @naive_matmul
-kgen.func public @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,
+// CHECK-LABEL: define linkonce void @naive_matmul
+kgen.func @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,
                         %b: !zap.ndbuffer<[?, ?], f32>,
                         %c: !zap.ndbuffer<[?, ?], f32>) {
   %zero = index.constant 0
