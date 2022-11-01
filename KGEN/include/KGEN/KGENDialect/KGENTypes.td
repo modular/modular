@@ -113,11 +113,15 @@ def SignatureType
   let assemblyFormat = "`<` $inputParams `,` $resultParamTypes `,` $values `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams,
-                                          "TypeArrayAttr":$resultParamTypes,
-                                          "mlir::FunctionType":$values), [{
-      return get(inputParams.getContext(), inputParams, resultParamTypes, values);
-    }]>
+    TypeBuilderWithInferredContext<(ins
+        "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
+        "FunctionType":$values), [{
+      return get(inputParams.getContext(), inputParams, resultParamTypes,
+                 values);
+    }]>,
+    TypeBuilderWithInferredContext<(ins
+        "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
+        "FunctionType":$values)>
   ];
 
   let extraClassDeclaration = [{

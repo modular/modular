@@ -69,6 +69,23 @@ Type SignatureType::replaceImmediateSubElements(
                             replTypes[0].cast<FunctionType>());
 }
 
+SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
+                                 ParamDeclArrayAttr resultParams,
+                                 FunctionType values) {
+  SmallVector<ParamDeclAttr> inputParamDecls;
+  inputParamDecls.reserve(inputParams.size());
+  for (ParamBindAttr inputParam : inputParams)
+    inputParamDecls.push_back(inputParam.getDecl());
+
+  SmallVector<Type> resultParamTypes;
+  resultParamTypes.reserve(resultParams.size());
+  for (ParamDeclAttr resultParam : resultParams)
+    resultParamTypes.push_back(resultParam.getType());
+
+  return get(ParamDeclArrayAttr::get(values.getContext(), inputParamDecls),
+             TypeArrayAttr::get(values.getContext(), resultParamTypes), values);
+}
+
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
 /// bindings affects the type signature of the value input and outputs, and
