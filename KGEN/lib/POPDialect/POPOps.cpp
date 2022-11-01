@@ -842,7 +842,14 @@ LogicalResult VariantVisitOp::verify() {
       return emitOpError("expected default region to have zero arguments");
   }
   for (Region *region : getRegions()) {
-    auto yield = cast<YieldOp>(region->front().getTerminator());
+    Operation *terminator = region->front().getTerminator();
+    auto yield = dyn_cast<YieldOp>(terminator);
+    if (!yield) {
+      return (emitOpError("region #") << region->getRegionNumber()
+                                      << " expected `pop.yield` terminator")
+                 .attachNote(terminator->getLoc())
+             << "see invalid terminator here";
+    }
     if (yield.getOperandTypes() != getResultTypes()) {
       return (emitOpError("operand types of region #")
               << region->getRegionNumber()
