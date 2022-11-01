@@ -79,3 +79,18 @@ kgen.func public @addressof() -> ((i64) -> i64) {
 kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, address>) {
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: llvm.func @an_extern_func
+// CHECK-SAME:  (i32, vector<4xf32>) -> vector<8xf32>
+// COM: Check that the next line closes the module - we don't want a body for this!
+// CHECK-NEXT: }
+
+kgen.extern.func @an_extern_func(si32, !pop.simd<4, f32>) -> !pop.simd<8, f32>
+
+// -----
+
+// CHECK-LABEL: llvm.mlir.global external @foo
+// CHECK-SAME: {addr_space = 0 : i32} : f64
+kgen.extern.variable @foo : f64
