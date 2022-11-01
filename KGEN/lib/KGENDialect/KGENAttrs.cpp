@@ -296,6 +296,11 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
+
+    // Equality check can be performed on two boolean values.
+    if (opcode == POC::EQ && operands[0].getType().isSignlessInteger(1))
+      break;
+
     if (!isEqualityComparableType(operands[0].getType()))
       return emitError() << "unsupported comparison type "
                          << operands[0].getType();
@@ -730,7 +735,6 @@ static IntegerAttr foldCompareOp(
 /// attributes to do the job for us.  Both operands may be null, and this
 /// returns null if no folding is possible.
 static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
-
   // foldCompareOp handles 32-bit truncation of input values correctly.
   if (lhs.getType().isIndex())
     return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
