@@ -418,6 +418,18 @@ kgen.func @variant_asm_missing_default(%a: !pop.variant<i32, f32>) {
 
 // -----
 
+kgen.func @variant_visit_bad_terminator(%a: !pop.variant<i32>) {
+  // expected-error @below {{'pop.variant.visit' op region #0 expected `pop.yield` terminator}}
+  pop.variant.visit %a : !pop.variant<i32>
+  default {
+    // expected-note @below {{see invalid terminator here}}
+    scf.yield
+  }
+  kgen.return
+}
+
+// -----
+
 kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op element index 1 out of bounds (>=1)}}
   %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i32>
