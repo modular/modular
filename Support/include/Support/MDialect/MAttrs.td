@@ -121,6 +121,56 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesAttr
+//===----------------------------------------------------------------------===//
+
+// Make sure the attribute's data argument is interned with the requested
+// alignment.
+def M_AlignedBytesData : ArrayRefParameter<"uint8_t",
+    "aligned storage for AlignedBytesAttr"> {
+  let allocator = [{
+    $_dst = copyIntoBytes($_allocator, $_self, align);
+  }];
+}
+
+def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
+    DeclareAttrInterfaceMethods<ElementsAttrInterface>] > {
+  let summary = "A literal byte array with (optional) alignment.";
+  let description = [{
+    This attribute is the 'inline' equivalent of `dense_resource`, and describes
+    a byte array with (optional) byte alignment. Nothing is implied about the
+    internal structure of the bytes (rank, dimensions, underlying element type,
+    padding, or element endianness).
+
+    This attribute implements the ElementsAttrInterface as a rank-1 ShapedType over
+    uint8_t elements.
+
+    Generally this attribute should only be used for 'small' literals. Larger literals
+    should be placed into the resources table and be referenced by the `dense_resources`
+    attribute. Note that dense resources encode their alignment in their first four bytes
+    using the little-endian convention, where as this attribute describes the alignment
+    explicitly.
+
+    Examples:
+    ```mlir
+    #M.aligned_bytes<"0x01020304">      // 4 bytes, no alignment constraint
+    #M.aligned_bytes<64: "0x01020304">  // 4 bytes, aligned on 64 byte boundary
+    ```
+  }];
+
+  let parameters = (ins OptionalParameter<"Optional<int64_t>">:$align, M_AlignedBytesData:$data);
+  let assemblyFormat = [{ `<` ($align^ `:`)? custom<AlignedBytesData>($data) `>` }];
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// ElementsAttr interface implementation.
+    using ContiguousIterableTypesT = std::tuple<uint8_t>;
+    FailureOr<const uint8_t*> try_value_begin_impl(OverloadToken<uint8_t>) const;
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // IntArrayElementsAttr
 //===----------------------------------------------------------------------===//

@@ -22,3 +22,13 @@
 
 // expected-error @below {{attribute type indicates 2 elements, but array has 1}}
 "M"() {a = #M.dense_array<1> : tensor<2xi32>} : () -> ()
+
+// -----
+
+// expected-error@+1 {{invalid hex string for aligned_bytes}}
+"M"() {a = #M.aligned_bytes<16: "0xg0010204">} : () -> ()
+
+// -----
+
+// expected-error@+1 {{alignment must be a power of two.}}
+"M"() {a = #M.aligned_bytes<15: "0x01020304">} : () -> ()

@@ -5,11 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrs.h"
+#include "Support/Compiler/ParsingUtils.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+
 #include <type_traits>
 
 using namespace M;
@@ -487,6 +490,87 @@ Attribute M::convertDenseElements(Attribute attr) {
   }
   auto values = llvm::to_vector(denseElements.getValues<APInt>());
   return IntArrayElementsAttr::get(denseElements.getType(), values);
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesAttr
+//===----------------------------------------------------------------------===//
+
+/// Interns data into allocator with align (or 1 if no align constraint given).
+/// The AlignedBytesAttr's getData will thus return a pointer respecting the
+/// requested alignment.
+static ArrayRef<uint8_t>
+copyIntoBytes(mlir::StorageUniquer::StorageAllocator &allocator,
+              ArrayRef<uint8_t> data, Optional<int64_t> align) {
+  auto *ptr = static_cast<uint8_t *>(
+      allocator.allocate(data.size(), align ? *align : sizeof(uint8_t)));
+  std::uninitialized_copy(data.begin(), data.end(), ptr);
+  return {ptr, data.size()};
+}
+
+/// (Just to make clear we'll be converting from decoded hex strings directly
+///  to vectors of uint8_t below.)
+static_assert(sizeof(uint8_t) == sizeof(char));
+
+/// Parses a hex string into data. The empty string denotes no data.
+static ParseResult
+parseAlignedBytesData(AsmParser &p, FailureOr<SmallVector<uint8_t>> &data) {
+  std::string encoded;
+  if (p.parseString(&encoded))
+    return mlir::failure();
+  if (encoded.empty()) {
+    data.emplace();
+    return success();
+  }
+  StringRef encodedRef = encoded;
+  std::string decoded;
+  auto startLoc = p.getCurrentLocation();
+  if (!encodedRef.consume_front("0x") || encodedRef.empty() ||
+      (encodedRef.size() & 1) || !llvm::tryGetFromHex(encodedRef, decoded)) {
+    return p.emitError(startLoc, "invalid hex string for aligned_bytes");
+  }
+  data.emplace(decoded.size());
+  memcpy(data->data(), decoded.data(), decoded.size());
+  return success();
+}
+
+/// Print data as a hex string. The empty data array is printed as the empty
+/// string.
+static void printAlignedBytesData(AsmPrinter &p, ArrayRef<uint8_t> data) {
+  if (data.empty()) {
+    p << "\"\"";
+    return;
+  }
+  p << "\"0x";
+  StringRef decodedRef(reinterpret_cast<const char *>(data.data()),
+                       data.size());
+  p << llvm::toHex(decodedRef);
+  p << "\"";
+}
+
+/// Verifies the attribute's align constraint is sensible.
+LogicalResult
+AlignedBytesAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         Optional<int64_t> align,
+                         ::llvm::ArrayRef<uint8_t> data) {
+  if (align && *align < 0)
+    return emitError() << "alignment cannot be negative.";
+  if (align && !llvm::isPowerOf2_64(*align))
+    return emitError() << "alignment must be a power of two.";
+  return success();
+}
+
+/// ElementsAttrInterface: returns the underlying data.
+FailureOr<const uint8_t *>
+AlignedBytesAttr::try_value_begin_impl(OverloadToken<uint8_t>) const {
+  return getData().data();
+}
+
+/// ElementsAttrInterface: returns the implied buffer type.
+ShapedType AlignedBytesAttr::getType() const {
+  return ArrayType::get(
+      static_cast<int64_t>(getData().size()),
+      IntegerType::get(getContext(), 8, IntegerType::Unsigned));
 }
 
 //===----------------------------------------------------------------------===//
