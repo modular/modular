@@ -250,6 +250,8 @@ std::unique_ptr<BlobCacheBackend>
 M::getDefaultBackendChain(const std::filesystem::path &basePath) {
   auto backend = getInMemoryBackend();
 
+  /* TODO: Disabled for now while we debug the filesystem backend
+           implementation (c.f. issue #4394)
   // Default to be in the `.derived` folder if we can.
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(
@@ -264,5 +266,6 @@ M::getDefaultBackendChain(const std::filesystem::path &basePath) {
     base = derived / basePath;
 
   backend->setDelegate(getFilesystemBackend(base));
+  */
   return backend;
 }
