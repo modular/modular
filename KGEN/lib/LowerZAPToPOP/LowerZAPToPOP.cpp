@@ -748,9 +748,23 @@ struct ConvertZAPNDBufferBitCast
     Value ndBuffer = convertValue(op.getInput());
     Value ptr = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
                                              kNDBufferAddressPosition);
+
     if (type.getDType() != inputType.getDType())
       ptr = rewriter.create<PointerBitcastOp>(
           op.getLoc(), op.getType().getPointerType(), ptr);
+
+    Value dtype;
+    TypedAttr dtypeExpr;
+    if (auto outputDType = type.getDType())
+      dtypeExpr = outputDType;
+    else if (auto inputDType = inputType.getDType())
+      dtypeExpr = inputDType;
+
+    if (dtypeExpr)
+      dtype = rewriter.create<ParamConstantOp>(op.getLoc(), dtypeExpr);
+    else
+      dtype = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
+                                           kNDBufferDTypePosition);
 
     // Query the source ndbuffer for the dynamic shape information.
     Value shapeArray;
@@ -765,9 +779,9 @@ struct ConvertZAPNDBufferBitCast
           rewriter.create<ArrayGetOp>(op.getLoc(), shapeArray, idx));
     }
 
-    rewriter.replaceOp(op,
-                       constructNDBuffer(rewriter, op.getLoc(), type, ptr,
-                                         type.getRank(), dynamicShapeValues));
+    rewriter.replaceOp(op, constructNDBuffer(rewriter, op.getLoc(), type, ptr,
+                                             type.getRank(), dynamicShapeValues,
+                                             /*dtype=*/dtype));
     return success();
   }
 };
