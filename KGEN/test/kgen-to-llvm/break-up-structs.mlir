@@ -15,9 +15,11 @@
 // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
 // CHECK: llvm.return
 
-kgen.func public @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
+kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
   kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
 }
+
+kgen.export [@kernel]
 
 // -----
 
@@ -44,9 +46,11 @@ llvm.func @kernel(%a: !nestedStruct) -> !nestedStruct {
 // CHECK-SAME: %[[I:.*]]: f32
 // CHECK: llvm.return
 
-kgen.func public @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
+kgen.func @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
   kgen.return
 }
+
+kgen.export [@kernel]
 
 // -----
 
@@ -55,19 +59,23 @@ kgen.func public @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, 
 // CHECK: %[[RESULT:.*]] = llvm.mlir.constant
 // CHECK: llvm.return %[[RESULT]]
 
-kgen.func public @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
+kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
   %0 = llvm.mlir.constant(1 : i64) : i64
   kgen.return %0 : i64
 }
+
+kgen.export [@kernel]
 
 // -----
 
 // CHECK-LABEL: @kernel
 // CHECK-SAME: (%{{.*}}: f32) -> f32
 // CHECK-NEXT: return %{{.*}}: f32
-kgen.func public @kernel(%a: f32) -> f32 {
+kgen.func @kernel(%a: f32) -> f32 {
   kgen.return %a : f32
 }
+
+kgen.export [@kernel]
 
 // -----
 

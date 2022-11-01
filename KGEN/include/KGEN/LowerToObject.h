@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/BlobCache.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/StringSet.h"
 #include <filesystem>
 #include <string>
 
@@ -105,7 +106,11 @@ private:
 class ObjectCompiler {
 public:
   ObjectCompiler(StringRef basePath, ModuleOp module)
-      : caches(basePath), module(module), symtab(module) {}
+      : caches(basePath), module(module), symtab(module) {
+    for (auto e : module.getOps<ExportOp>())
+      for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
+        exportedSymbols.insert(sym.getAttr());
+  }
 
   /// Given a FuncOp, lower it to LLVM and turn it into an LLVM module.
   /// At this point, the target must be provided. This function will replace
@@ -141,6 +146,12 @@ public:
   /// Get access to the caches the compiler holds.
   LoweringCacheCollection &getCaches() { return caches; }
 
+  /// Returns true if the symbol is exported with a `kgen.export` op in this
+  /// module. This is the equivalent of a context-sensitive "public".
+  bool isSymbolExported(StringAttr symbol) {
+    return exportedSymbols.contains(symbol);
+  }
+
 private:
   /// The caches needed for lowering/raising.
   LoweringCacheCollection caches;
@@ -150,6 +161,10 @@ private:
 
   /// This is a symbol table we maintain for easy lookups.
   SymbolTable symtab;
+
+  /// This is a list of exported symbol names so we don't constantly recompute
+  /// it.
+  DenseSet<StringAttr> exportedSymbols;
 };
 } // namespace M::KGEN
 

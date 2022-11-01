@@ -39,7 +39,6 @@ def LITFuncOp
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KStringArrayAttr:$valueParamNames,
                        TypeAttrOf<FunctionType>:$function_type,
-                       LinkageAttr:$linkage,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,

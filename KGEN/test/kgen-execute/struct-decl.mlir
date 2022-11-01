@@ -4,7 +4,7 @@ kgen.struct.decl @FooStruct<T:type> {
   value : !kgen.paramref<T>
 }
 
-kgen.func public @use_struct() -> f32 {
+kgen.func @use_struct() -> f32 {
   %0 = pop.constant(1.0 : f32) : !pop.simd<1, f32>
   %1 = pop.cast_to_builtin %0 : !pop.simd<1, f32> to f32
   %2 = kgen.struct.create(%1) : (f32) -> !kgen.ref<@FooStruct<T:type = f32>>

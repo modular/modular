@@ -9,7 +9,7 @@ kgen.generator @body() {
   kgen.return
 }
 
-kgen.generator public @test_param_call() {
+kgen.generator @test_param_call() {
   // CHECK: @"simple_param_call,fn=body"
   kgen.call @param_call<fn: () -> () = @body>() : () -> ()
   kgen.return

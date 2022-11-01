@@ -9,16 +9,18 @@ kgen.func @nested2() {
   kgen.return
 }
 
-kgen.func public @dependency() {
+kgen.func @dependency() {
   kgen.call @nested2() : () -> ()
   kgen.call @nested1() : () -> ()
   kgen.return
 }
 
-kgen.func public @kernel() {
+kgen.func @kernel() {
   kgen.call @dependency() : () -> ()
   kgen.call @dependency() : () -> ()
   kgen.return
 }
+
+kgen.export [@dependency, @kernel]
 
 // CHECK: --- 'kernel' finished

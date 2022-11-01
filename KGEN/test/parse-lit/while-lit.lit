@@ -1,6 +1,6 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
-# CHECK-LABEL: lit.func public @test_while(%a: index, %b: index) -> index {
+# CHECK-LABEL: lit.func @test_while(%a: index, %b: index) -> index {
 # CHECK:       %inside_a = lit.var.decl "inside_a" : <index>
 # CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
 # CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
@@ -37,7 +37,7 @@ def test_while(a: index, b: index) -> index:
     return a
 
 
-# CHECK-LABEL: lit.func public @test_simple(%a: index)
+# CHECK-LABEL: lit.func @test_simple(%a: index)
 # CHECK:       scf.while : () -> () {
 # CHECK-NEXT:     %[[LOAD_A:.*]] = pop.load %[[VAR_A:.*]] : !pop.pointer<index>
 # CHECK-NEXT:     %[[ONE:.*]] = index.constant 1
@@ -54,7 +54,7 @@ def test_simple(a: index):
         pass
 
 
-# CHECK-LABEL: lit.func public @test_else_outside_while
+# CHECK-LABEL: lit.func @test_else_outside_while
 def test_else_outside_while(a: index, b: index) -> index:
     # CHECK: scf.if {{.+}} {
     if b:

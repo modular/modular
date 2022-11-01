@@ -9,7 +9,7 @@ kgen.include "library.mlir"
 
 kgen.generator.interface @exp<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
 
-kgen.generator public @exp_f32(%arg0: f32) -> f32 {
+kgen.generator @exp_f32(%arg0: f32) -> f32 {
   %0 = pop.cast_from_builtin %arg0 : f32 to !pop.simd<1, f32>
   %1 = kgen.call @exp<type: dtype = f32>(%0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
   %2 = pop.cast_to_builtin %1 : !pop.simd<1, f32> to f32
@@ -24,11 +24,13 @@ kgen.generator @exp_f64(%arg0: f64) -> f64 {
 }
 
 // COM: run_exp computes exp(1.0)
-kgen.generator public @run_exp() -> f32 {
+kgen.generator @run_exp() -> f32 {
   %0 = llvm.mlir.constant(1.000000e+00 : f32) : f32
   %1 = kgen.call @exp_f32(%0) : (f32) -> f32
   kgen.return %1 : f32
 }
+
+kgen.export [@run_exp]
 
 // EXEC: --- 'run_exp' returned 2.7{{[0-9]+}}
 

@@ -3,6 +3,6 @@
 // expected-error @below {{unhandled float type: 'f128'}}
 // expected-note @below {{see current operation}}
 // expected-error @below {{during header emission for this function}}
-kgen.func public @kernel(%a: f128) -> f128 {
+kgen.func @kernel(%a: f128) -> f128 {
   kgen.return %a : f128
 }

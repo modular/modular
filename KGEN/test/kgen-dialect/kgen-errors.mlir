@@ -722,7 +722,7 @@ kgen.generator.interface @evaluateMe(index) -> index
 // -----
 
 // expected-note @below {{referenced evaluator declared here}}
-kgen.generator.interface public @evaluator<N>(
+kgen.generator.interface @evaluator<N>(
     %funcs: (index) -> index, %size: index) -> index
 
 // expected-error @below {{interface evaluator argument #0 has type '!pop.pointer<(index) -> index>' but referenced evaluator expected type '(index) -> index'}}
@@ -766,7 +766,7 @@ kgen.generator @baz<F>() {
 
 // -----
 
-kgen.generator public @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
 }
@@ -778,7 +778,7 @@ kgen.generator.interface @pickFirst()
 
 // -----
 
-kgen.generator public @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
+kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
 }

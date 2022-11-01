@@ -14,6 +14,7 @@
 #include "mlir/Analysis/DataFlow/SparseAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -171,18 +172,20 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   StringAttr publicAttr = b.getStringAttr("public");
   StringAttr privateAttr = b.getStringAttr("private");
 
-  // FIXME: We need to tag the functions with the appropriate MLIR visibility.
+  SmallPtrSet<StringAttr, 5> exportedSymbols;
+  for (auto e : getOperation().getOps<ExportOp>())
+    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
+      exportedSymbols.insert(sym.getAttr());
+
   std::vector<Operation *> funcOrGenerator;
   for (Operation &op : getOperation().getOps()) {
-    bool isPublic;
-    if (auto func = dyn_cast<FuncOp>(&op))
-      isPublic = func.getLinkage() == Linkage::Public;
-    else if (auto gen = dyn_cast<GeneratorOp>(&op))
-      isPublic = gen.getLinkage() == Linkage::Public;
-    else
-      continue;
-    op.setAttr(symVisibilityAttrName, isPublic ? publicAttr : privateAttr);
-    funcOrGenerator.push_back(&op);
+    TypeSwitch<Operation *>(&op).Case<FuncOp, GeneratorOp>([&](auto funcOrGen) {
+      if (exportedSymbols.contains(funcOrGen.getSymNameAttr()))
+        op.setAttr(symVisibilityAttrName, publicAttr);
+      else
+        op.setAttr(symVisibilityAttrName, privateAttr);
+      funcOrGenerator.push_back(funcOrGen);
+    });
   }
 
   if (failed(solver.initializeAndRun(getOperation())))

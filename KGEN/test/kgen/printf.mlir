@@ -16,13 +16,15 @@ kgen.generator @impl<lb, ub, step>(%buf: !zap.buffer<?, si64>) {
   kgen.return
 }
 
-kgen.generator public @test_print() {
+kgen.generator @test_print() {
   %0 = zap.buffer.constant(#M.dense_array<0, 11, 22, 33> : !M.array<4xsi64>) : si64
   %1 = zap.buffer.bitcast %0 : !zap.buffer<4, si64> to !zap.buffer<?, si64>
   kgen.call @impl<lb = 0, ub = 4, step = 2>(%1) : (!zap.buffer<?, si64>) -> ()
   kgen.call @impl<lb = 1, ub = 4, step = 1>(%1) : (!zap.buffer<?, si64>) -> ()
   kgen.return
 }
+
+kgen.export [@test_print]
 
 // CHECK: values:
 // CHECK-NEXT: buf[0] = 0

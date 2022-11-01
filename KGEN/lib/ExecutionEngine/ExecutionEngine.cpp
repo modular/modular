@@ -177,10 +177,6 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
   // Loop over all the funcs in the module and perform non-destructive
   // slicing, then push them to LLVM IR and compile them to objects.
   for (auto func : module.getOps<KGEN::FuncOp>()) {
-    // Only compile public functions.
-    if (func.getLinkage() != Linkage::Public)
-      continue;
-
     // Apply the filter.
     if (!only.empty() && !llvm::is_contained(only, func))
       continue;

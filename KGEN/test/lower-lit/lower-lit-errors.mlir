@@ -177,13 +177,13 @@ lit.func @impl3() implements @itf {
 
 // -----
 
-lit.func public @foo()  {
+lit.func @foo()  {
   kgen.return
 }
 
 lit.struct.decl @Adder<size> {
   // expected-error @+1 {{duplicated function name 'foo' should be uniquely mangled with 'Adder'}}
-  lit.func public @foo()  {
+  lit.func @foo()  {
     kgen.return
   }
 }

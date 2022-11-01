@@ -212,8 +212,7 @@ ObjectCompiler::produceStandaloneObject(bool isJIT) {
   // Collect all of the `kgen.precompiled.llvm`.
   SmallVector<StringRef> objs;
   for (auto op : module.getOps<PrecompiledLLVMOp>())
-    if (op.getLinkage() == Linkage::Public)
-      objs.push_back(op.getName());
+    objs.push_back(op.getName());
 
   return produceStandaloneObject(objs, isJIT);
 }

@@ -646,7 +646,7 @@ kgen.func @lower_raise_cast(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @create
 // CHECK-SAME: %[[A:.*]]: i64
-kgen.func public @create(%a: i64) -> !var {
+kgen.func @create(%a: i64) -> !var {
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]] x !llvm.array<2 x i64>
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<array<2 x i64>> to !llvm.ptr<i64>
@@ -664,7 +664,7 @@ kgen.func public @create(%a: i64) -> !var {
 }
 
 // CHECK-LABEL: @test
-kgen.func public @test(%a: !var) -> i1 {
+kgen.func @test(%a: !var) -> i1 {
   // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[DISCR:.*]] = llvm.extractvalue %[[VAR]][1]
   // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i2)
@@ -675,7 +675,7 @@ kgen.func public @test(%a: !var) -> i1 {
 }
 
 // CHECK-LABEL: @bitcast
-kgen.func public @bitcast(%a: !var) -> f32 {
+kgen.func @bitcast(%a: !var) -> f32 {
   // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]]
@@ -697,7 +697,7 @@ kgen.func @use(%a: !pop.variant<i32, i64>) {
 }
 
 // CHECK-LABEL: @hoist_alloca
-kgen.func public @hoist_alloca(%a: i32, %ub: index) {
+kgen.func @hoist_alloca(%a: i32, %ub: index) {
   // CHECK-NEXT: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca %[[ONE]] x !llvm.array<1 x i64>
   %0 = index.constant 0
@@ -718,7 +718,7 @@ kgen.func @use(%a: i32) {
 }
 
 // CHECK-LABEL: @hoist_alloca
-kgen.func public @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
+kgen.func @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
   // CHECK: builtin.unrealized_conversion_cast
   // CHECK-NEXT: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca %[[ONE]] x !llvm.array<1 x i64>

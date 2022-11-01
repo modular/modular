@@ -19,16 +19,18 @@ kgen.func @"float_constant_indirect"() -> f32 {
   kgen.return %0 : f32
 }
 
-kgen.func public @exec_exp() -> f32 {
+kgen.func @exec_exp() -> f32 {
   %0 = kgen.call @"float_constant_indirect"() : () -> f32
   %1 = kgen.call @"exp_intrinsic_f32,type=f32"(%0) : (f32) -> f32
   kgen.return %1 : f32
 }
 
-kgen.func public @void() {
+kgen.func @void() {
   %0 = kgen.call @"float_constant_indirect"() : () -> f32
   kgen.return
 }
+
+kgen.export [@exec_exp, @void]
 
 // COM: exec_exp computes exp(1.0)
 // CHECK: --- 'exec_exp' returned 2.7{{[0-9]+}}

@@ -58,7 +58,7 @@ kgen.generator.interface @exp<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<
 
 
 // Compute exp using the llvm intrinsics.
-kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
+kgen.generator @exp_intrinsic_f32<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
   constraints <[eq(:dtype type, f32), "incorrect element type"]> implements @exp {
   %0 = pop.cast_to_builtin %x: !pop.simd<1, type> to f32
   %1 = "llvm.intr.exp"(%0) : (f32) -> f32
@@ -66,7 +66,7 @@ kgen.generator public @exp_intrinsic_f32<type: dtype>(%x: !pop.simd<1, type>) ->
   kgen.return %2 : !pop.simd<1, type>
 }
 
-kgen.generator public @exp_intrinsic_f64<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
+kgen.generator @exp_intrinsic_f64<type: dtype>(%x: !pop.simd<1, type>) -> !pop.simd<1, type>
   constraints <[eq(:dtype type, f64), "incorrect element type"]> implements @exp {
   %0 = pop.cast_to_builtin %x: !pop.simd<1, type> to f64
   %1 = "llvm.intr.exp"(%0) : (f64) -> f64

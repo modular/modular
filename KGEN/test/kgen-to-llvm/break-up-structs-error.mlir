@@ -6,24 +6,19 @@ module {}
 // -----
 
 // expected-error @below {{func is not top-level}}
-kgen.func public @kernel() {
+kgen.func @kernel() {
   kgen.return
 }
 
-kgen.func public @toplevel() {
+kgen.func @toplevel() {
   // expected-note @below {{callsite here}}
   kgen.call @kernel() : () -> ()
   kgen.return
 }
 
+kgen.export [@kernel, @toplevel]
+
 // -----
 
 // expected-error @below {{cannot break up structs of an external function}}
 llvm.func @kernel() -> i32
-
-// -----
-
-// expected-warning@+1 {{will not rewrite calling convention for private functions}}
-kgen.func @kernel(%arg0 : f32) -> f32 {
-  kgen.return %arg0 : f32
-}

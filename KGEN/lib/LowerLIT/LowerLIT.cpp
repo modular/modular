@@ -407,8 +407,8 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     auto thunk = b.create<GeneratorOp>(
         b.getStringAttr(gen.getSymName() + "_thunk"),
         // Take the signature from the interface.
-        itf.getFunctionTypeAttr(), gen.getLinkageAttr(),
-        itf.getParamDeclsAttr(), itf.getResultParamTypesAttr(),
+        itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
+        itf.getResultParamTypesAttr(),
         // Take the constraints from the generator.
         gen.getConstraintsAttr(), gen.getImplementsAttr());
     // The thunk implements the interface, not the original generator.
@@ -515,9 +515,8 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
-      gen.getLinkageAttr(), gen.getParamDeclsAttr(),
-      gen.getResultParamTypesAttr(), gen.getConstraintsAttr(),
-      gen.getImplementsAttr());
+      gen.getParamDeclsAttr(), gen.getResultParamTypesAttr(),
+      gen.getConstraintsAttr(), gen.getImplementsAttr());
 
   // Move over the body.
   auto *bodyBlock = gen.getBody();
