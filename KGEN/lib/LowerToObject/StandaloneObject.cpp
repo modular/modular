@@ -38,50 +38,23 @@ using ObjectSet = SmallVector<std::unique_ptr<llvm::MemoryBuffer>>;
 namespace {
 struct CallGraphSlicer {
   llvm::LLVMContext ctx;
-  /// List of llvm::Module and object MemoryBuffers that we have managed to
-  /// slice out of the call graph.
+  /// List of llvm::Modules that we have managed to slice out of the call graph.
   LLVMModuleSet moduleSet;
-  ObjectSet objSet;
 
   /// The compiler instance we're currently using.
   ObjectCompiler &compiler;
 
   /// Use dense sets to check if we've already seen something.
-  DenseSet<StringAttr> seenObjectSymbols, seenLLVMSymbols;
+  DenseSet<StringAttr> seenLLVMSymbols;
 
   /// Construct a CallGraphSlicer with a location for error reporting.
   CallGraphSlicer(ObjectCompiler &compiler)
       : compiler(compiler), dbgs(llvm::dbgs()) {}
 
-  /// A slice can result in 3 states. Because the fundamental operation of a
-  /// slice includes raising, we have to distinguish between "not in cache" and
-  /// "failure". Not having something in the cache is not a failure - it could
-  /// be a dylib on-disk that we want to load.
-  struct SliceResult {
-    enum State {
-      notInCache,
-      failed,
-      succeeded,
-    } state;
-
-    /*implicit*/ SliceResult(State s) : state(s) {}
-    /*implicit*/ SliceResult(LogicalResult r)
-        : state(mlir::failed(r) ? failed : succeeded) {}
-    /*implicit*/ SliceResult(InFlightDiagnostic r)
-        : SliceResult(LogicalResult(r)) {}
-
-    /*implicit*/ operator LogicalResult() {
-      return mlir::failure(state == State::failed);
-    }
-  };
-
-  /// Returns true if we have the LLVM IR for every symbol we set out to get.
-  bool haveAllLLVM() const { return moduleSet.size() == objSet.size(); }
-
-  /// Slice the PrecompiledObjectOp's dependencies out of the IR by recursively
-  /// raising it and its callees to gather the whole list of objects we need to
+  /// Slice the PrecompiledLLVMOp's dependencies out of the IR by recursively
+  /// raising it and its callees to gather the whole list of modules we need to
   /// combine together.
-  SliceResult slice(Location loc, StringRef symbol);
+  LogicalResult slice(Location loc, StringRef symbol);
 
   mlir::raw_indented_ostream dbgs;
 };
@@ -91,62 +64,43 @@ struct CallGraphSlicer {
 // CallGraphSlicer::slice
 //===----------------------------------------------------------------------===//
 
-CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
-                                                    StringRef symbol) {
+LogicalResult CallGraphSlicer::slice(Location loc, StringRef symbol) {
   LLVM_DEBUG(dbgs << "Slicing for " << symbol << "...\n");
-  auto objOp = compiler.getSymbolTable().lookup<PrecompiledObjectOp>(symbol);
-  // If we don't have an object for this, we've already visited it.
-  if (!objOp) {
+  auto llvmOp = compiler.getSymbolTable().lookup<PrecompiledLLVMOp>(symbol);
+
+  // If we don't have an llvm op for this, we've already visited it.
+  if (!llvmOp) {
     if (compiler.getSymbolTable().lookup<FuncOp>(symbol)) {
-      LLVM_DEBUG(dbgs << "Already have object for " << symbol << "\n");
-      return SliceResult::succeeded;
+      LLVM_DEBUG(dbgs << "Already have LLVM for " << symbol << "\n");
+      return success();
     }
     return mlir::emitError(loc)
            << "no function named '@" << symbol << "' found";
   }
 
-  // First try to find the object in the cache.
-  CacheFindResult objOr = compiler.getCaches().getObject().find(objOp);
-  if (objOr.isError())
-    return mlir::emitError(loc) << objOr.getError();
-  if (!objOr.hasValue())
-    return SliceResult::notInCache;
-
-  // Insert this object into the set if we haven't already.
-  if (seenObjectSymbols.insert(objOp.getNameAttr()).second) {
-    LLVM_DEBUG(dbgs << "Inserting object for " << symbol << "\n");
-    objSet.push_back(objOr.takeValue());
-  }
-
-  // First, we decompile the object.
-  FailureOr<PrecompiledLLVMOp> llvmOr = compiler.raiseFromObject(objOp);
-  if (failed(llvmOr))
-    return SliceResult::failed;
-
   // Read the LLVM module out of the LLVM cache.
-  CacheFindResult llvmModuleBufOr =
-      compiler.getCaches().getLLVM().find(*llvmOr);
+  CacheFindResult llvmModuleBufOr = compiler.getCaches().getLLVM().find(llvmOp);
   if (llvmModuleBufOr.isError())
-    return emitError(llvmOr->getLoc()) << llvmModuleBufOr.getError();
+    return emitError(llvmOp.getLoc()) << llvmModuleBufOr.getError();
   // If the LLVM module is not in the cache, then we don't have to continue, but
   // we have gathered the object we wanted so it's not a failure.
   if (!llvmModuleBufOr.hasValue())
-    return SliceResult::succeeded;
+    return success();
 
   // Parse the module to an in-memory object.
   auto moduleOr = llvm::parseBitcodeFile(*llvmModuleBufOr, ctx);
   if (auto err = moduleOr.takeError())
-    return emitError(llvmOr->getLoc()) << toString(std::move(err));
+    return emitError(llvmOp.getLoc()) << toString(std::move(err));
   std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
 
   // Store the module in the moduleSet if we haven't already.
-  if (seenLLVMSymbols.insert(llvmOr->getNameAttr()).second)
+  if (seenLLVMSymbols.insert(llvmOp.getNameAttr()).second)
     moduleSet.push_back(std::move(module));
 
   // Get the kgen.func out of the LLVM object.
-  FailureOr<FuncOp> funcOr = compiler.raiseFromLLVM(*llvmOr);
+  FailureOr<FuncOp> funcOr = compiler.raiseFromLLVM(llvmOp);
   if (failed(funcOr))
-    return SliceResult::failed;
+    return failure();
 
   LLVM_DEBUG(dbgs << "Raised to kgen.func:\n" << *funcOr << "\n");
 
@@ -166,8 +120,7 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
            "===---------------------------------------------------------------"
            "-------===//\n");
     dbgs.indent();
-    SliceResult res = slice(callee->getLoc(), call.getCallee());
-    if (failed(res))
+    if (failed(slice(callee->getLoc(), call.getCallee())))
       return WalkResult::interrupt();
     dbgs.unindent();
     LLVM_DEBUG(
@@ -178,58 +131,7 @@ CallGraphSlicer::SliceResult CallGraphSlicer::slice(Location loc,
 
     return WalkResult::advance();
   };
-  if (funcOr->walk(walkDependency).wasInterrupted())
-    return SliceResult::failed;
-
-  return SliceResult::succeeded;
-}
-
-/// Combine all the LLVM modules into a single module and emit that to an object
-/// file. This is effectively LTO on steroids, as we recover the original LLVMIR
-/// and optimize/emit it directly.
-static FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-constructSingleModule(Location loc, CompositeObjectCache &compositeCache,
-                      LLVMModuleSet &moduleSet, llvm::TargetMachine &machine) {
-  auto &firstModule = moduleSet.front();
-
-  llvm::Linker linker(*firstModule);
-  for (auto &llvmModule : llvm::drop_begin(moduleSet)) {
-    // Set to linkonce because otherwise the private symbols get inserted as
-    // undefined symbols in the final object, which doesn't make a ton of
-    // sense, but there it is.
-    for (auto &f : llvmModule->functions())
-      if (!f.isIntrinsic() && !f.isDeclarationForLinker() &&
-          f.getLinkage() != llvm::GlobalValue::ExternalLinkage)
-        f.setLinkage(llvm::GlobalValue::LinkOnceAnyLinkage);
-
-    if (linker.linkInModule(std::move(llvmModule)))
-      return emitError(loc) << "could not link LLVM modules together";
-  }
-
-  // Erase the "llvm.used" global value, we don't need it because we have a
-  // single module and this will stymie inlining in cases where we might
-  // actually want it to stay.
-  if (llvm::GlobalVariable *used = firstModule->getNamedGlobal("llvm.used"))
-    used->eraseFromParent();
-
-  CacheFindResult objOr = compositeCache.find(&*firstModule);
-  if (objOr.hasValue())
-    return objOr.takeValue();
-
-  SmallVector<char, 0> objBuf;
-  if (failed(compileLLVMToObject(*firstModule, machine, objBuf)))
-    return failure();
-
-  // Turn it into a memory buffer so we can put it into the cache.
-  auto obj = std::make_unique<llvm::SmallVectorMemoryBuffer>(
-      std::move(objBuf), /*RequiresNullTerminator=*/false);
-
-  // Insert the compiled object into the cache.
-  if (auto err = compositeCache.insert(&*firstModule, *obj))
-    return mlir::emitError(loc) << err.getError();
-
-  // Return the object itself.
-  return std::unique_ptr<llvm::MemoryBuffer>(std::move(obj));
+  return failure(funcOr->walk(walkDependency).wasInterrupted());
 }
 
 //===----------------------------------------------------------------------===//
@@ -240,247 +142,65 @@ FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
 ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
                                         bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-object");
-  // Grab the first one so we can use it for locations, etc.
   Location loc = module.getLoc();
-  TargetInfoAttr theTarget =
-      (*module.getOps<PrecompiledObjectOp>().begin()).getCompiledFor();
 
-  CallGraphSlicer slicer(*this);
+  // Grab the target information.
+  TargetInfoAttr theTarget =
+      (*module.getOps<PrecompiledLLVMOp>().begin()).getCompiledFor();
 
   // Slice all of the precompiled objects into this set.
+  CallGraphSlicer slicer(*this);
   for (auto symbol : symbols)
     if (failed(slicer.slice(loc, symbol)))
       return failure();
-
-  if (slicer.objSet.empty())
-    return mlir::emitError(loc) << "no objects found for slicing";
-
-  // If there's only one object then just return it.
-  if (slicer.objSet.size() == 1)
-    return std::move(slicer.objSet.front());
 
   // Create the target machine.
   auto machineOr = createTargetMachine(theTarget, isJIT);
   if (failed(machineOr))
     return emitError(loc) << machineOr.getError();
-  std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOr);
+  auto &firstModule = slicer.moduleSet.front();
 
-  // If we have all the objects as LLVM modules, then we should invoke the llvm
-  // optimizer and lower it to an object file. Then we pass it through the
-  // linker to clean up all the symbols we don't want to export.
-  if (slicer.haveAllLLVM()) {
-    auto modOr = constructSingleModule(loc, caches.getComposite(),
-                                       slicer.moduleSet, *machine);
-    if (mlir::succeeded(modOr)) {
-      slicer.objSet.clear();
-      slicer.objSet.push_back(std::move(*modOr));
+  // If we have multiple modules, we have to link them together.
+  if (slicer.moduleSet.size() > 1) {
+    llvm::Linker linker(*firstModule);
+    for (auto &llvmModule : llvm::drop_begin(slicer.moduleSet)) {
+      // Set to linkonce because otherwise the private symbols get inserted as
+      // undefined symbols in the final object, which doesn't make a ton of
+      // sense, but there it is.
+      for (auto &f : llvmModule->functions())
+        if (!f.isIntrinsic() && !f.isDeclarationForLinker() &&
+            f.getLinkage() != llvm::GlobalValue::ExternalLinkage)
+          f.setLinkage(llvm::GlobalValue::LinkOnceAnyLinkage);
+
+      if (linker.linkInModule(std::move(llvmModule)))
+        return emitError(loc) << "could not link LLVM modules together";
     }
+
+    // Erase the "llvm.used" global value, we don't need it because we have a
+    // single module and this will stymie inlining in cases where we might
+    // actually want it to stay.
+    if (llvm::GlobalVariable *used = firstModule->getNamedGlobal("llvm.used"))
+      used->eraseFromParent();
   }
 
-  // This is an undesirable workaround because ld64 doesn't copy the .debug_info
-  // section into the output binary.
-  // TODO: Remove this when we no longer have to use the system linker.
-  if (slicer.objSet.size() == 1)
-    return std::move(slicer.objSet.front());
+  CacheFindResult objOr = getCaches().getComposite().find(&*firstModule);
+  if (objOr.hasValue())
+    return objOr.takeValue();
 
-  SmallVector<std::string> tmpFileNames;
-  SmallVector<TempFile> tmpFiles;
-  for (auto &obj : slicer.objSet) {
-    auto fileOr =
-        TempFile::create("kgen-standalone-object-input-%%%%%%%%%%%.o");
-    if (failed(fileOr))
-      return mlir::emitError(loc) << fileOr.getError();
+  SmallVector<char, 0> objBuf;
+  if (failed(compileLLVMToObject(*firstModule, **machineOr, objBuf)))
+    return failure();
 
-    // Write the object to this temp file.
-    llvm::raw_fd_ostream os(fileOr->getFD(), /*shouldClose=*/false);
-    LLVM_DEBUG(llvm::dbgs()
-               << "Writing " << obj->getBufferSize() << " bytes\n");
-    os.write(obj->getBufferStart(), obj->getBufferSize());
+  // Turn it into a memory buffer so we can put it into the cache.
+  auto obj = std::make_unique<llvm::SmallVectorMemoryBuffer>(
+      std::move(objBuf), /*RequiresNullTerminator=*/false);
 
-    LLVM_DEBUG(llvm::dbgs() << "Keeping file " << fileOr->getPath()
-                            << " for debugging\n";
-               fileOr->keep());
+  // Insert the compiled object into the cache.
+  if (auto err = getCaches().getComposite().insert(&*firstModule, *obj))
+    return mlir::emitError(loc) << err.getError();
 
-    // And save the temp file.
-    tmpFileNames.push_back(fileOr->getPath().string());
-    tmpFiles.push_back(std::move(*fileOr));
-  }
-
-  auto outFileOr =
-      TempFile::create("kgen-standalone-object-output-%%%%%%%%%%%.o");
-  if (failed(outFileOr))
-    return mlir::emitError(loc) << outFileOr.getError();
-
-  auto reportFailure = [&]() -> InFlightDiagnostic {
-    return mlir::emitError(loc);
-  };
-
-  llvm::Triple triple(theTarget.getTriple());
-
-  // Start off the arguments with the tmp file names.
-  SmallVector<std::string> args(tmpFileNames.begin(), tmpFileNames.end());
-
-  // Shell out to the system linker for now just to bring things up.
-  bool worked = true;
-  // TODO: We probably also want WASM
-  if (triple.isOSBinFormatELF()) {
-    TimeTraceScope<> traceScope("execute-ld");
-    // Add the requested AND public symbols as retained.
-    auto retainOr =
-        TempFile::create("kgen-standalone-object-retain-syms-%%%%%%%%%%%.txt");
-    if (failed(retainOr))
-      return mlir::emitError(loc) << retainOr.getError();
-
-    llvm::raw_fd_ostream retainStream(retainOr->getFD(), false);
-
-    for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
-      if (llvm::is_contained(symbols, f.getName())) {
-        if (f.getLinkage() != Linkage::Public)
-          return mlir::emitError(f.getLoc())
-                 << "requested export of private symbol, aborting";
-
-        LLVM_DEBUG(llvm::dbgs()
-                   << "Exporting symbol: " << f.getSymName() << "\n");
-        retainStream << f.getSymName() << "\n";
-      }
-    }
-
-    LLVM_DEBUG({
-      llvm::dbgs() << "Keeping version-script for debugging: "
-                   << retainOr->getPath() << "\n";
-      retainOr->keep();
-    });
-
-    args.append({
-        "--retain-symbols-file",
-        retainOr->getPath().string(),
-        "-r", //< Get a relocatable object
-        "-o",
-        outFileOr->getPath().string(),
-    });
-
-    auto ldOr = llvm::sys::findProgramByName("ld");
-    if (!ldOr)
-      return mlir::emitError(loc)
-             << "could not find ld: " << ldOr.getError().message();
-
-    // The first argument must be the program's name.
-    SmallVector<StringRef> cstrArgs = {*ldOr};
-    for (const auto &a : args) {
-      LLVM_DEBUG(llvm::dbgs() << a << "\n");
-      cstrArgs.push_back(a);
-    }
-
-    std::string err;
-    if (llvm::sys::ExecuteAndWait(*ldOr, cstrArgs, /*Env=*/None,
-                                  /*Redirects=*/{}, /*SecondsToWait=*/0,
-                                  /*MemoryLimit=*/0, /*ErrMsg=*/&err) != 0) {
-      worked = false;
-      emitError(loc) << err;
-    }
-  } else if (triple.isOSBinFormatMachO()) {
-    TimeTraceScope<> traceScope("execute-ld");
-    // Add the requested AND public symbols as exported.
-    for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
-      if (llvm::is_contained(symbols, f.getName())) {
-        if (f.getLinkage() != Linkage::Public)
-          return mlir::emitError(f.getLoc())
-                 << "requested export of private symbol, aborting";
-
-        args.push_back("-exported_symbol");
-        args.push_back("_" + f.getName().str());
-        LLVM_DEBUG(llvm::dbgs() << "Exporting symbol: " << args.back() << "\n");
-      }
-    }
-
-    // Append mac-specific arguments to the linker args.
-    args.append({
-        "-r", //< "-r" means "give me a new relocatable object".
-        "-arch",
-        triple.getArchName().str(),
-        "-flat_namespace",
-        "-o",
-        outFileOr->getPath().string(),
-    });
-
-    auto ldOr = llvm::sys::findProgramByName("ld");
-    if (!ldOr)
-      return mlir::emitError(loc)
-             << "could not find ld: " << ldOr.getError().message();
-
-    // The first argument must be the program's name.
-    SmallVector<StringRef> cstrArgs = {*ldOr};
-    for (const auto &a : args) {
-      LLVM_DEBUG(llvm::dbgs() << a << "\n");
-      cstrArgs.push_back(a);
-    }
-
-    std::string err;
-    if (llvm::sys::ExecuteAndWait(*ldOr, cstrArgs, /*Env=*/None,
-                                  /*Redirects=*/{}, /*SecondsToWait=*/0,
-                                  /*MemoryLimit=*/0, /*ErrMsg=*/&err) != 0) {
-      worked = false;
-      emitError(loc) << err;
-    }
-  } else if (triple.isOSBinFormatCOFF()) {
-    TimeTraceScope<> traceScope("execute-link.exe");
-    // Add the requested AND public symbols as exported.
-    for (auto f : cast<ModuleOp>(symtab.getOp()).getOps<FuncOp>()) {
-      if (llvm::is_contained(symbols, f.getName())) {
-        if (f.getLinkage() != Linkage::Public)
-          return mlir::emitError(f.getLoc())
-                 << "requested export of private symbol, aborting";
-
-        args.push_back(("/EXPORT:" + f.getName()).str());
-        LLVM_DEBUG(llvm::dbgs() << "Exporting symbol: " << args.back() << "\n");
-      }
-    }
-
-    // Append windows-specific arguments to the linker args.
-    args.append({
-        "/INCREMENTAL",
-        "/OUT:" + outFileOr->getPath().string(),
-    });
-
-    auto ldOr = llvm::sys::findProgramByName("link.exe");
-    if (!ldOr)
-      return mlir::emitError(loc)
-             << "could not find link.exe: " << ldOr.getError().message();
-
-    // The first argument must be the program's name.
-    SmallVector<StringRef> cstrArgs = {*ldOr};
-    for (const auto &a : args) {
-      LLVM_DEBUG(llvm::dbgs() << a << "\n");
-      cstrArgs.push_back(a);
-    }
-
-    std::string err;
-    if (llvm::sys::ExecuteAndWait(*ldOr, cstrArgs, /*Env=*/None,
-                                  /*Redirects=*/{}, /*SecondsToWait=*/0,
-                                  /*MemoryLimit=*/0, /*ErrMsg=*/&err) != 0) {
-      worked = false;
-      emitError(loc) << err;
-    }
-  } else {
-    return reportFailure() << "could not detect target";
-  }
-
-  // If something broke, discard the output and print an error.
-  if (!worked)
-    return reportFailure() << "linking failed";
-
-  // Now, open the output tmp file as a memory buffer.
-  auto objFileOr = llvm::MemoryBuffer::getFile(outFileOr->getPath().string());
-  if (!objFileOr)
-    return reportFailure() << objFileOr.getError().message();
-
-  // Copy the memory buffer so we have ownership of it and return from this
-  // function.
-  LLVM_DEBUG(llvm::dbgs() << "Keeping file " << outFileOr->getPath()
-                          << " for debugging\n";
-             outFileOr->keep(););
-
-  return std::move(*objFileOr);
+  // Return the object itself.
+  return std::unique_ptr<llvm::MemoryBuffer>(std::move(obj));
 }
 
 //===----------------------------------------------------------------------===//
@@ -489,11 +209,11 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
 
 FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
 ObjectCompiler::produceStandaloneObject(bool isJIT) {
-  // Collect all the `kgen.precompiled.object`.
+  // Collect all of the `kgen.precompiled.llvm`.
   SmallVector<StringRef> objs;
-  for (auto obj : module.getOps<PrecompiledObjectOp>())
-    if (obj.getLinkage() == Linkage::Public)
-      objs.push_back(obj.getName());
+  for (auto op : module.getOps<PrecompiledLLVMOp>())
+    if (op.getLinkage() == Linkage::Public)
+      objs.push_back(op.getName());
 
   return produceStandaloneObject(objs, isJIT);
 }

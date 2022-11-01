@@ -161,11 +161,6 @@ M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
     if (failed(llvmOr))
       return M::Error("failed to compile to LLVM");
 
-    // Lower to object, again from the cloned module.
-    auto objOr = compiler->lowerToObject(*llvmOr, /*isJIT=*/true);
-    if (failed(objOr))
-      return M::Error("failed to compile to object");
-
     // Produce a standalone object.
     auto standaloneOr =
         compiler->produceStandaloneObject({func.getSymName()}, /*isJIT=*/true);

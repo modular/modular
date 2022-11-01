@@ -940,28 +940,3 @@ def PrecompiledLLVMOp : PrecompiledOpBase<"llvm",
                    "llvm::StringRef":$llvm)>
   ];
 }
-
-//===----------------------------------------------------------------------===//
-// PrecompiledObjectOp
-//===----------------------------------------------------------------------===//
-
-def PrecompiledObjectOp : PrecompiledOpBase<"object",
-    (ins TargetInfoAttr:$compiledFor, StrAttr:$object)> {
-  let summary = "Declare a precompiled `kgen.func`'s cached object";
-  let description = [{
-    The `kgen.precompiled.object` operation provides an IR handle for a
-    `kgen.func` that is already compiled to an object file. It stores a cache
-    key to the object file (the `object` attr). We can back track up the
-    compilation stack by preserving a mapping from a `kgen.precompiled.object`
-    back to a serialized `kgen.precompiled.llvm`.
-
-    `kgen.precompiled.object` is target-specific, it contains the raw bytes
-    of a machine-specific object file.
-  }];
-
-  let builders = [
-    // Build this from a PrecompiledLLVMOp.
-    OpBuilder<(ins "M::KGEN::PrecompiledLLVMOp":$func,
-                   "llvm::StringRef":$object)>
-  ];
-}
