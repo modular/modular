@@ -19,7 +19,6 @@ def POPDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN::POP";
-  let hasConstantMaterializer = 1;
   let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
 
