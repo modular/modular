@@ -87,6 +87,8 @@ private:
   Attribute paramValues; // This is always a ParamBindArrayAttr.
 };
 
+using FullType = std::pair<Type, ASTType>;
+
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : int8_t {

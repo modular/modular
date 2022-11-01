@@ -123,7 +123,7 @@ TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
 ///
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
-LValue ExprEmitter::emitLValue(const ExprNode *node, Type contextualType,
+LValue ExprEmitter::emitLValue(const ExprNode *node, FullType contextualType,
                                const Twine &message) {
   AnyValue anyValue = node->emitIR(*this, contextualType);
   if (!anyValue)
@@ -137,8 +137,8 @@ LValue ExprEmitter::emitLValue(const ExprNode *node, Type contextualType,
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-std::pair<Type, ASTType> ExprEmitter::emitType(const ExprNode *node) {
-  std::pair<Type, ASTType> result = node->emitType(*this);
+FullType ExprEmitter::emitType(const ExprNode *node) {
+  FullType result = node->emitType(*this);
 
   // The emitType methods return null on failure, we return a
   // TypeCheckErrorType to simplify clients.
@@ -176,7 +176,7 @@ ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
-                                Type contextualType) const {
+                                FullType contextualType) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -186,39 +186,37 @@ AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
   return IntegerAttr::get(IndexType::get(emitter.getContext()), value);
 }
 
-std::pair<Type, ASTType> IntLiteralNode::emitType(ExprEmitter &emitter) const {
+FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
 AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
-                                  Type contextualType) const {
+                                  FullType contextualType) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   return FloatAttr::get(FloatType::getF64(emitter.getContext()),
                         APFloat(value.convertToDouble()));
 }
 
-std::pair<Type, ASTType>
-FloatLiteralNode::emitType(ExprEmitter &emitter) const {
+FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
-                                   Type contextualType) const {
+                                   FullType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return StringAttr::get(emitter.getContext(), value);
 }
 
-std::pair<Type, ASTType>
-StringLiteralNode::emitType(ExprEmitter &emitter) const {
+FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
-                                 Type contextualType) const {
+                                 FullType contextualType) const {
   // FIXME (Issue #4315): None should be emitted as an attribute (not a dynamic
   // value), but KGEN doesn't allow unknown parameters. This should work:
   //
@@ -234,12 +232,13 @@ AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
   return emitter.builder->create<NoneValueOp>(loc, type).getResult();
 }
 
-std::pair<Type, ASTType> NoneLiteralNode::emitType(ExprEmitter &emitter) const {
+FullType NoneLiteralNode::emitType(ExprEmitter &emitter) const {
   return {KGEN::NoneType::get(emitter.getContext()),
           ASTType(emitter.shared.noneDecl)};
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
+                             FullType contextualType) const {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
   ASTDecl *decl = emitter.declScope.lookup(nameAttr);
@@ -248,7 +247,7 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   if (!decl) {
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.
-    if (!contextualType || !emitter.varDeclCursor) {
+    if (!contextualType.first || !emitter.varDeclCursor) {
       emitter.emitError(getLoc(), "use of unknown declaration \"")
           << spelling << '"';
       return {};
@@ -259,7 +258,7 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
     //
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    auto declType = POP::PointerType::get(contextualType);
+    auto declType = POP::PointerType::get(contextualType.first);
 
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
@@ -298,7 +297,7 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   return {};
 }
 
-std::pair<Type, ASTType> DeclRefNode::emitType(ExprEmitter &emitter) const {
+FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
   // Lookup the identifier.
@@ -346,7 +345,7 @@ std::pair<Type, ASTType> DeclRefNode::emitType(ExprEmitter &emitter) const {
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
-                                  Type contextualType) const {
+                                  FullType contextualType) const {
   auto baseVal = base->emitIR(emitter);
 
   if (LValue baseLV = baseVal.getIfLValue()) {
@@ -409,13 +408,12 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-std::pair<Type, ASTType>
-AttributeRefNode::emitType(ExprEmitter &emitter) const {
+FullType AttributeRefNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
-AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+AnyValue CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const {
   auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
@@ -489,13 +487,13 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   return call.getResult(0);
 }
 
-std::pair<Type, ASTType> CallNode::emitType(ExprEmitter &emitter) const {
+FullType CallNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
-                               Type contextualType) const {
+                               FullType contextualType) const {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
   if (!subValue)
@@ -553,7 +551,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-std::pair<Type, ASTType> SubscriptNode::emitType(ExprEmitter &emitter) const {
+FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
   // KGEN doesn't support unbound parametric types (e.g. "SIMD" with unbound
   // size/dtype) as a stand-alone type, so we handle name resolution here.
   auto baseDRE = dyn_cast<DeclRefNode>(base);
@@ -613,15 +611,16 @@ std::pair<Type, ASTType> SubscriptNode::emitType(ExprEmitter &emitter) const {
 }
 
 AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
-                               Type contextualType) const {
+                               FullType contextualType) const {
   return subExpr->emitIR(emitter, contextualType);
 }
 
-std::pair<Type, ASTType> ParenExprNode::emitType(ExprEmitter &emitter) const {
+FullType ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
+                           FullType contextualType) const {
   auto lhsRep = emitter.emitRValue(lhs);
   auto rhsRep = emitter.emitRValue(rhs);
   if (!lhsRep || !rhsRep)
@@ -682,12 +681,13 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   }
 }
 
-std::pair<Type, ASTType> BinOpNode::emitType(ExprEmitter &emitter) const {
+FullType BinOpNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
-AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
+AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
+                             FullType contextualType) const {
   auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
@@ -721,7 +721,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, Type contextualType) const {
   }
 }
 
-std::pair<Type, ASTType> UnaryOpNode::emitType(ExprEmitter &emitter) const {
+FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
   auto eltType = subExpr->emitType(emitter);
   if (!eltType.first)
     return {};

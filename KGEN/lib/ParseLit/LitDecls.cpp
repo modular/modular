@@ -300,7 +300,7 @@ struct ParsedMetaSignature {
         return failure();
       }
 
-      std::pair<Type, ASTType> paramType;
+      FullType paramType;
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
           p.parseType(paramType, decl, None))
@@ -331,7 +331,7 @@ namespace {
 struct ParsedParam {
   SMLoc loc;
   StringAttr name;
-  std::pair<Type, ASTType> type;
+  FullType type;
   ExprNode *initValue = nullptr;
 
   // TODO: Implement support for variadic parameter markers:
@@ -368,13 +368,14 @@ struct ParsedParam {
 ///
 /// This returns failure after emitting an error when a type checking problem is
 /// detected.
-static ParseResult checkFunctionSignature(
-    ASTDecl &declScope, LITFuncOp defDecl, ParsedMetaSignature &metaSignature,
-    SmallVector<ParsedParam> &params, std::pair<Type, ASTType> &resultType) {
+static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
+                                          ParsedMetaSignature &metaSignature,
+                                          SmallVector<ParsedParam> &params,
+                                          FullType &resultType) {
 
   // If this definition is a struct/class member, return the self type otherwise
   // return a null type.
-  auto getSelfTypeForMethod = [&]() -> std::pair<Type, ASTType> {
+  auto getSelfTypeForMethod = [&]() -> FullType {
     // Get the context of the declaration, rejecting it if it isn't nested in a
     // structure.
     ASTDecl *parent = declScope.getParentDecl();
@@ -480,7 +481,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   // a def should default to returning a (default initialized) Object, whereas
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
-  std::pair<Type, ASTType> resultType;
+  FullType resultType;
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, decl, None))
       return failure();
@@ -582,7 +583,7 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
-  std::pair<Type, ASTType> type;
+  FullType type;
   ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.

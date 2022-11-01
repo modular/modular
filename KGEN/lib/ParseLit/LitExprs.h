@@ -168,11 +168,11 @@ public:
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
   virtual AnyValue emitIR(ExprEmitter &state,
-                          Type contextualType = {}) const = 0;
+                          FullType contextualType = {}) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
-  virtual std::pair<Type, ASTType> emitType(ExprEmitter &state) const = 0;
+  virtual FullType emitType(ExprEmitter &state) const = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -237,14 +237,14 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitLValue(const ExprNode *node, Type contextualType,
+  LValue emitLValue(const ExprNode *node, FullType contextualType,
                     const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null MLIR Types - if the
   /// expression is erroneous, it is diagnosed and a TypeCheckErrorType is
   /// returned, along with an erroneous AST type.
-  std::pair<Type, ASTType> emitType(const ExprNode *node);
+  FullType emitType(const ExprNode *node);
 
   /// Perform a name lookup in the current scope and return the named
   /// declaration.  This emits an error and returns null on error.

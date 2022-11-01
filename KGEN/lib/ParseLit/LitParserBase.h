@@ -181,7 +181,7 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   Optional<size_t> stmtIndent);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
-  ParseResult parseType(std::pair<Type, ASTType> &result, ASTDecl &declScope,
+  ParseResult parseType(FullType &result, ASTDecl &declScope,
                         Optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
