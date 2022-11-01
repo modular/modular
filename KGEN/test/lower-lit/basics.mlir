@@ -19,42 +19,42 @@ lit.func public @varDecl(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
-kgen.generator.interface @add<ty: dtype>(%arg0: !pop.simd<1, ty>, %arg1: !pop.simd<1, ty>)
--> !pop.simd<1, ty>
+kgen.generator.interface @add<ty: dtype>(%arg0: !pop.scalar<ty>, %arg1: !pop.scalar<ty>)
+-> !pop.scalar<ty>
 
 // This implementation is fine.
 // CHECK-LABEL: kgen.generator @add_f32<ty: dtype>
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<1, ty>, %[[ARG1:.*]]: !pop.simd<1, ty>) -> !pop.simd<1, ty>
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<ty>, %[[ARG1:.*]]: !pop.scalar<ty>) -> !pop.scalar<ty>
 // CHECK-NEXT: constraints <[eq(:dtype ty, f32), "f32 feels great", #
 // CHECK-NEXT: implements @add {
-kgen.generator @add_f32<ty: dtype>(%arg0 : !pop.simd<1, ty>, %arg1 : !pop.simd<1, ty>) -> !pop.simd<1, ty>
+kgen.generator @add_f32<ty: dtype>(%arg0 : !pop.scalar<ty>, %arg1 : !pop.scalar<ty>) -> !pop.scalar<ty>
   constraints <[eq(:dtype ty, f32), "f32 feels great"]> implements @add {
 
-  // CHECK: %[[V0:.*]] = pop.cast_to_builtin %[[ARG0]] : !pop.simd<1, ty> to f32
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<1, ty> to f32
-  // CHECK: %[[V1:.*]] = pop.cast_to_builtin %[[ARG1]] : !pop.simd<1, ty> to f32
-  %1 = pop.cast_to_builtin %arg1 : !pop.simd<1, ty> to f32
+  // CHECK: %[[V0:.*]] = pop.cast_to_builtin %[[ARG0]] : !pop.scalar<ty> to f32
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<ty> to f32
+  // CHECK: %[[V1:.*]] = pop.cast_to_builtin %[[ARG1]] : !pop.scalar<ty> to f32
+  %1 = pop.cast_to_builtin %arg1 : !pop.scalar<ty> to f32
 
   // CHECK: %[[V2:.*]] = llvm.fadd %[[V0]], %[[V1]] : f32
   %2 = llvm.fadd %0, %1 : f32
 
-  // CHECK: %[[V3:.*]] = pop.cast_from_builtin %[[V2]] : f32 to !pop.simd<1, ty>
-  %3 = pop.cast_from_builtin %2 : f32 to !pop.simd<1, ty>
+  // CHECK: %[[V3:.*]] = pop.cast_from_builtin %[[V2]] : f32 to !pop.scalar<ty>
+  %3 = pop.cast_from_builtin %2 : f32 to !pop.scalar<ty>
   // CHECK: kgen.return %[[V3]]
-  kgen.return %3 : !pop.simd<1, ty>
+  kgen.return %3 : !pop.scalar<ty>
 }
 
-lit.func @add_64<ty: dtype>(%arg0 : !pop.simd<1, f64>, %arg1 : !pop.simd<1, f64>)
-    -> !pop.simd<1, ty> implements @add {
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<1, f64> to f64
-  %1 = pop.cast_to_builtin %arg1 : !pop.simd<1, f64> to f64
+lit.func @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
+    -> !pop.scalar<ty> implements @add {
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f64> to f64
+  %1 = pop.cast_to_builtin %arg1 : !pop.scalar<f64> to f64
   %2 = llvm.fadd %0, %1 : f64
-  %3 = pop.cast_from_builtin %2 : f64 to !pop.simd<1, ty>
-  kgen.return %3 : !pop.simd<1, ty>
+  %3 = pop.cast_from_builtin %2 : f64 to !pop.scalar<ty>
+  kgen.return %3 : !pop.scalar<ty>
 }
 
 // CHECK-LABEL: kgen.generator @add_64_thunk
-// CHECK-SAME: %[[ARG0:.*]]: !pop.simd<1, {{.*}}>, %[[ARG1:.*]]: !pop.simd<1, {{.*}}>
+// CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<{{.*}}>, %[[ARG1:.*]]: !pop.scalar<{{.*}}>
 // CHECK-NEXT:    constraints <[eq(:dtype ty, f64), "argument #0 specifies 'ty' = f64", #
 // CHECK-NEXT:    implements @add {
 // CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]]
