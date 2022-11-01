@@ -344,13 +344,14 @@ struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
                                 PatternRewriter &rewriter) const override {
     // Lower the format into the a global constant.
     Value fmt = lowerToCString(op, op.getFmt(), rewriter);
-    // Create the invocation to `printf`.
+    // Create the invocation to `printf`. Use the CompilerRT print format to
+    // ensure the output is flushed.
     SmallVector<Value> operands;
     operands.reserve(op.getNumOperands() + 1);
     operands.push_back(fmt);
     llvm::append_range(operands, op.getOperands());
     rewriter.replaceOpWithNewOp<ExternalCallOp>(
-        op, TypeRange(), "printf", operands,
+        op, TypeRange(), "KGEN_CompilerRT_PrintFormat", operands,
         TypeAttr::get(rewriter.getFunctionType(fmt.getType(), {})));
     return success();
   }
