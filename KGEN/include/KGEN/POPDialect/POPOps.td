@@ -1936,18 +1936,20 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [Pure]> {
   let summary = "converts an index value to a pointer type.";
   let description = [{
     The `pop.index_to_pointer` instruction takes an index value to cast, and a
-    type to cast it to, which must be a pointer type.
+    type to cast it to, which must be a pointer type or an address type.
 
     Example:
 
     ```mlir
     %addr0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>>
     %addr1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, type>>
+    %addr2 = pop.index_to_pointer %idx : !pop.simd<1, address>
     ```
   }];
 
   let arguments = (ins Index:$value);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs POP_PointerOrSIMDAddressType:$result);
+
   let assemblyFormat = "$value attr-dict `:` qualified(type($result))";
 }
 
@@ -1958,18 +1960,19 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [Pure]> {
 def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure]> {
   let summary = "gets the address of the pointer as an index type.";
   let description = [{
-    The `pop.pointer_to_index` instruction takes a pointer to cast and gets
-    its address as an index type.
+    The `pop.pointer_to_index` instruction takes a pointer or address type
+    to cast and gets its address as an index type.
 
     Example:
 
     ```mlir
     %addr0 = pop.pointer_to_index %ptr : !pop.pointer<scalar<f32>>
     %addr1 = pop.pointer_to_index %idx : !pop.pointer<simd<4, type>>
+    %addr2 = pop.pointer_to_index %idx : !pop.simd<1, address>
     ```
   }];
 
-  let arguments = (ins POP_PointerType:$value);
+  let arguments = (ins POP_PointerOrSIMDAddressType:$value);
   let results = (outs Index:$result);
   let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
 }
