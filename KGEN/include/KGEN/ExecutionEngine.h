@@ -13,6 +13,10 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include <functional>
 
+namespace llvm {
+class JITEventListener;
+} // namespace llvm
+
 namespace M::KGEN {
 class ObjectCompiler;
 
@@ -89,6 +93,12 @@ private:
   llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<llvm::orc::LLJIT> jit;
   std::vector<llvm::orc::ThreadSafeModule> compiledModules;
+
+  /// GDB notification listener.
+  llvm::JITEventListener *gdbListener;
+
+  /// Perf notification listener.
+  llvm::JITEventListener *perfListener;
 };
 } // namespace M::KGEN
 
