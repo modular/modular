@@ -274,7 +274,7 @@ kgen.generator @simd_store_aligned(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4
 kgen.generator @zap_print(%a: !pop.simd<1, f32>) {
   // CHECK: %[[FMT:.*]] = pop.global_constant(#M.dense_array<102, 111, 111{{.*}}> : !M.array<7xsi8>)
   // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<simd<1, si8>>
-  // CHECK: pop.external_call @printf(%[[C_STR]], %{{.*}}) (!pop.pointer<simd<1, si8>>) -> ()
+  // CHECK: pop.external_call @KGEN_CompilerRT_PrintFormat(%[[C_STR]], %{{.*}}) (!pop.pointer<simd<1, si8>>) -> ()
   zap.print "foo %f"(%a) : !pop.simd<1, f32>
   kgen.return
 }
