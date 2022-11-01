@@ -224,6 +224,12 @@ def UI8SIMDSizeOne : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
                               "DTypeConstantAttr::get($_builder.getContext(), "
                               "KGENDType::ui8))">;
 
+def AddressSIMDSizeOne : AllOfType<[SIMDSizeOne, AddressSIMD],
+                             "!pop.simd<1, address>">;
+
+def POP_PointerOrSIMDAddressType : AnyTypeOf<
+                                        [POP_PointerType, AddressSIMDSizeOne]>;
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//

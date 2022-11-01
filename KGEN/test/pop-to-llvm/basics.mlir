@@ -611,6 +611,24 @@ kgen.func @index_to_pointer(%idx: index) -> (
 
 // -----
 
+// CHECK-LABEL: @address_to_index
+kgen.func @address_to_index(%a: !pop.simd<1, address>) -> (index) {
+  // CHECK: llvm.ptrtoint
+  %0 = pop.pointer_to_index %a : !pop.simd<1, address>
+  kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: @index_to_address
+kgen.func @index_to_address(%idx: index) -> (!pop.simd<1, address>) {
+  // CHECK: llvm.inttoptr
+  %0 = pop.index_to_pointer %idx : !pop.simd<1, address>
+  kgen.return %0 : !pop.simd<1, address>
+}
+
+// -----
+
 // CHECK-LABEL: @lower_raise_cast
 kgen.func @lower_raise_cast(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: builtin.unrealized_conversion_cast %arg0 : !pop.scalar<f32> to f32

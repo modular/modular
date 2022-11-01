@@ -783,6 +783,20 @@ kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
   kgen.return
 }
 
+// CHECK-LABEL: @address_to_index
+kgen.generator @address_to_index<type: type>(%a: !pop.simd<1, address>) {
+  // CHECK: pop.pointer_to_index %{{.*}} : !pop.simd<1, address>
+  %0 = pop.pointer_to_index %a : !pop.simd<1, address>
+  kgen.return
+}
+
+// CHECK-LABEL: @index_to_address
+kgen.generator @index_to_address<type: type>(%idx: index) {
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<1, address>
+  %0 = pop.index_to_pointer %idx : !pop.simd<1, address>
+  kgen.return
+}
+
 // CHECK-LABEL: @index_to_pointer
 kgen.generator @index_to_pointer<type: type>(%idx: index) {
   // CHECK: pop.index_to_pointer %{{.*}} : !pop.pointer<type>
