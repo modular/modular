@@ -74,6 +74,7 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
       << "buffer returned did not match the buffer inputted\n";
 }
 
+/* TODO: Disabled as part of #4394.
 TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
@@ -96,3 +97,4 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
               StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
       << "buffer returned did not match the buffer inputted\n";
 }
+*/
