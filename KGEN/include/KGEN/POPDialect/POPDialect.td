@@ -15,8 +15,7 @@ def POPDialect : Dialect {
   let summary = "The 'pop' dialect";
   let description = [{
     This dialect defines the `pop` dialect, which defines parametric operations
-    on top of the LLVM dialect.
-  }];
+    on top of the LLVM dialect.}];
 
   let cppNamespace = "::M::KGEN::POP";
   let useDefaultAttributePrinterParser = 1;
@@ -28,9 +27,9 @@ def POPDialect : Dialect {
     void registerTypes();
     /// Custom parser for POP types. The reason we customize it is to be able
     /// "scalar<t>" as "simd<1, t>".
-    Type parseType(DialectAsmParser &parser) const override;
+    Type parseType(DialectAsmParser & parser) const override;
     /// Custom printer for POP types.
-    void printType(Type type, DialectAsmPrinter &p) const override;
+    void printType(Type type, DialectAsmPrinter & p) const override;
   }];
 }
 

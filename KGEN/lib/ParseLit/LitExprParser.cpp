@@ -32,14 +32,26 @@ using namespace M;
 // Expression Parsing
 //===----------------------------------------------------------------------===//
 
+// See https://docs.python.org/3/reference/expressions.html#operator-precedence
+
 enum class Precedence {
-  kInvalid, // No precedence
-  kLowest,  // Lowest precedence (most loosely bound).
-  kSum,     // infix:  + -
-  kTerm,    // infix:  * /
-  kFactor,  // prefix: + - ~
-  kPower,   // infix:  **
-  kPrimary, // prefix: foo "123" 123 1.23 True False foo(1) foo.bar foo[bar]
+  kInvalid,    // No precedence
+  kLowest,     // Lowest precedence (most loosely bound).
+  kIfElse,     // infix: if - else
+  kBoolOr,     // infix: or
+  kBoolAnd,    // infix: and
+  kBoolNot,    // prefix: not
+  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+  kBitwiseOr,  // infix: |
+  kBitwiseXor, // infix: ^
+  kBitwiseAnd, // infix: &
+  kShift,      // infix: <<, >>
+  kSum,        // infix: +, -
+  kTerm,       // infix: *, @, /, //, %
+  kFactor,     // prefix: +, -, ~
+  kPower,      // infix: **
+  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
+               //         foo.bar, foo[bar]
   kHighest = kPrimary
 };
 
@@ -165,8 +177,48 @@ struct InfixInfo {
       return {Precedence::kSum, ExprNode::kSub, false};
     case LitToken::star:
       return {Precedence::kTerm, ExprNode::kMul, false};
+    case LitToken::at:
+      return {Precedence::kTerm, ExprNode::kMatrixMul, false};
     case LitToken::slash:
       return {Precedence::kTerm, ExprNode::kDiv, false};
+    case LitToken::slash_slash:
+      return {Precedence::kTerm, ExprNode::kFloorDiv, false};
+    case LitToken::percent:
+      return {Precedence::kTerm, ExprNode::kModulo, false};
+    case LitToken::kw_or:
+      return {Precedence::kBoolOr, ExprNode::kBoolOr, false};
+    case LitToken::kw_and:
+      return {Precedence::kBoolAnd, ExprNode::kBoolAnd, false};
+    case LitToken::kw_not:
+      return {Precedence::kBoolNot, ExprNode::kBoolNot, false};
+    case LitToken::kw_in:
+      return {Precedence::kComparison, ExprNode::kCmpIn, false};
+    case LitToken::kw_is:
+      return {Precedence::kComparison, ExprNode::kCmpIs, false};
+    case LitToken::less:
+      return {Precedence::kComparison, ExprNode::kCmpLess, false};
+    case LitToken::less_equal:
+      return {Precedence::kComparison, ExprNode::kCmpLessEqual, false};
+    case LitToken::greater:
+      return {Precedence::kComparison, ExprNode::kCmpGreater, false};
+    case LitToken::greater_equal:
+      return {Precedence::kComparison, ExprNode::kCmpGreaterEqual, false};
+    case LitToken::exclaim_equal:
+      return {Precedence::kComparison, ExprNode::kCmpNotEqual, false};
+    case LitToken::equal_equal:
+      return {Precedence::kComparison, ExprNode::kCmpEqual, false};
+    case LitToken::pipe:
+      return {Precedence::kBitwiseOr, ExprNode::kBitwiseOr, false};
+    case LitToken::circumflex:
+      return {Precedence::kBitwiseXor, ExprNode::kBitwiseXor, false};
+    case LitToken::amp:
+      return {Precedence::kBitwiseAnd, ExprNode::kBitwiseAnd, false};
+    case LitToken::less_less:
+      return {Precedence::kShift, ExprNode::kLeftShift, false};
+    case LitToken::right_right:
+      return {Precedence::kShift, ExprNode::kRightShift, false};
+    case LitToken::kw_if:
+      return {Precedence::kIfElse, ExprNode::kIfElse, false};
     case LitToken::star_star:
       return {Precedence::kPower, ExprNode::kExp, true};
     }
@@ -180,12 +232,44 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   if (parsePrefixExpr(expr))
     return failure();
 
+  if (isTokenStartOfNextStatement())
+    return success();
+
   // It consumes tokens until it meets a token whose tokPrecedence is equal or
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
   while (unsigned(minPrec) < unsigned(infixInfo.precedence)) {
+    LitToken::Kind tokKind = getToken().getKind();
     auto loc = consumeToken().getLoc();
+
+    if (tokKind == LitToken::Kind::kw_if) {
+      // Conditional if - else expression.
+      // trueExpr 'if' condition 'else' falseExpr.
+      ExprNode *condition;
+      if (parseExpression(condition, infixInfo.precedence))
+        return failure();
+
+      ExprNode *falseExpr;
+      if (parseToken(LitToken::Kind::kw_else,
+                     "expecting a 'else' followed by an expression") ||
+          parseExpression(falseExpr, infixInfo.precedence))
+        return failure();
+      expr = alloc<TernaryOpNode>(infixInfo.nodeKind, condition, expr,
+                                  falseExpr, loc);
+      infixInfo = InfixInfo::get(getToken().getKind());
+      continue;
+    }
+
+    // rhs 'is' 'not' lhs -> a is not True.
+    if (tokKind == LitToken::Kind::kw_is && consumeIf(LitToken::Kind::kw_not))
+      infixInfo.nodeKind = ExprNode::Kind::kCmpIsNot;
+    // rhs 'not' 'in' lhs -> a not in {1, 2}.
+    else if (tokKind == LitToken::Kind::kw_not &&
+             consumeIf(LitToken::Kind::kw_in)) {
+      infixInfo.nodeKind = ExprNode::Kind::kCmpNotIn;
+      infixInfo.precedence = Precedence::kComparison;
+    }
 
     // Handle left associative operations.
     if (infixInfo.isLeftAssociative)
@@ -195,7 +279,6 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     if (parseExpression(rhs, infixInfo.precedence))
       return failure();
     expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, loc, rhs);
-
     infixInfo = InfixInfo::get(getToken().getKind());
   }
   return success();
@@ -205,6 +288,8 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   switch (tokKind) {
   default:
     llvm_unreachable("invalid unary token");
+  case LitToken::kw_not:
+    return ExprNode::kBoolNot;
   case LitToken::plus:
     return ExprNode::kUnaryPlus;
   case LitToken::minus:
@@ -240,10 +325,14 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
   case LitToken::plus:
   case LitToken::minus:
   case LitToken::tilde:
+  case LitToken::kw_not:
   case LitToken::amp: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
-    if (parseExpression(expr, Precedence::kFactor))
+    Precedence precedence = Precedence::kFactor;
+    if (tokKind == LitToken::kw_not) // not expr.
+      precedence = Precedence::kBoolNot;
+    if (parseExpression(expr, precedence))
       return failure();
     result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), unaryLoc, expr);
     break;

@@ -8,6 +8,21 @@
 def empty_def():
   # Pass isn't required.
 
+# CHECK-LABEL: lit.func @test_if_cond(%a: index) -> !lit.none {
+def test_if_cond(a: index):
+    # CHECK:      %[[ONE0:.*]] = index.constant 1
+    # CHECK-NEXT: %[[ONE1:.*]] = index.constant 1
+    # CHECK-NEXT: %[[CMP:.*]] = index.cmp eq(%[[ONE0]], %[[ONE1]])
+    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[CMP]] -> (index) {
+    # CHECK-NEXT:   %[[TWO:.*]] = index.constant 2
+    # CHECK-NEXT:   scf.yield %[[TWO]] : index
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   %[[THREE:.*]] = index.constant 3
+    # CHECK-NEXT:   scf.yield %[[THREE]] : index
+    # CHECK-NEXT: }
+    # CHECK-NEXT: pop.store %[[IF_RES:.*]], %a_0 : !pop.pointer<index>
+    a = 2 if 1 else 3
+
 # CHECK-LABEL: lit.func @precedence_associativity(%a: index)
 def precedence_associativity(a: index):
   z = 0
@@ -35,6 +50,33 @@ def precedence_associativity(a: index):
   # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
   z = z + 3 * -2
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[MATRIX_MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MATRIX_MUL]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 @ -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = index.divs %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[FLOOR_DIV]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 // -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[REMINDER:.*]] = index.rems %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[REMINDER]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 % -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[THREE]]
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
@@ -52,6 +94,43 @@ def precedence_associativity(a: index):
   # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[POW]]
   # CHECK-NEXT:  pop.store %[[SUB]], %z : !pop.pointer<index>
   z = -2**z
+
+# CHECK-LABEL: lit.func @precedence_bitwise(%a: index, %b: index, %c: index) -> !lit.none {
+def precedence_bitwise(a: index, b: index, c: index):
+  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[A]], %[[TWO]]
+  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[MUL]], %[[B]]
+  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
+  # CHECK-NEXT: %[[FOUR:.*]] = index.constant 4
+  # CHECK-NEXT: %[[XOR:.*]] = index.divs %[[FOUR]], %[[C]]
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[XOR]]
+  # CHECK-NEXT: pop.store %[[OR]], %a_0 : !pop.pointer<index>
+  a = a * 2 & b | 4 ^ c
+
+# CHECK-LABEL: lit.func @precedence_comparison(%a: index, %b: index, %c: index, %d: index) -> !lit.none {
+def precedence_comparison(a: index, b: index, c: index, d: index):
+  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
+  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
+  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %[[A]], %[[B:.*]]
+  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
+  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %[[C]]
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
+  # CHECK-NEXT: %[[D:.*]] = pop.load %d_3 : !pop.pointer<index>
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[D]]
+  a = ((a == b) and (not c)) or d
+  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
+  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
+  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %[[A]], %[[B:.*]]
+  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
+  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %[[C]]
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
+  # CHECK-NEXT: %[[D:.*]] = pop.load %d_3 : !pop.pointer<index>
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[D]]
+  a = a == b and not c or d
 
 # CHECK-LABEL: lit.func @do_math(%a: index, %b: index, %c: index) -> index {
 def do_math(a: index, b: index, c: index) -> index:

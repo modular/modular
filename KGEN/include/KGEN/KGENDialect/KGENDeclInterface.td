@@ -10,27 +10,26 @@
 include "mlir/IR/OpBase.td"
 
 def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
-  let description = [{
-    This is an interface common to kgen.func, kgen.generator,
-    kgen.generator.interface, as well as lit.func.
-  }];
+  let description = [{This is an interface common to kgen.func, kgen.generator,
+                      kgen.generator.interface, as well as lit.func.}];
   let cppNamespace = "::M::KGEN";
 
   let methods = [
-    InterfaceMethod<[{
-      Return the parameter + SSA value signature.
-    }], "SignatureType", "getSignature", (ins), [{}], [{
-      return SignatureType::get($_op.getParamDeclsAttr(),
-                                $_op.getResultParamTypesAttr(),
-                                $_op.getFunctionType());}]>,
+    InterfaceMethod<[{Return the parameter + SSA value signature.}],
+                    "SignatureType", "getSignature", (ins), [{}], [{
+                      return SignatureType::get($_op.getParamDeclsAttr(),
+                                                $_op.getResultParamTypesAttr(),
+                                                $_op.getFunctionType());
+                    }]>,
 
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.
-    }], "mlir::FunctionType", "getFunctionType">,
-        /// Parameters.
-    InterfaceMethod<[{
-      Return the input parameter declarations live in the decl body.
+                    }],
+                    "mlir::FunctionType", "getFunctionType">,
+    /// Parameters.
+    InterfaceMethod<
+        [{Return the input parameter declarations live in the decl body.
     }], "ParamDeclArrayAttr", "getParamDeclsAttr">,
     InterfaceMethod<[{
       Return the result parameter declarations returned from the decl body.

@@ -20,10 +20,13 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitSharedState.h"
+#include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace M;
 using namespace M::KGEN::LIT;
+namespace scf = mlir::scf;
 
 static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
@@ -394,8 +397,6 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    // FIXME: This isn't the correct operator - it won't GEP into a struct field
-    // in a LITStructDeclOp.
     return LValue(emitter.builder->create<LITStructGEPOp>(
         emitter.translateLocation(getLoc()), foundVarDecl.getType(),
         foundVarDecl.getName(), baseLV));
@@ -655,6 +656,9 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
   auto rhsVal = emitter.emitDRValue(rhsRep, rhs->getLoc());
   auto loc = emitter.translateLocation(getLoc());
 
+  // TODO: implement properly these operations once we have a real type system
+  //       also, logical operators should implement short circuiting of the
+  //       operands.
   switch (kind) {
   default:
     llvm_unreachable("unknown binary operator");
@@ -664,12 +668,31 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
   case kSub:
     return (Value)emitter.builder->create<mlir::index::SubOp>(loc, lhsVal,
                                                               rhsVal);
+  case kBoolAnd:
+  case kBitwiseAnd:
+    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, lhsVal,
+                                                              rhsVal);
+  case kBoolOr:
+  case kBitwiseOr:
+    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, lhsVal,
+                                                              rhsVal);
+  case kBitwiseXor:
+    return (Value)emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal,
+                                                               rhsVal);
   case kMul:
+  case kMatrixMul:
     return (Value)emitter.builder->create<mlir::index::MulOp>(loc, lhsVal,
                                                               rhsVal);
   case kDiv:
-    // TODO(types): this should be floating point division
+  case kFloorDiv:
+    // TODO(types): kDiv should be floating point division
     return (Value)emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal,
+                                                               rhsVal);
+  case kCmpEqual:
+    return (Value)emitter.builder->create<mlir::index::RemUOp>(loc, lhsVal,
+                                                               rhsVal);
+  case kModulo:
+    return (Value)emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal,
                                                                rhsVal);
   case kExp:
     // TODO(types): this should be an exponentiation op
@@ -710,6 +733,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
     return (Value)emitter.builder->create<mlir::index::AddOp>(loc, zero,
                                                               exprVal);
   }
+  case kBoolNot:
   case kUnaryMinus: {
     // TODO:  this should eventually implement a call to object.__neg__(self)
     auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
@@ -730,6 +754,45 @@ FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
     return {POP::PointerType::get(eltType.first),
             ASTType(emitter.shared.pointerDecl)};
 
+  emitter.emitError(getLoc(), "cannot emit this expression as a type");
+  return {};
+}
+
+AnyValue TernaryOpNode::emitIR(ExprEmitter &emitter,
+                               FullType contextualType) const {
+  Value cond = emitter.emitDRValue(condExpr);
+  if (!cond)
+    return {};
+
+  // TODO(types): we only support 'index' values as a hack right now.
+  if (!cond.getType().isIndex()) {
+    emitter.emitError(condExpr->getLoc(), "value of type ")
+        << cond.getType() << " isn't convertible to Bool";
+    return {};
+  }
+  // TODO(types)
+  Type resType = mlir::IndexType::get(emitter.getContext());
+  Location ifLoc = emitter.translateLocation(getLoc());
+  auto one = emitter.builder->create<mlir::index::ConstantOp>(cond.getLoc(), 1);
+  Value condValue = emitter.builder->create<mlir::index::CmpOp>(
+      cond.getLoc(), mlir::index::IndexCmpPredicate::EQ, cond, one);
+  auto ifOp = emitter.builder->create<scf::IfOp>(ifLoc, TypeRange{resType},
+                                                 condValue, /*withElse=*/true);
+  emitter.builder = ifOp.getThenBodyBuilder();
+  Value trueVal = emitter.emitDRValue(trueExpr);
+  if (!trueVal)
+    return {};
+  emitter.builder->create<scf::YieldOp>(ifLoc, trueVal);
+  emitter.builder = ifOp.getElseBodyBuilder();
+  Value falseVal = emitter.emitDRValue(falseExpr);
+  if (!falseVal)
+    return {};
+  emitter.builder->create<scf::YieldOp>(ifLoc, falseVal);
+  emitter.builder->setInsertionPointAfter(ifOp);
+  return (Value)ifOp.getResult(0);
+}
+
+std::pair<Type, ASTType> TernaryOpNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
