@@ -104,6 +104,11 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
 /// identifies it, otherwise return kNormal.
 SpecialFunctionKind LITFuncOp::getSpecialFunctionKind() {
   StringRef nameStr = getName();
+  size_t methodSepIdx = nameStr.rfind("::");
+  // If this is a method, strip struct/class container name.
+  if (methodSepIdx != StringRef::npos)
+    nameStr = nameStr.substr(methodSepIdx + 2, nameStr.size());
+
   if (nameStr.size() < 5 || !nameStr.startswith("__") ||
       !nameStr.endswith("__"))
     return SpecialFunctionKind::kNormal;

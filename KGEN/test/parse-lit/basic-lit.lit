@@ -139,7 +139,7 @@ struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
   var value : index
 
-  # CHECK-NEXT: lit.func public @__init__(%self: !pop.pointer<@Int>, %value_0: index) -> !lit.none
+  # CHECK-NEXT: lit.func public @"Int::__init__"(%self: !pop.pointer<@Int>, %value_0: index) -> !lit.none
   # CHECK:        %0 = lit.nonevalue
   # CHECK-NEXT:   kgen.return %0
   # CHECK-NEXT: }
@@ -147,7 +147,7 @@ struct Int:
     #self.value = value
     return None
 
-  # CHECK: lit.func public @__add__(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  # CHECK: lit.func public @"Int::__add__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
   def __add__(self, rhs: Int) -> Int:
     return rhs
   # CHECK: }
