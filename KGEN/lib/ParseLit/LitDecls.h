@@ -51,10 +51,11 @@ public:
                    LitLexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(Operation *decl, ASTDecl *parentDecl);
+  ASTDecl &addFullyResolvedDecl(Operation *decl, ASTType type,
+                                ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(ParamDeclAttr decl, Location loc,
+  ASTDecl &addFullyResolvedDecl(ParamDeclAttr decl, Location loc, ASTType type,
                                 ASTDecl *parentDecl);
 
   /// Add a "magic" declaration that has special handling to this scope.  This

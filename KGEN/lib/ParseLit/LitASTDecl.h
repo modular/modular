@@ -11,6 +11,7 @@
 #ifndef LIT_DECL_AST_H
 #define LIT_DECL_AST_H
 
+#include "LitDecls.h"
 #include "LitLexer.h"
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -80,10 +81,29 @@ public:
     return OpBuilder(getContext());
   }
 
-  /// Given a type declaration, return a RefType for a reference to this with
-  /// the specified type parameters.  This aborts if the current decl isn't a
-  /// type.
-  RefType getIRTypeReference(ParamBindArrayAttr params);
+  /// This field holds a primary type for this declaration, valid after the
+  /// signature is type checked.  The meaning is different for various
+  /// declarations:
+  ///   VarDecl/ParamDecl: This is the type of the declaration.
+  ///   FuncDecl: This is the return type.
+  ///   StructDecl: This is the 'self' type.
+  const ASTType &getResolvedType() const {
+    assert(resolvedness != DeclResolvedness::unparsed &&
+           "signature must be resolved to get a resolved type");
+    return resolvedType;
+  }
+  void setResolvedType(ASTType type) {
+    // FIXME: Enable this:    assert(type && "Cannot set null types");
+    resolvedType = type;
+  }
+
+  /// Given a type declaration, return an MLIR+ASTType for a reference to this
+  /// with the specified type parameters.  This aborts if the current decl isn't
+  /// a type like a struct.
+  std::pair<Type, ASTType> getFullTypeForTypeReference();
+
+  /// Given an MLIR op for a struct declaration, return the self type.
+  ASTType computeSelfTypeForStruct();
 
   //===--------------------------------------------------------------------===//
   // Name lookup
@@ -141,6 +161,9 @@ private:
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
   Location loc;
+
+  /// This is a primary type for this declaration, see getResolvedType().
+  ASTType resolvedType;
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.

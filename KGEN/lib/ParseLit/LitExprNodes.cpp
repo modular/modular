@@ -267,7 +267,7 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
                        .create<VarDeclOp>(emitter.translateLocation(getLoc()),
                                           declType, nameAttr);
     decl = &emitter.shared.declResolver->addFullyResolvedDecl(
-        varDecl, &emitter.declScope);
+        varDecl, contextualType.second, &emitter.declScope);
   }
 
   // We need the signature for the struct to be resolved in order to know how

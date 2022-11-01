@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "LitSharedState.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -55,12 +56,34 @@ ParamDeclAttr ASTDecl::getParamDecl() const {
 /// Given a type declaration, return a RefType for a reference to this with
 /// the specified type parameters.  This aborts if the current decl isn't a
 /// type.
-RefType ASTDecl::getIRTypeReference(ParamBindArrayAttr params) {
-  if (!params)
-    params = ParamBindArrayAttr::get(getContext(), {});
-  auto parentStruct = cast<LITStructDeclOp>(*this);
-  return RefType::get(FlatSymbolRefAttr::get(parentStruct.getNameAttr()),
-                      params);
+std::pair<Type, ASTType> ASTDecl::getFullTypeForTypeReference() {
+  auto astType = getResolvedType();
+  auto structOp = cast<LITStructDeclOp>(*this);
+  auto mlirType = RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()),
+                               astType.getParamValues());
+
+  return {mlirType, astType};
+}
+
+/// Given an MLIR op for a struct declaration, return the self type.
+ASTType ASTDecl::computeSelfTypeForStruct() {
+  auto structOp = cast<LITStructDeclOp>(*this);
+
+// Figure out the expected type of self.
+#if 0 // FIXME: Handle parametric self references.
+  if (!structOp.getParamDecls().empty()) {
+    // TODO(Issue #4182)
+    structOp.emitError("cannot (yet) compute self type in parametric struct");
+    return {};
+  }
+#endif
+
+  ParamBindArrayAttr selfParams =
+      ParamBindArrayAttr::get(structOp.getContext(), {});
+
+  // Methods on structs (but not classes) take the struct implicitly by
+  // pointer so they can use and mutate it.
+  return ASTType(this, selfParams);
 }
 
 //===----------------------------------------------------------------------===//
@@ -141,19 +164,21 @@ ASTDecl &DeclResolver::addDecl(Operation *op, ASTDecl *parentDecl,
                  indentation);
 }
 
-ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op,
+ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, ASTType type,
                                             ASTDecl *parentDecl) {
   auto &decl = addDecl(op, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.setResolvedType(type);
   return decl;
 }
 
 /// Add a declaration that is already fully resolved.
 ASTDecl &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
-                                            ASTDecl *parentDecl) {
+                                            ASTType type, ASTDecl *parentDecl) {
   auto &decl = addDecl(attr, loc, attr.getName(), parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.setResolvedType(type);
   return decl;
 }
 
@@ -321,8 +346,9 @@ struct ParsedMetaSignature {
   void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
     // TODO: Use inputTypes.
-    for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs))
-      declResolver.addFullyResolvedDecl(paramDecl, loc, &decl);
+    for (auto [paramDecl, type, loc] :
+         llvm::zip(inputDecls, inputASTTypes, inputLocs))
+      declResolver.addFullyResolvedDecl(paramDecl, loc, type, &decl);
   }
 };
 } // namespace
@@ -371,38 +397,29 @@ struct ParsedParam {
 static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
-                                          FullType &resultType) {
+                                          FullType &resultType,
+                                          LitSharedState &shared) {
 
   // If this definition is a struct/class member, return the self type otherwise
   // return a null type.
-  auto getSelfTypeForMethod = [&]() -> FullType {
-    // Get the context of the declaration, rejecting it if it isn't nested in a
-    // structure.
-    ASTDecl *parent = declScope.getParentDecl();
-    if (!parent || !isa<LITStructDeclOp>(*parent))
-      return {};
-    auto parentStruct = cast<LITStructDeclOp>(*parent);
-
-    // Figure out the expected type of self.
-    if (!parentStruct.getParamDecls().empty()) {
-      // TODO(Issue #4182)
-      defDecl.emitError("cannot (yet) compute self type in parametric struct");
-      return {};
+  FullType selfType;
+  if (auto *parentDecl = declScope.getParentDecl())
+    if (isa<LITStructDeclOp>(*parentDecl)) {
+      // If this is a method, the signature for the enclosing type must be
+      // resolved.
+      (void)shared.declResolver->resolve(
+          *parentDecl, DeclResolvedness::signatureResolved,
+          declScope.getCursor().getToken().getLoc());
+      selfType = parentDecl->getFullTypeForTypeReference();
     }
-    ParamBindArrayAttr selfParams =
-        ParamBindArrayAttr::get(defDecl.getContext(), {});
-
-    auto ref = parent->getIRTypeReference(selfParams);
-
-    // Methods on structs (but not classes) take the struct implicitly by
-    // pointer so they can use and mutate it.
-    return {POP::PointerType::get(ref), ASTType(parent, selfParams)};
-  };
-
-  auto selfType = getSelfTypeForMethod();
 
   // If this is a method, enforce that self is declared correctly.
   if (selfType.first) {
+    // Methods on structs (but not classes) take the struct implicitly by
+    // pointer so they can use and mutate it.
+
+    selfType.first = POP::PointerType::get(selfType.first);
+
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
@@ -489,13 +506,16 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     resultType = {KGEN::NoneType::get(getContext()),
                   ASTType(sharedState.noneDecl)};
   }
+  // The resolvedType for a function is the return type of the function.
+  decl.setResolvedType(resultType.second);
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType)) {
+  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType,
+                             sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be broken.
     decl.hasReferenceError = true;
   }
@@ -517,8 +537,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
     if (!param.type.first)
-      param.type = {sharedState.objectDecl->getIRTypeReference({}),
-                    ASTType(sharedState.objectDecl)};
+      param.type = sharedState.objectDecl->getFullTypeForTypeReference();
     paramTypes.push_back(param.type.first);
 
     // TODO: add support for default parameter expressions.
@@ -534,14 +553,13 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
 
   // Set up the body of the def, creating declarations for the value parameters
   // and adding them to the symbol table.
-  for (auto [arg, name] :
-       llvm::zip(defOp.getBody()->getArguments(), defOp.getValueParamNames())) {
+  for (auto [arg, param] : llvm::zip(defOp.getBody()->getArguments(), params)) {
     // Create a mutable var.decl that references to the name can load from.
     // TODO: This is the wrong default, reconsider this for 'fn's when we have
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
-    auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, name);
-    addFullyResolvedDecl(varDecl, &decl);
+    auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
+    addFullyResolvedDecl(varDecl, param.type.second, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -598,6 +616,9 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     if (p.parseExpression(initValue, decl.getIndentation()))
       return failure();
   }
+
+  // The resolvedType of a variable declaration is the type of the decl.
+  decl.setResolvedType(type.second);
   return success();
 }
 
@@ -631,6 +652,10 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
 
   // Add the meta parameters to the struct's symbol table.
   metaSignature.addToScope(sharedState, decl);
+
+  // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
+  // the self type.
+  decl.setResolvedType(decl.computeSelfTypeForStruct());
   return success();
 }
 

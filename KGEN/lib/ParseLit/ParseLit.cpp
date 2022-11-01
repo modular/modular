@@ -13,6 +13,7 @@
 #include "LitASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
+#include "LitLexer.h"
 #include "LitParserBase.h"
 #include "LitSharedState.h"
 
@@ -96,8 +97,11 @@ static void addBuiltinDecls(LitSharedState &sharedState,
   // thing as we bring up full type support.  This should be eliminated.
   auto objectDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
   // TODO: Add body to the object type.
-  sharedState.objectDecl =
-      &resolver.addFullyResolvedDecl(objectDecl, &builtinsDecl);
+  sharedState.objectDecl = &resolver.addDecl(
+      objectDecl, &builtinsDecl, LitLexerCursor(), LitLexerCursor(), 0);
+  sharedState.objectDecl->setResolvedType(
+      sharedState.objectDecl->computeSelfTypeForStruct());
+  sharedState.objectDecl->resolvedness = DeclResolvedness::fullyResolved;
 }
 
 // Parse the specified .lit file into the specified MLIR context.
