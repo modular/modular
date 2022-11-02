@@ -299,32 +299,29 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
 
   // Materialize the expression statement.
   auto rhsValue = getExprEmitter().emitDRValue(rhs);
-  if (!rhsValue)
+  if (!rhsValue.first)
     return success(); // Parse succeeded.
 
   // Resolve LHS expression into an lvalue that we can store into.
-
-  LValue lValue = getExprEmitter().emitLValue(
-      lhs,
-      // FIXME: Pass a correct ASTType in here.
-      {rhsValue.getType(), ASTType()}, "cannot assign to expression");
-  if (!lValue)
+  LValueAndASTType lValue = getExprEmitter().emitLValue(
+      lhs, {rhsValue.first.getType(), rhsValue.second},
+      "cannot assign to expression");
+  if (!lValue.first)
     return success(); // Parse succeeded.
 
   // Check to see if the destination type and the source type are compatible.
-  auto destEltType =
-      cast<POP::PointerType>(lValue.getType()).getResolvedElementType();
   // TODO: Implement implicit conversions.
-  if (destEltType != rhsValue.getType()) {
+  if (lValue.first.getType() !=
+      POP::PointerType::get(rhsValue.first.getType())) {
     emitError(rhs->getLoc(), "cannot convert value of type ")
-        << rhsValue.getType() << " to " << destEltType;
+        << rhsValue.second << " to " << lValue.second;
     return success();
   }
 
   // If everything worked out, store the resultant value into the lvalue for the
   // destination.  If things didn't work, just drop this on the floor.
-  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue, lValue,
-                               /*alignment*/ None);
+  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue.first,
+                               lValue.first, /*alignment*/ None);
 
   return success();
 }
@@ -334,6 +331,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto loc = consumeToken(LitToken::kw_return).getLoc();
 
   SmallVector<Value> operandValues;
+  SmallVector<ASTType> operandTypes;
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
@@ -350,9 +348,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Materialize the expression values into IR.
   for (auto expr : operandExprs) {
     auto value = getExprEmitter().emitDRValue(expr);
-    if (!value)
+    if (!value.first)
       return failure();
-    operandValues.push_back(value);
+    operandValues.push_back(value.first);
+    operandTypes.push_back(value.second);
   }
 
   // We don't support formation of tuples / multiple result values yet.
@@ -375,8 +374,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   if (operandValues[0].getType() != decl.getResultTypes()[0]) {
     emitError(loc, "returned value has type ")
-        << operandValues[0].getType() << " but 'def' expected "
-        << decl.getResultTypes()[0];
+        << operandTypes[0] << " but 'def' expected "
+        << containingDecl.getResolvedType();
     return success();
   }
 
@@ -395,19 +394,20 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
   // TODO(types): add type checking: the condition should be bool.
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
-  Value cond = parser.getExprEmitter().emitDRValue(condExp);
-  if (!cond)
+  DRValueAndASTType cond = parser.getExprEmitter().emitDRValue(condExp);
+  if (!cond.first)
     return failure();
 
   // TODO(types): we only support 'index' values as a hack right now.
-  if (!cond.getType().isIndex())
+  if (!cond.first.getType().isIndex())
     return parser.emitError(condExp->getLoc(), "value of type ")
-           << cond.getType() << " isn't convertible to Bool";
+           << cond.second << " isn't convertible to Bool";
 
   auto &builder = parser.getBuilder();
-  auto one = builder.create<mlir::index::ConstantOp>(cond.getLoc(), 1);
+  auto loc = cond.first.getLoc();
+  auto one = builder.create<mlir::index::ConstantOp>(loc, 1);
   condValue = builder.create<mlir::index::CmpOp>(
-      cond.getLoc(), mlir::index::IndexCmpPredicate::EQ, cond, one);
+      loc, mlir::index::IndexCmpPredicate::EQ, cond.first, one);
   return success();
 }
 

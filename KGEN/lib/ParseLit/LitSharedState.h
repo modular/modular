@@ -99,6 +99,7 @@ public:
   /// printed out for diagnostics.
   std::string getAsString() const;
 
+  /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
 
 private:

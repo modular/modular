@@ -32,6 +32,26 @@ using llvm::SMLoc;
 class ExprEmitter;
 class ASTDecl;
 
+/// Instances of MValue model a known-compile-time meta value, represented by an
+/// MLIR attribute.
+struct MValue : public TypedAttr {
+  using TypedAttr::TypedAttr;
+  MValue(TypedAttr attr) : TypedAttr(attr) {}
+  using TypedAttr::operator=;
+};
+using MValueAndASTType = std::pair<MValue, ASTType>;
+
+/// Instances of DRValue model a dynamic value represented with an SSA value.
+/// It is described with an explicit type to clarify what sort of value it is,
+/// differentiating it from an emitted LValue.  This helps avoid subtle bugs in
+/// the emission phase.
+struct DRValue : public Value {
+  using Value::Value;
+  DRValue(Value v) : Value(v) {}
+  using Value::operator=;
+};
+using DRValueAndASTType = std::pair<DRValue, ASTType>;
+
 /// Instances of LValue model a dynamic address, which will always have pointer
 /// type.  It is described with an explicit type because the type of the
 /// underlying MLIR value may be pointer type for RValues of pointer type, so we
@@ -41,16 +61,14 @@ struct LValue : public Value {
   using Value::Value;
   LValue(Value v) : Value(v) {}
 };
+using LValueAndASTType = std::pair<LValue, ASTType>;
 
 /// This represents an RValue, which may be either a meta value (MValue)
 class RValue {
 public:
   RValue() : storage() {}
-  RValue(Attribute metaValue) : storage(metaValue) {
-    assert(isa<TypedAttr>(metaValue));
-  }
-  RValue(TypedAttr metaValue) : storage((Attribute)metaValue) {}
-  RValue(Value rValue) : storage(rValue) {}
+  RValue(MValue metaValue) : storage((Attribute)metaValue) {}
+  RValue(DRValue rValue) : storage(rValue) {}
   explicit RValue(PointerUnion<Attribute, Value> storage) : storage(storage) {}
 
   bool isNull() const { return storage.isNull(); }
@@ -58,7 +76,7 @@ public:
   operator bool() const { return !isNull(); }
 
   /// If this contains a metavalue, return it; otherwise return null.
-  TypedAttr getIfMValue() const {
+  MValue getIfMValue() const {
     // Meta values are stored as Attribute because they are a single word, but
     // we know they always hold a TypedAttr.
     if (auto attr = dyn_cast<Attribute>(storage))
@@ -66,7 +84,7 @@ public:
     return {};
   }
 
-  Value getIfDRValue() const { return dyn_cast<Value>(storage); }
+  DRValue getIfDRValue() const { return dyn_cast<Value>(storage); }
 
   /// Return the type for the contained representation, or null if they are
   /// both null.
@@ -77,15 +95,13 @@ public:
 private:
   PointerUnion<Attribute, Value> storage;
 };
+using RValueAndASTType = std::pair<RValue, ASTType>;
 
 class AnyValue {
 public:
   AnyValue() : storage() {}
-  AnyValue(Attribute metaValue) : storage(metaValue) {
-    assert(isa<TypedAttr>(metaValue));
-  }
-  AnyValue(TypedAttr metaValue) : storage(RValue(metaValue)) {}
-  AnyValue(Value rValue) : storage(RValue(rValue)) {}
+  AnyValue(MValue metaValue) : storage(RValue(metaValue)) {}
+  AnyValue(DRValue rValue) : storage(RValue(rValue)) {}
   AnyValue(LValue lValue) : storage(lValue) {}
 
   bool isNull() const { return storage.isNull(); }
@@ -118,6 +134,7 @@ public:
 private:
   PointerUnion<RValue, LValue> storage;
 };
+using AnyValueAndASTType = std::pair<AnyValue, ASTType>;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -188,8 +205,6 @@ public:
   /// Return the primary location for this node for error reporting purposes.
   virtual SMLoc getLoc() const = 0;
 
-  using AnyValueAndASTType = std::pair<AnyValue, ASTType>;
-
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
@@ -230,32 +245,32 @@ public:
   MLIRContext *getContext() const { return shared.context; }
 
   /// This helper emits the specified value rep as an RValue.
-  RValue emitRValue(const ExprNode *node) {
+  RValueAndASTType emitRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitRValue(node->emitIR(*this).first, node->getLoc());
+    return emitRValue(node->emitIR(*this), node->getLoc());
   }
-  RValue emitRValue(AnyValue rep, SMLoc loc);
+  RValueAndASTType emitRValue(AnyValueAndASTType rep, SMLoc loc);
 
   /// This helper emits the specified value rep as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  Value emitDRValue(RValue rep, SMLoc loc);
-  Value emitDRValue(AnyValue rep, SMLoc loc) {
+  DRValueAndASTType emitDRValue(RValueAndASTType rep, SMLoc loc);
+  DRValueAndASTType emitDRValue(AnyValueAndASTType rep, SMLoc loc) {
     return emitDRValue(emitRValue(rep, loc), loc);
   }
 
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  Value emitDRValue(const ExprNode *node) {
+  DRValueAndASTType emitDRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitDRValue(node->emitIR(*this).first, node->getLoc());
+    return emitDRValue(node->emitIR(*this), node->getLoc());
   }
 
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
-  TypedAttr emitMValue(const ExprNode *node, const Twine &message);
+  MValueAndASTType emitMValue(const ExprNode *node, const Twine &message);
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will
@@ -263,8 +278,8 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitLValue(const ExprNode *node, FullType contextualType,
-                    const Twine &message);
+  LValueAndASTType emitLValue(const ExprNode *node, FullType contextualType,
+                              const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null MLIR Types - if the
