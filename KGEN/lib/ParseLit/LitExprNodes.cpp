@@ -60,8 +60,9 @@ Type AnyValue::getType() const {
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-RValueAndASTType ExprEmitter::emitRValue(AnyValueAndASTType rep, SMLoc loc) {
-  if (!rep.first) // Already diagnosed error.
+ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
+                                           SMLoc loc) {
+  if (!rep) // Already diagnosed error.
     return {};
 
   if (!builder) {
@@ -69,28 +70,29 @@ RValueAndASTType ExprEmitter::emitRValue(AnyValueAndASTType rep, SMLoc loc) {
     return {};
   }
 
-  if (auto rvRep = rep.first.getIfRValue())
-    return {rvRep, rep.second};
+  if (auto rvRep = rep.ir.getIfRValue())
+    return {rvRep, rep.type};
 
-  auto pointer = rep.first.getIfLValue();
+  auto pointer = rep.ir.getIfLValue();
   assert(pointer);
 
   // Finally, if this is an LValue, emit a load.
   Value load = builder->create<POP::LoadOp>(translateLocation(loc), pointer,
                                             /*alignment*/ None);
-  return {DRValue(load), rep.second};
+  return {DRValue(load), rep.type};
 }
 
-DRValueAndASTType ExprEmitter::emitDRValue(RValueAndASTType rep, SMLoc loc) {
-  if (!rep.first)
+ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
+                                             SMLoc loc) {
+  if (!rep)
     return {};
   // If this is already an DRValue, emit this.
-  if (auto rvalue = rep.first.getIfDRValue())
-    return {rvalue, rep.second};
+  if (auto rvalue = rep.ir.getIfDRValue())
+    return {rvalue, rep.type};
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = rep.first.getIfMValue();
+  auto attr = rep.ir.getIfMValue();
   assert(attr);
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
@@ -98,26 +100,25 @@ DRValueAndASTType ExprEmitter::emitDRValue(RValueAndASTType rep, SMLoc loc) {
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
-      return {DRValue(cst), rep.second};
+      return {DRValue(cst), rep.type};
     }
 
   // Otherwise, emit a generalized parameter constant.
-  return {DRValue(builder->create<ParamConstantOp>(location, attr)),
-          rep.second};
+  return {DRValue(builder->create<ParamConstantOp>(location, attr)), rep.type};
 }
 
 /// This helper emits the specified expression as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
-MValueAndASTType ExprEmitter::emitMValue(const ExprNode *node,
-                                         const Twine &message) {
+ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
+                                           const Twine &message) {
   auto rep = node->emitIR(*this);
-  if (!rep.first)
+  if (!rep)
     return {};
 
   // If this is a parameter, return it.
-  if (auto attr = rep.first.getIfMValue())
-    return {attr, rep.second};
+  if (auto attr = rep.ir.getIfMValue())
+    return {attr, rep.type};
 
   emitError(node->getLoc(), message);
   return {};
@@ -129,14 +130,14 @@ MValueAndASTType ExprEmitter::emitMValue(const ExprNode *node,
 ///
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
-LValueAndASTType ExprEmitter::emitLValue(const ExprNode *node,
-                                         FullType contextualType,
-                                         const Twine &message) {
-  AnyValueAndASTType anyValue = node->emitIR(*this, contextualType);
-  if (!anyValue.first)
+ASTTypeAnd<LValue> ExprEmitter::emitLValue(const ExprNode *node,
+                                           FullType contextualType,
+                                           const Twine &message) {
+  ASTTypeAnd<AnyValue> anyValue = node->emitIR(*this, contextualType);
+  if (!anyValue)
     return {}; // Error already diagnosed.
-  if (LValue lValue = anyValue.first.getIfLValue())
-    return {lValue, anyValue.second};
+  if (LValue lValue = anyValue.ir.getIfLValue())
+    return {lValue, anyValue.type};
   emitError(node->getLoc(), message);
   return {};
 }
@@ -183,8 +184,8 @@ ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
-auto IntLiteralNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
+                                            FullType contextualType) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -200,9 +201,8 @@ FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto FloatLiteralNode::emitIR(ExprEmitter &emitter,
-                              FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
+                                              FullType contextualType) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
@@ -217,9 +217,8 @@ FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto StringLiteralNode::emitIR(ExprEmitter &emitter,
-                               FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
+                                               FullType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return {MValue(StringAttr::get(emitter.getContext(), value)),
           // FIXME: Wrong type!
@@ -231,9 +230,8 @@ FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto NoneLiteralNode::emitIR(ExprEmitter &emitter,
-                             FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
+                                             FullType contextualType) const {
   // FIXME (Issue #4315): None should be emitted as an attribute (not a dynamic
   // value), but KGEN doesn't allow unknown parameters. This should work:
   //
@@ -255,8 +253,8 @@ FullType NoneLiteralNode::emitType(ExprEmitter &emitter) const {
           emitter.shared.getNoneType()};
 }
 
-auto DeclRefNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
+                                         FullType contextualType) const {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
   ASTDecl *decl = emitter.declScope.lookup(nameAttr);
@@ -369,29 +367,28 @@ FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
           decl->getResolvedType()};
 }
 
-auto AttributeRefNode::emitIR(ExprEmitter &emitter,
-                              FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
+                                              FullType contextualType) const {
   auto baseVal = base->emitIR(emitter);
 
-  if (LValue baseLV = baseVal.first.getIfLValue()) {
+  if (LValue baseLV = baseVal.ir.getIfLValue()) {
     if (!emitter.builder) {
       emitter.emitError(getLoc(),
                         "TODO: cannot call function in parameter context");
       return {};
     }
 
-    ASTDecl *typeDecl = baseVal.second.getDecl();
-    auto typeParams = baseVal.second.getParamValues();
+    ASTDecl *typeDecl = baseVal.type.getDecl();
+    auto typeParams = baseVal.type.getParamValues();
     if (!typeParams.empty()) {
       emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-          << baseVal.second;
+          << baseVal.type;
       return {};
     }
 
     if (!isa<LITStructDeclOp>(*typeDecl)) {
       emitter.emitError(getLoc(), "cannot access fields in type ")
-          << baseVal.second;
+          << baseVal.type;
       return {};
     }
 
@@ -425,9 +422,9 @@ FullType AttributeRefNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
-  auto calleeVal = emitter.emitRValue(callee).first;
+ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
+                                      FullType contextualType) const {
+  auto calleeVal = emitter.emitRValue(callee).ir;
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
 
@@ -464,19 +461,19 @@ auto CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
   for (auto [arg, expectedType] :
        llvm::zip(args, calleeType.getValues().getInputs())) {
     auto argVal = emitter.emitDRValue(arg);
-    if (!argVal.first)
+    if (!argVal.ir)
       return {};
 
-    if (argVal.first.getType() != expectedType) {
+    if (argVal.ir.getType() != expectedType) {
       // TODO: Handle implicit conversions.
       emitter.emitError(arg->getLoc(), "value of type ")
-          << argVal.second
+          << argVal.type
           << " cannot be converted to expected type "
           // TODO: Print pretty expected type.
           << expectedType;
       return {};
     }
-    valueArguments.push_back(argVal.first);
+    valueArguments.push_back(argVal.ir);
   }
 
   auto calleeParam = calleeVal.getIfMValue();
@@ -508,15 +505,15 @@ FullType CallNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto SubscriptNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
+                                           FullType contextualType) const {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
-  if (!subValue.first)
+  if (!subValue)
     return {};
 
   // If we have a value of signature type, we can bind parameters to it.
-  if (auto signature = dyn_cast<SignatureType>(subValue.first.getType())) {
+  if (auto signature = dyn_cast<SignatureType>(subValue.ir.getType())) {
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -524,7 +521,7 @@ auto SubscriptNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
       return {};
     }
 
-    auto declParam = subValue.first.getIfMValue();
+    auto declParam = subValue.ir.getIfMValue();
     if (!declParam) {
       emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
@@ -536,20 +533,20 @@ auto SubscriptNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
       auto val = emitter.emitMValue(
           idx, "declaration parameters may not be a run-time value");
-      if (!val.first)
+      if (!val.ir)
         return {};
 
       // Check the type matches what is expected.
       // TODO: Do implicit conversions.
       // TODO: Handle signatures like (T, scalar<T>) where early bound
       // parameters changes the types of later ones.
-      if (val.first.getType() != decl.getType()) {
+      if (val.ir.getType() != decl.getType()) {
         emitter.emitError(idx->getLoc(), "index has type ")
             // TODO: Print pretty decl type.
-            << val.second << " but declaration expects " << decl.getType();
+            << val.type << " but declaration expects " << decl.getType();
         return {};
       }
-      bindOperands.push_back(val.first);
+      bindOperands.push_back(val.ir);
     }
     // Okay, everything checks out, form the bind operation.
     return {MValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
@@ -560,13 +557,13 @@ auto SubscriptNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
   // Emit each of the index values.
   SmallVector<RValue> indexValues;
   for (ExprNode *index : indices) {
-    indexValues.push_back(emitter.emitRValue(index).first);
+    indexValues.push_back(emitter.emitRValue(index).ir);
     if (!indexValues.back())
       return {};
   }
 
   emitter.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
-      << subValue.first.getType();
+      << subValue.type;
   return {};
 }
 
@@ -608,22 +605,22 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
   for (auto [indexExpr, decl] : llvm::zip(indices, structOp.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto value = emitter.emitMValue(
+    auto indexVal = emitter.emitMValue(
         indexExpr, "type parameters may not be a run-time value");
-    if (!value.first)
+    if (!indexVal.ir)
       return {};
 
     // TODO: Support conversions.
-    if (value.first.getType() != decl.getType()) {
+    if (indexVal.ir.getType() != decl.getType()) {
       emitter.emitError(indexExpr->getLoc(), "parameter of type ")
-          << value.second
+          << indexVal.type
           << " cannot be converted to expected type "
           // TODO: Pretty type.
           << decl.getType();
       return {};
     }
 
-    exprs.push_back(ParamBindAttr::get(decl, value.first));
+    exprs.push_back(ParamBindAttr::get(decl, indexVal.ir));
   }
 
   auto typeParams = ParamBindArrayAttr::get(emitter.getContext(), exprs);
@@ -632,8 +629,8 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
       ASTType(decl, typeParams)};
 }
 
-auto ParenExprNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
+                                           FullType contextualType) const {
   return subExpr->emitIR(emitter, contextualType);
 }
 
@@ -641,13 +638,13 @@ FullType ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
-auto BinOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
+                                       FullType contextualType) const {
   auto lhsRep = emitter.emitRValue(lhs);
   auto rhsRep = emitter.emitRValue(rhs);
-  if (!lhsRep.first || !rhsRep.first)
+  if (!lhsRep.ir || !rhsRep.ir)
     return {};
-  auto lhsType = lhsRep.first.getType(), rhsType = rhsRep.first.getType();
+  auto lhsType = lhsRep.ir.getType(), rhsType = rhsRep.ir.getType();
   if (lhsType != rhsType || !lhsType.isIndex()) {
     emitter.emitError(getLoc(),
                       "binary operator with interesting types not implemented");
@@ -656,8 +653,8 @@ auto BinOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
 
   // If these are both parameter values, we can fold them using parameter
   // expressions.
-  if (auto lhsParam = lhsRep.first.getIfMValue()) {
-    if (auto rhsParam = rhsRep.first.getIfMValue()) {
+  if (auto lhsParam = lhsRep.ir.getIfMValue()) {
+    if (auto rhsParam = rhsRep.ir.getIfMValue()) {
       POC opcode;
       switch (kind) {
       default:
@@ -676,8 +673,8 @@ auto BinOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
 
   assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto lhsVal = emitter.emitDRValue(lhsRep, lhs->getLoc()).first;
-  auto rhsVal = emitter.emitDRValue(rhsRep, rhs->getLoc()).first;
+  auto lhsVal = emitter.emitDRValue(lhsRep, lhs->getLoc()).ir;
+  auto rhsVal = emitter.emitDRValue(rhsRep, rhs->getLoc()).ir;
   auto loc = emitter.translateLocation(getLoc());
 
   // TODO: implement properly these operations once we have a real type system
@@ -734,12 +731,12 @@ FullType BinOpNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto UnaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
+ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
+                                         FullType contextualType) const {
   auto exprRep = emitter.emitRValue(subExpr);
-  if (!exprRep.first)
+  if (!exprRep)
     return {};
-  auto exprType = exprRep.first.getType();
+  auto exprType = exprRep.ir.getType();
   if (!exprType.isIndex()) {
     emitter.emitError(getLoc(),
                       "unary operator with interesting types not implemented");
@@ -748,7 +745,7 @@ auto UnaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
 
   assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto exprVal = emitter.emitDRValue(exprRep, subExpr->getLoc()).first;
+  auto exprVal = emitter.emitDRValue(exprRep, subExpr->getLoc()).ir;
   auto loc = emitter.translateLocation(getLoc());
   DRValue result;
   switch (kind) {
@@ -787,9 +784,9 @@ FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-auto TernaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
-    -> AnyValueAndASTType {
-  Value cond = emitter.emitDRValue(condExpr).first;
+ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
+                                           FullType contextualType) const {
+  Value cond = emitter.emitDRValue(condExpr).ir;
   if (!cond)
     return {};
 
@@ -808,15 +805,15 @@ auto TernaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
   auto ifOp = emitter.builder->create<scf::IfOp>(ifLoc, TypeRange{resType},
                                                  condValue, /*withElse=*/true);
   emitter.builder = ifOp.getThenBodyBuilder();
-  DRValueAndASTType trueVal = emitter.emitDRValue(trueExpr);
-  if (!trueVal.first)
+  ASTTypeAnd<DRValue> trueVal = emitter.emitDRValue(trueExpr);
+  if (!trueVal.ir)
     return {};
-  emitter.builder->create<scf::YieldOp>(ifLoc, trueVal.first);
+  emitter.builder->create<scf::YieldOp>(ifLoc, trueVal.ir);
   emitter.builder = ifOp.getElseBodyBuilder();
-  DRValueAndASTType falseVal = emitter.emitDRValue(falseExpr);
-  if (!falseVal.first)
+  ASTTypeAnd<DRValue> falseVal = emitter.emitDRValue(falseExpr);
+  if (!falseVal.ir)
     return {};
-  emitter.builder->create<scf::YieldOp>(ifLoc, falseVal.first);
+  emitter.builder->create<scf::YieldOp>(ifLoc, falseVal.ir);
   emitter.builder->setInsertionPointAfter(ifOp);
   return {(DRValue)ifOp.getResult(0), emitter.shared.getIndexType()};
 }
