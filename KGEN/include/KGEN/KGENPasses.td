@@ -163,6 +163,24 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Resolve Includes
+//===----------------------------------------------------------------------===//
+
+def ResolveIncludes : Pass<"resolve-includes", "mlir::ModuleOp"> {
+  let summary = "resolve includes in the module";
+  let description = [{
+    This pass performs include resolution on the KGEN module, replacing all
+    `kgen.include` operations with the included modules and reconciling included
+    symbols.
+  }];
+
+  let options = [
+    ListOption<"searchPaths", "search-path", "std::string",
+               "Search path for imported modules.">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // EmitLLVM
 //===----------------------------------------------------------------------===//
 
