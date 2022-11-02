@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "BytecodeUtils.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -18,7 +17,6 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Linker/Linker.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -55,201 +53,74 @@ static llvm::hash_code hashNoRegionOperation(Operation *op) {
 
 /// The hash consists of the symbol name, the signature and any attrs on the op,
 /// and the body.
-static std::string hashOpWithRegions(FuncOp f) {
+static std::string hashOpWithRegions(Operation *f) {
   llvm::hash_code opHash = 0;
   // Hash the body of the operation.
-  f.walk([&](Operation *op) { opHash = hashNoRegionOperation(op); });
+  f->walk([&](Operation *op) {
+    opHash = llvm::hash_combine(opHash, hashNoRegionOperation(op));
+  });
   return std::to_string(size_t(opHash));
-}
-
-static std::string hashLLVMModule(llvm::Module *m) {
-  // Make sure we hash the data layout!
-  llvm::hash_code moduleHash = llvm::hash_value(m->getDataLayoutStr());
-  for (auto &func : m->functions()) {
-    moduleHash = llvm::hash_combine(moduleHash, func.getName(),
-                                    func.getReturnType()->getTypeID());
-    for (auto *in : func.getFunctionType()->params())
-      moduleHash = llvm::hash_combine(moduleHash, in->getTypeID());
-
-    for (auto &instruction : llvm::instructions(func)) {
-      // Add any instruction operands to the hash as well.
-      for (auto &operand : instruction.operands()) {
-        if (auto inst = dyn_cast<llvm::Instruction>(operand.get()))
-          moduleHash = llvm::hash_combine(moduleHash, inst->getOpcode());
-      }
-      // And finally add the opcode for this instruction itself to the hash.
-      moduleHash = llvm::hash_combine(moduleHash, instruction.getOpcode());
-    }
-  }
-
-  return std::to_string(size_t(moduleHash));
 }
 
 //===----------------------------------------------------------------------===//
 // LLVMCacheKeyInfo implementation
 //===----------------------------------------------------------------------===//
 
-std::string LLVMCacheKeyInfo::hashKey(LLVMCacheKeyInfo::KeyTy key) {
-  return std::visit(
-      [](auto &&key) -> std::string {
-        using T = std::decay_t<decltype(key)>;
-        if constexpr (std::is_same_v<T, FuncOp>)
-          return hashOpWithRegions(key);
-        else if constexpr (std::is_same_v<T, llvm::Module *>)
-          return hashLLVMModule(key);
-        else
-          return key.getLlvm().str();
-      },
-      key);
-}
-
-//===----------------------------------------------------------------------===//
-// RaisingCacheKeyInfo implementation
-//===----------------------------------------------------------------------===//
-
-std::string RaisingCacheKeyInfo::hashKey(RaisingCacheKeyInfo::KeyTy key) {
-  return std::to_string(size_t(hashNoRegionOperation(key)));
+std::string LLVMCacheKeyInfo::hashKey(ModuleOp key) {
+  return hashOpWithRegions(key);
 }
 
 //===----------------------------------------------------------------------===//
 // CompositeObjectCacheKeyInfo implementation
 //===----------------------------------------------------------------------===//
 
-std::string CompositeObjectCacheKeyInfo::hashKey(llvm::Module *key) {
-  return hashLLVMModule(key);
+std::string CompositeObjectCacheKeyInfo::hashKey(ModuleOp key) {
+  return hashOpWithRegions(key);
 }
 
 //===----------------------------------------------------------------------===//
 // lowerToLLVM implementation
 //===----------------------------------------------------------------------===//
 
-/// Slice the dependencies of an operation out of the existing module into the
-/// self-contained slice module.
-static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
-                              const mlir::SymbolTable &symtab) {
-  // Extract a dependency from the IR parent module and place it into the slice
-  // module if it does not already exist. If a symbol was copied, return it.
-  auto extractDependency = [&](StringAttr name) -> Operation * {
-    // Don't copy the symbol if it is already copied.
-    if (sliceSymtab.lookup(name))
-      return nullptr;
-
-    Operation *symbol = symtab.lookup(name);
-    // If the symbol reference attribute doesn't reference a symbol, ignore it.
-    // Missing symbol references are caught by the verifier.
-    if (!symbol)
-      return nullptr;
-
-    // Clone the symbol into the new symbol table.
-    Operation *copy = symbol->clone();
-    sliceSymtab.insert(copy);
-    return copy;
-  };
-
-  std::function<void(Type)> checkForRefType = [&](Type type) {
-    if (auto ref = dyn_cast<RefType>(type)) {
-      Operation *decl = extractDependency(ref.getName().getAttr());
-      // Recurse on the type declaration.
-      if (decl)
-        sliceDependencies(decl, sliceSymtab, symtab);
-    } else if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
-      itf.walkSubTypes(checkForRefType);
-    }
-  };
-  auto extractDependencies = [&](Operation *op) {
-    // Extract references to type declarations.
-    op->getAttrDictionary().walkSubTypes(checkForRefType);
-    llvm::for_each(op->getResultTypes(), checkForRefType);
-    for (Region &region : op->getRegions())
-      llvm::for_each(region.getArgumentTypes(), checkForRefType);
-
-    // Extract references to functions. Mark copied functions as module private
-    // and recurse.
-    llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
-      Operation *symbol = extractDependency(op.getCalleeAttr().getAttr());
-      if (auto func = dyn_cast_if_present<FuncOp>(symbol)) {
-        sliceDependencies(func, sliceSymtab, symtab);
-      }
-    });
-  };
-  op->walk(extractDependencies);
-}
-
-static LogicalResult convertToLLVM(ModuleOp module, StringRef name) {
+static LogicalResult convertToLLVM(ModuleOp module) {
   mlir::PassManager pm(module.getContext());
   LowerToLLVMOptions options;
-
   pm.addPass(createLowerZAPToPOP());
-
-  if (!name.empty())
-    options.topLevelKernel = name.str();
-
   buildLowerToLLVMPipeline(pm, options);
   return pm.run(module);
 }
 
-/// This compiles a given `kgen.func` to LLVM IR, and then stores the LLVM IR
-/// and the function itself in the two caches. It also replaces `func` in the IR
-/// with a new `kgen.precompiled.llvm` that is returned for convenience.
-FailureOr<PrecompiledLLVMOp>
-ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
-  // So first, check if the result is already in the cache.
-  CacheFindResult precompiledOr = caches.getLLVM().find(func);
-  if (precompiledOr.hasValue()) {
-    auto precompiled = replaceSymbolFromBytecode(func, symtab, *precompiledOr);
-    if (succeeded(precompiled))
-      return llvm::cast<PrecompiledLLVMOp>(*precompiled);
-  }
+//===----------------------------------------------------------------------===//
+// lowerAllFuncsToLLVM
+//===----------------------------------------------------------------------===//
 
-  // Create a new module for this single func. This will go away at the end
-  // of this function.
-  mlir::OwningOpRef<mlir::ModuleOp> singleModule =
-      mlir::ModuleOp::create(func->getLoc());
-
-  // If the func is exported, then re-export it.
-  auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
-  if (exportedSymbols.contains(func.getNameAttr())) {
-    builder.create<ExportOp>(
-        func->getLoc(),
-        builder.getArrayAttr({FlatSymbolRefAttr::get(func.getNameAttr())}));
-  }
-
-  // Clone any symbols used by this func into the module as well.
-  mlir::SymbolTable sliceSymtab(*singleModule);
-
-  // Traverse the call graph and clone all the callees into this module.
-  sliceDependencies(func, sliceSymtab, symtab);
-
-  // Clone the func into this new module. We don't want to remove it from
-  // the current module.
-  sliceSymtab.insert(func.clone());
-
-  if (failed(convertToLLVM(*singleModule, func.getName())))
-    return failure();
+std::unique_ptr<llvm::Module>
+ObjectCompiler::lowerKGENToLLVM(ModuleOp module, llvm::LLVMContext &ctx) {
+  if (failed(convertToLLVM(module)))
+    return nullptr;
 
   // Turn the thing into an LLVM module.
-  llvm::LLVMContext ctx;
-  auto llvmModule =
-      mlir::translateModuleToLLVMIR(*singleModule, ctx, func.getName());
+  return mlir::translateModuleToLLVMIR(module, ctx);
+}
 
-  // Add any non-external function to the 'llvm.used' list. This means creating
-  // the global value, and therefore mucking about with some llvm:: types.
-  SmallVector<llvm::Constant *> funcPtrs;
-  for (auto &f : llvmModule->functions())
-    if (!f.isDeclarationForLinker() && !f.isIntrinsic() &&
-        f.getLinkage() != llvm::GlobalValue::ExternalLinkage)
-      funcPtrs.push_back(&f); //< Functions are constants.
-
-  // If we have any functions we processed then set up the llvm.used global.
-  if (!funcPtrs.empty()) {
-    llvm::ArrayType *usedTy =
-        llvm::ArrayType::get(llvm::PointerType::get(ctx, 0), funcPtrs.size());
-
-    auto *llvmUsed = new llvm::GlobalVariable(
-        *llvmModule, usedTy, false, llvm::GlobalValue::AppendingLinkage,
-        llvm::ConstantArray::get(usedTy, funcPtrs), "llvm.used");
-    llvmUsed->setSection("llvm.metadata");
+std::unique_ptr<llvm::Module>
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
+  OwningOpRef<ModuleOp> singleModule = produceStandaloneModule();
+  CacheFindResult foundModule = caches.getLLVM().find(*singleModule);
+  if (foundModule.hasValue()) {
+    // Get the composite module.
+    auto llvmModuleOr = llvm::parseBitcodeFile(*foundModule, ctx);
+    if (auto err = llvmModuleOr.takeError()) {
+      mlir::emitError(singleModule->getLoc()) << toString(std::move(err));
+      return nullptr;
+    }
+    std::unique_ptr<llvm::Module> llvmModule = std::move(*llvmModuleOr);
+    return llvmModule;
   }
+
+  auto llvmModule = lowerKGENToLLVM(*singleModule, ctx);
+  if (!llvmModule)
+    return nullptr;
 
   std::string bytes;
   llvm::raw_string_ostream stream(bytes);
@@ -257,79 +128,13 @@ ObjectCompiler::lowerToLLVM(FuncOp func, TargetInfoAttr target) {
 
   // Get the memory buffer and write it into the cache.
   auto moduleBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
-  auto keyOr = caches.getLLVM().insert(&*llvmModule, *moduleBuf);
-  if (failed(keyOr))
-    return mlir::emitError(func->getLoc()) << keyOr.getError();
-
-  std::string keyHash = std::move(*keyOr);
-
-  // Now we can create the new op at the location of the old op.
-  OpBuilder b(func->getContext());
-
-  // Remove the previous function from the symbol table.
-  symtab.remove(func);
-
-  // Create the new op.
-  auto newOp =
-      b.create<PrecompiledLLVMOp>(func->getLoc(), func, target, keyHash);
-
-  // Cache from the func to this new op so we can skip doing this in the future.
-  stream.str().clear();
-  mlir::writeBytecodeToFile(newOp, stream);
-  auto precompiledBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
-  if (auto err = caches.getLLVM().insert(func, *precompiledBuf))
-    return mlir::emitError(func->getLoc()) << err.getError();
-
-  // Finally, we'll also cache from this new op to the existing
-  // function.
-  stream.str().clear();
-  mlir::writeBytecodeToFile(func, stream);
-  auto funcBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
-  if (auto err = caches.getRaising().insert(newOp, *funcBuf))
-    return mlir::emitError(func->getLoc()) << err.getError();
-
-  // RAUW and delete the original func.
-  symtab.insert(newOp, ++Block::iterator(func));
-  func.erase();
-
-  // And return the new op we just created.
-  return newOp;
-}
-
-//===----------------------------------------------------------------------===//
-// lowerAllFuncsToLLVM
-//===----------------------------------------------------------------------===//
-
-LogicalResult ObjectCompiler::lowerAllFuncsToLLVM(TargetInfoAttr target) {
-  for (auto f : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
-    auto llvmFuncOr = lowerToLLVM(f, target);
-    if (failed(llvmFuncOr))
-      return mlir::emitError(f->getLoc()) << "lowering to llvm failed";
+  auto keyOr = caches.getLLVM().insert(*singleModule, *moduleBuf);
+  if (failed(keyOr)) {
+    mlir::emitError(singleModule->getLoc()) << keyOr.getError();
+    return nullptr;
   }
-  return success();
-}
 
-//===----------------------------------------------------------------------===//
-// raiseFromLLVM
-//===----------------------------------------------------------------------===//
-
-/// Backtrack up the compilation stack and get back the function that was used
-/// to generate the `kgen.precompiled.llvm`.
-FailureOr<FuncOp> ObjectCompiler::raiseFromLLVM(PrecompiledLLVMOp precompiled) {
-  CacheFindResult funcBufOr = caches.getRaising().find(precompiled);
-  if (funcBufOr.isError())
-    return mlir::emitError(precompiled->getLoc()) << funcBufOr.getError();
-  if (!funcBufOr.hasValue())
-    return mlir::emitError(precompiled->getLoc())
-           << "could not find corresponding function IR";
-
-  // It was in the cache, so do the replacement.
-  FailureOr<Operation *> func =
-      replaceSymbolFromBytecode(precompiled, symtab, *funcBufOr);
-  if (failed(func))
-    return failure();
-
-  return llvm::cast<FuncOp>(*func);
+  return llvmModule;
 }
 
 //===----------------------------------------------------------------------===//
@@ -352,9 +157,10 @@ public:
 
 void EmitLLVMPass::runOnOperation() {
   ObjectCompiler compiler(".kgen_cache", getOperation());
-  TargetInfoAttr target = TargetInfoAttr::getForHost(&getContext());
   // Lower all functions to LLVM.
-  if (failed(compiler.lowerAllFuncsToLLVM(target)))
+  llvm::LLVMContext ctx;
+  auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);
+  if (!llvmModule)
     return signalPassFailure();
 
   // We might have an output file.
@@ -368,40 +174,11 @@ void EmitLLVMPass::runOnOperation() {
     }
   }
 
-  // Get the compiled modules and print each one.
-  llvm::LLVMContext ctx;
-  SmallVector<std::unique_ptr<llvm::Module>> modules;
-  for (auto llvm : getOperation().getOps<PrecompiledLLVMOp>()) {
-    CacheFindResult moduleOr = compiler.getCaches().getLLVM().find(llvm);
-    if (moduleOr.isError()) {
-      mlir::emitError(llvm.getLoc()) << moduleOr.getError();
-      return signalPassFailure();
-    }
-    assert(moduleOr.hasValue() && "Given a kgen.precompiled.llvm, we must have "
-                                  "an llvm object in the cache.");
-
-    auto llvmModuleOr = llvm::parseBitcodeFile(*moduleOr, ctx);
-    if (auto err = llvmModuleOr.takeError()) {
-      mlir::emitError(llvm->getLoc()) << toString(std::move(err));
-      return signalPassFailure();
-    }
-    modules.push_back(std::move(*llvmModuleOr));
-  }
-
-  auto &firstModule = modules.front();
-  for (auto &m : llvm::drop_begin(modules))
-    if (llvm::Linker::linkModules(*firstModule, std::move(m),
-                                  llvm::Linker::OverrideFromSrc)) {
-      mlir::emitError(getOperation().getLoc())
-          << "could not link LLVM modules together";
-      return signalPassFailure();
-    }
-
   if (outputFile) {
-    firstModule->print(outputFile->os(), nullptr);
+    llvmModule->print(outputFile->os(), nullptr);
     outputFile->keep();
     return;
   }
 
-  firstModule->print(llvm::outs(), nullptr);
+  llvmModule->print(llvm::outs(), nullptr);
 }

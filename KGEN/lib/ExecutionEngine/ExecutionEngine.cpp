@@ -167,39 +167,24 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 /// Add the given module to the execution engine. This slices all public funcs
 /// out of the module with their dependencies to generate self-contained object
 /// files.
-// TODO: The slicing -> convert to LLVM -> createJITDylib + compile has natural
-//       parallelism that we aren't taking advantage of.
-M::ErrorOrSuccess ExecutionEngine::add(mlir::ModuleOp module,
-                                       ArrayRef<FuncOp> only) {
-  mlir::OwningOpRef<ModuleOp> cloned = module.clone();
-  compiler = std::make_unique<ObjectCompiler>(".kgen_cache", *cloned);
+M::ErrorOrSuccess ExecutionEngine::add(ModuleOp module,
+                                       ArrayRef<FuncOp> exports,
+                                       StringRef libName) {
+  // Create the set of symbols to export.
+  DenseSet<StringAttr> exportedSymbols;
+  for (auto e : exports)
+    exportedSymbols.insert(e.getSymNameAttr());
 
-  // Loop over all the funcs in the module and perform non-destructive
-  // slicing, then push them to LLVM IR and compile them to objects.
-  for (auto func : module.getOps<KGEN::FuncOp>()) {
-    // Apply the filter.
-    if (!only.empty() && !llvm::is_contained(only, func))
-      continue;
+  compiler = std::make_unique<ObjectCompiler>(".kgen_cache", module,
+                                              std::move(exportedSymbols));
 
-    // Lower to LLVM from the cloned module.
-    auto llvmOr =
-        compiler->lowerToLLVM(cloned->lookupSymbol<FuncOp>(func.getSymName()),
-                              TargetInfoAttr::getForHost(func->getContext()));
-    if (failed(llvmOr))
-      return M::Error("failed to compile to LLVM");
+  // Produce a standalone object for all the exports.
+  auto objOr = compiler->produceStandaloneObject(
+      TargetInfoAttr::getForHost(module->getContext()), true);
+  if (failed(objOr))
+    return Error("failed to produce standalone object");
 
-    // Produce a standalone object.
-    auto standaloneOr =
-        compiler->produceStandaloneObject({func.getSymName()}, /*isJIT=*/true);
-    if (failed(standaloneOr))
-      return M::Error("failed to produce standalone object");
-
-    // Add this new standalone object to the execution engine.
-    if (auto err = add(func.getSymName(), std::move(*standaloneOr)))
-      return err;
-  }
-
-  return success();
+  return add(libName, std::move(*objOr));
 }
 
 ErrorOrSuccess ExecutionEngine::add(StringRef name,

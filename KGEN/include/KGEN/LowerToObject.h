@@ -15,94 +15,65 @@
 #include <string>
 
 namespace llvm {
+class LLVMContext;
 class Module;
-}
+} // namespace llvm
 
 namespace M::KGEN {
-/// Provides a cache key for mapping from a `kgen.precompiled.llvm` back up to a
-/// `kgen.func`.
-struct RaisingCacheKeyInfo {
-  using KeyTy = PrecompiledLLVMOp;
-  static std::string hashKey(PrecompiledLLVMOp key);
-};
-
-using RaisingCache = M::BlobCache<RaisingCacheKeyInfo>;
-
-/// Provide a way to hash `kgen.precompiled.func` and `kgen.precompiled.llvm`
-/// ops to index into the LLVM cache. The key can be any of
-/// `kgen.precompiled.func`, `kgen.precompiled.llvm` or an LLVM module. We have
-/// such an...interesting key type because we have many different things we'd
-/// like to store in the same cache - we'd like the mapping from
-/// `kgen.precompiled.func` -> `kgen.precompiled.llvm` and a mapping from
-/// `kgen.precompiled.llvm` or `llvm::Module` the symbol's serialized LLVM
-/// bytecode.
+/// Provide a way to hash an mlir::Module in order to map from the mlir::Module
+/// to the corresponding llvm::Module. These modules are usually composites, but
+/// don't have to be - this key simply provides a 1:1 map from mlir::Module to
+/// llvm::Module.
 struct LLVMCacheKeyInfo {
-  using KeyTy = std::variant<FuncOp, PrecompiledLLVMOp, llvm::Module *>;
-  static std::string hashKey(KeyTy key);
+  using KeyTy = ModuleOp;
+  static std::string hashKey(ModuleOp key);
 };
 
-/// Provides 2 things: a mapping from `kgen.precompiled.func` to
-/// `kgen.precompiled.llvm`, and storage for llvm::Module objects that we have
-/// already stored.
+/// Stores llvm::Module objects as bitcode, indexed by an MLIR module.
 using LLVMCache = M::BlobCache<LLVMCacheKeyInfo>;
 
-/// Provides a way to hash a composite llvm::Module. This will be used to map a
-/// compiled object for that composite. This allows us to avoid recompiling
-/// composite modules whenever possible.
+/// Provides a way to hash a composite mlir::Module in order to map from that
+/// module to a compiled object for that module. This allows us to avoid both
+/// the LLVM lowering *and* object file emission.
 struct CompositeObjectCacheKeyInfo {
-  using KeyTy = llvm::Module *;
-  static std::string hashKey(llvm::Module *key);
+  using KeyTy = ModuleOp;
+  static std::string hashKey(ModuleOp key);
 };
 
-/// Provides a mapping from composite llvm::Module to the bytes of the object
-/// file for that composite. A composite module is created when we produce a
-/// standalone object - we take the modules for each of the symbols and merge
-/// them together, then produce a single object for that merged (composite)
-/// module.
+/// Provides a mapping from a composite mlir::Module to the bytes of the object
+/// file for that module. A composite module is created when we produce a
+/// standalone object - we take several symbols and merge them together, then
+/// produce a single object for that merged (composite) module.
 using CompositeObjectCache = M::BlobCache<CompositeObjectCacheKeyInfo>;
 
 /// Provides a basic way to interact with the set of caches needed
 /// lowering/raising to/from LLVM and objects.
 ///
 /// Cache Responsibilities:
-///   RaisingCache - Stores a mapping from a lower-level op (i.e. object) to a
-///     higher-level op (i.e. llvm). This allows us to raise the IR from a
-///     lowered representation to do things like walking the original function,
-///     or LTO-style optimizations.
-///   LLVMCache - Stores several mappings:
-///     - `kgen.func` -> `kgen.precompiled.llvm`: This is so that we don't have
-///       to re-emit LLVM.
-///     - `kgen.precompiled.llvm` -> llvm::Module: This is because
-///       `kgen.precompiled.llvm` is largely intended as a cache reference.
-///     - llvm::Module -> llvm::Module: This is the main purpose of the cache -
-///       to store llvm::Modules as bitcode.
-///   CompositeObjectCache - Stores a mapping from a LLVM module made up of the
+///   LLVMCache - Stores a mapping from a KGEN module made up of any number of
+///     symbols to the llvm::Module produced by lowering that mlir::Module to
+///     LLVM.
+///   CompositeObjectCache - Stores a mapping from a KGEN module made up of the
 ///     modules from multiple symbols to the object file produced by compiling
 ///     that composite.
 class LoweringCacheCollection {
 public:
   explicit LoweringCacheCollection(StringRef basePath)
-      : raising(getDefaultBackendChain(
-            (std::filesystem::path(basePath.str()) / "raising").string())),
-        llvm(getDefaultBackendChain(
+      : llvm(getDefaultBackendChain(
             (std::filesystem::path(basePath.str()) / "llvm").string())),
         composite(getDefaultBackendChain(
             (std::filesystem::path(basePath.str()) / "composite").string())) {}
 
-  RaisingCache &getRaising() { return raising; }
   LLVMCache &getLLVM() { return llvm; }
   CompositeObjectCache &getComposite() { return composite; }
 
 private:
-  RaisingCache raising;
   LLVMCache llvm;
   CompositeObjectCache composite;
 };
 
 /// The purpose of this class is to provide methods to lower concrete KGEN
-/// functions to LLVM, and then to objects. It also provides methods that allow
-/// the user to raise from an object, to LLVM, and even back to the original
-/// function.
+/// functions to LLVM, and then to objects.
 class ObjectCompiler {
 public:
   ObjectCompiler(StringRef basePath, ModuleOp module)
@@ -112,33 +83,20 @@ public:
         exportedSymbols.insert(sym.getAttr());
   }
 
-  /// Given a FuncOp, lower it to LLVM and turn it into an LLVM module.
-  /// At this point, the target must be provided. This function will replace
-  /// `func` in the IR with a `kgen.precompiled.llvm`, and return the op for
-  /// convenience. It will cache the original function in bytecode format
-  /// inside `funcCache`, and store the LLVM module in LLVMCache.
-  FailureOr<PrecompiledLLVMOp> lowerToLLVM(FuncOp func, TargetInfoAttr target);
+  /// Construct an ObjectCompiler with a specific set of exports.
+  ObjectCompiler(StringRef basePath, ModuleOp module,
+                 DenseSet<StringAttr> exports)
+      : caches(basePath), module(module), symtab(module),
+        exportedSymbols(std::move(exports)) {}
 
-  /// Lower all `kgen.func` to llvm and populate them in the cache. This
-  /// modifies the compiler-held module in-place.
-  LogicalResult lowerAllFuncsToLLVM(TargetInfoAttr target);
+  /// Lower all exported `kgen.func` to llvm and populate the composite module
+  /// in the cache. Returns the LLVM module on success, and nullptr on failure.
+  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx);
 
-  /// Backtrack up the compilation stack - given a `kgen.precompiled.llvm`,
-  /// replace it with the `kgen.func` it came from if possible.
-  FailureOr<FuncOp> raiseFromLLVM(PrecompiledLLVMOp precompiled);
-
-  /// Slices the call graph for `which` to produce a standalone object. If
-  /// slicing the call graph is not possible, it simply returns the object
-  /// already in the cache.
+  /// Slices the call graph for all exported symbols to produce a standalone
+  /// object.
   FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-  produceStandaloneObject(ArrayRef<StringRef> symbols, bool isJIT);
-
-  /// Collects all of the `kgen.precompiled.llvm` in the module and slices the
-  /// call graph for them to produce a single standalone object. If slicing the
-  /// call graph is not possible, it simply returns the object already in the
-  /// cache.
-  FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-  produceStandaloneObject(bool isJIT);
+  produceStandaloneObject(TargetInfoAttr target, bool isJIT);
 
   /// Get access to the symbol table the compiler holds.
   mlir::SymbolTable &getSymbolTable() { return symtab; }
@@ -153,6 +111,14 @@ public:
   }
 
 private:
+  /// Produce a standalone MLIR module by slicing out the dependencies of the
+  /// provided kgen.export op.
+  OwningOpRef<ModuleOp> produceStandaloneModule();
+
+  /// Lower a KGEN module to an LLVMIR module.
+  static std::unique_ptr<llvm::Module> lowerKGENToLLVM(ModuleOp module,
+                                                       llvm::LLVMContext &ctx);
+
   /// The caches needed for lowering/raising.
   LoweringCacheCollection caches;
 

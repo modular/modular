@@ -686,9 +686,14 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Fix up the linkage for the exported symbols.
   SymbolTable symtab(theModule);
-  for (FlatSymbolRefAttr sym : publicSymbols)
+  for (FlatSymbolRefAttr sym : publicSymbols) {
+    // Have to add the public symbols to the topLevelFuncs list.
+    topLevelFuncs.push_back(sym.getValue().str());
+
+    // And if it's public, set it to external linkage.
     if (auto llvmFunc = symtab.lookup<LLVM::LLVMFuncOp>(sym.getAttr()))
       llvmFunc.setLinkage(LLVM::Linkage::External);
+  }
 
   // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, topLevelFuncs)))

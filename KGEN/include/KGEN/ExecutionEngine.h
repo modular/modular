@@ -70,8 +70,10 @@ public:
   static ErrorOr<ExecutionEngine> create();
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
-  /// every func and generate self-contained libraries.
-  ErrorOrSuccess add(mlir::ModuleOp module, ArrayRef<FuncOp> only = {});
+  /// every func and generate self-contained libraries. Uses `libName` as the
+  /// name for the JITDylib to avoid ODR violations.
+  ErrorOrSuccess add(ModuleOp module, ArrayRef<FuncOp> exports,
+                     StringRef libName);
 
   /// Add an object to the JIT.
   ErrorOrSuccess add(StringRef libName,

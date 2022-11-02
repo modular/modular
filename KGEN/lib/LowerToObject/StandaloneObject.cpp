@@ -10,6 +10,7 @@
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -31,107 +32,96 @@ using namespace KGEN;
 using LLVMModuleSet = SmallVector<std::unique_ptr<llvm::Module>>;
 using ObjectSet = SmallVector<std::unique_ptr<llvm::MemoryBuffer>>;
 
-/// This struct provides the context necessary to provide incremental raising
-/// and call graph slicing. Its explicit purpose is to provide a recursive
-/// slice, which will walk the call graph and raise anything that isn't already
-/// in the IR.
-namespace {
-struct CallGraphSlicer {
-  llvm::LLVMContext ctx;
-  /// List of llvm::Modules that we have managed to slice out of the call graph.
-  LLVMModuleSet moduleSet;
-
-  /// The compiler instance we're currently using.
-  ObjectCompiler &compiler;
-
-  /// Use dense sets to check if we've already seen something.
-  DenseSet<StringAttr> seenLLVMSymbols;
-
-  /// Construct a CallGraphSlicer with a location for error reporting.
-  CallGraphSlicer(ObjectCompiler &compiler)
-      : compiler(compiler), dbgs(llvm::dbgs()) {}
-
-  /// Slice the PrecompiledLLVMOp's dependencies out of the IR by recursively
-  /// raising it and its callees to gather the whole list of modules we need to
-  /// combine together.
-  LogicalResult slice(Location loc, StringRef symbol);
-
-  mlir::raw_indented_ostream dbgs;
-};
-} // namespace
-
 //===----------------------------------------------------------------------===//
-// CallGraphSlicer::slice
+// produceStandaloneModule
 //===----------------------------------------------------------------------===//
 
-LogicalResult CallGraphSlicer::slice(Location loc, StringRef symbol) {
-  LLVM_DEBUG(dbgs << "Slicing for " << symbol << "...\n");
-  auto llvmOp = compiler.getSymbolTable().lookup<PrecompiledLLVMOp>(symbol);
+/// Slice the dependencies of an operation out of the existing module into the
+/// self-contained slice module.
+static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
+                              const mlir::SymbolTable &symtab) {
+  // Extract a dependency from the IR parent module and place it into the slice
+  // module if it does not already exist. If a symbol was copied, return it.
+  auto extractDependency = [&](StringAttr name) -> Operation * {
+    // Don't copy the symbol if it is already copied.
+    if (sliceSymtab.lookup(name))
+      return nullptr;
 
-  // If we don't have an llvm op for this, we've already visited it.
-  if (!llvmOp) {
-    if (compiler.getSymbolTable().lookup<FuncOp>(symbol)) {
-      LLVM_DEBUG(dbgs << "Already have LLVM for " << symbol << "\n");
-      return success();
+    Operation *symbol = symtab.lookup(name);
+    // If the symbol reference attribute doesn't reference a symbol, ignore it.
+    // Missing symbol references are caught by the verifier.
+    if (!symbol)
+      return nullptr;
+
+    // Clone the symbol into the new symbol table.
+    Operation *copy = symbol->clone();
+    sliceSymtab.insert(copy);
+    return copy;
+  };
+
+  std::function<void(Type)> checkForRefType = [&](Type type) {
+    if (auto ref = dyn_cast<RefType>(type)) {
+      Operation *decl = extractDependency(ref.getName().getAttr());
+      // Recurse on the type declaration.
+      if (decl)
+        sliceDependencies(decl, sliceSymtab, symtab);
+    } else if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
+      itf.walkSubTypes(checkForRefType);
     }
-    return mlir::emitError(loc)
-           << "no function named '@" << symbol << "' found";
+  };
+  auto extractDependencies = [&](Operation *op) {
+    // Extract references to type declarations.
+    op->getAttrDictionary().walkSubTypes(checkForRefType);
+    llvm::for_each(op->getResultTypes(), checkForRefType);
+    for (Region &region : op->getRegions())
+      llvm::for_each(region.getArgumentTypes(), checkForRefType);
+
+    // Extract references to functions. Mark copied functions as module private
+    // and recurse.
+    llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
+      Operation *symbol = extractDependency(op.getCalleeAttr().getAttr());
+      if (auto func = dyn_cast_if_present<FuncOp>(symbol))
+        sliceDependencies(func, sliceSymtab, symtab);
+    });
+  };
+  op->walk(extractDependencies);
+}
+
+OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
+  // Create a new module for these funcs. This will go away at the end
+  // of this function.
+  mlir::OwningOpRef<mlir::ModuleOp> singleModule =
+      mlir::ModuleOp::create(module->getLoc());
+
+  mlir::SymbolTable sliceSymtab(*singleModule);
+
+  // Re-export exported functions.
+  auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
+
+  SmallVector<FlatSymbolRefAttr> exportedSymbolVec;
+  for (auto exportedSym : exportedSymbols)
+    exportedSymbolVec.push_back(FlatSymbolRefAttr::get(exportedSym));
+
+  if (!exportedSymbolVec.empty()) {
+    builder.create<ExportOp>(
+        module->getLoc(),
+        builder.getArrayAttr(ArrayRef<Attribute>{exportedSymbolVec.begin(),
+                                                 exportedSymbolVec.end()}));
   }
 
-  // Read the LLVM module out of the LLVM cache.
-  CacheFindResult llvmModuleBufOr = compiler.getCaches().getLLVM().find(llvmOp);
-  if (llvmModuleBufOr.isError())
-    return emitError(llvmOp.getLoc()) << llvmModuleBufOr.getError();
-  // If the LLVM module is not in the cache, then we don't have to continue, but
-  // we have gathered the object we wanted so it's not a failure.
-  if (!llvmModuleBufOr.hasValue())
-    return success();
+  for (auto sym : exportedSymbols) {
+    auto func = symtab.lookup<FuncOp>(sym);
+    assert(func && "Unknown exported symbol");
 
-  // Parse the module to an in-memory object.
-  auto moduleOr = llvm::parseBitcodeFile(*llvmModuleBufOr, ctx);
-  if (auto err = moduleOr.takeError())
-    return emitError(llvmOp.getLoc()) << toString(std::move(err));
-  std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+    // Traverse the call graph and clone all the callees into this module.
+    sliceDependencies(func, sliceSymtab, symtab);
 
-  // Store the module in the moduleSet if we haven't already.
-  if (seenLLVMSymbols.insert(llvmOp.getNameAttr()).second)
-    moduleSet.push_back(std::move(module));
+    // Clone the func into this new module. We don't want to remove it from
+    // the current module.
+    sliceSymtab.insert(func.clone());
+  }
 
-  // Get the kgen.func out of the LLVM object.
-  FailureOr<FuncOp> funcOr = compiler.raiseFromLLVM(llvmOp);
-  if (failed(funcOr))
-    return failure();
-
-  LLVM_DEBUG(dbgs << "Raised to kgen.func:\n" << *funcOr << "\n");
-
-  // Now for each call, slice again.
-  auto walkDependency = [&](CallOp call) -> WalkResult {
-    auto callee = compiler.getSymbolTable().lookup(call.getCallee());
-    if (!callee)
-      return emitError(call.getLoc())
-             << "could not find callee " << call.getCallee();
-
-    LLVM_DEBUG(dbgs << "Found callee:\n"; callee->print(dbgs); dbgs << "\n");
-
-    // Now slice out the callers of the callee too.
-    LLVM_DEBUG(
-        dbgs
-        << "//"
-           "===---------------------------------------------------------------"
-           "-------===//\n");
-    dbgs.indent();
-    if (failed(slice(callee->getLoc(), call.getCallee())))
-      return WalkResult::interrupt();
-    dbgs.unindent();
-    LLVM_DEBUG(
-        dbgs
-        << "//"
-           "===---------------------------------------------------------------"
-           "-------===//\n");
-
-    return WalkResult::advance();
-  };
-  return failure(funcOr->walk(walkDependency).wasInterrupted());
+  return singleModule;
 }
 
 //===----------------------------------------------------------------------===//
@@ -139,56 +129,33 @@ LogicalResult CallGraphSlicer::slice(Location loc, StringRef symbol) {
 //===----------------------------------------------------------------------===//
 
 FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
-                                        bool isJIT) {
+ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-object");
   Location loc = module.getLoc();
 
-  // Grab the target information.
-  TargetInfoAttr theTarget =
-      (*module.getOps<PrecompiledLLVMOp>().begin()).getCompiledFor();
-
-  // Slice all of the precompiled objects into this set.
-  CallGraphSlicer slicer(*this);
-  for (auto symbol : symbols)
-    if (failed(slicer.slice(loc, symbol)))
-      return failure();
+  OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
 
   // Create the target machine.
-  auto machineOr = createTargetMachine(theTarget, isJIT);
+  auto machineOr = createTargetMachine(target, isJIT);
   if (failed(machineOr))
     return emitError(loc) << machineOr.getError();
-  auto &firstModule = slicer.moduleSet.front();
 
-  // If we have multiple modules, we have to link them together.
-  if (slicer.moduleSet.size() > 1) {
-    llvm::Linker linker(*firstModule);
-    for (auto &llvmModule : llvm::drop_begin(slicer.moduleSet)) {
-      // Set to linkonce because otherwise the private symbols get inserted as
-      // undefined symbols in the final object, which doesn't make a ton of
-      // sense, but there it is.
-      for (auto &f : llvmModule->functions())
-        if (!f.isIntrinsic() && !f.isDeclarationForLinker() &&
-            f.getLinkage() != llvm::GlobalValue::ExternalLinkage)
-          f.setLinkage(llvm::GlobalValue::LinkOnceAnyLinkage);
-
-      if (linker.linkInModule(std::move(llvmModule)))
-        return emitError(loc) << "could not link LLVM modules together";
-    }
-
-    // Erase the "llvm.used" global value, we don't need it because we have a
-    // single module and this will stymie inlining in cases where we might
-    // actually want it to stay.
-    if (llvm::GlobalVariable *used = firstModule->getNamedGlobal("llvm.used"))
-      used->eraseFromParent();
-  }
-
-  CacheFindResult objOr = getCaches().getComposite().find(&*firstModule);
+  CacheFindResult objOr = getCaches().getComposite().find(*slicedModule);
   if (objOr.hasValue())
     return objOr.takeValue();
 
+  // Lower everything to LLVM.
+  llvm::LLVMContext ctx;
+  std::unique_ptr<llvm::Module> llvmModule =
+      lowerKGENToLLVM(*slicedModule, ctx);
+  if (!llvmModule)
+    return failure();
+
+  // Set the data layout on the module.
+  llvmModule->setDataLayout((*machineOr)->createDataLayout());
+
   SmallVector<char, 0> objBuf;
-  if (failed(compileLLVMToObject(*firstModule, **machineOr, objBuf)))
+  if (failed(compileLLVMToObject(*llvmModule, **machineOr, objBuf)))
     return failure();
 
   // Turn it into a memory buffer so we can put it into the cache.
@@ -196,23 +163,9 @@ ObjectCompiler::produceStandaloneObject(ArrayRef<StringRef> symbols,
       std::move(objBuf), /*RequiresNullTerminator=*/false);
 
   // Insert the compiled object into the cache.
-  if (auto err = getCaches().getComposite().insert(&*firstModule, *obj))
+  if (auto err = getCaches().getComposite().insert(*slicedModule, *obj))
     return mlir::emitError(loc) << err.getError();
 
   // Return the object itself.
   return std::unique_ptr<llvm::MemoryBuffer>(std::move(obj));
-}
-
-//===----------------------------------------------------------------------===//
-// produceStandaloneObject(ModuleOp)
-//===----------------------------------------------------------------------===//
-
-FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-ObjectCompiler::produceStandaloneObject(bool isJIT) {
-  // Collect all of the `kgen.precompiled.llvm`.
-  SmallVector<StringRef> objs;
-  for (auto op : module.getOps<PrecompiledLLVMOp>())
-    objs.push_back(op.getName());
-
-  return produceStandaloneObject(objs, isJIT);
 }

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LowerToObject.h"
-#include "BytecodeUtils.h"
 #include "LowerToObjectImpl.h"
 #include "Support/ErrorOr.h"
 #include "Support/TempFile.h"
