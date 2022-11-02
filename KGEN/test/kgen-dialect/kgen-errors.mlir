@@ -621,7 +621,7 @@ kgen.generator.interface @InvalidTypeParamValue<a>() ->
 // expected-note @below {{@SomeType declared here}}
 kgen.struct.decl @SomeType<v, d> {}
 
-// expected-error @below {{typedef symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
+// expected-error @below {{!kgen.ref symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
 kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
     !kgen.ref<@SomeType<v = a, b = c>>
 
@@ -675,7 +675,7 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.ref<@Bar>) {
 kgen.struct.decl @ParamNamedA<A> {}
 
 kgen.generator @give_it_B<C>() {
-  // expected-error @below {{typedef symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
+  // expected-error @below {{!kgen.ref symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
   %0 = "a"() : () -> !kgen.ref<@ParamNamedA<B = C>>
   kgen.return
 }
