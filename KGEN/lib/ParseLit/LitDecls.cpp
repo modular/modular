@@ -69,17 +69,16 @@ std::pair<Type, ASTType> ASTDecl::getFullTypeForTypeReference() {
 ASTType ASTDecl::computeSelfTypeForStruct() {
   auto structOp = cast<LITStructDeclOp>(*this);
 
-// Figure out the expected type of self.
-#if 0 // FIXME: Handle parametric self references.
-  if (!structOp.getParamDecls().empty()) {
-    // TODO(Issue #4182)
-    structOp.emitError("cannot (yet) compute self type in parametric struct");
-    return {};
+  SmallVector<ParamBindAttr> parameters;
+  for (auto decl : structOp.getParamDecls()) {
+    // We're using the parameter from the type declaration scope in the
+    // parameter binding list.
+    auto ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
+    parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
   }
-#endif
 
   ParamBindArrayAttr selfParams =
-      ParamBindArrayAttr::get(structOp.getContext(), {});
+      ParamBindArrayAttr::get(structOp.getContext(), parameters);
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
