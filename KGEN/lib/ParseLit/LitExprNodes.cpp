@@ -380,31 +380,20 @@ auto AttributeRefNode::emitIR(ExprEmitter &emitter,
                         "TODO: cannot call function in parameter context");
       return {};
     }
-    // FIXME: Use the ASTType on baseLV.
-    auto eltType =
-        cast<POP::PointerType>(baseLV.getType()).getResolvedElementType();
-    if (!eltType) {
-      emitter.emitError(getLoc(), "cannot refer to values of type parameter")
-          << cast<POP::PointerType>(baseLV.getType()).getElementType();
-      return {};
-    }
 
-    auto [typeDecl, typeParams] =
-        emitter.shared.declResolver->getDeclAndParamsFromType(eltType);
-    if (!typeDecl) {
-      emitter.emitError(getLoc(), "cannot access a field in value of type ")
-          << eltType;
-      return {};
-    }
-
+    ASTDecl *typeDecl = baseVal.second.getDecl();
+    auto typeParams = baseVal.second.getParamValues();
     if (!typeParams.empty()) {
       emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-          << eltType;
+          << baseVal.second;
       return {};
     }
 
-    // FIXME: Look up the field decl using name lookup.
-    assert(isa<LITStructDeclOp>(*typeDecl) && "only have one type");
+    if (!isa<LITStructDeclOp>(*typeDecl)) {
+      emitter.emitError(getLoc(), "cannot access fields in type ")
+          << baseVal.second;
+      return {};
+    }
 
     // Find the field.
     ASTDecl *fieldDecl = emitter.lookupDecl(attrSpelling, getLoc(), *typeDecl,
