@@ -480,26 +480,26 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
 /// The first time we encounter a RefType, check to see if its parameter
 /// bindings agrees with the parameter declarations of the referred type
 /// dedclaration.
-void DeclParameterVerifier::verifyRefType(RefType typeDef) {
+void DeclParameterVerifier::verifyRefType(RefType refType) {
   // We only check this during the op verification phase.
   if (!symbolTable)
     return;
 
   auto decl =
-      symbolTable->lookup<KGENDeclInterface>(typeDef.getName().getAttr());
+      symbolTable->lookup<KGENDeclInterface>(refType.getName().getAttr());
   if (!decl) {
     hadError = true;
     emitError(curLocationCollecting.value())
-        << typeDef.getName() << " does not reference a KGEN type declaration";
+        << refType.getName() << " does not reference a KGEN type declaration";
     return;
   }
 
   SmallString<32> paramName("@");
-  paramName.append(typeDef.getName().getLeafReference());
+  paramName.append(refType.getName().getLeafReference());
   if (failed(verifyParamDeclsMatch(
-          "typedef symbol use",
+          "!kgen.ref symbol use",
           llvm::to_vector(llvm::map_range(
-              typeDef.getParamValues(),
+              refType.getParamValues(),
               [](ParamBindAttr value) { return value.getDecl(); })),
           curLocationCollecting.value(), paramName.c_str(),
           decl.getParamDeclsAttr(), decl.getLoc())))
