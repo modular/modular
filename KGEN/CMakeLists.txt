@@ -44,7 +44,7 @@ macro(_setup_libs)
       message(FATAL_ERROR "${lib} is not a target, it can't be linked")
     endif ()
     get_target_property(lib_include_dir ${lib} INCLUDE_DIRECTORIES)
-    set(KGEN_INCLUDE_FLAGS "${KGEN_INCLUDE_FLAGS} -I=${lib_include_dir}")
+    set(KGEN_INCLUDE_FLAGS ${KGEN_INCLUDE_FLAGS} "-I=${lib_include_dir}")
     list(APPEND KGEN_LIB_DEPENDS "${lib}")
   endforeach ()
 endmacro()
@@ -75,7 +75,7 @@ function(add_kgen_library target)
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
-      -gen-lib ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_INCLUDE_FLAGS} -o ${KGEN_OUTPUT}
+      -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
   )
