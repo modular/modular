@@ -180,11 +180,6 @@ ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
       ASTDecl(irDecl, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
-  // If this is a type definition, remember in in a special table so we can
-  // look up references from attributes.
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl))
-    typeSymbolDecls[structDecl.getNameAttr()] = decl;
-
   // If this has a parent and a name, insert it into the parents name table so
   // name lookup will resolve it.
   if (!parentDecl || !name)
@@ -253,21 +248,6 @@ ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
   decl.setResolvedType(
       ASTType(&decl, ParamBindArrayAttr::get(getContext(), {})));
   return decl;
-}
-
-/// If the specified type is a RefType that resolves to a (possibly
-/// parameterized) type, return the decl for the type and the parameters in
-/// the reference.  This returns null on error.
-std::pair<ASTDecl *, ParamBindArrayAttr>
-DeclResolver::getDeclAndParamsFromType(Type type) {
-  auto refType = dyn_cast<RefType>(type);
-  if (!refType)
-    return {};
-
-  auto it = typeSymbolDecls.find(refType.getName().getAttr());
-  if (it == typeSymbolDecls.end())
-    return {};
-  return {it->second, refType.getParamValues()};
 }
 
 /// Resolve all of the declarations that are visible.

@@ -63,11 +63,6 @@ public:
   ASTDecl &addMagicDecl(StringRef name, MagicDeclKind kind,
                         ASTDecl *parentDecl);
 
-  /// If the specified type is a RefType that resolves to a (possibly
-  /// parameterized) type, return the decl for the type and the parameters in
-  /// the reference.  This returns null on error.
-  std::pair<ASTDecl *, ParamBindArrayAttr> getDeclAndParamsFromType(Type type);
-
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
   LogicalResult resolve(ASTDecl &decl, DeclResolvedness howResolved,
@@ -95,9 +90,6 @@ private:
 private:
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
-
-  /// This is a mapping of MLIR symbol to decl for types.
-  DenseMap<StringAttr, ASTDecl *> typeSymbolDecls;
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;
