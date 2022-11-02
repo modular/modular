@@ -155,10 +155,11 @@ FullType ExprEmitter::emitType(const ExprNode *node) {
 
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
-ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc) {
-  ASTDecl *lookupResult = declScope.lookup(StringAttr::get(getContext(), name));
+ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
+                                 Twine errorMessage) {
+  ASTDecl *lookupResult = scope.lookup(StringAttr::get(getContext(), name));
   if (!lookupResult)
-    return emitError(loc, "unknown type name '" + name + "'"), nullptr;
+    return emitError(loc, errorMessage + " '" + name + "'"), nullptr;
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
@@ -304,7 +305,8 @@ FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
   auto *context = emitter.getContext();
 
   // Lookup the identifier.
-  ASTDecl *decl = emitter.lookupDecl(spelling, getLoc());
+  ASTDecl *decl = emitter.lookupDecl(spelling, getLoc(), emitter.declScope,
+                                     "unknown type name");
   if (!decl)
     return {};
   auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
@@ -382,24 +384,25 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
 
     // Figure out what field index this is.
     assert(isa<LITStructDeclOp>(*typeDecl) && "only have one type");
-    auto structOp = cast<LITStructDeclOp>(*typeDecl);
 
-    VarDeclOp foundVarDecl;
-    for (auto varDecl : structOp.getRegion().front().getOps<VarDeclOp>()) {
-      if (varDecl.getName() == attrSpelling) {
-        foundVarDecl = varDecl;
-        break;
-      }
-    }
-    if (!foundVarDecl) {
-      emitter.emitError(getLoc(), "")
-          << eltType << " object has no attribute '" << attrSpelling << "'";
+    // Find the field.
+    ASTDecl *fieldDecl = emitter.lookupDecl(attrSpelling, getLoc(), *typeDecl,
+                                            "object has no attribute");
+    if (!fieldDecl)
+      return {};
+
+    // TODO: Support method references some day.
+    auto varOp = dyn_cast_or_null<VarDeclOp>(fieldDecl->getOperation());
+    if (!varOp) {
+      emitter.emitError(getLoc(), "'" + attrSpelling + "' is not a field");
       return {};
     }
 
-    return LValue(emitter.builder->create<LITStructGEPOp>(
-        emitter.translateLocation(getLoc()), foundVarDecl.getType(),
-        foundVarDecl.getName(), baseLV));
+    // TODO(Issue #4321): Perform parameter substitution
+    Value resultGEP = emitter.builder->create<LITStructGEPOp>(
+        emitter.translateLocation(getLoc()), varOp.getType(),
+        varOp.getNameAttr(), baseLV);
+    return LValue(resultGEP);
   }
 
   // TODO: Handle parameter member references.
@@ -563,7 +566,8 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
   }
 
   // Lookup the identifier.
-  ASTDecl *decl = emitter.lookupDecl(baseDRE->spelling, getLoc());
+  ASTDecl *decl = emitter.lookupDecl(baseDRE->spelling, getLoc(),
+                                     emitter.declScope, "unknown type name");
   if (!decl)
     return {};
 

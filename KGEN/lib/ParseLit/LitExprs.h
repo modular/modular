@@ -272,7 +272,8 @@ public:
 
   /// Perform a name lookup in the current scope and return the named
   /// declaration.  This emits an error and returns null on error.
-  ASTDecl *lookupDecl(StringRef name, SMLoc loc);
+  ASTDecl *lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
+                      Twine errorMessage);
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
