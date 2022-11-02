@@ -10,6 +10,7 @@ add_modular_conversion_library(ParseLit
   LitExprParser.cpp
   LitLexer.cpp
   LitParserBase.cpp
+  LitSharedState.cpp
   LitStmtParser.cpp
   ParseLit.cpp
 

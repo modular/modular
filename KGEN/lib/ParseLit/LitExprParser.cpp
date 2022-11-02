@@ -73,6 +73,16 @@ public:
   ExprNode *getNoneExpr(SMLoc loc) { return alloc<NoneLiteralNode>(loc); };
 
 private:
+  template <typename T, typename... Args>
+  T *alloc(Args &&...args) {
+    return getSharedState().allocPersistent<T>(std::forward<Args>(args)...);
+  }
+
+  template <typename T>
+  ArrayRef<T> copyArrayRef(ArrayRef<T> elements) {
+    return getSharedState().getPersistentCopy(elements);
+  }
+
   /// Return true if the current token is the start of another statement, false
   /// if it is part of this one.
   bool isTokenStartOfNextStatement();
@@ -81,17 +91,6 @@ private:
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
-
-  /// Allocate an expression node into the expression bump pointer allocator.
-  template <typename T, typename... Args>
-  T *alloc(Args &&...args);
-
-  /// memcpy the specified ArrayRef into the expression allocator and return a
-  /// pointer to the new data.  This cannot be used with things that have
-  /// non-trivial copyctors/dtors because the expression allocator does run
-  /// destructors.
-  template <typename T>
-  ArrayRef<T> copyArrayRef(ArrayRef<T> elements);
 
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -119,31 +118,6 @@ bool ExprParser::isTokenStartOfNextStatement() {
   // If this token is on its own line and we care, then it is a new statement if
   // it is as indented (or less) than the statement.
   return tokIndent <= stmtIndent;
-}
-
-/// Allocate an expression node into the expression bump pointer allocator.
-template <typename T, typename... Args>
-T *ExprParser::alloc(Args &&...args) {
-  auto &allocator = getSharedState().persistentAllocator;
-  void *node = allocator.Allocate(sizeof(T), llvm::Align::Of<T>());
-  return new (node) T(std::forward<Args>(args)...);
-}
-
-/// memcpy the specified ArrayRef into the expression allocator and return a
-/// pointer to the new data.  This cannot be used with things that have
-/// non-trivial copyctors/dtors because the expression allocator does run
-/// destructors.
-template <typename T>
-ArrayRef<T> ExprParser::copyArrayRef(ArrayRef<T> elements) {
-  if (elements.empty())
-    return elements;
-
-  size_t dataSize = sizeof(T) * elements.size();
-  auto &allocator = getSharedState().persistentAllocator;
-  T *result =
-      static_cast<T *>(allocator.Allocate(dataSize, llvm::Align::Of<T>()));
-  memcpy(result, elements.data(), dataSize);
-  return ArrayRef<T>(result, elements.size());
 }
 
 //===----------------------------------------------------------------------===//

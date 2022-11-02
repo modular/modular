@@ -148,8 +148,8 @@ public:
   MagicDeclKind magicKind = MagicDeclKind::kNormal;
 
 private:
-  // ASTDecl is created by DeclResolver.
   friend class DeclResolver;
+  friend class LitSharedState;
   ASTDecl(IRDecl irDecl, Location loc, ASTDecl *parentDecl,
           LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
       : irDecl(irDecl), loc(loc), parentDecl(std::move(parentDecl)),

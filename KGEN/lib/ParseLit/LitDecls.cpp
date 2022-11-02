@@ -174,10 +174,8 @@ ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
                                Location loc, StringAttr name,
                                ASTDecl *parentDecl, LitLexerCursor cursor,
                                LitLexerCursor endCursor, ssize_t indentation) {
-  void *rawDeclPtr = sharedState.persistentAllocator.Allocate(sizeof(ASTDecl),
-                                                              alignof(ASTDecl));
-  ASTDecl *decl = new (rawDeclPtr)
-      ASTDecl(irDecl, loc, parentDecl, cursor, endCursor, indentation);
+  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
+      irDecl, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this has a parent and a name, insert it into the parents name table so

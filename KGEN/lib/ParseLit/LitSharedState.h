@@ -70,12 +70,39 @@ public:
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
 
-  /// This is used for memory that lives as long as the global parser does.
-  llvm::BumpPtrAllocator persistentAllocator;
-
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
   Location translateLocation(llvm::SMLoc loc);
+
+  /// Allocate an expression node into the persistent bump pointer allocator.
+  template <typename T, typename... Args>
+  T *allocPersistent(Args &&...args) {
+    void *node = persistentAllocator.Allocate(sizeof(T), llvm::Align::Of<T>());
+    return new (node) T(std::forward<Args>(args)...);
+  }
+
+  /// memcpy the specified ArrayRef into the persistent allocator and return a
+  /// pointer to the new data.  This cannot be used with things that have
+  /// non-trivial copyctors/dtors because the expression allocator does run
+  /// destructors.
+  template <typename T>
+  ArrayRef<T> getPersistentCopy(ArrayRef<T> elements) {
+    if (elements.empty())
+      return elements;
+
+    size_t dataSize = sizeof(T) * elements.size();
+    T *result = static_cast<T *>(
+        persistentAllocator.Allocate(dataSize, llvm::Align::Of<T>()));
+    memcpy(result, elements.data(), dataSize);
+    return ArrayRef<T>(result, elements.size());
+  }
+
+private:
+  /// This is used for memory that lives as long as the global parser does.
+  llvm::BumpPtrAllocator persistentAllocator;
+
+  class Impl;
+  std::unique_ptr<Impl> impl;
 };
 
 /// This type represents an AST type for a value or declaration, which is a
