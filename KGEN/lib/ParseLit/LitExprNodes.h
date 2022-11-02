@@ -35,7 +35,8 @@ struct IntLiteralNode final : public ExprNode {
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -51,7 +52,8 @@ struct FloatLiteralNode final : public ExprNode {
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -67,7 +69,8 @@ struct StringLiteralNode final : public ExprNode {
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -80,7 +83,8 @@ struct NoneLiteralNode final : public ExprNode {
     return node->kind == kNoneLiteral;
   }
   SMLoc getLoc() const override { return loc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -93,7 +97,8 @@ struct DeclRefNode final : public ExprNode {
   SMLoc getLoc() const override {
     return SMLoc::getFromPointer(spelling.data());
   }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -110,7 +115,8 @@ struct AttributeRefNode final : public ExprNode {
     return node->kind == kAttributeRef;
   }
   SMLoc getLoc() const override { return dotLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -124,7 +130,8 @@ struct CallNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kCall; }
   SMLoc getLoc() const override { return lparenLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -141,7 +148,8 @@ struct SubscriptNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
   SMLoc getLoc() const override { return lsquareLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -158,7 +166,8 @@ struct ParenExprNode final : public ExprNode {
     return node->kind == kParenExprNode;
   }
   SMLoc getLoc() const override { return lparenLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -174,7 +183,8 @@ struct TernaryOpNode final : public ExprNode {
   const SMLoc opLoc;
 
   SMLoc getLoc() const override { return opLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   std::pair<Type, ASTType> emitType(ExprEmitter &emitter) const override;
 };
 
@@ -190,7 +200,8 @@ struct BinOpNode final : public ExprNode {
     return node->kind >= kFirstBinOp && node->kind <= kLastBinOp;
   }
   SMLoc getLoc() const override { return opLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 
@@ -205,7 +216,8 @@ struct UnaryOpNode final : public ExprNode {
     return node->kind >= kFirstUnaryOp && node->kind <= klastUnaryOp;
   }
   SMLoc getLoc() const override { return opLoc; }
-  AnyValue emitIR(ExprEmitter &emitter, FullType contextualType) const override;
+  AnyValueAndASTType emitIR(ExprEmitter &emitter,
+                            FullType contextualType) const override;
   FullType emitType(ExprEmitter &emitter) const override;
 };
 

@@ -109,11 +109,11 @@ Value ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
 /// null if emission fails.
 TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
   auto valueRep = node->emitIR(*this);
-  if (!valueRep)
+  if (!valueRep.first)
     return {};
 
   // If this is a parameter, return it.
-  if (auto attr = valueRep.getIfMValue())
+  if (auto attr = valueRep.first.getIfMValue())
     return attr;
 
   emitError(node->getLoc(), message);
@@ -128,7 +128,7 @@ TypedAttr ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
 /// valid LValue.
 LValue ExprEmitter::emitLValue(const ExprNode *node, FullType contextualType,
                                const Twine &message) {
-  AnyValue anyValue = node->emitIR(*this, contextualType);
+  AnyValue anyValue = node->emitIR(*this, contextualType).first;
   if (!anyValue)
     return {}; // Error already diagnosed.
   if (LValue lValue = anyValue.getIfLValue())
@@ -147,7 +147,7 @@ FullType ExprEmitter::emitType(const ExprNode *node) {
   // TypeCheckErrorType to simplify clients.
   if (!result.first) {
     result.first = TypeCheckErrorType::get(getContext());
-    result.second = ASTType(shared.typeCheckErrorTypeDecl);
+    result.second = shared.getTypeCheckErrorType();
   }
   // TODO: Should this return an magic decl marked erroneous?
   return result;
@@ -179,15 +179,16 @@ ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
-AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
-                                FullType contextualType) const {
+auto IntLiteralNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
-  return IntegerAttr::get(IndexType::get(emitter.getContext()), value);
+  return {IntegerAttr::get(IndexType::get(emitter.getContext()), value),
+          emitter.shared.getIndexType()};
 }
 
 FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -195,12 +196,15 @@ FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
-                                  FullType contextualType) const {
+auto FloatLiteralNode::emitIR(ExprEmitter &emitter,
+                              FullType contextualType) const
+    -> AnyValueAndASTType {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
-  return FloatAttr::get(FloatType::getF64(emitter.getContext()),
-                        APFloat(value.convertToDouble()));
+  return {FloatAttr::get(FloatType::getF64(emitter.getContext()),
+                         APFloat(value.convertToDouble())),
+          // FIXME: Wrong type!
+          emitter.shared.getIndexType()};
 }
 
 FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -208,10 +212,13 @@ FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
-                                   FullType contextualType) const {
+auto StringLiteralNode::emitIR(ExprEmitter &emitter,
+                               FullType contextualType) const
+    -> AnyValueAndASTType {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  return StringAttr::get(emitter.getContext(), value);
+  return {StringAttr::get(emitter.getContext(), value),
+          // FIXME: Wrong type!
+          emitter.shared.getIndexType()};
 }
 
 FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -219,8 +226,9 @@ FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
-                                 FullType contextualType) const {
+auto NoneLiteralNode::emitIR(ExprEmitter &emitter,
+                             FullType contextualType) const
+    -> AnyValueAndASTType {
   // FIXME (Issue #4315): None should be emitted as an attribute (not a dynamic
   // value), but KGEN doesn't allow unknown parameters. This should work:
   //
@@ -233,16 +241,17 @@ AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
 
   auto loc = emitter.translateLocation(getLoc());
   auto type = KGEN::NoneType::get(emitter.getContext());
-  return emitter.builder->create<NoneValueOp>(loc, type).getResult();
+  return {emitter.builder->create<NoneValueOp>(loc, type).getResult(),
+          emitter.shared.getNoneType()};
 }
 
 FullType NoneLiteralNode::emitType(ExprEmitter &emitter) const {
   return {KGEN::NoneType::get(emitter.getContext()),
-          ASTType(emitter.shared.noneDecl)};
+          emitter.shared.getNoneType()};
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
-                             FullType contextualType) const {
+auto DeclRefNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   // Look up the name.
   auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
   ASTDecl *decl = emitter.declScope.lookup(nameAttr);
@@ -285,16 +294,20 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
-    return LValue(var.getResult());
+    return {LValue(var.getResult()), decl->getResolvedType()};
 
   // Functions form an address.
   if (auto fnDecl = dyn_cast<LITFuncOp>(*decl))
-    return SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
-                                   fnDecl.getSignature());
+    return {
+        SymbolConstantAttr::get(FlatSymbolRefAttr::get(fnDecl.getNameAttr()),
+                                fnDecl.getSignature()),
+        // TODO: Correct signature type.
+        emitter.shared.getSignatureType()};
 
   // Attributes always resolve to their known value.
   if (auto param = decl->getParamDecl())
-    return ParamDeclRefAttr::get(param.getName(), param.getType());
+    return {ParamDeclRefAttr::get(param.getName(), param.getType()),
+            decl->getResolvedType()};
 
   emitter.emitError(getLoc(), "use of declaration \"")
       << spelling << "\" as a value isn't supported yet";
@@ -327,11 +340,12 @@ FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
         mlirType = TypeCheckErrorType::get(context);
         break;
       case MagicDeclKind::kPointerType:
+      case MagicDeclKind::kSignatureType:
         emitter.emitError(getLoc(),
                           "TODO: Cannot emit this until it is parameterized");
         return {};
       }
-      return {mlirType, ASTType(decl)};
+      return {mlirType, decl->getResolvedType()};
     }
 
     emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
@@ -346,20 +360,21 @@ FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
   }
 
   return {RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr())),
-          ASTType(decl)};
+          decl->getResolvedType()};
 }
 
-AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
-                                  FullType contextualType) const {
+auto AttributeRefNode::emitIR(ExprEmitter &emitter,
+                              FullType contextualType) const
+    -> AnyValueAndASTType {
   auto baseVal = base->emitIR(emitter);
 
-  if (LValue baseLV = baseVal.getIfLValue()) {
+  if (LValue baseLV = baseVal.first.getIfLValue()) {
     if (!emitter.builder) {
       emitter.emitError(getLoc(),
                         "TODO: cannot call function in parameter context");
       return {};
     }
-
+    // FIXME: Use the ASTType on baseLV.
     auto eltType =
         cast<POP::PointerType>(baseLV.getType()).getResolvedElementType();
     if (!eltType) {
@@ -382,7 +397,7 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    // Figure out what field index this is.
+    // FIXME: Look up the field decl using name lookup.
     assert(isa<LITStructDeclOp>(*typeDecl) && "only have one type");
 
     // Find the field.
@@ -402,7 +417,7 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     Value resultGEP = emitter.builder->create<LITStructGEPOp>(
         emitter.translateLocation(getLoc()), varOp.getType(),
         varOp.getNameAttr(), baseLV);
-    return LValue(resultGEP);
+    return {LValue(resultGEP), fieldDecl->getResolvedType()};
   }
 
   // TODO: Handle parameter member references.
@@ -415,7 +430,8 @@ FullType AttributeRefNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const {
+auto CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
     return {};
@@ -486,7 +502,8 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, FullType contextualType) const {
       /*operands*/ valueArguments);
 
   // Value returning call returns its result.
-  return call.getResult(0);
+  // FIXME: This is a completely wrong result type from the call!
+  return {call.getResult(0), ASTType()};
 }
 
 FullType CallNode::emitType(ExprEmitter &emitter) const {
@@ -494,15 +511,15 @@ FullType CallNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
-                               FullType contextualType) const {
+auto SubscriptNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
-  if (!subValue)
+  if (!subValue.first)
     return {};
 
   // If we have a value of signature type, we can bind parameters to it.
-  if (auto signature = dyn_cast<SignatureType>(subValue.getType())) {
+  if (auto signature = dyn_cast<SignatureType>(subValue.first.getType())) {
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -510,7 +527,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    auto declParam = subValue.getIfMValue();
+    auto declParam = subValue.first.getIfMValue();
     if (!declParam) {
       emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
@@ -537,7 +554,9 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
       bindOperands.push_back(val);
     }
     // Okay, everything checks out, form the bind operation.
-    return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+    return {ParamOperatorAttr::get(POC::BindSignature, bindOperands),
+            // TODO: Correct signature type.
+            emitter.shared.getSignatureType()};
   }
 
   // Emit each of the index values.
@@ -549,7 +568,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
   }
 
   emitter.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
-      << subValue.getType();
+      << subValue.first.getType();
   return {};
 }
 
@@ -613,8 +632,8 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
       ASTType(decl, typeParams)};
 }
 
-AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
-                               FullType contextualType) const {
+auto ParenExprNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   return subExpr->emitIR(emitter, contextualType);
 }
 
@@ -622,8 +641,8 @@ FullType ParenExprNode::emitType(ExprEmitter &emitter) const {
   return subExpr->emitType(emitter);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
-                           FullType contextualType) const {
+auto BinOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   auto lhsRep = emitter.emitRValue(lhs);
   auto rhsRep = emitter.emitRValue(rhs);
   if (!lhsRep || !rhsRep)
@@ -650,7 +669,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
         opcode = POC::Mul;
         break;
       }
-      return ParamOperatorAttr::get(opcode, lhsParam, rhsParam);
+      return {ParamOperatorAttr::get(opcode, lhsParam, rhsParam),
+              emitter.shared.getIndexType()};
     }
   }
 
@@ -663,47 +683,50 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter,
   // TODO: implement properly these operations once we have a real type system
   //       also, logical operators should implement short circuiting of the
   //       operands.
+  Value result;
   switch (kind) {
   default:
     llvm_unreachable("unknown binary operator");
   case kAdd:
-    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, lhsVal,
-                                                              rhsVal);
+    result = emitter.builder->create<mlir::index::AddOp>(loc, lhsVal, rhsVal);
+    break;
   case kSub:
-    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, lhsVal,
-                                                              rhsVal);
+    result = emitter.builder->create<mlir::index::SubOp>(loc, lhsVal, rhsVal);
+    break;
   case kBoolAnd:
   case kBitwiseAnd:
-    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, lhsVal,
-                                                              rhsVal);
+    result = emitter.builder->create<mlir::index::AddOp>(loc, lhsVal, rhsVal);
+    break;
   case kBoolOr:
   case kBitwiseOr:
-    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, lhsVal,
-                                                              rhsVal);
+    result = emitter.builder->create<mlir::index::SubOp>(loc, lhsVal, rhsVal);
+    break;
   case kBitwiseXor:
-    return (Value)emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal,
-                                                               rhsVal);
+    result = emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal, rhsVal);
+    break;
   case kMul:
   case kMatrixMul:
-    return (Value)emitter.builder->create<mlir::index::MulOp>(loc, lhsVal,
-                                                              rhsVal);
+    result = emitter.builder->create<mlir::index::MulOp>(loc, lhsVal, rhsVal);
+    break;
   case kDiv:
   case kFloorDiv:
     // TODO(types): kDiv should be floating point division
-    return (Value)emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal,
-                                                               rhsVal);
+    result = emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal, rhsVal);
+    break;
   case kCmpEqual:
-    return (Value)emitter.builder->create<mlir::index::RemUOp>(loc, lhsVal,
-                                                               rhsVal);
+    result = emitter.builder->create<mlir::index::RemUOp>(loc, lhsVal, rhsVal);
+    break;
   case kModulo:
-    return (Value)emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal,
-                                                               rhsVal);
+    result = emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal, rhsVal);
+    break;
   case kExp:
     // TODO(types): this should be an exponentiation op
     // eventually we should call object.__pow__(self, other[, modulo])
-    return (Value)emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal,
-                                                               rhsVal);
+    result = emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal, rhsVal);
+    break;
   }
+
+  return {result, emitter.shared.getIndexType()};
 }
 
 FullType BinOpNode::emitType(ExprEmitter &emitter) const {
@@ -711,8 +734,8 @@ FullType BinOpNode::emitType(ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
-                             FullType contextualType) const {
+auto UnaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
@@ -727,6 +750,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   auto exprVal = emitter.emitDRValue(exprRep, subExpr->getLoc());
   auto loc = emitter.translateLocation(getLoc());
+  Value result;
   switch (kind) {
   default:
     emitter.emitError(getLoc(), "TODO: cannot emit this operator yet");
@@ -734,17 +758,18 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   case kUnaryPlus: {
     // TODO:  this should eventually implement a call to object.__pos__(self)
     auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
-    return (Value)emitter.builder->create<mlir::index::AddOp>(loc, zero,
-                                                              exprVal);
+    result = emitter.builder->create<mlir::index::AddOp>(loc, zero, exprVal);
+    break;
   }
   case kBoolNot:
   case kUnaryMinus: {
     // TODO:  this should eventually implement a call to object.__neg__(self)
     auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
-    return (Value)emitter.builder->create<mlir::index::SubOp>(loc, zero,
-                                                              exprVal);
+    result = emitter.builder->create<mlir::index::SubOp>(loc, zero, exprVal);
+    break;
   }
   }
+  return {result, emitter.shared.getIndexType()};
 }
 
 FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
@@ -756,14 +781,14 @@ FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
   // by an element type.
   if (kind == kUnaryAmp)
     return {POP::PointerType::get(eltType.first),
-            ASTType(emitter.shared.pointerDecl)};
+            emitter.shared.getPointerType()};
 
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
-AnyValue TernaryOpNode::emitIR(ExprEmitter &emitter,
-                               FullType contextualType) const {
+auto TernaryOpNode::emitIR(ExprEmitter &emitter, FullType contextualType) const
+    -> AnyValueAndASTType {
   Value cond = emitter.emitDRValue(condExpr);
   if (!cond)
     return {};
@@ -793,7 +818,7 @@ AnyValue TernaryOpNode::emitIR(ExprEmitter &emitter,
     return {};
   emitter.builder->create<scf::YieldOp>(ifLoc, falseVal);
   emitter.builder->setInsertionPointAfter(ifOp);
-  return (Value)ifOp.getResult(0);
+  return {(Value)ifOp.getResult(0), emitter.shared.getIndexType()};
 }
 
 std::pair<Type, ASTType> TernaryOpNode::emitType(ExprEmitter &emitter) const {
