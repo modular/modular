@@ -32,6 +32,18 @@ using llvm::SMLoc;
 class ExprEmitter;
 class ASTDecl;
 
+template <typename ValueType>
+struct ASTTypeAnd {
+  ValueType ir; // This is the IR representation of this.
+  ASTType type; // This is the AST type.
+
+  bool isNull() const { return ir; }
+  bool operator!() const { return !ir; }
+  operator bool() const { return ir; }
+
+  FullType getFullType() const { return {ir.getType(), type}; }
+};
+
 /// Instances of MValue model a known-compile-time meta value, represented by an
 /// MLIR attribute.
 struct MValue : public TypedAttr {
@@ -39,7 +51,6 @@ struct MValue : public TypedAttr {
   MValue(TypedAttr attr) : TypedAttr(attr) {}
   using TypedAttr::operator=;
 };
-using MValueAndASTType = std::pair<MValue, ASTType>;
 
 /// Instances of DRValue model a dynamic value represented with an SSA value.
 /// It is described with an explicit type to clarify what sort of value it is,
@@ -50,7 +61,6 @@ struct DRValue : public Value {
   DRValue(Value v) : Value(v) {}
   using Value::operator=;
 };
-using DRValueAndASTType = std::pair<DRValue, ASTType>;
 
 /// Instances of LValue model a dynamic address, which will always have pointer
 /// type.  It is described with an explicit type because the type of the
@@ -61,7 +71,6 @@ struct LValue : public Value {
   using Value::Value;
   LValue(Value v) : Value(v) {}
 };
-using LValueAndASTType = std::pair<LValue, ASTType>;
 
 /// This represents an RValue, which may be either a meta value (MValue)
 class RValue {
@@ -95,7 +104,6 @@ public:
 private:
   PointerUnion<Attribute, Value> storage;
 };
-using RValueAndASTType = std::pair<RValue, ASTType>;
 
 class AnyValue {
 public:
@@ -134,7 +142,6 @@ public:
 private:
   PointerUnion<RValue, LValue> storage;
 };
-using AnyValueAndASTType = std::pair<AnyValue, ASTType>;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -208,8 +215,8 @@ public:
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
-  virtual AnyValueAndASTType emitIR(ExprEmitter &state,
-                                    FullType contextualType = {}) const = 0;
+  virtual ASTTypeAnd<AnyValue> emitIR(ExprEmitter &state,
+                                      FullType contextualType = {}) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
@@ -245,24 +252,24 @@ public:
   MLIRContext *getContext() const { return shared.context; }
 
   /// This helper emits the specified value rep as an RValue.
-  RValueAndASTType emitRValue(const ExprNode *node) {
+  ASTTypeAnd<RValue> emitRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
     return emitRValue(node->emitIR(*this), node->getLoc());
   }
-  RValueAndASTType emitRValue(AnyValueAndASTType rep, SMLoc loc);
+  ASTTypeAnd<RValue> emitRValue(ASTTypeAnd<AnyValue> rep, SMLoc loc);
 
   /// This helper emits the specified value rep as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  DRValueAndASTType emitDRValue(RValueAndASTType rep, SMLoc loc);
-  DRValueAndASTType emitDRValue(AnyValueAndASTType rep, SMLoc loc) {
+  ASTTypeAnd<DRValue> emitDRValue(ASTTypeAnd<RValue> rep, SMLoc loc);
+  ASTTypeAnd<DRValue> emitDRValue(ASTTypeAnd<AnyValue> rep, SMLoc loc) {
     return emitDRValue(emitRValue(rep, loc), loc);
   }
 
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  DRValueAndASTType emitDRValue(const ExprNode *node) {
+  ASTTypeAnd<DRValue> emitDRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
     return emitDRValue(node->emitIR(*this), node->getLoc());
   }
@@ -270,7 +277,7 @@ public:
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
-  MValueAndASTType emitMValue(const ExprNode *node, const Twine &message);
+  ASTTypeAnd<MValue> emitMValue(const ExprNode *node, const Twine &message);
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will
@@ -278,8 +285,8 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValueAndASTType emitLValue(const ExprNode *node, FullType contextualType,
-                              const Twine &message);
+  ASTTypeAnd<LValue> emitLValue(const ExprNode *node, FullType contextualType,
+                                const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null MLIR Types - if the

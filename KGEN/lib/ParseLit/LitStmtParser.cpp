@@ -299,29 +299,27 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
 
   // Materialize the expression statement.
   auto rhsValue = getExprEmitter().emitDRValue(rhs);
-  if (!rhsValue.first)
+  if (!rhsValue)
     return success(); // Parse succeeded.
 
   // Resolve LHS expression into an lvalue that we can store into.
-  LValueAndASTType lValue = getExprEmitter().emitLValue(
-      lhs, {rhsValue.first.getType(), rhsValue.second},
-      "cannot assign to expression");
-  if (!lValue.first)
+  ASTTypeAnd<LValue> lValue = getExprEmitter().emitLValue(
+      lhs, rhsValue.getFullType(), "cannot assign to expression");
+  if (!lValue)
     return success(); // Parse succeeded.
 
   // Check to see if the destination type and the source type are compatible.
   // TODO: Implement implicit conversions.
-  if (lValue.first.getType() !=
-      POP::PointerType::get(rhsValue.first.getType())) {
+  if (lValue.ir.getType() != POP::PointerType::get(rhsValue.ir.getType())) {
     emitError(rhs->getLoc(), "cannot convert value of type ")
-        << rhsValue.second << " to " << lValue.second;
+        << rhsValue.type << " to " << lValue.type;
     return success();
   }
 
   // If everything worked out, store the resultant value into the lvalue for the
   // destination.  If things didn't work, just drop this on the floor.
-  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue.first,
-                               lValue.first, /*alignment*/ None);
+  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue.ir,
+                               lValue.ir, /*alignment*/ None);
 
   return success();
 }
@@ -348,10 +346,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Materialize the expression values into IR.
   for (auto expr : operandExprs) {
     auto value = getExprEmitter().emitDRValue(expr);
-    if (!value.first)
+    if (!value)
       return failure();
-    operandValues.push_back(value.first);
-    operandTypes.push_back(value.second);
+    operandValues.push_back(value.ir);
+    operandTypes.push_back(value.type);
   }
 
   // We don't support formation of tuples / multiple result values yet.
@@ -394,20 +392,20 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
   // TODO(types): add type checking: the condition should be bool.
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
-  DRValueAndASTType cond = parser.getExprEmitter().emitDRValue(condExp);
-  if (!cond.first)
+  ASTTypeAnd<DRValue> cond = parser.getExprEmitter().emitDRValue(condExp);
+  if (!cond)
     return failure();
 
   // TODO(types): we only support 'index' values as a hack right now.
-  if (!cond.first.getType().isIndex())
+  if (!cond.ir.getType().isIndex())
     return parser.emitError(condExp->getLoc(), "value of type ")
-           << cond.second << " isn't convertible to Bool";
+           << cond.type << " isn't convertible to Bool";
 
   auto &builder = parser.getBuilder();
-  auto loc = cond.first.getLoc();
+  auto loc = cond.ir.getLoc();
   auto one = builder.create<mlir::index::ConstantOp>(loc, 1);
   condValue = builder.create<mlir::index::CmpOp>(
-      loc, mlir::index::IndexCmpPredicate::EQ, cond.first, one);
+      loc, mlir::index::IndexCmpPredicate::EQ, cond.ir, one);
   return success();
 }
 
