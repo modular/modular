@@ -578,9 +578,9 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
   auto baseDRE = dyn_cast<DeclRefNode>(base);
   if (!baseDRE) {
     auto baseType = base->emitType(emitter);
-    if (baseType.first) // TODO(type printing): print pretty name.
+    if (baseType.first)
       emitter.emitError(getLoc(), "unknown parameterized type ")
-          << baseType.first;
+          << baseType.second;
     return {};
   }
 

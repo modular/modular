@@ -15,6 +15,7 @@
 #include "LitParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -39,6 +40,66 @@ ASTType::ASTType(ASTDecl *decl, ParamBindArrayAttr attrs)
 ParamBindArrayAttr ASTType::getParamValues() const {
   return cast<ParamBindArrayAttr>(paramValues);
 }
+
+/// Convert this type to a human readable string representation so it can be
+/// printed out for diagnostics.
+std::string ASTType::getAsString() const {
+  if (!decl)
+    return "<<NULL ASTTYPE>>";
+
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << "'";
+
+  if (auto typeDecl = dyn_cast<LITStructDeclOp>(*decl)) {
+    // TODO: Could include name scope information.
+    os << typeDecl.getName();
+  } else if (decl->isMagic()) {
+    switch (decl->magicKind) {
+    case MagicDeclKind::kNormal:
+      llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::kIndexType:
+      os << "!magic.index";
+      break;
+    case MagicDeclKind::kNoneType:
+      os << "!magic.none";
+      break;
+    case MagicDeclKind::kTypeCheckErrorType:
+      os << "<<TypeCheckError>>";
+      break;
+    case MagicDeclKind::kPointerType:
+      os << "<<Pointer>>";
+      break;
+    case MagicDeclKind::kSignatureType:
+      os << "<<FnSignature>>";
+      break;
+    }
+  } else {
+    // TODO: Add "aka" information when we have "type defs".
+    os << "<<unknown ASTType>>";
+  }
+
+  ParamBindArrayAttr params = getParamValues();
+  if (!params.empty()) {
+    os << '[';
+    llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
+      // TODO: This isn't really right, but will work enough for now.
+      printParamValue(bind.getValue(), os);
+    });
+    os << ']';
+  }
+
+  os << '\'';
+  return os.str();
+}
+
+mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
+                                           ASTType type) {
+  return diag << type.getAsString();
+}
+
+/// Print to standard error with newline after it, for use in a debugger.
+void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 
 //===----------------------------------------------------------------------===//
 // ASTDecl
@@ -86,8 +147,9 @@ ASTType ASTDecl::computeSelfTypeForStruct() {
 // DeclResolver
 //===----------------------------------------------------------------------===//
 
-// Declarations (e.g. module, class, function) are parsed in multiple phases to
-// increase laziness of the parse as well as make circular references possible.
+// Declarations (e.g. module, class, function) are parsed in multiple phases
+// to increase laziness of the parse as well as make circular references
+// possible.
 //
 // This ensures that the forward references between peer declarations are
 // handled correctly as well as circular references, for example in mutually
@@ -118,8 +180,8 @@ ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
       ASTDecl(irDecl, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
-  // If this is a type definition, remember in in a special table so we can look
-  // up references from attributes.
+  // If this is a type definition, remember in in a special table so we can
+  // look up references from attributes.
   if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl))
     typeSymbolDecls[structDecl.getNameAttr()] = decl;
 
@@ -209,8 +271,8 @@ DeclResolver::getDeclAndParamsFromType(Type type) {
 /// Resolve all of the declarations that are visible.
 void DeclResolver::resolveAll(SMLoc loc) {
   // We can do this in any order, but choose to use the order they are
-  // discovered so diagnostics are mostly top-down.  Resolving declarations may
-  // cause more entries to be added to this list.
+  // discovered so diagnostics are mostly top-down.  Resolving declarations
+  // may cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i)
     (void)resolve(*parsedDeclList[i], DeclResolvedness::fullyResolved, loc);
 }
@@ -383,21 +445,22 @@ struct ParsedParam {
 };
 } // namespace
 
-/// Perform type checking for a function signature that has just been parsed but
-/// that has not been installed into the specified decl.  This allows magic
-/// behavior (like __new__ being static, self getting implicitly declared),
-/// checking of method self requirements and enforcement of other invariants.
+/// Perform type checking for a function signature that has just been parsed
+/// but that has not been installed into the specified decl.  This allows
+/// magic behavior (like __new__ being static, self getting implicitly
+/// declared), checking of method self requirements and enforcement of other
+/// invariants.
 ///
-/// This returns failure after emitting an error when a type checking problem is
-/// detected.
+/// This returns failure after emitting an error when a type checking problem
+/// is detected.
 static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           FullType &resultType,
                                           LitSharedState &shared) {
 
-  // If this definition is a struct/class member, return the self type otherwise
-  // return a null type.
+  // If this definition is a struct/class member, return the self type
+  // otherwise return a null type.
   FullType selfType;
   if (auto *parentDecl = declScope.getParentDecl())
     if (isa<LITStructDeclOp>(*parentDecl)) {
@@ -426,11 +489,9 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
     // Check that the first method has the right type.
     if (!params[0].type.first)
       params[0].type = selfType;
-    if (params[0].type.first != selfType.first) {
-      // TODO(pretty types).
+    if (params[0].type.first != selfType.first)
       return defDecl.emitError("'self' argument must have type ")
-             << selfType.first;
-    }
+             << selfType.second;
   }
 
   // This lambda verifies the decl is a method.
@@ -461,8 +522,8 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
 /// value_param_list  ::= value_parameter ("," value_parameter)*
-/// value_parameter   ::= value_parammarker identifier_opt_type ["=" expression]
-/// value_parammarker ::= "/" | "*" | "**"
+/// value_parameter   ::= value_parammarker identifier_opt_type ["="
+/// expression] value_parammarker ::= "/" | "*" | "**"
 ///
 LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
                                              ASTDecl &decl) {
@@ -511,7 +572,8 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   // and adjust them if there are implicit declarations.
   if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType,
                              sharedState)) {
-    // If the function wasn't type checked correctly, uses of it may be broken.
+    // If the function wasn't type checked correctly, uses of it may be
+    // broken.
     decl.hasReferenceError = true;
   }
 
@@ -527,9 +589,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     paramNames.push_back(param.name);
 
     // If the parameter is missing a type, infer object type.
-    // TODO(fn): /require/ types on parameters instead of defaulting to object.
-    // TODO: I think there are some other special cases to evaluate, e.g. "self"
-    // arguments should be containing type in methods?
+    // TODO(fn): /require/ types on parameters instead of defaulting to
+    // object.
+    // TODO: I think there are some other special cases to evaluate, e.g.
+    // "self" arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
     if (!param.type.first)
       param.type = sharedState.objectDecl->getFullTypeForTypeReference();
@@ -546,8 +609,8 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
   defOp.getBody()->addArguments(paramTypes, paramLocs);
 
-  // Set up the body of the def, creating declarations for the value parameters
-  // and adding them to the symbol table.
+  // Set up the body of the def, creating declarations for the value
+  // parameters and adding them to the symbol table.
   for (auto [arg, param] : llvm::zip(defOp.getBody()->getArguments(), params)) {
     // Create a mutable var.decl that references to the name can load from.
     // TODO: This is the wrong default, reconsider this for 'fn's when we have
@@ -619,10 +682,10 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 
 ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
-  // Nothing to do for a var decl, we parse everything as part of its signature.
-  // We could move to parsing an initializer expression lazily when a type is
-  // present if there were a reason to do that (e.g. more laziness desired) in
-  // the future.
+  // Nothing to do for a var decl, we parse everything as part of its
+  // signature. We could move to parsing an initializer expression lazily when
+  // a type is present if there were a reason to do that (e.g. more laziness
+  // desired) in the future.
   return success();
 }
 
