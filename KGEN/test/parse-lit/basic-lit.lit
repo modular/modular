@@ -239,7 +239,11 @@ struct Pair[dt: DType]:
   var a : SIMD[42, dt]
   var b : Int
 
-# CHECK-NEXT: }
+  # CHECK: lit.func @"Pair::__init__"(%self: !pop.pointer<@Pair<dt: !kgen.ref<@DType> = dt>>)
+  def __init__(self): pass
+  # CHECK: }
+
+# CHECK: }
 
 # CHECK-LABEL:  lit.func @var_decls(%untyped: !kgen.ref<@object>)
 def var_decls(untyped):
