@@ -1059,8 +1059,8 @@ struct ConvertPOPVariantCreate
         op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getOperand().getType()),
         contentPtr);
 
-    // TODO: Compute the bytecount of the variant.
-    int64_t byteCount = 1;
+    // Compute the bytecount of the variant.
+    int64_t byteCount = getByteCount(variantType.getBody().front());
 
     // Add lifetime markers in case the alloca doesn't get optimized away.
     rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
@@ -1131,8 +1131,8 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
     // block in case it isn't optimized away.
     Value contentPtr =
         createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
-    // TODO: Compute the bytecount of the variant.
-    int64_t byteCount = 1;
+    // Compute the bytecount of the variant.
+    int64_t byteCount = getByteCount(variantType.getBody().front());
 
     // Extract the content and put it in the block of memory.
     Value content = rewriter.create<LLVM::ExtractValueOp>(

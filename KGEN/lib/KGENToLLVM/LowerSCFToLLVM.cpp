@@ -354,8 +354,8 @@ struct ConvertPOPVariantVisit
         adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
     Value contentPtr =
         createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
-    // TODO: Compute the bytecount of the variant.
-    int64_t byteCount = 1;
+    // Compute the bytecount of the content.
+    int64_t byteCount = getByteCount(variantType.getBody().front());
     Value content = rewriter.create<LLVM::ExtractValueOp>(
         op.getLoc(), adaptor.getVariant(), 0);
     rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
