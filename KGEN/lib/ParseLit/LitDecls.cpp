@@ -59,10 +59,10 @@ std::string ASTType::getAsString() const {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::kIndexType:
-      os << "!magic.index";
+      os << "!builtin.index";
       break;
     case MagicDeclKind::kNoneType:
-      os << "!magic.none";
+      os << "!lit.none";
       break;
     case MagicDeclKind::kTypeCheckErrorType:
       os << "<<TypeCheckError>>";
@@ -250,6 +250,8 @@ ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
                        LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   decl.magicKind = kind;
+  decl.setResolvedType(
+      ASTType(&decl, ParamBindArrayAttr::get(getContext(), {})));
   return decl;
 }
 
@@ -562,8 +564,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   } else {
     resultType = {KGEN::NoneType::get(getContext()), sharedState.getNoneType()};
   }
-  // The resolvedType for a function is the return type of the function.
-  decl.setResolvedType(resultType.second);
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
@@ -576,6 +576,9 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // broken.
     decl.hasReferenceError = true;
   }
+
+  // The resolvedType for a function is the return type of the function.
+  decl.setResolvedType(resultType.second);
 
   auto builder = decl.getDeclEndBuilder();
 

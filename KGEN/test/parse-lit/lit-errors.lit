@@ -40,10 +40,10 @@ def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
 def missing_ret_val() -> index:
-  return # expected-error {{returned value has type '!lit.none' but 'def' expected 'index'}}
+  return # expected-error {{returned value has type '!lit.none' but 'def' expected '!builtin.index'}}
 
 def ret_type_mismatch() -> index:
-  return 4.0 # expected-error {{returned value has type 'f64' but 'def' expected 'index'}}
+  return 4.0 # expected-error {{returned value has type '!lit.none' but 'def' expected '!builtin.index'}}
 
 def meta_param_then_param_redef[
       dt: index # expected-note {{previous definition here}}
@@ -91,12 +91,12 @@ def missing_type_on_var_decl():
 
 
 def invalid_conversion(a: Int, b: index):
-  a = b+1 # expected-error {{cannot convert value of type 'index' to '!kgen.ref<@Int>'}}
+  a = b+1 # expected-error {{cannot convert value of type '!builtin.index' to 'Int'}}
 
 struct NotBoolConvertible:
 
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{value of type '!kgen.ref<@NotBoolConvertible>' isn't convertible to Bool}}
+  if a: # expected-error {{value of type 'NotBoolConvertible' isn't convertible to Bool}}
      pass
 
 struct Thing[a: index, b: index]:
@@ -114,13 +114,13 @@ def MultipleThingMetaparams(a: Thing[1,2][1]):
 def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
-# expected-error @+1 {{parameter of type 'none' cannot be converted to expected type 'index'}}
+# expected-error @+1 {{parameter of type '!lit.none' cannot be converted to expected type 'index'}}
 def WeirdMetaParams(a: Thing[1, "foo"]):
   pass
 
 def voidReturningFn(): pass
 def badCall():
-  # expected-error @+1 {{value of type '!lit.none' cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
+  # expected-error @+1 {{value of type <<NULL ASTTYPE>> cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
   test_bool_context(voidReturningFn())
 
 
@@ -128,7 +128,7 @@ def generic_fn[a: DType, b: index](c : index):
 
 def call_generic[dt: DType]():
   generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
-  generic_fn[1, dt](57) # expected-error {{index has type 'index' but declaration expects '!kgen.ref<@DType>'}}
+  generic_fn[1, dt](57) # expected-error {{index has type '!builtin.index' but declaration expects '!kgen.ref<@DType>'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}
