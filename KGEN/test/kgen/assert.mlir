@@ -8,3 +8,5 @@ kgen.generator @assert_false() {
   zap.debug_assert %false, "assert failure!!!" : !pop.simd<1, bool>
   kgen.return
 }
+
+kgen.export [@assert_false]

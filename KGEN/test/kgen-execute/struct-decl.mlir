@@ -12,4 +12,6 @@ kgen.func @use_struct() -> f32 {
   kgen.return %3 : f32
 }
 
+kgen.export [@use_struct]
+
 // CHECK: 'use_struct' returned 1.0

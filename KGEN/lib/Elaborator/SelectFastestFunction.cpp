@@ -29,14 +29,15 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
   if (ErrorOrSuccess err =
-          engine.add(cast<ModuleOp>(symtab.getOp()), funcsToCompile))
+          engine.add(cast<ModuleOp>(symtab.getOp()), funcsToCompile,
+                     "evaluateSpecializations"))
     return err.takeError();
 
   // Get pointers to all the candidates.
   SmallVector<void *> candidatePtrs;
   for (FuncOp candidate : specializations) {
     ErrorOr<CompiledFunc> func =
-        engine.lookup(candidate.getSymName(), candidate);
+        engine.lookup("evaluateSpecializations", candidate);
     if (func.isError())
       return func.takeError();
 
@@ -45,7 +46,7 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
 
   // Lookup the evaluator function
   ErrorOr<CompiledFunc> evaluatorFunc =
-      engine.lookup(evaluator.getSymName(), evaluator);
+      engine.lookup("evaluateSpecializations", evaluator);
   if (evaluatorFunc.isError())
     return evaluatorFunc.takeError();
 

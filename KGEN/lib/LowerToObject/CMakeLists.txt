@@ -5,7 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(KGENEmitObject
-  BytecodeUtils.cpp
   LowerToLLVM.cpp
   LowerToObject.cpp
   StandaloneObject.cpp
