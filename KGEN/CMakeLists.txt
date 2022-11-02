@@ -103,6 +103,12 @@ function(add_kgen_kernel target)
 
   _setup_libs()
 
+  # If we built with MODULAR_KGEN_ENABLE_SEARCH=ON, then turn on
+  # KGEN_ENABLE_SEARCH unconditionally.
+  if (MODULAR_KGEN_ENABLE_SEARCH)
+    set(KGEN_ENABLE_SEARCH ON)
+  endif()
+
   # Add a target that controls emission of all of the kernels.
   set(OBJS "")
   foreach (kernel ${KGEN_KERNELS})
