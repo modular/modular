@@ -1018,3 +1018,21 @@ kgen.generator @test() {
   kgen.call @pickFirst() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @"inlineButDontDelete,N=1"
+kgen.generator @inlineButDontDelete<N>() {
+  // CHECK-NEXT: kgen.param.constant = <1>
+  %0 = kgen.param.constant = <N>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @callAndInlineCall
+kgen.generator @callAndInlineCall() {
+  // CHECK-NEXT: kgen.param.constant = <1>
+  kgen.inlined_call[<N>() -> (): @inlineButDontDelete]<N = 1>()
+  // CHECK-NEXT: kgen.call @"inlineButDontDelete,N=1"
+  kgen.call @inlineButDontDelete<N = 1>() : () -> ()
+  kgen.return
+}

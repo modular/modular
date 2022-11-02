@@ -1183,10 +1183,17 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
   auto symbolCst = cast<SymbolConstantAttr>(callee.get());
   // If there are no bound parameters on the call, use the one on the
   // CallParam.  TODO: Remove.
-  if (symbolCst.getParamValues().empty())
+  if (symbolCst.getParamValues().empty()) {
+    // We don't need to mark the function as being inlined if there are no
+    // region parameters (it will still be inlined).
+    bool markInlined =
+        llvm::any_of(call.getParamValues(), [](ParamBindAttr value) {
+          return isa<ParamCallRegionRefAttr>(value.getValue());
+        });
     return processGeneratorUserImpl(
         call, call.getParamDecls(), call.getParamValues(),
-        symbolCst.getSymbol(), rewriters, /*inlined=*/true);
+        symbolCst.getSymbol(), rewriters, markInlined);
+  }
   return processGeneratorUserImpl(
       call, call.getParamDecls(), symbolCst.getParamValues().getValue(),
       symbolCst.getSymbol(), rewriters, /*inlined=*/false);
