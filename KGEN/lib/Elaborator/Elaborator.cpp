@@ -1938,6 +1938,7 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_ELABORATEGENERATORS
+#define GEN_PASS_DEF_RESOLVEINCLUDES
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
@@ -1969,6 +1970,25 @@ struct ElaborateGeneratorsPass
       return signalPassFailure();
 
     if (failed(elaborateGenerators(symtab, primaryGenerators, shouldDoSearch)))
+      return signalPassFailure();
+  }
+};
+
+/// Resolve includes in a pass. This pass only does include resolution.
+struct ResolveIncludesPass
+    : public KGEN::impl::ResolveIncludesBase<ResolveIncludesPass> {
+  using ResolveIncludesBase::ResolveIncludesBase;
+
+  void runOnOperation() override {
+    ModuleOp theModule = getOperation();
+
+    SmallVector<std::filesystem::path> paths;
+    for (const auto &p : searchPaths)
+      paths.push_back(p);
+    paths.push_back(std::filesystem::path("."));
+
+    SymbolTable symtab(theModule);
+    if (failed(resolveIncludes(symtab, paths)))
       return signalPassFailure();
   }
 };
