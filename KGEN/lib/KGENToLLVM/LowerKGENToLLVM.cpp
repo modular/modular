@@ -109,35 +109,6 @@ struct ConvertKGENExternVariable
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENPrecompiled
-//===----------------------------------------------------------------------===//
-
-/// Convert `kgen.precompiled.*` to an extern `llvm.func`.
-template <typename PrecompiledOpT>
-struct ConvertKGENPrecompiled
-    : public mlir::ConvertOpToLLVMPattern<PrecompiledOpT> {
-  using mlir::ConvertOpToLLVMPattern<PrecompiledOpT>::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(PrecompiledOpT op, typename PrecompiledOpT::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Convert the func signature.
-    TypeConverter::SignatureConversion result(op.getNumArguments());
-    Type funcType = this->getTypeConverter()->convertFunctionSignature(
-        op.getFunctionType(),
-        /*isVariadic=*/false, result);
-    if (!funcType)
-      return emitError(op.getLoc(), "failed to convert func signature");
-
-    // Replace it with an LLVM function that has no body.
-    rewriter.template replaceOpWithNewOp<LLVM::LLVMFuncOp>(
-        op, op.getNameAttr(), funcType, LLVM::Linkage::External);
-
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENAddressOf
 //===----------------------------------------------------------------------===//
 
@@ -407,7 +378,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENFunc,
       ConvertKGENExternFunc,
       ConvertKGENExternVariable,
-      ConvertKGENPrecompiled<PrecompiledLLVMOp>,
       ConvertKGENParamConstant,
       ConvertKGENReturn
       // clang-format on
