@@ -63,6 +63,32 @@ Location LitSharedState::translateLocation(SMLoc loc) {
                              lineAndColumn.second);
 }
 
+ASTType LitSharedState::getTypeCheckErrorType() const {
+  return typeCheckErrorTypeDecl->getResolvedType();
+}
+
+ASTType LitSharedState::getIndexType() const {
+  return indexDecl->getResolvedType();
+}
+
+ASTType LitSharedState::getNoneType() const {
+  return noneDecl->getResolvedType();
+}
+
+// FIXME: This isn't correctly parameterized.
+ASTType LitSharedState::getPointerType() const {
+  return pointerDecl->getResolvedType();
+}
+
+ASTType LitSharedState::getObjectType() const {
+  return objectDecl->getResolvedType();
+}
+
+// FIXME: This isn't correctly parameterized; we need variadics.
+ASTType LitSharedState::getSignatureType() const {
+  return signatureDecl->getResolvedType();
+}
+
 //===----------------------------------------------------------------------===//
 // Driver
 //===----------------------------------------------------------------------===//
@@ -86,6 +112,8 @@ static void addBuiltinDecls(LitSharedState &sharedState,
       &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
   sharedState.pointerDecl = &resolver.addMagicDecl(
       "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
+  sharedState.signatureDecl = &resolver.addMagicDecl(
+      "Signature", MagicDeclKind::kSignatureType, &builtinsDecl);
 
   /// FIXME: These should be a user declared types in the standard library,
   /// which are looked up here instead of being synthesized.

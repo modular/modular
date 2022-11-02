@@ -31,13 +31,10 @@ using namespace M::KGEN::LIT;
 // ASTType
 //===----------------------------------------------------------------------===//
 
-ASTType::ASTType(ASTDecl *decl) : decl(decl) {
-  assert(decl && "cannot create ASTType with null decl");
-  paramValues = ParamBindArrayAttr::get(decl->getContext(), {});
-}
-
 ASTType::ASTType(ASTDecl *decl, ParamBindArrayAttr attrs)
-    : decl(decl), paramValues(attrs) {}
+    : decl(decl), paramValues(attrs) {
+  assert(decl && "cannot create ASTType with null decl");
+}
 
 ParamBindArrayAttr ASTType::getParamValues() const {
   return cast<ParamBindArrayAttr>(paramValues);
@@ -502,8 +499,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     if (p.parseType(resultType, decl, None))
       return failure();
   } else {
-    resultType = {KGEN::NoneType::get(getContext()),
-                  ASTType(sharedState.noneDecl)};
+    resultType = {KGEN::NoneType::get(getContext()), sharedState.getNoneType()};
   }
   // The resolvedType for a function is the return type of the function.
   decl.setResolvedType(resultType.second);

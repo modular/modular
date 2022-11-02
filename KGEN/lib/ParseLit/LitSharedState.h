@@ -26,6 +26,7 @@ class ParamBindArrayAttr;
 namespace M::KGEN::LIT {
 class DeclResolver;
 class ASTDecl;
+class ASTType;
 
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
@@ -42,16 +43,29 @@ public:
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTDecl *typeCheckErrorTypeDecl = nullptr;
+  ASTType getTypeCheckErrorType() const;
 
   /// This is the decl for the builtin 'index' type.
   ASTDecl *indexDecl = nullptr;
+  ASTType getIndexType() const;
+
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
+  ASTType getNoneType() const;
 
   /// This is the decl for the builtin POP::PointerType type.
   ASTDecl *pointerDecl = nullptr;
+  // FIXME: This isn't correctly parameterized.
+  ASTType getPointerType() const;
+
+  /// This is the decl for the builtin signature type.
+  ASTDecl *signatureDecl = nullptr;
+  // FIXME: This isn't correctly parameterized; we need variadics.
+  ASTType getSignatureType() const;
+
   /// This is the decl for the builtin lit.object type.
   ASTDecl *objectDecl = nullptr;
+  ASTType getObjectType() const;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
@@ -76,7 +90,6 @@ public:
   ParamBindArrayAttr getParamValues() const;
 
   ASTType() : decl(nullptr) {}
-  ASTType(ASTDecl *decl);
   ASTType(ASTDecl *decl, ParamBindArrayAttr attrs);
 
   bool operator!() const { return decl == nullptr; }
@@ -120,6 +133,8 @@ enum class MagicDeclKind {
   kNoneType,
   // This is a POP::PointerType type.
   kPointerType,
+  // This is a KGEN Signature for a callable function.
+  kSignatureType,
 };
 
 } // namespace M::KGEN::LIT

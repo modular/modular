@@ -188,11 +188,13 @@ public:
   /// Return the primary location for this node for error reporting purposes.
   virtual SMLoc getLoc() const = 0;
 
+  using AnyValueAndASTType = std::pair<AnyValue, ASTType>;
+
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
-  virtual AnyValue emitIR(ExprEmitter &state,
-                          FullType contextualType = {}) const = 0;
+  virtual AnyValueAndASTType emitIR(ExprEmitter &state,
+                                    FullType contextualType = {}) const = 0;
 
   /// Emit this expression tree to an MLIR type.  This returns null on error,
   /// unlike the corresponding ExprEmitter method.
@@ -230,7 +232,7 @@ public:
   /// This helper emits the specified value rep as an RValue.
   RValue emitRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitRValue(node->emitIR(*this), node->getLoc());
+    return emitRValue(node->emitIR(*this).first, node->getLoc());
   }
   RValue emitRValue(AnyValue rep, SMLoc loc);
 
@@ -247,7 +249,7 @@ public:
   /// emission fails.
   Value emitDRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitDRValue(node->emitIR(*this), node->getLoc());
+    return emitDRValue(node->emitIR(*this).first, node->getLoc());
   }
 
   /// This helper emits the specified expression as a meta value, diagnosing the
