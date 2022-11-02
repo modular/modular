@@ -1307,45 +1307,6 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
-// Precompiled*Op
-//===----------------------------------------------------------------------===//
-
-/// Parse a `kgen.precompiled.*` op. They all have almost exactly the same form,
-/// so we can use a single function to parse them all. This defines the form of
-/// all the `kgen.precompiled.*` ops to be:
-///
-///   kgen.precompiled.* (public|private) @symbol(...) -> (...) attributes {
-///     ...
-///   }
-///
-/// Note that none of them have bodies, but they do keep the function
-/// signatures.
-static ParseResult parsePrecompiledOp(OpAsmParser &parser,
-                                      OperationState &result) {
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::precompiled);
-}
-
-/// Print a `kgen.precompiled.*` op. They all have almost exactly the same form
-/// so we use a single function to handle them all. See `parsePrecompiledOp` for
-/// an example of the form we want printed.
-static void printPrecompiledOp(OpAsmPrinter &p, Operation *op) {
-  auto funcOp = cast<mlir::FunctionOpInterface>(op);
-  printGeneratorOrFunc(p, funcOp);
-}
-
-//===----------------------------------------------------------------------===//
-// PrecompiledLLVMOp
-//===----------------------------------------------------------------------===//
-
-void PrecompiledLLVMOp::build(OpBuilder &builder, OperationState &result,
-                              FuncOp func, TargetInfoAttr compiledFor,
-                              StringRef llvm) {
-  build(builder, result, func.getSymNameAttr(), func.getFunctionTypeAttr(),
-        func.getParamDeclsAttr(), func.getResultParamTypesAttr(), compiledFor,
-        builder.getStringAttr(llvm));
-}
-
-//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

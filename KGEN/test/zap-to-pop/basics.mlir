@@ -302,18 +302,6 @@ kgen.generator @zap_global_string() -> !pop.pointer<array<4, scalar<si8>>> {
 
 // -----
 
-// CHECK-LABEL: @simd_store
-// CHECK-SAME: !pop.simd
-// CHECK-SAME: !pop.struct
-// CHECK-SAME: index
-kgen.precompiled.llvm @simd_store(%val : !pop.simd<4, f32>, %buf: !zap.buffer<4, f32>, %idx: index) attributes {
-  compiledFor = #kgen.target<"darwin-arm64-unknown", "generic", "", 8>,
-  llvm = "hash key for LLVM IR for @symbol",
-  ir = "hash key for @precompiled"
-}
-
-// -----
-
 // CHECK-LABEL: @zap_ndbuffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
 kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<scalar<f32>>) {
