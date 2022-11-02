@@ -54,6 +54,9 @@ private:
 /// Insert an alloca at the top of the function body.
 Value createAllocaAtEntry(Operation *op, Type type, PatternRewriter &rewriter);
 
+/// Compute the bytecount of a buffer of numElements with specified elementType.
+int64_t getByteCount(Type elementType, IntegerAttr numElements = {});
+
 } // namespace M::KGEN
 
 #endif // KGEN_LLVM_LOWERING_UTILS_H

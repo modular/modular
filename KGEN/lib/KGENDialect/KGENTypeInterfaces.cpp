@@ -22,30 +22,27 @@ Optional<int64_t>
 KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
                                               Type type) {
   // Check for builtin types.
-  auto iface = llvm::dyn_cast<DataLayoutInterface>(type);
-  if (!iface) {
-    // Return the integer or floating point width rounded up to the next byte.
-    if (type.isIntOrFloat())
-      return llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT);
+  if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
+    return iface.getTypeSize(target);
 
-    // Return the target pointer width.
-    if (type.isa<FunctionType>() || type.isIndex())
-      return target.getPointerSize();
+  // Return the integer or floating point width rounded up to the next byte.
+  if (type.isIntOrFloat())
+    return llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT);
 
-    // Return the element type size multiplied by the size.
-    if (auto vec = llvm::dyn_cast<VectorType>(type)) {
-      Optional<int64_t> elSize =
-          getTypeSizeInBytes(target, vec.getElementType());
-      if (!elSize || vec.getRank() != 1)
-        return {};
-      return *elSize * llvm::PowerOf2Ceil(vec.getShape().back());
-    }
+  // Return the target pointer width.
+  if (type.isa<FunctionType>() || type.isIndex())
+    return target.getPointerSize();
 
-    // No other builtin types are supported;
-    return {};
+  // Return the element type size multiplied by the size.
+  if (auto vec = llvm::dyn_cast<VectorType>(type)) {
+    Optional<int64_t> elSize = getTypeSizeInBytes(target, vec.getElementType());
+    if (!elSize || vec.getRank() != 1)
+      return {};
+    return *elSize * llvm::PowerOf2Ceil(vec.getShape().back());
   }
 
-  return iface.getTypeSize(target);
+  // No other builtin types are supported;
+  return {};
 }
 
 Optional<int64_t>
