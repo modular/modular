@@ -6,16 +6,16 @@ kgen.func @stack_allocation(%cond: i1) {
   // CHECK-DAG: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32
   // CHECK-DAG: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32>
-  // CHECK: llvm.intr.lifetime.start 16, %[[PTR0]]
+  // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
   %0 = pop.stack_allocation 16 x !pop.simd<1, f32>
   // CHECK: scf.if
   scf.if %cond {
-    // CHECK-NEXT: llvm.intr.lifetime.start 4, %[[PTR1]]
-    // CHECK-NEXT: llvm.intr.lifetime.end 4, %[[PTR1]]
+    // CHECK-NEXT: llvm.intr.lifetime.start 64, %[[PTR1]]
+    // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR1]]
     %1 = pop.stack_allocation 4 x !pop.simd<4, f32>
     // CHECK: }
   }
-  // CHECK-NEXT: llvm.intr.lifetime.end 16, %[[PTR0]]
+  // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
 }

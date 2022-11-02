@@ -169,3 +169,14 @@ Value KGEN::createAllocaAtEntry(Operation *op, Type type,
   return rewriter.create<LLVM::AllocaOp>(op->getLoc(),
                                          LLVM::LLVMPointerType::get(type), one);
 }
+
+/// Compute the bytecount of a buffer of numElements with specified elementType.
+int64_t KGEN::getByteCount(Type elementType, IntegerAttr numElements) {
+  auto target = KGEN::TargetInfoAttr::getForHost(elementType.getContext());
+  Optional<int64_t> elementByteSize =
+      DataLayoutInterface::getTypeSizeInBytes(target, elementType);
+  assert(elementByteSize.has_value() && "elementByteSize must be resolved");
+  if (numElements)
+    return *elementByteSize * numElements.getInt();
+  return *elementByteSize;
+}

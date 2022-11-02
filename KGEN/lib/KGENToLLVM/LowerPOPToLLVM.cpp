@@ -553,11 +553,14 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   Value sizeVal = rewriter.create<LLVM::ConstantOp>(op.getLoc(), size);
   Value ptr = rewriter.create<LLVM::AllocaOp>(op.getLoc(), ptrType, sizeVal);
 
+  // Compute the bytecount of the allocated buffer.
+  int64_t byteCount = getByteCount(op.getType().getResolvedElementType(), size);
+
   // Insert lifetime markers starting from the op to the end of its block.
   rewriter.setInsertionPoint(op);
-  rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), size, ptr);
+  rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, ptr);
   rewriter.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), size, ptr);
+  rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, ptr);
   rewriter.replaceOp(op, ptr);
   return success();
 }
@@ -1056,13 +1059,16 @@ struct ConvertPOPVariantCreate
         op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getOperand().getType()),
         contentPtr);
 
+    // TODO: Compute the bytecount of the variant.
+    int64_t byteCount = 1;
+
     // Add lifetime markers in case the alloca doesn't get optimized away.
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), 1, contentPtr);
+    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
 
     // Store the variant value and then load the result.
     rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getOperand(), valuePtr);
     Value content = rewriter.create<LLVM::LoadOp>(op.getLoc(), contentPtr);
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
+    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
 
     // Build the result struct.
     Value variant = rewriter.create<LLVM::UndefOp>(op.getLoc(), variantType);
@@ -1125,20 +1131,22 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
     // block in case it isn't optimized away.
     Value contentPtr =
         createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
+    // TODO: Compute the bytecount of the variant.
+    int64_t byteCount = 1;
 
     // Extract the content and put it in the block of memory.
     Value content = rewriter.create<LLVM::ExtractValueOp>(
         op.getLoc(), adaptor.getVariant(), 0);
 
     // Add lifetime markers in case the alloca doesn't get optimized away.
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), 1, contentPtr);
+    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
     rewriter.create<LLVM::StoreOp>(op.getLoc(), content, contentPtr);
 
     // Bitcast and read the value.
     Value valuePtr = rewriter.create<LLVM::BitcastOp>(
         op.getLoc(), LLVM::LLVMPointerType::get(valueType), contentPtr);
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, valuePtr);
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), 1, contentPtr);
+    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
     return success();
   }
 };

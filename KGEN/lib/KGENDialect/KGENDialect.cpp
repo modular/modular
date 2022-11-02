@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -166,6 +167,17 @@ SignatureType SignatureType::getSpecializedSignature(
     ParamBindArrayAttr inputParams,
     llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
   return getSpecializedSignature(inputParams.getValue(), emitErrorFn);
+}
+
+//===----------------------------------------------------------------------===//
+// DType
+
+Optional<int64_t> DTypeType::getTypeSize(TargetInfoAttr target) const {
+  return sizeof(uint8_t);
+}
+
+Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
+  return 1;
 }
 
 //===----------------------------------------------------------------------===//
