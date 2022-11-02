@@ -67,6 +67,16 @@ void registerLowerToLLVMPipeline();
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENPasses.h.inc"
 
+//===----------------------------------------------------------------------===//
+// Elaborator
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the elaborator pass that captures all of the
+/// referenced include files.
+std::unique_ptr<mlir::Pass>
+createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
+                          const ElaborateGeneratorsOptions &options = {});
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENPASSES_H
