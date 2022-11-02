@@ -131,7 +131,7 @@ def call_generic[dt: DType]():
   generic_fn[1, dt](57) # expected-error {{index has type 'index' but declaration expects '!kgen.ref<@DType>'}}
 
 def field_indexes(a: Int):
-  a.badField = 42 # expected-error {{'!kgen.ref<@Int>' object has no attribute 'badField'}}
+  a.badField = 42 # expected-error {{object has no attribute 'badField'}}
 
 
 # https://github.com/modularml/modular/issues/4181

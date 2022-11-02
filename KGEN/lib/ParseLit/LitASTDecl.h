@@ -49,6 +49,8 @@ public:
 
   /// If this is a ParamDecl, return it otherwise return null.
   ParamDeclAttr getParamDecl() const;
+  /// If the IRDecl is an Operation*, return it, otherwise return null.
+  Operation *getOperation() const { return dyn_cast<Operation *>(irDecl); }
 
   /// Return true if this is a "magic" declaration that has no IR
   /// representation.
