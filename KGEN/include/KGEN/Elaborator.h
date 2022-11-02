@@ -16,9 +16,13 @@ class GeneratorOp;
 } // namespace KGEN
 
 /// Resolve the includes in the specified module, incorporating implementation
-/// logic from the included files found in `searchPaths`.
-LogicalResult resolveIncludes(SymbolTable &symtab,
-                              ArrayRef<std::filesystem::path> searchPaths);
+/// logic from the included files found in `searchPaths`. `includedFiles` is
+/// an optional set that is populated with the files that were included during
+/// the resolution process.
+LogicalResult
+resolveIncludes(SymbolTable &symtab,
+                ArrayRef<std::filesystem::path> searchPaths,
+                SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the

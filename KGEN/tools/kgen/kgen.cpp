@@ -66,6 +66,10 @@ public:
   cl::list<std::string> searchPaths{
       "I", cl::desc("Path to use to search for included files.")};
 
+  cl::opt<std::string> dependencyFilename{
+      "d", llvm::cl::desc("Path of the dependency file to generate"),
+      llvm::cl::value_desc("filename"), llvm::cl::init("")};
+
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
@@ -125,24 +129,6 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
     exit(reportError(err.getError()));
 }
 
-/// This function creates the elaborator pass and forwards the correct
-/// arguments. If it fails, it fails with a fatal error.
-static std::unique_ptr<Pass> createElaboratorPass(const CLOptions &clOptions) {
-  auto elaborate = createElaborateGenerators();
-  std::string includes;
-  llvm::raw_string_ostream includeStr(includes);
-  for (StringRef include : clOptions.searchPaths)
-    includeStr << "search-path=" << include << " ";
-
-  // Conditionally do search.
-  includeStr << "enable-search=" << (clOptions.enableSearch ? "true" : "false");
-
-  if (failed(elaborate->initializeOptions(includeStr.str())))
-    llvm::report_fatal_error("unable to initialize elaborator options");
-
-  return elaborate;
-}
-
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   TimeTraceScope<> traceScope("emit-module",
@@ -160,6 +146,40 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
     irFile->keep();
   }
 
+  return mlir::success();
+}
+
+/// Create a dependency file for the `-d` option.
+///
+/// This functionality is generally only for the benefit of the build system,
+/// and informs it of the dependencies of the input files.
+static LogicalResult
+createDependencyFile(const CLOptions &clOptions,
+                     SmallVectorImpl<std::string> &includedFiles) {
+  if (clOptions.outputFilename == "-") {
+    return failure(clOptions.reportError(
+        "cannot create dependency file when outputting to stdout"));
+  }
+
+  std::string errorMessage;
+  std::unique_ptr<llvm::ToolOutputFile> outputFile =
+      openOutputFile(clOptions.dependencyFilename, &errorMessage);
+  if (!outputFile)
+    return failure(clOptions.reportError(errorMessage));
+
+  // Setup the search paths.
+  SmallVector<std::filesystem::path> paths;
+  for (const auto &p : clOptions.searchPaths)
+    paths.push_back(p);
+  paths.push_back(std::filesystem::path("."));
+
+  // Resolve each of the dependencies and add them to the file.
+  outputFile->os() << clOptions.outputFilename << ":";
+  for (StringRef includeFile : includedFiles)
+    outputFile->os() << ' ' << includeFile;
+
+  outputFile->os() << "\n";
+  outputFile->keep();
   return mlir::success();
 }
 
@@ -189,18 +209,30 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
+  // The set of files included during processing, used to generate the
+  // dependency file.
+  SmallVector<std::string> includedFiles;
+
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerLIT());
   pm.addPass(createPruneImpossibleVariants());
 
   pm.addPass(mlir::createCanonicalizerPass());
-  if (clOptions.cmd != Command::kGenLibraryFile)
-    pm.addPass(createElaboratorPass(clOptions));
+  if (clOptions.cmd != Command::kGenLibraryFile) {
+    pm.addPass(createElaborateGenerators(
+        includedFiles, {clOptions.searchPaths, clOptions.enableSearch}));
+  }
 
   // Run the pass manager.
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
+
+  // If we are generating a dependency file, do so now.
+  if (!clOptions.dependencyFilename.empty()) {
+    if (failed(createDependencyFile(clOptions, includedFiles)))
+      return failure();
+  }
 
   // If all we're doing is generating a library file or elaborating, we're done
   // now.

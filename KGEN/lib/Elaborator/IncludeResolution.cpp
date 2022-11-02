@@ -138,9 +138,11 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
 /// Recursively resolve included files according to the provided search paths,
 /// appending the included IR to the main module. Include each file at most
 /// once.
-static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
-                                    ArrayRef<std::filesystem::path> searchPaths,
-                                    DenseSet<StringAttr> &loadedFiles) {
+static LogicalResult
+resolveInclude(SymbolTable &symtab, IncludeOp include,
+               ArrayRef<std::filesystem::path> searchPaths,
+               DenseSet<StringAttr> &loadedFiles,
+               SmallVectorImpl<std::string> *includedFiles) {
   if (!loadedFiles.insert(include.getFileNameAttr()).second) {
     include->erase();
     return success();
@@ -163,6 +165,10 @@ static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
              << include.getFileName() << "'";
   }
 
+  // Record this file if requested.
+  if (includedFiles)
+    includedFiles->push_back(modulePath);
+
   auto includedModule =
       mlir::parseSourceFile<ModuleOp>(modulePath, include->getContext());
   if (!includedModule)
@@ -172,7 +178,8 @@ static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
   // Recursively resolve transitive includes.
   for (auto inc :
        llvm::make_early_inc_range(includedModule->getOps<IncludeOp>()))
-    if (failed(resolveInclude(symtab, inc, searchPaths, loadedFiles)))
+    if (failed(resolveInclude(symtab, inc, searchPaths, loadedFiles,
+                              includedFiles)))
       return failure();
 
   // Prepend all the ops to the main module.
@@ -200,15 +207,14 @@ static LogicalResult resolveInclude(SymbolTable &symtab, IncludeOp include,
   return success();
 }
 
-/// Resolve the includes in the specified module, incorporating implementation
-/// logic from the included files found in `searchPaths`.
 LogicalResult M::resolveIncludes(SymbolTable &symtab,
-                                 ArrayRef<std::filesystem::path> searchPaths) {
-
+                                 ArrayRef<std::filesystem::path> searchPaths,
+                                 SmallVectorImpl<std::string> *includedFiles) {
   DenseSet<StringAttr> loadedFiles;
   for (auto include : llvm::make_early_inc_range(
            cast<ModuleOp>(symtab.getOp()).getOps<IncludeOp>()))
-    if (failed(resolveInclude(symtab, include, searchPaths, loadedFiles)))
+    if (failed(resolveInclude(symtab, include, searchPaths, loadedFiles,
+                              includedFiles)))
       return failure();
   return success();
 }
