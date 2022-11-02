@@ -9,6 +9,8 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/MLIRContext.h"
 
 using namespace M;
 using namespace KGEN;
@@ -172,7 +174,18 @@ Value KGEN::createAllocaAtEntry(Operation *op, Type type,
 
 /// Compute the bytecount of a buffer of numElements with specified elementType.
 int64_t KGEN::getByteCount(Type elementType, IntegerAttr numElements) {
-  auto target = KGEN::TargetInfoAttr::getForHost(elementType.getContext());
+  MLIRContext *ctx = elementType.getContext();
+  auto target = KGEN::TargetInfoAttr::getForHost(ctx);
+
+  // Return the element type size multiplied by the size.
+  if (auto arry = llvm::dyn_cast<LLVM::LLVMArrayType>(elementType)) {
+    Type arrayElementType = arry.getElementType();
+    return llvm::alignTo(KGEN::getByteCount(arrayElementType),
+                         *DataLayoutInterface::getTypeAlignInBytes(
+                             target, arrayElementType)) *
+           arry.getNumElements();
+  }
+
   Optional<int64_t> elementByteSize =
       DataLayoutInterface::getTypeSizeInBytes(target, elementType);
   assert(elementByteSize.has_value() && "elementByteSize must be resolved");
