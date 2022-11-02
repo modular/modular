@@ -93,7 +93,13 @@ public:
   ASTType(ASTDecl *decl, ParamBindArrayAttr attrs);
 
   bool operator!() const { return decl == nullptr; }
-  operator bool() const { return decl != nullptr; }
+  explicit operator bool() const { return decl != nullptr; }
+
+  /// Convert this type to a human readable string representation so it can be
+  /// printed out for diagnostics.
+  std::string getAsString() const;
+
+  void dump() const;
 
 private:
   ASTDecl *decl;
@@ -101,6 +107,8 @@ private:
 };
 
 using FullType = std::pair<Type, ASTType>;
+
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);
 
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.

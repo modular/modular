@@ -107,7 +107,7 @@ def GoodUseOfThing(a: Thing[4, 5]):
 def MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
-# expected-error @+1 {{unknown parameterized type '!kgen.ref<@Thing<a = 1, b = 2>>'}}
+# expected-error @+1 {{unknown parameterized type 'Thing[1, 2]'}}
 def MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
@@ -154,9 +154,11 @@ def StaticMethod(): pass
 def __init__(): pass
 
 struct WrongSelfType:
-  # expected-error @+1 {{'self' argument must have type '!pop.pointer<@WrongSelfType>'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType'}}
   def __init__(self: Int): pass
-  # expected-error @+1 {{'self' argument must have type '!pop.pointer<@WrongSelfType>'}}
+
+struct WrongSelfType2[a: Int]:
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType2[a]'}}
   def badMethod(self: Int): pass
 
 struct WrongInitResult:
