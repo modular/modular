@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/MathExtras.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -13,6 +14,7 @@
 #include <random>
 
 using namespace M;
+namespace LLVM = mlir::LLVM;
 
 //===----------------------------------------------------------------------===//
 // DataLayoutInterface Utility Functions
@@ -32,6 +34,14 @@ KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
   // Return the target pointer width.
   if (type.isa<FunctionType>() || type.isIndex())
     return target.getPointerSize();
+
+  // Return the element type size multiplied by the size.
+  if (auto vec = llvm::dyn_cast<LLVM::LLVMArrayType>(type)) {
+    Optional<int64_t> elSize = getTypeSizeInBytes(target, vec.getElementType());
+    if (!elSize)
+      return {};
+    return *elSize * llvm::PowerOf2Ceil(vec.getNumElements());
+  }
 
   // Return the element type size multiplied by the size.
   if (auto vec = llvm::dyn_cast<VectorType>(type)) {

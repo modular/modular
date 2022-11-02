@@ -6,7 +6,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.simd<1, si32> {
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64) : i64
   // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca
   // CHECK-NEXT: %[[CONTENT:.*]] = llvm.extractvalue %[[A]][0]
-  // CHECK-NEXT: llvm.intr.lifetime.start 1, %[[PTR]]
+  // CHECK-NEXT: llvm.intr.lifetime.start 8, %[[PTR]]
   // CHECK-NEXT: llvm.store %[[CONTENT]], %[[PTR]]
   // CHECK-NEXT: %[[DISCR:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-NEXT: llvm.switch %[[DISCR]] : i1, ^bb2
@@ -16,7 +16,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.simd<1, si32> {
   case (%v: i32) {
     // CHECK-NEXT: %[[VPTR:.*]] = llvm.bitcast %[[PTR]]
     // CHECK-NEXT: %[[V:.*]] = llvm.load %[[VPTR]]
-    // CHECK-NEXT: llvm.intr.lifetime.end 1, %[[PTR]]
+    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(0 :
     %1 = pop.constant(0 : si32) : !pop.simd<1, si32>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
@@ -26,7 +26,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.simd<1, si32> {
   case (%v: f32) {
     // CHECK-NEXT: %[[VPTR:.*]] = llvm.bitcast %[[PTR]]
     // CHECK-NEXT: %[[V:.*]] = llvm.load %[[VPTR]]
-    // CHECK-NEXT: llvm.intr.lifetime.end 1, %[[PTR]]
+    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(1 :
     %1 = pop.constant(1 : si32) : !pop.simd<1, si32>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
@@ -54,7 +54,7 @@ kgen.func @variant_visit(%a: !pop.variant<simd<1, si32>, f32>) -> !pop.simd<1, s
   }
   // CHECK: ^bb2:
   default {
-    // CHECK-NEXT: llvm.intr.lifetime.end 1, %[[PTR]]
+    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
     %2 = pop.sub %0, %0 : !pop.simd<1, si32>
     pop.yield %2 : !pop.simd<1, si32>
   }

@@ -650,10 +650,10 @@ kgen.func @create(%a: i64) -> !var {
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]] x !llvm.array<2 x i64>
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<array<2 x i64>> to !llvm.ptr<i64>
-  // CHECK-NEXT: llvm.intr.lifetime.start 1, %[[MEM]]
+  // CHECK-NEXT: llvm.intr.lifetime.start 16, %[[MEM]]
   // CHECK: llvm.store %[[A]], %[[PTR]]
   // CHECK: %[[CONTENT:.*]] = llvm.load %[[MEM]]
-  // CHECK-NEXT: llvm.intr.lifetime.end 1, %[[MEM]]
+  // CHECK-NEXT: llvm.intr.lifetime.end 16, %[[MEM]]
   // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(array<2 x i64>, i2)>
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[CONTENT]], %[[S0]][0]
   // CHECK: %[[DISCR:.*]] = llvm.mlir.constant(1 : i2)
@@ -680,11 +680,11 @@ kgen.func @bitcast(%a: !var) -> f32 {
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]]
   // CHECK: %[[CONTENT:.*]] = llvm.extractvalue %0[0]
-  // CHECK: llvm.intr.lifetime.start 1, %[[MEM]]
+  // CHECK: llvm.intr.lifetime.start 16, %[[MEM]]
   // CHECK: llvm.store %[[CONTENT]], %[[MEM]]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<array<2 x i64>> to !llvm.ptr<f32>
   // CHECK: %[[RESULT:.*]] = llvm.load %[[PTR]]
-  // CHECK: llvm.intr.lifetime.end 1, %[[MEM]]
+  // CHECK: llvm.intr.lifetime.end 16, %[[MEM]]
   %0 = pop.variant.get %a : !var as f32
   // CHECK: return %[[RESULT]]
   kgen.return %0 : f32
