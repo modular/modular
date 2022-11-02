@@ -766,6 +766,24 @@ kgen.generator @baz<F>() {
 
 // -----
 
+kgen.generator @callMe<fn: ()->()>() {
+  kgen.return
+}
+
+kgen.generator @doIt<SomeParam>() {
+  kgen.call @callMe<fn: ()->() = region>() : () -> ()
+  fn() {
+    // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeParam" with incorrect type 'index'}}
+    %0 = kgen.param.constant = <SomeParam>
+    // expected-note @below {{parameter defined with type '!kgen.dtype'}}
+    kgen.param.declare SomeParam : dtype = <f32>
+    kgen.return
+  }
+  kgen.return
+}
+
+// -----
+
 kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
