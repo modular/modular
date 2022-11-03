@@ -24,6 +24,7 @@
 #ifndef LIT_EXPRS_H
 #define LIT_EXPRS_H
 
+#include "ASTType.h"
 #include "LitSharedState.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/PointerUnion.h"

@@ -9,10 +9,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitSharedState.h"
+#include "ASTDecl.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "LitASTDecl.h"
 #include "LitDecls.h"
 #include "mlir/IR/Location.h"
 #include "llvm/Support/SourceMgr.h"
@@ -123,6 +123,9 @@ std::string ASTType::getAsString() const {
     switch (getDecl()->magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::kTypeType:
+      os << "type";
+      break;
     case MagicDeclKind::kIndexType:
       os << "!builtin.index";
       break;

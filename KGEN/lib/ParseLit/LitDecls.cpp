@@ -9,7 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
-#include "LitASTDecl.h"
+#include "ASTDecl.h"
 #include "LitExprs.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"

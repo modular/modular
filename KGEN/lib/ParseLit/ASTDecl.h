@@ -11,6 +11,7 @@
 #ifndef LIT_DECL_AST_H
 #define LIT_DECL_AST_H
 
+#include "ASTType.h"
 #include "LitDecls.h"
 #include "LitLexer.h"
 #include "LitSharedState.h"

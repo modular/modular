@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitASTDecl.h"
+#include "ASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
 #include "LitParserBase.h"

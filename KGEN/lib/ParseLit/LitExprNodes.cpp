@@ -10,7 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitExprNodes.h"
-#include "LitASTDecl.h"
+#include "ASTDecl.h"
 #include "LitDecls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
