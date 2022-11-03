@@ -257,7 +257,7 @@ Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
-  if (auto simd = dyn_cast<POP::SIMDType>(type)) {
+  if (auto simd = dyn_cast_or_null<POP::SIMDType>(type)) {
     auto resolvedSize = simd.getResolvedSize();
     return (resolvedSize && *resolvedSize == 1);
   }
