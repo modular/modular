@@ -1303,6 +1303,9 @@ using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =
     mlir::OneToOneConvertToLLVMPattern<PointerToIndexOp, LLVM::PtrToIntOp>;
+using ConvertPOPCallLLVMIntrinsic =
+    mlir::OneToOneConvertToLLVMPattern<CallLLVMIntrinsicOp,
+                                       LLVM::CallIntrinsicOp>;
 
 } // namespace
 
@@ -1323,6 +1326,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPArrayRepeat,
       ConvertPOPArrayReplace,
       ConvertPOPBitcast,
+      ConvertPOPCallLLVMIntrinsic,
       ConvertPOPCast,
       ConvertPOPCastFromBuiltin,
       ConvertPOPCastToBuiltin,

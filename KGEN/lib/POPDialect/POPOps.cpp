@@ -984,6 +984,18 @@ OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// CallLLVMIntrinsicOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CallLLVMIntrinsicOp::verify() {
+  size_t numRes = getNumResults();
+  if (numRes > 1)
+    return emitOpError("expected 0 or 1 results, but got ")
+           << numRes << " results.";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

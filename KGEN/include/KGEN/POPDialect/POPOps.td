@@ -2057,3 +2057,27 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
   let hasFolder = 1;
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// CallLLVMIntrinsicOp
+//===----------------------------------------------------------------------===//
+
+def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic", [Pure]> {
+  let summary = "Call to an LLVM intrinsic function.";
+  let description = [{
+    The `pop.call_llvm_intrinsic` operation calls an llvm intrinsic using the
+    `llvm.call_intrinsic` op.
+
+    Example:
+
+    ```mlir
+      %0 = pop.call_llvm_intrinsic "llvm.round"(%arg0) :
+        !pop.scalar<f32> -> !pop.scalar<f32>
+    ```
+  }];
+  let arguments = (ins StrAttr:$intrin, Variadic<AnyType>:$args);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = "$intrin `(` $args `)` attr-dict `:` functional-type($args, $results)";
+
+  let hasVerifier = 1;
+}
