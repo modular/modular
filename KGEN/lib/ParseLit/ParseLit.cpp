@@ -71,7 +71,7 @@ static void addBuiltinDecls(LitSharedState &sharedState,
   sharedState.objectDecl = &resolver.addDecl(
       objectDecl, &builtinsDecl, LitLexerCursor(), LitLexerCursor(), 0);
   sharedState.objectDecl->setResolvedType(
-      sharedState.objectDecl->computeSelfTypeForStruct());
+      sharedState.objectDecl->computeSelfTypeForStruct(sharedState));
   sharedState.objectDecl->resolvedness = DeclResolvedness::fullyResolved;
 }
 

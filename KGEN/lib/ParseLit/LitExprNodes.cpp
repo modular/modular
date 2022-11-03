@@ -623,10 +623,11 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
     exprs.push_back(ParamBindAttr::get(decl, indexVal.ir));
   }
 
+  auto typeRef = emitter.shared.getASTType(decl, exprs);
   auto typeParams = ParamBindArrayAttr::get(emitter.getContext(), exprs);
   return {
       RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()), typeParams),
-      ASTType(decl, typeParams)};
+      typeRef};
 }
 
 ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
@@ -818,7 +819,7 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
   return {(DRValue)ifOp.getResult(0), emitter.shared.getIndexType()};
 }
 
-std::pair<Type, ASTType> TernaryOpNode::emitType(ExprEmitter &emitter) const {
+FullType TernaryOpNode::emitType(ExprEmitter &emitter) const {
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }

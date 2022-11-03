@@ -89,7 +89,7 @@ public:
   ///   VarDecl/ParamDecl: This is the type of the declaration.
   ///   FuncDecl: This is the return type.
   ///   StructDecl: This is the 'self' type.
-  const ASTType &getResolvedType() const {
+  ASTType getResolvedType() const {
     assert(resolvedness != DeclResolvedness::unparsed &&
            "signature must be resolved to get a resolved type");
     return resolvedType;
@@ -102,10 +102,10 @@ public:
   /// Given a type declaration, return an MLIR+ASTType for a reference to this
   /// with the specified type parameters.  This aborts if the current decl isn't
   /// a type like a struct.
-  std::pair<Type, ASTType> getFullTypeForTypeReference();
+  FullType getFullTypeForTypeReference();
 
   /// Given an MLIR op for a struct declaration, return the self type.
-  ASTType computeSelfTypeForStruct();
+  ASTType computeSelfTypeForStruct(LitSharedState &state);
 
   //===--------------------------------------------------------------------===//
   // Name lookup

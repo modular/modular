@@ -185,7 +185,7 @@ struct TernaryOpNode final : public ExprNode {
   SMLoc getLoc() const override { return opLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  std::pair<Type, ASTType> emitType(ExprEmitter &emitter) const override;
+  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct BinOpNode final : public ExprNode {

@@ -15,7 +15,6 @@
 #include "LitParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -27,79 +26,6 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
-
-//===----------------------------------------------------------------------===//
-// ASTType
-//===----------------------------------------------------------------------===//
-
-ASTType::ASTType(ASTDecl *decl, ParamBindArrayAttr attrs)
-    : decl(decl), paramValues(attrs) {
-  assert(decl && "cannot create ASTType with null decl");
-}
-
-ParamBindArrayAttr ASTType::getParamValues() const {
-  return cast<ParamBindArrayAttr>(paramValues);
-}
-
-/// Convert this type to a human readable string representation so it can be
-/// printed out for diagnostics.
-std::string ASTType::getAsString() const {
-  if (!decl)
-    return "<<NULL ASTTYPE>>";
-
-  std::string result;
-  llvm::raw_string_ostream os(result);
-  os << "'";
-
-  if (auto typeDecl = dyn_cast<LITStructDeclOp>(*decl)) {
-    // TODO: Could include name scope information.
-    os << typeDecl.getName();
-  } else if (decl->isMagic()) {
-    switch (decl->magicKind) {
-    case MagicDeclKind::kNormal:
-      llvm_unreachable("not a magic declaration?");
-    case MagicDeclKind::kIndexType:
-      os << "!builtin.index";
-      break;
-    case MagicDeclKind::kNoneType:
-      os << "!lit.none";
-      break;
-    case MagicDeclKind::kTypeCheckErrorType:
-      os << "<<TypeCheckError>>";
-      break;
-    case MagicDeclKind::kPointerType:
-      os << "<<Pointer>>";
-      break;
-    case MagicDeclKind::kSignatureType:
-      os << "<<FnSignature>>";
-      break;
-    }
-  } else {
-    // TODO: Add "aka" information when we have "type defs".
-    os << "<<unknown ASTType>>";
-  }
-
-  ParamBindArrayAttr params = getParamValues();
-  if (!params.empty()) {
-    os << '[';
-    llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
-      // TODO: This isn't really right, but will work enough for now.
-      printParamValue(bind.getValue(), os);
-    });
-    os << ']';
-  }
-
-  os << '\'';
-  return os.str();
-}
-
-mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
-                                           ASTType type) {
-  return diag << type.getAsString();
-}
-
-/// Print to standard error with newline after it, for use in a debugger.
-void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 
 //===----------------------------------------------------------------------===//
 // ASTDecl
@@ -114,17 +40,18 @@ ParamDeclAttr ASTDecl::getParamDecl() const {
 /// Given a type declaration, return a RefType for a reference to this with
 /// the specified type parameters.  This aborts if the current decl isn't a
 /// type.
-std::pair<Type, ASTType> ASTDecl::getFullTypeForTypeReference() {
+FullType ASTDecl::getFullTypeForTypeReference() {
   auto astType = getResolvedType();
   auto structOp = cast<LITStructDeclOp>(*this);
-  auto mlirType = RefType::get(FlatSymbolRefAttr::get(structOp.getNameAttr()),
-                               astType.getParamValues());
+  auto mlirType = RefType::get(
+      FlatSymbolRefAttr::get(structOp.getNameAttr()),
+      ParamBindArrayAttr::get(getContext(), astType.getParamValues()));
 
   return {mlirType, astType};
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
-ASTType ASTDecl::computeSelfTypeForStruct() {
+ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<LITStructDeclOp>(*this);
 
   SmallVector<ParamBindAttr> parameters;
@@ -135,12 +62,9 @@ ASTType ASTDecl::computeSelfTypeForStruct() {
     parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
   }
 
-  ParamBindArrayAttr selfParams =
-      ParamBindArrayAttr::get(structOp.getContext(), parameters);
-
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return ASTType(this, selfParams);
+  return state.getASTType(this, parameters);
 }
 
 //===----------------------------------------------------------------------===//
@@ -243,8 +167,7 @@ ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
                        LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   decl.magicKind = kind;
-  decl.setResolvedType(
-      ASTType(&decl, ParamBindArrayAttr::get(getContext(), {})));
+  decl.setResolvedType(sharedState.getASTType(&decl, {}));
   return decl;
 }
 
@@ -694,7 +617,7 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
-  decl.setResolvedType(decl.computeSelfTypeForStruct());
+  decl.setResolvedType(decl.computeSelfTypeForStruct(sharedState));
   return success();
 }
 

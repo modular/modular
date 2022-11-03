@@ -20,6 +20,7 @@ class SourceMgr;
 }
 
 namespace M::KGEN {
+class ParamBindAttr;
 class ParamBindArrayAttr;
 }
 
@@ -40,6 +41,9 @@ public:
   std::unique_ptr<DeclResolver> declResolver;
 
   const mlir::StringAttr bufferNameIdentifier;
+
+  /// Get a uniqued and pointer sized reference to an ASTType.
+  ASTType getASTType(ASTDecl *decl, ArrayRef<ParamBindAttr> params);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTDecl *typeCheckErrorTypeDecl = nullptr;
@@ -103,24 +107,53 @@ private:
 
   class Impl;
   std::unique_ptr<Impl> impl;
+
+  ArrayRef<ParamBindAttr> getUniquedParams(ArrayRef<ParamBindAttr> params);
+};
+
+/// This is the underlying storage for an ASTType and shouldn't be interacted
+/// with directly.  Use ASTType instead.
+class ASTTypeStorage {
+private:
+  friend class LitSharedState;
+  friend class ASTType;
+  ASTTypeStorage(ASTDecl &decl, ArrayRef<ParamBindAttr> paramValues)
+      : decl(decl), paramValues(paramValues) {}
+  ASTTypeStorage(const ASTTypeStorage &) = delete;
+  const ASTTypeStorage &operator=(const ASTTypeStorage &) = delete;
+
+  // Note that this is bump pointer allocated and its destructor is never run.
+  ASTDecl &decl;
+  ArrayRef<ParamBindAttr> paramValues;
 };
 
 /// This type represents an AST type for a value or declaration, which is a
 /// pointer to the DeclAST that defines it as well as any bound parameters.
 ///
+/// Instances of this type are always created by LitSharedState to ensure that
+/// their parameter arrays are uniqued and this can be copied around with ease.
+/// This type is typically used via ASTType.
+///
 /// The bound parameters may themselves refer to other parameters in the
 /// enclosing scope, e.g. in the case of `SomeType[size*42]`.
 ///
+/// This is a pointer-sized reference to a uniqued ASTType, maintained in the
+/// persistent allocator for the current parse.
 class ASTType {
 public:
-  ASTDecl *getDecl() const { return decl; }
-  ParamBindArrayAttr getParamValues() const;
+  ASTType() : pointer(nullptr) {}
 
-  ASTType() : decl(nullptr) {}
-  ASTType(ASTDecl *decl, ParamBindArrayAttr attrs);
+  ASTDecl *getDecl() const {
+    assert(pointer && "Cannot dereference null ASTType");
+    return &pointer->decl;
+  }
+  ArrayRef<ParamBindAttr> getParamValues() const {
+    assert(pointer && "Cannot dereference null ASTType");
+    return pointer->paramValues;
+  }
 
-  bool operator!() const { return decl == nullptr; }
-  explicit operator bool() const { return decl != nullptr; }
+  operator bool() const { return pointer != nullptr; }
+  bool operator!() const { return pointer == nullptr; }
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.
@@ -130,13 +163,14 @@ public:
   void dump() const;
 
 private:
-  ASTDecl *decl;
-  Attribute paramValues; // This is always a ParamBindArrayAttr.
+  friend class LitSharedState;
+  ASTType(ASTTypeStorage *pointer) : pointer(pointer) {}
+  ASTTypeStorage *pointer;
 };
 
-using FullType = std::pair<Type, ASTType>;
-
 mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);
+
+using FullType = std::pair<Type, ASTType>;
 
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
