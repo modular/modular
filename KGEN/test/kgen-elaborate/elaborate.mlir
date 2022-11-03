@@ -1085,3 +1085,18 @@ kgen.generator @callARegion<fn: () -> ()>() {
 kgen.generator @noReallyCallIt<fn: () -> ()>() {
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=foo"
+kgen.generator @takeStringParameter<SomeString: string>()
+    constraints <[eq(:string SomeString, "foo"), "I want foo"]> {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @giveString
+kgen.generator @giveString() {
+  // CHECK-NEXT: kgen.call @"takeStringParameter,SomeString=foo"
+  kgen.call @takeStringParameter<SomeString: string = "foo">() : () -> ()
+  kgen.return
+}
