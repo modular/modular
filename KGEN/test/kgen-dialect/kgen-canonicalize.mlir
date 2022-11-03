@@ -84,3 +84,25 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
   %result = kgen.param.constant = <unroll_simd_size>
   kgen.return %result : index
 }
+
+// -----
+
+// Hoisting constants that reference parameters.
+// https://github.com/modularml/modular/issues/4518
+
+kgen.generator @callee<fn: <N>()->index>() {
+  kgen.return
+}
+
+// CHECK-LABEL: @hoist_constant
+kgen.generator @hoist_constant() {
+  // CHECK-NEXT: inlined_call
+  kgen.inlined_call[<fn: <N>()->index>() -> (): @callee]<fn: <N>()->index = region>()
+  // CHECK-NEXT: fn<N>
+  fn<N>() {
+    // CHECK-NEXT: kgen.param.constant = <N>
+    %0 = kgen.param.constant = <N>
+    kgen.return %0 : index
+  }
+  kgen.return
+}
