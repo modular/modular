@@ -10,10 +10,10 @@ lit.struct.decl @AdderOneField {
 lit.struct.decl @Adder<size> {
   %base = lit.var.decl "base" : <index>
 
-  // CHECK-LABEL: kgen.generator @"Adder::__add__"(%arg0: !kgen.ref<@Adder<size = 2>>) {
+  // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.ref<@Adder<size = size>>) {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
-  lit.func @"Adder::__add__"(%self: !kgen.ref<@Adder<size = 2>>)  {
+  lit.func @"Adder::__add__"(%self: !kgen.ref<@Adder<size = size>>)  {
     %0 = lit.var.decl "a" : <index>
     %one = index.constant 1
     pop.store %one, %0 : !pop.pointer<index>
