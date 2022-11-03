@@ -356,7 +356,7 @@ struct ConvertPOPSIMDInsertElement
                   ConversionPatternRewriter &rewriter) const override {
     if (isSIMDSizeOneType(op.getVector().getType())) {
       // If the vector is size 1, return the value as is - it's a scalar.
-      rewriter.replaceOp(op, adaptor.getVector());
+      rewriter.replaceOp(op, adaptor.getValue());
       return success();
     }
     rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
