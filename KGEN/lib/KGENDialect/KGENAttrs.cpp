@@ -273,13 +273,11 @@ LogicalResult ParamOperatorAttr::verify(
     if (type != operands[0].getType())
       return emitError() << "result type should match operand types";
     // Check the types that are supported.
+    if (type.isIntOrIndex())
+      break; // Index and fixed-width integer types supported for all of these.
     if (type.isIndex())
-      break; // Index type supported for all of these.
-    if ((opcode == POC::Xor || opcode == POC::And || opcode == POC::Or) &&
-        type.isSignlessInteger(1))
-      break; // i1 types only support and, or, and xor.
-    // TODO: Can support signful fixed width types as needed.
-    return emitError() << "operator requires an index type";
+      return emitError() << "operator requires an index or integer type";
+    break;
   // Binary expressions.
   case POC::Shl:
   case POC::Shr:
@@ -289,8 +287,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode) << " must have two operands";
     if (type != operands[0].getType())
       return emitError() << "result type should match operand types";
-    if (!operands[0].getType().isIndex())
-      return emitError() << "operator requires an index type";
+    if (!operands[0].getType().isIntOrIndex())
+      return emitError() << "operator requires an index or integer type";
     break;
   case POC::EQ:
     if (operands.size() != 2)
@@ -311,9 +309,9 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "comparisons return i1";
 
     // Relational operations only work on index types.
-    if (!operands[0].getType().isa<IndexType>())
-      return emitError()
-             << "relational comparisons only allowed on index values";
+    if (!operands[0].getType().isIntOrIndex())
+      return emitError() << "relational comparisons only allowed on index or "
+                            "integer values";
     break;
   case POC::In:
     if (operands.empty())
@@ -452,6 +450,12 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   return false;
 }
 
+/// Treat `index` and signed integers as signed. Treat signless and unsigned
+/// integers as unsigned.
+static bool isSignedIntType(Type type) {
+  return type.isIndex() || type.isSignedInteger();
+}
+
 /// Given a function_ref from `(APInt,APInt)->T` and two APInt's, compute the
 /// result value T and return it.
 ///
@@ -463,8 +467,12 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
 template <typename ResultTy>
 static IntegerAttr foldBinaryValues(
     const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
-        &calculateFn,
+        &unsignedCalculateFn,
+    const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
+        &signedCalculateFn,
     const APInt &lhs, const APInt &rhs, Type valueTy, Type resultTy = {}) {
+  const auto &calculateFn =
+      isSignedIntType(valueTy) ? signedCalculateFn : unsignedCalculateFn;
 
   // Clients can specify resultTy if it differs from valueTy (e.g. for
   // compares), but not specifying it defaults to the result being the same type
@@ -501,7 +509,8 @@ static IntegerAttr foldBinaryValues(
 /// constant, then return that, otherwise update the operands list.
 static Attribute simplifyAssocOp(
     POC opcode, SmallVectorImpl<TypedAttr> &operands,
-    llvm::function_ref<APInt(const APInt &, const APInt &)> calculateFn,
+    llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
+    llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn = {},
     llvm::function_ref<bool(const APInt &)> identityConstantFn = {},
     llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {}) {
   auto type = operands[0].getType();
@@ -532,7 +541,8 @@ static Attribute simplifyAssocOp(
            operands[operands.size() - 2].isa<IntegerAttr>()) {
       APInt c1 = operands[operands.size() - 2].cast<IntegerAttr>().getValue();
       APInt c2 = operands.back().cast<IntegerAttr>().getValue();
-      if (auto resultConstant = foldBinaryValues(calculateFn, c1, c2, type)) {
+      if (auto resultConstant = foldBinaryValues(
+              unsignedFn, signedFn ? signedFn : unsignedFn, c1, c2, type)) {
         operands.pop_back();
         operands.pop_back();
         operands.push_back(resultConstant);
@@ -580,7 +590,7 @@ static Attribute getOneOfType(Type type) {
 
 static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
-          POC::Add, operands, [](auto a, auto b) { return a + b; },
+          POC::Add, operands, [](auto a, auto b) { return a + b; }, {},
           /*identityCst*/ [](auto cst) { return cst.isZero(); }))
     return result;
 
@@ -629,7 +639,7 @@ static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyMul(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
-          POC::Mul, operands, [](auto a, auto b) { return a * b; },
+          POC::Mul, operands, [](auto a, auto b) { return a * b; }, {},
           /*identityCst*/ [](auto cst) { return cst.isOne(); },
           /*destructiveCst*/ [](auto cst) { return cst.isZero(); }))
     return result;
@@ -659,21 +669,21 @@ static Attribute simplifyMul(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::And, operands, [](auto a, auto b) { return a & b; },
+      POC::And, operands, [](auto a, auto b) { return a & b; }, {},
       /*identityCst*/ [](auto cst) { return cst.isAllOnes(); },
       /*destructiveCst*/ [](auto cst) { return cst.isZero(); });
 }
 
 static Attribute simplifyOr(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::Or, operands, [](auto a, auto b) { return a | b; },
+      POC::Or, operands, [](auto a, auto b) { return a | b; }, {},
       /*identityCst*/ [](auto cst) { return cst.isZero(); },
       /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); });
 }
 
 static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::Xor, operands, [](auto a, auto b) { return a ^ b; },
+      POC::Xor, operands, [](auto a, auto b) { return a ^ b; }, {},
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
 }
 
@@ -685,33 +695,50 @@ static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
   operands = uniqueOperands.takeVector();
 }
 
+/// Returns true if the integer is at its max value.
+static bool intIsMaxValue(Type type, const APInt &value) {
+  return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
+}
+
+/// Returns true if the integer is at its min value.
+static bool intIsMinValue(Type type, const APInt &value) {
+  return isSignedIntType(type) ? value.isMinSignedValue() : value.isMinValue();
+}
+
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
   deduplicateOperands(operands);
-  return simplifyAssocOp(POC::Max, operands, [](auto a, auto b) {
-    return llvm::APIntOps::smax(a, b);
-  });
+  Type type = operands.front().getType();
+  return simplifyAssocOp(
+      POC::Max, operands,
+      [](auto a, auto b) { return llvm::APIntOps::umax(a, b); },
+      [](auto a, auto b) { return llvm::APIntOps::smax(a, b); },
+      [&](auto cst) { return intIsMinValue(type, cst); },
+      [&](auto cst) { return intIsMaxValue(type, cst); });
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
   deduplicateOperands(operands);
-  return simplifyAssocOp(POC::Min, operands, [](auto a, auto b) {
-    return llvm::APIntOps::smin(a, b);
-  });
+  Type type = operands.front().getType();
+  return simplifyAssocOp(
+      POC::Min, operands,
+      [](auto a, auto b) { return llvm::APIntOps::umin(a, b); },
+      [](auto a, auto b) { return llvm::APIntOps::smin(a, b); },
+      [&](auto cst) { return intIsMaxValue(type, cst); },
+      [&](auto cst) { return intIsMinValue(type, cst); });
 }
 
 /// Given a binary function, if the two operands are known constant integers,
 /// use the specified fold functions to compute the result.
 static Attribute
 foldBinaryOp(ArrayRef<TypedAttr> operands,
-             llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedfn,
+             llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
              llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn) {
   assert(operands.size() == 2 && "binary operator always has two operands");
   if (auto lhs = dyn_cast<IntegerAttr>(operands[0]))
     if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
-      const auto &fn =
-          (lhs.getType().isSignedInteger() ? signedFn : unsignedfn);
-      if (auto resultConstant = foldBinaryValues(fn, lhs.getValue(),
-                                                 rhs.getValue(), lhs.getType()))
+      if (auto resultConstant =
+              foldBinaryValues(unsignedFn, signedFn, lhs.getValue(),
+                               rhs.getValue(), lhs.getType()))
         return resultConstant;
     }
   return {};
@@ -721,11 +748,15 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
 /// must handle signedness etc.
 static IntegerAttr foldCompareOp(
     TypedAttr lhs, TypedAttr rhs,
-    llvm::function_ref<bool(const APInt &, const APInt &)> compareFn) {
+    llvm::function_ref<bool(const APInt &, const APInt &)> unsignedCompareFn,
+    llvm::function_ref<bool(const APInt &, const APInt &)> signedCompareFn =
+        {}) {
   if (auto lhsInt = dyn_cast<IntegerAttr>(lhs))
     if (auto rhsInt = dyn_cast<IntegerAttr>(rhs)) {
       if (auto resultConstant = foldBinaryValues(
-              compareFn, lhsInt.getValue(), rhsInt.getValue(), lhsInt.getType(),
+              unsignedCompareFn,
+              signedCompareFn ? signedCompareFn : unsignedCompareFn,
+              lhsInt.getValue(), rhsInt.getValue(), lhsInt.getType(),
               IntegerType::get(rhs.getContext(), 1)))
         return resultConstant;
     }
@@ -808,26 +839,23 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
   return foldEquality(operands[0], operands[1]);
 }
 
-// Simplify the < and <= operations.
+/// Simplify the < and <= operations.
 static Attribute
 simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
-  // We only support signed arithmetic so far.
-  assert(operands[0].getType().isIndex());
-
   auto rhs = dyn_cast<IntegerAttr>(operands[1]);
   auto lhs = dyn_cast<IntegerAttr>(operands[0]);
 
   if (rhs && !lhs) {
     // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
     if (opcode == POC::LE) {
-      if (rhs.getValue().isMaxSignedValue()) // x <=s 127 --> TRUE.
+      if (intIsMaxValue(rhs.getType(), rhs.getValue())) // x <= 127 --> TRUE.
         return BoolAttr::get(rhs.getContext(), true);
       return ParamOperatorAttr::get(
           POC::LT, operands[0],
           IntegerAttr::get(rhs.getType(), rhs.getValue() + 1));
     }
     // If this is (x < MAXCST) canonicalize to (x != MAXCST).
-    if (rhs.getValue().isMaxSignedValue())
+    if (intIsMaxValue(rhs.getType(), rhs.getValue()))
       return ParamOperatorAttr::getNE(operands[0], rhs);
   }
 
@@ -842,11 +870,13 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
   }
 
   if (opcode == POC::LT)
-    return foldCompareOp(operands[0], operands[1],
-                         [](auto a, auto b) { return a.slt(b); });
+    return foldCompareOp(
+        operands[0], operands[1], [](auto a, auto b) { return a.ult(b); },
+        [](auto a, auto b) { return a.slt(b); });
   assert(opcode == POC::LE);
-  return foldCompareOp(operands[0], operands[1],
-                       [](auto a, auto b) { return a.sle(b); });
+  return foldCompareOp(
+      operands[0], operands[1], [](auto a, auto b) { return a.ule(b); },
+      [](auto a, auto b) { return a.sle(b); });
 }
 
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
