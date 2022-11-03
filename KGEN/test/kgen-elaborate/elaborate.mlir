@@ -1064,3 +1064,24 @@ kgen.generator @callAndInlineCall() {
   kgen.call @inlineButDontDelete<N = 1>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @passNonIsolatedRegion
+// CHECK-NEXT: kgen.return
+kgen.generator @passNonIsolatedRegion() {
+  kgen.inlined_call[<fn: () -> ()>() -> (): @callARegion]<fn: () -> () = region>()
+  fn() {
+    kgen.return
+  }
+  kgen.return
+}
+
+kgen.generator @callARegion<fn: () -> ()>() {
+  kgen.inlined_call[<fn: () -> ()>() -> (): @noReallyCallIt]<fn: () -> () = fn>()
+  kgen.return
+}
+
+kgen.generator @noReallyCallIt<fn: () -> ()>() {
+  kgen.return
+}

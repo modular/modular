@@ -472,9 +472,12 @@ private:
   LogicalResult processParamConstantOp(ParamConstantOp op);
   LogicalResult processParamAssertOp(ParamAssertOp op);
 
-  ArrayAttr resolveCallInputParams(Operation *call,
-                                   ArrayRef<ParamBindAttr> inputValues,
-                                   bool inlined);
+  /// Resolve the input parameters to a call into concrete values. This returns
+  /// an array of bound input constants and a flag indicating whether the
+  /// instantiated callee will always be inlined.
+  FailureOr<std::pair<ArrayAttr, bool>>
+  resolveCallInputParams(Operation *call, ArrayRef<ParamBindAttr> inputValues,
+                         bool isInlinedCall);
 
   /// Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
@@ -483,13 +486,13 @@ private:
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
     return processGeneratorUserImpl(user, user.getParamDecls(),
                                     user.getParamValues(), user.getCalleeAttr(),
-                                    rewriters);
+                                    rewriters, /*isInlinedCall=*/false);
   }
   LogicalResult processGeneratorUserImpl(
       Operation *user, ArrayRef<ParamDeclAttr> decls,
       ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
-      bool inlined = false);
+      bool isInlinedCall);
   void
   completeGeneratorUserProcessing(Operation *user,
                                   ArrayRef<ParamDeclAttr> decls,
@@ -827,14 +830,15 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
 }
 
 /// Resolve all of input parameters present at the specified call site to
-/// concrete constants.  This reports the error and returns null on failure,
+/// concrete constants. This reports the error and returns null on failure,
 /// and returns an array of bound input parameters on success.
-ArrayAttr ParameterRewriter::resolveCallInputParams(
-    Operation *call, ArrayRef<ParamBindAttr> inputValues, bool inlined) {
+FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
+    Operation *call, ArrayRef<ParamBindAttr> inputValues, bool isInlinedCall) {
   // The region to use for the next "region" input parameter.
   size_t nextRegionInThisCall = 0;
 
   SmallVector<Attribute> boundInputParams;
+  bool inlineCallee = false;
   for (ParamBindAttr param : inputValues) {
     // If this is a region reference, form a binding to the region provided by
     // the call.
@@ -861,11 +865,11 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
       // TODO: We could do some content hashing to avoid making a new name for
       // a lexically identical body.  This would reduce some redundant
       // specialization.
-      elaborator.addRegionReference(
-          regionRefName,
-          Elaborator::RegionBody{
-              body,
-              ParameterEvaluator(symtab, getEvaluator().getParameterValues())});
+      Elaborator::RegionBody regionBody{
+          body,
+          ParameterEvaluator(symtab, getEvaluator().getParameterValues())};
+      inlineCallee |= !regionBody.isIsolatedFromAbove();
+      elaborator.addRegionReference(regionRefName, std::move(regionBody));
       boundInputParams.push_back(regionRefName);
       continue;
     }
@@ -874,33 +878,39 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
     // constant.
     auto value = getEvaluator().concretizeParameterExpr(param.getValue());
     if (value.isError())
-      return (void)error(call->getLoc(), value.takeError()), ArrayAttr();
+      return error(call->getLoc(), value.takeError());
 
-    // A call that isn't going to be inlined cannot reference a region that is
-    // not isolated from above.
+    // Check if we have a reference to a non-isolated region.
     auto regionRef = dyn_cast<StringAttr>(value.get());
-    if (!inlined && regionRef &&
+    if (regionRef &&
         !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
-      (void)error(
-          call->getLoc(),
-          "non-inlined call to symbol instantiated with non-isolated region");
-      return nullptr;
+      // Only the callees of inlined calls can be regions not isolated from
+      // above.
+      if (!isInlinedCall)
+        return error(
+            call->getLoc(),
+            "non-inlined call to symbol instantiated with non-isolated region");
+      // Indicate that the callee will always be inlined.
+      inlineCallee = true;
     }
 
     boundInputParams.push_back(value.takeValue());
   }
-  return ArrayAttr::get(call->getContext(), boundInputParams);
+  return std::make_pair(ArrayAttr::get(call->getContext(), boundInputParams),
+                        inlineCallee);
 }
 
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
     Operation *user, ArrayRef<ParamDeclAttr> decls,
     ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
-    bool inlined) {
+    bool isInlinedCall) {
   // Evaluate any input parameters.
-  auto inputParamKey = resolveCallInputParams(user, paramValues, inlined);
-  if (!inputParamKey)
+  FailureOr<std::pair<ArrayAttr, bool>> result =
+      resolveCallInputParams(user, paramValues, isInlinedCall);
+  if (failed(result))
     return failure();
+  auto [inputParamKey, inlineCallee] = *result;
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
@@ -915,9 +925,9 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   // evaluator first.
   if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee))
     if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr())
-      if (failed(processGeneratorUserImpl(itf, {},
-                                          evaluator.getParamValues().getValue(),
-                                          evaluator.getSymbol(), rewriters)))
+      if (failed(processGeneratorUserImpl(
+              itf, {}, evaluator.getParamValues().getValue(),
+              evaluator.getSymbol(), rewriters, /*isInlinedCall=*/false)))
         return failure();
 
   DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
@@ -934,7 +944,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
   ArrayRef<ElaboratedGeneratorOrCalleeError> newCalleesRef =
-      elaborator.getAllInstantiations(calleeDeclAndInputParams, inlined);
+      elaborator.getAllInstantiations(calleeDeclAndInputParams, inlineCallee);
 
   // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -1102,13 +1112,13 @@ LogicalResult ParameterRewriter::processCallParamOp(
     // If there are no bound parameters on the call, use the one on the
     // CallParam.  TODO: Remove.
     if (symbolCst.getParamValues().empty())
-      return processGeneratorUserImpl(call, call.getParamDecls(),
-                                      call.getParamValues(),
-                                      symbolCst.getSymbol(), rewriters);
+      return processGeneratorUserImpl(
+          call, call.getParamDecls(), call.getParamValues(),
+          symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/false);
     // Otherwise use the ones from the symbol.
-    return processGeneratorUserImpl(call, call.getParamDecls(),
-                                    symbolCst.getParamValues().getValue(),
-                                    symbolCst.getSymbol(), rewriters);
+    return processGeneratorUserImpl(
+        call, call.getParamDecls(), symbolCst.getParamValues().getValue(),
+        symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/false);
   }
 
   // Otherwise, the only other case we support is a call to a region, which is
@@ -1135,20 +1145,13 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
   auto symbolCst = cast<SymbolConstantAttr>(callee.get());
   // If there are no bound parameters on the call, use the one on the
   // CallParam.  TODO: Remove.
-  if (symbolCst.getParamValues().empty()) {
-    // We don't need to mark the function as being inlined if there are no
-    // region parameters (it will still be inlined).
-    bool markInlined =
-        llvm::any_of(call.getParamValues(), [](ParamBindAttr value) {
-          return isa<ParamCallRegionRefAttr>(value.getValue());
-        });
+  if (symbolCst.getParamValues().empty())
     return processGeneratorUserImpl(
         call, call.getParamDecls(), call.getParamValues(),
-        symbolCst.getSymbol(), rewriters, markInlined);
-  }
+        symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/true);
   return processGeneratorUserImpl(
       call, call.getParamDecls(), symbolCst.getParamValues().getValue(),
-      symbolCst.getSymbol(), rewriters, /*inlined=*/false);
+      symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/true);
 }
 
 LogicalResult ParameterRewriter::processRegionCallImpl(
@@ -1160,10 +1163,11 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   KGENDeclInterface region = regionBody.body;
 
   // Compute the binding of input parameters to concrete values.
-  auto inputParamKey =
-      resolveCallInputParams(call, paramValues, /*inlined=*/true);
-  if (!inputParamKey)
+  FailureOr<std::pair<ArrayAttr, bool>> result =
+      resolveCallInputParams(call, paramValues, /*isInlinedCall=*/true);
+  if (failed(result))
     return failure();
+  auto [inputParamKey, _] = *result;
 
   auto theRegionReturnOp =
       cast<ReturnOp>(region->getRegion(0).front().getTerminator());
