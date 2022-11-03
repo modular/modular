@@ -579,6 +579,14 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
     funcField->remove();
     symbolTable.insert(funcField, Block::iterator(structDecl));
 
+    // Prepend the parameters from the struct decl.
+    SmallVector<ParamDeclAttr> paramDecls;
+    paramDecls.reserve(litStructDecl.getParamDecls().size() +
+                       funcField.getParamDecls().size());
+    llvm::append_range(paramDecls, litStructDecl.getParamDecls());
+    llvm::append_range(paramDecls, funcField.getParamDecls());
+    funcField.setParamDecls(paramDecls);
+
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(funcField, symbolTable)))
       return failure();
