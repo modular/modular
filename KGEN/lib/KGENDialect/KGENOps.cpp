@@ -345,33 +345,8 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
 /// Create a func with no body block.  The caller must create it and fill
 /// it in.
 void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, ArrayRef<Type> outputParamTypes) {
-  // Add an attribute for the name and function_type attributes.
-  result.addAttribute(SymbolTable::getSymbolAttrName(), name);
-  result.addAttribute(getTypeAttrName(), TypeAttr::get(signature));
-  result.addAttribute("paramDecls", builder.getAttr<ParamDeclArrayAttr>(
-                                        ArrayRef<ParamDeclAttr>()));
-  result.addAttribute("resultParamTypes",
-                      builder.getAttr<TypeArrayAttr>(outputParamTypes));
-  result.addRegion();
-}
-
-/// Create a func with an empty body, `argLocs` specifies the locations for
-/// all the block arguments.
-void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, ArrayRef<Type> outputParamTypes,
-                   ArrayRef<Location> argLocs) {
-  build(builder, result, name, signature, outputParamTypes);
-
-  // Create a block for the body.
-  auto *bodyRegion = result.regions[0].get();
-  Block *body = new Block();
-  bodyRegion->push_back(body);
-
-  // Add arguments to the body block.
-  assert(signature.getInputs().size() == argLocs.size() &&
-         "incorrect number of arg locs");
-  body->addArguments(signature.getInputs(), argLocs);
+                   FunctionType signature, ArrayRef<Type> resultParamTypes) {
+  build(builder, result, name, signature, {}, resultParamTypes);
 }
 
 ReturnOp FuncOp::getReturnOp() {
