@@ -252,12 +252,6 @@ LogicalResult ParamOperatorAttr::verify(
       }))
     return emitError() << "operand type mismatch";
 
-  // This is the list of types we can apply == and set comparison to.
-  auto isEqualityComparableType = [&](Type ty) -> bool {
-    return ty.isSignlessInteger(1) || ty.isIndex() ||
-           ty.isa<DTypeType, MLIRTypeType, StringType>();
-  };
-
   // Check invariants on the expression.
   switch (opcode) {
   case POC::Add:
@@ -293,10 +287,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::EQ:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
-
-    if (!isEqualityComparableType(operands[0].getType()))
-      return emitError() << "unsupported comparison type "
-                         << operands[0].getType();
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
@@ -316,9 +306,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
-    if (!isEqualityComparableType(operands[0].getType()))
-      return emitError() << "unsupported set comparison type "
-                         << operands[0].getType();
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
@@ -771,6 +758,10 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   // foldCompareOp handles 32-bit truncation of input values correctly.
   if (lhs.getType().isIndex())
     return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
+
+  // If the values have pointer equality, we know they are equal.
+  if (lhs == rhs)
+    return BoolAttr::get(rhs.getContext(), true);
 
   // Otherwise, we can use pointer equality for the attributes we support that
   // are known to have agreeable widths.

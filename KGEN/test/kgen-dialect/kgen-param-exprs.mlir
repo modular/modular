@@ -132,7 +132,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <5>
   %38 = kgen.param.constant = <sub(9, 4)>
 
-  // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int1)>
+  // CHECK: = kgen.param.constant: i1 = <1>
   %39 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>
 
   // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int2)>
@@ -187,6 +187,16 @@ kgen.generator @signed_unsigned_integers<ps: si8, pu: ui8>() {
   // CHECK-NEXT: constant: si8 = <5>
   %7 = kgen.param.constant: si8 = <max(-5, 5)>
 
+  kgen.return
+}
+
+// CHECK-LABEL: @eq_compare_anything
+kgen.generator @eq_compare_anything() {
+  // CHECK-NEXT: <1>
+  %0 = kgen.param.constant: i1 = <eq(:f32 1.5, 1.5)>
+
+  // CHECK-NEXT: <0>
+  %1 = kgen.param.constant: i1 = <ne(:f32 1.5, 1.5)>
   kgen.return
 }
 
