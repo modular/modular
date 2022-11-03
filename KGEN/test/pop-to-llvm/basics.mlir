@@ -735,6 +735,15 @@ kgen.func @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
 
 // -----
 
+// CHECK-LABEL: @one_variant_type
+// CHECK: !llvm.struct<(array<1 x i64>, i1)>
+kgen.func @one_variant_type(%a: !pop.variant<i32>) -> i1 {
+  %0 = pop.variant.is i32, %a : !pop.variant<i32>
+  kgen.return %0 : i1
+}
+
+// -----
+
 // CHECK-LABEL: @prefetch
 kgen.func @prefetch(%p: !pop.pointer<scalar<si32>>) {
   // CHECK-DAG: [[RW:%[0-9]+]] = llvm.mlir.constant(0 : i32) : i32
