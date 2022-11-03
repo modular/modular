@@ -187,6 +187,36 @@ using ElaboratedGeneratorOrCalleeError =
     std::variant<ElaboratedGenerator, CalleeExpansionError>;
 
 //===----------------------------------------------------------------------===//
+// RegionReferenceAttr
+//===----------------------------------------------------------------------===//
+
+/// Region references in the elaborator are encoded as string attributes with
+/// signature types. The string value is a key that uniquely identifies a bound
+/// region whose ownership has been transferred to the elaborator. The string
+/// value is used to mangle the name of instantiated functions.
+namespace {
+class RegionReferenceAttr : public StringAttr {
+public:
+  using StringAttr::StringAttr;
+
+  /// Allow implicit conversion for dense maps.
+  RegionReferenceAttr(StringAttr impl) : StringAttr(impl) {}
+
+  /// Create a region reference.
+  static RegionReferenceAttr get(const Twine &regionName, SignatureType type) {
+    return llvm::cast<RegionReferenceAttr>(StringAttr::get(regionName, type));
+  }
+
+  /// Support type inquiry.
+  static bool classof(Attribute attr) {
+    if (auto string = llvm::dyn_cast<StringAttr>(attr))
+      return llvm::isa<SignatureType>(string.getType());
+    return false;
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // Elaborator class definition
 //===----------------------------------------------------------------------===//
 
@@ -217,7 +247,8 @@ public:
   void insertFuncVariant(FuncOp existing, FuncOp newFunc);
 
   /// Indicate that a function should be removed from the module at the end of
-  /// elaboration. These functions are either invalid instantiations or inlined.
+  /// elaboration. These functions are either invalid instantiations or
+  /// inlined.
   void markFuncForRemoval(FuncOp func) { funcsToRemove.insert(func); }
 
   /// Return true if the function was invalid or inlined and should be removed
@@ -248,21 +279,21 @@ public:
 
   /// These methods provide access to the `regionsReferenced` dictionary. This
   /// tracks regions on kgen.call operations with unique string names. The
-  /// elaborator takes ownership of the body by hooking it up to a module as its
-  /// virtual root.
-  void addRegionReference(StringAttr attr, RegionBody regionBody) {
+  /// elaborator takes ownership of the body by hooking it up to a module as
+  /// its virtual root.
+  void addRegionReference(RegionReferenceAttr attr, RegionBody regionBody) {
     regionsReferenced[attr] = std::move(regionBody);
     regionOwner->push_back(regionBody.body);
   }
 
-  /// Get a reference region by name. The referenced region can be isolated from
-  /// above or not isolated from above.
-  const RegionBody &getRegionReferenced(StringAttr attr) {
+  /// Get a reference region by name. The referenced region can be isolated
+  /// from above or not isolated from above.
+  const RegionBody &getRegionReferenced(RegionReferenceAttr attr) {
     return regionsReferenced[attr];
   }
 
-  /// Have the elaborator take the nested parameter declarations and uses for a
-  /// set of nested parameter scopes. The uses can be looked up later when
+  /// Have the elaborator take the nested parameter declarations and uses for
+  /// a set of nested parameter scopes. The uses can be looked up later when
   /// elaboration recurses into those nested scopes.
   void takeNestedParameterUses(
       DenseMap<KGENDeclInterface, ParameterDeclsAndUses> &&nestedUses) {
@@ -273,10 +304,10 @@ public:
     }
   }
 
-  /// Try to find cached parameter declarations and uses for the provided nested
-  /// scope. Due to nested scopes getting cloned, nested scopes will only hit
-  /// the cache at best every other depth. Still, it covers the most common case
-  /// of depth 1.
+  /// Try to find cached parameter declarations and uses for the provided
+  /// nested scope. Due to nested scopes getting cloned, nested scopes will
+  /// only hit the cache at best every other depth. Still, it covers the most
+  /// common case of depth 1.
   const ParameterDeclsAndUses *lookupNestedUses(KGENDeclInterface decl) {
     auto it = nestedParamDeclsAndUses.find(decl);
     return it == nestedParamDeclsAndUses.end() ? nullptr : &it->second;
@@ -284,8 +315,8 @@ public:
 
 private:
   /// Specialize a func body, generating one variant or each viable
-  /// instantiation of that body.  Funcs do not have input parameters, but they
-  /// can invoke interfaces etc which can cause them to produce multiple
+  /// instantiation of that body.  Funcs do not have input parameters, but
+  /// they can invoke interfaces etc which can cause them to produce multiple
   /// variants.
   ///
   /// SourceModule indicates which module in the included library this
@@ -293,8 +324,8 @@ private:
   SmallVector<ElaboratedGeneratorOrCalleeError>
   specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined);
 
-  /// Specialize a generator with the specified input parameters and return the
-  /// generated func.
+  /// Specialize a generator with the specified input parameters and return
+  /// the generated func.
   SmallVector<ElaboratedGeneratorOrCalleeError>
   specializeGenerator(DeclAndInputParamsPair declAndInputParams, bool inlined);
 
@@ -326,9 +357,10 @@ private:
            SmallVector<ElaboratedGeneratorOrCalleeError>>
       generatedFuncs;
 
-  /// This is keeps track of a mapping from named regions (which get pulled out
-  /// of kgen.call's during elaboration) to a Block that provides the body.
-  DenseMap<StringAttr, RegionBody> regionsReferenced;
+  /// This is keeps track of a mapping from named regions (which get pulled
+  /// out of kgen.call's during elaboration) to a Block that provides the
+  /// body.
+  DenseMap<RegionReferenceAttr, RegionBody> regionsReferenced;
 
   /// The elaborator maintains ownership of all region body parameters through
   /// an owned module that is the parent of all region bodies. The region body
@@ -339,14 +371,15 @@ private:
   /// parameter scopes (region bodies).
   DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedParamDeclsAndUses;
 
-  /// This map keeps track of the first func that a generator with no parameters
-  /// expanded into.  We rename it to have the same symbol as the original
-  /// generator in a post-pass.
+  /// This map keeps track of the first func that a generator with no
+  /// parameters expanded into.  We rename it to have the same symbol as the
+  /// original generator in a post-pass.
   DenseMap<GeneratorOp, FuncOp> firstConcreteFuncForGenerator;
 
-  /// This tracks generated functions that should be removed after elaboration.
-  /// These functions were either inlined by a parameter rewriter or are
-  /// malformed. These functions need to be cleaned up at the end of the pass.
+  /// This tracks generated functions that should be removed after
+  /// elaboration. These functions were either inlined by a parameter rewriter
+  /// or are malformed. These functions need to be cleaned up at the end of
+  /// the pass.
   DenseSet<FuncOp> funcsToRemove;
 
   /// Enable search during interface elaboration. This defaults to `false`
@@ -517,7 +550,7 @@ private:
 
   /// Process a call to a region.
   LogicalResult processRegionCallImpl(KGENCallOpInterface call,
-                                      StringAttr regionName,
+                                      RegionReferenceAttr regionName,
                                       ParamDeclArrayAttr decls,
                                       ArrayRef<ParamBindAttr> paramValues);
 
@@ -845,12 +878,12 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
     if (auto regionRef = dyn_cast<ParamCallRegionRefAttr>(param.getValue())) {
       Region &region = call->getRegion(nextRegionInThisCall++);
 
-      // Give this reference a unique name, and make a StringAttr attribute with
+      // Give this reference a unique name, and make a RegionReferenceAttr with
       // the name and SignatureType.
-      auto regionRefName =
-          StringAttr::get(elaboratedGenerator.func.getName() + "_region_" +
-                              Twine(nextCallRegionID++),
-                          regionRef.getType());
+      auto regionRefAttr =
+          RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
+                                       "_region_" + Twine(nextCallRegionID++),
+                                   regionRef.getType());
 
       // The region in question should only have a single RegionBodyOp
       // operation.  Take it out and hand ownership to the elaborator so
@@ -869,8 +902,8 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
           body,
           ParameterEvaluator(symtab, getEvaluator().getParameterValues())};
       inlineCallee |= !regionBody.isIsolatedFromAbove();
-      elaborator.addRegionReference(regionRefName, std::move(regionBody));
-      boundInputParams.push_back(regionRefName);
+      elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
+      boundInputParams.push_back(regionRefAttr);
       continue;
     }
 
@@ -881,7 +914,7 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
       return error(call->getLoc(), value.takeError());
 
     // Check if we have a reference to a non-isolated region.
-    auto regionRef = dyn_cast<StringAttr>(value.get());
+    auto regionRef = dyn_cast<RegionReferenceAttr>(value.get());
     if (regionRef &&
         !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
       // Only the callees of inlined calls can be regions not isolated from
@@ -1075,7 +1108,7 @@ void ParameterRewriter::spawnNewFuncClone(
   // If the duplicated callee referenced a region not isolated from above, then
   // we need to remap any values that escaped to the cloned function.
   auto isNonIsolatedRegionRef = [&](Attribute attr) {
-    if (auto regionRef = dyn_cast<StringAttr>(attr))
+    if (auto regionRef = dyn_cast<RegionReferenceAttr>(attr))
       return !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove();
     return false;
   };
@@ -1123,7 +1156,7 @@ LogicalResult ParameterRewriter::processCallParamOp(
 
   // Otherwise, the only other case we support is a call to a region, which is
   // marked with a StringAttr value that has signature type.
-  auto regionName = errorOrValue.get().cast<StringAttr>();
+  auto regionName = errorOrValue.get().cast<RegionReferenceAttr>();
   return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                call.getParamValues());
 }
@@ -1138,7 +1171,7 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
 
   // If the parameter expression is resolved to a region, then it is inlined
   // anyways.
-  if (auto regionName = dyn_cast<StringAttr>(callee.get()))
+  if (auto regionName = dyn_cast<RegionReferenceAttr>(callee.get()))
     return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                  call.getParamValues());
 
@@ -1155,8 +1188,8 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
 }
 
 LogicalResult ParameterRewriter::processRegionCallImpl(
-    KGENCallOpInterface call, StringAttr regionName, ParamDeclArrayAttr decls,
-    ArrayRef<ParamBindAttr> paramValues) {
+    KGENCallOpInterface call, RegionReferenceAttr regionName,
+    ParamDeclArrayAttr decls, ArrayRef<ParamBindAttr> paramValues) {
   assert(regionName.getType().isa<SignatureType>() && "not a region reference");
   const Elaborator::RegionBody &regionBody =
       elaborator.getRegionReferenced(regionName);

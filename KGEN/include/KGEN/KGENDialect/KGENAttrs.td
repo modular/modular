@@ -167,12 +167,12 @@ def ParamCallRegionRefAttr
    : ExprAttr<"ParamCallRegionRef", "param.call.region.ref"> {
   let summary =
     "A marker indicating a signature value is specified by a call region";
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let assemblyFormat = "";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "SignatureType":$type), [{
       return get(type.getContext(), type);
     }]>
   ];

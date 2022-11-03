@@ -605,7 +605,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     /// The region keyword is a token that specifies that a signature value will
     /// be provided by a region on a kgen.call{_param} operation.
     if (keyword == "region" && type.isa<SignatureType>()) {
-      value = ParamCallRegionRefAttr::get(p.getContext(), type);
+      value = ParamCallRegionRefAttr::get(p.getContext(),
+                                          cast<SignatureType>(type));
       return success();
     }
 
