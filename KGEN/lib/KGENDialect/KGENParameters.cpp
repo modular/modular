@@ -300,9 +300,12 @@ private:
 /// definitions in invalid positions as well.
 LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
-    // Defer nested parameter scopes.
-    if (bodyOp != topLevelOp && isa<KGENDeclInterface>(bodyOp)) {
-      parameters.nestedDecls.push_back(cast<KGENDeclInterface>(bodyOp));
+    // Defer nested parameter scopes. If the nested scope is parametrically
+    // isolated from above, skip it.
+    auto nestedDecl = dyn_cast<KGENDeclInterface>(bodyOp);
+    if (nestedDecl && nestedDecl != topLevelOp) {
+      if (!nestedDecl.isIsolatedFromAbove())
+        parameters.nestedDecls.push_back(nestedDecl);
       return WalkResult::skip();
     }
 
@@ -409,6 +412,11 @@ LogicalResult DeclParameterVerifier::checkParameterUses() {
             << "parameter defined with type " << decl.getType();
         return failure();
       }
+
+      // If the declaration of the parameter is outside the scope, save it as a
+      // use from above.
+      if (!topLevelOp->isAncestor(op))
+        parameters.usesFromAbove.insert(paramRefAttr);
     }
 
     // Build the `opIndexInUses` map so the graph iterator can be efficient.
@@ -814,7 +822,7 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     return failure();
 
   DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedDeclUses;
-  DenseSet<Operation *> callsWithRegions;
+  DenseSet<KGENCallOpInterface> calls;
   for (KGENDeclInterface nestedDecl : nestedDecls) {
     // Fold the current declarations into the nested scope.
     ParameterDeclsAndUses &nested = nestedDeclUses[nestedDecl];
@@ -834,22 +842,22 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     // wherein operations in region bodies use the result parameters of the
     // enclosing call. Do this by making the enclosing call implicitly a user of
     // all parameters used by nested scopes.
-    if (isa<RegionBodyOp, RegionOpenBodyOp>(nestedDecl))
-      callsWithRegions.insert(nestedDecl->getParentOp());
+    if (auto call = dyn_cast<KGENCallOpInterface>(nestedDecl->getParentOp()))
+      calls.insert(call);
   }
 
   llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> callUses;
-  for (Operation *call : callsWithRegions) {
-    for (Region &region : call->getRegions()) {
-      auto nestedDecl = cast<KGENDeclInterface>(&region.front().front());
+  for (KGENCallOpInterface call : calls) {
+    for (KGENDeclInterface nestedDecl : call.getRegionBodies()) {
       const ParameterDeclsAndUses &uses =
           nestedDeclUses.find(nestedDecl)->second;
-
       // Only add references to parameters defined at or above this scope.
-      for (auto &[_, nestedUses] : uses.usersAndDeclarers)
-        for (ParamDeclRefAttr use : nestedUses)
-          if (decls.find(use.getName()) != decls.end())
-            callUses.insert(use);
+      for (ParamDeclRefAttr use : uses.usesFromAbove)
+        callUses.insert(use);
+      // If there were no uses from above, notify the nested declaration that
+      // it is isolated. Do not do this during verification.
+      if (!symbolTable && uses.usesFromAbove.empty())
+        nestedDecl.notifyKnownIsolatedFromAbove();
     }
     verifier.getUsesForOperation(call) = callUses.takeVector();
   }

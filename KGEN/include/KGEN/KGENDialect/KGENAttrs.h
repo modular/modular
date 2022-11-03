@@ -69,4 +69,18 @@ public:
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.h.inc"
 
+//===----------------------------------------------------------------------===//
+// PointerLikeTypeTraits
+//===----------------------------------------------------------------------===//
+
+namespace llvm {
+template <>
+struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
+    : public PointerLikeTypeTraits<mlir::Attribute> {
+  static inline M::KGEN::ParamDeclRefAttr getFromVoidPointer(void *p) {
+    return M::KGEN::ParamDeclRefAttr::getFromOpaquePointer(p);
+  }
+};
+} // namespace llvm
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_H

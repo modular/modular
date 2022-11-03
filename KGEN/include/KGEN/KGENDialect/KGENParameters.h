@@ -14,11 +14,9 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 namespace M::KGEN {
-class ParamDeclAttr;
-class ParamDeclRefAttr;
-
 /// This class holds descriptions about parameter definitions and uses in a
 /// func or generator context.
 class ParameterDeclsAndUses {
@@ -69,11 +67,13 @@ public:
   /// Keep track of any nested parameter scopes encountered.
   SmallVector<KGENDeclInterface> nestedDecls;
 
+  /// Keep track of uses of parameters that were defined in a higher scope.
+  SmallPtrSet<ParamDeclRefAttr, 8> usesFromAbove;
+
 private:
   FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
   calculateAndPotentiallyVerify(KGENDeclInterface op, SymbolTable *symbolTable);
 };
-
 } // namespace M::KGEN
 
 #endif // KGEN_KGENPARAMETERS_H
