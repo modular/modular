@@ -8,3 +8,11 @@ kgen.func @stack_allocation(%cond: i1) {
   }
   kgen.return
 }
+
+// -----
+
+kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> () {
+  // expected-error @below {{'pop.call_llvm_intrinsic' op expected 0 or 1 results, but got 2 results.}}
+  pop.call_llvm_intrinsic "llvm.round"(%inp) : (!pop.scalar<f32>) -> (!pop.scalar<f32>, !pop.scalar<f32>)
+  kgen.return
+}
