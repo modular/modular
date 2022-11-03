@@ -45,7 +45,9 @@ constexpr auto destructure_kgen_arguments(TensorShapeStorageType &shapeStorage,
                       reinterpret_cast<ssize_t *>(shapeStorage.back().data()),
                       arg.getEltType().getValue()};
   } else if constexpr (is_arrayref_v<T>) {
-    return std::tuple{(void *)arg.data(), (ssize_t)arg.size(),
+    using array_element_type = std::decay_t<decltype(*arg.data())>;
+    return std::tuple{const_cast<array_element_type *>(arg.data()),
+                      (ssize_t)arg.size(),
                       DTypeForCXXType<typename T::value_type>::kind.getValue()};
   } else {
     return std::tuple{std::forward<T>(arg)};
