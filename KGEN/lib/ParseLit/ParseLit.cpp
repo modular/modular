@@ -49,6 +49,8 @@ static void addBuiltinDecls(LitSharedState &sharedState,
   sharedState.typeCheckErrorTypeDecl->hasReferenceError = true;
 
   // Add a declarations for builtin types.
+  sharedState.typeTypeDecl =
+      &resolver.addMagicDecl("type", MagicDeclKind::kTypeType, &builtinsDecl);
   sharedState.indexDecl =
       &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
   sharedState.noneDecl =
@@ -64,10 +66,9 @@ static void addBuiltinDecls(LitSharedState &sharedState,
   auto b = builtinsDecl.getDeclEndBuilder();
   auto loc = builtinsDecl.getLoc();
 
-  // Add a declaration for an "index" struct, which is used as a transitionary
-  // thing as we bring up full type support.  This should be eliminated.
+  // Add a declaration for an "object" struct.  This should be written in the
+  // standard library.
   auto objectDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
-  // TODO: Add body to the object type.
   sharedState.objectDecl = &resolver.addDecl(
       objectDecl, &builtinsDecl, LitLexerCursor(), LitLexerCursor(), 0);
   sharedState.objectDecl->setResolvedType(
