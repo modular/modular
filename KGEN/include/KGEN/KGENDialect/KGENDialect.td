@@ -29,6 +29,8 @@ def KGENDialect : Dialect {
   let extraClassDeclaration = [{
     /// Register all KGEN attributes.
     void registerAttributes();
+    /// Register all KGEN types.
+    void registerTypes();
   }];
 }
 
