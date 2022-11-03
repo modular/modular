@@ -2076,8 +2076,8 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic", [Pure]> {
     ```
   }];
   let arguments = (ins StrAttr:$intrin, Variadic<AnyType>:$args);
-  let results = (outs Variadic<AnyType>:$results);
-  let assemblyFormat = "$intrin `(` $args `)` attr-dict `:` functional-type($args, $results)";
-
-  let hasVerifier = 1;
+  let results = (outs Optional<AnyType>:$results);
+  let assemblyFormat = [{
+    $intrin `(` $args `)` attr-dict `:`functional-type($args, $results)
+  }];
 }
