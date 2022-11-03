@@ -29,7 +29,8 @@ public:
   /// specified operation.  This assumes the IR is in a valid state. Returns the
   /// declarations and uses for the top-level operation and those of any nested
   /// scopes.
-  void calculate(KGENDeclInterface op);
+  DenseMap<KGENDeclInterface, ParameterDeclsAndUses>
+  calculate(KGENDeclInterface op);
 
   /// Check deep invariants for a func/generator decl body, used by the
   /// verifiers for these operations.  If a problem is detected, this emits an

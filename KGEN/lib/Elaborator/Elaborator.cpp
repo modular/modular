@@ -217,7 +217,7 @@ public:
   void insertFuncVariant(FuncOp existing, FuncOp newFunc);
 
   /// Indicate that a function should be removed from the module at the end of
-  /// elaboration. These functions are either invalid instantiations
+  /// elaboration. These functions are either invalid instantiations or inlined.
   void markFuncForRemoval(FuncOp func) { funcsToRemove.insert(func); }
 
   /// Return true if the function was invalid or inlined and should be removed
@@ -259,6 +259,27 @@ public:
   /// above or not isolated from above.
   const RegionBody &getRegionReferenced(StringAttr attr) {
     return regionsReferenced[attr];
+  }
+
+  /// Have the elaborator take the nested parameter declarations and uses for a
+  /// set of nested parameter scopes. The uses can be looked up later when
+  /// elaboration recurses into those nested scopes.
+  void takeNestedParameterUses(
+      DenseMap<KGENDeclInterface, ParameterDeclsAndUses> &&nestedUses) {
+    for (auto entry : nestedUses) {
+      auto [_, inserted] = nestedParamDeclsAndUses.try_emplace(
+          entry.first, std::move(entry.second));
+      assert(inserted && "already found uses for nested scope?");
+    }
+  }
+
+  /// Try to find cached parameter declarations and uses for the provided nested
+  /// scope. Due to nested scopes getting cloned, nested scopes will only hit
+  /// the cache at best every other depth. Still, it covers the most common case
+  /// of depth 1.
+  const ParameterDeclsAndUses *lookupNestedUses(KGENDeclInterface decl) {
+    auto it = nestedParamDeclsAndUses.find(decl);
+    return it == nestedParamDeclsAndUses.end() ? nullptr : &it->second;
   }
 
 private:
@@ -313,6 +334,10 @@ private:
   /// an owned module that is the parent of all region bodies. The region body
   /// operations require a virtual for parameter scanning.
   OwningOpRef<ModuleOp> regionOwner;
+
+  /// This map contains the parameter declarations and uses for nested
+  /// parameter scopes (region bodies).
+  DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedParamDeclsAndUses;
 
   /// This map keeps track of the first func that a generator with no parameters
   /// expanded into.  We rename it to have the same symbol as the original
@@ -1190,19 +1215,25 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   for (auto &bodyOp : bodyBlock)
     b.insert(cloneOperation(&bodyOp, mapper, operationMap));
 
-  // Find all the parameter decls and uses in the body of region, we will
+  // Lookup all the parameter decls and uses in the body of region, we will
   // visit all of them as the evaluator continues processing the ops we just
   // cloned over.
-  ParameterDeclsAndUses uses;
-  // Fold the current parameter scope into the declarations. Make the region's
-  // parent the virtual root.
-  for (auto [name, value] : evaluator.getParameterValues()) {
-    uses.decls.try_emplace(
-        name, std::make_pair(
-                  region->getParentOp(),
-                  ParamDeclAttr::get(name, cast<TypedAttr>(value).getType())));
+  const ParameterDeclsAndUses *uses = elaborator.lookupNestedUses(region);
+  // If we didn't get a cache hit, recompute the uses.
+  Optional<ParameterDeclsAndUses> recomputedUses;
+  if (!uses) {
+    recomputedUses.emplace();
+    uses = &recomputedUses.value();
+    // Fold the current parameter scope into the declarations. Make the region's
+    // parent the virtual root.
+    for (auto [name, value] : evaluator.getParameterValues()) {
+      recomputedUses->decls.try_emplace(
+          name, std::make_pair(region->getParentOp(),
+                               ParamDeclAttr::get(
+                                   name, cast<TypedAttr>(value).getType())));
+    }
+    elaborator.takeNestedParameterUses(recomputedUses->calculate(region));
   }
-  uses.calculate(region);
 
   // Add the parameter-using operations we cloned over from the region to
   // the commandWorklist so we rewrite them.
@@ -1214,9 +1245,9 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
     commandWorklist.push_back(operationMap[op]);
     assert(commandWorklist.back() && "operation wasn't cloned over correctly?");
   };
-  for (Operation *op : uses.constExprOps)
+  for (Operation *op : uses->constExprOps)
     remapOp(op);
-  for (auto &[op, _] : llvm::reverse(uses.usersAndDeclarers))
+  for (auto &[op, _] : llvm::reverse(uses->usersAndDeclarers))
     remapOp(op);
 
   // Now that we've cloned all the operations over, we know what the SSA
@@ -1370,7 +1401,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
   // Get a partial ordering of parameter definitions and uses that is listed
   // "top down" in our evaluation order.
   ParameterDeclsAndUses uses;
-  uses.calculate(func);
+  takeNestedParameterUses(uses.calculate(func));
   SmallVector<Operation *> opsToRewrite;
 
   // Rewrite all the parameter-using ops in this scope only. We are going to use
