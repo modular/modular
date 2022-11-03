@@ -58,6 +58,11 @@ class ParameterEvaluator {
 public:
   ParameterEvaluator(SymbolTable *symtab = nullptr) : symtab(symtab) {}
 
+  /// Instantiate a new parameter evaluator with the given parameter values.
+  explicit ParameterEvaluator(SymbolTable *symtab,
+                              DenseMap<StringAttr, Attribute> paramValues)
+      : symtab(symtab), paramValues(std::move(paramValues)) {}
+
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(StringAttr name, Attribute value) {

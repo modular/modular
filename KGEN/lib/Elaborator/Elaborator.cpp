@@ -195,7 +195,8 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, bool enableSearch = false)
-      : symtab(symtab), enableSearch(enableSearch) {}
+      : symtab(symtab), regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
+        enableSearch(enableSearch) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
@@ -233,16 +234,31 @@ public:
     return firstConcreteFuncForGenerator;
   }
 
-  /// These methods provide access to the `regionsReferenced` dictionary.  This
-  /// tracks regions on kgen.call operations with unique string names.
-  void addRegionReference(StringAttr attr, OwningOpRef<Operation *> body) {
-    regionsReferenced[attr] = std::move(body);
+  /// This struct contains a region body and the parameter context at its
+  /// original parent operation.
+  struct RegionBody {
+    KGENDeclInterface body;
+    ParameterEvaluator evaluator;
+
+    /// Return true if the body is isolated from above.
+    bool isIsolatedFromAbove() const {
+      return body->hasTrait<OpTrait::IsIsolatedFromAbove>();
+    }
+  };
+
+  /// These methods provide access to the `regionsReferenced` dictionary. This
+  /// tracks regions on kgen.call operations with unique string names. The
+  /// elaborator takes ownership of the body by hooking it up to a module as its
+  /// virtual root.
+  void addRegionReference(StringAttr attr, RegionBody regionBody) {
+    regionsReferenced[attr] = std::move(regionBody);
+    regionOwner->push_back(regionBody.body);
   }
 
   /// Get a reference region by name. The referenced region can be isolated from
   /// above or not isolated from above.
-  Operation *getRegionReferenced(StringAttr attr) {
-    return regionsReferenced[attr].get();
+  const RegionBody &getRegionReferenced(StringAttr attr) {
+    return regionsReferenced[attr];
   }
 
 private:
@@ -291,9 +307,12 @@ private:
 
   /// This is keeps track of a mapping from named regions (which get pulled out
   /// of kgen.call's during elaboration) to a Block that provides the body.
-  /// Note that this is an /owning/ reference to the block, it has been removed
-  /// from the IR.
-  DenseMap<StringAttr, OwningOpRef<Operation *>> regionsReferenced;
+  DenseMap<StringAttr, RegionBody> regionsReferenced;
+
+  /// The elaborator maintains ownership of all region body parameters through
+  /// an owned module that is the parent of all region bodies. The region body
+  /// operations require a virtual for parameter scanning.
+  OwningOpRef<ModuleOp> regionOwner;
 
   /// This map keeps track of the first func that a generator with no parameters
   /// expanded into.  We rename it to have the same symbol as the original
@@ -431,14 +450,6 @@ private:
   ArrayAttr resolveCallInputParams(Operation *call,
                                    ArrayRef<ParamBindAttr> inputValues,
                                    bool inlined);
-
-  /// Evaluate the parameter expressions in an operation.
-  static void evaluateParameters(ParameterEvaluator &evaluator, Operation *op);
-
-  /// Partially evaluate the parameter expressions nested under this operation.
-  /// Operations in a region body need to be made parametrically "isolated"
-  /// before the bodies can be processed.
-  void partiallyEvaluateRegions(KGENCallOpInterface call);
 
   /// Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
@@ -620,7 +631,7 @@ LogicalResult ParameterRewriter::rewriteOps(
     // Bind each of the result parameter declarations in the callers context.
     assert(rr->callerParamDecls.size() == returnedParams.size());
     for (auto [decl, value] : llvm::zip(rr->callerParamDecls, returnedParams))
-      getEvaluator().setParameterValue(decl, value);
+      getEvaluator().setOrOverwriteParameterValue(decl, value);
   }
 
   // If the generated function will be inlined, don't verify it.
@@ -676,7 +687,8 @@ LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
     return error(op->getLoc(), errorOrValue.takeError());
 
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setParameterValue(op.getParamDecl(), errorOrValue.takeValue());
+  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
+                                              errorOrValue.takeValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -752,7 +764,7 @@ void ParameterRewriter::spawnParamSearchClone(
 void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
                                                         Attribute value) {
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setParameterValue(op.getParamDecl(), value);
+  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
 
   // The kgne.param.search operation serves no other purpose: remove it.
   op->erase();
@@ -802,7 +814,7 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
     // If this is a region reference, form a binding to the region provided by
     // the call.
     if (auto regionRef = dyn_cast<ParamCallRegionRefAttr>(param.getValue())) {
-      auto &region = call->getRegion(nextRegionInThisCall++);
+      Region &region = call->getRegion(nextRegionInThisCall++);
 
       // Give this reference a unique name, and make a StringAttr attribute with
       // the name and SignatureType.
@@ -816,7 +828,7 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
       // references to it get correctly resolved.
       assert(region.hasOneBlock());
       Block &regionBlock = *region.begin();
-      Operation *body = &regionBlock.front();
+      auto body = cast<KGENDeclInterface>(&regionBlock.front());
       // Remove the RegionBodyOp from the call's region, and hand ownership of
       // it to the elaborator.
       body->remove();
@@ -824,8 +836,11 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
       // TODO: We could do some content hashing to avoid making a new name for
       // a lexically identical body.  This would reduce some redundant
       // specialization.
-      elaborator.addRegionReference(regionRefName,
-                                    OwningOpRef<Operation *>(body));
+      elaborator.addRegionReference(
+          regionRefName,
+          Elaborator::RegionBody{
+              body,
+              ParameterEvaluator(symtab, getEvaluator().getParameterValues())});
       boundInputParams.push_back(regionRefName);
       continue;
     }
@@ -840,8 +855,7 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
     // not isolated from above.
     auto regionRef = dyn_cast<StringAttr>(value.get());
     if (!inlined && regionRef &&
-        !elaborator.getRegionReferenced(regionRef)
-             ->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
+        !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
       (void)error(
           call->getLoc(),
           "non-inlined call to symbol instantiated with non-isolated region");
@@ -853,97 +867,11 @@ ArrayAttr ParameterRewriter::resolveCallInputParams(
   return ArrayAttr::get(call->getContext(), boundInputParams);
 }
 
-void ParameterRewriter::evaluateParameters(ParameterEvaluator &evaluator,
-                                           Operation *op) {
-  // Scan all the attributes and types to look for uses of parameters.  We let
-  // the walker scan the region hierarchy.
-  SmallVector<NamedAttribute> newAttrs;
-  bool changedAttrs = false;
-  for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
-    if (namedAttr.getName() == "paramDecls") {
-      newAttrs.push_back(namedAttr);
-      continue;
-    }
-
-    newAttrs.push_back(
-        NamedAttribute(namedAttr.getName(),
-                       evaluator.getReboundAttribute(namedAttr.getValue())));
-    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
-  }
-  if (changedAttrs)
-    op->setAttrs(newAttrs);
-
-  // Check the types of results to find any parameters embedded in their
-  // types.  We don't have to check operands because they are always checked
-  // when being defined.
-  for (OpResult result : op->getResults())
-    result.setType(evaluator.getReboundType(result.getType()));
-
-  // Scan the region list if present.  The walker will automatically recurse
-  // for us, but we have to check the block arguments.
-  if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
-    for (auto &region : op->getRegions())
-      for (auto &block : region)
-        for (Value arg : block.getArguments())
-          arg.setType(evaluator.getReboundType(arg.getType()));
-  }
-}
-
-void ParameterRewriter::partiallyEvaluateRegions(KGENCallOpInterface call) {
-  // FIXME: Nested regions get specialized O(N^2) times. It would be more
-  // efficient to not partially specialize and keep folding parameter scopes
-  // until we actually need to fully evaluate everything.
-  std::function<void(KGENDeclInterface, const ParameterEvaluator &)>
-      recursivelyPartiallyEvaluate = [&](KGENDeclInterface decl,
-                                         const ParameterEvaluator &evaluator) {
-        // Clone the current parameter scope and fold it into a use list,
-        // using the call operation as the virtual root.
-        ParameterDeclsAndUses localScope;
-        for (auto [name, value] : evaluator.getParameterValues()) {
-          auto decl =
-              ParamDeclAttr::get(name, cast<TypedAttr>(value).getType());
-          localScope.decls.try_emplace(name, std::make_pair(call, decl));
-        }
-
-        // Compute the parameter uses in this region.
-        localScope.calculate(decl);
-
-        // Go ahead and process constant expressions first.
-        ParameterEvaluator localEvaluator;
-        for (auto [name, value] : evaluator.getParameterValues())
-          localEvaluator.setParameterValue(name, value);
-        for (Operation *op : localScope.constExprOps)
-          evaluateParameters(localEvaluator, op);
-
-        for (auto &[op, _] : localScope.usersAndDeclarers) {
-          // Leave any locally-declared parameters as unresolved.
-          for (ParamDeclAttr decl : getParamDecls(op)) {
-            localEvaluator.setOrOverwriteParameterValue(
-                decl, ParamDeclRefAttr::get(decl.getName(), decl.getType()));
-          }
-          evaluateParameters(localEvaluator, op);
-        }
-
-        // Recurse on any nested declarations.
-        for (KGENDeclInterface nestedDecl : localScope.nestedDecls)
-          recursivelyPartiallyEvaluate(nestedDecl, localEvaluator);
-      };
-
-  for (KGENDeclInterface topLevelDecl : call.getRegionBodies())
-    recursivelyPartiallyEvaluate(topLevelDecl, getEvaluator());
-}
-
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
     Operation *user, ArrayRef<ParamDeclAttr> decls,
     ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool inlined) {
-  if (auto call = dyn_cast<KGENCallOpInterface>(user)) {
-    // Partially evaluate any nested regions.
-    partiallyEvaluateRegions(call);
-  }
-
   // Evaluate any input parameters.
   auto inputParamKey = resolveCallInputParams(user, paramValues, inlined);
   if (!inputParamKey)
@@ -1087,7 +1015,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
        llvm::zip(newDecls, newCalleeFunc.getReturnOp().getParameters()))
-    getEvaluator().setParameterValue(decl, bindValue);
+    getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
 }
 
 /// Sometimes when we expand a call, we find that there are multiple viable
@@ -1113,8 +1041,7 @@ void ParameterRewriter::spawnNewFuncClone(
   // we need to remap any values that escaped to the cloned function.
   auto isNonIsolatedRegionRef = [&](Attribute attr) {
     if (auto regionRef = dyn_cast<StringAttr>(attr))
-      return !elaborator.getRegionReferenced(regionRef)
-                  ->hasTrait<OpTrait::IsIsolatedFromAbove>();
+      return !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove();
     return false;
   };
   if (llvm::any_of(calleeAndInputParams.second, isNonIsolatedRegionRef)) {
@@ -1203,11 +1130,9 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
     KGENCallOpInterface call, StringAttr regionName, ParamDeclArrayAttr decls,
     ArrayRef<ParamBindAttr> paramValues) {
   assert(regionName.getType().isa<SignatureType>() && "not a region reference");
-  auto region =
-      cast<KGENDeclInterface>(elaborator.getRegionReferenced(regionName));
-
-  // Partially evaluate any nested regions.
-  partiallyEvaluateRegions(call);
+  const Elaborator::RegionBody &regionBody =
+      elaborator.getRegionReferenced(regionName);
+  KGENDeclInterface region = regionBody.body;
 
   // Compute the binding of input parameters to concrete values.
   auto inputParamKey =
@@ -1230,15 +1155,14 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // represents the bindings within the region body and set the region return to
   // restore back to the previous scope when operations from the region have
   // finished their processing.
-  ParameterEvaluator &evaluator =
-      evaluators.emplace_back(ParameterEvaluator(symtab));
+  ParameterEvaluator &evaluator = evaluators.emplace_back(regionBody.evaluator);
 
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing
   // the newly cloned operations.
   for (auto [decl, value] :
        llvm::zip(region.getInputParamDecls(), inputParamKey))
-    evaluator.setParameterValue(decl, value);
+    evaluator.setOrOverwriteParameterValue(decl, value);
 
   auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
     return error(loc, std::move(message));
@@ -1270,6 +1194,14 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // visit all of them as the evaluator continues processing the ops we just
   // cloned over.
   ParameterDeclsAndUses uses;
+  // Fold the current parameter scope into the declarations. Make the region's
+  // parent the virtual root.
+  for (auto [name, value] : evaluator.getParameterValues()) {
+    uses.decls.try_emplace(
+        name, std::make_pair(
+                  region->getParentOp(),
+                  ParamDeclAttr::get(name, cast<TypedAttr>(value).getType())));
+  }
   uses.calculate(region);
 
   // Add the parameter-using operations we cloned over from the region to
@@ -1313,9 +1245,39 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     return error(op->getLoc(),
                  "unknown parameter-defining operator in elaboration");
 
-  // Evaluate parameter expression in the operation using the current parameter
-  // scope.
-  evaluateParameters(getEvaluator(), op);
+  // Scan all the attributes and types to look for uses of parameters.  We let
+  // the walker scan the region hierarchy.
+  SmallVector<NamedAttribute> newAttrs;
+  bool changedAttrs = false;
+  for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
+    if (namedAttr.getName() == "paramDecls") {
+      newAttrs.push_back(namedAttr);
+      continue;
+    }
+
+    newAttrs.push_back(NamedAttribute(
+        namedAttr.getName(),
+        getEvaluator().getReboundAttribute(namedAttr.getValue())));
+    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  }
+  if (changedAttrs)
+    op->setAttrs(newAttrs);
+
+  // Check the types of results to find any parameters embedded in their
+  // types.  We don't have to check operands because they are always checked
+  // when being defined.
+  for (OpResult result : op->getResults())
+    result.setType(getEvaluator().getReboundType(result.getType()));
+
+  // Scan the region list if present.  The walker will automatically recurse
+  // for us, but we have to check the block arguments.
+  if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
+    for (auto &region : op->getRegions())
+      for (auto &block : region)
+        for (Value arg : block.getArguments())
+          arg.setType(getEvaluator().getReboundType(arg.getType()));
+  }
 
   // If the op implements the elaborator interface, indicate it as resolved.
   if (auto elaboratorIface = dyn_cast<ElaboratorOpInterface>(op)) {

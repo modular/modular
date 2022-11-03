@@ -978,6 +978,34 @@ kgen.generator @doIt() {
 
 // -----
 
+kgen.generator @hasReturn<() -> index>() {
+  kgen.return<2>
+}
+
+// CHECK-LABEL: kgen.func @"placeholder
+kgen.generator @placeholder<fn: () -> index>() -> index {
+  // CHECK-NEXT: kgen.param.constant = <2>
+  %0 = kgen.call_param[() -> index: fn]()
+  kgen.return %0 : index
+}
+
+kgen.generator @returnValueOverwritesParameter<SomeParam: dtype>() {
+  %0 = kgen.call @placeholder<fn: () -> index = region>() : () -> index
+  fn() {
+    %0 = kgen.param.constant = <SomeParam>
+    kgen.call @hasReturn<() -> SomeParam>() : () -> ()
+    kgen.return %0 : index
+  }
+  kgen.return
+}
+
+kgen.generator @top() {
+  kgen.call @returnValueOverwritesParameter<SomeParam: dtype = f32>() : () -> ()
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @passArgument
 kgen.generator @passArgument(%arg0: index) -> index {
   // CHECK: return %arg0
