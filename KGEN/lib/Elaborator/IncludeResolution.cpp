@@ -14,6 +14,19 @@
 using namespace M;
 using namespace KGEN;
 
+/// Compare constraints ignoring their location.
+static bool areSameConstraints(ArrayRef<ConstraintAttr> lhsConstraints,
+                               ArrayRef<ConstraintAttr> rhsConstraints) {
+  if (lhsConstraints.size() != rhsConstraints.size())
+    return false;
+  for (auto [lhs, rhs] : llvm::zip(lhsConstraints, rhsConstraints)) {
+    if (std::make_pair(lhs.getExpr(), lhs.getMessage()) !=
+        std::make_pair(rhs.getExpr(), rhs.getMessage()))
+      return false;
+  }
+  return true;
+}
+
 /// When including files, some symbols may be duplicated. Attempt to reconcile
 /// the `included` symbol with the current `symbol`. Returns failure if the
 /// duplicate symbols could not be reconciled.
@@ -48,12 +61,16 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
             incIface.getLoc())))
       return failure();
 
-    if (iface.getConstraintsAttr() != incIface.getConstraintsAttr()) {
+    // Compare the constraints ignoring the location. Take one of the sets of
+    // constraints.
+    if (!areSameConstraints(iface.getConstraints(),
+                            incIface.getConstraints())) {
       return (symbol->emitError("interface @")
               << name << " was redeclared with different constraints")
                  .attachNote(included->getLoc())
              << "previous declaration here";
     }
+    iface.setConstraintsAttr(incIface.getConstraintsAttr());
 
     // Just check the attributes now.
     if (symbol->getAttrDictionary() != included->getAttrDictionary()) {
