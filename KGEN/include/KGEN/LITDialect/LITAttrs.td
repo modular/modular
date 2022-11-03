@@ -13,8 +13,9 @@
 
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 
-/// An attribute in the KGEN dialect.
+/// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<LITDialect, attrName, traits> {
   let mnemonic = attrMnemonic;
@@ -30,8 +31,8 @@ def NoneAttr : LITAttr<"None", "none", [TypedAttrInterface]> {
     This attribute represents None values.
   }];
 
-  let parameters = (ins "Type":$type);
-  let assemblyFormat = "$type";
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD
