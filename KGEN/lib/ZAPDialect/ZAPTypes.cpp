@@ -66,60 +66,6 @@ static POP::SIMDType getElementType(Op *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// BufferType
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-BufferType::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
-                   TypedAttr size, TypedAttr dtype) {
-  if (size && !size.getType().isIndex())
-    return emitError() << "size parameter for buffer must have type `index`";
-  if (dtype && !dtype.getType().isa<DTypeType>())
-    return emitError() << "type parameter for buffer must be a !kgen.dtype";
-  return success();
-}
-
-void BufferType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getSize());
-  walkAttrsFn(getDType());
-}
-
-Type BufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                             ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.empty());
-  return BufferType::get(getContext(), replAttrs[0], replAttrs[1]);
-}
-
-Optional<int64_t> BufferType::getResolvedSize() const {
-  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(getSize()))
-    return intAttr.getInt();
-  return {};
-}
-
-Optional<KGENDType> BufferType::getResolvedDType() const {
-  return ::getResolvedDType(this);
-}
-
-POP::PointerType BufferType::getPointerType() const {
-  return ::getPointerType(this);
-}
-
-POP::SIMDType BufferType::getElementType() const {
-  return ::getElementType(this);
-}
-
-BufferType BufferType::get(TypedAttr size, TypedAttr dtype) {
-  return get(size.getContext(), size, dtype);
-}
-
-BufferType BufferType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
-  return get(OpBuilder(ctx).getIndexAttr(size),
-             DTypeConstantAttr::get(ctx, dtype));
-}
-
-//===----------------------------------------------------------------------===//
 // NDBufferType
 //===----------------------------------------------------------------------===//
 

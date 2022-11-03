@@ -398,8 +398,8 @@ kgen.generator @region_params
    // CHECK-SAME: r2: <() -> i1>() -> (),
    r2: <() -> i1>() -> (),
    // This uses a different parameter.
-   // CHECK-SAME: r3: <dt: dtype>() -> !zap.buffer<4, dt>
-   r3: <dt: dtype>() -> !zap.buffer<4, dt>
+   // CHECK-SAME: r3: <dt: dtype>() -> !pop.scalar<dt>
+   r3: <dt: dtype>() -> !pop.scalar<dt>
    >() {
   // use unaryFn
   kgen.return
