@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
 
-// CHECK-LABEL: llvm.func linkonce @trivial
+// CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
 // CHECK-NEXT: llvm.return %[[ARG0]] : i32
 kgen.func @trivial(%arg0: si32) -> si32 {
@@ -9,7 +9,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 // -----
 
-// CHECK-LABEL: llvm.func linkonce @produces_result
+// CHECK-LABEL: llvm.func internal @produces_result
 kgen.func @produces_result<() -> index>() {
   // CHECK: llvm.return
   kgen.return<42>
@@ -17,7 +17,7 @@ kgen.func @produces_result<() -> index>() {
 
 // -----
 
-// CHECK-LABEL: llvm.func linkonce @convert_pop_types
+// CHECK-LABEL: llvm.func internal @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
 // CHECK-SAME: %{{.*}}: vector<4xf32>
@@ -43,7 +43,7 @@ kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.sim
   kgen.return %arg0, %arg0 : !pop.simd<1, f32>, !pop.simd<1, f32>
 }
 
-// CHECK-LABEL: llvm.func linkonce @convert_call
+// CHECK-LABEL: llvm.func internal @convert_call
 // CHECK-SAME: %[[ARG0:.*]]: f32
 kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   // CHECK: llvm.call @trivial(%[[ARG0]]) : (f32) -> f32
@@ -63,7 +63,7 @@ kgen.func @reference_me(%a: i64) -> i64 {
   kgen.return %a : i64
 }
 
-// CHECK-LABEL: llvm.func linkonce @addressof
+// CHECK-LABEL: llvm.func internal @addressof
 // CHECK-SAME: -> !llvm.ptr<func<i64 (i64)>>
 kgen.func @addressof() -> ((i64) -> i64) {
   // CHECK: llvm.mlir.addressof @reference_me : !llvm.ptr<func<i64 (i64)>>

@@ -35,7 +35,6 @@ kgen.export [@run_exp]
 // EXEC: --- 'run_exp' returned 2.7{{[0-9]+}}
 
 // OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: F {{.*}}exp_f32
-// OBJ-DAG: *UND* {{.*}}expf
+// OBJ-DAG: F {{.*}}exp
 
 // HDR-LABEL: extern float exp_f32(float);

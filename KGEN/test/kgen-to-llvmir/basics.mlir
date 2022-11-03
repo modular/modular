@@ -1,16 +1,16 @@
 // RUN: kgen-opt -split-input-file -emit-llvm %s | FileCheck %s
 
-// CHECK-LABEL: define linkonce float @trivial
+// CHECK-LABEL: define internal float @trivial
 kgen.func @trivial(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   kgen.return %arg0 : !pop.simd<1, f32>
 }
 
-// CHECK-LABEL: define linkonce void @no_result
+// CHECK-LABEL: define internal void @no_result
 kgen.func @no_result(%arg0: !pop.simd<1, f32>) {
   kgen.return
 }
 
-// CHECK-LABEL: define linkonce { float, float } @two_results
+// CHECK-LABEL: define internal { float, float } @two_results
 kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.simd<1, f32>) {
   kgen.return %arg0, %arg0 : !pop.simd<1, f32>, !pop.simd<1, f32>
 }

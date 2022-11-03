@@ -43,7 +43,7 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 
     // Mark all functions as internal for now - we'll clean this up later.
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType, LLVM::Linkage::Linkonce);
+        func.getLoc(), func.getNameAttr(), funcType, LLVM::Linkage::Internal);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
