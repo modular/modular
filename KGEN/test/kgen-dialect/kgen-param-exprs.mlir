@@ -141,6 +141,55 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   kgen.return
 }
 
+// CHECK-LABEL: @fixed_width_integers
+kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
+  // CHECK-NEXT: constant: i32 = <add(p1, p2)>
+  %0 = kgen.param.constant: i32 = <add(p1, p2)>
+
+  // CHECK-NEXT: constant: i32 = <11>
+  %1 = kgen.param.constant: i32 = <add(5, 6)>
+
+  // CHECK-NEXT: constant: i32 = <div(p2, p1)>
+  %2 = kgen.param.constant: i32 = <div(p2, p1)>
+
+  // CHECK-NEXT: constant: i32 = <2>
+  %3 = kgen.param.constant: i32 = <div(12, 5)>
+
+  // CHECK-NEXT: constant: i1 = <lt(:i32 p2, p1)>
+  %4 = kgen.param.constant: i1 = <lt(:i32 p2, p1)>
+
+  kgen.return
+}
+
+// CHECK-LABEL: @signed_unsigned_integers
+kgen.generator @signed_unsigned_integers<ps: si8, pu: ui8>() {
+  // CHECK-NEXT: constant: ui8 = <255>
+  %0 = kgen.param.constant: ui8 = <max(pu, 255)>
+
+  // CHECK-NEXT: constant: si8 = <127>
+  %1 = kgen.param.constant: si8 = <max(pu, 127)>
+
+  // CHECK-NEXT: constant: ui8 = <0>
+  %2 = kgen.param.constant: ui8 = <min(pu, 0)>
+
+  // CHECK-NEXT: constant: si8 = <-128>
+  %3 = kgen.param.constant: si8 = <min(pu, -128)>
+
+  // CHECK-NEXT: constant: ui8 = <5>
+  %4 = kgen.param.constant: ui8 = <min(250, 5)>
+
+  // CHECK-NEXT: constant: si8 = <-5>
+  %5 = kgen.param.constant: si8 = <min(-5, 5)>
+
+  // CHECK-NEXT: constant: ui8 = <250>
+  %6 = kgen.param.constant: ui8 = <max(250, 5)>
+
+  // CHECK-NEXT: constant: si8 = <5>
+  %7 = kgen.param.constant: si8 = <max(-5, 5)>
+
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @int1_aliases
 kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 

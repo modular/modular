@@ -44,8 +44,8 @@ kgen.generator @test<p1>() {
 
 // -----
 
-// expected-error @+1 {{operator requires an index type}}
-%0 = kgen.param.constant: i32 = <shl(1, 2)>
+// expected-error @+1 {{operator requires an index or integer type}}
+%0 = kgen.param.constant: f32 = <shl(1., 2.)>
 
 // -----
 
