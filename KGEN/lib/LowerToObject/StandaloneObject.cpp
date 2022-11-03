@@ -28,10 +28,6 @@
 using namespace M;
 using namespace KGEN;
 
-/// Convenience typedefs for many-templated types.
-using LLVMModuleSet = SmallVector<std::unique_ptr<llvm::Module>>;
-using ObjectSet = SmallVector<std::unique_ptr<llvm::MemoryBuffer>>;
-
 //===----------------------------------------------------------------------===//
 // produceStandaloneModule
 //===----------------------------------------------------------------------===//
