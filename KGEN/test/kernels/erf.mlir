@@ -48,20 +48,21 @@ kgen.generator @erf_scalar_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-kgen.generator.interface @erf<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
+kgen.generator.interface @erf<type: dtype>(
+    %in: !pop.pointer<scalar<type>>, %out: !pop.pointer<scalar<type>>, %size: index)
 
-lit.func @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?, type>)
+lit.func @erf_impl1<type: dtype>(
+    %in: !pop.pointer<scalar<type>>, %out: !pop.pointer<scalar<type>>, %size: index)
   implements @erf {
   %zero = index.constant 0
   %one = index.constant 1
 
-  // TODO: Must assert that size of in and out buffers are the same
-  %size = zap.buffer.size %in: !zap.buffer<?, type>
-
   scf.for %i = %zero to %size step %one {
-      %src  = zap.buffer.load %in[%i] : !zap.buffer<?, type>, !pop.scalar<type>
-      %res  = kgen.call @erf_scalar<type: dtype = type>(%src) : (!pop.scalar<type>) -> !pop.scalar<type>
-      zap.buffer.store %res, %out[%i] : !pop.scalar<type>, !zap.buffer<?, type>
+    %inPtr = pop.offset %in[%i] : !pop.pointer<scalar<type>>
+    %src = pop.load %inPtr : !pop.pointer<scalar<type>>
+    %res = kgen.call @erf_scalar<type: dtype = type>(%src) : (!pop.scalar<type>) -> !pop.scalar<type>
+    %outPtr = pop.offset %out[%i] : !pop.pointer<scalar<type>>
+    pop.store %res, %outPtr : !pop.pointer<scalar<type>>
   }
 
   kgen.return
@@ -70,9 +71,10 @@ lit.func @erf_impl1<type: dtype>(%in: !zap.buffer<?, type>, %out : !zap.buffer<?
 // Instantiate @erf for concrete buffer size and element type
 
 // CHECK-LABEL: kgen.func @erf_f32
-// CHECK-SAME: %[[ARG0:.*]]: !zap.buffer<?, f32>, %[[ARG1:.*]]: !zap.buffer<?, f32>
-// CHECK: kgen.call @"erf_impl1,type=f32"(%[[ARG0]], %[[ARG1]]) : (!zap.buffer<?, f32>, !zap.buffer<?, f32>) -> ()
-kgen.generator @erf_f32(%in: !zap.buffer<?, f32>, %out: !zap.buffer<?, f32>) {
-  kgen.call @erf<type: dtype = f32>(%in, %out) : (!zap.buffer<?, f32>, !zap.buffer<?, f32>) -> ()
+// CHECK: kgen.call @"erf_impl1,type=f32"(%arg0, %arg1, %arg2)
+// CHECK-SAMAE: (!pop.pointer<scalar<f32>>, !pop.pointer<scalar<f32>>, index) -> ()
+kgen.generator @erf_f32(%in: !pop.pointer<scalar<f32>>, %out: !pop.pointer<scalar<f32>>, %size: index) {
+  kgen.call @erf<type: dtype = f32>(%in, %out, %size)
+    : (!pop.pointer<scalar<f32>>, !pop.pointer<scalar<f32>>, index) -> ()
   kgen.return
 }

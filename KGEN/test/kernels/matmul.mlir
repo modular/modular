@@ -7,18 +7,18 @@ kgen.generator.interface @index2D(%row: index, %col: index, %stride: index) -> i
 
 
 kgen.generator.interface @matmul<type: dtype>(
-    %A: !zap.buffer<?, type>,
-    %B: !zap.buffer<?, type>,
-    %C: !zap.buffer<?, type>,
+    %A: !pop.pointer<scalar<type>>,
+    %B: !pop.pointer<scalar<type>>,
+    %C: !pop.pointer<scalar<type>>,
     %M: index,
     %N: index,
     %K: index)
 
 // Implements a naive matrix multiplication kernel.
 lit.func @matmaul_naive<type: dtype>(
-    %A: !zap.buffer<?, type>,
-    %B: !zap.buffer<?, type>,
-    %C: !zap.buffer<?, type>,
+    %A: !pop.pointer<scalar<type>>,
+    %B: !pop.pointer<scalar<type>>,
+    %C: !pop.pointer<scalar<type>>,
     %M: index,
     %N: index,
     %K: index)
@@ -31,13 +31,16 @@ lit.func @matmaul_naive<type: dtype>(
       %acc = scf.for %k = %zero to %K step %one iter_args(%sum = %init) -> (!pop.simd<1, type>) {
         %aikIndex = kgen.call @index2D(%i, %k, %N) : (index, index, index) -> index
         %bkjIndex = kgen.call @index2D(%k, %j, %M) : (index, index, index) -> index
-        %aik = zap.buffer.load %A[%aikIndex] : !zap.buffer<?, type>, !pop.simd<1, type>
-        %bkj = zap.buffer.load %B[%bkjIndex] : !zap.buffer<?, type>, !pop.simd<1, type>
+        %aPtr = pop.offset %A[%aikIndex] : !pop.pointer<scalar<type>>
+        %bPtr = pop.offset %B[%bkjIndex] : !pop.pointer<scalar<type>>
+        %aik = pop.load %aPtr : !pop.pointer<scalar<type>>
+        %bkj = pop.load %bPtr : !pop.pointer<scalar<type>>
         %res = pop.fma %aik, %bkj, %sum : !pop.simd<1, type>
         scf.yield %res : !pop.simd<1, type>
       }
       %cij = kgen.call @index2D(%i, %j, %K) : (index, index, index) -> index
-      zap.buffer.store %acc, %C[%cij] : !pop.simd<1, type>, !zap.buffer<?, type>
+      %cPtr = pop.offset %C[%cij] : !pop.pointer<scalar<type>>
+      pop.store %acc, %cPtr : !pop.pointer<scalar<type>>
     }
   }
   kgen.return
@@ -48,13 +51,14 @@ lit.func @matmaul_naive<type: dtype>(
 // CHECK-LABEL: kgen.func @matmul_f32
 // CHECK: kgen.call @"matmaul_naive,type=f32"
 kgen.generator @matmul_f32(
-    %A: !zap.buffer<?, f32>,
-    %B: !zap.buffer<?, f32>,
-    %C: !zap.buffer<?, f32>,
+    %A: !pop.pointer<scalar<f32>>,
+    %B: !pop.pointer<scalar<f32>>,
+    %C: !pop.pointer<scalar<f32>>,
     %M: index,
     %N: index,
     %K: index) {
   kgen.call @matmul<type: dtype = f32>(%A, %B, %C, %M, %N, %K) :
-    (!zap.buffer<?, f32>, !zap.buffer<?, f32>, !zap.buffer<?, f32>, index, index, index) -> ()
+    (!pop.pointer<scalar<f32>>, !pop.pointer<scalar<f32>>, !pop.pointer<scalar<f32>>,
+     index, index, index) -> ()
   kgen.return
 }
