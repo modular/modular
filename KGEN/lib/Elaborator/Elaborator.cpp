@@ -1046,18 +1046,15 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
-  ArrayRef<ParamDeclAttr> newDecls;
   if (isa<CallOp, CallParamOp>(user)) {
-    auto newCall = b.replaceOpWithNewOp<CallOp>(
-        user, resultTypes, newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), decls, user->getOperands());
-    newDecls = newCall.getParamDecls();
+    b.replaceOpWithNewOp<CallOp>(user, resultTypes, newCalleeFunc.getNameAttr(),
+                                 ArrayRef<ParamBindAttr>(), decls,
+                                 user->getOperands());
 
   } else if (isa<AddressOfOp>(user)) {
-    auto newAddressof = b.replaceOpWithNewOp<AddressOfOp>(
-        user, resultTypes.front(), newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), decls);
-    newDecls = newAddressof.getParamDecls();
+    b.replaceOpWithNewOp<AddressOfOp>(user, resultTypes.front(),
+                                      newCalleeFunc.getNameAttr(),
+                                      ArrayRef<ParamBindAttr>(), decls);
 
   } else if (isa<InlinedCallOp>(user)) {
     // Inline the callee.
@@ -1082,7 +1079,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
 
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
-       llvm::zip(newDecls, newCalleeFunc.getReturnOp().getParameters()))
+       llvm::zip(decls, newCalleeFunc.getReturnOp().getParameters()))
     getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
 }
 

@@ -62,15 +62,8 @@ def FuncOp
   let builders = [
     // Create a func with a region but no body block.  The caller must create
     // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name,
-                   "FunctionType":$signature,
-                   "ArrayRef<Type>":$outputParamTypes)>,
-    // Create a func with an empty body, `argLocs` specifies the locations for
-    // all the block arguments.
-    OpBuilder<(ins "StringAttr":$name,
-                   "FunctionType":$signature,
-                   "ArrayRef<Type>":$outputParamTypes,
-                   "ArrayRef<Location>":$argLocs)>,
+    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
+                   "ArrayRef<Type>":$resultParamTypes)>
   ];
 }
 
