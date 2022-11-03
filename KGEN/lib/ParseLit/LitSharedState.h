@@ -49,6 +49,10 @@ public:
   ASTDecl *typeCheckErrorTypeDecl = nullptr;
   ASTType getTypeCheckErrorType() const;
 
+  /// This is the "type" type, which can bind to any lit type.
+  ASTDecl *typeTypeDecl = nullptr;
+  ASTType getTypeType() const;
+
   /// This is the decl for the builtin 'index' type.
   ASTDecl *indexDecl = nullptr;
   ASTType getIndexType() const;
@@ -162,6 +166,11 @@ public:
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
 
+  void *getAsVoidPointer() const { return pointer; }
+  static ASTType getFromVoidPointer(void *ptr) {
+    return ASTType(static_cast<ASTTypeStorage *>(ptr));
+  }
+
 private:
   friend class LitSharedState;
   ASTType(ASTTypeStorage *pointer) : pointer(pointer) {}
@@ -197,6 +206,8 @@ enum class MagicDeclKind {
   kNormal,
   // This type is produced when an error is detected to simplify clients.
   kTypeCheckErrorType,
+  // This is the 'type' type.
+  kTypeType,
   // This is the __builtin.mlirtype.builtin.index type.
   kIndexType,
   // This is the __builtin.mlirtype.lit.none type.
@@ -208,5 +219,23 @@ enum class MagicDeclKind {
 };
 
 } // namespace M::KGEN::LIT
+
+namespace llvm {
+template <>
+struct PointerLikeTypeTraits<M::KGEN::LIT::ASTType> {
+public:
+  using ASTType = M::KGEN::LIT::ASTType;
+  static inline void *getAsVoidPointer(ASTType value) {
+    return const_cast<void *>(value.getAsVoidPointer());
+  }
+  static inline ASTType getFromVoidPointer(void *pointer) {
+    return ASTType::getFromVoidPointer(pointer);
+  }
+  enum {
+    NumLowBitsAvailable = PointerLikeTypeTraits<void *>::NumLowBitsAvailable
+  };
+};
+
+} // namespace llvm
 
 #endif // LIT_SHARED_STATE_H

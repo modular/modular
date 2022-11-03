@@ -34,24 +34,25 @@ static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 // RValue / AnyValue Implementation
 //===----------------------------------------------------------------------===//
 
-Type RValue::getType() const {
-  if (isNull())
+static Type
+getTypeFrom(PointerUnion<MAValue, ASTType, DRValue, LValue> storage) {
+  if (storage.isNull())
     return Type();
-  if (TypedAttr attr = getIfMValue())
-    return attr.getType();
-  return getIfDRValue().getType();
+  if (auto attr = storage.dyn_cast<MAValue>())
+    return attr.get().getType();
+
+  if (auto value = storage.dyn_cast<DRValue>())
+    return value.getType();
+  if (auto value = storage.dyn_cast<LValue>())
+    return value.getType();
+
+  // TODO: Handle ASTType.
+  llvm_unreachable("unhandled case ASTType");
 }
 
-Type AnyValue::getType() const {
-  if (isNull())
-    return Type();
-  if (RValue rvalue = getIfRValue())
-    return rvalue.getType();
-
-  LValue lvalue = getIfLValue();
-  assert(lvalue && "Unknown type");
-  return lvalue.getType();
-}
+Type MValue::getType() const { return getTypeFrom(storage); }
+Type RValue::getType() const { return getTypeFrom(storage); }
+Type AnyValue::getType() const { return getTypeFrom(storage); }
 
 //===----------------------------------------------------------------------===//
 // ExprEmitter Implementation
@@ -92,11 +93,12 @@ ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = rep.ir.getIfMValue();
+  auto attr = rep.ir.getIfMAValue();
   assert(attr);
+
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr.get()))
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
@@ -118,6 +120,19 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
 
   // If this is a parameter, return it.
   if (auto attr = rep.ir.getIfMValue())
+    return {attr, rep.type};
+
+  emitError(node->getLoc(), message);
+  return {};
+}
+
+ASTTypeAnd<MAValue> ExprEmitter::emitMAValue(const ExprNode *node,
+                                             const Twine &message) {
+  auto rep = node->emitIR(*this);
+  if (!rep)
+    return {};
+
+  if (auto attr = rep.ir.getIfMAValue())
     return {attr, rep.type};
 
   emitError(node->getLoc(), message);
@@ -193,7 +208,7 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
-  return {MValue(attr), emitter.shared.getIndexType()};
+  return {AnyValue(attr), emitter.shared.getIndexType()};
 }
 
 FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -207,7 +222,7 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
-  return {MValue(attr),
+  return {AnyValue(attr),
           // FIXME: Wrong type!
           emitter.shared.getNoneType()};
 }
@@ -220,7 +235,7 @@ FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
                                                FullType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  return {MValue(StringAttr::get(emitter.getContext(), value)),
+  return {AnyValue(StringAttr::get(emitter.getContext(), value)),
           // FIXME: Wrong type!
           emitter.shared.getNoneType()};
 }
@@ -313,6 +328,10 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
     return {MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
             decl->getResolvedType()};
 
+  if (auto structOp = dyn_cast<LITStructDeclOp>(*decl)) {
+    // getTypeType()
+  }
+
   emitter.emitError(getLoc(), "use of declaration \"")
       << spelling << "\" as a value isn't supported yet";
   return {};
@@ -333,6 +352,9 @@ FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
       switch (decl->magicKind) {
       case MagicDeclKind::kNormal:
         llvm_unreachable("not a magic declaration?");
+      case MagicDeclKind::kTypeType:
+        mlirType = MLIRTypeType::get(context);
+        break;
       case MagicDeclKind::kIndexType:
         // TODO(types): This is a hack to unblock tests in the interim.
         mlirType = IndexType::get(context);
@@ -476,7 +498,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
     valueArguments.push_back(argVal.ir);
   }
 
-  auto calleeParam = calleeVal.getIfMValue();
+  auto calleeParam = calleeVal.getIfMAValue();
   if (!calleeParam) {
     emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};
@@ -521,7 +543,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    auto declParam = subValue.ir.getIfMValue();
+    auto declParam = subValue.ir.getIfMAValue();
     if (!declParam) {
       emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
@@ -531,7 +553,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     SmallVector<TypedAttr> bindOperands;
     bindOperands.push_back(declParam);
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
-      auto val = emitter.emitMValue(
+      auto val = emitter.emitMAValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val.ir)
         return {};
@@ -605,7 +627,7 @@ FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
   for (auto [indexExpr, decl] : llvm::zip(indices, structOp.getParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal = emitter.emitMValue(
+    auto indexVal = emitter.emitMAValue(
         indexExpr, "type parameters may not be a run-time value");
     if (!indexVal.ir)
       return {};
@@ -654,8 +676,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   // If these are both parameter values, we can fold them using parameter
   // expressions.
-  if (auto lhsParam = lhsRep.ir.getIfMValue()) {
-    if (auto rhsParam = rhsRep.ir.getIfMValue()) {
+  if (auto lhsParam = lhsRep.ir.getIfMAValue()) {
+    if (auto rhsParam = rhsRep.ir.getIfMAValue()) {
       POC opcode;
       switch (kind) {
       default:
