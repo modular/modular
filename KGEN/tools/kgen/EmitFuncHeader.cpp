@@ -5,9 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "EmitFuncHeader.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/ML/DType.h"
+#include "Support/STLExtras.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -17,7 +19,8 @@ using namespace M;
 using namespace KGEN;
 
 /// Emit the C signature of a KGEN func.
-static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
+static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
+                                   FuncOp func) {
   auto printDTypeAsC = [&](DType dt) -> LogicalResult {
     if (dt.isFloat()) {
       switch (dt.getValue()) {
@@ -109,6 +112,23 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
       return success();
     }
 
+    if (auto ref = dyn_cast<RefType>(t)) {
+      auto decl = symtab.lookup<StructDeclOp>(ref.getName().getAttr());
+      ParameterEvaluator evaluator;
+      for (ParamBindAttr bind : ref.getParamValues())
+        evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+      assert(decl && "expected a valid type reference");
+      return failableInterleave(
+          decl.getFieldDecls(),
+          [&](StructFieldOp field) {
+            return printTypeAsC(evaluator.getReboundType(field.getType()));
+          },
+          [&] {
+            os << ", ";
+            return mlir::success();
+          });
+    }
+
     if (!t.isa<IndexType, IntegerType, FloatType>())
       return func.emitError("unsupported argument type: ") << t;
     if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
@@ -151,7 +171,8 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
 
 /// This allows us to emit a header file for the given func so that we can
 /// `#include` it and get nice autocompletion/etc. in users' IDEs.
-LogicalResult M::KGEN::emitHeaderForFunc(FuncOp func, StringRef filename) {
+LogicalResult M::KGEN::emitHeaderForFunc(SymbolTable &symtab, FuncOp func,
+                                         StringRef filename) {
   std::string err;
   auto outFile = mlir::openOutputFile(filename, &err);
   if (!outFile)
@@ -191,7 +212,7 @@ extern "C" {{
       llvm::fmt_align(" " + func.getName() + ".h ", llvm::AlignStyle::Left,
                       80 - 2 * strlen("//===-"), '-'),
       llvm::fmt_repeat('-', 80 - 2 * strlen("//===")), headerGuard);
-  if (failed(emitSignature(outFile->os(), func)))
+  if (failed(emitSignature(outFile->os(), symtab, func)))
     return mlir::emitError(func.getLoc(),
                            "during header emission for this function");
   outFile->os() << llvm::formatv(headerFmtEnd.data(), headerGuard);

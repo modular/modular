@@ -11,7 +11,8 @@
 
 namespace M::KGEN {
 /// Emit the header for a func.
-LogicalResult emitHeaderForFunc(FuncOp func, StringRef filename);
+LogicalResult emitHeaderForFunc(SymbolTable &symtab, FuncOp func,
+                                StringRef filename);
 } // namespace M::KGEN
 
 #endif // EMIT_FUNC_HEADER_H
