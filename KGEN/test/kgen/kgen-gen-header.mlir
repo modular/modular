@@ -10,6 +10,9 @@
 // RUN: kgen %s -emit -func="someMetaScalarKernel" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=SCALARMETA
 
+// RUN: kgen %s -emit -func="nestedParametricStruct" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=STRUCT
+
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
@@ -28,9 +31,21 @@ kgen.func @someNDBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, 
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
 
-// https://github.com/modularml/modular/issues/2636
 kgen.func @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   kgen.return %arg0 : !pop.simd<1, f32>
 }
-
 // SCALARMETA: extern float someMetaScalarKernel(float);
+
+kgen.struct.decl @Foo<DT:dtype> {
+  value : !pop.scalar<DT>
+}
+
+kgen.struct.decl @Bar {
+  a : !kgen.ref<@Foo<DT:dtype=f32>>
+  b : !pop.scalar<f64>
+}
+
+kgen.func @nestedParametricStruct(%a: !kgen.ref<@Bar>) {
+  kgen.return
+}
+// STRUCT: extern void nestedParametricStruct(float, double)

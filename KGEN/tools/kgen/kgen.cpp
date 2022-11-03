@@ -264,13 +264,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return mlir::success();
 
     // And now we have to produce the header files for each requested func.
+    SymbolTable symtab(*theModule);
     for (auto f : theModule->getOps<FuncOp>()) {
       if ((clOptions.funcs.empty() &&
            compiler.isSymbolExported(f.getNameAttr())) ||
           clOptions.shouldHandleFunc(f.getName())) {
-        if (failed(emitHeaderForFunc(f, std::filesystem::path(objPath)
-                                            .replace_extension(".h")
-                                            .string())))
+        if (failed(emitHeaderForFunc(symtab, f,
+                                     std::filesystem::path(objPath)
+                                         .replace_extension(".h")
+                                         .string())))
           return failure();
       }
     }
