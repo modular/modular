@@ -10,7 +10,7 @@
 
 #include "KGEN/ParseLit.h"
 
-#include "LitASTDecl.h"
+#include "ASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprs.h"
 #include "LitLexer.h"
