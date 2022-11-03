@@ -42,7 +42,7 @@ kgen.func @int_abs_simd(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
 // CHECK-LABEL: abs_simd
 kgen.func @abs_simd(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   %0 = pop.abs %arg0 : !pop.simd<4, f32>
-  // CHECK: "llvm.intr.fabs"(%{{.*}})
+  // CHECK: llvm.intr.fabs(%{{.*}})
   kgen.return %0 : !pop.simd<4, f32>
 }
 
@@ -61,7 +61,7 @@ kgen.func @int_abs_1xsi32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 // CHECK-LABEL: abs_1xf32
 kgen.func @abs_1xf32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   %0 = pop.abs %arg0 : !pop.scalar<f32>
-  // CHECK: "llvm.intr.fabs"(%{{.*}})
+  // CHECK: llvm.intr.fabs(%{{.*}})
   kgen.return %0 : !pop.scalar<f32>
 }
 
