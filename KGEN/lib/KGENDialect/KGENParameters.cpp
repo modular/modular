@@ -775,10 +775,12 @@ LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
 
 /// Collect information about the parameter definitions and uses in the
 /// specified operation.  This assumes the IR is in a valid state.
-void ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
-  LogicalResult result = calculateAndPotentiallyVerify(op, nullptr);
-  (void)result;
+DenseMap<KGENDeclInterface, ParameterDeclsAndUses>
+ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
+  FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>> result =
+      calculateAndPotentiallyVerify(op, nullptr);
   assert(succeeded(result) && "IR should be legal here!");
+  return std::move(*result);
 }
 
 /// Check deep invariants for a func/generator decl body, used by the
