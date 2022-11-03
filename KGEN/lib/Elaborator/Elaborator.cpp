@@ -265,6 +265,23 @@ public:
     return firstConcreteFuncForGenerator;
   }
 
+  /// Bind the result parameters of a fully-specialized function and clear them
+  /// from the function.
+  void bindResultParameters(FuncOp func) {
+    ParameterExprArrayAttr &values = resultParams[func];
+    assert(!values && "results for function already bound");
+    values = func.getReturnOp().getParametersAttr();
+    func.setResultParamTypes({});
+    func.getReturnOp().setParameters({});
+  }
+
+  /// Lookup bound result parameters of a function.
+  ParameterExprArrayAttr lookupResultParameters(FuncOp func) {
+    auto it = resultParams.find(func);
+    assert(it != resultParams.end() && "results parameters not bound");
+    return it->second;
+  }
+
   /// This struct contains a region body and the parameter context at its
   /// original parent operation.
   struct RegionBody {
@@ -349,6 +366,10 @@ private:
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
   DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
+
+  /// This map contains bindings for result parameteres from specialized
+  /// functions.
+  DenseMap<FuncOp, ParameterExprArrayAttr> resultParams;
 
   /// This is a cache of already-instantiated declarations.  The key is the
   /// generator/interface and input parameters, the result are all-possible
@@ -1048,13 +1069,14 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   mlir::IRRewriter b{OpBuilder(user)};
   if (isa<CallOp, CallParamOp>(user)) {
     b.replaceOpWithNewOp<CallOp>(user, resultTypes, newCalleeFunc.getNameAttr(),
-                                 ArrayRef<ParamBindAttr>(), decls,
+                                 ArrayRef<ParamBindAttr>(),
+                                 ArrayRef<ParamDeclAttr>(),
                                  user->getOperands());
 
   } else if (isa<AddressOfOp>(user)) {
-    b.replaceOpWithNewOp<AddressOfOp>(user, resultTypes.front(),
-                                      newCalleeFunc.getNameAttr(),
-                                      ArrayRef<ParamBindAttr>(), decls);
+    b.replaceOpWithNewOp<AddressOfOp>(
+        user, resultTypes.front(), newCalleeFunc.getNameAttr(),
+        ArrayRef<ParamBindAttr>(), ArrayRef<ParamDeclAttr>());
 
   } else if (isa<InlinedCallOp>(user)) {
     // Inline the callee.
@@ -1079,7 +1101,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
 
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
-       llvm::zip(decls, newCalleeFunc.getReturnOp().getParameters()))
+       llvm::zip(decls, elaborator.lookupResultParameters(newCallee.func)))
     getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
 }
 
@@ -1462,7 +1484,12 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
 
     // If elaborating the func succeeded, then we have a viable candidate.
     if (succeeded(rewriter->rewriteOps(rewriterWorklist))) {
-      results.push_back(rewriter->takeElaboratedGenerator());
+      // Take the result parameters from the rewritten function and bind it in
+      // the elaborator.
+      ElaboratedGenerator result = rewriter->takeElaboratedGenerator();
+      bindResultParameters(result.func);
+      results.push_back(std::move(result));
+
     } else {
       // If elaborating the func fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
@@ -1652,7 +1679,9 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  localError, symtab))) {
     /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
-    // Nothing to do here. Just return the function.
+    // Nothing to do here. Just bind the result parameters and return the
+    // function.
+    bindResultParameters(func);
     newCallees.emplace_back(ElaboratedGenerator(func));
   } else if (isa<GeneratorOp>(decl)) {
     newCallees = specializeGenerator(declAndInputParams, inlined);
