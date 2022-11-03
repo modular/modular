@@ -147,9 +147,11 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     auto contentType = LLVM::LLVMArrayType::get(
         getIndexType(),
         llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
-    // Compute the smallest integer to contain the discriminator.
+    // Compute the smallest integer to contain the discriminator. If there is
+    // only one variant type, use i1 since LLVM does not accept i0.
     auto discrType = IntegerType::get(
-        &getContext(), llvm::Log2_32_Ceil(variant.getTypes().size()));
+        &getContext(),
+        std::max(1u, llvm::Log2_32_Ceil(variant.getTypes().size())));
     return LLVM::LLVMStructType::getLiteral(&getContext(),
                                             {contentType, discrType});
   });
