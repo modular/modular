@@ -399,10 +399,12 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
 class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
   : KGENOp<mnemonic, [Terminator,
     SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<KGENDeclInterface>] # traits> {
+    DeclareOpInterfaceMethods<KGENDeclInterface, [
+      "isIsolatedFromAbove", "notifyKnownIsolatedFromAbove"]>] # traits> {
   let arguments = (ins ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
-                       ConstraintArrayAttr:$constraints);
+                       ConstraintArrayAttr:$constraints,
+                       UnitAttr:$isolated);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
@@ -414,6 +416,10 @@ class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
   let extraClassDeclaration = [{
     /// Get the terminator.
     ReturnOp getReturnOp();
+  }];
+  let extraClassDefinition = [{
+    bool $cppClass::isIsolatedFromAbove() { return getIsolated(); }
+    void $cppClass::notifyKnownIsolatedFromAbove() { setIsolated(true); }
   }];
 
   let hasRegionVerifier = 1;
