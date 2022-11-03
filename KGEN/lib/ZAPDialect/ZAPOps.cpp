@@ -29,10 +29,10 @@ using namespace ZAP;
 static LogicalResult
 verifyHasSameUnderlyingDType(Operation *op, Value memory,
                              mlir::TypedValue<POP::SIMDType> simd) {
-  TypedAttr aDType = TypeSwitch<Type, TypedAttr>(memory.getType())
-                         .Case<BufferType, NDBufferType>(
-                             [](auto type) { return type.getDType(); })
-                         .Default([](Type) { return TypedAttr(); });
+  TypedAttr aDType =
+      TypeSwitch<Type, TypedAttr>(memory.getType())
+          .Case<NDBufferType>([](auto type) { return type.getDType(); })
+          .Default([](Type) { return TypedAttr(); });
   TypedAttr bDType = simd.getType().getDType();
   if (aDType == bDType)
     return success();
@@ -51,127 +51,6 @@ void ZAPDialect::registerOperations() {
 #define GET_OP_LIST
 #include "KGEN/ZAPDialect/ZAP.cpp.inc"
       >();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferConstructOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult BufferConstructOp::verify() {
-  BufferType type = getType();
-  if (!type.getSize() == !getSize())
-    return emitOpError(
-        "requires either a size operand or a buffer type with static size");
-  if (!type.getDType() == !getDType())
-    return emitOpError(
-        "requires either a dtype operand or a buffer type with static dtype");
-  return success();
-}
-
-void BufferConstructOp::build(OpBuilder &b, OperationState &state, Type type,
-                              Value ptr) {
-  build(b, state, type, ptr, /*size=*/Value(), /*dtype=*/Value());
-}
-
-//===----------------------------------------------------------------------===//
-// BufferSizeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult BufferSizeOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.size() == 1 && "zap.buffer.size has one operand");
-  // A null size indicates ? size (unknown size). Since returning null
-  // indicates that we don't fold anything, we don't need to check if
-  // size is null.
-  return getBuffer().getType().getSize();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferDTypeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult BufferDTypeOp::fold(ArrayRef<Attribute> constants) {
-  assert(constants.size() == 1 && "zap.buffer.dtype has one operand");
-  // A null dtype indicates ? dtype (unknown dtype). Since returning null
-  // indicates that we don't fold anything, we don't need to check if dtype is
-  // null.
-  return getBuffer().getType().getDType();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferBitCastOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult BufferBitCastOp::fold(ArrayRef<Attribute> operands) {
-  assert(operands.size() == 1 && "buffer convert expected 1 operand");
-  // Fold A->B->C casts into a cast of the original cast's operand.
-  if (auto castOperand = getOperand().getDefiningOp<BufferBitCastOp>()) {
-    // A->B->A doesn't need a cast at all.
-    if (castOperand.getOperand().getType() == getType())
-      return castOperand.getOperand();
-    setOperand(castOperand.getOperand());
-    return getResult();
-  }
-
-  return {};
-}
-
-bool BufferBitCastOp::areCastCompatible(TypeRange lhs, TypeRange rhs) {
-  if (lhs.size() != 1 || rhs.size() != 1)
-    return false;
-  return lhs.front().isa<BufferType>() && rhs.front().isa<BufferType>();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferStackAllocationOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult BufferStackAllocationOp::verify() {
-  if (!getType().cast<BufferType>().getSize())
-    return emitOpError("cannot stack allocate a buffer of unknown size");
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferConstantOp
-//===----------------------------------------------------------------------===//
-
-/// Parse the dtype of a constant buffer.
-static ParseResult
-parseConstantBufferDType(AsmParser &p, ArrayElementsAttr values, Type &result) {
-  TypedAttr dtype;
-  if (parseParamValue(p, dtype, DTypeType::get(p.getContext())))
-    return failure();
-  result = BufferType::get(p.getBuilder().getIndexAttr(values.size()), dtype);
-  return success();
-}
-
-/// Print the dtype of a constant buffer.
-static void printConstantBufferDType(AsmPrinter &p, Operation *op,
-                                     ArrayElementsAttr values, Type result) {
-  printParamValue(p, result.cast<BufferType>().getDType());
-}
-
-LogicalResult BufferConstantOp::verify() {
-  auto type = dyn_cast<ArrayType>(getValues().getType());
-  if (!type)
-    return emitOpError("expected an '!M.array' type");
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// BufferLoadOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult BufferLoadOp::verify() {
-  return verifyHasSameUnderlyingDType(*this, getBuffer(), getResult());
-}
-
-//===----------------------------------------------------------------------===//
-// BufferStoreOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult BufferStoreOp::verify() {
-  return verifyHasSameUnderlyingDType(*this, getBuffer(), getValue());
 }
 
 //===----------------------------------------------------------------------===//

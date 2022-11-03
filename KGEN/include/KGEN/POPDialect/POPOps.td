@@ -1878,8 +1878,8 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     non-variadic arguments.
 
     ```mlir
-    pop.external_call @printf(%fmt, %v0, %v1) (!pop.pointer<si8>) -> ()
-      : (!zap.buffer<16, si8>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
+    pop.external_call @printf(%fmt, %v0, %v1) (!pop.pointer<scalar<si8>>) -> ()
+      : (!pop.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
     ```
   }];
 

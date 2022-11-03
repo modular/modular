@@ -18,7 +18,6 @@ class ZAPType<string typeName, string typeMnemonic, list<Trait> traits = []>
   let mnemonic = typeMnemonic;
 }
 
-
 //===----------------------------------------------------------------------===//
 // MemoryLikeType
 //===----------------------------------------------------------------------===//
@@ -38,54 +37,6 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic>
   }];
   let extraClassDeclaration = classDeclaration # baseExtraClassDeclaration;
 }
-
-//===----------------------------------------------------------------------===//
-// BufferType
-//===----------------------------------------------------------------------===//
-
-def ZAP_BufferType : ZAP_MemoryLikeType<"Buffer", "buffer"> {
-  let summary = "parameterized buffer type";
-  let description = [{
-    This type is a parameterized buffer type with a size and a `!kgen.dtype`.
-    The size field is optional (may be null) in which case this is a buffer
-    with an unknown size. The dtype type is also optional, in which case this
-    is a buffer with unknown element type.
-  }];
-
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
-  let assemblyFormat = [{
-    `<` custom<OptionalIndexParamValue>($size) `,` ` `
-        custom<OptionalDTypeParamValue>($dType) `>`
-  }];
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
-    TypeBuilder<(ins "int64_t":$size, "KGENDType":$dtype)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// BufferType Type Constraints
-//===----------------------------------------------------------------------===//
-
-def BufferKnownDType : ConfinedType<ZAP_BufferType,
-    [CPred<"$_self.cast<ZAP::BufferType>().getDType()">],
-    "buffer with concrete dtype">;
-
-def ConcreteBuffer : ConfinedType<ZAP_BufferType,
-    [CPred<"$_self.cast<ZAP::BufferType>().getDType() && " #
-           "$_self.cast<ZAP::BufferType>().getSize()">],
-    "buffer with concrete size and dtype">;
-
-class BufferPointerType<string lhs, string rhs>
-  : TypesMatchWith<"pointer to scalar of the same dtype", lhs, rhs,
-                   "$_self.cast<ZAP::BufferType>().getPointerType()">;
-
-class BufferElementType<string lhs, string rhs>
-  : TypesMatchWith<"scalar of the same dtype", lhs, rhs,
-                   "$_self.cast<ZAP::BufferType>().getElementType()">;
-
 
 //===----------------------------------------------------------------------===//
 // NDBufferType

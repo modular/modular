@@ -84,10 +84,6 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
       return success();
     }
 
-    if (auto buffer = dyn_cast<ZAP::BufferType>(t)) {
-      os << "void *, ssize_t, uint8_t";
-      return success();
-    }
     if (auto ndbuffer = dyn_cast<ZAP::NDBufferType>(t)) {
       os << "void *, ssize_t, ssize_t[5], uint8_t";
       return success();

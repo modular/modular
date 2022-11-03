@@ -1,5 +1,27 @@
 // RUN: kgen-opt %s | FileCheck %s
 
+// CHECK-LABEL: kgen.generator @pointer_type<dt: dtype>(
+kgen.generator @pointer_type<dt: dtype>
+  // CHECK-SAME: %{{.*}}: !pop.pointer<scalar<dt>>,
+  (%arg0 : !pop.pointer<scalar<dt>>,
+  // CHECK-SAME: %{{.*}}: !pop.pointer<scalar<ui8>>,
+  %arg1: !pop.pointer<scalar<ui8>>,
+  // CHECK-SAME: %{{.*}}: !pop.pointer<scalar<invalid>>) {
+  %arg2: !pop.pointer<scalar<invalid>>) {
+  kgen.return
+}
+
+
+// CHECK-LABEL: kgen.generator @simd_type<dt: dtype, size>(
+kgen.generator @simd_type<dt: dtype, size>
+  // CHECK-SAME: %{{.*}}: !pop.simd<4, dt>,
+  (%arg0 : !pop.simd<4,dt>,
+  // CHECK-SAME: %{{.*}}: !pop.simd<mul(size, size), ui8>) {
+   %arg1: !pop.simd<mul(size,size), ui8>) {
+
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.func @pop_constant()
 kgen.func @pop_constant() {
   // CHECK-NEXT: pop.constant(32 : si64) : !pop.scalar<si64>

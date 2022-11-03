@@ -142,7 +142,7 @@ kgen.generator @dtype_params() {
 
 // expected-note @+2 {{parameter defined with type 'ui32'}}
 // expected-error @+1 {{reference to parameter "n" with incorrect type 'index'}}
-kgen.generator @scalar_params_verbose<n : ui32>(%x : !zap.buffer<n, f32>) {
+kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invalid>>) {
   kgen.return
 }
 
@@ -387,7 +387,7 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 // -----
 
 // expected-error @below {{invalid use of parameter with no declaration "dt"}}
-kgen.generator @region_params<r3: () -> !zap.buffer<4, dt>>() {
+kgen.generator @region_params<r3: () -> !pop.scalar<dt>>() {
   kgen.return
 }
 
