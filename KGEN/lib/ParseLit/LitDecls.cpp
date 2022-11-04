@@ -110,9 +110,10 @@ ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
   auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
   if (!inserted) {
     ASTDecl *existing = it->second;
-    auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
+    auto diag =
+        sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
+        << name;
     diag.attachNote(existing->getLoc()) << "previous definition here";
-    sharedState.errorOccurred = true;
 
     // Mark the existing decl and this one as erroneous so uses of either
     // don't create confusing errors.

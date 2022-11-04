@@ -420,8 +420,7 @@ public:
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
-    shared.errorOccurred = true;
-    return mlir::emitError(translateLocation(loc), twine);
+    return shared.emitError(loc, twine);
   }
 
   /// Translate an SMLoc into an MLIR Location.

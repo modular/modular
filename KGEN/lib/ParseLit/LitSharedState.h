@@ -78,9 +78,15 @@ public:
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
 
+  /// Emit an error through the parser's logic.
+  InFlightDiagnostic emitError(Location loc, const Twine &twine);
+
+  /// Emit an error through the parser's logic.
+  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &twine);
+
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
-  Location translateLocation(llvm::SMLoc loc);
+  Location translateLocation(llvm::SMLoc loc) const;
 
   /// Allocate an expression node into the persistent bump pointer allocator.
   template <typename T, typename... Args>
