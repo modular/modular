@@ -737,7 +737,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (p.parseAttribute(attr, type))
       return failure();
 
-    if (auto symbol = dyn_cast<FlatSymbolRefAttr>(attr)) {
+    if (auto symbol = dyn_cast<SymbolRefAttr>(attr)) {
       // Parse any trailing parameter bindings.
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
@@ -833,7 +833,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // Symbol constants print as just the symbol followed by parameter bindings.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    os << symbolConstant.getSymbol();
+    os << symbolConstant.getSymbolRef();
     printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
     return;
   }
@@ -1019,7 +1019,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   if ((opKind == GeneratorOrFuncKind::generator ||
        opKind == GeneratorOrFuncKind::litfunc) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
-    ::mlir::FlatSymbolRefAttr implementsAttr;
+    FlatSymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
                               parser.getBuilder().getType<::mlir::NoneType>(),
                               "implements", result.attributes))

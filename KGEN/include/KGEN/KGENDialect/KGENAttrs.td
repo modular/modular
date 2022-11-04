@@ -378,7 +378,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
     formation - when this happens, the result type is non-parametric.
   }];
 
-  let parameters = (ins "FlatSymbolRefAttr":$symbol,
+  let parameters = (ins "SymbolRefAttr":$symbolRef,
                         "ParamBindArrayAttr":$paramValues,
                         AttributeSelfTypeParameter<"">:$type);
 
@@ -388,7 +388,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
       auto *context = symbol.getContext();
       return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
     }]>,
-    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
                                         "ParamBindArrayAttr":$paramValues,
                                         "Type":$type), [{
       return get(symbol.getContext(), symbol, paramValues, type);
@@ -396,11 +396,16 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
   ];
 
   let assemblyFormat =
-     "`<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`";
+     "`<` $symbolRef custom<OptionalParamBindSpec>($paramValues) `>`";
 
   let extraClassDeclaration = [{
     /// Get the symbol name.
     StringAttr getName() { return getSymbol().getAttr(); }
+
+    /// Get the symbol constant as a flat reference.
+    FlatSymbolRefAttr getSymbol() {
+      return llvm::cast<FlatSymbolRefAttr>(getSymbolRef());
+    }
   }];
 }
 

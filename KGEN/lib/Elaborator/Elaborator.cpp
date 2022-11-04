@@ -233,8 +233,8 @@ public:
   ParseResult collectInterfaces();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(SymbolRefAttr symbolRef) {
-    return symtab.lookup(symbolRef.cast<FlatSymbolRefAttr>().getAttr());
+  Operation *lookupCallee(FlatSymbolRefAttr symbolRef) {
+    return symtab.lookup(symbolRef.getAttr());
   }
 
   /// Return all instantiations of the specified declaration (a func,
@@ -1435,7 +1435,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
       // something if these get too verbose.
       os << typeConstant.getValue();
     } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-      os << symbolConstant.getSymbol().getValue();
+      os << symbolConstant.getName().getValue();
     } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
       os << stringConstant.strref();
     } else {

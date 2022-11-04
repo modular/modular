@@ -440,18 +440,43 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
   if (!symbolTable)
     return;
 
-  auto symbol = symbolConstant.getSymbol();
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(
-      symbolTable->lookupSymbolIn(module, symbol));
-
-  if (!decl) {
+  // Build the signature of the referenced symbol.
+  SymbolRefAttr symbol = symbolConstant.getSymbolRef();
+  auto lookupDecl = [&](Operation *root, auto name) -> KGENDeclInterface {
+    if (auto decl = dyn_cast_or_null<KGENDeclInterface>(
+            symbolTable->lookupSymbolIn(root, name)))
+      return decl;
     hadError = true;
     emitError(curLocationCollecting.value(), "'")
         << symbol << "' does not reference a KGEN declaration";
-    return;
-  }
+    return nullptr;
+  };
 
-  auto declSignature = decl.getSignature();
+  // The symbol reference may refer to a nested symbol, in which case we build
+  // the signature by concatenating the parameter signature down to the leaf
+  // symbol.
+  KGENDeclInterface decl = lookupDecl(module, symbol.getRootReference());
+  if (!decl)
+    return;
+
+  SignatureType declSignature;
+  if (isa<FlatSymbolRefAttr>(symbol)) {
+    declSignature = decl.getSignature();
+  } else {
+    SmallVector<ParamDeclAttr> inputParams(decl.getInputParamDecls());
+    SmallVector<Type> resultParamTypes(decl.getResultParamTypes());
+    for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences()) {
+      decl = lookupDecl(decl, nestedRef.getAttr());
+      if (!decl)
+        return;
+      llvm::append_range(inputParams, decl.getInputParamDecls());
+      llvm::append_range(resultParamTypes, decl.getResultParamTypes());
+    }
+    declSignature = SignatureType::get(
+        ParamDeclArrayAttr::get(decl.getContext(), inputParams),
+        TypeArrayAttr::get(decl.getContext(), resultParamTypes),
+        decl.getFunctionType());
+  }
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
   // signature to include the substitutions.
