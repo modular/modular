@@ -112,6 +112,15 @@ kgen.func @add_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !po
 
 // -----
 
+// CHECK-LABEL: @add_simd
+kgen.func @add_simd(%arg0: !pop.simd<4, index>, %arg1: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  // CHECK: llvm.add
+  %0 = pop.add %arg0, %arg1: !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+// -----
+
 // CHECK-LABEL: @fadd_simd
 kgen.func @fadd_simd(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   // CHECK: llvm.fadd

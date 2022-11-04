@@ -20,12 +20,16 @@ namespace LLVM = mlir::LLVM;
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
-Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype) {
+Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
+                                            size_t indexBitwidth) {
   if (dtype.isBool())
     return IntegerType::get(ctx, 1);
 
   if (dtype.isAddress())
     return LLVM::LLVMPointerType::get(ctx);
+
+  if (dtype.isIndex())
+    return IntegerType::get(ctx, indexBitwidth);
 
   // This intentionally discards signed-ness because LLVM is signless.
   if (dtype.isInt())
@@ -40,8 +44,9 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype) {
   return {};
 }
 
-Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype) {
-  if (Optional<Type> type = getMLIRTypeForDType(ctx, dtype))
+Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype,
+                               size_t indexBitwidth) {
+  if (Optional<Type> type = getMLIRTypeForDType(ctx, dtype, indexBitwidth))
     return LLVM::LLVMPointerType::get(*type);
   return LLVM::LLVMPointerType::get(ctx);
 }
@@ -53,7 +58,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   // Convert a DType expression to an MLIR type.
   auto convertDType = [&](auto type) -> Optional<Type> {
     if (Optional<KGENDType> dtype = type.getResolvedDType())
-      return getMLIRTypeForDType(type.getContext(), *dtype);
+      return getMLIRTypeForDType(type.getContext(), *dtype,
+                                 options.getIndexBitwidth());
     return {};
   };
 

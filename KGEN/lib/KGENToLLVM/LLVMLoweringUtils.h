@@ -20,11 +20,13 @@ class KGENDType;
 
 /// Get the MLIR type for a data type.
 llvm::Optional<mlir::Type> getMLIRTypeForDType(mlir::MLIRContext *ctx,
-                                               KGENDType dtype);
+                                               KGENDType dtype,
+                                               size_t indexBitwidth);
 
 /// Get an LLVM pointer to the given dtype. If the dtype is unknown, return an
 /// untyped pointer.
-mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, KGENDType dtype);
+mlir::Type getLLVMPointerTo(mlir::MLIRContext *ctx, KGENDType dtype,
+                            size_t indexBitwidth);
 
 /// This type converter maps fully-specified pop dialect parametric types and
 /// built-in MLIR types to LLVM types.
