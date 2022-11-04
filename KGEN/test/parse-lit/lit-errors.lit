@@ -147,7 +147,7 @@ struct DecoratedStruct:
 @decorator # expected-error {{no var decorators supported yet}}
 var DecoratedVar: Int
 
-@staticmethod # expected-error {{no def decorators supported yet}}
+@staticmethod # expected-error {{unsupported decorator: staticmethod}}
 def StaticMethod(): pass
 
 # expected-error @+1 {{special function must be a method}}
