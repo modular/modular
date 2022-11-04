@@ -193,7 +193,7 @@ Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
 void RefType::walkImmediateSubElements(
     function_ref<void(Attribute)> walkAttrs,
     function_ref<void(Type)> walkTypes) const {
-  walkAttrs(getName());
+  walkAttrs(getSymbol());
   walkAttrs(getParamValues());
 }
 

@@ -530,7 +530,7 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
         popType.print(p);
       })
       .Case([&](RefType ref) {
-        p << ref.getName();
+        p << ref.getSymbol();
         printOptionalParamBindSpec(p, ref.getParamValues());
       })
       .Case([&](DTypeType) { p << DTypeType::getMnemonic(); })

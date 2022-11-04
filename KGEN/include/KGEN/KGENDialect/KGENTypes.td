@@ -165,15 +165,22 @@ def RefType : KGENType<"Ref", "ref",
     ```
   }];
 
-  let parameters = (ins "FlatSymbolRefAttr":$name,
+  let parameters = (ins "FlatSymbolRefAttr":$symbol,
                         "ParamBindArrayAttr":$paramValues);
-  let assemblyFormat = "`<` $name custom<OptionalParamBindSpec>($paramValues) `>`";
+  let assemblyFormat = [{
+    `<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`
+  }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name,
                                         "ParamBindArrayAttr":$paramValues)>,
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name)>
   ];
+
+  let extraClassDeclaration = [{
+    /// Get the name of the referenced type.
+    StringAttr getName() { return getSymbol().getAttr(); }
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
