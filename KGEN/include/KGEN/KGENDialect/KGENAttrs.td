@@ -397,6 +397,11 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
 
   let assemblyFormat =
      "`<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`";
+
+  let extraClassDeclaration = [{
+    /// Get the symbol name.
+    StringAttr getName() { return getSymbol().getAttr(); }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
