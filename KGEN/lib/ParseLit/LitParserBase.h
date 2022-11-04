@@ -49,8 +49,7 @@ public:
   /// Emit an error and notice that so we don't verify the IR at the end of
   /// compilation.
   InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
-    getSharedState().errorOccurred = true;
-    return mlir::emitError(loc, message);
+    return getSharedState().emitError(loc, message);
   }
 
   /// Emit an error at the current token.

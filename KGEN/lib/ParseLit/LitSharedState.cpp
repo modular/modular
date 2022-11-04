@@ -69,9 +69,21 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
 
+/// Emit an error through the parser's logic.
+InFlightDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
+  errorOccurred = true;
+  return mlir::emitError(loc, twine);
+}
+
+/// Emit an error through the parser's logic.
+InFlightDiagnostic LitSharedState::emitError(llvm::SMLoc loc,
+                                             const Twine &twine) {
+  return emitError(translateLocation(loc), twine);
+}
+
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.
-Location LitSharedState::translateLocation(SMLoc loc) {
+Location LitSharedState::translateLocation(SMLoc loc) const {
   unsigned mainFileID = sourceMgr.getMainFileID();
   auto lineAndColumn = sourceMgr.getLineAndColumn(loc, mainFileID);
   return FileLineColLoc::get(bufferNameIdentifier, lineAndColumn.first,
