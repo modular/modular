@@ -20,10 +20,8 @@ kgen.func @trivial_conversions(%a: !simd, %b: !simd, %c: !simd, %d: !pop.simd<4,
   %6 = pop.fma %a, %b, %c : !simd
   // CHECK: llvm.select
   %7 = pop.select %d, %a, %b : !simd
-  // CHECK: llvm.intr.floor
-  %8 = pop.floor %a : !simd
   // CHECK: llvm.intr.ceil
-  %9 = pop.ceil %a : !simd
+  %8 = pop.ceil %a : !simd
   kgen.return
 }
 

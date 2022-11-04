@@ -71,17 +71,6 @@ kgen.func @pop_neg(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   kgen.return %0 : !pop.scalar<f32>
 }
 
-// CHECK-LABEL: kgen.func @pop_floor
-// CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<f32>
-// CHECK-SAME: %[[ARG1:.*]]: !pop.simd<4, f64>
-kgen.func @pop_floor(%arg0: !pop.scalar<f32>, %arg1: !pop.simd<4, f64>) {
-  // CHECK: %[[V0:.*]] = pop.floor %[[ARG0]] : !pop.scalar<f32>
-  %0 = pop.floor %arg0 : !pop.scalar<f32>
-  // CHECK: %[[V1:.*]] = pop.floor %[[ARG1]] : !pop.simd<4, f64>
-  %1 = pop.floor %arg1 : !pop.simd<4, f64>
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.func @pop_ceil
 // CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<f32>
 // CHECK-SAME: %[[ARG1:.*]]: !pop.simd<4, f64>
