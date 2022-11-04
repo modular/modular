@@ -49,3 +49,10 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 }
+
+// CHECK-LABEL: @noneTypeAndValue
+lit.func @noneTypeAndValue() -> !lit.none {
+  // CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  kgen.return %0 : !lit.none
+}

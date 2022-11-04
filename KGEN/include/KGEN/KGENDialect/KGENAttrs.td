@@ -16,14 +16,7 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/SubElementInterfaces.td"
 
-/// This is an attribute that is formed of valid nodes in a parameter
-/// expression.
-def ParameterExprAttr
-  : ConfinedAttr<TypedAttrInterface, [AttrConstraint<
-      CPred<"KGEN::isValidParameterExpr($_self)">, "valid parameter expression"
-    >]>;
-
-class TypedParameterExprAttr<Type type> : ConfinedAttr<ParameterExprAttr, [
+class AttrOfType<Type type> : ConfinedAttr<TypedAttrInterface, [
   AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
                              type.predicate>, type.summary>]>;
 

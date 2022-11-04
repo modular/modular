@@ -315,7 +315,7 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
   }];
 
   let arguments =
-   (ins TypedParameterExprAttr<SignatureType>:$callee,
+   (ins AttrOfType<SignatureType>:$callee,
         ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
@@ -367,7 +367,7 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
   }];
 
   let arguments = (ins
-    TypedParameterExprAttr<SignatureType>:$callee,
+    AttrOfType<SignatureType>:$callee,
     ParamBindArrayAttr:$paramValues,
     ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
@@ -482,7 +482,7 @@ def ParamConstantOp : KGENOp<"param.constant",
     by other ops.
   }];
 
-  let arguments = (ins ParameterExprAttr:$value);
+  let arguments = (ins TypedAttrInterface:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat =
      "`` custom<ParamConstantOpValue>($value, qualified(type($result))) attr-dict";
@@ -502,7 +502,7 @@ def ParamDeclareOp : KGENOp<"param.declare", []> {
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
-                       ParameterExprAttr:$value);
+                       TypedAttrInterface:$value);
   let assemblyFormat =
      "custom<ParamDeclareOpValue>($paramDecls, $value) attr-dict";
 
@@ -587,7 +587,7 @@ def ParamAssertOp : KGENOp<"param.assert", []> {
     on a generator.
   }];
 
-  let arguments = (ins TypedParameterExprAttr<I1>:$cond, StrAttr:$message);
+  let arguments = (ins AttrOfType<I1>:$cond, StrAttr:$message);
   let assemblyFormat =
     "` ` `<` custom<ParamAssertOpValue>($cond) `>` `,` $message attr-dict";
 
