@@ -27,11 +27,10 @@ def fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[
   # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
   return x
 
-# expected-error @+1 {{no def decorators supported yet}}
 @interface
-def erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]: pass
+def erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]:
 
-# expected-error @+1 {{no def decorators supported yet}}
+# expected-error @+1 {{unsupported decorator}}
 @implements(erf_scalar)
 def erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 # expected-error @+1 {{binary operator with interesting types not implemented}}

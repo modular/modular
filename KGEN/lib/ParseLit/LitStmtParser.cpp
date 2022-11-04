@@ -10,6 +10,7 @@
 
 #include "ASTDecl.h"
 #include "LitDecls.h"
+#include "LitExprNodes.h"
 #include "LitExprs.h"
 #include "LitParserBase.h"
 
@@ -532,12 +533,20 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
     name = StringAttr::get(getContext(), mangledName);
   }
 
+  bool isInterface = false;
+  // Process any decorators we will eventually want when they come up.
+  for (ExprNode *decorator : decorators) {
+    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+      isInterface = declRef->spelling == "interface";
+      if (!isInterface)
+        emitError(decorator->getLoc(), "unsupported decorator: ")
+            << declRef->spelling;
+    } else
+      emitError(decorator->getLoc(), "unsupported decorator");
+  }
+
   auto funcDecl = builder.create<LITFuncOp>(loc, name);
   funcDecl.getRegion().push_back(new Block());
-
-  // Process any decorators we will eventually want when they come up.
-  if (!decorators.empty())
-    emitError(decorators[0]->getLoc(), "no def decorators supported yet");
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
