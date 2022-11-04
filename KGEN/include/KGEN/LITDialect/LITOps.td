@@ -73,7 +73,7 @@ def LITFuncOp
 // LITStructDeclOp
 //===----------------------------------------------------------------------===//
 
-def LITStructDeclOp : LITOp<"struct.decl", [Symbol,
+def LITStructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
                   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                   DeclareOpInterfaceMethods<KGENDeclInterface>, NoTerminator]> {
   let summary = "Struct declaration.";
