@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENCallInterface.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Interfaces/CallInterfaces.h"
@@ -23,6 +24,47 @@
 namespace M::KGEN::POP {
 class PointerType;
 } // namespace M::KGEN::POP
+
+//===----------------------------------------------------------------------===//
+// KGENModule
+//===----------------------------------------------------------------------===//
+
+namespace M {
+/// A KGEN module wraps a `ModuleOp` and a `SymbolTableCollection` for
+/// convenient nested symbol lookups across the module.
+class KGENModule {
+public:
+  /// Create KGEN module with the provided module and symbol table collection.
+  KGENModule(ModuleOp module, SymbolTableCollection &symbolTable)
+      : module(module), symbolTable(symbolTable) {}
+
+  /// Get the KGEN module from the provided operation.
+  static KGENModule from(Operation *op, SymbolTableCollection &symbolTable) {
+    return {op->getParentOfType<ModuleOp>(), symbolTable};
+  }
+
+  /// Lookup the given symbol in the module.
+  template <typename OpT>
+  OpT lookup(StringAttr name) {
+    return dyn_cast_or_null<OpT>(symbolTable.lookupSymbolIn(module, name));
+  }
+  template <typename OpT>
+  OpT lookup(FlatSymbolRefAttr symbol) {
+    return lookup<OpT>(symbol.getAttr());
+  }
+
+private:
+  /// The top-level IR module.
+  ModuleOp module;
+
+  /// A collection of symbol tables.
+  SymbolTableCollection &symbolTable;
+};
+} // namespace M
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.h.inc"
