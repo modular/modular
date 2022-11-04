@@ -204,8 +204,11 @@ struct MValue : public VariantValueStorage<MValue> {
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
   ASTType getIfType() const { return dyn_cast<ASTType>(storage); }
 
+  /// Return this value as an MLIR parameter attribute.
+  TypedAttr getAttribute(MLIRContext *context) const;
+
   /// Return the type for the contained representation, or null if null.
-  Type getType() const;
+  Type getType(MLIRContext *context) const;
 };
 
 /// RValue = MValue|DRValue.
@@ -228,9 +231,10 @@ public:
   MValue getIfMValue() const { return MValue::getFrom(storage); }
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
+  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
 
   /// Return the type for the contained representation, or null if null.
-  Type getType() const;
+  Type getType(MLIRContext *context) const;
 };
 
 /// AnyValue = RValue|LValue.
@@ -247,13 +251,14 @@ public:
   LValue getIfLValue() const { return dyn_cast<LValue>(storage); }
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
+  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
 
   RValue getIfRValue() const { return RValue::getFrom(storage); }
   MValue getIfMValue() const { return MValue::getFrom(storage); }
 
   /// Return the type for the contained representation, or null if they are
   /// both null.  In the case of an LValue, this will return the PointerType.
-  Type getType() const;
+  Type getType(MLIRContext *context) const;
 };
 
 //===----------------------------------------------------------------------===//

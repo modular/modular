@@ -138,6 +138,7 @@ enum class DeclResolvedness : int8_t {
 enum class MagicDeclKind {
   // This is not a magic declaration, process it as normal.
   kNormal,
+
   // This type is produced when an error is detected to simplify clients.
   kTypeCheckErrorType,
   // This is the 'type' type.
