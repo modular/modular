@@ -1908,49 +1908,64 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
-def POP_IndexToPointerOp : POPOp<"index_to_pointer", [Pure]> {
+def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
+    Pure,
+    DeclareOpInterfaceMethods<CastOpInterface>
+  ]> {
   let summary = "converts an index value to a pointer type.";
   let description = [{
-    The `pop.index_to_pointer` instruction takes an index value to cast, and a
-    type to cast it to, which must be a pointer type or an address type.
+    The `pop.index_to_pointer` instruction takes a simd vector of index dtype
+    to cast, and a type to cast it to, which must be a pointer type or a simd
+    of address dtype.
 
     Example:
 
     ```mlir
-    %addr0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, type>>
-    %addr2 = pop.index_to_pointer %idx : !pop.simd<1, address>
+    %addr0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>> to index
+    %addr1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, type>> to index
+    %addr2 = pop.index_to_pointer %idx : !pop.scalar<address> to index
+    %addr4 = pop.index_to_pointer %idx : !pop.simd<4, address> to
+                                         !pop.simd<4, index>
     ```
   }];
 
-  let arguments = (ins Index:$value);
-  let results = (outs POP_PointerOrSIMDAddressType:$result);
+  let arguments = (ins UnboundOrIndexSIMDOrIndex:$value);
+  let results = (outs UnboundOrPointerOrSIMDAddressType:$result);
 
-  let assemblyFormat = "$value attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
+  }];
 }
 
 //===----------------------------------------------------------------------===//
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure]> {
+def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
+    Pure,
+    DeclareOpInterfaceMethods<CastOpInterface>
+  ]> {
   let summary = "gets the address of the pointer as an index type.";
   let description = [{
-    The `pop.pointer_to_index` instruction takes a pointer or address type
-    to cast and gets its address as an index type.
+    The `pop.pointer_to_index` instruction takes a pointer or a simd value of
+    address dtype to cast and gets its address as a simd of index dtype.
 
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<scalar<f32>>
-    %addr1 = pop.pointer_to_index %idx : !pop.pointer<simd<4, type>>
-    %addr2 = pop.pointer_to_index %idx : !pop.simd<1, address>
+    %addr0 = pop.pointer_to_index %ptr : index to !pop.pointer<scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : indx to !pop.pointer<simd<4, type>>
+    %addr2 = pop.pointer_to_index %idx : index to !pop.scalar<address>
+    %addr4 = pop.pointer_to_index %idx : !pop.simd<4, index> to
+                                         !pop.simd<4, address>
     ```
   }];
 
-  let arguments = (ins POP_PointerOrSIMDAddressType:$value);
-  let results = (outs Index:$result);
-  let assemblyFormat = "$value attr-dict `:` qualified(type($value))";
+  let arguments = (ins UnboundOrPointerOrSIMDAddressType:$value);
+  let results = (outs UnboundOrIndexSIMDOrIndex:$result);
+  let assemblyFormat = [{
+    $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
+  }];
 }
 
 //===----------------------------------------------------------------------===//

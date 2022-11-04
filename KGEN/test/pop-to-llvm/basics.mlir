@@ -600,9 +600,9 @@ kgen.func @cmp_simd(%lhs: !pop.simd<4, f32>, %rhs: !pop.simd<4, f32>) -> !pop.si
 kgen.func @pointer_to_index(%a: !pop.pointer<scalar<f32>>,
                             %b: !pop.pointer<simd<4, si32>>) -> (index, index) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.pointer<scalar<f32>>
+  %0 = pop.pointer_to_index %a : !pop.pointer<scalar<f32>> to index
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !pop.pointer<simd<4, si32>>
+  %1 = pop.pointer_to_index %b : !pop.pointer<simd<4, si32>> to index
   kgen.return %0, %1 : index, index
 }
 
@@ -613,9 +613,9 @@ kgen.func @index_to_pointer(%idx: index) -> (
       !pop.pointer<scalar<f32>>,
       !pop.pointer<simd<4, si32>>) {
   // CHECK: llvm.inttoptr
-  %0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>>
+  %0 = pop.index_to_pointer %idx : index to !pop.pointer<scalar<f32>>
   // CHECK: llvm.inttoptr
-  %1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, si32>>
+  %1 = pop.index_to_pointer %idx : index to !pop.pointer<simd<4, si32>>
   kgen.return %0, %1 :!pop.pointer<scalar<f32>>, !pop.pointer<simd<4, si32>>
 }
 
@@ -624,8 +624,17 @@ kgen.func @index_to_pointer(%idx: index) -> (
 // CHECK-LABEL: @address_to_index
 kgen.func @address_to_index(%a: !pop.simd<1, address>) -> (index) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.simd<1, address>
+  %0 = pop.pointer_to_index %a : !pop.simd<1, address> to index
   kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: @simd_address_to_index
+kgen.func @simd_address_to_index(%a: !pop.simd<4, address>) -> !pop.simd<4, index> {
+  // CHECK: llvm.ptrtoint
+  %0 = pop.pointer_to_index %a : !pop.simd<4, address> to !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
 }
 
 // -----
@@ -633,8 +642,17 @@ kgen.func @address_to_index(%a: !pop.simd<1, address>) -> (index) {
 // CHECK-LABEL: @index_to_address
 kgen.func @index_to_address(%idx: index) -> (!pop.simd<1, address>) {
   // CHECK: llvm.inttoptr
-  %0 = pop.index_to_pointer %idx : !pop.simd<1, address>
+  %0 = pop.index_to_pointer %idx : index to !pop.simd<1, address>
   kgen.return %0 : !pop.simd<1, address>
+}
+
+// -----
+
+// CHECK-LABEL: @simd_index_to_address
+kgen.func @simd_index_to_address(%idx: !pop.simd<4, index>) -> (!pop.simd<4, address>) {
+  // CHECK: llvm.inttoptr
+  %0 = pop.index_to_pointer %idx : !pop.simd<4, index> to !pop.simd<4, address>
+  kgen.return %0 : !pop.simd<4, address>
 }
 
 // -----
