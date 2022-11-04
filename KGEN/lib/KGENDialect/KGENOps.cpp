@@ -322,8 +322,9 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
 
   // Check that the callee attribute was specified.
-  GeneratorInterfaceOp interface = dyn_cast_if_present<GeneratorInterfaceOp>(
-      symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
+  auto module = (*this)->getParentOfType<ModuleOp>();
+  auto interface = dyn_cast_if_present<GeneratorInterfaceOp>(
+      symbolTable.lookupSymbolIn(module, interfaceSym));
   if (!interface)
     return emitError() << "'" << interfaceSym
                        << "' does not reference a generator interface";
@@ -489,8 +490,8 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
   }
 
-  auto func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
-      *this, evaluator.getName());
+  auto module = KGENModule::from(*this, symbolTable);
+  auto func = module.lookup<KGENDeclInterface>(evaluator.getName());
   if (!func)
     return emitOpError("evaluator ")
            << evaluator.getSymbol() << " does not refer to a KGEN declaration";
@@ -522,8 +523,8 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   SymbolConstantAttr defaultImpl = getDefaultImplAttr();
   if (!defaultImpl)
     return success();
-  func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
-      *this, defaultImpl.getName());
+
+  func = module.lookup<KGENDeclInterface>(defaultImpl.getName());
   if (!func)
     return emitOpError("defaultImpl ")
            << defaultImpl.getSymbol()
@@ -679,8 +680,8 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
 
 LogicalResult
 AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  auto callee = dyn_cast_if_present<KGENDeclInterface>(
-      symbolTable.lookupNearestSymbolFrom(*this, getCalleeAttr()));
+  auto module = KGENModule::from(*this, symbolTable);
+  auto callee = module.lookup<KGENDeclInterface>(getCalleeAttr());
   if (!callee)
     return emitOpError() << getCalleeAttr()
                          << " does not reference a valid callee";
@@ -725,14 +726,10 @@ void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
 //===----------------------------------------------------------------------===//
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // Check that the callee attribute was specified.
-  auto calleeAttr = getCalleeAttr();
-  if (!calleeAttr)
-    return emitOpError("requires a 'callee' symbol reference attribute");
-  auto callee = dyn_cast_if_present<KGENDeclInterface>(
-      symbolTable.lookupNearestSymbolFrom(*this, calleeAttr));
+  auto module = KGENModule::from(*this, symbolTable);
+  auto callee = module.lookup<KGENDeclInterface>(getCalleeAttr());
   if (!callee)
-    return emitError() << "'" << calleeAttr.getValue()
+    return emitError() << "'" << getCalleeAttr()
                        << "' does not reference a valid callee";
 
   // Check the parameters and operands align with the requirements of the
@@ -1159,8 +1156,8 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
                  RefType ref) {
-  auto structDecl =
-      symbolTable.lookupNearestSymbolFrom<StructDeclOp>(user, ref.getName());
+  auto module = KGENModule::from(user, symbolTable);
+  auto structDecl = module.lookup<StructDeclOp>(ref.getName());
   // Currently, this is impossible to fail because the symbol use was verified
   // by the parameter verifier.
   assert(structDecl && "expected a struct declaration");
@@ -1269,10 +1266,9 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitOpError("exports must not be empty");
 
   // Just ensure we're exporting symbols we can see.
-  for (FlatSymbolRefAttr e : getExports().getAsRange<FlatSymbolRefAttr>()) {
-    auto decl =
-        symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(*this, e);
-    if (!decl)
+  auto module = KGENModule::from(*this, symbolTable);
+  for (auto e : getExports().getAsRange<FlatSymbolRefAttr>()) {
+    if (!module.lookup<KGENDeclInterface>(e))
       return emitOpError("could not find referenced symbol '") << e << "'";
   }
 

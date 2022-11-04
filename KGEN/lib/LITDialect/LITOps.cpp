@@ -73,8 +73,8 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
 
   // Check that the callee attribute was specified.
-  GeneratorInterfaceOp interface = dyn_cast_if_present<GeneratorInterfaceOp>(
-      symbolTable.lookupNearestSymbolFrom(*this, interfaceSym));
+  auto module = KGENModule::from(*this, symbolTable);
+  auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
   if (!interface)
     return emitError() << "'" << interfaceSym.getValue()
                        << "' does not reference a generator interface";
@@ -145,8 +145,8 @@ static LogicalResult
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
                  RefType ref,
                  std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
-  auto structDecl =
-      symbolTable.lookupNearestSymbolFrom<LITStructDeclOp>(user, ref.getName());
+  auto module = KGENModule::from(user, symbolTable);
+  auto structDecl = module.lookup<LITStructDeclOp>(ref.getName());
   if (!structDecl)
     return user->emitOpError("expected a struct declaration");
 
