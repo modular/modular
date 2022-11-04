@@ -72,7 +72,8 @@ public:
 
 private:
   FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
-  calculateAndPotentiallyVerify(KGENDeclInterface op, SymbolTable *symbolTable);
+  calculateAndPotentiallyVerify(KGENDeclInterface op,
+                                SymbolTableCollection *symbolTable);
 };
 } // namespace M::KGEN
 

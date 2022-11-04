@@ -241,8 +241,9 @@ namespace {
 struct DeclParameterVerifier final : public ParameterCollector {
   DeclParameterVerifier(KGENDeclInterface topLevelOp,
                         ParameterDeclsAndUses &parameters,
-                        SymbolTable *symbolTable)
+                        SymbolTableCollection *symbolTable)
       : topLevelOp(topLevelOp), parameters(parameters),
+        module(topLevelOp->getParentOfType<ModuleOp>()),
         symbolTable(symbolTable) {}
 
   /// Walk the operation and all the operations in its body to find the
@@ -276,9 +277,12 @@ struct DeclParameterVerifier final : public ParameterCollector {
   /// This is the parameter information that we're building.
   ParameterDeclsAndUses &parameters;
 
-  /// If non-null, this contains a symbol table that we can use to verify the
-  /// validity of SymbolConstantAttr's.
-  SymbolTable *symbolTable;
+  /// The top-level KGEN module.
+  ModuleOp module;
+
+  /// If non-null, this contains a symbol table collection that we can use to
+  /// verify the validity of SymbolConstantAttr's.
+  SymbolTableCollection *symbolTable;
 
   /// This is the current operation being scanned during the attribute/type
   /// collection phase.
@@ -437,7 +441,8 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
 
   auto symbol = symbolConstant.getSymbol();
-  auto decl = symbolTable->lookup<KGENDeclInterface>(symbol.getAttr());
+  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+      symbolTable->lookupSymbolIn(module, symbol));
 
   if (!decl) {
     hadError = true;
@@ -493,8 +498,8 @@ void DeclParameterVerifier::verifyRefType(RefType refType) {
   if (!symbolTable)
     return;
 
-  auto decl =
-      symbolTable->lookup<KGENDeclInterface>(refType.getName().getAttr());
+  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+      symbolTable->lookupSymbolIn(module, refType.getName().getAttr()));
   if (!decl) {
     hadError = true;
     emitError(curLocationCollecting.value())
@@ -797,9 +802,7 @@ ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
 LogicalResult
 ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
                                           SymbolTableCollection &symbolTables) {
-  SymbolTable *symbolTable =
-      &symbolTables.getSymbolTable(op->getParentOfType<ModuleOp>());
-  return calculateAndPotentiallyVerify(op, symbolTable);
+  return calculateAndPotentiallyVerify(op, &symbolTables);
 }
 
 /// Collect information about the parameter definitions and uses in the
@@ -810,7 +813,7 @@ ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
 /// problem is detected, this emits an error and returns failure.
 FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
 ParameterDeclsAndUses::calculateAndPotentiallyVerify(
-    KGENDeclInterface topLevelOp, SymbolTable *symbolTable) {
+    KGENDeclInterface topLevelOp, SymbolTableCollection *symbolTable) {
   DeclParameterVerifier verifier(topLevelOp, *this, symbolTable);
 
   // Start by doing a pass over the operation and all the operations in its
