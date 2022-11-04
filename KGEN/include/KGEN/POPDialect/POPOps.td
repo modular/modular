@@ -167,6 +167,8 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
     %b = pop.neg %a : !pop.simd<size, type>
     ```
   }];
+  let arguments = (ins UnboundOrSignedSIMD:$operand);
+  let results = (outs UnboundOrSignedSIMD:$result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -821,8 +823,8 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
     POPOp<mnemonic, traits # [Pure,
                               SIMDSizeOneOfSameDType<"operand", "result">]>,
-    Arguments<(ins POP_SIMDType:$operand)>,
-    Results<(outs POP_SIMDType:$result)> {
+    Arguments<(ins UnboudOrIndexOrArithmeticSIMD:$operand)>,
+    Results<(outs UnboudOrIndexOrArithmeticSIMD:$result)> {
   let assemblyFormat = "$operand attr-dict `:` qualified(type($operand))";
 }
 

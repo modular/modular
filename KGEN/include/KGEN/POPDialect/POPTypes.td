@@ -182,11 +182,16 @@ def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType],
 
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
     "whose element type is either unbound or an integral dtype">;
+def UnboundOrSignedSIMD : AllOfType<[POP_SIMDType, UnboundOrSignedDType],
+    "whose element type is either unbound or of signed dtype">;
 def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
 def UnboundOrBoolOrIntegerSIMD : AllOfType<
     [POP_SIMDType, IntegerOrBoolOrUnboundDType],
     "whose element type is either unbound, or integer, or bool">;
+def UnboudOrIndexOrArithmeticSIMD : AllOfType<[
+    POP_SIMDType, UnboundOrIndexOrArithmeticDType],
+    "whose element type is either unboudn, index, or arithmetic dtype">;
 
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;

@@ -90,9 +90,18 @@ def AddressDType : ConstrainedDType<"$_self && $_self->isAddress()">;
 /// A type whose data type is either unbound or integral.
 def IntegerOrUnboundDType :
     ConstrainedDType<"!$_self || $_self->isInt()">;
+/// A type whose data type is either unbound or signed.
+def UnboundOrSignedDType :
+    ConstrainedDType<"!$_self || $_self->isSInt() || $_self->isFloat()">;
 /// A type whose data type is either unbound or floating point.
 def FloatOrUnboundDType :
     ConstrainedDType<"!$_self || $_self->isFloat()">;
+/// A type whose data type is either index or arithmetic.
+def IndexOrArithmeticDType :
+    ConstrainedDType<"$_self && ($_self->isIndex() || $_self->isArithmetic())">;
+/// A type whose data type is either unbound, index, or arithmetic.
+def UnboundOrIndexOrArithmeticDType :
+    ConstrainedDType<"!$_self || $_self->isIndex() || $_self->isArithmetic()">;
 /// A type whose data type is either unbound, or integral, or bool.
 def IntegerOrBoolOrUnboundDType :
     ConstrainedDType<"!$_self || $_self->isInt() || $_self->isBool()">;

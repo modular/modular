@@ -205,7 +205,7 @@ public:
   /// Return the in-memory size for an array of the specified type with the
   /// specified number of elements, or -1 for non-numeric types or too large
   /// values.  This supports densely packed sub-byte types like i1, i2, i4.
-  ssize_t getSizeInBytes(size_t numElements) const;
+  ssize_t getSizeInBytes(size_t numElements = 1) const;
 
   constexpr bool operator==(uint8_t v) const { return value == v; }
   constexpr bool operator!=(uint8_t v) const { return value != v; }

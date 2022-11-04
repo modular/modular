@@ -109,6 +109,14 @@ kgen.func @pop_add_simd(%arg0 : !pop.simd<4, f32>, %arg1 : !pop.simd<4, f32>) ->
   kgen.return %0 : !pop.simd<4, f32>
 }
 
+// CHECK-LABEL: kgen.func @pop_add_simd_index
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<4, index>, %[[ARG1:.*]]: !pop.simd<4, index>) -> !pop.simd<4, index> {
+kgen.func @pop_add_simd_index(%arg0 : !pop.simd<4, index>, %arg1 : !pop.simd<4, index>) -> !pop.simd<4, index> {
+  // CHECK-NEXT: %[[V0:.*]] = pop.add %[[ARG0]], %[[ARG1]] : !pop.simd<4, index>
+  %0 = pop.add %arg0, %arg1 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
 // CHECK-LABEL: kgen.func @pop_sub
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>, %[[ARG1:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
 kgen.func @pop_sub(%arg0 : !pop.scalar<f32>, %arg1 : !pop.scalar<f32>) -> !pop.scalar<f32> {
@@ -123,6 +131,14 @@ kgen.func @pop_sub_simd(%arg0 : !pop.simd<4, f32>, %arg1 : !pop.simd<4, f32>) ->
   // CHECK-NEXT: %[[V0:.*]] = pop.sub %[[ARG0]], %[[ARG1]] : !pop.simd<4, f32>
   %0 = pop.sub %arg0, %arg1 : !pop.simd<4, f32>
   kgen.return %0 : !pop.simd<4, f32>
+}
+
+// CHECK-LABEL: kgen.func @pop_sub_simd_index
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<4, index>, %[[ARG1:.*]]: !pop.simd<4, index>) -> !pop.simd<4, index> {
+kgen.func @pop_sub_simd_index(%arg0 : !pop.simd<4, index>, %arg1 : !pop.simd<4, index>) -> !pop.simd<4, index> {
+  // CHECK-NEXT: %[[V0:.*]] = pop.sub %[[ARG0]], %[[ARG1]] : !pop.simd<4, index>
+  %0 = pop.sub %arg0, %arg1 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
 }
 
 // CHECK-LABEL: kgen.func @pop_max
