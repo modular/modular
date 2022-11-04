@@ -762,6 +762,76 @@ LogicalResult GlobalConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// IndexToPointerOp
+//===----------------------------------------------------------------------===//
+
+/// Checks the the input pointer type is catabolic to the output address type.
+static bool isPointerToAddressCastCompatible(TypeRange inputs,
+                                             TypeRange outputs) {
+  if (inputs.size() != 1 || inputs.size() != outputs.size())
+    return false;
+  Type pointerType = inputs.front();
+  Type addressType = outputs.front();
+
+  // The input and output must be either both scalar or both SIMD. And so,
+  // implement the DTypeInterface.
+  auto pointerDType = dyn_cast<DTypeInterface>(pointerType);
+  auto addressDType = dyn_cast<DTypeInterface>(addressType);
+
+  // If the address type does not implement the dtype interface, then the lhs
+  // must be a pointer or address type and the rhs must be an index type.
+  if (!addressDType) {
+    if (!isa<IndexType>(addressType))
+      return false;
+    if (pointerType.isa<PointerType>())
+      return true;
+    // If the pointer type is unresolved, then we are ok.
+    if (!pointerDType || !pointerDType.getResolvedDType())
+      return true;
+    // If the pointer type is of the form !pop.simd<1, address> then that's
+    // ok.
+    if (pointerDType.getResolvedDType()->isAddress() &&
+        pointerType.cast<SIMDType>().getResolvedSize().value_or(0) == 1)
+      return true;
+  }
+
+  // If the pointer type is unresolved, then we we are ok.
+  if (!pointerDType)
+    return false;
+
+  auto isUnboundOrIndexDType = [](DTypeInterface type) {
+    Optional<KGENDType> dtype = type.getResolvedDType();
+    return !dtype || dtype->isIndex();
+  };
+  auto isUnboundOrAddressDType = [](DTypeInterface type) {
+    Optional<KGENDType> dtype = type.getResolvedDType();
+    return !dtype || dtype->isAddress();
+  };
+
+  // Otherwise, the lhs type must be an address dtype and the rhs type must be
+  // an index dtype.
+  if (!isUnboundOrAddressDType(pointerDType) ||
+      !isUnboundOrIndexDType(addressDType))
+    return false;
+
+  // Finally, the simd width must match.
+  return pointerType.cast<SIMDType>().getResolvedSize() ==
+         addressType.cast<SIMDType>().getResolvedSize();
+}
+
+bool IndexToPointerOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  return isPointerToAddressCastCompatible(outputs, inputs);
+}
+
+//===----------------------------------------------------------------------===//
+// PointerToIndexOp
+//===----------------------------------------------------------------------===//
+
+bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  return isPointerToAddressCastCompatible(inputs, outputs);
+}
+
+//===----------------------------------------------------------------------===//
 // VariantVisitOp
 //===----------------------------------------------------------------------===//
 

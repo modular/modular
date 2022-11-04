@@ -171,6 +171,10 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface]> {
 
 def BoolSIMD : AllOfType<[POP_SIMDType, BoolDType], "!pop.simd<N, bool>">;
 
+def UnboundSIMD : AllOfType<[POP_SIMDType, UnboundDType], "!pop.simd<N, invalid>">;
+
+def IndexSIMD : AllOfType<[POP_SIMDType, IndexDType], "!pop.simd<N, index>">;
+
 def IntegerSIMD : AllOfType<[POP_SIMDType, IntegerDType],
                             "!pop.simd<N, integral>">;
 
@@ -179,6 +183,8 @@ def FloatSIMD : AllOfType<[POP_SIMDType, FloatDType],
 
 def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType],
                              "!pop.simd<N, address>">;
+
+def UnboundOrIndexSIMDOrIndex : AnyTypeOf<[Index, IndexSIMD, UnboundSIMD]>;
 
 def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
     "whose element type is either unbound or an integral dtype">;
@@ -229,11 +235,8 @@ def UI8SIMDSizeOne : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
                               "DTypeConstantAttr::get($_builder.getContext(), "
                               "KGENDType::ui8))">;
 
-def AddressSIMDSizeOne : AllOfType<[SIMDSizeOne, AddressSIMD],
-                             "!pop.simd<1, address>">;
-
-def POP_PointerOrSIMDAddressType : AnyTypeOf<
-                                        [POP_PointerType, AddressSIMDSizeOne]>;
+def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<[
+    POP_PointerType, AddressSIMD, UnboundDType]>;
 
 //===----------------------------------------------------------------------===//
 // StructType
