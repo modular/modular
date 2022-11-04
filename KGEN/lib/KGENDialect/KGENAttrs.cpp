@@ -269,8 +269,7 @@ LogicalResult ParamOperatorAttr::verify(
     // Check the types that are supported.
     if (type.isIntOrIndex())
       break; // Index and fixed-width integer types supported for all of these.
-    if (type.isIndex())
-      return emitError() << "operator requires an index or integer type";
+    return emitError() << "operator requires an index or integer type";
     break;
   // Binary expressions.
   case POC::Shl:
@@ -696,9 +695,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
   deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
-      POC::Max, operands,
-      [](auto a, auto b) { return llvm::APIntOps::umax(a, b); },
-      [](auto a, auto b) { return llvm::APIntOps::smax(a, b); },
+      POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
       [&](auto cst) { return intIsMinValue(type, cst); },
       [&](auto cst) { return intIsMaxValue(type, cst); });
 }
@@ -707,9 +704,7 @@ static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
   deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
-      POC::Min, operands,
-      [](auto a, auto b) { return llvm::APIntOps::umin(a, b); },
-      [](auto a, auto b) { return llvm::APIntOps::smin(a, b); },
+      POC::Min, operands, llvm::APIntOps::umin, llvm::APIntOps::smin,
       [&](auto cst) { return intIsMaxValue(type, cst); },
       [&](auto cst) { return intIsMinValue(type, cst); });
 }
