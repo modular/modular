@@ -208,7 +208,8 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
   KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
-  if (parent && succeeded(collectParameterReferences(cond, parameterRefs))) {
+  if (parent) {
+    collectParameterReferences(cond, parameterRefs);
     ArrayRef<ParamDeclAttr> generatorInputParams = getParamDecls(parent);
 
     // Check to see if the parameters referenced by the condition are all
@@ -1021,12 +1022,10 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
 /// Otherwise, require that the concrete input and output types are the same.
 LogicalResult RebindOp::verify() {
   SmallVector<ParamDeclRefAttr> inputRefs, outputRefs;
-  if (failed(collectParameterReferences(getInput().getType(), inputRefs)))
-    return failure();
+  collectParameterReferences(getInput().getType(), inputRefs);
   if (!inputRefs.empty())
     return success();
-  if (failed(collectParameterReferences(getType(), outputRefs)))
-    return failure();
+  collectParameterReferences(getType(), outputRefs);
   if (!outputRefs.empty())
     return success();
 

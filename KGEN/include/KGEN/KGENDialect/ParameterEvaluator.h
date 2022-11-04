@@ -26,18 +26,14 @@ class KGENDeclInterface;
 
 /// Given a parameter expression, walk it and return any references to named
 /// parameters.  This fails if an invalid parameter expression exists.
-LogicalResult
-collectParameterReferences(TypedAttr expr,
-                           SmallVector<ParamDeclRefAttr> &results);
+void collectParameterReferences(Attribute attr,
+                                SmallVector<ParamDeclRefAttr> &results);
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
 /// references to named parameters.  This fails if an invalid parameter
 /// expression exists.
-LogicalResult
-collectParameterReferences(Type type, SmallVector<ParamDeclRefAttr> &results);
-
-/// Return true if the attribute is a valid parameter expression.
-bool isValidParameterExpr(TypedAttr value);
+void collectParameterReferences(Type type,
+                                SmallVector<ParamDeclRefAttr> &results);
 
 /// Return true if the specified type contains parameter references, e.g.
 /// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.

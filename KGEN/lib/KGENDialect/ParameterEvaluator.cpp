@@ -20,75 +20,36 @@ using namespace M::KGEN;
 
 /// Given a parameter expression, walk it and return any references to named
 /// parameters.  This fails if an unknown parameter expression exists.
-LogicalResult
-KGEN::collectParameterReferences(TypedAttr expr,
-                                 SmallVector<ParamDeclRefAttr> &results) {
-  // Simple constants don't have parameter references.
-  if (isSimpleConstant(expr))
-    return success();
+void KGEN::collectParameterReferences(Attribute attr,
+                                      SmallVector<ParamDeclRefAttr> &results) {
+  // We know that simple constants (including concrete type constants) don't
+  // have parameter references in them. Walk over them.
+  if (!attr || isSimpleConstant(attr))
+    return;
 
-  // We can directly substitute declaration references given our known table of
-  // bindings.
-  if (auto declRef = dyn_cast<ParamDeclRefAttr>(expr)) {
-    results.push_back(declRef);
-    return success();
+  if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
+    results.push_back(paramRef);
+    return;
   }
 
-  // Dig references out of expressions.
-  if (auto oper = dyn_cast<ParamOperatorAttr>(expr)) {
-    for (auto value : oper.getOperands()) {
-      if (failed(collectParameterReferences(value, results)))
-        return failure();
-    }
-    return success();
-  }
-
-  // Dig parameters out of parameterized types.
-  if (auto typeConstant = dyn_cast<ParameterizedTypeConstantAttr>(expr))
-    return collectParameterReferences(typeConstant.getValue(), results);
-
-  // Otherwise, we don't know how to walk this attribute.
-  return failure();
+  auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr);
+  if (!itf)
+    return;
+  itf.walkImmediateSubElements(
+      [&](Attribute attr) { collectParameterReferences(attr, results); },
+      [&](Type type) { collectParameterReferences(type, results); });
 }
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
-/// references to named parameters.  This fails if an invalid parameter
-/// expression exists.
-LogicalResult
-KGEN::collectParameterReferences(Type type,
-                                 SmallVector<ParamDeclRefAttr> &results) {
-  if (auto ref = dyn_cast<RefType>(type)) {
-    for (ParamBindAttr value : ref.getParamValues())
-      if (failed(collectParameterReferences(value.getValue(), results)))
-        return failure();
-    return success();
-  }
-
-  auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
+/// references to named parameters.
+void KGEN::collectParameterReferences(Type type,
+                                      SmallVector<ParamDeclRefAttr> &results) {
+  auto itf = dyn_cast_or_null<mlir::SubElementTypeInterface>(type);
   if (!itf)
-    return success();
-
-  LogicalResult result = success();
+    return;
   itf.walkImmediateSubElements(
-      [&](Attribute attr) {
-        // Skip ConcreteTypeConstantAttr's since we know they can never have
-        // parameters.
-        if (succeeded(result) && attr && !attr.isa<ConcreteTypeConstantAttr>())
-          if (auto expr = dyn_cast<TypedAttr>(attr))
-            result = collectParameterReferences(expr, results);
-      },
-      [&](Type type) {
-        if (succeeded(result))
-          result = collectParameterReferences(type, results);
-      });
-  return result;
-}
-
-/// Return true if the attribute is a valid parameter expression.
-///
-bool KGEN::isValidParameterExpr(TypedAttr value) {
-  SmallVector<ParamDeclRefAttr> paramDecls;
-  return succeeded(collectParameterReferences(value, paramDecls));
+      [&](Attribute attr) { collectParameterReferences(attr, results); },
+      [&](Type type) { collectParameterReferences(type, results); });
 }
 
 /// Return true if the specified type contains parameter references, e.g.
@@ -100,7 +61,7 @@ bool KGEN::isValidParameterExpr(TypedAttr value) {
 /// caching.
 bool KGEN::isParameterizedType(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
-  (void)collectParameterReferences(type, paramDecls);
+  collectParameterReferences(type, paramDecls);
   return !paramDecls.empty();
 }
 
