@@ -1159,9 +1159,8 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
                  RefType ref) {
-  FlatSymbolRefAttr name = ref.getName();
   auto structDecl =
-      symbolTable.lookupNearestSymbolFrom<StructDeclOp>(user, name.getAttr());
+      symbolTable.lookupNearestSymbolFrom<StructDeclOp>(user, ref.getName());
   // Currently, this is impossible to fail because the symbol use was verified
   // by the parameter verifier.
   assert(structDecl && "expected a struct declaration");
@@ -1215,7 +1214,7 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
 
   return emitOpError("struct ")
-         << getType().getName() << " has no field named " << getFieldAttr();
+         << getType().getSymbol() << " has no field named " << getFieldAttr();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1239,7 +1238,7 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
   }
 
   return op->emitOpError("struct ")
-         << ref.getName() << " has no field named " << fieldName;
+         << ref.getSymbol() << " has no field named " << fieldName;
 }
 
 LogicalResult

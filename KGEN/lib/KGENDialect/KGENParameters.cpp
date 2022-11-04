@@ -499,7 +499,7 @@ void DeclParameterVerifier::verifyRefType(RefType refType) {
     return;
 
   auto decl = dyn_cast_or_null<KGENDeclInterface>(
-      symbolTable->lookupSymbolIn(module, refType.getName().getAttr()));
+      symbolTable->lookupSymbolIn(module, refType.getName()));
   if (!decl) {
     hadError = true;
     emitError(curLocationCollecting.value())
@@ -508,7 +508,7 @@ void DeclParameterVerifier::verifyRefType(RefType refType) {
   }
 
   SmallString<32> paramName("@");
-  paramName.append(refType.getName().getLeafReference());
+  paramName.append(refType.getName());
   if (failed(verifyParamDeclsMatch(
           "!kgen.ref symbol use",
           llvm::to_vector(llvm::map_range(

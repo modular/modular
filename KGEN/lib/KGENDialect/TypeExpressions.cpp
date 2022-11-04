@@ -25,7 +25,7 @@ lookupStructDecl(SymbolTable &symtab, RefType type) {
   ParameterEvaluator evaluator(&symtab);
   for (ParamBindAttr bind : type.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-  auto decl = symtab.lookup<StructDeclOp>(type.getName().getAttr());
+  auto decl = symtab.lookup<StructDeclOp>(type.getName());
   return {decl, std::move(evaluator)};
 }
 

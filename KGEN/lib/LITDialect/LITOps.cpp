@@ -145,9 +145,8 @@ static LogicalResult
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
                  RefType ref,
                  std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
-  FlatSymbolRefAttr name = ref.getName();
-  auto structDecl = symbolTable.lookupNearestSymbolFrom<LITStructDeclOp>(
-      user, name.getAttr());
+  auto structDecl =
+      symbolTable.lookupNearestSymbolFrom<LITStructDeclOp>(user, ref.getName());
   if (!structDecl)
     return user->emitOpError("expected a struct declaration");
 

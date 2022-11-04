@@ -247,9 +247,8 @@ public:
       : structDecls(structDecls) {}
 
   /// Get the index of the struct field.
-  Optional<int64_t> getFieldIndex(StringAttr name, RefType typeDef) const {
-    auto it =
-        structDecls.fieldIndices.find({typeDef.getName().getAttr(), name});
+  Optional<int64_t> getFieldIndex(StringAttr name, RefType ref) const {
+    auto it = structDecls.fieldIndices.find({ref.getName(), name});
     if (it == structDecls.fieldIndices.end())
       return {};
     return it->second;
@@ -400,14 +399,14 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 
 /// Replace a KGEN struct with an LLVM struct.
 static LLVM::LLVMStructType
-substituteStructDecl(const StructDeclarations &structDecls, RefType typeDef,
+substituteStructDecl(const StructDeclarations &structDecls, RefType ref,
                      function_ref<Type(Type)> transformElement) {
-  auto it = structDecls.fieldTypes.find(typeDef.getName().getAttr());
+  auto it = structDecls.fieldTypes.find(ref.getName());
   if (it == structDecls.fieldTypes.end())
     return {};
   // Substitute parameters into the field types.
   ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : typeDef.getParamValues())
+  for (ParamBindAttr bind : ref.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
 
   SmallVector<Type> elementTypes;
@@ -417,7 +416,7 @@ substituteStructDecl(const StructDeclarations &structDecls, RefType typeDef,
       return {};
     elementTypes.push_back(elementType);
   }
-  return LLVM::LLVMStructType::getLiteral(typeDef.getContext(), elementTypes);
+  return LLVM::LLVMStructType::getLiteral(ref.getContext(), elementTypes);
 }
 
 //===----------------------------------------------------------------------===//

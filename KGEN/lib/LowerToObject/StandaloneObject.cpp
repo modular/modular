@@ -57,7 +57,7 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
 
   std::function<void(Type)> checkForRefType = [&](Type type) {
     if (auto ref = dyn_cast<RefType>(type)) {
-      Operation *decl = extractDependency(ref.getName().getAttr());
+      Operation *decl = extractDependency(ref.getName());
       // Recurse on the type declaration.
       if (decl)
         sliceDependencies(decl, sliceSymtab, symtab);
