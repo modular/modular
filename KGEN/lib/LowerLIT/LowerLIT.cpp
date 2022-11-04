@@ -598,6 +598,37 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
   return success();
 }
 
+/// Member funtions are reference with nested symbol references. After lowering,
+/// the symbol tree will be flat. Remove all nested symbol references in symbol
+/// constants by taking just the leaf reference.
+static void trimNestedSymbolReferences(Operation *op) {
+  auto trimSymbolConstant = [](Attribute attr) -> Attribute {
+    if (auto symbolCst = dyn_cast<SymbolConstantAttr>(attr)) {
+      return SymbolConstantAttr::get(
+          FlatSymbolRefAttr::get(symbolCst.getSymbolRef().getLeafReference()),
+          symbolCst.getParamValues(), symbolCst.getType());
+    }
+    return attr;
+  };
+  auto trimInType = [&](Type type) {
+    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type))
+      return itf.replaceSubElements(trimSymbolConstant);
+    return type;
+  };
+
+  op->walk([&](Operation *op) {
+    // Search in operation attributes, result types, and argument types.
+    op->setAttrs(cast<DictionaryAttr>(
+        op->getAttrDictionary().replaceSubElements(trimSymbolConstant)));
+    for (OpResult result : op->getOpResults())
+      result.setType(trimInType(result.getType()));
+    for (Region &region : op->getRegions())
+      for (Block &block : region)
+        for (BlockArgument arg : block.getArguments())
+          arg.setType(trimInType(arg.getType()));
+  });
+}
+
 //===----------------------------------------------------------------------===//
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
@@ -619,6 +650,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
           return signalPassFailure();
       }
     }
+    trimNestedSymbolReferences(module);
   }
 };
 
