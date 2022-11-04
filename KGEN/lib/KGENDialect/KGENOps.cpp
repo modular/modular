@@ -490,7 +490,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
 
   auto func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
-      *this, evaluator.getSymbol().getAttr());
+      *this, evaluator.getName());
   if (!func)
     return emitOpError("evaluator ")
            << evaluator.getSymbol() << " does not refer to a KGEN declaration";
@@ -523,7 +523,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!defaultImpl)
     return success();
   func = symbolTable.lookupNearestSymbolFrom<KGENDeclInterface>(
-      *this, defaultImpl.getSymbol().getAttr());
+      *this, defaultImpl.getName());
   if (!func)
     return emitOpError("defaultImpl ")
            << defaultImpl.getSymbol()

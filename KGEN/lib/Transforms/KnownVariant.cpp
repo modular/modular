@@ -197,7 +197,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   getOperation()->walk([&](Operation *op) {
     op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
       if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-        refd.insert(symbol.getSymbol().getAttr());
+        refd.insert(symbol.getName());
     });
 
     // Replace `pop.variant.is` ops on variants with known types with constants.
