@@ -11,8 +11,10 @@
 #include "LitSharedState.h"
 #include "ASTDecl.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "LitDecls.h"
 #include "mlir/IR/Location.h"
 #include "llvm/Support/SourceMgr.h"
@@ -80,6 +82,10 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
   return typeCheckErrorTypeDecl->getResolvedType();
 }
 
+ASTType LitSharedState::getTypeType() const {
+  return typeTypeDecl->getResolvedType();
+}
+
 ASTType LitSharedState::getIndexType() const {
   return indexDecl->getResolvedType();
 }
@@ -105,6 +111,39 @@ ASTType LitSharedState::getSignatureType() const {
 //===----------------------------------------------------------------------===//
 // ASTType
 //===----------------------------------------------------------------------===//
+
+/// Return the MLIR type that corresponds to this AST type.
+Type ASTType::getMLIRType(MLIRContext *context) {
+  ASTDecl *decl = getDecl();
+  assert(decl && "Cannot get MLIR type for null ASTType");
+
+  if (auto typeDecl = dyn_cast<LITStructDeclOp>(*decl)) {
+    assert(typeDecl.getParamDecls().empty() &&
+           "Invalid reference to qualified type");
+    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
+  }
+
+  if (!decl->isMagic())
+    return {};
+
+  switch (decl->magicKind) {
+  case MagicDeclKind::kNormal:
+    llvm_unreachable("not a magic declaration?");
+  case MagicDeclKind::kTypeType:
+    return MLIRTypeType::get(context);
+  case MagicDeclKind::kIndexType:
+    return IndexType::get(context);
+  case MagicDeclKind::kNoneType:
+    return KGEN::NoneType::get(context);
+  case MagicDeclKind::kTypeCheckErrorType:
+    return TypeCheckErrorType::get(context);
+  case MagicDeclKind::kPointerType:
+  case MagicDeclKind::kSignatureType:
+    // TODO: Support qualified types.
+    return {};
+  }
+  llvm_unreachable("unknown case");
+}
 
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.

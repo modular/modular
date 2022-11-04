@@ -25,6 +25,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace M;
+using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 namespace scf = mlir::scf;
 
@@ -34,25 +35,44 @@ static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 // RValue / AnyValue Implementation
 //===----------------------------------------------------------------------===//
 
-static Type
-getTypeFrom(PointerUnion<MAValue, ASTType, DRValue, LValue> storage) {
+static Type getTypeFrom(PointerUnion<MAValue, ASTType, DRValue, LValue> storage,
+                        MLIRContext *context) {
   if (storage.isNull())
     return Type();
-  if (auto attr = storage.dyn_cast<MAValue>())
+  if (auto attr = dyn_cast<MAValue>(storage))
     return attr.get().getType();
+  if (auto value = dyn_cast<DRValue>(storage))
+    return value.getType();
+  if (auto value = dyn_cast<LValue>(storage))
+    return value.getType();
 
-  if (auto value = storage.dyn_cast<DRValue>())
-    return value.getType();
-  if (auto value = storage.dyn_cast<LValue>())
-    return value.getType();
+  if (isa<ASTType>(storage))
+    return MLIRTypeType::get(context);
 
   // TODO: Handle ASTType.
   llvm_unreachable("unhandled case ASTType");
 }
 
-Type MValue::getType() const { return getTypeFrom(storage); }
-Type RValue::getType() const { return getTypeFrom(storage); }
-Type AnyValue::getType() const { return getTypeFrom(storage); }
+Type MValue::getType(MLIRContext *context) const {
+  return getTypeFrom(storage, context);
+}
+Type RValue::getType(MLIRContext *context) const {
+  return getTypeFrom(storage, context);
+}
+Type AnyValue::getType(MLIRContext *context) const {
+  return getTypeFrom(storage, context);
+}
+
+/// Return this value as an MLIR parameter attribute.
+TypedAttr MValue::getAttribute(MLIRContext *context) const {
+  assert(!storage.isNull() && "null MValue");
+  if (auto attrValue = getIfMAValue())
+    return attrValue;
+
+  // Otherwise, convert the ASTTType to an attribute.
+  return ParameterizedTypeConstantAttr::get(
+      cast<ASTType>(storage).getMLIRType(context));
+}
 
 //===----------------------------------------------------------------------===//
 // ExprEmitter Implementation
@@ -329,7 +349,24 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
             decl->getResolvedType()};
 
   if (auto structOp = dyn_cast<LITStructDeclOp>(*decl)) {
-    // getTypeType()
+    auto numParams = structOp.getParamDecls().size();
+    if (numParams != 0) {
+      emitter.emitError(getLoc(), "'" + spelling + "' requires ")
+          << numParams << " meta parameter" << plural(numParams);
+      return {};
+    }
+
+    auto astType = emitter.shared.getASTType(decl, {});
+    return {MValue(astType), emitter.shared.getTypeType()};
+  }
+
+  if (decl->isMagic()) {
+    auto astType = emitter.shared.getASTType(decl, {});
+    if (!astType) {
+      emitter.emitError(getLoc(), "Unable to emit this as a type");
+      return {};
+    }
+    return {MValue(astType), emitter.shared.getTypeType()};
   }
 
   emitter.emitError(getLoc(), "use of declaration \"")
@@ -338,55 +375,16 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
 }
 
 FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
-  auto *context = emitter.getContext();
-
-  // Lookup the identifier.
-  ASTDecl *decl = emitter.lookupDecl(spelling, getLoc(), emitter.declScope,
-                                     "unknown type name");
-  if (!decl)
+  // TODO: Merge type emission into value emission!
+  auto value = emitIR(emitter, {});
+  if (!value)
     return {};
-  auto typeDecl = dyn_cast<LITStructDeclOp>(*decl);
-  if (!typeDecl) {
-    if (decl->isMagic()) {
-      Type mlirType;
-      switch (decl->magicKind) {
-      case MagicDeclKind::kNormal:
-        llvm_unreachable("not a magic declaration?");
-      case MagicDeclKind::kTypeType:
-        mlirType = MLIRTypeType::get(context);
-        break;
-      case MagicDeclKind::kIndexType:
-        // TODO(types): This is a hack to unblock tests in the interim.
-        mlirType = IndexType::get(context);
-        break;
-      case MagicDeclKind::kNoneType:
-        mlirType = KGEN::NoneType::get(context);
-        break;
-      case MagicDeclKind::kTypeCheckErrorType:
-        mlirType = TypeCheckErrorType::get(context);
-        break;
-      case MagicDeclKind::kPointerType:
-      case MagicDeclKind::kSignatureType:
-        emitter.emitError(getLoc(),
-                          "TODO: Cannot emit this until it is parameterized");
-        return {};
-      }
-      return {mlirType, decl->getResolvedType()};
-    }
 
-    emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
-    return {};
-  }
+  if (auto astType = value.ir.getIfMTValue())
+    return {astType.getMLIRType(emitter.getContext()), astType};
 
-  auto numParams = typeDecl.getParamDecls().size();
-  if (numParams != 0) {
-    emitter.emitError(getLoc(), "'" + spelling + "' requires ")
-        << numParams << " meta parameter" << plural(numParams);
-    return {};
-  }
-
-  return {RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr())),
-          decl->getResolvedType()};
+  emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
+  return {};
 }
 
 ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
@@ -447,15 +445,16 @@ FullType AttributeRefNode::emitType(ExprEmitter &emitter) const {
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
                                       FullType contextualType) const {
   auto calleeVal = emitter.emitRValue(callee).ir;
-  if (!calleeVal || isa<TypeCheckErrorType>(calleeVal.getType()))
+  if (!calleeVal)
     return {};
 
   // The only callable thing we have right now are functions.
   // TODO: Support struct initialization.
-  auto calleeType = dyn_cast<SignatureType>(calleeVal.getType());
+  auto calleeAnyType = calleeVal.getType(emitter.getContext());
+  auto calleeType = dyn_cast<SignatureType>(calleeAnyType);
   if (!calleeType) {
     emitter.emitError(getLoc(), "unable to call value of type ")
-        << calleeVal.getType();
+        << calleeAnyType;
     return {};
   }
 
@@ -535,7 +534,9 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     return {};
 
   // If we have a value of signature type, we can bind parameters to it.
-  if (auto signature = dyn_cast<SignatureType>(subValue.ir.getType())) {
+  // TODO(SignatureASTTypes): Use subValue.type when we have signatures.
+  if (auto signature =
+          dyn_cast<SignatureType>(subValue.ir.getType(emitter.getContext()))) {
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -553,7 +554,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     SmallVector<TypedAttr> bindOperands;
     bindOperands.push_back(declParam);
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
-      auto val = emitter.emitMAValue(
+      auto val = emitter.emitMValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val.ir)
         return {};
@@ -562,13 +563,13 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       // TODO: Do implicit conversions.
       // TODO: Handle signatures like (T, scalar<T>) where early bound
       // parameters changes the types of later ones.
-      if (val.ir.getType() != decl.getType()) {
+      if (val.ir.getType(emitter.getContext()) != decl.getType()) {
         emitter.emitError(idx->getLoc(), "index has type ")
             // TODO: Print pretty decl type.
             << val.type << " but declaration expects " << decl.getType();
         return {};
       }
-      bindOperands.push_back(val.ir);
+      bindOperands.push_back(val.ir.getAttribute(emitter.getContext()));
     }
     // Okay, everything checks out, form the bind operation.
     return {MValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
@@ -667,8 +668,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   auto rhsRep = emitter.emitRValue(rhs);
   if (!lhsRep.ir || !rhsRep.ir)
     return {};
-  auto lhsType = lhsRep.ir.getType(), rhsType = rhsRep.ir.getType();
-  if (lhsType != rhsType || !lhsType.isIndex()) {
+  if (lhsRep.type.getDecl()->magicKind != MagicDeclKind::kIndexType ||
+      rhsRep.type.getDecl()->magicKind != MagicDeclKind::kIndexType) {
     emitter.emitError(getLoc(),
                       "binary operator with interesting types not implemented");
     return {};
@@ -759,8 +760,7 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
   auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
-  auto exprType = exprRep.ir.getType();
-  if (!exprType.isIndex()) {
+  if (exprRep.type.getDecl()->magicKind != MagicDeclKind::kIndexType) {
     emitter.emitError(getLoc(),
                       "unary operator with interesting types not implemented");
     return {};

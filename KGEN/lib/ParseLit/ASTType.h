@@ -12,7 +12,8 @@
 #define AST_TYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/PointerLikeTypeTraits.h"
 
 namespace M::KGEN {
 class ParamBindAttr;
@@ -65,6 +66,10 @@ public:
 
   operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
+
+  /// Return the MLIR type that corresponds to this AST type.  This assumes the
+  /// ASTType is correctly formed.
+  Type getMLIRType(MLIRContext *context);
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.
