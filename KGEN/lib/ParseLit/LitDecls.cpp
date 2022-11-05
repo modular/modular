@@ -15,6 +15,7 @@
 #include "LitParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -545,7 +546,9 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
     if (isa<KGEN::NoneType>(defOp.getResultType()) &&
         defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
-      Value noneVal = b.create<NoneValueOp>(loc);
+
+      auto noneAttr = b.getType<NoneAttr>(defOp.getResultType());
+      Value noneVal = b.create<ParamConstantOp>(loc, noneAttr);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();

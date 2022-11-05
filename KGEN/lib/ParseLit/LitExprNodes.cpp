@@ -260,18 +260,8 @@ FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
 
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                              FullType contextualType) const {
-  // FIXME (Issue #4315): None should be emitted as an attribute (not a dynamic
-  // value), but KGEN doesn't allow unknown parameters. This should work:
-  //
-  // return NoneAttr::get(emitter.getContext(), emitType(emitter));
-  if (!emitter.builder) {
-    emitter.emitError(
-        getLoc(), "TODO(Issue #4315) we need a builder to emit None values");
-    return {};
-  }
-  auto loc = emitter.translateLocation(getLoc());
-  auto type = KGEN::NoneType::get(emitter.getContext());
-  return {DRValue(emitter.builder->create<NoneValueOp>(loc, type).getResult()),
+  auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
+  return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
           emitter.shared.getNoneType()};
 }
 
