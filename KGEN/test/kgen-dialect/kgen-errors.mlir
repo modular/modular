@@ -819,3 +819,12 @@ kgen.export []
 
 // expected-error @below {{could not find referenced symbol '@doesNotExist'}}
 kgen.export [@doesNotExist]
+
+// -----
+
+kgen.generator @call_indirect_parametric(%arg0: !kgen.signature<[N : index], [], () -> ()>) {
+  // expected-error @below {{'kgen.call_indirect' op requires the signature callee to have no input or output parameters}}
+  // expected-note @below {{use `bind_signature`}}
+  "kgen.call_indirect"(%arg0) : (!kgen.signature<[N : index], [], () -> ()>) -> ()
+  kgen.return
+}

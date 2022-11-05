@@ -958,6 +958,34 @@ LogicalResult RegionOpenBodyOp::verifyRegions() {
 }
 
 //===----------------------------------------------------------------------===//
+// CallIndirectOp
+//===----------------------------------------------------------------------===//
+
+/// Infer the callee type from the input and result types.
+static ParseResult parseCallIndirectCalleeType(AsmParser &p, Type &calleeType,
+                                               TypeRange inputTypes,
+                                               TypeRange resultTypes) {
+  calleeType = SignatureType::get(p.getContext(), inputTypes, resultTypes);
+  return success();
+}
+
+static void printCallIndirectCalleeType(AsmPrinter &p, Operation *op,
+                                        Type calleeType, TypeRange inputTypes,
+                                        TypeRange resultTypes) {}
+
+/// Require that the signature type has no input or output parameters.
+LogicalResult CallIndirectOp::verify() {
+  SignatureType calleeType = getCallee().getType();
+  if (calleeType.getInputParams().empty() &&
+      calleeType.getResultParamTypes().empty())
+    return success();
+  return emitOpError("requires the signature callee to have no input or output "
+                     "parameters")
+             .attachNote()
+         << "use `bind_signature`";
+}
+
+//===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
