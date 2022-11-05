@@ -986,6 +986,127 @@ LogicalResult CallIndirectOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// PartialApplyOp
+//===----------------------------------------------------------------------===//
+
+/// Parse the input operands, using `?` to represent a placeholder value.
+static ParseResult parseBoundInputs(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &inputs,
+    mlir::DenseI64ArrayAttr &boundInputs, SmallVectorImpl<Type> &inputTypes,
+    Type &resultType, Type &calleeType) {
+  // Parse the binding list `(` ((`?` | operand) (`,` (`?` | operand))*)? `)`.
+  SmallVector<int64_t> boundInputIndices;
+  if (p.parseLParen())
+    return failure();
+  if (p.parseOptionalRParen()) {
+    int64_t index = 0;
+    OpAsmParser::UnresolvedOperand input;
+    auto parseElt = [&]() -> ParseResult {
+      llvm::SMLoc loc = p.getCurrentLocation();
+      if (p.parseOptionalQuestion()) {
+        mlir::OptionalParseResult result = p.parseOptionalOperand(input);
+        if (result.has_value() && failed(*result))
+          return failure();
+        if (!result.has_value())
+          return p.emitError(loc, "expected '?' or an operand in binding list");
+        inputs.push_back(input);
+        boundInputIndices.push_back(index);
+      }
+      ++index;
+      return success();
+    };
+    if (p.parseCommaSeparatedList(parseElt) || p.parseRParen())
+      return failure();
+  }
+
+  // Parse the input function type `:` functional-type.
+  llvm::SMLoc loc = p.getCurrentLocation();
+  FunctionType funcType;
+  if (p.parseColonType(funcType))
+    return failure();
+  calleeType = SignatureType::get(funcType);
+  boundInputs = p.getBuilder().getDenseI64ArrayAttr(boundInputIndices);
+
+  // Infer the input types from the function type.
+  SmallVector<Type> resultTypes;
+  int64_t lastIdx = 0;
+  for (int64_t index : boundInputIndices) {
+    if (index >= funcType.getNumInputs())
+      return p.emitError(loc, "there are more bound inputs than arguments");
+    inputTypes.push_back(funcType.getInputs()[index]);
+    while (lastIdx++ < index)
+      resultTypes.push_back(funcType.getInputs()[lastIdx - 1]);
+  }
+  for (; lastIdx < funcType.getNumInputs(); ++lastIdx)
+    resultTypes.push_back(funcType.getInputs()[lastIdx]);
+
+  // Infer the result signature type.
+  resultType =
+      SignatureType::get(p.getContext(), resultTypes, funcType.getResults());
+  return success();
+}
+
+static void printBoundInputs(OpAsmPrinter &p, Operation *op, ValueRange inputs,
+                             mlir::DenseI64ArrayAttr boundInputs,
+                             TypeRange inputTypes, Type resultType,
+                             Type calleeType) {
+  FunctionType calleeSig = cast<SignatureType>(calleeType).getValues();
+
+  p << '(';
+  auto idxIt = boundInputs.asArrayRef().begin();
+  int64_t index = 0;
+  auto eachFn = [&](int64_t i) {
+    if (idxIt == boundInputs.asArrayRef().end() || i < *idxIt) {
+      p << '?';
+    } else {
+      ++idxIt;
+      p << inputs[index++];
+    }
+  };
+  llvm::interleaveComma(llvm::seq<int64_t>(0, calleeSig.getNumInputs()), p,
+                        eachFn);
+  p << ") : " << calleeSig;
+}
+
+/// Verify the operation is well-formed. It is not possible to get an ill-formed
+/// operation using the pretty syntax, but it is possible from C++.
+LogicalResult PartialApplyOp::verify() {
+  // Ensure the indices are sorted.
+  if (!llvm::is_sorted(getBoundInputs()))
+    return emitOpError("expected indices to be sorted ascending");
+  if (getBoundInputs().size() != getInputs().size())
+    return emitOpError("mismatch between number of indices and inputs: ")
+           << getBoundInputs().size() << " vs " << getInputs().size();
+
+  DenseSet<int64_t> seenInputs;
+  seenInputs.reserve(getBoundInputs().size());
+  ArrayRef<Type> argumentTypes = getCallee().getType().getValues().getInputs();
+  SmallVector<Type> resultTypes;
+  unsigned lastIdx = 0;
+  for (auto [input, index] : llvm::zip(getInputs(), getBoundInputs())) {
+    if (index >= static_cast<int64_t>(argumentTypes.size()))
+      return emitOpError("bound input index is out of range: ") << index;
+    if (!seenInputs.insert(index).second)
+      return emitOpError("duplicate bound input index: ") << index;
+    if (input.getType() != argumentTypes[index])
+      return emitOpError("input bound to argument #")
+             << index << " should be " << argumentTypes[index] << " but got "
+             << input.getType();
+    // Pick the types of arguments that aren't bound.
+    while (lastIdx++ < index)
+      resultTypes.push_back(argumentTypes[lastIdx - 1]);
+  }
+  for (; lastIdx < argumentTypes.size(); ++lastIdx)
+    resultTypes.push_back(argumentTypes[lastIdx]);
+
+  assert(resultTypes.size() == argumentTypes.size() - getBoundInputs().size());
+  if (resultTypes != getType().getValues().getInputs())
+    return emitOpError("result signature does not match");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
