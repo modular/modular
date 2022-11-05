@@ -92,10 +92,14 @@ SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
              TypeArrayAttr::get(values.getContext(), resultParamTypes), values);
 }
 
+SignatureType SignatureType::get(FunctionType values) {
+  return get(ParamDeclArrayAttr::get(values.getContext(), {}),
+             TypeArrayAttr::get(values.getContext(), {}), values);
+}
+
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                  TypeRange results) {
-  return get(ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
-             FunctionType::get(ctx, inputs, results));
+  return get(FunctionType::get(ctx, inputs, results));
 }
 
 /// Return a signature with the specified parameter bindings substituted

@@ -501,6 +501,44 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
 }
 
 //===----------------------------------------------------------------------===//
+// PartialApplyOp
+//===----------------------------------------------------------------------===//
+
+def PartialApplyOp : KGENOp<"partial_apply", [Pure]> {
+  let summary = "partially apply arguments to a callable";
+  let description = [{
+    The `kgen.partial_apply` operation takes a callable of `!kgen.signature`
+    type but which does not have input or output parameters and binds values
+    to its arguments, partially specializing the callable and returning a
+    closure. The operation can bind any number of the callee's arguments.
+
+    Example:
+
+    ```mlir
+    // The result has the signature type `(index, f32) -> !pop.scalar<address>`.
+    %0 = kgen.partial_apply %fn(?, %arg0, ?, %arg1)
+      : (index, i32, f32, !pop.scalar<index>) -> !pop.scalar<address>
+    ```
+
+    The syntax of the operation uses `?` to denote arguments that are left
+    unbound. These arguments form the signature of the resulting callable.
+    In the above example, the second and fourth arguments to the callable `%fn`
+    are bound to `%arg0` and `%arg1` respectively, returning a callable that
+    has two fewer arguments.
+  }];
+
+  let arguments = (ins SignatureType:$callee, Variadic<AnyType>:$inputs,
+                       DenseI64ArrayAttr:$boundInputs);
+  let results = (outs SignatureType:$result);
+  let assemblyFormat = [{
+    $callee `` custom<BoundInputs>($inputs, $boundInputs, type($inputs),
+                                   type($result), type($callee)) attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 

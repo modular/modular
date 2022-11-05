@@ -828,3 +828,67 @@ kgen.generator @call_indirect_parametric(%arg0: !kgen.signature<[N : index], [],
   "kgen.call_indirect"(%arg0) : (!kgen.signature<[N : index], [], () -> ()>) -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], () -> ()>) {
+  // expected-error @below {{'kgen.partial_apply' op expected indices to be sorted ascending}}
+  "kgen.partial_apply"(%arg0) {boundInputs = array<i64: 1, 0>} : (!kgen.signature<[], [], () -> ()>) -> !kgen.signature<[], [], () -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], () -> ()>, %arg1: i32) {
+  // expected-error @below {{'kgen.partial_apply' op mismatch between number of indices and inputs: 0 vs 1}}
+  "kgen.partial_apply"(%arg0, %arg1) {boundInputs = array<i64>} : (!kgen.signature<[], [], () -> ()>, i32) -> !kgen.signature<[], [], () -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], () -> ()>, %arg1: i32) {
+  // expected-error @below {{'kgen.partial_apply' op bound input index is out of range: 0}}
+  "kgen.partial_apply"(%arg0, %arg1) {boundInputs = array<i64: 0>} : (!kgen.signature<[], [], () -> ()>, i32) -> !kgen.signature<[], [], () -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], (i32, i32) -> ()>, %arg1: i32, %arg2: i32) {
+  // expected-error @below {{'kgen.partial_apply' op duplicate bound input index: 0}}
+  "kgen.partial_apply"(%arg0, %arg1, %arg2) {boundInputs = array<i64: 0, 0>} : (!kgen.signature<[], [], (i32, i32) -> ()>, i32, i32) -> !kgen.signature<[], [], (i32, i32) -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], (i32) -> ()>, %arg1: i64) {
+  // expected-error @below {{'kgen.partial_apply' op input bound to argument #0 should be 'i32' but got 'i64'}}
+  "kgen.partial_apply"(%arg0, %arg1) {boundInputs = array<i64: 0>} : (!kgen.signature<[], [], (i32) -> ()>, i64) -> !kgen.signature<[], [], () -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], (i16, i32, i64) -> ()>, %arg1: i32) {
+  // expected-error @below {{'kgen.partial_apply' op result signature does not match}}
+  "kgen.partial_apply"(%arg0, %arg1) {boundInputs = array<i64: 1>} : (!kgen.signature<[], [], (i16, i32, i64) -> ()>, i32) -> !kgen.signature<[], [], (i32, i64) -> ()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>) {
+  // expected-error @below {{custom op 'kgen.partial_apply' expected '?' or an operand in binding list}}
+  kgen.partial_apply %arg0([])
+  kgen.return
+}
+
+// -----
+
+kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1: i8, %arg2: i8) {
+  // expected-error @below {{custom op 'kgen.partial_apply' there are more bound inputs than arguments}}
+  kgen.partial_apply %arg0(%arg1, %arg2) : (i8) -> ()
+  kgen.return
+}
