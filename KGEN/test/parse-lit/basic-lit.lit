@@ -185,7 +185,7 @@ z
 # CHECK-SAME: (%x: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>,
 # CHECK-SAME:  %exp: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>) -> index {
 def fancy_signature[dt: DType, size: index]
-  (x: SIMD[size, dt], exp: SIMD[size, dt]) -> index:
+  (x: SIMD[size, dt], exp: (SIMD)[size, dt]) -> index:
 
   # CHECK: %local = lit.var.decl "local" : <index>
   # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
@@ -253,19 +253,19 @@ def var_decls(untyped):
   x = 123
   var y : Int
   y = y #+1
-  # CHECK: %[[TMP:.*]] = pop.load %y : !pop.pointer<@Int>
-  # CHECK: pop.store %[[TMP]], %y : !pop.pointer<@Int>
+  # CHECK: [[TMP:%.*]] = pop.load %y : !pop.pointer<@Int>
+  # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int>
 
   var z : index
   z = 42
-  # CHECK: %[[TMP:.*]] = index.constant 42
-  # CHECK: pop.store %[[TMP]], %z
+  # CHECK: [[TMP:%.*]] = index.constant 42
+  # CHECK: pop.store [[TMP]], %z
 
 
 def patterns():
   (((z2))) = 42  # Paren patterns
-  # CHECK: %[[TMP:.*]] = index.constant 42
-  # CHECK: pop.store %[[TMP]], %z2
+  # CHECK: [[TMP:%.*]] = index.constant 42
+  # CHECK: pop.store [[TMP]], %z2
 
 # CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.ref<@DType>> {
 struct SIMD[size: index, dt: DType]:
@@ -283,5 +283,6 @@ def call_generic[dt: DType]():
   # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.ref<@DType> = dt, b = 42, c: type = !kgen.ref<@DType>>](%0)
   generic_fn[dt, 42, DType](57)
 
-  # TODO:
-  # generic_fn[dt, 13, SIMD[4, dt]](57)
+  # CHECK: [[TMP:%.*]] = index.constant 57
+  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.ref<@DType> = dt, b = 13, c: type = !kgen.ref<@SIMD<size = 4, dt: !kgen.ref<@DType> = dt>>>]([[TMP]])
+  generic_fn[dt, 13, SIMD[4, dt]](57)
