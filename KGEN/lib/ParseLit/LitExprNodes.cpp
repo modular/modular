@@ -222,6 +222,8 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
   // TODO: Detect overflow errors.
   value = value.zextOrTrunc(64);
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
+
+  // TODO: Switch to builtin.IntegerLiteralType.
   return {AnyValue(attr), emitter.shared.getIndexType()};
 }
 
@@ -236,9 +238,7 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
-  return {AnyValue(attr),
-          // FIXME: Wrong type!
-          emitter.shared.getNoneType()};
+  return {AnyValue(attr), emitter.shared.getFloatLiteralType()};
 }
 
 FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -250,8 +250,7 @@ ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
                                                FullType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return {AnyValue(StringAttr::get(emitter.getContext(), value)),
-          // FIXME: Wrong type!
-          emitter.shared.getNoneType()};
+          emitter.shared.getStringLiteralType()};
 }
 
 FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
@@ -270,7 +269,6 @@ ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
         getLoc(), "TODO(Issue #4315) we need a builder to emit None values");
     return {};
   }
-
   auto loc = emitter.translateLocation(getLoc());
   auto type = KGEN::NoneType::get(emitter.getContext());
   return {DRValue(emitter.builder->create<NoneValueOp>(loc, type).getResult()),

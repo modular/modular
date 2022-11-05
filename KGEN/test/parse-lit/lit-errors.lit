@@ -43,7 +43,7 @@ def missing_ret_val() -> index:
   return # expected-error {{returned value has type '!lit.none' but 'def' expected '!builtin.index'}}
 
 def ret_type_mismatch() -> index:
-  return 4.0 # expected-error {{returned value has type '!lit.none' but 'def' expected '!builtin.index'}}
+  return 4.0 # expected-error {{returned value has type 'FloatLiteralType' but 'def' expected '!builtin.index'}}
 
 def meta_param_then_param_redef[
       dt: index # expected-note {{previous definition here}}
@@ -114,7 +114,7 @@ def MultipleThingMetaparams(a: Thing[1,2][1]):
 def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
-# expected-error @+1 {{parameter of type '!lit.none' cannot be converted to expected type 'index'}}
+# expected-error @+1 {{parameter of type 'StringLiteralType' cannot be converted to expected type 'index'}}
 def WeirdMetaParams(a: Thing[1, "foo"]):
   pass
 
