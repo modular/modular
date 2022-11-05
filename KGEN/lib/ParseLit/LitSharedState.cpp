@@ -11,7 +11,6 @@
 #include "LitSharedState.h"
 #include "ASTDecl.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
@@ -26,7 +25,9 @@ using namespace M::KGEN::LIT;
 
 using llvm::SMLoc;
 using llvm::SourceMgr;
+static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
+namespace {
 struct AttributeVectorComparison {
   bool operator()(const std::vector<ParamBindAttr> &lhs,
                   const std::vector<ParamBindAttr> &rhs) const {
@@ -39,6 +40,7 @@ struct AttributeVectorComparison {
     return false;
   }
 };
+} // namespace
 
 class LitSharedState::Impl {
 public:
@@ -124,54 +126,21 @@ ASTType LitSharedState::getSignatureType() const {
 // ASTType
 //===----------------------------------------------------------------------===//
 
-/// Return the MLIR type that corresponds to this AST type.
-Type ASTType::getMLIRType(MLIRContext *context) {
-  ASTDecl *decl = getDecl();
-  assert(decl && "Cannot get MLIR type for null ASTType");
-
-  if (auto typeDecl = dyn_cast<LITStructDeclOp>(*decl)) {
-    assert(typeDecl.getParamDecls().empty() &&
-           "Invalid reference to qualified type");
-    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()));
-  }
-
-  if (!decl->isMagic())
-    return {};
-
-  switch (decl->magicKind) {
-  case MagicDeclKind::kNormal:
-    llvm_unreachable("not a magic declaration?");
-  case MagicDeclKind::kTypeType:
-    return MLIRTypeType::get(context);
-  case MagicDeclKind::kIndexType:
-    return IndexType::get(context);
-  case MagicDeclKind::kNoneType:
-    return KGEN::NoneType::get(context);
-  case MagicDeclKind::kTypeCheckErrorType:
-    return TypeCheckErrorType::get(context);
-  case MagicDeclKind::kPointerType:
-  case MagicDeclKind::kSignatureType:
-    // TODO: Support qualified types.
-    return {};
-  }
-  llvm_unreachable("unknown case");
-}
-
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 std::string ASTType::getAsString() const {
-  if (!pointer || !getDecl())
+  if (!pointer)
     return "<<NULL ASTTYPE>>";
 
   std::string result;
   llvm::raw_string_ostream os(result);
   os << "'";
 
-  if (auto typeDecl = dyn_cast<LITStructDeclOp>(*getDecl())) {
+  if (auto typeDecl = dyn_cast<LITStructDeclOp>(getDecl())) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();
-  } else if (getDecl()->isMagic()) {
-    switch (getDecl()->magicKind) {
+  } else if (getDecl().isMagic()) {
+    switch (getDecl().magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::kTypeType:
@@ -238,4 +207,68 @@ ASTType LitSharedState::getASTType(ASTDecl *decl,
 
   // Ok, the entry hasn't been established, make it now.
   return entry = allocPersistent<ASTTypeStorage>(*decl, params);
+}
+
+/// Return the MLIR type that corresponds to this AST type, emitting an error
+/// if malformed at the specified location and returning a null type.
+Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
+  assert(type && "Cannot get MLIR type from a null ASTType");
+  ASTDecl &decl = type.getDecl();
+
+  // Check to see if we've already converted this type.  If so, return it.
+  Type &result = type.pointer->mlirType;
+  if (result)
+    return result;
+
+  // If we have a reference to a struct, check the signatures match.
+  if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
+    size_t numDeclParams = typeDecl.getParamDecls().size();
+    size_t numTypeParams = type.getParamValues().size();
+    if (numDeclParams != numTypeParams) {
+      emitError(loc, "'" + typeDecl.getName() + "' requires ")
+          << numDeclParams << " meta parameter" << plural(numDeclParams)
+          << " but " << numTypeParams << " were bound";
+      return TypeCheckErrorType::get(context);
+    }
+
+    for (auto [decl, bindValue] :
+         llvm::zip(typeDecl.getParamDecls(), type.getParamValues())) {
+      if (decl == bindValue.getDecl())
+        continue;
+      emitError(loc, "'" + typeDecl.getName() + "' expected ")
+          << decl.getName() << " of type " << decl.getType()
+          << " but use bound " << bindValue.getDecl().getName() << " of type "
+          << bindValue.getDecl().getType();
+      return TypeCheckErrorType::get(context);
+    }
+
+    // Everything looks good, go forth!
+    auto typeParams = ParamBindArrayAttr::get(context, type.getParamValues());
+    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
+                        typeParams);
+  }
+
+  if (!decl.isMagic()) {
+    emitError(decl.getLoc(), "cannot emit a value as a type");
+    return result = TypeCheckErrorType::get(context);
+  }
+
+  switch (decl.magicKind) {
+  case MagicDeclKind::kNormal:
+    llvm_unreachable("not a magic declaration?");
+  case MagicDeclKind::kTypeType:
+    return result = MLIRTypeType::get(context);
+  case MagicDeclKind::kIndexType:
+    return result = IndexType::get(context);
+  case MagicDeclKind::kNoneType:
+    return result = KGEN::NoneType::get(context);
+  case MagicDeclKind::kTypeCheckErrorType:
+    return result = TypeCheckErrorType::get(context);
+  case MagicDeclKind::kPointerType:
+  case MagicDeclKind::kSignatureType:
+    // TODO: Support qualified types.
+    emitError(loc, "TODO: Cannot emit parameterized builtin type yet");
+    return result = TypeCheckErrorType::get(context);
+  }
+  llvm_unreachable("unknown case");
 }

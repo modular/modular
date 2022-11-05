@@ -12,6 +12,7 @@
 #define AST_TYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Types.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
 
@@ -37,6 +38,11 @@ private:
   // Note that this is bump pointer allocated and its destructor is never run.
   ASTDecl &decl;
   ArrayRef<ParamBindAttr> paramValues;
+
+  /// This is a cached MLIR type that is filled in the first time an ASTType is
+  /// converted to an MLIR type.  On error converting the type, the error is
+  /// diagnosed and this is filled in with an error type.
+  Type mlirType;
 };
 
 /// This type represents an AST type for a value or declaration, which is a
@@ -55,9 +61,9 @@ class ASTType {
 public:
   ASTType() : pointer(nullptr) {}
 
-  ASTDecl *getDecl() const {
+  ASTDecl &getDecl() const {
     assert(pointer && "Cannot dereference null ASTType");
-    return &pointer->decl;
+    return pointer->decl;
   }
   ArrayRef<ParamBindAttr> getParamValues() const {
     assert(pointer && "Cannot dereference null ASTType");
@@ -66,10 +72,6 @@ public:
 
   operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
-
-  /// Return the MLIR type that corresponds to this AST type.  This assumes the
-  /// ASTType is correctly formed.
-  Type getMLIRType(MLIRContext *context);
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.

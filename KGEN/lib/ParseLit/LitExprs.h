@@ -204,9 +204,6 @@ struct MValue : public VariantValueStorage<MValue> {
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
   ASTType getIfType() const { return dyn_cast<ASTType>(storage); }
 
-  /// Return this value as an MLIR parameter attribute.
-  TypedAttr getAttribute(MLIRContext *context) const;
-
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;
 };
