@@ -46,33 +46,30 @@ public:
   ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBindAttr> params);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
-  ASTDecl *typeCheckErrorTypeDecl = nullptr;
   ASTType getTypeCheckErrorType() const;
 
   /// This is the "type" type, which can bind to any lit type.
-  ASTDecl *typeTypeDecl = nullptr;
   ASTType getTypeType() const;
 
+  // TODO: Add IntegerLiteralType.
+  ASTType getFloatLiteralType() const;
+  ASTType getStringLiteralType() const;
+
   /// This is the decl for the builtin 'index' type.
-  ASTDecl *indexDecl = nullptr;
   ASTType getIndexType() const;
 
   /// This is the decl for the builtin 'kgen.none' type.
-  ASTDecl *noneDecl = nullptr;
   ASTType getNoneType() const;
 
   /// This is the decl for the builtin POP::PointerType type.
-  ASTDecl *pointerDecl = nullptr;
   // FIXME: This isn't correctly parameterized.
   ASTType getPointerType() const;
 
   /// This is the decl for the builtin signature type.
-  ASTDecl *signatureDecl = nullptr;
   // FIXME: This isn't correctly parameterized; we need variadics.
   ASTType getSignatureType() const;
 
   /// This is the decl for the builtin lit.object type.
-  ASTDecl *objectDecl = nullptr;
   ASTType getObjectType() const;
 
   /// Return the MLIR type that corresponds to this AST type.  On error, this
@@ -115,6 +112,10 @@ public:
     return ArrayRef<T>(result, elements.size());
   }
 
+  /// Add declarations for magic things to the builtins decl when parsing
+  /// starts.
+  void addBuiltinTypes(ASTDecl &builtinsDecl);
+
 private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
@@ -153,9 +154,14 @@ enum class MagicDeclKind {
   kTypeCheckErrorType,
   // This is the 'type' type.
   kTypeType,
-  // This is the __builtin.mlirtype.builtin.index type.
+  // TODO: builtin.IntegerLiteralType
+  // This is the '__builtin.FloatLiteralType' type.
+  kFloatLiteralType,
+  // This is the '__builtin.StringLiteralType' type.
+  kStringLiteralType,
+  // This is the __builtin.mlirtype["builtin.index"] type.
   kIndexType,
-  // This is the __builtin.mlirtype.lit.none type.
+  // This is the __builtin.mlirtype["lit.none"] type.
   kNoneType,
   // This is a POP::PointerType type.
   kPointerType,

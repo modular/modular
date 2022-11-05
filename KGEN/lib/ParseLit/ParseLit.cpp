@@ -36,46 +36,6 @@ using llvm::SourceMgr;
 // Driver
 //===----------------------------------------------------------------------===//
 
-/// Add declarations for magic things to the builtins decl.
-static void addBuiltinDecls(LitSharedState &sharedState,
-                            ASTDecl &builtinsDecl) {
-  auto &resolver = *sharedState.declResolver;
-
-  // Make the error type.  Anything that references this will
-  // considering it erroneous and already declared as such.
-  sharedState.typeCheckErrorTypeDecl =
-      &resolver.addMagicDecl("<<type check error>>",
-                             MagicDeclKind::kTypeCheckErrorType, &builtinsDecl);
-  sharedState.typeCheckErrorTypeDecl->hasReferenceError = true;
-
-  // Add a declarations for builtin types.
-  sharedState.typeTypeDecl =
-      &resolver.addMagicDecl("type", MagicDeclKind::kTypeType, &builtinsDecl);
-  sharedState.indexDecl =
-      &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
-  sharedState.noneDecl =
-      &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
-  sharedState.pointerDecl = &resolver.addMagicDecl(
-      "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
-  sharedState.signatureDecl = &resolver.addMagicDecl(
-      "Signature", MagicDeclKind::kSignatureType, &builtinsDecl);
-
-  /// FIXME: These should be a user declared types in the standard library,
-  /// which are looked up here instead of being synthesized.
-
-  auto b = builtinsDecl.getDeclEndBuilder();
-  auto loc = builtinsDecl.getLoc();
-
-  // Add a declaration for an "object" struct.  This should be written in the
-  // standard library.
-  auto objectDecl = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
-  sharedState.objectDecl = &resolver.addDecl(
-      objectDecl, &builtinsDecl, LitLexerCursor(), LitLexerCursor(), 0);
-  sharedState.objectDecl->setResolvedType(
-      sharedState.objectDecl->computeSelfTypeForStruct(sharedState));
-  sharedState.objectDecl->resolvedness = DeclResolvedness::fullyResolved;
-}
-
 // Parse the specified .lit file into the specified MLIR context.
 OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              MLIRContext *context,
@@ -101,7 +61,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   ASTDecl &builtinsDecl = sharedState.declResolver->addDecl(
       *module, nullptr, lexer.getCursor(), lexer.getCursor(), -1);
-  addBuiltinDecls(sharedState, builtinsDecl);
+  sharedState.addBuiltinTypes(builtinsDecl);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.

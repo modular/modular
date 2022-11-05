@@ -500,7 +500,9 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // "self" arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
     if (!param.type.first)
-      param.type = sharedState.objectDecl->getFullTypeForTypeReference();
+      param.type =
+          sharedState.getObjectType().getDecl().getFullTypeForTypeReference();
+
     paramTypes.push_back(param.type.first);
 
     // TODO: add support for default parameter expressions.

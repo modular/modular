@@ -50,6 +50,24 @@ public:
   // TODO(complile time): This is horribly inefficient.
   // Switch to StorageUniquer or something else?
   std::set<std::vector<ParamBindAttr>, AttributeVectorComparison> uniquedParams;
+
+  /// This is the AST type that corresponds to TypeCheckErrorType.
+  ASTDecl *typeCheckErrorTypeDecl = nullptr;
+  /// This is the "type" type, which can bind to any lit type.
+  ASTDecl *typeTypeDecl = nullptr;
+  // TODO: Add IntegerLiteralType.
+  ASTDecl *floatLiteralTypeDecl = nullptr;
+  ASTDecl *stringLiteralTypeDecl = nullptr;
+  /// This is the decl for the builtin 'index' type.
+  ASTDecl *indexDecl = nullptr;
+  /// This is the decl for the builtin 'kgen.none' type.
+  ASTDecl *noneDecl = nullptr;
+  /// This is the decl for the builtin POP::PointerType type.
+  ASTDecl *pointerDecl = nullptr;
+  /// This is the decl for the builtin signature type.
+  ASTDecl *signatureDecl = nullptr;
+  /// This is the decl for the builtin lit.object type.
+  ASTDecl *objectDecl = nullptr;
 };
 
 /// Get the name of the main buffer so we can rapidly build Location objects
@@ -93,33 +111,83 @@ Location LitSharedState::translateLocation(SMLoc loc) const {
 }
 
 ASTType LitSharedState::getTypeCheckErrorType() const {
-  return typeCheckErrorTypeDecl->getResolvedType();
+  return impl->typeCheckErrorTypeDecl->getResolvedType();
 }
 
 ASTType LitSharedState::getTypeType() const {
-  return typeTypeDecl->getResolvedType();
+  return impl->typeTypeDecl->getResolvedType();
+}
+
+ASTType LitSharedState::getFloatLiteralType() const {
+  return impl->floatLiteralTypeDecl->getResolvedType();
+}
+
+ASTType LitSharedState::getStringLiteralType() const {
+  return impl->stringLiteralTypeDecl->getResolvedType();
 }
 
 ASTType LitSharedState::getIndexType() const {
-  return indexDecl->getResolvedType();
+  return impl->indexDecl->getResolvedType();
 }
 
 ASTType LitSharedState::getNoneType() const {
-  return noneDecl->getResolvedType();
+  return impl->noneDecl->getResolvedType();
 }
 
 // FIXME: This isn't correctly parameterized.
 ASTType LitSharedState::getPointerType() const {
-  return pointerDecl->getResolvedType();
+  return impl->pointerDecl->getResolvedType();
 }
 
 ASTType LitSharedState::getObjectType() const {
-  return objectDecl->getResolvedType();
+  return impl->objectDecl->getResolvedType();
 }
 
 // FIXME: This isn't correctly parameterized; we need variadics.
 ASTType LitSharedState::getSignatureType() const {
-  return signatureDecl->getResolvedType();
+  return impl->signatureDecl->getResolvedType();
+}
+
+/// Add declarations for magic things to the builtins decl.
+void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
+  auto &resolver = *declResolver;
+
+  // Make the error type.  Anything that references this will
+  // considering it erroneous and already declared as such.
+  impl->typeCheckErrorTypeDecl =
+      &resolver.addMagicDecl("<<type check error>>",
+                             MagicDeclKind::kTypeCheckErrorType, &builtinsDecl);
+  impl->typeCheckErrorTypeDecl->hasReferenceError = true;
+
+  // Add a declarations for builtin types.
+  impl->typeTypeDecl =
+      &resolver.addMagicDecl("type", MagicDeclKind::kTypeType, &builtinsDecl);
+  impl->floatLiteralTypeDecl = &resolver.addMagicDecl(
+      "FloatLiteralType", MagicDeclKind::kFloatLiteralType, &builtinsDecl);
+  impl->stringLiteralTypeDecl = &resolver.addMagicDecl(
+      "StringLiteralType", MagicDeclKind::kStringLiteralType, &builtinsDecl);
+  impl->indexDecl =
+      &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
+  impl->noneDecl =
+      &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
+  impl->pointerDecl = &resolver.addMagicDecl(
+      "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
+  impl->signatureDecl = &resolver.addMagicDecl(
+      "Signature", MagicDeclKind::kSignatureType, &builtinsDecl);
+
+  /// FIXME: These should be a user declared types in the standard library,
+  /// which are looked up here instead of being synthesized.
+  auto b = builtinsDecl.getDeclEndBuilder();
+  auto loc = builtinsDecl.getLoc();
+
+  // Add a declaration for an "object" struct.  This should be written in the
+  // standard library.
+  auto objectOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
+  impl->objectDecl = &resolver.addDecl(objectOp, &builtinsDecl,
+                                       LitLexerCursor(), LitLexerCursor(), 0);
+  impl->objectDecl->setResolvedType(
+      impl->objectDecl->computeSelfTypeForStruct(*this));
+  impl->objectDecl->resolvedness = DeclResolvedness::fullyResolved;
 }
 
 //===----------------------------------------------------------------------===//
@@ -145,6 +213,12 @@ std::string ASTType::getAsString() const {
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::kTypeType:
       os << "type";
+      break;
+    case MagicDeclKind::kFloatLiteralType:
+      os << "FloatLiteralType";
+      break;
+    case MagicDeclKind::kStringLiteralType:
+      os << "StringLiteralType";
       break;
     case MagicDeclKind::kIndexType:
       os << "!builtin.index";
@@ -256,6 +330,11 @@ Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
     llvm_unreachable("not a magic declaration?");
   case MagicDeclKind::kTypeType:
     return result = MLIRTypeType::get(context);
+  case MagicDeclKind::kFloatLiteralType:
+    return result = Float64Type::get(context);
+  case MagicDeclKind::kStringLiteralType:
+    // FIXME: Add a sensible type.
+    return result = IndexType::get(context);
   case MagicDeclKind::kIndexType:
     return result = IndexType::get(context);
   case MagicDeclKind::kNoneType:
