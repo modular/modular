@@ -123,7 +123,8 @@ def SignatureType
     }]>,
     TypeBuilderWithInferredContext<(ins
         "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
-        "FunctionType":$values)>
+        "FunctionType":$values)>,
+    TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
 
   let extraClassDeclaration = [{

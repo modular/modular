@@ -471,6 +471,36 @@ def RegionOpenBodyOp : RegionBodyBaseOp<"region.open_body",
 }
 
 //===----------------------------------------------------------------------===//
+// CallIndirectOp
+//===----------------------------------------------------------------------===//
+
+def CallIndirectOp : KGENOp<"call_indirect"> {
+  let summary = "call a signature-typed value";
+  let description = [{
+    The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`
+    type but which does not have input or output parameters and invokes it with
+    the provided operands as arguments.
+
+    Example:
+
+    ```mlir
+    %0:2 = kgen.call_indirect %fn(%arg0, %arg1)
+      : (index, !kgen.ref<@Foo>) -> (!pop.simd<2, si32>, !kgen.ref<@Bar>)
+    ```
+  }];
+
+  let arguments = (ins SignatureType:$callee, Variadic<AnyType>:$inputs);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+    $callee `(` $inputs `)` attr-dict `:` functional-type($inputs, $results)
+    `` custom<CallIndirectCalleeType>(type($callee), ref(type($inputs)),
+                                      ref(type($results)))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
