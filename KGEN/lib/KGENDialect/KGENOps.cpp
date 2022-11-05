@@ -985,6 +985,42 @@ LogicalResult CallIndirectOp::verify() {
          << "use `bind_signature`";
 }
 
+/// Canonicalize `call_indirect(partial_apply) -> call_indirect` by folding the
+/// bound arguments into the call, and canonicalize `call_indirect(constant)`
+/// into `call_param`.
+LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
+                                           PatternRewriter &rewriter) {
+  Operation *calleeOp = op.getCallee().getDefiningOp();
+  if (auto constant = dyn_cast_or_null<ParamConstantOp>(calleeOp)) {
+    rewriter.replaceOpWithNewOp<CallParamOp>(
+        op, op.getResultTypes(), constant.getValue(), ArrayRef<ParamBindAttr>(),
+        ArrayRef<ParamDeclAttr>(), op.getInputs());
+    return success();
+  }
+
+  if (auto bind = dyn_cast_or_null<PartialApplyOp>(calleeOp)) {
+    SmallVector<Value> newInputs;
+    int64_t totalInputs = op.getInputs().size() + bind.getInputs().size();
+    newInputs.reserve(totalInputs);
+    auto boundIt = bind.getBoundInputs().begin();
+    auto curInputsIt = op.getInputs().begin();
+    auto boundInputsIt = bind.getInputs().begin();
+    for (int64_t i = 0; i < totalInputs; ++i) {
+      if (boundIt == bind.getBoundInputs().end() || i < *boundIt) {
+        newInputs.push_back(*curInputsIt++);
+      } else {
+        ++boundIt;
+        newInputs.push_back(*boundInputsIt++);
+      }
+    }
+    rewriter.replaceOpWithNewOp<CallIndirectOp>(op, op.getResultTypes(),
+                                                bind.getCallee(), newInputs);
+    return success();
+  }
+
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
@@ -1103,6 +1139,50 @@ LogicalResult PartialApplyOp::verify() {
   if (resultTypes != getType().getValues().getInputs())
     return emitOpError("result signature does not match");
 
+  return success();
+}
+
+/// Canonicalize `partial_apply(partial_apply))` by folding the bound operands
+/// into the same operation.
+LogicalResult PartialApplyOp::canonicalize(PartialApplyOp op,
+                                           PatternRewriter &rewriter) {
+  auto bind = dyn_cast_or_null<PartialApplyOp>(op.getCallee().getDefiningOp());
+  if (!bind)
+    return failure();
+  // Merge the values and indices together.
+  SmallVector<Value> newInputs;
+  SmallVector<int64_t> newIndices;
+  size_t totalInputs = op.getInputs().size() + bind.getInputs().size();
+  newInputs.reserve(totalInputs);
+  newIndices.reserve(totalInputs);
+  auto lhsRange = llvm::zip(op.getInputs(), op.getBoundInputs());
+  auto rhsRange = llvm::zip(bind.getInputs(), bind.getBoundInputs());
+  auto lhs = lhsRange.begin(), rhs = rhsRange.begin(), lhsEnd = lhsRange.end(),
+       rhsEnd = rhsRange.end();
+  while (lhs != lhsEnd && rhs != rhsEnd) {
+    auto [lhsInput, lhsIndex] = *lhs;
+    auto [rhsInput, rhsIndex] = *rhs;
+    if (lhsIndex < rhsIndex) {
+      ++lhs;
+      newInputs.push_back(lhsInput);
+      newIndices.push_back(lhsIndex);
+    } else {
+      ++rhs;
+      newInputs.push_back(rhsInput);
+      newIndices.push_back(rhsIndex);
+    }
+  }
+  auto pushTheRest = [&](auto it, auto end) {
+    for (; it != end; ++it) {
+      auto [input, index] = *it;
+      newInputs.push_back(input);
+      newIndices.push_back(index);
+    }
+  };
+  pushTheRest(lhs, lhsEnd);
+  pushTheRest(rhs, rhsEnd);
+  rewriter.replaceOpWithNewOp<PartialApplyOp>(
+      op, op.getType(), bind.getCallee(), newInputs, newIndices);
   return success();
 }
 
