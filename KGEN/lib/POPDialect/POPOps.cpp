@@ -986,39 +986,39 @@ void VariantVisitOp::getRegionInvocationBounds(
 static LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      Type popType, Type builtinType) {
+  auto simd = dyn_cast<SIMDType>(popType);
+  if (!simd)
+    return emitError("cannot convert type ") << popType;
   // Verify the SIMD size matches the vector size and the dtypes match.
-  if (auto simd = dyn_cast<SIMDType>(popType)) {
-    auto size = dyn_cast<IntegerAttr>(simd.getSize());
-    if (size && size.getInt() == 1) {
-      // Scalar case
-      auto vector = dyn_cast<VectorType>(builtinType);
-      if (vector) {
-        builtinType = vector.getElementType();
-        return verifyConversionCast(emitError, popType, builtinType);
-      }
-      auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
-      if (dtype && !dtype.isConvertibleTo(builtinType))
-        return emitError("cannot convert from scalar dtype ")
-               << dtype.getDType().getAsString() << " to " << builtinType;
-      return success();
-    }
 
+  auto size = simd.getResolvedSize();
+  if (size && *size == 1) {
+    // Scalar case
     auto vector = dyn_cast<VectorType>(builtinType);
-    if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
-      return emitError("expected a rank 1 non-scalable vector");
-
-    if (size && size.getInt() != vector.getShape().front())
-      return emitError("expected vector<") << size.getInt() << "xT>";
-
-    if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
-        dtype && !dtype.isConvertibleTo(vector.getElementType()))
-      return emitError("cannot convert from SIMD dtype ")
-             << dtype.getDType().getAsString() << " to vector element "
-             << vector.getElementType();
+    if (vector) {
+      builtinType = vector.getElementType();
+      return verifyConversionCast(emitError, popType, builtinType);
+    }
+    auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
+    if (dtype && !dtype.isConvertibleTo(builtinType))
+      return emitError("cannot convert from scalar dtype ")
+             << dtype.getDType().getAsString() << " to " << builtinType;
     return success();
   }
 
-  return emitError("cannot convert type ") << popType;
+  auto vector = dyn_cast<VectorType>(builtinType);
+  if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
+    return emitError("expected a rank 1 non-scalable vector");
+
+  if (size && *size != vector.getShape().front())
+    return emitError("expected vector<") << *size << "xT>";
+
+  if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
+      dtype && !dtype.isConvertibleTo(vector.getElementType()))
+    return emitError("cannot convert from SIMD dtype ")
+           << dtype.getDType().getAsString() << " to vector element "
+           << vector.getElementType();
+  return success();
 }
 
 LogicalResult CastToBuiltinOp::verify() {

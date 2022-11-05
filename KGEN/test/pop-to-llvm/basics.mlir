@@ -667,7 +667,25 @@ kgen.func @lower_raise_cast(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
   kgen.return %2 : !pop.scalar<f32>
 }
+// -----
 
+// CHECK-LABEL: @cast_to_builtin
+kgen.func @cast_to_builtin(%arg0: !pop.scalar<index>) -> index {
+  // CHECK: %[[TMP:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.scalar<index> to i{{64|32}}
+  // CHECK: builtin.unrealized_conversion_cast %[[TMP]] : i{{64|32}} to index
+  %0 = pop.cast_to_builtin %arg0 : !pop.scalar<index> to index
+  kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: @cast_from_builtin
+kgen.func @cast_from_builtin(%arg0: index) -> !pop.scalar<index> {
+  // CHECK: %[[TMP:.*]] = builtin.unrealized_conversion_cast %arg0 : index to i{{64|32}}
+  // CHECK: builtin.unrealized_conversion_cast %[[TMP]] : i{{64|32}} to !pop.scalar<index>
+  %0 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
 // -----
 
 !var = !pop.variant<f32, i64, struct<i8, i8, f64>>
