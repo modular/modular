@@ -62,7 +62,7 @@ public:
   ASTDecl *indexDecl = nullptr;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
-  /// This is the decl for the builtin POP::PointerType type.
+  // This is a PointerType type which is lowered into POP::PointerType.
   ASTDecl *pointerDecl = nullptr;
   /// This is the decl for the builtin signature type.
   ASTDecl *signatureDecl = nullptr;
@@ -135,8 +135,19 @@ ASTType LitSharedState::getNoneType() const {
 }
 
 // FIXME: This isn't correctly parameterized.
-ASTType LitSharedState::getPointerType() const {
-  return impl->pointerDecl->getResolvedType();
+ASTType LitSharedState::getPointerType(TypedAttr elementTypeParam) {
+  auto pointerStruct = cast<LITStructDeclOp>(*impl->pointerDecl);
+  assert(pointerStruct.getParamDecls().size() == 1 && "Have an element type");
+  ParamDeclAttr elementDecl = pointerStruct.getParamDecls()[0];
+  return getASTType(*impl->pointerDecl,
+                    ParamBindAttr::get(elementDecl, elementTypeParam));
+}
+
+/// PointerType can be parameterized on arbitrary meta expressions, but a common
+/// thing is to use a literal type, this provides that.
+ASTType LitSharedState::getPointerType(ASTType elementType, SMLoc loc) {
+  return getPointerType(
+      ParameterizedTypeConstantAttr::get(getMLIRType(elementType, loc)));
 }
 
 ASTType LitSharedState::getObjectType() const {
@@ -170,8 +181,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
       &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
   impl->noneDecl =
       &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
-  impl->pointerDecl = &resolver.addMagicDecl(
-      "Pointer", MagicDeclKind::kPointerType, &builtinsDecl);
   impl->signatureDecl = &resolver.addMagicDecl(
       "Signature", MagicDeclKind::kSignatureType, &builtinsDecl);
 
@@ -180,14 +189,28 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto b = builtinsDecl.getDeclEndBuilder();
   auto loc = builtinsDecl.getLoc();
 
+  // Given a LITStructDeclOp that is completely initialized, add it to the
+  // resolver.
+  auto addCompletedStructDecl = [&](LITStructDeclOp structOp, ASTDecl *&decl) {
+    decl = &resolver.addDecl(structOp, &builtinsDecl, LitLexerCursor(),
+                             LitLexerCursor(), 0);
+    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
+    decl->resolvedness = DeclResolvedness::fullyResolved;
+  };
+
+  // Add a declaration for `struct Pointer<ElementType: type>:` which gets a
+  // magic lowering to POP::PointerType.
+  auto pointerOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Pointer"));
+  pointerOp.setParamDecls(
+      ParamDeclAttr::get("ElementType", b.getType<MLIRTypeType>()));
+
+  addCompletedStructDecl(pointerOp, impl->pointerDecl);
+  impl->pointerDecl->magicKind = MagicDeclKind::kPointerType;
+
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.
   auto objectOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
-  impl->objectDecl = &resolver.addDecl(objectOp, &builtinsDecl,
-                                       LitLexerCursor(), LitLexerCursor(), 0);
-  impl->objectDecl->setResolvedType(
-      impl->objectDecl->computeSelfTypeForStruct(*this));
-  impl->objectDecl->resolvedness = DeclResolvedness::fullyResolved;
+  addCompletedStructDecl(objectOp, impl->objectDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -283,7 +306,7 @@ ASTType LitSharedState::getASTType(ASTDecl &decl,
 
 /// Return the MLIR type that corresponds to this AST type, emitting an error
 /// if malformed at the specified location and returning a null type.
-Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
+Type LitSharedState::getMLIRType(ASTType type, Location loc) {
   assert(type && "Cannot get MLIR type from a null ASTType");
   ASTDecl &decl = type.getDecl();
 
@@ -348,4 +371,8 @@ Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
     return result = TypeCheckErrorType::get(context);
   }
   llvm_unreachable("unknown case");
+}
+
+Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
+  return getMLIRType(type, translateLocation(loc));
 }

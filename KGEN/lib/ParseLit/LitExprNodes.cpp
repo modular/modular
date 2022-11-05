@@ -771,11 +771,9 @@ FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
   if (!eltType.first)
     return {};
 
-  // FIXME: This should be a declared type in the standard library parameterized
-  // by an element type.
   if (kind == kUnaryAmp)
     return {POP::PointerType::get(eltType.first),
-            emitter.shared.getPointerType()};
+            emitter.shared.getPointerType(eltType.second, getLoc())};
 
   emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};

@@ -38,19 +38,6 @@ ParamDeclAttr ASTDecl::getParamDecl() const {
   return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
 }
 
-/// Given a type declaration, return a RefType for a reference to this with
-/// the specified type parameters.  This aborts if the current decl isn't a
-/// type.
-FullType ASTDecl::getFullTypeForTypeReference() {
-  auto astType = getResolvedType();
-  auto structOp = cast<LITStructDeclOp>(*this);
-  auto mlirType = RefType::get(
-      FlatSymbolRefAttr::get(structOp.getNameAttr()),
-      ParamBindArrayAttr::get(getContext(), astType.getParamValues()));
-
-  return {mlirType, astType};
-}
-
 /// Given an MLIR op for a struct declaration, return the self type.
 ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<LITStructDeclOp>(*this);
@@ -374,14 +361,14 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
       (void)shared.declResolver->resolve(
           *parentDecl, DeclResolvedness::signatureResolved,
           declScope.getCursor().getToken().getLoc());
-      selfType = parentDecl->getFullTypeForTypeReference();
+      selfType.second = parentDecl->getResolvedType();
+      selfType.first = shared.getMLIRType(selfType.second, defDecl.getLoc());
     }
 
   // If this is a method, enforce that self is declared correctly.
   if (selfType.first) {
     // Methods on structs (but not classes) take the struct implicitly by
     // pointer so they can use and mutate it.
-
     selfType.first = POP::PointerType::get(selfType.first);
 
     // If there are no parameters, install an implicit self parameter.
@@ -500,9 +487,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
     // TODO: I think there are some other special cases to evaluate, e.g.
     // "self" arguments should be containing type in methods?
     // TODO(default args): Get the type from the default arg when present.
-    if (!param.type.first)
-      param.type =
-          sharedState.getObjectType().getDecl().getFullTypeForTypeReference();
+    if (!param.type.first) {
+      param.type.second = sharedState.getObjectType();
+      param.type.first = sharedState.getMLIRType(param.type.second, param.loc);
+    }
 
     paramTypes.push_back(param.type.first);
 
