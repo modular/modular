@@ -498,6 +498,7 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
   }];
 
   let hasVerifier = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,6 +537,7 @@ def PartialApplyOp : KGENOp<"partial_apply", [Pure]> {
   }];
 
   let hasVerifier = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -106,3 +106,33 @@ kgen.generator @hoist_constant() {
   }
   kgen.return
 }
+
+kgen.generator @call_me() {
+  kgen.return
+}
+
+// CHECK-LABEL: @call_indirect_constant
+kgen.generator @call_indirect_constant() {
+  // CHECK-NEXT: kgen.call @call_me() : () -> ()
+  %0 = kgen.param.constant: () -> () = <@call_me>
+  kgen.call_indirect %0() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: @call_indirect_partial_apply
+kgen.generator @call_indirect_partial_apply(%fn: !kgen.signature<[], [], (index, i32) -> index>, %arg0: index, %arg1: i32) -> index {
+  // CHECK-NEXT: %0 = kgen.call_indirect %arg0(%arg1, %arg2) : (index, i32) -> index
+  %0 = kgen.partial_apply %fn(?, %arg1) : (index, i32) -> index
+  %1 = kgen.call_indirect %0(%arg0) : (index) -> index
+  // CHECK-NEXT: return %0
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @partial_apply_of_partial_apply
+kgen.generator @partial_apply_of_partial_apply(%fn: !kgen.signature<[], [], (index, i32) -> index>, %arg0: index, %arg1: i32) -> !kgen.signature<[], [], () -> index> {
+  // CHECK-NEXT: %0 = kgen.partial_apply %arg0(%arg1, %arg2) : (index, i32) -> index
+  %0 = kgen.partial_apply %fn(?, %arg1) : (index, i32) -> index
+  %1 = kgen.partial_apply %0(%arg0) : (index) -> index
+  // CHECK-NEXT: return %0
+  kgen.return %1 : !kgen.signature<[], [], () -> index>
+}
