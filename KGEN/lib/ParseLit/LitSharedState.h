@@ -62,8 +62,8 @@ public:
   ASTType getNoneType() const;
 
   /// This is the decl for the builtin POP::PointerType type.
-  // FIXME: This isn't correctly parameterized.
-  ASTType getPointerType() const;
+  ASTType getPointerType(TypedAttr elementTypeParam);
+  ASTType getPointerType(ASTType elementType, llvm::SMLoc loc);
 
   /// This is the decl for the builtin signature type.
   // FIXME: This isn't correctly parameterized; we need variadics.
@@ -75,6 +75,7 @@ public:
   /// Return the MLIR type that corresponds to this AST type.  On error, this
   /// emits an error at the specified location and returns an error type.
   Type getMLIRType(ASTType type, llvm::SMLoc loc);
+  Type getMLIRType(ASTType type, Location loc);
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
@@ -163,7 +164,7 @@ enum class MagicDeclKind {
   kIndexType,
   // This is the __builtin.mlirtype["lit.none"] type.
   kNoneType,
-  // This is a POP::PointerType type.
+  // This is a PointerType type which is lowered into POP::PointerType.
   kPointerType,
   // This is a KGEN Signature for a callable function.
   kSignatureType,
