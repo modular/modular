@@ -64,7 +64,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return state.getASTType(this, parameters);
+  return state.getASTType(*this, parameters);
 }
 
 //===----------------------------------------------------------------------===//
@@ -168,7 +168,7 @@ ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
                        LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   decl.magicKind = kind;
-  decl.setResolvedType(sharedState.getASTType(&decl, {}));
+  decl.setResolvedType(sharedState.getASTType(decl, {}));
   return decl;
 }
 

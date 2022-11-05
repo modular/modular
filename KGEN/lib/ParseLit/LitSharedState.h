@@ -43,7 +43,7 @@ public:
   const mlir::StringAttr bufferNameIdentifier;
 
   /// Get a uniqued and pointer sized reference to an ASTType.
-  ASTType getASTType(ASTDecl *decl, ArrayRef<ParamBindAttr> params);
+  ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBindAttr> params);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTDecl *typeCheckErrorTypeDecl = nullptr;

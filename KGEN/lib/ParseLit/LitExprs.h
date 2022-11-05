@@ -202,7 +202,7 @@ struct MValue : public VariantValueStorage<MValue> {
   }
 
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
-  ASTType getIfType() const { return dyn_cast<ASTType>(storage); }
+  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
 
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;
@@ -241,6 +241,7 @@ public:
   AnyValue(MValue value) : VariantValueStorage(value.getStorage()) {}
   AnyValue(RValue value) : VariantValueStorage(value.getStorage()) {}
   AnyValue(TypedAttr value) : VariantValueStorage(MAValue(value)) {}
+  AnyValue(ASTType value) : VariantValueStorage(value) {}
   AnyValue(MAValue value) : VariantValueStorage(value) {}
   AnyValue(DRValue value) : VariantValueStorage(value) {}
   AnyValue(LValue value) : VariantValueStorage(value) {}
@@ -393,7 +394,11 @@ public:
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
   ASTTypeAnd<MValue> emitMValue(const ExprNode *node, const Twine &message);
-  ASTTypeAnd<MAValue> emitMAValue(const ExprNode *node, const Twine &message);
+
+  ASTTypeAnd<MAValue> emitMAValue(ASTTypeAnd<MValue> rep, SMLoc loc);
+  ASTTypeAnd<MAValue> emitMAValue(const ExprNode *node, const Twine &message) {
+    return emitMAValue(emitMValue(node, message), node->getLoc());
+  }
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will

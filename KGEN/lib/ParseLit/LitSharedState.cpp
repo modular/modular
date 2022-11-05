@@ -196,17 +196,15 @@ LitSharedState::getUniquedParams(ArrayRef<ParamBindAttr> params) {
 }
 
 /// Get a uniqued and pointer sized reference to an ASTType.
-ASTType LitSharedState::getASTType(ASTDecl *decl,
+ASTType LitSharedState::getASTType(ASTDecl &decl,
                                    ArrayRef<ParamBindAttr> params) {
-  if (!decl)
-    return ASTType();
   params = getUniquedParams(params);
-  auto &entry = impl->uniquedASTTypes[{decl, params.data()}];
+  auto &entry = impl->uniquedASTTypes[{&decl, params.data()}];
   if (entry)
     return ASTType(entry);
 
   // Ok, the entry hasn't been established, make it now.
-  return entry = allocPersistent<ASTTypeStorage>(*decl, params);
+  return entry = allocPersistent<ASTTypeStorage>(decl, params);
 }
 
 /// Return the MLIR type that corresponds to this AST type, emitting an error

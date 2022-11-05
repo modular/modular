@@ -135,9 +135,8 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
   return {};
 }
 
-ASTTypeAnd<MAValue> ExprEmitter::emitMAValue(const ExprNode *node,
-                                             const Twine &message) {
-  auto rep = node->emitIR(*this);
+ASTTypeAnd<MAValue> ExprEmitter::emitMAValue(ASTTypeAnd<MValue> rep,
+                                             SMLoc loc) {
   if (!rep)
     return {};
 
@@ -147,12 +146,11 @@ ASTTypeAnd<MAValue> ExprEmitter::emitMAValue(const ExprNode *node,
 
   // If this is a type, convert it.
   if (auto astType = rep.ir.getIfMTValue())
-    return {ParameterizedTypeConstantAttr::get(
-                shared.getMLIRType(astType, node->getLoc())),
-            rep.type};
+    return {
+        ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc)),
+        rep.type};
 
-  emitError(node->getLoc(), message);
-  return {};
+  llvm_unreachable("Unknown MAValue kind");
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
@@ -344,24 +342,8 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
     return {MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
             decl->getResolvedType()};
 
-  if (auto structOp = dyn_cast<LITStructDeclOp>(*decl)) {
-    auto numParams = structOp.getParamDecls().size();
-    if (numParams != 0) {
-      emitter.emitError(getLoc(), "'" + spelling + "' requires ")
-          << numParams << " meta parameter" << plural(numParams);
-      return {};
-    }
-
-    auto astType = emitter.shared.getASTType(decl, {});
-    return {MValue(astType), emitter.shared.getTypeType()};
-  }
-
-  if (decl->isMagic()) {
-    auto astType = emitter.shared.getASTType(decl, {});
-    if (!astType) {
-      emitter.emitError(getLoc(), "Unable to emit this as a type");
-      return {};
-    }
+  if (isa<LITStructDeclOp>(*decl) || decl->isMagic()) {
+    auto astType = emitter.shared.getASTType(*decl, {});
     return {MValue(astType), emitter.shared.getTypeType()};
   }
 
@@ -532,6 +514,61 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
   if (!subValue)
     return {};
 
+  // If the sub-value is an unbound ASTType, try binding things to it!
+  if (auto astType = subValue.ir.getIfMTValue()) {
+    // If already parameterized, give up.
+    if (!astType.getParamValues().empty()) {
+      emitter.emitError(
+          getLoc(),
+          "cannot apply more parameters to an already parameterized type ")
+          << astType;
+      return {};
+    }
+
+    auto structOp = dyn_cast<LITStructDeclOp>(astType.getDecl());
+    if (!structOp) {
+      emitter.emitError(getLoc(), "unknown parameterized type ") << astType;
+      return {};
+    }
+
+    auto numParams = structOp.getParamDecls().size();
+    if (numParams != indices.size()) {
+      emitter.emitError(getLoc(), "")
+          << astType << " requires " << numParams << " meta parameter"
+          << plural(numParams) << " but " << indices.size()
+          << " were specified";
+      return {};
+    }
+
+    // Emit each of the indices as parameter expressions.
+    SmallVector<ParamBindAttr> exprs;
+    for (auto [indexExpr, decl] :
+         llvm::zip(indices, structOp.getParamDecls())) {
+      // TODO: Slice syntax is the obvious way to support named parameter
+      // arguments.
+      auto indexVal = emitter.emitMAValue(
+          indexExpr, "type parameters may not be a run-time value");
+      if (!indexVal.ir)
+        return {};
+
+      // TODO: Support conversions.
+      if (indexVal.ir.getType() != decl.getType()) {
+        emitter.emitError(indexExpr->getLoc(), "parameter of type ")
+            << indexVal.type
+            << " cannot be converted to expected type "
+            // TODO: Pretty type.
+            << decl.getType();
+        return {};
+      }
+
+      exprs.push_back(ParamBindAttr::get(decl, indexVal.ir));
+    }
+
+    // Ok, we succeeded at reparameterizing the type.
+    auto result = emitter.shared.getASTType(astType.getDecl(), exprs);
+    return {MValue(result), emitter.shared.getTypeType()};
+  }
+
   // If we have a value of signature type, we can bind parameters to it.
   // TODO(SignatureASTTypes): Use subValue.type when we have signatures.
   if (auto signature =
@@ -590,64 +627,16 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 }
 
 FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
-
-  // KGEN doesn't support unbound parametric types (e.g. "SIMD" with unbound
-  // size/dtype) as a stand-alone type, so we handle name resolution here.
-  auto baseDRE = dyn_cast<DeclRefNode>(base);
-  if (!baseDRE) {
-    auto baseType = base->emitType(emitter);
-    if (baseType.first)
-      emitter.emitError(getLoc(), "unknown parameterized type ")
-          << baseType.second;
-    return {};
-  }
-
-  // Lookup the identifier.
-  ASTDecl *decl = emitter.lookupDecl(baseDRE->spelling, getLoc(),
-                                     emitter.declScope, "unknown type name");
-  if (!decl)
+  // TODO: Merge type emission into value emission!
+  auto value = emitIR(emitter, {});
+  if (!value)
     return {};
 
-  auto structOp = dyn_cast<LITStructDeclOp>(*decl);
-  if (!structOp) {
-    emitter.emitError(getLoc(),
-                      "'" + baseDRE->spelling + "' names a value, not a type");
-    return {};
-  }
+  if (auto astType = value.ir.getIfMTValue())
+    return {emitter.shared.getMLIRType(astType, getLoc()), astType};
 
-  auto numParams = structOp.getParamDecls().size();
-  if (numParams != indices.size()) {
-    emitter.emitError(getLoc(), "'" + baseDRE->spelling + "' requires ")
-        << numParams << " meta parameter" << plural(numParams) << " but "
-        << indices.size() << " were specified";
-    return {};
-  }
-
-  // Emit each of the indices as parameter expressions.
-  SmallVector<ParamBindAttr> exprs;
-  for (auto [indexExpr, decl] : llvm::zip(indices, structOp.getParamDecls())) {
-    // TODO: Slice syntax is the obvious way to support named parameter
-    // arguments.
-    auto indexVal = emitter.emitMAValue(
-        indexExpr, "type parameters may not be a run-time value");
-    if (!indexVal.ir)
-      return {};
-
-    // TODO: Support conversions.
-    if (indexVal.ir.getType() != decl.getType()) {
-      emitter.emitError(indexExpr->getLoc(), "parameter of type ")
-          << indexVal.type
-          << " cannot be converted to expected type "
-          // TODO: Pretty type.
-          << decl.getType();
-      return {};
-    }
-
-    exprs.push_back(ParamBindAttr::get(decl, indexVal.ir));
-  }
-
-  auto typeRef = emitter.shared.getASTType(decl, exprs);
-  return {emitter.shared.getMLIRType(typeRef, getLoc()), typeRef};
+  emitter.emitError(getLoc(), "unknown parameterized type");
+  return {};
 }
 
 ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
