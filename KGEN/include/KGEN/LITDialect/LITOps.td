@@ -141,17 +141,3 @@ def VarDeclOp : LITOp<"var.decl",
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = "$name `:` type($result) attr-dict";
 }
-
-//===----------------------------------------------------------------------===//
-// NoneValueOp
-//===----------------------------------------------------------------------===//
-
-// FIXME (Issue #4315): NoneAttr+kgen.param.constant should subsume this.
-def NoneValueOp : LITOp<"nonevalue",
-            [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
-  let summary = "Produce a value of LITNoneType";
-
-  let arguments = (ins);
-  let results = (outs LITNoneType:$result);
-  let assemblyFormat = "attr-dict";
-}
