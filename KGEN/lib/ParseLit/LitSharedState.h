@@ -75,6 +75,10 @@ public:
   ASTDecl *objectDecl = nullptr;
   ASTType getObjectType() const;
 
+  /// Return the MLIR type that corresponds to this AST type.  On error, this
+  /// emits an error at the specified location and returns an error type.
+  Type getMLIRType(ASTType type, llvm::SMLoc loc);
+
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
 
