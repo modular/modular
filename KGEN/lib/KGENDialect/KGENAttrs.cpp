@@ -1184,11 +1184,15 @@ DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool DTypeConstantAttr::isConvertibleTo(Type type) {
-  DType dtype = getDType();
+  KGENDType dtype = getDType();
 
   // Bool can only be `i1`.
   if (dtype.isBool())
     return type.isSignlessInteger(1);
+
+  // Index DType can only be the mlir `index` type.
+  if (dtype.isIndex())
+    return type.isIndex();
 
   // Integer dtypes can be converted to MLIR integers of the same width and
   // un-opposing signedness; signed integer dtypes can be converted to signless
