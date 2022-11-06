@@ -92,6 +92,7 @@ private:
 };
 
 mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);
+raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 using FullType = std::pair<Type, ASTType>;
 

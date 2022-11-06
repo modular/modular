@@ -235,19 +235,18 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
-std::string ASTType::getAsString() const {
-  if (!pointer)
-    return "<<NULL ASTTYPE>>";
+raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
+  if (!type)
+    return os << "<<NULL ASTTYPE>>";
 
-  std::string result;
-  llvm::raw_string_ostream os(result);
   os << "'";
 
-  if (auto typeDecl = dyn_cast<LITStructDeclOp>(getDecl())) {
+  ASTDecl &decl = type.getDecl();
+  if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();
-  } else if (getDecl().isMagic()) {
-    switch (getDecl().magicKind) {
+  } else if (decl.isMagic()) {
+    switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::kPointerType:
@@ -277,7 +276,7 @@ std::string ASTType::getAsString() const {
     os << "<<unknown ASTType>>";
   }
 
-  ArrayRef<ParamBindAttr> params = getParamValues();
+  ArrayRef<ParamBindAttr> params = type.getParamValues();
   if (!params.empty()) {
     os << '[';
     llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
@@ -288,6 +287,13 @@ std::string ASTType::getAsString() const {
   }
 
   os << '\'';
+  return os;
+}
+
+std::string ASTType::getAsString() const {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << *this;
   return os.str();
 }
 
