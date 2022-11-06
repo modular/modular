@@ -32,7 +32,7 @@ namespace scf = mlir::scf;
 static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
 //===----------------------------------------------------------------------===//
-// RValue / AnyValue Implementation
+// IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
 static Type getTypeFrom(PointerUnion<MAValue, ASTType, DRValue, LValue> storage,
@@ -61,6 +61,22 @@ Type RValue::getType(MLIRContext *context) const {
 }
 Type AnyValue::getType(MLIRContext *context) const {
   return getTypeFrom(storage, context);
+}
+
+/// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
+/// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
+TypedAttr MValue::lowerToAttribute(LitSharedState &shared, SMLoc loc) {
+  if (isNull())
+    return {};
+
+  // If this is already an attribute, return it.
+  if (auto attr = getIfMAValue())
+    return attr;
+
+  // If this is a type, convert it.
+  auto astType = getIfMTValue();
+  assert(astType && "Unknown MValue kind");
+  return ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc));
 }
 
 //===----------------------------------------------------------------------===//
@@ -133,24 +149,6 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
 
   emitError(node->getLoc(), message);
   return {};
-}
-
-ASTTypeAnd<MAValue> ExprEmitter::emitMAValue(ASTTypeAnd<MValue> rep,
-                                             SMLoc loc) {
-  if (!rep)
-    return {};
-
-  // If this is already an attribute, return it.
-  if (auto attr = rep.ir.getIfMAValue())
-    return {attr, rep.type};
-
-  // If this is a type, convert it.
-  if (auto astType = rep.ir.getIfMTValue())
-    return {
-        ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc)),
-        rep.type};
-
-  llvm_unreachable("Unknown MAValue kind");
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
