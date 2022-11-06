@@ -235,6 +235,20 @@ ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
   return pointer->paramValues;
 }
 
+/// If this is a builtin lit Pointer type, return the element type, otherwise
+/// return null.
+MValue ASTType::getPointerElementType() const {
+  if (isNull())
+    return {};
+
+  // Ensure that this is a Pointer type and that its parameters have been bound.
+  ASTDecl &decl = getDecl();
+  auto params = getParamValues();
+  if (decl.magicKind != MagicDeclKind::kPointerType || params.size() != 1)
+    return {};
+  return params[0].second;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
