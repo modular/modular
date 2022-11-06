@@ -78,13 +78,13 @@ static std::string getStorageAsString(VariantStorage storage) {
 }
 
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, MValue value) {
-  return diag << getStorageAsString(value.getStorage());
+  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
 }
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, RValue value) {
-  return diag << getStorageAsString(value.getStorage());
+  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
 }
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
-  return diag << getStorageAsString(value.getStorage());
+  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
 }
 
 static Type getTypeFrom(VariantStorage storage, MLIRContext *context) {

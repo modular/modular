@@ -154,12 +154,16 @@ def StaticMethod(): pass
 def __init__(): pass
 
 struct WrongSelfType:
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType'}}
+  # expected-error @+1 {{'self' argument must have type '&WrongSelfType'}}
   def __init__(self: Int): pass
 
 struct WrongSelfType2[a: Int]:
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType2[a]'}}
+  # expected-error @+1 {{'self' argument must have type '&WrongSelfType2[a]'}}
   def badMethod(self: Int): pass
+
+struct WrongSelfType3:
+  # expected-error @+1 {{'self' argument must have type '&WrongSelfType3'}}
+  def __init__(self: WrongSelfType3): pass
 
 struct WrongInitResult:
   # expected-error @+1 {{result type must be elided (or None)}}

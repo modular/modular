@@ -57,7 +57,12 @@ ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
   // Finally, if this is an LValue, emit a load.
   Value load = builder->create<POP::LoadOp>(translateLocation(loc), pointer,
                                             /*alignment*/ None);
-  return {DRValue(load), rep.type};
+
+  if (auto eltType = rep.type.getLValueElementType().getIfMTValue())
+    return {DRValue(load), eltType};
+
+  emitError(loc, "TODO: cannot load parameterized pointer yet") << rep.type;
+  return {};
 }
 
 ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
@@ -253,7 +258,8 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
-    return {LValue(var.getResult()), decl->getResolvedType()};
+    return {LValue(var.getResult()),
+            emitter.shared.getPointerType(decl->getResolvedType())};
 
   // Functions form an address.
   if (auto fnDecl = dyn_cast<LITFuncOp>(*decl)) {
@@ -284,17 +290,19 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   auto baseVal = base->emitIR(emitter);
 
   if (LValue baseLV = baseVal.ir.getIfLValue()) {
-    if (!emitter.builder) {
-      emitter.emitError(getLoc(),
-                        "TODO: cannot call function in parameter context");
-      return {};
+    // Look through the ASTType of the receiver.
+    auto baseValMType = baseVal.type.getLValueElementType();
+    ASTType baseValType = baseValMType.getIfMTValue();
+    if (!baseValType) {
+      emitter.emitError(getLoc(), "TODO: Cannot handle parameterized pointers")
+          << baseValMType;
     }
 
-    ASTDecl &typeDecl = baseVal.type.getDecl();
-    auto typeParams = baseVal.type.getParamValues();
+    ASTDecl &typeDecl = baseValType.getDecl();
+    auto typeParams = baseValType.getParamValues();
     if (!typeParams.empty()) {
       emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-          << baseVal.type;
+          << baseValType;
       return {};
     }
 
@@ -314,6 +322,12 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     auto varOp = dyn_cast_or_null<VarDeclOp>(fieldDecl->getOperation());
     if (!varOp) {
       emitter.emitError(getLoc(), "'" + attrSpelling + "' is not a field");
+      return {};
+    }
+
+    if (!emitter.builder) {
+      emitter.emitError(
+          getLoc(), "TODO: cannot access lvalue member in parameter context");
       return {};
     }
 
@@ -652,7 +666,6 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   // If the sub-value is an ASTType, apply type sugar.
   if (auto astType = exprRep.ir.getIfMTValue()) {
-    // TODO: Shouldn't be MTValue check: use "getMValue()" + check for typetype.
     if (kind == kUnaryAmp)
       return {MValue(emitter.shared.getPointerType(astType)), exprRep.type};
 
