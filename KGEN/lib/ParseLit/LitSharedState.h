@@ -65,9 +65,10 @@ public:
   ASTType getPointerType(TypedAttr elementTypeParam);
   ASTType getPointerType(ASTType elementType, llvm::SMLoc loc);
 
-  /// This is the decl for the builtin signature type.
+  /// This is the decl for the Function type.
   // FIXME: This isn't correctly parameterized; we need variadics.
-  ASTType getSignatureType() const;
+  ASTType getFunctionType(ASTType elementType, llvm::SMLoc loc);
+  ASTType getFunctionType(TypedAttr elementType);
 
   /// This is the decl for the builtin lit.object type.
   ASTType getObjectType() const;
@@ -166,8 +167,8 @@ enum class MagicDeclKind {
   kNoneType,
   // This is a PointerType type which is lowered into POP::PointerType.
   kPointerType,
-  // This is a KGEN Signature for a callable function.
-  kSignatureType,
+  // This is a FunctionType that is lowered to a KGEN::SignatureType.
+  kFunctionType,
 };
 
 } // namespace M::KGEN::LIT
