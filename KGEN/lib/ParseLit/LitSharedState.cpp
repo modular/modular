@@ -10,6 +10,8 @@
 
 #include "LitSharedState.h"
 #include "ASTDecl.h"
+#include "ASTType.h"
+#include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -30,13 +32,16 @@ static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
 namespace {
 struct AttributeVectorComparison {
-  bool operator()(const std::vector<ParamBindAttr> &lhs,
-                  const std::vector<ParamBindAttr> &rhs) const {
+  bool operator()(const std::vector<LitSharedState::ParamBinding> &lhs,
+                  const std::vector<LitSharedState::ParamBinding> &rhs) const {
     if (lhs.size() != rhs.size())
       return lhs.size() < rhs.size();
     for (size_t i = 0, e = lhs.size(); i != e; ++i) {
-      if (lhs[i] != rhs[i])
-        return lhs[i].getAsOpaquePointer() < rhs[i].getAsOpaquePointer();
+      if (lhs[i].first != rhs[i].first)
+        return lhs[i].first.getAsOpaquePointer() <
+               rhs[i].first.getAsOpaquePointer();
+      if (lhs[i].second.getStorage() != rhs[i].second.getStorage())
+        return lhs[i].second.getStorage() < rhs[i].second.getStorage();
     }
     return false;
   }
@@ -45,12 +50,14 @@ struct AttributeVectorComparison {
 
 class LitSharedState::Impl {
 public:
-  DenseMap<std::pair<ASTDecl *, const ParamBindAttr *>, ASTTypeStorage *>
+  DenseMap<std::pair<ASTDecl *, const LitSharedState::ParamBinding *>,
+           ASTTypeStorage *>
       uniquedASTTypes;
 
   // TODO(complile time): This is horribly inefficient.
   // Switch to StorageUniquer or something else?
-  std::set<std::vector<ParamBindAttr>, AttributeVectorComparison> uniquedParams;
+  std::set<std::vector<LitSharedState::ParamBinding>, AttributeVectorComparison>
+      uniquedParams;
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTDecl *typeCheckErrorTypeDecl = nullptr;
@@ -139,33 +146,19 @@ ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getResolvedType();
 }
 
-ASTType LitSharedState::getPointerType(TypedAttr elementTypeParam) {
+ASTType LitSharedState::getPointerType(MValue elementType) {
   auto pointerStruct = cast<LITStructDeclOp>(*impl->pointerDecl);
   assert(pointerStruct.getParamDecls().size() == 1 && "Have an element type");
   ParamDeclAttr elementDecl = pointerStruct.getParamDecls()[0];
-  return getASTType(*impl->pointerDecl,
-                    ParamBindAttr::get(elementDecl, elementTypeParam));
-}
-
-/// PointerType can be parameterized on arbitrary meta expressions, but a common
-/// thing is to use a literal type, this provides that.
-ASTType LitSharedState::getPointerType(ASTType elementType, SMLoc loc) {
-  return getPointerType(
-      ParameterizedTypeConstantAttr::get(getMLIRType(elementType, loc)));
-}
-
-ASTType LitSharedState::getFunctionType(TypedAttr resultTypeParam) {
-  auto functionStruct = cast<LITStructDeclOp>(*impl->functionDecl);
-  assert(functionStruct.getParamDecls().size() == 1 && "Have a result type");
-  ParamDeclAttr resultDecl = functionStruct.getParamDecls()[0];
-  return getASTType(*impl->functionDecl,
-                    ParamBindAttr::get(resultDecl, resultTypeParam));
+  return getASTType(*impl->pointerDecl, ParamBinding{elementDecl, elementType});
 }
 
 // FIXME: This isn't correctly parameterized; we need variadics.
-ASTType LitSharedState::getFunctionType(ASTType resultType, SMLoc loc) {
-  return getFunctionType(
-      ParameterizedTypeConstantAttr::get(getMLIRType(resultType, loc)));
+ASTType LitSharedState::getFunctionType(MValue resultType) {
+  auto functionStruct = cast<LITStructDeclOp>(*impl->functionDecl);
+  assert(functionStruct.getParamDecls().size() == 1 && "Have a result type");
+  ParamDeclAttr resultDecl = functionStruct.getParamDecls()[0];
+  return getASTType(*impl->functionDecl, ParamBinding{resultDecl, resultType});
 }
 
 /// Add declarations for magic things to the builtins decl.
@@ -233,6 +226,15 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 // ASTType
 //===----------------------------------------------------------------------===//
 
+ASTTypeStorage::ASTTypeStorage(
+    ASTDecl &decl, ArrayRef<LitSharedState::ParamBinding> paramValues)
+    : decl(decl), paramValues(paramValues) {}
+
+ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
+  assert(pointer && "Cannot dereference null ASTType");
+  return pointer->paramValues;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
@@ -276,12 +278,15 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     os << "<<unknown ASTType>>";
   }
 
-  ArrayRef<ParamBindAttr> params = type.getParamValues();
+  ArrayRef<LitSharedState::ParamBinding> params = type.getParamValues();
   if (!params.empty()) {
     os << '[';
-    llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
+    llvm::interleaveComma(params, os, [&](LitSharedState::ParamBinding bind) {
       // TODO: This isn't really right, but will work enough for now.
-      printParamValue(bind.getValue(), os);
+      if (auto attrVal = bind.second.getIfMAValue())
+        printParamValue(attrVal.get(), os);
+      else
+        os << bind.second.getIfMTValue();
     });
     os << ']';
   }
@@ -305,15 +310,15 @@ mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
 /// Print to standard error with newline after it, for use in a debugger.
 void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 
-ArrayRef<ParamBindAttr>
-LitSharedState::getUniquedParams(ArrayRef<ParamBindAttr> params) {
+auto LitSharedState::getUniquedParams(ArrayRef<ParamBinding> params)
+    -> ArrayRef<ParamBinding> {
   // std::set produces stable pointers.
   return *impl->uniquedParams.insert(params.vec()).first;
 }
 
 /// Get a uniqued and pointer sized reference to an ASTType.
 ASTType LitSharedState::getASTType(ASTDecl &decl,
-                                   ArrayRef<ParamBindAttr> params) {
+                                   ArrayRef<ParamBinding> params) {
   params = getUniquedParams(params);
   auto &entry = impl->uniquedASTTypes[{&decl, params.data()}];
   if (entry)
@@ -325,9 +330,14 @@ ASTType LitSharedState::getASTType(ASTDecl &decl,
 
 /// Return the MLIR type that corresponds to this AST type, emitting an error
 /// if malformed at the specified location and returning a null type.
-Type LitSharedState::getMLIRType(ASTType type, Location loc) {
-  assert(type && "Cannot get MLIR type from a null ASTType");
-  ASTDecl &decl = type.getDecl();
+Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
+  assert(typeVal && "Cannot get MLIR type from a null value");
+
+  // If this value is an attribute for the type, then return it as a Type.
+  if (auto attrVal = typeVal.getIfMAValue())
+    return ParamRefType::get(attrVal);
+
+  auto type = typeVal.getIfMTValue();
 
   // Check to see if we've already converted this type.  If so, return it.
   Type &result = type.pointer->mlirType;
@@ -335,6 +345,7 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
     return result;
 
   // If this is a magic declaration, provide custom lowering for it.
+  ASTDecl &decl = type.getDecl();
   if (decl.isMagic()) {
     switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
@@ -355,7 +366,7 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
     case MagicDeclKind::kPointerType: {
       assert(type.getParamValues().size() == 1 &&
              "PointerType should have one parameter");
-      auto eltType = type.getParamValues()[0].getValue();
+      auto eltType = getMLIRType(type.getParamValues()[0].second, loc);
       return result = POP::PointerType::get(eltType);
     }
     case MagicDeclKind::kFunctionType:
@@ -377,19 +388,23 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
       return result = TypeCheckErrorType::get(context);
     }
 
-    for (auto [decl, bindValue] :
+    SmallVector<ParamBindAttr> attrBindings;
+    for (auto [decl, binding] :
          llvm::zip(typeDecl.getParamDecls(), type.getParamValues())) {
-      if (decl == bindValue.getDecl())
+      if (decl == binding.first) {
+        attrBindings.push_back(ParamBindAttr::get(
+            decl, binding.second.lowerToAttribute(*this, loc)));
         continue;
+      }
       emitError(loc, "'" + typeDecl.getName() + "' expected ")
           << decl.getName() << " of type " << decl.getType()
-          << " but use bound " << bindValue.getDecl().getName() << " of type "
-          << bindValue.getDecl().getType();
+          << " but use bound " << binding.first.getName() << " of type "
+          << binding.first.getType();
       return TypeCheckErrorType::get(context);
     }
 
     // Everything looks good, go forth!
-    auto typeParams = ParamBindArrayAttr::get(context, type.getParamValues());
+    auto typeParams = ParamBindArrayAttr::get(context, attrBindings);
     return result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
                                  typeParams);
   }
@@ -399,6 +414,6 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
   return result = TypeCheckErrorType::get(context);
 }
 
-Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
+Type LitSharedState::getMLIRType(MValue type, SMLoc loc) {
   return getMLIRType(type, translateLocation(loc));
 }

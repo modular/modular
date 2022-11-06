@@ -169,6 +169,8 @@ public:
   // ASTTypeAnd<MAValue> emitMAValue(ASTTypeAnd<MValue> rep, SMLoc loc);
   ASTTypeAnd<MAValue> emitMAValue(const ExprNode *node, const Twine &message) {
     auto mValue = emitMValue(node, message);
+    if (!mValue.ir)
+      return {};
     return {MAValue(mValue.ir.lowerToAttribute(shared, node->getLoc())),
             mValue.type};
   }

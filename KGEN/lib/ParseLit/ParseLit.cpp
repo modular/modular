@@ -12,7 +12,6 @@
 
 #include "ASTDecl.h"
 #include "LitDecls.h"
-#include "LitExprs.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
 #include "LitSharedState.h"
