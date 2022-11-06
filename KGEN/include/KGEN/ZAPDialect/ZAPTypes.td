@@ -13,8 +13,11 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 
 class ZAPType<string typeName, string typeMnemonic, list<Trait> traits = []>
-  : TypeDef<ZAPDialect, typeName,
-            [DeclareTypeInterfaceMethods<SubElementTypeInterface>] # traits> {
+  : TypeDef<ZAPDialect, typeName, [
+    DeclareTypeInterfaceMethods<SubElementTypeInterface, [
+      "walkImmediateSubElements", "replaceImmediateSubElements",
+    ]>
+  ] # traits> {
   let mnemonic = typeMnemonic;
 }
 

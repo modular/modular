@@ -43,12 +43,6 @@ Type ParamRefType::get(TypedAttr param) {
   return Base::get(param.getContext(), param);
 }
 
-void ParamRefType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getParam());
-}
-
 Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
                                                ArrayRef<Type> replTypes) const {
   assert(replAttrs.size() == 1 && replTypes.empty());
@@ -58,22 +52,6 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 //===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
-
-void SignatureType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getInputParams());
-  walkAttrsFn(getResultParamTypes());
-  walkTypesFn(getValues());
-}
-
-Type SignatureType::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.size() == 1);
-  return SignatureType::get(replAttrs[0].cast<ParamDeclArrayAttr>(),
-                            replAttrs[1].cast<TypeArrayAttr>(),
-                            replTypes[0].cast<FunctionType>());
-}
 
 SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
                                  ParamDeclArrayAttr resultParams,
@@ -199,20 +177,6 @@ Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 // RefType
 //===----------------------------------------------------------------------===//
-
-void RefType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrs,
-    function_ref<void(Type)> walkTypes) const {
-  walkAttrs(getSymbol());
-  walkAttrs(getParamValues());
-}
-
-Type RefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                          ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.empty());
-  return get(replAttrs[0].cast<FlatSymbolRefAttr>(),
-             replAttrs[1].cast<ParamBindArrayAttr>());
-}
 
 RefType RefType::get(FlatSymbolRefAttr name, ParamBindArrayAttr paramValues) {
   return get(name.getContext(), name, paramValues);

@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='lower-kgen-to-llvm,lower-scf-to-llvm,llvm.func(lower-pop-to-llvm)' %s -verify-diagnostics
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,lower-scf-to-llvm,llvm.func(lower-pop-to-llvm))' %s -verify-diagnostics
 
 // expected-error @below {{cannot run on operations with CFG regions}}
 // expected-note @below {{try running it before lower-scf-to-llvm}}

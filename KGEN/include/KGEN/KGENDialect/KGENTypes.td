@@ -26,9 +26,9 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 // ParamRefType
 //===----------------------------------------------------------------------===//
 
-def ParamRefType
-  : KGENType<"ParamRef", "paramref",
-             [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+def ParamRefType : KGENType<"ParamRef", "paramref", [
+    DeclareTypeInterfaceMethods<SubElementTypeInterface, ["replaceImmediateSubElements"]>
+  ]> {
   let summary = "Type specified by a parameter expression";
   let description = [{
     This is a symbolic type represented with a parameter expression that is

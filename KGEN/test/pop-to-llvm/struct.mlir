@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='kgen.func(lower-pop-to-llvm)' %s | FileCheck %s
+// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 !struct1 = !pop.struct<struct<simd<1, f32>>, array<4, simd<1, f32>>>
 
