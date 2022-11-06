@@ -26,6 +26,7 @@
 #define IRVALUES_H
 
 #include "ASTType.h"
+#include "LitSharedState.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -188,6 +189,10 @@ struct MValue : public VariantValueStorage<MValue> {
 
   MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
   ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
+
+  /// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
+  /// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
+  TypedAttr lowerToAttribute(LitSharedState &shared, llvm::SMLoc loc);
 
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;
