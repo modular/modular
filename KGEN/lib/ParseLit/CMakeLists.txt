@@ -5,6 +5,8 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(ParseLit
+  ASTType.cpp
+  IRValues.cpp
   LitDecls.cpp
   LitExprNodes.cpp
   LitExprParser.cpp
