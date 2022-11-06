@@ -63,12 +63,12 @@ public:
   ASTDecl *indexDecl = nullptr;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
-  // This is a PointerType type which is lowered into POP::PointerType.
-  ASTDecl *pointerDecl = nullptr;
-  /// This is the decl for the builtin signature type.
-  ASTDecl *signatureDecl = nullptr;
   /// This is the decl for the builtin lit.object type.
   ASTDecl *objectDecl = nullptr;
+  /// This is a PointerType type which is lowered into POP::PointerType.
+  ASTDecl *pointerDecl = nullptr;
+  /// This is the decl for the builtin signature type.
+  ASTDecl *functionDecl = nullptr;
 };
 
 /// Get the name of the main buffer so we can rapidly build Location objects
@@ -135,7 +135,10 @@ ASTType LitSharedState::getNoneType() const {
   return impl->noneDecl->getResolvedType();
 }
 
-// FIXME: This isn't correctly parameterized.
+ASTType LitSharedState::getObjectType() const {
+  return impl->objectDecl->getResolvedType();
+}
+
 ASTType LitSharedState::getPointerType(TypedAttr elementTypeParam) {
   auto pointerStruct = cast<LITStructDeclOp>(*impl->pointerDecl);
   assert(pointerStruct.getParamDecls().size() == 1 && "Have an element type");
@@ -151,13 +154,18 @@ ASTType LitSharedState::getPointerType(ASTType elementType, SMLoc loc) {
       ParameterizedTypeConstantAttr::get(getMLIRType(elementType, loc)));
 }
 
-ASTType LitSharedState::getObjectType() const {
-  return impl->objectDecl->getResolvedType();
+ASTType LitSharedState::getFunctionType(TypedAttr resultTypeParam) {
+  auto functionStruct = cast<LITStructDeclOp>(*impl->functionDecl);
+  assert(functionStruct.getParamDecls().size() == 1 && "Have a result type");
+  ParamDeclAttr resultDecl = functionStruct.getParamDecls()[0];
+  return getASTType(*impl->functionDecl,
+                    ParamBindAttr::get(resultDecl, resultTypeParam));
 }
 
 // FIXME: This isn't correctly parameterized; we need variadics.
-ASTType LitSharedState::getSignatureType() const {
-  return impl->signatureDecl->getResolvedType();
+ASTType LitSharedState::getFunctionType(ASTType resultType, SMLoc loc) {
+  return getFunctionType(
+      ParameterizedTypeConstantAttr::get(getMLIRType(resultType, loc)));
 }
 
 /// Add declarations for magic things to the builtins decl.
@@ -182,8 +190,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
       &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
   impl->noneDecl =
       &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
-  impl->signatureDecl = &resolver.addMagicDecl(
-      "Signature", MagicDeclKind::kSignatureType, &builtinsDecl);
 
   /// FIXME: These should be a user declared types in the standard library,
   /// which are looked up here instead of being synthesized.
@@ -204,9 +210,18 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto pointerOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Pointer"));
   pointerOp.setParamDecls(
       ParamDeclAttr::get("ElementType", b.getType<MLIRTypeType>()));
-
   addCompletedStructDecl(pointerOp, impl->pointerDecl);
   impl->pointerDecl->magicKind = MagicDeclKind::kPointerType;
+
+  // Add a declaration for `struct Function<ResultType: type>:` which gets a
+  // magic lowering to KGEN::SignatureType.
+  // TODO: This currently only carries result type, it should carry variadic
+  // meta parameter and argument packs.
+  auto functionOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Function"));
+  functionOp.setParamDecls(
+      ParamDeclAttr::get("ResultType", b.getType<MLIRTypeType>()));
+  addCompletedStructDecl(functionOp, impl->functionDecl);
+  impl->functionDecl->magicKind = MagicDeclKind::kFunctionType;
 
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.
@@ -236,6 +251,7 @@ std::string ASTType::getAsString() const {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::kPointerType:
+    case MagicDeclKind::kFunctionType:
       llvm_unreachable("Implemented as a struct, so should be handled");
     case MagicDeclKind::kTypeType:
       os << "type";
@@ -254,9 +270,6 @@ std::string ASTType::getAsString() const {
       break;
     case MagicDeclKind::kTypeCheckErrorType:
       os << "<<TypeCheckError>>";
-      break;
-    case MagicDeclKind::kSignatureType:
-      os << "<<FnSignature>>";
       break;
     }
   } else {
@@ -339,9 +352,8 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
       auto eltType = type.getParamValues()[0].getValue();
       return result = POP::PointerType::get(eltType);
     }
-
-    case MagicDeclKind::kSignatureType:
-      // TODO: Support qualified types.
+    case MagicDeclKind::kFunctionType:
+      // TODO: Support argument signature.
       emitError(loc, "TODO: Cannot emit parameterized builtin type yet");
       return result = TypeCheckErrorType::get(context);
     }

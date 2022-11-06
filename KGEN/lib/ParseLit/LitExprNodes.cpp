@@ -310,8 +310,8 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
     auto attr = SymbolConstantAttr::get(
         FlatSymbolRefAttr::get(fnDecl.getNameAttr()), fnDecl.getSignature());
     return {MValue(attr),
-            // TODO: Correct signature type.
-            emitter.shared.getSignatureType()};
+            // TODO: Correct argument/parameter type.
+            emitter.shared.getFunctionType(decl->getResolvedType(), getLoc())};
   }
 
   // Attributes always resolve to their known value.
@@ -381,19 +381,26 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
                                       FullType contextualType) const {
-  auto calleeVal = emitter.emitRValue(callee).ir;
+  auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal)
     return {};
 
   // The only callable thing we have right now are functions.
   // TODO: Support struct initialization.
-  auto calleeAnyType = calleeVal.getType(emitter.getContext());
+  auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
   auto calleeType = dyn_cast<SignatureType>(calleeAnyType);
   if (!calleeType) {
     emitter.emitError(getLoc(), "unable to call value of type ")
         << calleeAnyType;
     return {};
   }
+
+  // The ASTType of calleeVal must be a magic function type, for the IR to have
+  // signature type.  We cannot have error types or anything else here.
+  // TODO: Switch to key off the AST type when it carries everything we need.
+  assert(calleeVal.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
+  assert(calleeVal.type.getParamValues().size() == 1 &&
+         "FunctionType should have one (result) parameter");
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
@@ -434,7 +441,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
     valueArguments.push_back(argVal.ir);
   }
 
-  auto calleeParam = calleeVal.getIfMAValue();
+  auto calleeParam = calleeVal.ir.getIfMAValue();
   if (!calleeParam) {
     emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};
@@ -524,6 +531,15 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
   // TODO(SignatureASTTypes): Use subValue.type when we have signatures.
   if (auto signature =
           dyn_cast<SignatureType>(subValue.ir.getType(emitter.getContext()))) {
+
+    // The ASTType of subValue must be a magic function type, for the IR to have
+    // signature type.  We cannot have error types or anything else here.
+    // TODO: Switch to key off the AST type when it carries everything we need.
+    assert(subValue.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
+    assert(subValue.type.getParamValues().size() == 1 &&
+           "FunctionType should have one (result) parameter");
+    auto resultASTType = subValue.type.getParamValues()[0].getValue();
+
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -561,7 +577,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     // Okay, everything checks out, form the bind operation.
     return {MValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
             // TODO: Correct signature type.
-            emitter.shared.getSignatureType()};
+            emitter.shared.getFunctionType(resultASTType)};
   }
 
   // Emit each of the index values.
