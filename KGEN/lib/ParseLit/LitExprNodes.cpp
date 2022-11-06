@@ -35,8 +35,29 @@ static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 // IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-static Type getTypeFrom(PointerUnion<MAValue, ASTType, DRValue, LValue> storage,
-                        MLIRContext *context) {
+using VariantStorage = PointerUnion<MAValue, ASTType, DRValue, LValue>;
+
+static void dumpStorage(VariantStorage storage) {
+  if (storage.isNull()) {
+    llvm::errs() << "<NULL>\n";
+  } else if (auto val = dyn_cast<MAValue>(storage)) {
+    llvm::errs() << "MA: " << val.get() << "\n";
+  } else if (auto val = dyn_cast<ASTType>(storage)) {
+    llvm::errs() << "MT: " << val << "\n";
+  } else if (auto val = dyn_cast<DRValue>(storage)) {
+    llvm::errs() << "DR: " << val << "\n";
+  } else if (auto val = dyn_cast<LValue>(storage)) {
+    llvm::errs() << "LV: " << val << "\n";
+  } else {
+    llvm::errs() << "UNKNOWN VALUE\n";
+  }
+}
+
+void MValue::dump() const { dumpStorage(getStorage()); }
+void RValue::dump() const { dumpStorage(getStorage()); }
+void AnyValue::dump() const { dumpStorage(getStorage()); }
+
+static Type getTypeFrom(VariantStorage storage, MLIRContext *context) {
   if (storage.isNull())
     return Type();
   if (auto attr = dyn_cast<MAValue>(storage))
