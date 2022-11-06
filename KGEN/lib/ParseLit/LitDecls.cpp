@@ -10,7 +10,7 @@
 
 #include "LitDecls.h"
 #include "ASTDecl.h"
-#include "LitExprs.h"
+#include "IRValues.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
 
@@ -42,12 +42,12 @@ ParamDeclAttr ASTDecl::getParamDecl() const {
 ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<LITStructDeclOp>(*this);
 
-  SmallVector<ParamBindAttr> parameters;
+  SmallVector<LitSharedState::ParamBinding> parameters;
   for (auto decl : structOp.getParamDecls()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
-    auto ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
-    parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
+    TypedAttr ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
+    parameters.push_back({decl, ref});
   }
 
   // Methods on structs (but not classes) take the struct implicitly by
@@ -496,7 +496,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
 
     // TODO: add support for default parameter expressions.
     if (param.initValue)
-      p.emitError(param.initValue->getLoc(), "TODO: No default values yet");
+      p.emitError(param.loc, "TODO: No default values yet");
   }
 
   defOp.setValueParamNamesAttr(StringArrayAttr::get(getContext(), paramNames));

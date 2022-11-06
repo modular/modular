@@ -18,9 +18,6 @@
 
 #include "LitExprs.h"
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-
 namespace M::KGEN::LIT {
 
 struct IntLiteralNode final : public ExprNode {

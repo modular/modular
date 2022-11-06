@@ -86,9 +86,23 @@ Type AnyValue::getType(MLIRContext *context) const {
 
 /// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
 /// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
-TypedAttr MValue::lowerToAttribute(LitSharedState &shared, SMLoc loc) {
-  if (isNull())
-    return {};
+TypedAttr MValue::lowerToAttribute(LitSharedState &shared, Location loc) const {
+  assert(!isNull() && "Cannot emit null attribute");
+
+  // If this is already an attribute, return it.
+  if (auto attr = getIfMAValue())
+    return attr;
+
+  // If this is a type, convert it.
+  auto astType = getIfMTValue();
+  assert(astType && "Unknown MValue kind");
+  return ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc));
+}
+
+/// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
+/// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
+TypedAttr MValue::lowerToAttribute(LitSharedState &shared, SMLoc loc) const {
+  assert(!isNull() && "Cannot emit null attribute");
 
   // If this is already an attribute, return it.
   if (auto attr = getIfMAValue())
@@ -165,8 +179,8 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
     return {};
 
   // If this is a parameter, return it.
-  if (auto attr = rep.ir.getIfMValue())
-    return {attr, rep.type};
+  if (auto value = rep.ir.getIfMValue())
+    return {value, rep.type};
 
   emitError(node->getLoc(), message);
   return {};
@@ -330,7 +344,7 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
         FlatSymbolRefAttr::get(fnDecl.getNameAttr()), fnDecl.getSignature());
     return {MValue(attr),
             // TODO: Correct argument/parameter type.
-            emitter.shared.getFunctionType(decl->getResolvedType(), getLoc())};
+            emitter.shared.getFunctionType(decl->getResolvedType())};
   }
 
   // Attributes always resolve to their known value.
@@ -518,18 +532,18 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     }
 
     // Emit each of the indices as parameter expressions.
-    SmallVector<ParamBindAttr> exprs;
+    SmallVector<LitSharedState::ParamBinding> paramBindings;
     for (auto [indexExpr, decl] :
          llvm::zip(indices, structOp.getParamDecls())) {
       // TODO: Slice syntax is the obvious way to support named parameter
       // arguments.
-      auto indexVal = emitter.emitMAValue(
+      auto indexVal = emitter.emitMValue(
           indexExpr, "type parameters may not be a run-time value");
       if (!indexVal.ir)
         return {};
 
       // TODO: Support conversions.
-      if (indexVal.ir.getType() != decl.getType()) {
+      if (indexVal.ir.getType(emitter.getContext()) != decl.getType()) {
         emitter.emitError(indexExpr->getLoc(), "parameter of type ")
             << indexVal.type
             << " cannot be converted to expected type "
@@ -537,12 +551,14 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
             << decl.getType();
         return {};
       }
-
-      exprs.push_back(ParamBindAttr::get(decl, indexVal.ir));
+      paramBindings.push_back({decl, indexVal.ir});
     }
 
     // Ok, we succeeded at reparameterizing the type.
-    auto result = emitter.shared.getASTType(astType.getDecl(), exprs);
+    auto result = emitter.shared.getASTType(astType.getDecl(), paramBindings);
+
+    llvm::errs() << "TYPE: " << result << "\n";
+
     return {MValue(result), emitter.shared.getTypeType()};
   }
 
@@ -557,7 +573,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     assert(subValue.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
     assert(subValue.type.getParamValues().size() == 1 &&
            "FunctionType should have one (result) parameter");
-    auto resultASTType = subValue.type.getParamValues()[0].getValue();
+    auto resultASTType = subValue.type.getParamValues()[0].second;
 
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
@@ -713,9 +729,9 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   // If the sub-value is an ASTType, apply type sugar.
   if (auto astType = exprRep.ir.getIfMTValue()) {
+    // TODO: Shouldn't be MTValue check: use "getMValue()" + check for typetype.
     if (kind == kUnaryAmp)
-      return {MValue(emitter.shared.getPointerType(astType, getLoc())),
-              exprRep.type};
+      return {MValue(emitter.shared.getPointerType(astType)), exprRep.type};
 
     emitter.emitError(getLoc(), "cannot emit this expression as a type");
     return {};

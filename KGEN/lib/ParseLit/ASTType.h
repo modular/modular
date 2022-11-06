@@ -17,12 +17,13 @@
 #include "llvm/Support/PointerLikeTypeTraits.h"
 
 namespace M::KGEN {
+class ParamDeclAttr;
 class ParamBindAttr;
-class ParamBindArrayAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class ASTDecl;
+class MValue;
 
 /// This is the underlying storage for an ASTType and shouldn't be interacted
 /// with directly.  Use ASTType instead.
@@ -30,14 +31,14 @@ class ASTTypeStorage {
 private:
   friend class LitSharedState;
   friend class ASTType;
-  ASTTypeStorage(ASTDecl &decl, ArrayRef<ParamBindAttr> paramValues)
-      : decl(decl), paramValues(paramValues) {}
+  ASTTypeStorage(ASTDecl &decl,
+                 ArrayRef<std::pair<ParamDeclAttr, MValue>> paramValues);
   ASTTypeStorage(const ASTTypeStorage &) = delete;
   const ASTTypeStorage &operator=(const ASTTypeStorage &) = delete;
 
   // Note that this is bump pointer allocated and its destructor is never run.
   ASTDecl &decl;
-  ArrayRef<ParamBindAttr> paramValues;
+  ArrayRef<std::pair<ParamDeclAttr, MValue>> paramValues;
 
   /// This is a cached MLIR type that is filled in the first time an ASTType is
   /// converted to an MLIR type.  On error converting the type, the error is
@@ -65,10 +66,9 @@ public:
     assert(pointer && "Cannot dereference null ASTType");
     return pointer->decl;
   }
-  ArrayRef<ParamBindAttr> getParamValues() const {
-    assert(pointer && "Cannot dereference null ASTType");
-    return pointer->paramValues;
-  }
+
+  using ParamBinding = std::pair<ParamDeclAttr, MValue>;
+  ArrayRef<ParamBinding> getParamValues() const;
 
   operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }

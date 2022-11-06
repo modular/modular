@@ -37,7 +37,8 @@ namespace M::KGEN::LIT {
 /// It is described with an explicit type to clarify what sort of value it is,
 /// differentiating it from an emitted LValue.  This helps avoid subtle bugs in
 /// the emission phase.
-struct DRValue : public Value {
+class DRValue : public Value {
+public:
   using Value::Value;
   using Value::operator=;
   DRValue(Value v) : Value(v) {}
@@ -48,14 +49,16 @@ struct DRValue : public Value {
 /// underlying MLIR value may be pointer type for RValues of pointer type, so we
 /// need something explicit to represent this.  This also helps avoid subtle
 /// bugs in the emission phase.
-struct LValue : public Value {
+class LValue : public Value {
+public:
   using Value::Value;
   LValue(Value v) : Value(v) {}
 };
 
 /// Instances of MAValue model compile time values that are represented as MLIR
 /// attributes.
-struct MAValue {
+class MAValue {
+public:
   MAValue() {}
   MAValue(TypedAttr v) : storage(v) {}
 
@@ -173,7 +176,8 @@ protected:
 /// MLIR attribute or an ASTType.
 ///
 /// MValue = MAValue|ASTType.
-struct MValue : public VariantValueStorage<MValue> {
+class MValue : public VariantValueStorage<MValue> {
+public:
   MValue() {}
   MValue(TypedAttr attr) : VariantValueStorage(MAValue(attr)) {}
   MValue(MAValue value) : VariantValueStorage(value) {}
@@ -192,7 +196,8 @@ struct MValue : public VariantValueStorage<MValue> {
 
   /// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
   /// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
-  TypedAttr lowerToAttribute(LitSharedState &shared, llvm::SMLoc loc);
+  TypedAttr lowerToAttribute(LitSharedState &shared, Location loc) const;
+  TypedAttr lowerToAttribute(LitSharedState &shared, llvm::SMLoc loc) const;
 
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;

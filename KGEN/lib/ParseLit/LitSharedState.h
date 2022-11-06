@@ -20,14 +20,14 @@ class SourceMgr;
 }
 
 namespace M::KGEN {
-class ParamBindAttr;
-class ParamBindArrayAttr;
+class ParamDeclAttr;
 }
 
 namespace M::KGEN::LIT {
 class DeclResolver;
 class ASTDecl;
 class ASTType;
+class MValue;
 
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
@@ -42,8 +42,15 @@ public:
 
   const mlir::StringAttr bufferNameIdentifier;
 
+  using ParamBinding = std::pair<ParamDeclAttr, MValue>;
+
   /// Get a uniqued and pointer sized reference to an ASTType.
-  ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBindAttr> params);
+  ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBinding> params);
+
+  /// Return the MLIR type that corresponds to this AST type.  On error, this
+  /// emits an error at the specified location and returns an error type.
+  Type getMLIRType(MValue type, llvm::SMLoc loc);
+  Type getMLIRType(MValue type, Location loc);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
@@ -62,21 +69,14 @@ public:
   ASTType getNoneType() const;
 
   /// This is the decl for the builtin POP::PointerType type.
-  ASTType getPointerType(TypedAttr elementTypeParam);
-  ASTType getPointerType(ASTType elementType, llvm::SMLoc loc);
+  ASTType getPointerType(MValue elementType);
 
   /// This is the decl for the Function type.
   // FIXME: This isn't correctly parameterized; we need variadics.
-  ASTType getFunctionType(ASTType elementType, llvm::SMLoc loc);
-  ASTType getFunctionType(TypedAttr elementType);
+  ASTType getFunctionType(MValue resultType);
 
   /// This is the decl for the builtin lit.object type.
   ASTType getObjectType() const;
-
-  /// Return the MLIR type that corresponds to this AST type.  On error, this
-  /// emits an error at the specified location and returns an error type.
-  Type getMLIRType(ASTType type, llvm::SMLoc loc);
-  Type getMLIRType(ASTType type, Location loc);
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
@@ -125,7 +125,7 @@ private:
   class Impl;
   std::unique_ptr<Impl> impl;
 
-  ArrayRef<ParamBindAttr> getUniquedParams(ArrayRef<ParamBindAttr> params);
+  ArrayRef<ParamBinding> getUniquedParams(ArrayRef<ParamBinding> params);
 };
 
 /// This enum indicates how much parsing and type checking has been done on
