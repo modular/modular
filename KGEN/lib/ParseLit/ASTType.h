@@ -75,6 +75,11 @@ public:
   /// otherwise return null.
   MValue getPointerElementType() const;
 
+  /// This is used for types that are known on valid LValues, which must always
+  /// have pointer type.  This is just an asserting form of
+  /// getPointerElementType.
+  MValue getLValueElementType() const;
+
   /// ASTType is nullable.
   bool isNull() const { return pointer == nullptr; }
   operator bool() const { return pointer != nullptr; }

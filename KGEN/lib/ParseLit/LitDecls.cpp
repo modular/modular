@@ -82,8 +82,7 @@ DeclResolver::~DeclResolver() {
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(PointerUnion<Operation *, Attribute> irDecl,
-                               Location loc, StringAttr name,
+ASTDecl &DeclResolver::addDecl(IRDecl irDecl, Location loc, StringAttr name,
                                ASTDecl *parentDecl, LitLexerCursor cursor,
                                LitLexerCursor endCursor, ssize_t indentation) {
   ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
@@ -361,16 +360,15 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
       (void)shared.declResolver->resolve(
           *parentDecl, DeclResolvedness::signatureResolved,
           declScope.getCursor().getToken().getLoc());
-      selfType.second = parentDecl->getResolvedType();
+      // The self type is stored as the resolved type.  Methods on structs (but
+      // not classes) always take the struct implicitly by pointer so they can
+      // mutate it.
+      selfType.second = shared.getPointerType(parentDecl->getResolvedType());
       selfType.first = shared.getMLIRType(selfType.second, defDecl.getLoc());
     }
 
   // If this is a method, enforce that self is declared correctly.
   if (selfType.first) {
-    // Methods on structs (but not classes) take the struct implicitly by
-    // pointer so they can use and mutate it.
-    selfType.first = POP::PointerType::get(selfType.first);
-
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
@@ -508,7 +506,9 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [arg, param] : llvm::zip(defOp.getBody()->getArguments(), params)) {
-    // Create a mutable var.decl that references to the name can load from.
+
+    // If this was passed by-value, then create a mutable var.decl that
+    // references to the name can load from.
     // TODO: This is the wrong default, reconsider this for 'fn's when we have
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());

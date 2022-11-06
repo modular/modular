@@ -228,6 +228,11 @@ struct Int:
 
   # CHECK: lit.func @"Int::__add__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
   def __add__(self, rhs: Int) -> Int:
+    # CHECK: %rhs_1 = lit.var.decl "rhs" : <@Int>
+    # CHECK: pop.store %rhs, %rhs_1
+    # CHECK: %0 = lit.struct.gep %rhs_1[value]
+    # CHECK: %1 = pop.load %rhs_1
+    rhs.value      # TODO: Use this somehow. :)
     return rhs
   # CHECK: }
 # CHECK: }

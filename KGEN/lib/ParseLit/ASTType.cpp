@@ -47,15 +47,25 @@ MValue ASTType::getPointerElementType() const {
   return params[0].second;
 }
 
+MValue ASTType::getLValueElementType() const {
+  auto result = getPointerElementType();
+  assert(result && "LValues always have a valid element type");
+  return result;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
   if (!type)
     return os << "<<NULL ASTTYPE>>";
 
-  os << "'";
-
   ASTDecl &decl = type.getDecl();
+
+  // If this has sugar, use it.
+  if (decl.magicKind == MagicDeclKind::kPointerType)
+    if (auto eltType = type.getPointerElementType())
+      return os << '&' << eltType;
+
   if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();
@@ -102,8 +112,6 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     });
     os << ']';
   }
-
-  os << '\'';
   return os;
 }
 
@@ -116,7 +124,7 @@ std::string ASTType::getAsString() const {
 
 mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
                                            ASTType type) {
-  return diag << type.getAsString();
+  return diag << '\'' << type.getAsString() << '\'';
 }
 
 /// Print to standard error with newline after it, for use in a debugger.

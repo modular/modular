@@ -312,7 +312,7 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
   // TODO: Implement implicit conversions.
   if (lValue.ir.getType() != POP::PointerType::get(rhsValue.ir.getType())) {
     emitError(rhs->getLoc(), "cannot convert value of type ")
-        << rhsValue.type << " to " << lValue.type;
+        << rhsValue.type << " to " << lValue.type.getLValueElementType();
     return success();
   }
 
