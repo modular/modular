@@ -75,16 +75,16 @@ ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
   if (!rep) // Already diagnosed error.
     return {};
 
-  if (!builder) {
-    emitError(loc, "context only permits a meta value, not a dynamic one");
-    return {};
-  }
-
   if (auto rvRep = rep.ir.getIfRValue())
     return {rvRep, rep.type};
 
   auto pointer = rep.ir.getIfLValue();
   assert(pointer);
+
+  if (!builder) {
+    emitError(loc, "context only permits a meta value, not a dynamic one");
+    return {};
+  }
 
   // Finally, if this is an LValue, emit a load.
   Value load = builder->create<POP::LoadOp>(translateLocation(loc), pointer,
@@ -175,16 +175,25 @@ ASTTypeAnd<LValue> ExprEmitter::emitLValue(const ExprNode *node,
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
 FullType ExprEmitter::emitType(const ExprNode *node) {
-  FullType result = node->emitType(*this);
+  auto value = emitMValue(node, "expected a type");
+  if (!value)
+    return {TypeCheckErrorType::get(getContext()),
+            shared.getTypeCheckErrorType()};
 
-  // The emitType methods return null on failure, we return a
-  // TypeCheckErrorType to simplify clients.
-  if (!result.first) {
-    result.first = TypeCheckErrorType::get(getContext());
-    result.second = shared.getTypeCheckErrorType();
+  // If this emitted a type, we can lower it.
+  if (auto astType = value.ir.getIfMTValue()) {
+    Type mlirType = shared.getMLIRType(astType, node->getLoc());
+    return {mlirType, astType};
   }
-  // TODO: Should this return an magic decl marked erroneous?
-  return result;
+
+  // If we emitted a NoneAttr then convert it to a NoneType.  This is a special
+  // case because "None" is both a value and a type, and defaults to a value.
+  if (isa<KGEN::NoneAttr>(value.ir.getIfMAValue().get()))
+    return {KGEN::NoneType::get(getContext()), shared.getNoneType()};
+
+  emitError(node->getLoc(), "expected a type, not a value");
+  return {TypeCheckErrorType::get(getContext()),
+          shared.getTypeCheckErrorType()};
 }
 
 /// Perform a name lookup in the current scope and return the named
@@ -734,6 +743,18 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
   auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
+
+  // If the sub-value is an ASTType, apply type sugar.
+  if (auto astType = exprRep.ir.getIfMTValue()) {
+    if (kind == kUnaryAmp)
+      return {MValue(emitter.shared.getPointerType(astType, getLoc())),
+              exprRep.type};
+
+    emitter.emitError(getLoc(), "cannot emit this expression as a type");
+    return {};
+  }
+
+  // Otherwise we just have our hard coded expression stuff going on.
   if (exprRep.type.getDecl().magicKind != MagicDeclKind::kIndexType) {
     emitter.emitError(getLoc(),
                       "unary operator with interesting types not implemented");

@@ -77,7 +77,7 @@ def var_decl():
 
 var globalvar : index
 def err():
-  var y : globalvar  # expected-error {{'globalvar' names a value, not a type}}
+  var y : globalvar  # expected-error {{expected a type}}
 
 struct Rec[param:
                 Rec  # expected-error {{recursive reference to declaration}}
