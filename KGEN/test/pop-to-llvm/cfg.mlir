@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -pass-pipeline='lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm,lower-scf-to-llvm),llvm.func(reconcile-unrealized-casts)' | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm,lower-scf-to-llvm),llvm.func(reconcile-unrealized-casts))' | FileCheck %s
 
 // CHECK-LABEL: @variant_visit
 // CHECK-SAME: %[[A:.*]]:

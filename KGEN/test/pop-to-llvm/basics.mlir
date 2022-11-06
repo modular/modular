@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='kgen.func(lower-pop-to-llvm)' %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 // CHECK-LABEL: @constant
 kgen.func @constant() -> !pop.scalar<f32> {

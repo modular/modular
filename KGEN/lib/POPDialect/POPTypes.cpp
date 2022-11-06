@@ -43,20 +43,6 @@ LogicalResult ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-void ArrayType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrs,
-    function_ref<void(Type)> walkTypes) const {
-  walkAttrs(getSize());
-  walkAttrs(getElementType());
-}
-
-Type ArrayType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
-                                            ArrayRef<Type> types) const {
-  assert(types.empty() && attrs.size() == 2 && "expected 2 sub-attributes");
-  return get(getContext(), attrs[0].cast<TypedAttr>(),
-             attrs[1].cast<TypedAttr>());
-}
-
 Optional<int64_t> ArrayType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
@@ -129,18 +115,6 @@ LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-void PointerType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getElementType());
-}
-
-Type PointerType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                              ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 1 && replTypes.empty());
-  return PointerType::get(replAttrs[0]);
-}
-
 Type PointerType::getResolvedElementType() const {
   if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
     return typeCst.getValue();
@@ -208,19 +182,6 @@ LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-void SIMDType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getSize());
-  walkAttrsFn(getDType());
-}
-
-Type SIMDType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                           ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.empty());
-  return SIMDType::get(replAttrs[0], replAttrs[1]);
-}
-
 Optional<int64_t> SIMDType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
@@ -276,24 +237,6 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                          << elementType.index() << " is not a !kgen.mlirtype";
   }
   return success();
-}
-
-void StructType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrs,
-    function_ref<void(Type)> walkTypes) const {
-  for (TypedAttr elementType : getElementTypes())
-    walkAttrs(elementType);
-}
-
-Type StructType::replaceImmediateSubElements(ArrayRef<Attribute> attrs,
-                                             ArrayRef<Type> types) const {
-  assert(types.empty() && attrs.size() == getNumElements() &&
-         "expected same number of sub-attributes as element types");
-  SmallVector<TypedAttr> elementTypes;
-  elementTypes.reserve(attrs.size());
-  for (Attribute attr : attrs)
-    elementTypes.push_back(attr.cast<TypedAttr>());
-  return get(getContext(), elementTypes);
 }
 
 LogicalResult
@@ -376,24 +319,6 @@ canonicalizeVariantTypes(ArrayRef<TypedAttr> types) {
 
 VariantType VariantType::get(MLIRContext *ctx, ArrayRef<TypedAttr> types) {
   return Base::get(ctx, canonicalizeVariantTypes(types));
-}
-
-void VariantType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrs,
-    function_ref<void(Type)> walkTypes) const {
-  for (TypedAttr type : getTypes())
-    walkAttrs(type);
-}
-
-Type VariantType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                              ArrayRef<Type> replTypes) const {
-  assert(replTypes.empty() && replAttrs.size() == getTypes().size() &&
-         "expected same number of sub-attributes as variant types");
-  SmallVector<TypedAttr> variantTypes;
-  variantTypes.reserve(replAttrs.size());
-  for (Attribute attr : replAttrs)
-    variantTypes.push_back(llvm::cast<TypedAttr>(attr));
-  return get(getContext(), variantTypes);
 }
 
 Optional<int64_t> VariantType::getTypeIndex(Type type) const {

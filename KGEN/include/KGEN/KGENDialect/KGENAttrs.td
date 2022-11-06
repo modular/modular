@@ -36,8 +36,9 @@ class ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 /// Declaration of a named parameter.
-def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
-            [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
+    SubElementAttrInterface
+  ]> {
   let summary = "Parameter declaration";
   let description = [{
     This is a declaration of a parameter in the meta-programming domain for
@@ -67,7 +68,7 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl",
 /// interface.
 class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
     : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
-                  [DeclareAttrInterfaceMethods<SubElementAttrInterface>]>;
+                  [SubElementAttrInterface]>;
 
 //===----------------------------------------------------------------------===//
 // ParameterExprArrayAttr
@@ -117,9 +118,11 @@ def KTypeArrayAttr
 /// This attribute binds a concrete value to a named parameter, for example a
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
-def ParamBindAttr : KGENAttr<"ParamBind", "param.bind",
-              [DeclareAttrInterfaceMethods<SubElementAttrInterface,
-                                           ["replaceImmediateSubAttribute"]>]> {
+def ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
+    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
+      "walkImmediateSubElements", "replaceImmediateSubElements"
+    ]
+  >]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "ParamDeclAttr":$decl, "TypedAttr":$value);
 
@@ -212,9 +215,11 @@ def ParamDeclRefAttr : ExprAttr<"ParamDeclRef", "param.decl.ref"> {
 // The design of these operators assumes signful types like si64, and the fully
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
-def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
-              [DeclareAttrInterfaceMethods<SubElementAttrInterface,
-                                           ["replaceImmediateSubAttribute"]>]> {
+def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr", [
+    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
+      "walkImmediateSubElements", "replaceImmediateSubElements"
+    ]
+  >]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
                         ArrayRefParameter<"TypedAttr">:$operands,
@@ -269,8 +274,9 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr",
 //===----------------------------------------------------------------------===//
 
 def ConcreteTypeConstantAttr
-  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant",
-             [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant", [
+    SubElementAttrInterface
+  ]> {
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -306,8 +312,9 @@ def ConcreteTypeConstantAttr
 /// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
 /// refers to an MLIR type and has 'kgen.type' itself.
 def ParameterizedTypeConstantAttr
-  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",
-             [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",  [
+    DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
+  ]> {
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -413,8 +420,9 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
-def ConstraintAttr : KGENAttr<"Constraint", "constraint",
-    [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+def ConstraintAttr : KGENAttr<"Constraint", "constraint", [
+    SubElementAttrInterface
+  ]> {
   let summary = "kgen constraint";
   let description = [{
     A constraint attribute represents a constraint on a generator or

@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='kgen.func(lower-pop-to-llvm)' %s | FileCheck %s
+// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 // CHECK-LABEL: @stack_allocation
 kgen.func @stack_allocation(%cond: i1) {
