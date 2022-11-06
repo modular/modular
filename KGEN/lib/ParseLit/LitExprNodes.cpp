@@ -236,11 +236,6 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
   return {AnyValue(attr), emitter.shared.getIndexType()};
 }
 
-FullType IntLiteralNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
                                               FullType contextualType) const {
   // TODO: this assumes float literal are always doubles
@@ -250,11 +245,6 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
   return {AnyValue(attr), emitter.shared.getFloatLiteralType()};
 }
 
-FullType FloatLiteralNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
                                                FullType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
@@ -262,20 +252,10 @@ ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
           emitter.shared.getStringLiteralType()};
 }
 
-FullType StringLiteralNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                              FullType contextualType) const {
   auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
   return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
-          emitter.shared.getNoneType()};
-}
-
-FullType NoneLiteralNode::emitType(ExprEmitter &emitter) const {
-  return {KGEN::NoneType::get(emitter.getContext()),
           emitter.shared.getNoneType()};
 }
 
@@ -349,22 +329,6 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-FullType DeclRefNode::emitType(ExprEmitter &emitter) const {
-  // TODO: Merge type emission into value emission!
-  auto value = emitIR(emitter, {});
-  if (!value)
-    return {};
-
-  // If this emitted a type, we can lower it.
-  if (auto astType = value.ir.getIfMTValue()) {
-    Type mlirType = emitter.shared.getMLIRType(astType, getLoc());
-    return {mlirType, astType};
-  }
-
-  emitter.emitError(getLoc(), "'" + spelling + "' names a value, not a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
                                               FullType contextualType) const {
   auto baseVal = base->emitIR(emitter);
@@ -412,11 +376,6 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // TODO: Handle parameter member references.
   emitter.emitError(getLoc(), "cannot emit members of rvalues yet");
-  return {};
-}
-
-FullType AttributeRefNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
   return {};
 }
 
@@ -497,11 +456,6 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   // Value returning call returns its result.
   // FIXME: This is a completely wrong result type from the call!
   return {DRValue(call.getResult(0)), ASTType()};
-}
-
-FullType CallNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
 }
 
 ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
@@ -623,26 +577,9 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-FullType SubscriptNode::emitType(ExprEmitter &emitter) const {
-  // TODO: Merge type emission into value emission!
-  auto value = emitIR(emitter, {});
-  if (!value)
-    return {};
-
-  if (auto astType = value.ir.getIfMTValue())
-    return {emitter.shared.getMLIRType(astType, getLoc()), astType};
-
-  emitter.emitError(getLoc(), "unknown parameterized type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
                                            FullType contextualType) const {
   return subExpr->emitIR(emitter, contextualType);
-}
-
-FullType ParenExprNode::emitType(ExprEmitter &emitter) const {
-  return subExpr->emitType(emitter);
 }
 
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
@@ -733,11 +670,6 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   return {DRValue(result), emitter.shared.getIndexType()};
 }
 
-FullType BinOpNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
                                          FullType contextualType) const {
   auto exprRep = emitter.emitRValue(subExpr);
@@ -787,19 +719,6 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
   return {result, emitter.shared.getIndexType()};
 }
 
-FullType UnaryOpNode::emitType(ExprEmitter &emitter) const {
-  auto eltType = subExpr->emitType(emitter);
-  if (!eltType.first)
-    return {};
-
-  if (kind == kUnaryAmp)
-    return {POP::PointerType::get(eltType.first),
-            emitter.shared.getPointerType(eltType.second, getLoc())};
-
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
-}
-
 ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
                                            FullType contextualType) const {
   Value cond = emitter.emitDRValue(condExpr).ir;
@@ -832,9 +751,4 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
   emitter.builder->create<scf::YieldOp>(ifLoc, falseVal.ir);
   emitter.builder->setInsertionPointAfter(ifOp);
   return {(DRValue)ifOp.getResult(0), emitter.shared.getIndexType()};
-}
-
-FullType TernaryOpNode::emitType(ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "cannot emit this expression as a type");
-  return {};
 }

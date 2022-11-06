@@ -37,7 +37,6 @@ struct IntLiteralNode final : public ExprNode {
   }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct FloatLiteralNode final : public ExprNode {
@@ -54,7 +53,6 @@ struct FloatLiteralNode final : public ExprNode {
   }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct StringLiteralNode final : public ExprNode {
@@ -71,7 +69,6 @@ struct StringLiteralNode final : public ExprNode {
   }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct NoneLiteralNode final : public ExprNode {
@@ -85,7 +82,6 @@ struct NoneLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return loc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct DeclRefNode final : public ExprNode {
@@ -99,7 +95,6 @@ struct DeclRefNode final : public ExprNode {
   }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -117,7 +112,6 @@ struct AttributeRefNode final : public ExprNode {
   SMLoc getLoc() const override { return dotLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -132,7 +126,6 @@ struct CallNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
@@ -150,7 +143,6 @@ struct SubscriptNode final : public ExprNode {
   SMLoc getLoc() const override { return lsquareLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct ParenExprNode final : public ExprNode {
@@ -168,7 +160,6 @@ struct ParenExprNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct TernaryOpNode final : public ExprNode {
@@ -185,7 +176,6 @@ struct TernaryOpNode final : public ExprNode {
   SMLoc getLoc() const override { return opLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct BinOpNode final : public ExprNode {
@@ -202,7 +192,6 @@ struct BinOpNode final : public ExprNode {
   SMLoc getLoc() const override { return opLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 struct UnaryOpNode final : public ExprNode {
@@ -218,7 +207,6 @@ struct UnaryOpNode final : public ExprNode {
   SMLoc getLoc() const override { return opLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  FullType emitType(ExprEmitter &emitter) const override;
 };
 
 } // namespace M::KGEN::LIT

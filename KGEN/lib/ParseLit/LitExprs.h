@@ -333,10 +333,6 @@ public:
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
   virtual ASTTypeAnd<AnyValue> emitIR(ExprEmitter &state,
                                       FullType contextualType = {}) const = 0;
-
-  /// Emit this expression tree to an MLIR type.  This returns null on error,
-  /// unlike the corresponding ExprEmitter method.
-  virtual FullType emitType(ExprEmitter &state) const = 0;
 };
 
 //===----------------------------------------------------------------------===//
