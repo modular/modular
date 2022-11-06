@@ -45,10 +45,12 @@ public:
 };
 
 /// Instances of LValue model a dynamic address, which will always have pointer
-/// type.  It is described with an explicit type because the type of the
-/// underlying MLIR value may be pointer type for RValues of pointer type, so we
-/// need something explicit to represent this.  This also helps avoid subtle
-/// bugs in the emission phase.
+/// type.  It is described with an explicit C++ type so the expression emission
+/// logic can better reason about it.
+///
+/// When produced by the emitter, the AST Type of an LValue is always a lit
+/// Pointer type, the element type can be accessed with getLValueElementType().
+///
 class LValue : public Value {
 public:
   using Value::Value;
@@ -203,6 +205,8 @@ public:
   Type getType(MLIRContext *context) const;
   void dump() const;
 };
+raw_ostream &operator<<(raw_ostream &os, MValue value);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, MValue value);
 
 /// RValue = MValue|DRValue.
 class RValue : public VariantValueStorage<RValue> {
@@ -230,6 +234,8 @@ public:
   Type getType(MLIRContext *context) const;
   void dump() const;
 };
+raw_ostream &operator<<(raw_ostream &os, RValue value);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, RValue value);
 
 /// AnyValue = RValue|LValue.
 class AnyValue : public VariantValueStorage<RValue> {
@@ -256,6 +262,8 @@ public:
   Type getType(MLIRContext *context) const;
   void dump() const;
 };
+raw_ostream &operator<<(raw_ostream &os, AnyValue value);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, AnyValue value);
 
 } // namespace M::KGEN::LIT
 

@@ -37,25 +37,68 @@ static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
 using VariantStorage = PointerUnion<MAValue, ASTType, DRValue, LValue>;
 
-static void dumpStorage(VariantStorage storage) {
+static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
+                                 bool isDump = false) {
   if (storage.isNull()) {
-    llvm::errs() << "<NULL>\n";
+    os << "<NULL IR Value>\n";
   } else if (auto val = dyn_cast<MAValue>(storage)) {
-    llvm::errs() << "MA: " << val.get() << "\n";
+    if (isDump)
+      os << "MA: ";
+    os << val.get();
   } else if (auto val = dyn_cast<ASTType>(storage)) {
-    llvm::errs() << "MT: " << val << "\n";
+    if (isDump)
+      os << "MT: ";
+    os << val;
   } else if (auto val = dyn_cast<DRValue>(storage)) {
-    llvm::errs() << "DR: " << val << "\n";
+    if (isDump)
+      os << "DR: ";
+    os << val;
   } else if (auto val = dyn_cast<LValue>(storage)) {
-    llvm::errs() << "LV: " << val << "\n";
+    if (isDump)
+      os << "LV: ";
+    os << val;
   } else {
-    llvm::errs() << "UNKNOWN VALUE\n";
+    os << "<UNKNOWN IRVALUE>";
   }
+  return os;
 }
 
-void MValue::dump() const { dumpStorage(getStorage()); }
-void RValue::dump() const { dumpStorage(getStorage()); }
-void AnyValue::dump() const { dumpStorage(getStorage()); }
+raw_ostream &LIT::operator<<(raw_ostream &os, MValue value) {
+  return printStorage(os, value.getStorage());
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
+  return printStorage(os, value.getStorage());
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
+  return printStorage(os, value.getStorage());
+}
+
+void MValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+void RValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+void AnyValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+
+static std::string getStorageAsString(VariantStorage storage) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  printStorage(os, storage);
+  return os.str();
+}
+
+mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, MValue value) {
+  return diag << getStorageAsString(value.getStorage());
+}
+mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, RValue value) {
+  return diag << getStorageAsString(value.getStorage());
+}
+mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
+  return diag << getStorageAsString(value.getStorage());
+}
 
 static Type getTypeFrom(VariantStorage storage, MLIRContext *context) {
   if (storage.isNull())
@@ -187,8 +230,8 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
-/// If contextualType is non-null, then an implicitly declared LValue will
-/// that that type.
+/// If contextualType is non-null, then an implicitly declared LValue will be
+/// assigned that type.
 ///
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.

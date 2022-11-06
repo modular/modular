@@ -62,6 +62,7 @@ class ASTType {
 public:
   ASTType() : pointer(nullptr) {}
 
+  // Accessors for the type.
   ASTDecl &getDecl() const {
     assert(pointer && "Cannot dereference null ASTType");
     return pointer->decl;
@@ -70,16 +71,24 @@ public:
   using ParamBinding = std::pair<ParamDeclAttr, MValue>;
   ArrayRef<ParamBinding> getParamValues() const;
 
+  /// If this is a bound builtin lit Pointer type, return the element type,
+  /// otherwise return null.
+  MValue getPointerElementType() const;
+
+  /// ASTType is nullable.
+  bool isNull() const { return pointer == nullptr; }
   operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
 
   /// Convert this type to a human readable string representation so it can be
-  /// printed out for diagnostics.
+  /// printed out for diagnostics.  This may also be inserted into raw_ostream
+  /// and diagnostics.
   std::string getAsString() const;
 
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
 
+  /// ASTType can be put into a PointerUnion, these are implementation details.
   void *getAsVoidPointer() const { return pointer; }
   static ASTType getFromVoidPointer(void *ptr) {
     return ASTType(static_cast<ASTTypeStorage *>(ptr));

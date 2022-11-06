@@ -166,7 +166,6 @@ public:
   /// specified message).  This returns null if emission fails.
   ASTTypeAnd<MValue> emitMValue(const ExprNode *node, const Twine &message);
 
-  // ASTTypeAnd<MAValue> emitMAValue(ASTTypeAnd<MValue> rep, SMLoc loc);
   ASTTypeAnd<MAValue> emitMAValue(const ExprNode *node, const Twine &message) {
     auto mValue = emitMValue(node, message);
     if (!mValue.ir)
@@ -176,8 +175,8 @@ public:
   }
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
-  /// If contextualType is non-null, then an implicitly declared LValue will
-  /// that that type.
+  /// If contextualType is non-null, then an implicitly declared LValue will be
+  /// assigned that type.
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
