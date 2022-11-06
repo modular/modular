@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
 #include "mlir/IR/Location.h"
 #include "llvm/Support/SourceMgr.h"
@@ -234,6 +235,8 @@ std::string ASTType::getAsString() const {
     switch (getDecl().magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::kPointerType:
+      llvm_unreachable("Implemented as a struct, so should be handled");
     case MagicDeclKind::kTypeType:
       os << "type";
       break;
@@ -251,9 +254,6 @@ std::string ASTType::getAsString() const {
       break;
     case MagicDeclKind::kTypeCheckErrorType:
       os << "<<TypeCheckError>>";
-      break;
-    case MagicDeclKind::kPointerType:
-      os << "<<Pointer>>";
       break;
     case MagicDeclKind::kSignatureType:
       os << "<<FnSignature>>";
@@ -315,6 +315,39 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
   if (result)
     return result;
 
+  // If this is a magic declaration, provide custom lowering for it.
+  if (decl.isMagic()) {
+    switch (decl.magicKind) {
+    case MagicDeclKind::kNormal:
+      llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::kTypeType:
+      return result = MLIRTypeType::get(context);
+    case MagicDeclKind::kFloatLiteralType:
+      return result = Float64Type::get(context);
+    case MagicDeclKind::kStringLiteralType:
+      // FIXME: Add a sensible type.
+      return result = IndexType::get(context);
+    case MagicDeclKind::kIndexType:
+      return result = IndexType::get(context);
+    case MagicDeclKind::kNoneType:
+      return result = KGEN::NoneType::get(context);
+    case MagicDeclKind::kTypeCheckErrorType:
+      return result = TypeCheckErrorType::get(context);
+    case MagicDeclKind::kPointerType: {
+      assert(type.getParamValues().size() == 1 &&
+             "PointerType should have one parameter");
+      auto eltType = type.getParamValues()[0].getValue();
+      return result = POP::PointerType::get(eltType);
+    }
+
+    case MagicDeclKind::kSignatureType:
+      // TODO: Support qualified types.
+      emitError(loc, "TODO: Cannot emit parameterized builtin type yet");
+      return result = TypeCheckErrorType::get(context);
+    }
+    llvm_unreachable("unknown case");
+  }
+
   // If we have a reference to a struct, check the signatures match.
   if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     size_t numDeclParams = typeDecl.getParamDecls().size();
@@ -323,7 +356,7 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
       emitError(loc, "'" + typeDecl.getName() + "' requires ")
           << numDeclParams << " meta parameter" << plural(numDeclParams)
           << " but " << numTypeParams << " were bound";
-      return TypeCheckErrorType::get(context);
+      return result = TypeCheckErrorType::get(context);
     }
 
     for (auto [decl, bindValue] :
@@ -339,38 +372,13 @@ Type LitSharedState::getMLIRType(ASTType type, Location loc) {
 
     // Everything looks good, go forth!
     auto typeParams = ParamBindArrayAttr::get(context, type.getParamValues());
-    return RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
-                        typeParams);
+    return result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
+                                 typeParams);
   }
 
-  if (!decl.isMagic()) {
-    emitError(decl.getLoc(), "cannot emit a value as a type");
-    return result = TypeCheckErrorType::get(context);
-  }
-
-  switch (decl.magicKind) {
-  case MagicDeclKind::kNormal:
-    llvm_unreachable("not a magic declaration?");
-  case MagicDeclKind::kTypeType:
-    return result = MLIRTypeType::get(context);
-  case MagicDeclKind::kFloatLiteralType:
-    return result = Float64Type::get(context);
-  case MagicDeclKind::kStringLiteralType:
-    // FIXME: Add a sensible type.
-    return result = IndexType::get(context);
-  case MagicDeclKind::kIndexType:
-    return result = IndexType::get(context);
-  case MagicDeclKind::kNoneType:
-    return result = KGEN::NoneType::get(context);
-  case MagicDeclKind::kTypeCheckErrorType:
-    return result = TypeCheckErrorType::get(context);
-  case MagicDeclKind::kPointerType:
-  case MagicDeclKind::kSignatureType:
-    // TODO: Support qualified types.
-    emitError(loc, "TODO: Cannot emit parameterized builtin type yet");
-    return result = TypeCheckErrorType::get(context);
-  }
-  llvm_unreachable("unknown case");
+  // Otherwise it is something unknown.
+  emitError(decl.getLoc(), "cannot emit a value as a type");
+  return result = TypeCheckErrorType::get(context);
 }
 
 Type LitSharedState::getMLIRType(ASTType type, SMLoc loc) {
