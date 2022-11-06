@@ -196,6 +196,7 @@ struct MValue : public VariantValueStorage<MValue> {
 
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;
+  void dump() const;
 };
 
 /// RValue = MValue|DRValue.
@@ -222,6 +223,7 @@ public:
 
   /// Return the type for the contained representation, or null if null.
   Type getType(MLIRContext *context) const;
+  void dump() const;
 };
 
 /// AnyValue = RValue|LValue.
@@ -247,6 +249,7 @@ public:
   /// Return the type for the contained representation, or null if they are
   /// both null.  In the case of an LValue, this will return the PointerType.
   Type getType(MLIRContext *context) const;
+  void dump() const;
 };
 
 } // namespace M::KGEN::LIT
