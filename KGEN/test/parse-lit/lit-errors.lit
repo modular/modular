@@ -120,7 +120,7 @@ def WeirdMetaParams(a: Thing[1, "foo"]):
 
 def voidReturningFn(): pass
 def badCall():
-  # expected-error @+1 {{value of type <<NULL ASTTYPE>> cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
+  # expected-error @+1 {{value of type '!lit.none' cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
   test_bool_context(voidReturningFn())
 
 

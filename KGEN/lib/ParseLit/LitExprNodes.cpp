@@ -434,6 +434,16 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   assert(calleeVal.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
   assert(calleeVal.type.getParamValues().size() == 1 &&
          "FunctionType should have one (result) parameter");
+  auto resultASTTypeVal = calleeVal.type.getParamValues()[0].second;
+
+  auto resultASTType = resultASTTypeVal.getIfMTValue();
+  if (!resultASTType) {
+    // TODO: We have no way to represent a symbolic value of ASTType.  The best
+    // we can do is
+    emitter.emitError(
+        getLoc(), "unable to call function value with parametric result type");
+    return {};
+  }
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
@@ -494,8 +504,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
       /*operands*/ valueArguments);
 
   // Value returning call returns its result.
-  // FIXME: This is a completely wrong result type from the call!
-  return {DRValue(call.getResult(0)), ASTType()};
+  return {DRValue(call.getResult(0)), resultASTType};
 }
 
 ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
@@ -556,9 +565,6 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 
     // Ok, we succeeded at reparameterizing the type.
     auto result = emitter.shared.getASTType(astType.getDecl(), paramBindings);
-
-    llvm::errs() << "TYPE: " << result << "\n";
-
     return {MValue(result), emitter.shared.getTypeType()};
   }
 

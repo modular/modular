@@ -97,7 +97,7 @@ public:
     return resolvedType;
   }
   void setResolvedType(ASTType type) {
-    // FIXME: Enable this:    assert(type && "Cannot set null types");
+    assert(type && "Cannot set null types");
     resolvedType = type;
   }
 
