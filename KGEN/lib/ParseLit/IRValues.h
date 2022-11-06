@@ -66,7 +66,7 @@ struct MAValue {
 
   bool isNull() const { return storage == Attribute(); }
   bool operator!() const { return isNull(); }
-  operator bool() const { return !isNull(); }
+  explicit operator bool() const { return !isNull(); }
 
   TypedAttr get() const { return cast_or_null<TypedAttr>(storage); }
   operator TypedAttr() const { return get(); }
@@ -151,7 +151,7 @@ struct VariantValueStorage {
 
   bool isNull() const { return storage.isNull(); }
   bool operator!() const { return storage.isNull(); }
-  operator bool() const { return !storage.isNull(); }
+  explicit operator bool() const { return !storage.isNull(); }
 
   static DerivedType getFromStorage(Storage storage) {
     DerivedType result;
