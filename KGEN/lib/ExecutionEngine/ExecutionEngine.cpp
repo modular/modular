@@ -104,6 +104,7 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   // Ensure the native target is initialized.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
 
   // Create the target machine.
   auto machineOr = createHostTargetMachine();

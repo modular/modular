@@ -13,6 +13,7 @@ add_modular_mlir_library(KGENEmitObject
   OrcJIT
   JITLink
   MC
+  native
   nativecodegen
 
   LINK_LIBS PUBLIC

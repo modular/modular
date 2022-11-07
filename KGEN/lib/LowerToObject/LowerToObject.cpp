@@ -75,6 +75,7 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo, bool isJIT) {
 
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
 
   std::string errorMessage;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
