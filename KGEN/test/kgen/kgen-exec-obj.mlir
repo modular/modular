@@ -1,5 +1,5 @@
-// RUN: kgen %s -execute -func="run_exp:f32()" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
-// RUN: kgen %s -emit -func="exp_f32:f32(f32)" -o %t_expf32.o -I %S/../kernels
+// RUN: kgen %s -execute -func="exp_f32:f32(f32)" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
+// RUN: kgen %s -emit -o %t_expf32.o -I %S/../kernels
 // COM: Check the object file.
 // RUN: llvm-objdump %t_expf32.o -t | FileCheck %s -check-prefix=OBJ
 // COM: Check the header file.
@@ -23,16 +23,10 @@ kgen.generator @exp_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-// COM: run_exp computes exp(1.0)
-kgen.generator @run_exp() -> f32 {
-  %0 = llvm.mlir.constant(1.000000e+00 : f32) : f32
-  %1 = kgen.call @exp_f32(%0) : (f32) -> f32
-  kgen.return %1 : f32
-}
+kgen.export [@exp_f32]
 
-kgen.export [@run_exp]
-
-// EXEC: --- 'run_exp' returned 2.7{{[0-9]+}}
+// COM: We have exp_f32 compute exp(1.0) for this test.
+// EXEC: --- 'exp_f32' returned 2.7{{[0-9]+}}
 
 // OBJ-LABEL: SYMBOL TABLE
 // OBJ-DAG: F {{.*}}exp

@@ -6,3 +6,5 @@
 kgen.func @kernel(%a: f128) -> f128 {
   kgen.return %a : f128
 }
+
+kgen.export [@kernel]

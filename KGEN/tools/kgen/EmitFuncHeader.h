@@ -10,9 +10,10 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 
 namespace M::KGEN {
-/// Emit the header for a func.
-LogicalResult emitHeaderForFunc(SymbolTable &symtab, FuncOp func,
-                                StringRef filename);
+class ObjectCompiler;
+
+/// Emit the header for a set of exported functions.
+LogicalResult emitHeader(ObjectCompiler &compiler, StringRef filename);
 } // namespace M::KGEN
 
 #endif // EMIT_FUNC_HEADER_H
