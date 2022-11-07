@@ -75,7 +75,7 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
     The `zap.ndbuffer.stack_allocation` operation allocates memory on the stack.
     The allocated memory is automatically released when control transfers back
     from the region of its closest surrounding operation. The amount of memory
-    allocated is specified by the ndbuffer type. An optional `algin` attribute
+    allocated is specified by the ndbuffer type. An optional `align` attribute
     can be provided to specify the alignment of the allocation.
 
     The resulting ndbuffer type must be concrete in both the shape and dtype.

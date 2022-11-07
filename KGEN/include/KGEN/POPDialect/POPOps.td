@@ -1654,7 +1654,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
     memory on the stack. The operation returns a pointer to the allocated memory
-    of count elements aligned to the element type. An optional `algin` attribute
+    of count elements aligned to the element type. An optional `align` attribute
     can be provided to specify the alignment of the allocation.
 
     Example:

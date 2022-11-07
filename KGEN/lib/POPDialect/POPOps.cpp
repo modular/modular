@@ -37,7 +37,7 @@ using namespace POP;
 
 /// Reify an integer to another integer.
 static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
-                                     DType dtype) {
+                                     KGENDType dtype) {
   // Integer to integer conversion. Check that this isn't converting between
   // signed or unsigned integers.
   if (!type.isSignlessInteger() && type.isSignedInteger() != dtype.isSInt()) {
@@ -50,7 +50,8 @@ static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
 
   // Truncate or extend the value depending on the result width.
   APSInt origInt(value, dtype.isUInt());
-  APSInt intValue = origInt.extOrTrunc(dtype.getWidthInBits());
+  APSInt intValue = origInt.extOrTrunc(
+      dtype.isIndex() ? sizeof(int32_t) * CHAR_BIT : dtype.getWidthInBits());
   if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
     return Error("integer constant does not fit into " + dtype.getAsString());
 
@@ -59,7 +60,7 @@ static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
 
 /// Reify an integer to a float.
 static ErrorOr<APFloat> reifyIntToFloat(const APInt &value, IntegerType type,
-                                        FloatType fpType, DType dtype) {
+                                        FloatType fpType, KGENDType dtype) {
   // Roundtrip the integer value through float.
   APFloat apFp(fpType.getFloatSemantics());
   apFp.convertFromAPInt(value, !type.isUnsigned(),
@@ -99,18 +100,19 @@ static ErrorOr<APFloat> reifyFloatToFloat(APFloat apFp, FloatType fpType) {
 
 /// Reify a single integer or float attribute to an attribute that fits the
 /// given dtype.
-static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, DType dtype) {
+static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, KGENDType dtype) {
   if (auto value = dyn_cast<IntegerAttr>(attr)) {
     auto type = value.getType().cast<IntegerType>();
 
-    if (!dtype.isInt() && !dtype.isFloat() && !dtype.isBool())
+    if (!dtype.isIndex() && !dtype.isInt() && !dtype.isFloat() &&
+        !dtype.isBool())
       return Error("cannot coerce constant value to " + dtype.getAsString());
 
     if (dtype.isBool() && type.getWidth() != 1)
       return Error("cannot coerce i" + Twine(type.getWidth()) +
                    " value to bool");
 
-    if (dtype.isBool() || dtype.isInt()) {
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
       ErrorOr<APSInt> intValue = reifyIntToInt(value.getValue(), type, dtype);
       if (intValue.isError())
         return intValue.takeError();
