@@ -219,19 +219,24 @@ struct Int:
   var value : index
 
   # CHECK-NEXT: lit.func @"Int::__init__"(%self: !pop.pointer<@Int>, %value_0: index) -> !lit.none
-  # CHECK:        %0 = kgen.param.constant: !lit.none = <#lit.none>
-  # CHECK-NEXT:   kgen.return %0
+  # CHECK:      %value_1 = lit.var.decl "value" : <index>
+  # CHECK:      pop.store %value_0, %value_1 : !pop.pointer<index>
+  # CHECK:      %0 = pop.load %value_1 : !pop.pointer<index>
+  # CHECK:      %1 = lit.struct.gep %self[value] : <index> from <@Int>
+  # CHECK:      pop.store %0, %1 : !pop.pointer<index>
+  # CHECK:      %2 = kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT:  kgen.return %2
   # CHECK-NEXT: }
   def __init__(self: &Int, value: index) -> None:
-    #self.value = value
+    self.value = value
     return None
 
   # CHECK: lit.func @"Int::__add__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
   def __add__(self, rhs: Int) -> Int:
-    # CHECK: %rhs_1 = lit.var.decl "rhs" : <@Int>
-    # CHECK: pop.store %rhs, %rhs_1
-    # CHECK: %0 = lit.struct.gep %rhs_1[value]
-    # CHECK: %1 = pop.load %rhs_1
+    # CHECK: %rhs_0 = lit.var.decl "rhs" : <@Int>
+    # CHECK: pop.store %rhs, %rhs_0
+    # CHECK: %0 = lit.struct.gep %rhs_0[value]
+    # CHECK: %1 = pop.load %rhs_0
     rhs.value      # TODO: Use this somehow. :)
     return rhs
   # CHECK: }

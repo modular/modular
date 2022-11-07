@@ -32,10 +32,15 @@ using namespace M::KGEN::LIT;
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
-/// If this is a ParamDecl, return it otherwise return null.
-ParamDeclAttr ASTDecl::getParamDecl() const {
-  auto attr = dyn_cast_or_null<Attribute>(irDecl);
-  return attr ? cast<ParamDeclAttr>(attr) : ParamDeclAttr();
+/// If this is an RValue, return it otherwise return null.
+RValue ASTDecl::getIfRValue() const {
+  // Meta value.
+  if (auto attr = dyn_cast_or_null<MAValue>(irValue))
+    return MValue(attr);
+  // DRValue.
+  if (auto value = dyn_cast_or_null<DRValue>(irValue))
+    return value;
+  return {};
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
@@ -82,11 +87,12 @@ DeclResolver::~DeclResolver() {
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(IRDecl irDecl, Location loc, StringAttr name,
-                               ASTDecl *parentDecl, LitLexerCursor cursor,
-                               LitLexerCursor endCursor, ssize_t indentation) {
+ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
+                               StringAttr name, ASTDecl *parentDecl,
+                               LitLexerCursor cursor, LitLexerCursor endCursor,
+                               ssize_t indentation) {
   ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
-      irDecl, loc, parentDecl, cursor, endCursor, indentation);
+      irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this has a parent and a name, insert it into the parents name table so
@@ -136,9 +142,10 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, ASTType type,
 }
 
 /// Add a declaration that is already fully resolved.
-ASTDecl &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
+ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
+                                            StringAttr name, Location loc,
                                             ASTType type, ASTDecl *parentDecl) {
-  auto &decl = addDecl(attr, loc, attr.getName(), parentDecl, LitLexerCursor(),
+  auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   decl.setResolvedType(type);
@@ -150,7 +157,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(ParamDeclAttr attr, Location loc,
 ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
                                     ASTDecl *parentDecl) {
   assert(parentDecl && "top level isn't magic");
-  auto &decl = addDecl(ParamDeclAttr(), parentDecl->getLoc(),
+  auto &decl = addDecl(MAValue(), parentDecl->getLoc(),
                        StringAttr::get(getContext(), name), parentDecl,
                        LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
@@ -296,8 +303,12 @@ struct ParsedMetaSignature {
     auto &declResolver = *sharedState.declResolver;
     // TODO: Use inputTypes.
     for (auto [paramDecl, type, loc] :
-         llvm::zip(inputDecls, inputASTTypes, inputLocs))
-      declResolver.addFullyResolvedDecl(paramDecl, loc, type, &decl);
+         llvm::zip(inputDecls, inputASTTypes, inputLocs)) {
+      auto paramRef =
+          ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
+      declResolver.addFullyResolvedDecl(MAValue(paramRef), paramDecl.getName(),
+                                        loc, type, &decl);
+    }
   }
 };
 } // namespace
@@ -506,6 +517,17 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [arg, param] : llvm::zip(defOp.getBody()->getArguments(), params)) {
+    // We need to know what parameter convention that argument is passed
+    // with, e.g. by-value, by-ref, by-transfer, etc.
+
+    // FIXME: For now, hard code this based on whether it has a pointer.  This
+    // will be incorrect when you want to pass a pointer by value etc.
+    if (isa<POP::PointerType>(arg.getType())) {
+      // Arguments passed by-reference can be directly used.
+      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(),
+                           param.type.second, &decl);
+      continue;
+    }
 
     // If this was passed by-value, then create a mutable var.decl that
     // references to the name can load from.

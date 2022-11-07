@@ -270,10 +270,11 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
             emitter.shared.getFunctionType(decl->getResolvedType())};
   }
 
-  // Attributes always resolve to their known value.
-  if (auto param = decl->getParamDecl())
-    return {MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
-            decl->getResolvedType()};
+  // RValue's and LValues always resolve to their known value.
+  if (auto rvalue = decl->getIfRValue())
+    return {rvalue, decl->getResolvedType()};
+  if (auto lvalue = decl->getIfLValue())
+    return {lvalue, decl->getResolvedType()};
 
   if (isa<LITStructDeclOp>(*decl) || decl->isMagic()) {
     auto astType = emitter.shared.getASTType(*decl, {});
@@ -319,7 +320,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
 
     // TODO: Support method references some day.
-    auto varOp = dyn_cast_or_null<VarDeclOp>(fieldDecl->getOperation());
+    auto varOp = dyn_cast_or_null<VarDeclOp>(fieldDecl->getIfOperation());
     if (!varOp) {
       emitter.emitError(getLoc(), "'" + attrSpelling + "' is not a field");
       return {};

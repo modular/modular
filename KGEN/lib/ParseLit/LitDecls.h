@@ -11,6 +11,7 @@
 #ifndef LITDECLS_H
 #define LITDECLS_H
 
+#include "IRValues.h"
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
@@ -35,6 +36,11 @@ class ASTDecl;
 // DeclResolver
 //===----------------------------------------------------------------------===//
 
+/// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
+/// as operations.  It stores RValues for parameters and SSA values as an
+/// RValue.
+using DeclIRValue = PointerUnion<Operation *, MAValue, DRValue, LValue>;
+
 class DeclResolver {
 public:
   DeclResolver(LitSharedState &state);
@@ -55,7 +61,8 @@ public:
                                 ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(ParamDeclAttr decl, Location loc, ASTType type,
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr name,
+                                Location loc, ASTType type,
                                 ASTDecl *parentDecl);
 
   /// Add a "magic" declaration that has special handling to this scope.  This
@@ -69,8 +76,8 @@ public:
                         llvm::SMLoc loc);
 
 private:
-  ASTDecl &addDecl(PointerUnion<Operation *, Attribute> decl, Location loc,
-                   StringAttr name, ASTDecl *parentDecl, LitLexerCursor cursor,
+  ASTDecl &addDecl(DeclIRValue decl, Location loc, StringAttr name,
+                   ASTDecl *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 
   /// The resolveSignature methods are invoked on an operation to parse and type
