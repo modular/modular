@@ -1010,8 +1010,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
-    pointer cannot have a `?` element type. An optional `alignment` attribute
-    can be provided to specify the alignment of the load.
+    pointer cannot have a `?` element type. An optional `align` attribute can be
+    provided to specify the alignment of the load.
 
     Example:
 
@@ -1654,13 +1654,15 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
     memory on the stack. The operation returns a pointer to the allocated memory
-    of count elements aligned to the element type.
+    of count elements aligned to the element type. An optional `algin` attribute
+    can be provided to specify the alignment of the allocation.
 
     Example:
 
     ```mlir
     %0 = pop.stack_allocation count x !pop.simd<4, f32>
     %1 = pop.stack_allocation count x !pop.scalar<ui64>
+    %1 = pop.stack_allocation count x !pop.scalar<ui64> align 8
     ```
 
     The allocated memory is automatically released when control tranfers back
@@ -1713,15 +1715,18 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$count);
+  let arguments = (ins TypedAttrInterface:$count,
+                       OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
+  let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
-    attr-dict
+    custom<OptionalAlignmentParamValue>($alignment) `` attr-dict
   }];
 
   let builders = [
+    OpBuilder<(ins "Type":$result, "TypedAttr":$count)>,
     OpBuilder<(ins "Type":$result, "int64_t":$count)>
   ];
 }

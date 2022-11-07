@@ -16,6 +16,7 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -565,10 +566,18 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   // Hoist the alloca to the top of the enclosing function body.
   rewriter.setInsertionPointToStart(body);
   Value sizeVal = rewriter.create<LLVM::ConstantOp>(op.getLoc(), size);
-  Value ptr = rewriter.create<LLVM::AllocaOp>(op.getLoc(), ptrType, sizeVal);
+  unsigned alignment =
+      adaptor.getAlignment()
+          ? adaptor.getAlignmentAttr().cast<IntegerAttr>().getInt()
+          : 0;
+  Value ptr = rewriter.create<LLVM::AllocaOp>(
+      op.getLoc(), ptrType,
+      ptrType.cast<LLVM::LLVMPointerType>().getElementType(), sizeVal,
+      alignment);
 
   // Compute the bytecount of the allocated buffer.
-  int64_t byteCount = getByteCount(op.getType().getResolvedElementType(), size);
+  int64_t byteCount = getByteCount(
+      op.getType().cast<PointerType>().getResolvedElementType(), size);
 
   // Insert lifetime markers starting from the op to the end of its block.
   rewriter.setInsertionPoint(op);

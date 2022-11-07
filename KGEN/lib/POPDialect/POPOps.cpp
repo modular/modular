@@ -731,6 +731,11 @@ static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
+                              TypedAttr count) {
+  build(b, state, result, count, TypedAttr());
+}
+
+void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
                               int64_t count) {
   auto countAttr = b.getIndexAttr(count);
   build(b, state, result, countAttr);

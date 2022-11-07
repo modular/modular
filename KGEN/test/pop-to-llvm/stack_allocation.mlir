@@ -20,6 +20,17 @@ kgen.func @stack_allocation(%cond: i1) {
   kgen.return
 }
 
+// CHECK-LABEL: @stack_allocation_with_alignment
+kgen.func @stack_allocation_with_alignment(%cond: i1) {
+  // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
+  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64}
+  // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
+  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> align 8
+  // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR0]]
+  // CHECK-NEXT: return
+  kgen.return
+}
+
 // CHECK-LABEL: @stack_allocation_insertion
 kgen.func @stack_allocation_insertion(%v: !pop.simd<1, si32>, %lb: index, %ub: index, %step: index) {
   // CHECK: llvm.alloca
