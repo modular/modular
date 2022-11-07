@@ -49,3 +49,5 @@ kgen.func @nestedParametricStruct(%a: !kgen.ref<@Bar>) {
   kgen.return
 }
 // STRUCT: extern void nestedParametricStruct(float, double)
+
+kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel, @someMetaScalarKernel, @nestedParametricStruct]

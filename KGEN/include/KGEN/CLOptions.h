@@ -75,7 +75,7 @@ public:
   cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
       "func", cl::desc("Specifies the funcs to execute.")};
 
-  Optional<CommandLineFunc> shouldHandleFunc(StringRef func) const {
+  Optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
     auto found = llvm::find_if(
         funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
     if (found == funcs.end())

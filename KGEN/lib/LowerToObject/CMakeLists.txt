@@ -8,6 +8,7 @@ add_modular_mlir_library(KGENEmitObject
   LowerToLLVM.cpp
   LowerToObject.cpp
   StandaloneObject.cpp
+  ProduceFunctionDecls.cpp
 
   LINK_COMPONENTS
   OrcJIT

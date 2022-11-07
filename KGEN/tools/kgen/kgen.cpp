@@ -263,20 +263,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (objPath.empty())
       return mlir::success();
 
-    // And now we have to produce the header files for each requested func.
-    SymbolTable symtab(*theModule);
-    for (auto f : theModule->getOps<FuncOp>()) {
-      if ((clOptions.funcs.empty() &&
-           compiler.isSymbolExported(f.getNameAttr())) ||
-          clOptions.shouldHandleFunc(f.getName())) {
-        if (failed(emitHeaderForFunc(symtab, f,
-                                     std::filesystem::path(objPath)
-                                         .replace_extension(".h")
-                                         .string())))
-          return failure();
-      }
-    }
-    return mlir::success();
+    // Finish off by producing a header file with the decls.
+    std::string headerFilename =
+        std::filesystem::path(objPath).replace_extension(".h").string();
+
+    return emitHeader(compiler, headerFilename);
   }
 
   // Now we can load it into the JIT - we're definitely executing the thing.
@@ -319,7 +310,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
     // If we were asked to handle this func, do so.
     if (Optional<CommandLineFunc> clFunc =
-            clOptions.shouldHandleFunc(fn.getName())) {
+            clOptions.shouldExecuteFunc(fn.getName())) {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:

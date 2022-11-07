@@ -98,8 +98,14 @@ public:
   FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
   produceStandaloneObject(TargetInfoAttr target, bool isJIT);
 
+  /// Writes function declarations for all exported symbols.
+  LogicalResult produceFunctionDecls(raw_ostream &os);
+
   /// Get access to the symbol table the compiler holds.
   mlir::SymbolTable &getSymbolTable() { return symtab; }
+
+  /// Get access to the module held by the compiler.
+  ModuleOp getModule() { return module; }
 
   /// Get access to the caches the compiler holds.
   LoweringCacheCollection &getCaches() { return caches; }
