@@ -2072,3 +2072,36 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic", [Pure]> {
     $intrin `(` $args `)` attr-dict `:`functional-type($args, $results)
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// InlineAsmOp
+//===----------------------------------------------------------------------===//
+
+def InlineAsmOp : POPOp<"inline_asm"> {
+  let description = [{
+    The InlineAsmOp mirrors the underlying LLVM semantics with a notable
+    exception: the embedded `asm_string` is not allowed to define or reference
+    any symbol or any global variable: only the operands of the op may be read,
+    written, or referenced.
+    Attempting to define or reference any symbol or any global behavior is
+    considered undefined behavior at this time.
+  }];
+  let arguments = (
+    ins Variadic<AnyType>:$operands,
+        StrAttr:$assembly,
+        StrAttr:$constraints,
+        UnitAttr:$hasSideEffects,
+        UnitAttr:$isStackAligned,
+        OptionalAttr<ArrayAttr>:$operandAttrs);
+
+  let results = (outs Optional<AnyType>:$res);
+
+  let assemblyFormat = [{
+    (`side_effecting` $hasSideEffects^)?
+    (`stack_aligned` $isStackAligned^)?
+    (`operand_attrs` `=` $operandAttrs^)?
+    attr-dict
+    $assembly `,` $constraints
+    operands `:` functional-type(operands, results)
+   }];
+}
