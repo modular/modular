@@ -1005,3 +1005,23 @@ kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
     (!pop.scalar<si64>, !pop.pointer<si8>) -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @inline_asm
+kgen.func @inline_asm(
+    %arg0: !pop.scalar<si32>,
+    %arg1: !pop.scalar<si64>) {
+  // CHECK: llvm.inline_asm asm_dialect = att "bswap $0", "=r,r" %0 : (i32) -> i8
+  %0 = pop.inline_asm "bswap $0", "=r,r" %arg0 : (!pop.scalar<si32>) -> i8
+  // CHECK: llvm.inline_asm asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  %1 = pop.inline_asm "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
+  // CHECK: llvm.inline_asm has_side_effects asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  %2 = pop.inline_asm side_effecting "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
+  // CHECK: llvm.inline_asm is_align_stack asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
+  %3 = pop.inline_asm stack_aligned "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
+  kgen.return
+}

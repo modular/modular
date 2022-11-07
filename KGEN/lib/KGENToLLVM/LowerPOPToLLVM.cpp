@@ -14,6 +14,7 @@
 #include "LLVMLoweringUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
@@ -1279,6 +1280,29 @@ struct ConvertPOPMemset : mlir::ConvertOpToLLVMPattern<MemsetOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPInlineAsm
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPInlineAsm : mlir::ConvertOpToLLVMPattern<InlineAsmOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(InlineAsmOp op, InlineAsmOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    SmallVector<Type, 3> types;
+    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+      return failure();
+    rewriter.replaceOpWithNewOp<LLVM::InlineAsmOp>(
+        op, types, adaptor.getOperands(), adaptor.getAssemblyAttr(),
+        adaptor.getConstraintsAttr(), adaptor.getHasSideEffectsAttr(),
+        adaptor.getIsStackAlignedAttr(),
+        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
+        adaptor.getOperandAttrsAttr());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1347,6 +1371,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
       ConvertPOPIndirectCall,
+      ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,
       ConvertPOPMemcpy,

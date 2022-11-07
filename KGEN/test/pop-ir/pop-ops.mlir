@@ -1010,3 +1010,34 @@ kgen.generator @indirect_call(%a: i32, %fn: (i32) -> index) -> index {
   // CHECK: return %0 : index
   kgen.return %0 : index
 }
+
+// CHECK-LABEL: @inline_asm
+kgen.generator @inline_asm<type: type, dtype: dtype>(
+    %arg0: !pop.scalar<si32>,
+    %arg1: !pop.scalar<index>,
+    %arg2: !kgen.paramref<type>,
+    %arg3: !pop.scalar<dtype>) {
+  // CHECK: pop.inline_asm "bswap $0", "=r,r" %arg0 : (!pop.scalar<si32>) -> i8
+  %0 = pop.inline_asm "bswap $0", "=r,r" %arg0 : (!pop.scalar<si32>) -> i8
+  // CHECK: pop.inline_asm "something", "anotherthing" %arg0, %arg1 :
+  // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  %1 = pop.inline_asm "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  // CHECK: pop.inline_asm side_effecting "something", "anotherthing" %arg0, %arg1 :
+  // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  %2 = pop.inline_asm side_effecting "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  // CHECK: pop.inline_asm stack_aligned "something", "anotherthing" %arg0, %arg1 :
+  // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  %3 = pop.inline_asm stack_aligned "something", "anotherthing" %arg0, %arg1 :
+    (!pop.scalar<si32>, !pop.scalar<index>) -> i8
+  // CHECK: pop.inline_asm "foo", "=r,=r,r" %arg0 : (!pop.scalar<si32>) ->
+  // CHECK: !pop.struct<type, scalar<dtype>>
+  %4 = pop.inline_asm "foo", "=r,=r,r" %arg0 : (!pop.scalar<si32>) ->
+    !pop.struct<type, scalar<dtype>>
+  // CHECK: pop.inline_asm "bar $0", "=r,r" %arg2 : (!kgen.paramref<type>) -> i8
+  %5 = pop.inline_asm "bar $0", "=r,r" %arg2 : (!kgen.paramref<type>) -> i8
+  // CHECK: pop.inline_asm "bar $0", "=r,r" %arg3 : (!pop.scalar<dtype>) -> i8
+  %6 = pop.inline_asm "bar $0", "=r,r" %arg3 : (!pop.scalar<dtype>) -> i8
+  kgen.return
+}
