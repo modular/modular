@@ -1927,11 +1927,12 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
     Example:
 
     ```mlir
-    %addr0 = pop.index_to_pointer %idx : !pop.pointer<scalar<f32>> to index
-    %addr1 = pop.index_to_pointer %idx : !pop.pointer<simd<4, type>> to index
-    %addr2 = pop.index_to_pointer %idx : !pop.scalar<address> to index
-    %addr4 = pop.index_to_pointer %idx : !pop.simd<4, address> to
-                                         !pop.simd<4, index>
+    %addr0 = pop.index_to_pointer %idx : index to !pop.pointer<scalar<f32>>
+    %addr1 = pop.index_to_pointer %idx : index to !pop.pointer<simd<4, type>>
+    %addr2 = pop.index_to_pointer %idx : index to !pop.scalar<address>
+    %addr4 = pop.index_to_pointer %idx : !pop.simd<4, index> to
+                                         !pop.simd<4, address>
+
     ```
   }];
 
@@ -1959,11 +1960,11 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : index to !pop.pointer<scalar<f32>>
-    %addr1 = pop.pointer_to_index %idx : indx to !pop.pointer<simd<4, type>>
-    %addr2 = pop.pointer_to_index %idx : index to !pop.scalar<address>
-    %addr4 = pop.pointer_to_index %idx : !pop.simd<4, index> to
-                                         !pop.simd<4, address>
+    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<scalar<f32>> to index
+    %addr1 = pop.pointer_to_index %idx : !pop.pointer<simd<4, type>> to index
+    %addr2 = pop.pointer_to_index %idx : !pop.scalar<address> to index
+    %addr4 = pop.pointer_to_index %idx : !pop.simd<4, address> to
+                                         !pop.simd<4, index>
     ```
   }];
 
