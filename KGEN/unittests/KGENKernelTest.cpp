@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "array_index.h"
+#include "test_kernels.h"
 #include "gtest/gtest.h"
 
 TEST(KGENKernelTest, testArrayArgument) {

@@ -99,7 +99,7 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH" "SOURCE" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
 
@@ -107,39 +107,34 @@ function(add_kgen_kernel target)
   # KGEN_ENABLE_SEARCH unconditionally.
   if (MODULAR_KGEN_ENABLE_SEARCH)
     set(KGEN_ENABLE_SEARCH ON)
-  endif()
+  endif ()
 
-  # Add a target that controls emission of all of the kernels.
-  set(OBJS "")
-  foreach (kernel ${KGEN_KERNELS})
-    # CMake emits build targets as relative paths but Ninja doesn't identify
-    # absolute paths (in *.d) as relative paths (in build.ninja).
-    set(object_file_name "${kernel}${CMAKE_CXX_OUTPUT_EXTENSION}")
-    file(RELATIVE_PATH object_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name})
+  if (NOT KGEN_OUTPUT_NAME)
+    get_filename_component(KGEN_OUTPUT_NAME ${KGEN_SOURCE} NAME_WE)
+  endif ()
 
-    add_custom_command(
-      OUTPUT ${object_file_name}
-      OUTPUT "${kernel}.h"
+  # CMake emits build targets as relative paths but Ninja doesn't identify
+  # absolute paths (in *.d) as relative paths (in build.ninja).
+  set(object_file_name "${KGEN_OUTPUT_NAME}${CMAKE_CXX_OUTPUT_EXTENSION}")
+  file(RELATIVE_PATH object_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name})
 
-      COMMAND $<TARGET_FILE:kgen> -emit
-      -func=${kernel}
-      $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
-      $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
-      -o ${object_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
-      -d ${object_file_name_rel}.d
+  add_custom_command(
+    OUTPUT ${object_file_name}
+    OUTPUT "${KGEN_OUTPUT_NAME}.h"
 
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name}.d
-      DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
-    )
+    COMMAND $<TARGET_FILE:kgen> -emit
+    -func=${kernel}
+    $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
+    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
+    -o ${object_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+    -d ${object_file_name_rel}.d
 
-    add_library(${target}_${kernel} ${object_file_name})
-    set_target_properties(${target}_${kernel} PROPERTIES LINKER_LANGUAGE C)
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name}.d
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
+  )
 
-    list(APPEND OBJS ${object_file_name})
-  endforeach ()
-
-  add_library(${target} ${OBJS})
+  add_library(${target} ${object_file_name})
   add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen)
   set_target_properties(${target}
     PROPERTIES LINKER_LANGUAGE C
