@@ -30,6 +30,8 @@ kgen.func @pop_constant() {
   %1 = pop.constant(32.0 : f32) : !pop.scalar<f32>
   // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !pop.scalar<f64>
   %2 = pop.constant(32.0 : f64) : !pop.scalar<f64>
+  // CHECK-NEXT: pop.constant(1 : si32) : !pop.scalar<index>
+  %3 = pop.constant(1 : si32) : !pop.scalar<index>
   kgen.return
 }
 
@@ -43,8 +45,8 @@ kgen.func @pop_constant_simd() {
   %2 = pop.constant(#M.dense_array<32, 64> : vector<2xui32>) : !pop.simd<2, ui32>
   // CHECK: pop.constant(42 : ui32)
   %3 = pop.constant(42 : ui32) : !pop.simd<2, ui32>
-  // CHECK: pop.constant(7 : si32)
-  %4 = pop.constant(7 : si32) : !pop.scalar<si32>
+  // CHECK: pop.constant(42 : ui32)
+  %4 = pop.constant(42 : ui32) : !pop.simd<2, index>
   kgen.return
 }
 

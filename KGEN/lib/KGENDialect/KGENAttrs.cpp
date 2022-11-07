@@ -1106,7 +1106,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
 }
 
 bool DTypeConstantAttr::isConvertibleFrom(Type type) {
-  DType dtype = getDType();
+  KGENDType dtype = getDType();
 
   // Bool can only be `i1`.
   if (dtype.isBool())
@@ -1116,10 +1116,17 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
   if (type.isSignlessInteger())
     return false;
 
-  // Integers can be converted to dtypes of the same width and signedness.
   if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
-    return dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
-           dtype.isSInt() == intType.isSigned();
+    // Integers can be converted to dtypes of width less than or equal to
+    // int32_t.
+    if (dtype.isIndex() && intType.getWidth() <= 32)
+      return true;
+    // Integers can be converted to dtypes of the same width and signedness.
+    if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
+        dtype.isSInt() == intType.isSigned())
+      return true;
+    // Otherwise, we risk loosing bits, so we conservatively disallow.
+    return false;
   }
 
   // Floating point types can be converted to equivalent dtypes.

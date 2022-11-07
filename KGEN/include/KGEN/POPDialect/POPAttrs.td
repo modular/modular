@@ -59,5 +59,4 @@ def POP_PrefetchLocalityAttr :
     let assemblyFormat = "`` $value";
 }
 
-
 #endif // KGEN_POPDIALECT_POPATTRS_TD
