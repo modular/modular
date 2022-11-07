@@ -340,8 +340,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
   let description = [{
     The `pop.shl` instruction returns the first operand shifted to the left a
     specified number of bits. Both arguments to the shl instruction must be
-    the same integer or vector of integer type. rhs is treated as an unsigned
-    value.
+    the same integer/index or vector of integer/index type. rhs is treated as an
+    unsigned value.
 
     The value produced is lhs * 2^{rhs} mod 2^n, where n is the width of the
     result. If rhs is (statically or dynamically) equal to or larger than the
@@ -356,8 +356,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
     %0 = pop.shl %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrIntegerSIMD:$lhs,
-                       UnboundOrIntegerSIMD:$rhs);
+  let arguments = (ins UnboudOrIndexOrIntegerSIMD:$lhs,
+                       UnboudOrIndexOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -369,8 +369,9 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
   let description = [{
     The `pop.shr` op returns the first operand shifted to the right a specified
     number of bits. Whether the result is sign extended or zero extended depends
-    on the result dtype. Both arguments to the `shr` op must be the same integer
-    or vector of integer type. `rhs` is always treated as unsigned.
+    on the result dtype. Both arguments to the `shr` op must be the same
+    integer/index or vector of integer/index type. `rhs` is always treated as
+    unsigned.
 
     This operation performs an arithmetic shift right operation if the dtype
     is signed. The most significant bits of the result will be filled with the
@@ -387,8 +388,8 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
     %0 = pop.shr %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrIntegerSIMD:$lhs,
-                       UnboundOrIntegerSIMD:$rhs);
+  let arguments = (ins UnboudOrIndexOrIntegerSIMD:$lhs,
+                       UnboudOrIndexOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
