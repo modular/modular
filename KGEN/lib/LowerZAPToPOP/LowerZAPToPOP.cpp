@@ -242,8 +242,8 @@ struct ConvertZAPNDBufferStackAllocation
     auto size =
         ParamOperatorAttr::get(rewriter.getContext(), POC::Mul, type.getShape(),
                                rewriter.getIndexType());
-    Value ptr =
-        rewriter.create<StackAllocationOp>(loc, type.getPointerType(), size);
+    Value ptr = rewriter.create<StackAllocationOp>(loc, type.getPointerType(),
+                                                   size, op.getAlignmentAttr());
     Value buf = constructNDBuffer(rewriter, loc, type, ptr, type.getRank());
     rewriter.replaceOp(op, buf);
     return success();

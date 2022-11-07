@@ -97,6 +97,17 @@ kgen.generator @ndbuffer_stack_allocation<type: dtype>(%i: index) -> (
   kgen.return %0, %1 : !zap.ndbuffer<[4], f32>,
                        !zap.ndbuffer<[42, 42], type>
 }
+
+// -----
+
+// CHECK-LABEL: @ndbuffer_stack_allocation_with_alignment
+kgen.generator @ndbuffer_stack_allocation_with_alignment<type: dtype>() {
+  // CHECK: %[[PTR0:.*]] = pop.stack_allocation 4 x !pop.scalar<f32> align 8
+  // CHECK: %[[BUF0:.*]] = pop.struct.construct(%[[PTR0]], %{{.*}}, %{{.*}}, %{{.*}}) : !pop.struct<pointer<scalar<f32>>, index, array<5, index>, dtype>
+  %0 = zap.ndbuffer.stack_allocation align 8 : !zap.ndbuffer<[4], f32>
+  kgen.return
+}
+
 // -----
 
 // CHECK-LABEL: @ndbuffer_stack_allocation_parametric_size

@@ -75,7 +75,8 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
     The `zap.ndbuffer.stack_allocation` operation allocates memory on the stack.
     The allocated memory is automatically released when control transfers back
     from the region of its closest surrounding operation. The amount of memory
-    allocated is specified by the ndbuffer type.
+    allocated is specified by the ndbuffer type. An optional `algin` attribute
+    can be provided to specify the alignment of the allocation.
 
     The resulting ndbuffer type must be concrete in both the shape and dtype.
     That is, the ndbuffer type cannot have `?` as either the shape or dtype.
@@ -86,6 +87,7 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
     %0 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[4], f32>
     %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size0, size1], f32>
     %2 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[size], type>
+    %2 = zap.ndbuffer.stack_allocation align 4 : !zap.ndbuffer<[size], type>
 
     // The following is not allowed:
     %3 = pop.ndbuffer.stack_allocation : !zap.ndbuffer<[?], f32>
@@ -93,9 +95,13 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
     ```
   }];
 
+  let arguments = (ins OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs Res<ConcreteNDBuffer, "", [MemAlloc]>:$result);
 
-  let assemblyFormat = "attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    custom<OptionalAlignmentParamValue>($alignment) `` attr-dict `:`
+    qualified(type($result))
+  }];
 }
 
 //===----------------------------------------------------------------------===//

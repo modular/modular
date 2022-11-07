@@ -732,6 +732,10 @@ kgen.generator @stack_allocation<size, type: type>() {
   %0 = pop.stack_allocation size x type
   // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32>
   %1 = pop.stack_allocation 16 x !pop.simd<4, f32>
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align 8
+  %2 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align size
+  %3 = pop.stack_allocation 16 x !pop.simd<4, f32> align size
   kgen.return
 }
 

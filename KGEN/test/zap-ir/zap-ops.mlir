@@ -76,6 +76,10 @@ kgen.generator @zap_ndbuffer_stack_allocation<type: dtype, size>() {
   %1 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[42, size], f32>
   // CHECK: zap.ndbuffer.stack_allocation : !zap.ndbuffer<[3, 1, size, 42], type>
   %2 = zap.ndbuffer.stack_allocation : !zap.ndbuffer<[3, 1, size, 42], type>
+  // CHECK: zap.ndbuffer.stack_allocation align 4 : !zap.ndbuffer<[4], f32>
+  %3 = zap.ndbuffer.stack_allocation align 4 : !zap.ndbuffer<[4], f32>
+  // CHECK: zap.ndbuffer.stack_allocation align size : !zap.ndbuffer<[4], f32>
+  %4 = zap.ndbuffer.stack_allocation align size : !zap.ndbuffer<[4], f32>
   kgen.return
 }
 
