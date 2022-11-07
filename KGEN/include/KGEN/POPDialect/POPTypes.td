@@ -192,8 +192,8 @@ def UnboundOrSignedSIMD : AllOfType<[POP_SIMDType, UnboundOrSignedDType],
     "whose element type is either unbound or of signed dtype">;
 def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
     "whose element type is either unbound or a floating-point dtype">;
-def UnboundOrBoolOrIntegerSIMD : AllOfType<
-    [POP_SIMDType, IntegerOrBoolOrUnboundDType],
+def UnboundOrBoolOrIndexOrIntegerSIMD : AllOfType<
+    [POP_SIMDType, IndexOrIntegerOrBoolOrUnboundDType],
     "whose element type is either unbound, or integer, or bool">;
 def UnboudOrIndexOrIntegerSIMD : AllOfType<[
     POP_SIMDType, UnboundOrIndexOrIntegerDType],

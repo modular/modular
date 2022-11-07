@@ -494,9 +494,9 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType
       ]> {
 
-  let arguments = (ins UnboundOrBoolOrIntegerSIMD:$lhs,
-                       UnboundOrBoolOrIntegerSIMD:$rhs);
-  let results = (outs UnboundOrBoolOrIntegerSIMD:$result);
+  let arguments = (ins UnboundOrBoolOrIndexOrIntegerSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrIntegerSIMD:$rhs);
+  let results = (outs UnboundOrBoolOrIndexOrIntegerSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
 }

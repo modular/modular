@@ -513,6 +513,21 @@ kgen.func @and(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<
 
 // -----
 
+// CHECK-LABEL: @and
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
+kgen.func @and(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.and %[[LHS]], %[[RHS]]
+  %0 = pop.and %lhs, %rhs : !pop.scalar<index>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// -----
+
 // CHECK-LABEL: @or
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
@@ -558,6 +573,21 @@ kgen.func @or(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<4
 
 // -----
 
+// CHECK-LABEL: @or
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
+kgen.func @or(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.or %[[LHS]], %[[RHS]]
+  %0 = pop.or %lhs, %rhs : !pop.scalar<index>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// -----
+
 // CHECK-LABEL: @xor
 // CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<bool>,
 // CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<bool>
@@ -599,6 +629,21 @@ kgen.func @xor(%lhs: !pop.simd<4, si32>, %rhs: !pop.simd<4, si32>) -> !pop.simd<
   // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
   // CHECK: kgen.return %[[RES]]
   kgen.return %0 : !pop.simd<4, si32>
+}
+
+// -----
+
+// CHECK-LABEL: @xor
+// CHECK-SAME: %[[LHS0:.*]]: !pop.scalar<index>,
+// CHECK-SAME: %[[RHS0:.*]]: !pop.scalar<index>
+kgen.func @xor(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %[[LHS:.*]] = builtin.unrealized_conversion_cast %[[LHS0]]
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[RHS0]]
+  // CHECK: %[[AND:.*]] = llvm.xor %[[LHS]], %[[RHS]]
+  %0 = pop.xor %lhs, %rhs : !pop.scalar<index>
+  // CHECK: %[[RES:.*]] = builtin.unrealized_conversion_cast %[[AND]]
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %0 : !pop.scalar<index>
 }
 
 

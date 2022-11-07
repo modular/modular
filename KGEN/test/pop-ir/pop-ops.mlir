@@ -305,6 +305,16 @@ kgen.func @pop_and(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   kgen.return
 }
 
+// CHECK-LABEL: @pop_and_index
+kgen.func @pop_and_index(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>,
+                       %arg2: !pop.simd<4, index>, %arg3: !pop.simd<4, index>) {
+  // CHECK: pop.and %{{.*}}, %{{.*}} :
+  %0 = pop.and %arg0, %arg1 : !pop.scalar<index>
+  // CHECK: pop.and %{{.*}}, %{{.*}} :
+  %1 = pop.and %arg2, %arg3 : !pop.simd<4, index>
+  kgen.return
+}
+
 kgen.generator @pop_and_parametric<size, type: dtype>(
                    %arg0: !pop.scalar<type>, %arg1: !pop.scalar<type>,
                    %arg2: !pop.simd<size, type>, %arg3: !pop.simd<size, type>) {
@@ -335,6 +345,16 @@ kgen.func @pop_or(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   kgen.return
 }
 
+// CHECK-LABEL: @pop_or_index
+kgen.func @pop_or_index(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>,
+                       %arg2: !pop.simd<4, index>, %arg3: !pop.simd<4, index>) {
+  // CHECK: pop.or %{{.*}}, %{{.*}} :
+  %0 = pop.or %arg0, %arg1 : !pop.scalar<index>
+  // CHECK: pop.or %{{.*}}, %{{.*}} :
+  %1 = pop.or %arg2, %arg3 : !pop.simd<4, index>
+  kgen.return
+}
+
 kgen.generator @pop_or_parametric<size, type: dtype>(
                    %arg0: !pop.scalar<type>, %arg1: !pop.scalar<type>,
                    %arg2: !pop.simd<size, type>, %arg3: !pop.simd<size, type>) {
@@ -362,6 +382,16 @@ kgen.func @pop_xor(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>,
   %0 = pop.xor %arg0, %arg1 : !pop.scalar<si32>
   // CHECK: pop.xor %{{.*}}, %{{.*}} :
   %1 = pop.xor %arg2, %arg3 : !pop.simd<4, si32>
+  kgen.return
+}
+
+// CHECK-LABEL: @pop_xor_index
+kgen.func @pop_xor_index(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>,
+                       %arg2: !pop.simd<4, index>, %arg3: !pop.simd<4, index>) {
+  // CHECK: pop.xor %{{.*}}, %{{.*}} :
+  %0 = pop.xor %arg0, %arg1 : !pop.scalar<index>
+  // CHECK: pop.xor %{{.*}}, %{{.*}} :
+  %1 = pop.xor %arg2, %arg3 : !pop.simd<4, index>
   kgen.return
 }
 

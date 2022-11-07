@@ -110,8 +110,9 @@ def UnboundOrIndexOrIntegerDType :
 /// A type whose data type is either unbound, index, or arithmetic.
 def UnboundOrIndexOrArithmeticDType :
     ConstrainedDType<"!$_self || $_self->isIndex() || $_self->isArithmetic()">;
-/// A type whose data type is either unbound, or integral, or bool.
-def IntegerOrBoolOrUnboundDType :
-    ConstrainedDType<"!$_self || $_self->isInt() || $_self->isBool()">;
+/// A type whose data type is either unbound, index, integral, or bool.
+def IndexOrIntegerOrBoolOrUnboundDType :
+    ConstrainedDType<
+      "!$_self || $_self->isIndex() || $_self->isInt() || $_self->isBool()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
