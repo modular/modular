@@ -104,6 +104,9 @@ def FloatOrUnboundDType :
 /// A type whose data type is either index or arithmetic.
 def IndexOrArithmeticDType :
     ConstrainedDType<"$_self && ($_self->isIndex() || $_self->isArithmetic())">;
+/// A type whose data type is either unbound, index, or integral.
+def UnboundOrIndexOrIntegerDType :
+    ConstrainedDType<"!$_self || $_self->isIndex() || $_self->isInt()">;
 /// A type whose data type is either unbound, index, or arithmetic.
 def UnboundOrIndexOrArithmeticDType :
     ConstrainedDType<"!$_self || $_self->isIndex() || $_self->isArithmetic()">;

@@ -360,6 +360,15 @@ kgen.func @shifts(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>, %arg2: !po
 
 // -----
 
+// CHECK-LABEL: @shifts
+kgen.func @shifts(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) {
+  // CHECK: llvm.shl
+  %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @simd_shift
 kgen.func @simd_shift(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>, %arg2: !pop.simd<4, ui32>, %arg3: !pop.simd<4, ui32>) {
   // CHECK: llvm.shl
@@ -368,6 +377,15 @@ kgen.func @simd_shift(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>, %arg
   %1 = pop.shr %arg0, %arg1 : !pop.simd<4, si32>
   // CHECKL llvm.lshr
   %2 = pop.shr %arg2, %arg3 : !pop.simd<4, ui32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @shifts
+kgen.func @shifts(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) {
+  // CHECK: llvm.ashr
+  %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
   kgen.return
 }
 

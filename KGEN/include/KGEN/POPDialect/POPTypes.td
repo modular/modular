@@ -195,9 +195,12 @@ def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
 def UnboundOrBoolOrIntegerSIMD : AllOfType<
     [POP_SIMDType, IntegerOrBoolOrUnboundDType],
     "whose element type is either unbound, or integer, or bool">;
+def UnboudOrIndexOrIntegerSIMD : AllOfType<[
+    POP_SIMDType, UnboundOrIndexOrIntegerDType],
+    "whose element type is either unbound, index, or integral dtype">;
 def UnboudOrIndexOrArithmeticSIMD : AllOfType<[
     POP_SIMDType, UnboundOrIndexOrArithmeticDType],
-    "whose element type is either unboudn, index, or arithmetic dtype">;
+    "whose element type is either unbound, index, or arithmetic dtype">;
 
 class SIMDDType<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
