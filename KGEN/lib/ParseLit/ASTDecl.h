@@ -11,7 +11,6 @@
 #ifndef LIT_DECL_AST_H
 #define LIT_DECL_AST_H
 
-#include "ASTType.h"
 #include "LitDecls.h"
 #include "LitLexer.h"
 #include "LitSharedState.h"
@@ -24,10 +23,6 @@ class RefType;
 }
 
 namespace M::KGEN::LIT {
-
-/// This stores the ParamDeclAttr as an Attribute, but this is always known to
-/// be a ParamDeclAttr.  When both are null, this is a 'magic' declaration.
-using IRDecl = PointerUnion<Operation *, Attribute>;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -46,12 +41,18 @@ public:
 
   /// Return the Module, StructDecl, Func, or ParamDecl that this scope
   /// corresponds to.
-  IRDecl getIRDecl() const { return irDecl; }
+  DeclIRValue getIRValue() const { return irValue; }
 
-  /// If this is a ParamDecl, return it otherwise return null.
-  ParamDeclAttr getParamDecl() const;
-  /// If the IRDecl is an Operation*, return it, otherwise return null.
-  Operation *getOperation() const { return dyn_cast<Operation *>(irDecl); }
+  /// If this declaration is defined by its value (e.g. a parameter value or an
+  /// SSA value) then return it.
+  RValue getIfRValue() const;
+
+  /// If this declaration is defined by its value (e.g. a parameter value or an
+  /// SSA value) then return it.
+  LValue getIfLValue() const { return dyn_cast<LValue>(irValue); }
+
+  /// If the IRValue is an Operation*, return it, otherwise return null.
+  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
 
   /// Return true if this is a "magic" declaration that has custom lowering,
   /// and possibly no IR representation.
@@ -78,7 +79,7 @@ public:
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
-    if (Operation *op = dyn_cast<Operation *>(irDecl))
+    if (Operation *op = dyn_cast<Operation *>(irValue))
       if (op->getNumRegions() != 0)
         return OpBuilder::atBlockEnd(&op->getRegion(0).front());
     return OpBuilder(getContext());
@@ -147,15 +148,15 @@ public:
 private:
   friend class DeclResolver;
   friend class LitSharedState;
-  ASTDecl(IRDecl irDecl, Location loc, ASTDecl *parentDecl,
+  ASTDecl(DeclIRValue irValue, Location loc, ASTDecl *parentDecl,
           LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
-      : irDecl(irDecl), loc(loc), parentDecl(std::move(parentDecl)),
+      : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
         indentation(indentation) {}
 
 private:
   /// This is the MLIR declaration that this scope corresponds to.
-  IRDecl irDecl;
+  DeclIRValue irValue;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
@@ -198,11 +199,11 @@ struct CastInfo<T, M::KGEN::LIT::ASTDecl>
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
   static bool isPossible(M::KGEN::LIT::ASTDecl &decl) {
-    auto *op = dyn_cast<mlir::Operation *>(decl.getIRDecl());
+    auto *op = dyn_cast<mlir::Operation *>(decl.getIRValue());
     return op && T::classof(op);
   }
   static T doCast(M::KGEN::LIT::ASTDecl &decl) {
-    return T(cast<mlir::Operation *>(decl.getIRDecl()));
+    return T(cast<mlir::Operation *>(decl.getIRValue()));
   }
 };
 template <typename T>
