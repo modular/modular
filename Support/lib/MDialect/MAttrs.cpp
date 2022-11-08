@@ -501,7 +501,7 @@ Attribute M::convertDenseElements(Attribute attr) {
 /// requested alignment.
 static ArrayRef<uint8_t>
 copyIntoBytes(mlir::StorageUniquer::StorageAllocator &allocator,
-              ArrayRef<uint8_t> data, Optional<int64_t> align) {
+              ArrayRef<uint8_t> data, Optional<uint64_t> align) {
   auto *ptr = static_cast<uint8_t *>(
       allocator.allocate(data.size(), align ? *align : sizeof(uint8_t)));
   std::uninitialized_copy(data.begin(), data.end(), ptr);
@@ -551,7 +551,7 @@ static void printAlignedBytesData(AsmPrinter &p, ArrayRef<uint8_t> data) {
 /// Verifies the attribute's align constraint is sensible.
 LogicalResult
 AlignedBytesAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         Optional<int64_t> align,
+                         Optional<uint64_t> align,
                          ::llvm::ArrayRef<uint8_t> data) {
   if (align && *align < 0)
     return emitError() << "alignment cannot be negative.";

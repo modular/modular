@@ -160,7 +160,7 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
     ```
   }];
 
-  let parameters = (ins OptionalParameter<"Optional<int64_t>">:$align, M_AlignedBytesData:$data);
+  let parameters = (ins OptionalParameter<"Optional<uint64_t>">:$align, M_AlignedBytesData:$data);
   let assemblyFormat = [{ `<` ($align^ `:`)? custom<AlignedBytesData>($data) `>` }];
   let genVerifyDecl = 1;
 
