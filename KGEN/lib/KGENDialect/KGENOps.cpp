@@ -473,6 +473,17 @@ void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
   }
 }
 
+void GeneratorInterfaceOp::build(OpBuilder &builder, OperationState &result,
+                                 StringAttr name) {
+  auto context = builder.getContext();
+  auto functionType =
+      builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
+  return build(builder, result, name, TypeAttr::get(functionType),
+               ParamDeclArrayAttr::get(context, {}),
+               TypeArrayAttr::get(context, {}),
+               ConstraintArrayAttr::get(context, {}), nullptr, nullptr);
+}
+
 LogicalResult
 GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are

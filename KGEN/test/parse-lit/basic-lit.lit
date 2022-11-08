@@ -296,3 +296,16 @@ def call_generic[dt: DType]():
   # CHECK: [[TMP:%.*]] = index.constant 57
   # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.ref<@DType> = dt, b = 13, c: type = !kgen.ref<@SIMD<size = 4, dt: !kgen.ref<@DType> = dt>>>]([[TMP]])
   generic_fn[dt, 13, SIMD[4, dt]](57)
+
+@interface
+#CHECK: kgen.generator.interface @func_interface0<type: !kgen.ref<@DType>>(index) -> index
+def func_interface0[type: DType](x: index) -> index:
+
+@interface
+#CHECK: kgen.generator.interface @func_interface1<type: !kgen.ref<@DType>>(index) -> index
+def func_interface1[type: DType](x: index) -> index: pass
+
+@interface
+#CHECK: kgen.generator.interface @func_interface2<type: !kgen.ref<@DType>>(index) -> index
+def func_interface2[type: DType](x: index) -> index:
+  ...
