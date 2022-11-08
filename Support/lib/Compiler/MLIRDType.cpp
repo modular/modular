@@ -31,8 +31,6 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
 
 FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
   switch (dtype.getValue()) {
-  default:
-    return nullptr;
   case DType::f16:
     return FloatType::getF16(ctx);
   case DType::bf16:
@@ -45,14 +43,34 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
     return FloatType::getF80(ctx);
   case DType::f128:
     return FloatType::getF128(ctx);
+  default:
+    return {}; // null denotes failure
+  }
+}
+
+bool M::hasEquivalentFloatType(DType dtype) {
+  switch (dtype.getValue()) {
+  case DType::f16:
+  case DType::bf16:
+  case DType::f32:
+  case DType::f64:
+  case DType::f80:
+  case DType::f128:
+    return true;
+  default:
+    return false;
   }
 }
 
 IntegerType M::getEquivalentIntegerType(MLIRContext *ctx, DType dtype) {
+  if (!dtype.isInt())
+    return {}; // null denotes failure
   return IntegerType::get(ctx, dtype.getWidthInBits(),
                           dtype.isSInt() ? IntegerType::Signed
                                          : IntegerType::Unsigned);
 }
+
+bool M::hasEquivalentIntegerType(DType dtype) { return dtype.isInt(); }
 
 DType M::getEquivalentDType(FloatType fpType) {
   if (fpType.isF16())
@@ -67,15 +85,15 @@ DType M::getEquivalentDType(FloatType fpType) {
     return DType(DType::f80);
   if (fpType.isF128())
     return DType(DType::f128);
-  return {}; // unrepresentable
+  return {}; // invalid denotes failure
 }
 
 DType M::getEquivalentDType(IntegerType intType) {
   if (intType.isSignless())
-    return {}; // unrepresentable
+    return {}; // invalid denotes failure
   FailureOr<DType> optDType =
       DType::getInt(intType.getIntOrFloatBitWidth(), intType.isSignedInteger());
   if (failed(optDType))
-    return {}; // unrepresentable
+    return {}; // invalid denotes failure
   return *optDType;
 }

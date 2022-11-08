@@ -23,17 +23,25 @@ bool areEquivalentFloatTypes(DType dtype, FloatType fpType);
 /// Given a float dtype, return the equivalent MLIR float type which represents
 /// a concrete float type with the same semantics as the dtype. For example,
 /// for `dtype:bf16`, this function returns an instance of `mlir::BFloat16Type`.
+/// Returns the null type if dtype has no representation as an MLIR type.
 FloatType getEquivalentFloatType(MLIRContext *ctx, DType dtype);
 
+/// Returns true if dtype has an equivalent MLIR float type representation.
+bool hasEquivalentFloatType(DType dtype);
+
 /// Given an integer dtype, return the equivalent MLIR integer type.
+/// Returns the null type if dtype has no representation as an MLIR type.
 IntegerType getEquivalentIntegerType(MLIRContext *ctx, DType dtype);
 
-/// Given an MLIR float type, return the equivalent dtype. Returns an
-/// invalid DType if the MLIR float type is not representable.
+/// Returns true if dtype has an equivalant MLIR integer type representation.
+bool hasEquivalentIntegerType(DType dtype);
+
+/// Given an MLIR float type, return the equivalent dtype.
+/// Returns the invalid DType if the MLIR type is not representable.
 DType getEquivalentDType(FloatType fpType);
 
-/// Given an MLIR integer type, return the equivalent dtype. Returns an
-/// invalid DType if the MLIR integer type is not representable.
+/// Given an MLIR integer type, return the equivalent dtype.
+/// Returns the invalid DType if the MLIR type is not representable.
 DType getEquivalentDType(IntegerType intType);
 
 } // namespace M
