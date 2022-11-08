@@ -4,6 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_mlir_dialect(HLCF HLCF -dialect=HLCF)
+add_mlir_dialect(HLCF hlcf -dialect=hlcf)
 add_modular_doc(HLCF -gen-dialect-doc HLCFDialect Support/docs
-                -dialect=HLCFDialect)
+                -dialect=hlcf)
