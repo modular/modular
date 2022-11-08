@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_dialect_library(HLCFDilaect
+add_modular_dialect_library(HLCFDialect
   HLCFDialect.cpp
   HLCFOps.cpp
 
@@ -13,4 +13,5 @@ add_modular_dialect_library(HLCFDilaect
 
   LINK_LIBS PUBLIC
   MLIRIR
+  MLIRSideEffectInterfaces
 )

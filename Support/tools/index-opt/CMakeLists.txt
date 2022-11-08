@@ -8,6 +8,7 @@ add_modular_tool(index-opt
   index-opt.cpp
 
   LINK_LIBS PRIVATE
+  HLCFDialect
   MDialect
   MLIRFuncDialect
   MLIROptLib
