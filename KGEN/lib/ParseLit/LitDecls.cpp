@@ -123,7 +123,7 @@ ASTDecl &DeclResolver::addDecl(Operation *op, ASTDecl *parentDecl,
   // Get the name for the entity.
   StringAttr name;
   TypeSwitch<Operation *>(op)
-      .Case<VarDeclOp, LITFuncOp, LITStructDeclOp>(
+      .Case<VarDeclOp, LITFuncOp, GeneratorInterfaceOp, LITStructDeclOp>(
           [&](auto op) { name = op.getNameAttr(); })
       .Case([&](ModuleOp op) {})
       .Default(
@@ -200,16 +200,17 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
-          LitLexer lexer(sharedState, decl.getCursor());
+        .Case<LITFuncOp, GeneratorInterfaceOp, LITStructDeclOp, VarDeclOp>(
+            [&](auto op) {
+              LitLexer lexer(sharedState, decl.getCursor());
 
-          // Resolve the signature: on a parse error, we note that the decl is
-          // malformed and should not be referenced to silence downstream
-          // errors.
-          if (failed(resolveSignature(op, lexer, decl)))
-            decl.hasReferenceError = true;
-          decl.getCursor() = lexer.getCursor();
-        })
+              // Resolve the signature: on a parse error, we note that the decl
+              // is malformed and should not be referenced to silence downstream
+              // errors.
+              if (failed(resolveSignature(op, lexer, decl)))
+                decl.hasReferenceError = true;
+              decl.getCursor() = lexer.getCursor();
+            })
         .Case([&](ModuleOp op) { /*Nothing*/ })
         .Default([&](auto attr) {
           emitError(decl.getLoc(),
@@ -241,6 +242,22 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             else
               lexer.emitError("unknown tokens at the end of a declaration");
           }
+        })
+        .Case<GeneratorInterfaceOp>([&](auto op) {
+          LitLexer lexer(sharedState, decl.getCursor());
+          LitToken currToken = lexer.getToken();
+          // Allow an empty body
+          if (currToken.is(LitToken::Kind::kw_pass) ||
+              currToken.is(LitToken::Kind::dot_dot_dot)) {
+            lexer.lexToken();
+          }
+          currToken = lexer.getToken();
+          // Check if there is an erroneous body
+          if (currToken.isNot(LitToken::eof) &&
+              currToken.getIndentation() !=
+                  decl.parentDecl->getCursor().getToken().getIndentation() &&
+              !decl.hasReferenceError)
+            lexer.emitError("interfaces have no body: unknown tokens found");
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto attr) {
@@ -426,7 +443,7 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
 /// value_parameter   ::= value_parammarker identifier_opt_type ["="
 /// expression] value_parammarker ::= "/" | "*" | "**"
 ///
-LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
+LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
 
@@ -467,10 +484,15 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
+  auto interfaceOp = dyn_cast<GeneratorInterfaceOp>(defOp);
+  auto funcOp = dyn_cast<LITFuncOp>(defOp);
+  assert((interfaceOp || funcOp) &&
+         "defOp must be a GeneratorInterfaceOp or a LITFuncOp");
+
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType,
-                             sharedState)) {
+  if (funcOp && checkFunctionSignature(decl, funcOp, metaSignature, params,
+                                       resultType, sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
     decl.hasReferenceError = true;
@@ -478,8 +500,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
 
   // The resolvedType for a function is the return type of the function.
   decl.setResolvedType(resultType.second);
-
-  auto builder = decl.getDeclEndBuilder();
 
   // We have parsed the signature but skipped over the actual types, we use
   // unresolved types for now.
@@ -508,15 +528,46 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp defOp, LitLexer &lexer,
       p.emitError(param.loc, "TODO: No default values yet");
   }
 
-  defOp.setValueParamNamesAttr(StringArrayAttr::get(getContext(), paramNames));
-  defOp.setType(builder.getFunctionType(paramTypes, resultType.first));
-  defOp.setParamDeclsAttr(
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
-  defOp.getBody()->addArguments(paramTypes, paramLocs);
-
+  MLIRContext *context = getContext();
+  if (interfaceOp) {
+    NamedAttrList attrs;
+    MLIRContext *context = getContext();
+    auto funcType = FunctionType::get(context, paramTypes, resultType.first);
+    attrs.set(GeneratorInterfaceOp::getTypeAttrName(), TypeAttr::get(funcType));
+    auto paramDecls =
+        ParamDeclArrayAttr::get(context, metaSignature.inputDecls);
+    mlir::OperationName name = interfaceOp->getName();
+    attrs.set(GeneratorInterfaceOp::getSymNameAttrName(name),
+              interfaceOp.getSymNameAttr());
+    attrs.set(GeneratorInterfaceOp::getParamDeclsAttrName(name), paramDecls);
+    attrs.set(GeneratorInterfaceOp::getConstraintsAttrName(name),
+              ConstraintArrayAttr::get(context, {}));
+    attrs.set(GeneratorInterfaceOp::getResultParamTypesAttrName(name),
+              TypeArrayAttr::get(context, {}));
+    interfaceOp->setAttrs(attrs);
+    return success();
+  }
+  auto builder = decl.getDeclEndBuilder();
+  NamedAttrList attrs;
+  mlir::OperationName name = funcOp->getName();
+  attrs.set(LITFuncOp::getSymNameAttrName(name), funcOp.getSymNameAttr());
+  attrs.set(LITFuncOp::getValueParamNamesAttrName(name),
+            StringArrayAttr::get(context, paramNames));
+  attrs.set(
+      LITFuncOp::getFunctionTypeAttrName(name),
+      TypeAttr::get(builder.getFunctionType(paramTypes, resultType.first)));
+  attrs.set(LITFuncOp::getParamDeclsAttrName(name),
+            ParamDeclArrayAttr::get(context, metaSignature.inputDecls));
+  attrs.set(LITFuncOp::getConstraintsAttrName(name),
+            ConstraintArrayAttr::get(context, funcOp.getConstraints()));
+  attrs.set(LITFuncOp::getResultParamTypesAttrName(name),
+            TypeArrayAttr::get(context, funcOp.getResultParamTypes()));
+  funcOp->setAttrs(attrs);
+  funcOp.getBody()->addArguments(paramTypes, paramLocs);
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [arg, param] : llvm::zip(defOp.getBody()->getArguments(), params)) {
+  for (auto [arg, param] :
+       llvm::zip(funcOp.getBody()->getArguments(), params)) {
     // We need to know what parameter convention that argument is passed
     // with, e.g. by-value, by-ref, by-transfer, etc.
 

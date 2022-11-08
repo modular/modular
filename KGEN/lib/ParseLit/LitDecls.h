@@ -84,7 +84,7 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(Operation *op, LitLexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
 
   LogicalResult resolveSignature(LITStructDeclOp op, LitLexer &lexer,

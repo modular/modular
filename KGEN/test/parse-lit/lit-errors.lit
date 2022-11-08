@@ -168,3 +168,19 @@ struct WrongSelfType3:
 struct WrongInitResult:
   # expected-error @+1 {{result type must be elided (or None)}}
   def __init__(self) -> Int: pass
+
+@interface
+def bad_interface_with_body0(x: index) -> index:
+  # expected-error @+1 {{interfaces have no body: unknown tokens found}}
+  return 0
+
+@interface
+def bad_interface_with_body1(x: index) -> index:
+  ...
+  # expected-error @+1 {{interfaces have no body: unknown tokens found}}
+  return 0
+
+struct NoNestedInterface:
+  @interface
+  # expected-error @+1 {{interfaces cannot be nested inside a struct}}
+  def foo(self: &NoNestedInterface) -> index:

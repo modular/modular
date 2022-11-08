@@ -525,13 +525,6 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
-  // Is this a method?
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
-    std::string mangledName =
-        (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
-    name = StringAttr::get(getContext(), mangledName);
-  }
-
   bool isInterface = false;
   // Process any decorators we will eventually want when they come up.
   for (ExprNode *decorator : decorators) {
@@ -544,15 +537,30 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
       emitError(decorator->getLoc(), "unsupported decorator");
   }
 
-  auto funcDecl = builder.create<LITFuncOp>(loc, name);
-  funcDecl.getRegion().push_back(new Block());
+  // Is this a method?
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
+    std::string mangledName =
+        (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
+    name = StringAttr::get(getContext(), mangledName);
+    if (isInterface)
+      emitError(loc, "interfaces cannot be nested inside a struct");
+  }
+
+  Operation *litDecl;
+  if (isInterface) {
+    litDecl = builder.create<GeneratorInterfaceOp>(loc, name);
+  } else {
+    auto funcDecl = builder.create<LITFuncOp>(loc, name);
+    funcDecl.getRegion().push_back(new Block());
+    litDecl = funcDecl;
+  }
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(funcDecl, &containingDecl, startCursor,
+  getDeclResolver().addDecl(litDecl, &containingDecl, startCursor,
                             getLexer().getCursor(), curIndent);
   return success();
 }
