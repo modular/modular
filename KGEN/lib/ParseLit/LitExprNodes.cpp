@@ -11,6 +11,7 @@
 
 #include "LitExprNodes.h"
 #include "ASTDecl.h"
+#include "IRValues.h"
 #include "LitDecls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -353,20 +354,25 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   // The only callable thing we have right now are functions.
   // TODO: Support struct initialization.
   auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
-  auto calleeType = dyn_cast<SignatureType>(calleeAnyType);
-  if (!calleeType) {
-    emitter.emitError(getLoc(), "unable to call value of type ")
-        << calleeAnyType;
-    return {};
-  }
+  if (auto calleeType = dyn_cast<SignatureType>(calleeAnyType))
+    return emitFunctionCall(emitter, calleeVal.ir, calleeVal.type, calleeType);
 
+  emitter.emitError(getLoc(), "unable to call value of type ")
+      << calleeVal.type;
+  return {};
+}
+
+ASTTypeAnd<AnyValue>
+CallNode ::emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
+                            ASTType calleeASTType,
+                            SignatureType calleeType) const {
   // The ASTType of calleeVal must be a magic function type, for the IR to have
   // signature type.  We cannot have error types or anything else here.
   // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeVal.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
-  assert(calleeVal.type.getParamValues().size() == 1 &&
+  assert(calleeASTType.getDecl().magicKind == MagicDeclKind::kFunctionType);
+  assert(calleeASTType.getParamValues().size() == 1 &&
          "FunctionType should have one (result) parameter");
-  auto resultASTTypeVal = calleeVal.type.getParamValues()[0].second;
+  auto resultASTTypeVal = calleeASTType.getParamValues()[0].second;
 
   auto resultASTType = resultASTTypeVal.getIfMTValue();
   if (!resultASTType) {
@@ -416,7 +422,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
     valueArguments.push_back(argVal.ir);
   }
 
-  auto calleeParam = calleeVal.ir.getIfMAValue();
+  auto calleeParam = calleeVal.getIfMAValue();
   if (!calleeParam) {
     emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
     return {};

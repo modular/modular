@@ -17,6 +17,9 @@
 #define LIT_EXPR_NODES_H
 
 #include "LitExprs.h"
+namespace M::KGEN {
+class SignatureType;
+}
 
 namespace M::KGEN::LIT {
 
@@ -123,6 +126,9 @@ struct CallNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
+  ASTTypeAnd<AnyValue> emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
+                                        ASTType calleeASTType,
+                                        SignatureType calleeType) const;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
