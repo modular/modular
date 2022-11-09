@@ -184,3 +184,36 @@ struct NoNestedInterface:
   @interface
   # expected-error @+1 {{interfaces cannot be nested inside a struct}}
   def foo(self: &NoNestedInterface) -> index:
+
+@interface
+def good_interface(x: index) -> index:
+  ...
+
+# expected-error @+1 {{unsupported decorator}}
+@impl(good_interface)
+def func_impl0(x: index) -> index:
+  return x
+
+# expected-error @+1 {{@implements decorator must specify one interface by name}}
+@implements(good_interface, good_interface)
+def func_impl1(x: index) -> index:
+  return x
+
+@implements(good_interface)
+# expected-error @+1 {{only one @implements decorator is allowed}}
+@implements(good_interface)
+def func_impl2(x: index) -> index:
+  return x
+
+@implements(xyz)
+# expected-error @+1 {{this function implements an unknown interface: xyz}}
+def func_impl3(x: index) -> index:
+  return x
+
+struct struct_bar:
+  pass
+
+@implements(struct_bar)
+# expected-error @+1 {{not an interface: struct_bar}}
+def func_impl4(x: index) -> index:
+  return x

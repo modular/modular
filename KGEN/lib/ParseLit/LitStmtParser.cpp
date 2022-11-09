@@ -84,6 +84,13 @@ struct LitStmtParser : public LitParserBase {
                                size_t stmtIndent);
 
 private:
+  // Process a function decorator.
+  // `isInterface` is set to true if `decorator` is @interface.
+  // `implementedInterface` is populated if `decorator` is
+  // @implements(identifier).
+  void processDecorator(ExprNode *decorator, bool &isInterface,
+                        FlatSymbolRefAttr &implementedInterface);
+
   /// This is declaration / scope that we're parsing into.
   ASTDecl &containingDecl;
 
@@ -515,6 +522,36 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
+void LitStmtParser::processDecorator(ExprNode *decorator, bool &isInterface,
+                                     FlatSymbolRefAttr &implementedInterface) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    isInterface = declRef->spelling == "interface";
+    if (!isInterface)
+      emitError(decorator->getLoc(), "unsupported decorator: ")
+          << declRef->spelling;
+  } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
+    if (!declRef || declRef->spelling != "implements") {
+      emitError(decorator->getLoc(), "unsupported decorator: ")
+          << declRef->spelling;
+      return;
+    }
+    if (callNode->args.size() != 1 ||
+        callNode->args.front()->kind != ExprNode::Kind::kDeclRef) {
+      emitError(decorator->getLoc(),
+                "@implements decorator must specify one interface by name");
+      return;
+    }
+    if (implementedInterface)
+      emitError(decorator->getLoc(),
+                "only one @implements decorator is allowed");
+    StringRef interfaceName =
+        cast<DeclRefNode>(callNode->args.front())->spelling;
+    implementedInterface = FlatSymbolRefAttr::get(getContext(), interfaceName);
+  } else
+    emitError(decorator->getLoc(), "unsupported decorator");
+}
+
 ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
                                         size_t curIndent) {
   Location loc = getTokenLocation();
@@ -526,15 +563,10 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
     return failure();
 
   bool isInterface = false;
+  FlatSymbolRefAttr implementedInterface;
   // Process any decorators we will eventually want when they come up.
   for (ExprNode *decorator : decorators) {
-    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      isInterface = declRef->spelling == "interface";
-      if (!isInterface)
-        emitError(decorator->getLoc(), "unsupported decorator: ")
-            << declRef->spelling;
-    } else
-      emitError(decorator->getLoc(), "unsupported decorator");
+    processDecorator(decorator, isInterface, implementedInterface);
   }
 
   // Is this a method?
@@ -550,7 +582,7 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   if (isInterface) {
     litDecl = builder.create<GeneratorInterfaceOp>(loc, name);
   } else {
-    auto funcDecl = builder.create<LITFuncOp>(loc, name);
+    auto funcDecl = builder.create<LITFuncOp>(loc, name, implementedInterface);
     funcDecl.getRegion().push_back(new Block());
     litDecl = funcDecl;
   }
