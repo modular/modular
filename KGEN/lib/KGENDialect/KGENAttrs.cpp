@@ -98,7 +98,7 @@ getBindAttrsForDeclsAndValues(ParamDeclArrayAttr decls,
 static Type
 verifyBindSignature(ArrayRef<TypedAttr> operands,
                     llvm::function_ref<mlir::InFlightDiagnostic()> emitError) {
-  if (operands.size() == 0) {
+  if (operands.empty()) {
     emitError() << "'bind_signature' requires a function parameter";
     return {};
   }
