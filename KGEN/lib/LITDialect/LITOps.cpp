@@ -88,7 +88,7 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void LITFuncOp::build(OpBuilder &builder, OperationState &result,
-                      StringAttr name) {
+                      StringAttr name, FlatSymbolRefAttr implements) {
   auto context = builder.getContext();
   auto functionType =
       builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
@@ -96,7 +96,7 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
                TypeAttr::get(functionType),
                ParamDeclArrayAttr::get(context, {}),
                TypeArrayAttr::get(context, {}),
-               ConstraintArrayAttr::get(context, {}), FlatSymbolRefAttr());
+               ConstraintArrayAttr::get(context, {}), implements);
 }
 
 /// If this is a special function like __init__ return the enum that

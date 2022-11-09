@@ -248,14 +248,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           LitToken currToken = lexer.getToken();
           // Allow an empty body
           if (currToken.is(LitToken::Kind::kw_pass) ||
-              currToken.is(LitToken::Kind::dot_dot_dot)) {
+              currToken.is(LitToken::Kind::dot_dot_dot))
             lexer.lexToken();
-          }
-          currToken = lexer.getToken();
-          // Check if there is an erroneous body
-          if (currToken.isNot(LitToken::eof) &&
-              currToken.getIndentation() !=
-                  decl.parentDecl->getCursor().getToken().getIndentation() &&
+
+          if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
               !decl.hasReferenceError)
             lexer.emitError("interfaces have no body: unknown tokens found");
         })
@@ -562,6 +558,21 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
             ConstraintArrayAttr::get(context, funcOp.getConstraints()));
   attrs.set(LITFuncOp::getResultParamTypesAttrName(name),
             TypeArrayAttr::get(context, funcOp.getResultParamTypes()));
+  if (funcOp.getImplementsAttr()) {
+    FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr();
+    StringRef interfaceName = implementsAttr.getAttr().getValue();
+    if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
+      if (!dyn_cast_or_null<GeneratorInterfaceOp>(
+              interfaceDecl->getIfOperation()))
+        p.emitError(funcOp->getLoc(), "not an interface: ") << interfaceName;
+      // conformance between the function and interface signatures is done
+      // during lowering.
+    } else
+      p.emitError(funcOp->getLoc(),
+                  "this function implements an unknown interface: ")
+          << interfaceName;
+    attrs.set(LITFuncOp::getImplementsAttrName(name), implementsAttr);
+  }
   funcOp->setAttrs(attrs);
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
   // Set up the body of the def, creating declarations for the value

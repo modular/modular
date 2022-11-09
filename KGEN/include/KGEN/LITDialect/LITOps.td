@@ -63,7 +63,7 @@ def LITFuncOp
   let builders = [
     // Create a func with a region but no body block. The caller must create
     // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name)>,
+    OpBuilder<(ins "StringAttr":$name, "FlatSymbolRefAttr":$implements)>,
   ];
 
   let hasCustomAssemblyFormat = 1;

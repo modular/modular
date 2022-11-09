@@ -309,3 +309,9 @@ def func_interface1[type: DType](x: index) -> index: pass
 #CHECK: kgen.generator.interface @func_interface2<type: !kgen.ref<@DType>>(index) -> index
 def func_interface2[type: DType](x: index) -> index:
   ...
+
+@implements(func_interface2)
+#CHECK: lit.func @func_impl<type: !kgen.ref<@DType>>(%x: index) -> index
+#CHECK:    implements @func_interface2 {
+def func_impl[type: DType](x: index) -> index:
+  return x
