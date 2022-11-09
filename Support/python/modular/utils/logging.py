@@ -4,6 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+__doc__ = """
+Logging utility library
+
+This is a drop-in replacement for the Python standard library's logging module.
+Modular developers are strongly encouraged to use this instead of the built-in
+logging module, because it overrides the default logger so that we can more
+easily separate what's logged by our tools from the often substantial debug logs
+of third-party libraries (e.g. TensorFlow).
+"""
+
 from logging import *  # noqa: F403
 from logging import getLogger as _getLogger
 from types import TracebackType

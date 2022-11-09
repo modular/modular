@@ -22,11 +22,7 @@ slow to load. For more context and rationale for this design, see:
 https://www.notion.so/modularai/Modular-Python-support-library-045f201fa45d4b1e8769944f28367ffe
 
 With the exception of the `modular.utils.misc` module, each utility module is
-expected to provide rationale for its scope and existence. The `misc` submodule
-can be thought of as staging ground for utilities that don't fit into any other
-existing module yet, and is expected to have more flux than other modules. This
-is not to say that `misc` is experimental; one motivation for this utility
-library is to lift code from experimental to trusted.
+expected to provide rationale for its scope and existence.
 
 For the time being there are no strict rules on what necessitates a new module.
 There are a few cases where the decision is relatively simple:
