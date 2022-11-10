@@ -1077,14 +1077,15 @@ static ParseResult parseBoundInputs(
   // Infer the input types from the function type.
   SmallVector<Type> resultTypes;
   int64_t lastIdx = 0;
+  int64_t numInputs = funcType.getNumInputs();
   for (int64_t index : boundInputIndices) {
-    if (index >= funcType.getNumInputs())
+    if (index >= numInputs)
       return p.emitError(loc, "there are more bound inputs than arguments");
     inputTypes.push_back(funcType.getInputs()[index]);
     while (lastIdx++ < index)
       resultTypes.push_back(funcType.getInputs()[lastIdx - 1]);
   }
-  for (; lastIdx < funcType.getNumInputs(); ++lastIdx)
+  for (; lastIdx < numInputs; ++lastIdx)
     resultTypes.push_back(funcType.getInputs()[lastIdx]);
 
   // Infer the result signature type.
