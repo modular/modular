@@ -255,6 +255,9 @@ public:
   /// from the module.
   bool shouldRemoveFunc(FuncOp func) { return funcsToRemove.contains(func); }
 
+  /// Returns true if search is enabled.
+  bool isSearchEnabled() { return enableSearch; }
+
   ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
     auto it = interfaceImpls.find(itf.getNameAttr());
     return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
@@ -804,6 +807,10 @@ LogicalResult ParameterRewriter::processParamSearchOp(
     // If this is the first viable value we've seen, remember it.
     if (!firstValid) {
       firstValid = value;
+      // If we are not doing search in the elaborator, then we are done after
+      // processing the first parameter.
+      if (!elaborator.isSearchEnabled())
+        break;
     } else {
       // Otherwise, we have to enqueue an exploration of this value.
       spawnParamSearchClone(op, value, rewriters);
@@ -848,7 +855,7 @@ void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
   // Bind it to the parameter declaration it is setting.
   getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
 
-  // The kgne.param.search operation serves no other purpose: remove it.
+  // The kgen.param.search operation serves no other purpose: remove it.
   op->erase();
 }
 
