@@ -15,7 +15,7 @@ using namespace M;
 using namespace llvm;
 
 namespace {
-enum class QueryProperty {
+enum class QuerySystemProperty {
   TargetTriple,
   Arch,
   Features,
@@ -24,17 +24,18 @@ enum class QueryProperty {
 };
 
 struct SystemInfoCLIOptions {
-  M::cl::opt<QueryProperty> QueryProperty{
+  M::cl::opt<QuerySystemProperty> QueryProperty{
       "query", M::cl::desc("Available Queries:"),
       M::cl::values(
-          clEnumValN(QueryProperty::TargetTriple, "target-triple",
+          clEnumValN(QuerySystemProperty::TargetTriple, "target-triple",
                      "Host target triple"),
-          clEnumValN(QueryProperty::Arch, "arch", "Host CPU architecture"),
-          clEnumValN(QueryProperty::Features, "features",
+          clEnumValN(QuerySystemProperty::Arch, "arch",
+                     "Host CPU architecture"),
+          clEnumValN(QuerySystemProperty::Features, "features",
                      "Host CPU features printed as comma-separated values"),
-          clEnumValN(QueryProperty::CoreCount, "core-count",
+          clEnumValN(QuerySystemProperty::CoreCount, "core-count",
                      "Host number of cores"),
-          clEnumValN(QueryProperty::SIMDBitWidth, "simd-width",
+          clEnumValN(QuerySystemProperty::SIMDBitWidth, "simd-width",
                      "Host SIMD bitwidth")),
       llvm::cl::Required};
 };
@@ -47,13 +48,13 @@ int main(int argc, char **argv) {
 
   raw_ostream &os(outs());
   switch (cli.QueryProperty) {
-  case QueryProperty::TargetTriple:
+  case QuerySystemProperty::TargetTriple:
     os << sys::getDefaultTargetTriple() << "\n";
     break;
-  case QueryProperty::Arch:
+  case QuerySystemProperty::Arch:
     os << sys::getHostCPUName() << "\n";
     break;
-  case QueryProperty::Features: {
+  case QuerySystemProperty::Features: {
     StringMap<bool> features;
     if (!sys::getHostCPUFeatures(features))
       break;
@@ -63,10 +64,10 @@ int main(int argc, char **argv) {
         os, [&](const auto &feature) { os << feature.getKey(); });
     break;
   }
-  case QueryProperty::CoreCount:
+  case QuerySystemProperty::CoreCount:
     os << sys::getHostNumPhysicalCores() << "\n";
     break;
-  case QueryProperty::SIMDBitWidth:
+  case QuerySystemProperty::SIMDBitWidth:
     os << kPreferredSIMDBitWidth << "\n";
     break;
   }
