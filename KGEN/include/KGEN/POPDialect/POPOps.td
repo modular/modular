@@ -1027,7 +1027,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $ptr custom<OptionalAlignmentParamValue>($alignment) `` attr-dict `:`
+    $ptr custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
     qualified(type($ptr))
   }];
 
@@ -1060,7 +1060,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
                        Arg<POP_PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let assemblyFormat = [{
-    $arg `,` $ptr custom<OptionalAlignmentParamValue>($alignment) `` attr-dict
+    $arg `,` $ptr custom<OptionalAlignmentParamValue>($alignment) attr-dict
     `:` qualified(type($ptr))
   }];
 
@@ -1723,7 +1723,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation"> {
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
-    custom<OptionalAlignmentParamValue>($alignment) `` attr-dict
+    custom<OptionalAlignmentParamValue>($alignment) attr-dict
   }];
 
   let builders = [
@@ -2084,9 +2084,9 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic", [Pure]> {
 // InlineAsmOp
 //===----------------------------------------------------------------------===//
 
-def InlineAsmOp : POPOp<"inline_asm"> {
+def POP_InlineAsmOp : POPOp<"inline_asm"> {
   let description = [{
-    The InlineAsmOp mirrors the underlying LLVM semantics with a notable
+    The `pop.inline_asm` mirrors the underlying LLVM semantics with a notable
     exception: the embedded `asm_string` is not allowed to define or reference
     any symbol or any global variable: only the operands of the op may be read,
     written, or referenced.

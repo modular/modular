@@ -99,7 +99,7 @@ def ZAP_NDBufferStackAllocationOp : ZAPOp<"ndbuffer.stack_allocation"> {
   let results = (outs Res<ConcreteNDBuffer, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
-    custom<OptionalAlignmentParamValue>($alignment) `` attr-dict `:`
+    custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
     qualified(type($result))
   }];
 }
