@@ -11,7 +11,7 @@ add_modular_unittest(
   TEST_NAME
   LLCLTests
 
-  RCBufferTest.cpp
+  BufferRefTest.cpp
 
   LINK_LIBS PRIVATE
   LLCLRuntime
