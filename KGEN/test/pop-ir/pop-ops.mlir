@@ -30,8 +30,10 @@ kgen.func @pop_constant() {
   %1 = pop.constant(32.0 : f32) : !pop.scalar<f32>
   // CHECK-NEXT: pop.constant(3.200000e+01 : f64) : !pop.scalar<f64>
   %2 = pop.constant(32.0 : f64) : !pop.scalar<f64>
-  // CHECK-NEXT: pop.constant(1 : si32) : !pop.scalar<index>
-  %3 = pop.constant(1 : si32) : !pop.scalar<index>
+  // CHECK-NEXT: pop.constant(1 : i64) : !pop.scalar<index>
+  %3 = pop.constant(1) : !pop.scalar<index>
+  // CHECK-NEXT: pop.constant(1 : index) : !pop.scalar<index>
+  %4 = pop.constant(1 : index) : !pop.scalar<index>
   kgen.return
 }
 

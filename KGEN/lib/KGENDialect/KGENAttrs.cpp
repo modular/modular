@@ -1113,13 +1113,15 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     return type.isSignlessInteger(1);
 
   // Signless integers cannot be converted.
-  if (type.isSignlessInteger())
+  if (type.isSignlessInteger() && !dtype.isIndex())
     return false;
 
+  // Index dtypes can be converted if the type is an IndexType.
+  if (dtype.isIndex() && type.isa<IndexType>())
+    return true;
+
   if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
-    // Integers can be converted to dtypes of width less than or equal to
-    // int32_t.
-    if (dtype.isIndex() && intType.getWidth() <= 32)
+    if (dtype.isIndex())
       return true;
     // Integers can be converted to dtypes of the same width and signedness.
     if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&

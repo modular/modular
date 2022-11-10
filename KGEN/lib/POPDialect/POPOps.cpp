@@ -50,8 +50,9 @@ static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
 
   // Truncate or extend the value depending on the result width.
   APSInt origInt(value, dtype.isUInt());
-  APSInt intValue = origInt.extOrTrunc(
-      dtype.isIndex() ? sizeof(int32_t) * CHAR_BIT : dtype.getWidthInBits());
+  APSInt intValue =
+      origInt.extOrTrunc(dtype.isIndex() ? IndexType::kInternalStorageBitWidth
+                                         : dtype.getWidthInBits());
   if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
     return Error("integer constant does not fit into " + dtype.getAsString());
 
@@ -98,8 +99,8 @@ static ErrorOr<APFloat> reifyFloatToFloat(APFloat apFp, FloatType fpType) {
   return apFp;
 }
 
-/// Reify a single integer or float attribute to an attribute that fits the
-/// given dtype.
+/// Reify a single bool, integer, integer, or float attribute to an attribute
+/// that fits the given dtype.
 static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, KGENDType dtype) {
   if (auto value = dyn_cast<IntegerAttr>(attr)) {
     auto type = value.getType().cast<IntegerType>();
@@ -164,8 +165,8 @@ static ErrorOr<TypedAttr> reifyArray(InAttrT attr, ConvertValueFn &&convert,
   return OutAttrT::get(newShapedType, values);
 }
 
-/// Reify a primitive constant attribute (integer, float, or vector thereof)
-/// to an attribute that fits the given type.
+/// Reify a primitive constant attribute (index, integer, float, or vector
+/// thereof) to an attribute that fits the given type.
 static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
                                         Type type) {
   // If the value is an integer or float attribute, reify it to according to the

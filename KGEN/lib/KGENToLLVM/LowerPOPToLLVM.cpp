@@ -552,6 +552,12 @@ public:
 private:
   /// The enclosing function body.
   Block *body;
+
+  unsigned resolveAlignment(Optional<TypedAttr> alignment) const {
+    if (!alignment)
+      return 0;
+    return alignment->cast<IntegerAttr>().getInt();
+  }
 };
 
 LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
@@ -566,14 +572,10 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   // Hoist the alloca to the top of the enclosing function body.
   rewriter.setInsertionPointToStart(body);
   Value sizeVal = rewriter.create<LLVM::ConstantOp>(op.getLoc(), size);
-  unsigned alignment =
-      adaptor.getAlignment()
-          ? adaptor.getAlignmentAttr().cast<IntegerAttr>().getInt()
-          : 0;
   Value ptr = rewriter.create<LLVM::AllocaOp>(
       op.getLoc(), ptrType,
       ptrType.cast<LLVM::LLVMPointerType>().getElementType(), sizeVal,
-      alignment);
+      resolveAlignment(op.getAlignment()));
 
   // Compute the bytecount of the allocated buffer.
   int64_t byteCount = getByteCount(
@@ -1298,7 +1300,7 @@ struct ConvertPOPInlineAsm : mlir::ConvertOpToLLVMPattern<InlineAsmOp> {
   LogicalResult
   matchAndRewrite(InlineAsmOp op, InlineAsmOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    SmallVector<Type, 3> types;
+    SmallVector<Type, 2> types;
     if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
       return failure();
     rewriter.replaceOpWithNewOp<LLVM::InlineAsmOp>(
