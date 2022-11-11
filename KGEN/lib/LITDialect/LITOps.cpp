@@ -88,15 +88,15 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void LITFuncOp::build(OpBuilder &builder, OperationState &result,
-                      StringAttr name, FlatSymbolRefAttr implements) {
+                      StringAttr name) {
   auto context = builder.getContext();
   auto functionType =
       builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
-  return build(builder, result, name, StringArrayAttr::get(context, {}),
-               TypeAttr::get(functionType),
-               ParamDeclArrayAttr::get(context, {}),
-               TypeArrayAttr::get(context, {}),
-               ConstraintArrayAttr::get(context, {}), implements);
+  build(builder, result, name, StringArrayAttr::get(context, {}),
+        TypeAttr::get(functionType), ParamDeclArrayAttr::get(context, {}),
+        TypeArrayAttr::get(context, {}), ConstraintArrayAttr::get(context, {}),
+        /*isStatic=*/mlir::UnitAttr(), FlatSymbolRefAttr());
+  result.regions[0]->push_back(new Block());
 }
 
 /// If this is a special function like __init__ return the enum that
@@ -114,6 +114,8 @@ SpecialFunctionKind LITFuncOp::getSpecialFunctionKind() {
   nameStr = nameStr.drop_front(2).drop_back(2);
   if (nameStr == "init")
     return SpecialFunctionKind::kInit;
+  if (nameStr == "new")
+    return SpecialFunctionKind::kNew;
 
   // Otherwise, this declaration isn't known.
   return SpecialFunctionKind::kNormal;

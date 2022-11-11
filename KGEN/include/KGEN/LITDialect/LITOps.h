@@ -34,6 +34,7 @@ enum class SpecialFunctionKind {
   kNormal = 0,
 
   kInit = 1, //< __init__
+  kNew = 2,  //< __new__
 };
 
 } // namespace M::KGEN

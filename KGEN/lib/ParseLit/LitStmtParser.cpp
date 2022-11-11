@@ -84,13 +84,6 @@ struct LitStmtParser : public LitParserBase {
                                size_t stmtIndent);
 
 private:
-  // Process a function decorator.
-  // `isInterface` is set to true if `decorator` is @interface.
-  // `implementedInterface` is populated if `decorator` is
-  // @implements(identifier).
-  void processDecorator(ExprNode *decorator, bool &isInterface,
-                        FlatSymbolRefAttr &implementedInterface);
-
   /// This is declaration / scope that we're parsing into.
   ASTDecl &containingDecl;
 
@@ -522,68 +515,100 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-void LitStmtParser::processDecorator(ExprNode *decorator, bool &isInterface,
-                                     FlatSymbolRefAttr &implementedInterface) {
+namespace {
+struct DefAttributes {
+  /// This is set to true by @staticmethod.
+  bool isStatic = false;
+  // This is set to true by @interface.
+  bool isInterface = false;
+  // This is set by @implementedInterface(x).
+  FlatSymbolRefAttr implementedInterface;
+
+  void processDecorator(ExprNode *decorator, LitStmtParser &parser);
+};
+} // namespace
+
+// Process a function decorator.
+void DefAttributes::processDecorator(ExprNode *decorator,
+                                     LitStmtParser &parser) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    isInterface = declRef->spelling == "interface";
-    if (!isInterface)
-      emitError(decorator->getLoc(), "unsupported decorator: ")
+    if (declRef->spelling == "staticmethod")
+      isStatic = true;
+    else if (declRef->spelling == "interface")
+      isInterface = true;
+    else
+      parser.emitError(decorator->getLoc(), "unsupported decorator: ")
           << declRef->spelling;
-  } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    return;
+  }
+
+  // `x()` forms.
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
     auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
     if (!declRef || declRef->spelling != "implements") {
-      emitError(decorator->getLoc(), "unsupported decorator: ")
-          << declRef->spelling;
+      parser.emitError(decorator->getLoc(), "unsupported decorator");
       return;
     }
     if (callNode->args.size() != 1 ||
-        callNode->args.front()->kind != ExprNode::Kind::kDeclRef) {
-      emitError(decorator->getLoc(),
-                "@implements decorator must specify one interface by name");
+        !isa<DeclRefNode>(callNode->args.front())) {
+      parser.emitError(
+          decorator->getLoc(),
+          "@implements decorator must specify one interface by name");
       return;
     }
     if (implementedInterface)
-      emitError(decorator->getLoc(),
-                "only one @implements decorator is allowed");
+      parser.emitError(decorator->getLoc(),
+                       "only one @implements decorator is allowed");
     StringRef interfaceName =
         cast<DeclRefNode>(callNode->args.front())->spelling;
-    implementedInterface = FlatSymbolRefAttr::get(getContext(), interfaceName);
-  } else
-    emitError(decorator->getLoc(), "unsupported decorator");
+    implementedInterface =
+        FlatSymbolRefAttr::get(parser.getContext(), interfaceName);
+    return;
+  }
+
+  parser.emitError(decorator->getLoc(), "unsupported decorator");
 }
 
 ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
                                         size_t curIndent) {
   Location loc = getTokenLocation();
 
-  // TODO: Add support for decorators.
   StringAttr name;
   consumeToken(LitToken::kw_def);
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
-  bool isInterface = false;
-  FlatSymbolRefAttr implementedInterface;
+  DefAttributes attrs;
+
   // Process any decorators we will eventually want when they come up.
-  for (ExprNode *decorator : decorators) {
-    processDecorator(decorator, isInterface, implementedInterface);
-  }
+  for (ExprNode *decorator : decorators)
+    attrs.processDecorator(decorator, *this);
 
   // Is this a method?
+  bool isMethod = false;
   if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
     std::string mangledName =
         (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
     name = StringAttr::get(getContext(), mangledName);
-    if (isInterface)
-      emitError(loc, "interfaces cannot be nested inside a struct");
+    isMethod = true;
+  }
+
+  if (attrs.isStatic && !isMethod) {
+    emitError(loc, "only methods on structs may be declared static");
+    attrs.isStatic = false;
   }
 
   Operation *litDecl;
-  if (isInterface) {
+  if (attrs.isInterface) {
     litDecl = builder.create<GeneratorInterfaceOp>(loc, name);
+    if (isMethod)
+      emitError(loc, "interfaces cannot be nested inside a struct");
   } else {
-    auto funcDecl = builder.create<LITFuncOp>(loc, name, implementedInterface);
-    funcDecl.getRegion().push_back(new Block());
+    auto funcDecl = builder.create<LITFuncOp>(loc, name);
+    if (attrs.implementedInterface)
+      funcDecl.setImplementsAttr(attrs.implementedInterface);
+    if (attrs.isStatic)
+      funcDecl.setIsStaticAttr(mlir::UnitAttr::get(getContext()));
     litDecl = funcDecl;
   }
 

@@ -147,14 +147,20 @@ struct DecoratedStruct:
 @decorator # expected-error {{no var decorators supported yet}}
 var DecoratedVar: Int
 
-@staticmethod # expected-error {{unsupported decorator: staticmethod}}
+@invalidDec # expected-error {{unsupported decorator: invalidDec}}
+def BadDecorator(): pass
+
+@staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
 # expected-error @+1 {{special function must be a method}}
 def __init__(): pass
 
-struct WrongSelfType:
-  # expected-error @+1 {{'self' argument must have type '&WrongSelfType'}}
+struct WrongType:
+  # expected-error @+1 {{result type must be 'WrongType'}}
+  def __new__() -> Int: pass
+
+  # expected-error @+1 {{'self' argument must have type '&WrongType'}}
   def __init__(self: Int): pass
 
 struct WrongSelfType2[a: Int]:

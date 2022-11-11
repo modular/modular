@@ -374,9 +374,11 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
                                           FullType &resultType,
                                           LitSharedState &shared) {
 
+  auto specialFunctionKind = defDecl.getSpecialFunctionKind();
+
   // If this definition is a struct/class member, return the self type
   // otherwise return a null type.
-  FullType selfType;
+  ASTType selfType;
   if (auto *parentDecl = declScope.getParentDecl())
     if (isa<LITStructDeclOp>(*parentDecl)) {
       // If this is a method, the signature for the enclosing type must be
@@ -384,34 +386,50 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
       (void)shared.declResolver->resolve(
           *parentDecl, DeclResolvedness::signatureResolved,
           declScope.getCursor().getToken().getLoc());
-      // The self type is stored as the resolved type.  Methods on structs (but
-      // not classes) always take the struct implicitly by pointer so they can
-      // mutate it.
-      selfType.second = shared.getPointerType(parentDecl->getResolvedType());
-      selfType.first = shared.getMLIRType(selfType.second, defDecl.getLoc());
+      // The self type is stored as the resolved type.
+      selfType = parentDecl->getResolvedType();
     }
 
-  // If this is a method, enforce that self is declared correctly.
-  if (selfType.first) {
+  // __new__ is implicitly static.
+  if (specialFunctionKind == SpecialFunctionKind::kNew)
+    defDecl.setIsStaticAttr(mlir::UnitAttr::get(defDecl.getContext()));
+
+  // If this is an instance method, enforce that self is declared correctly.
+  if (selfType && !defDecl.getIsStatic()) {
+    // Methods on structs (but not classes) always take the struct implicitly
+    // by pointer so they can mutate it.
+    // TODO: Revise this by adding mutation model.
+    FullType selfFullType;
+    selfFullType.second = shared.getPointerType(selfType);
+    selfFullType.first =
+        shared.getMLIRType(selfFullType.second, defDecl.getLoc());
+
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
-                        StringAttr::get(defDecl.getContext(), "self"), selfType,
+                        StringAttr::get(defDecl.getContext(), "self"),
+                        selfFullType,
                         /*initPtr*/ nullptr});
     }
 
     // Check that the first method has the right type.
     if (!params[0].type.first)
-      params[0].type = selfType;
-    if (params[0].type.first != selfType.first)
+      params[0].type = selfFullType;
+    if (params[0].type.first != selfFullType.first)
       return defDecl.emitError("'self' argument must have type ")
-             << selfType.second;
+             << selfFullType.second;
   }
 
-  // This lambda verifies the decl is a method.
-  auto checkInstanceMethod = [&]() -> ParseResult {
-    if (!selfType.first)
+  auto checkMethod = [&]() -> ParseResult {
+    if (!selfType)
       return defDecl.emitError("special function must be a method");
+    return success();
+  };
+  auto checkInstanceMethod = [&]() -> ParseResult {
+    if (checkMethod())
+      return failure();
+    if (defDecl.getIsStatic())
+      return defDecl.emitError("special method may not be a static method");
     return success();
   };
   auto checkResultNoneType = [&]() -> ParseResult {
@@ -420,13 +438,22 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
     return success();
   };
 
-  switch (defDecl.getSpecialFunctionKind()) {
+  switch (specialFunctionKind) {
   case SpecialFunctionKind::kNormal:
     return success();
   case SpecialFunctionKind::kInit:
     // __init__ must be a method and return NoneType.
     if (checkInstanceMethod() || checkResultNoneType())
       return failure();
+    return success();
+
+  case SpecialFunctionKind::kNew:
+    if (checkMethod())
+      return failure();
+    // __new__ must return containing type.
+    // TODO: We could allow omitting result type.
+    if (resultType.first != shared.getMLIRType(selfType, defDecl.getLoc()))
+      return defDecl.emitError("result type must be ") << selfType;
     return success();
   }
   llvm_unreachable("Unknown special function kind");
