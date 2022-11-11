@@ -1798,7 +1798,7 @@ def POP_MemcpyOp : POPOp<"memcpy", [
 //===----------------------------------------------------------------------===//
 
 def POP_MemsetOp : POPOp<"memset"> {
-  let summary = "copies memory from one location to another";
+  let summary = "fills memory with a given value";
   let description = [{
     The `pop.memset` op will fill a block of memory with a particular byte
     value. Note that, unlike the standard libc function, the `pop.memset` op
