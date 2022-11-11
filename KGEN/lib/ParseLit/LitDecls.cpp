@@ -524,57 +524,42 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
       p.emitError(param.loc, "TODO: No default values yet");
   }
 
-  MLIRContext *context = getContext();
+  // Interfaces are simpler than functions, process them and get out.
   if (interfaceOp) {
-    NamedAttrList attrs;
-    MLIRContext *context = getContext();
-    auto funcType = FunctionType::get(context, paramTypes, resultType.first);
-    attrs.set(GeneratorInterfaceOp::getTypeAttrName(), TypeAttr::get(funcType));
-    auto paramDecls =
-        ParamDeclArrayAttr::get(context, metaSignature.inputDecls);
-    mlir::OperationName name = interfaceOp->getName();
-    attrs.set(GeneratorInterfaceOp::getSymNameAttrName(name),
-              interfaceOp.getSymNameAttr());
-    attrs.set(GeneratorInterfaceOp::getParamDeclsAttrName(name), paramDecls);
-    attrs.set(GeneratorInterfaceOp::getConstraintsAttrName(name),
-              ConstraintArrayAttr::get(context, {}));
-    attrs.set(GeneratorInterfaceOp::getResultParamTypesAttrName(name),
-              TypeArrayAttr::get(context, {}));
-    interfaceOp->setAttrs(attrs);
+    auto context = getContext();
+    assert(interfaceOp);
+    interfaceOp.setType(
+        FunctionType::get(context, paramTypes, resultType.first));
+    interfaceOp.setParamDeclsAttr(
+        ParamDeclArrayAttr::get(context, metaSignature.inputDecls));
+    // Interface specific.
     return success();
   }
+
   auto builder = decl.getDeclEndBuilder();
-  NamedAttrList attrs;
-  mlir::OperationName name = funcOp->getName();
-  attrs.set(LITFuncOp::getSymNameAttrName(name), funcOp.getSymNameAttr());
-  attrs.set(LITFuncOp::getValueParamNamesAttrName(name),
-            StringArrayAttr::get(context, paramNames));
-  attrs.set(
-      LITFuncOp::getFunctionTypeAttrName(name),
-      TypeAttr::get(builder.getFunctionType(paramTypes, resultType.first)));
-  attrs.set(LITFuncOp::getParamDeclsAttrName(name),
-            ParamDeclArrayAttr::get(context, metaSignature.inputDecls));
-  attrs.set(LITFuncOp::getConstraintsAttrName(name),
-            ConstraintArrayAttr::get(context, funcOp.getConstraints()));
-  attrs.set(LITFuncOp::getResultParamTypesAttrName(name),
-            TypeArrayAttr::get(context, funcOp.getResultParamTypes()));
-  if (funcOp.getImplementsAttr()) {
-    FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr();
+  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
+  funcOp.setType(builder.getFunctionType(paramTypes, resultType.first));
+  funcOp.setParamDeclsAttr(
+      builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls));
+  funcOp.getBody()->addArguments(paramTypes, paramLocs);
+
+  if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
     StringRef interfaceName = implementsAttr.getAttr().getValue();
     if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
       if (!dyn_cast_or_null<GeneratorInterfaceOp>(
               interfaceDecl->getIfOperation()))
         p.emitError(funcOp->getLoc(), "not an interface: ") << interfaceName;
-      // conformance between the function and interface signatures is done
-      // during lowering.
-    } else
+
+      // FIXME: This needs to type check the signature here, not defer to
+      // lowering.  This also needs to resolve the interface.
+    } else {
       p.emitError(funcOp->getLoc(),
                   "this function implements an unknown interface: ")
           << interfaceName;
-    attrs.set(LITFuncOp::getImplementsAttrName(name), implementsAttr);
+      funcOp.setImplements(llvm::None);
+    }
   }
-  funcOp->setAttrs(attrs);
-  funcOp.getBody()->addArguments(paramTypes, paramLocs);
+
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [arg, param] :
