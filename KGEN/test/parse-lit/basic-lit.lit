@@ -213,12 +213,28 @@ struct EmptyStruct:
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
+# CHECK-LABEL: lit.struct.decl @StructExample {
+struct StructExample:
+  # CHECK: lit.func @"StructExample::static"(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
+  @staticmethod
+  def static(x: Int):
+    pass
+# CHECK: }
+# CHECK-NEXT: }
+
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
   var value : index
 
-  # CHECK-NEXT: lit.func @"Int::__init__"(%self: !pop.pointer<@Int>, %value_0: index) -> !lit.none
+  # CHECK: lit.func @"Int::__new__"(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
+  def __new__(value: index) -> Int:
+    # TODO: Enable dict_display somehow so we can use "return {value: value}"
+    var result: Int
+    result.value = value
+    return result
+
+  # CHECK: lit.func @"Int::__init__"(%self: !pop.pointer<@Int>, %value_0: index) -> !lit.none
   # CHECK:      %value_1 = lit.var.decl "value" : <index>
   # CHECK:      pop.store %value_0, %value_1 : !pop.pointer<index>
   # CHECK:      %0 = pop.load %value_1 : !pop.pointer<index>

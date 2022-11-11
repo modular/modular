@@ -82,7 +82,7 @@ public:
 
   /// ASTType is nullable.
   bool isNull() const { return pointer == nullptr; }
-  operator bool() const { return pointer != nullptr; }
+  explicit operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
 
   /// Convert this type to a human readable string representation so it can be

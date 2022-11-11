@@ -42,6 +42,7 @@ def LITFuncOp
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
+                       UnitAttr:$isStatic,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -61,9 +62,8 @@ def LITFuncOp
   }];
 
   let builders = [
-    // Create a func with a region but no body block. The caller must create
-    // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name, "FlatSymbolRefAttr":$implements)>,
+    // Create a func with a region and a body block.
+    OpBuilder<(ins "StringAttr":$name)>,
   ];
 
   let hasCustomAssemblyFormat = 1;
