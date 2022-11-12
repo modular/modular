@@ -10,6 +10,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -38,7 +39,7 @@ struct ProcessBuffer {
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
     DialectRegistry registry;
     // Don't need LIT here.
-    registry.insert<KGEN::KGENDialect, KGEN::POP::POPDialect,
+    registry.insert<KGEN::KGENDialect, KGEN::POP::POPDialect, HLCF::HLCFDialect,
                     mlir::index::IndexDialect, mlir::scf::SCFDialect>();
     mlir::registerLLVMDialectTranslation(registry);
 

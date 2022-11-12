@@ -9,7 +9,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -520,6 +520,10 @@ void LowerSCFToLLVMPass::runOnOperation() {
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
   POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
+
+  // Run HLCF lowerings.
+  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), typeConverter)))
+    return signalPassFailure();
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
