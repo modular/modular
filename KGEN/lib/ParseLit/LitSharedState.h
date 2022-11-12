@@ -42,6 +42,8 @@ public:
 
   const mlir::StringAttr bufferNameIdentifier;
 
+  MLIRContext *getContext() const { return context; }
+
   using ParamBinding = std::pair<ParamDeclAttr, MValue>;
 
   /// Get a uniqued and pointer sized reference to an ASTType.

@@ -355,18 +355,26 @@ struct ParsedParam {
 /// Perform type checking for a function signature that has just been parsed
 /// but that has not been installed into the specified decl.  This allows
 /// magic behavior (like __new__ being static, self getting implicitly
-/// declared), checking of method self requirements and enforcement of other
-/// invariants.
+/// declared), checking of method self requirements, inference of default object
+/// argument types and enforcement of other invariants.
 ///
 /// This returns failure after emitting an error when a type checking problem
 /// is detected.
-static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
+static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           FullType &resultType,
                                           LitSharedState &shared) {
+  auto specialFunctionKind = SpecialFunctionKind::kNormal;
+  bool isStatic = false;
 
-  auto specialFunctionKind = defDecl.getSpecialFunctionKind();
+  // We either have a function or interface.  Functions are more general and
+  // therefore have more checking to perform.
+  auto funcOp = dyn_cast<LITFuncOp>(op);
+  if (funcOp) {
+    specialFunctionKind = funcOp.getSpecialFunctionKind();
+    isStatic = funcOp.getIsStatic();
+  }
 
   // If this definition is a struct/class member, return the self type
   // otherwise return a null type.
@@ -383,23 +391,25 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
     }
 
   // __new__ is implicitly static.
-  if (specialFunctionKind == SpecialFunctionKind::kNew)
-    defDecl.setIsStaticAttr(mlir::UnitAttr::get(defDecl.getContext()));
+  if (specialFunctionKind == SpecialFunctionKind::kNew) {
+    assert(funcOp && "Cannot have special function generators");
+    funcOp.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
+    isStatic = true;
+  }
 
   // If this is an instance method, enforce that self is declared correctly.
-  if (selfType && !defDecl.getIsStatic()) {
+  if (selfType && !isStatic) {
     // Methods on structs (but not classes) always take the struct implicitly
     // by pointer so they can mutate it.
     // TODO: Revise this by adding mutation model.
     FullType selfFullType;
     selfFullType.second = shared.getPointerType(selfType);
-    selfFullType.first =
-        shared.getMLIRType(selfFullType.second, defDecl.getLoc());
+    selfFullType.first = shared.getMLIRType(selfFullType.second, op->getLoc());
 
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
-                        StringAttr::get(defDecl.getContext(), "self"),
+                        StringAttr::get(shared.getContext(), "self"),
                         selfFullType,
                         /*initPtr*/ nullptr});
     }
@@ -408,52 +418,64 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
     if (!params[0].type.first)
       params[0].type = selfFullType;
     if (params[0].type.first != selfFullType.first)
-      return defDecl.emitError("'self' argument must have type ")
+      return op->emitError("'self' argument must have type ")
              << selfFullType.second;
   }
 
   auto checkMethod = [&]() -> ParseResult {
     if (!selfType)
-      return defDecl.emitError("special function must be a method");
+      return op->emitError("special function must be a method");
     return success();
   };
 
   auto checkInstanceMethod = [&]() -> ParseResult {
     if (checkMethod())
       return failure();
-    if (defDecl.getIsStatic())
-      return defDecl.emitError("special method may not be a static method");
+    if (isStatic)
+      return op->emitError("special method may not be a static method");
     return success();
   };
   auto checkResultNoneType = [&]() -> ParseResult {
     if (!isa<KGEN::NoneType>(resultType.first))
-      return defDecl.emitError("result type must be elided (or None)");
+      return op->emitError("result type must be elided (or None)");
     return success();
   };
 
   switch (specialFunctionKind) {
   case SpecialFunctionKind::kNormal:
-    return success();
+    break;
 
   case SpecialFunctionKind::kInit:
     // __init__ must be a method and return NoneType.
     if (checkInstanceMethod() || checkResultNoneType())
       return failure();
     if (isa<LITStructDeclOp>(selfType.getDecl()))
-      return defDecl.emitError(
+      return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
-    return success();
+    break;
 
   case SpecialFunctionKind::kNew:
     if (checkMethod())
       return failure();
     // __new__ must return containing type.
     // TODO: We could allow omitting result type.
-    if (resultType.first != shared.getMLIRType(selfType, defDecl.getLoc()))
-      return defDecl.emitError("result type must be ") << selfType;
-    return success();
+    if (resultType.first != shared.getMLIRType(selfType, op->getLoc()))
+      return op->emitError("result type must be ") << selfType;
+    break;
   }
-  llvm_unreachable("Unknown special function kind");
+
+  // If the parameter is missing a type, infer object type.
+  // TODO(fn): /require/ types on parameters instead of defaulting to
+  // object.
+  // TODO(default args): Get the type from the default arg when present.
+  for (auto &param : params) {
+    if (!param.type.first) {
+      param.type.second = shared.getObjectType();
+      param.type.first = shared.getMLIRType(param.type.second, param.loc);
+    }
+  }
+
+  return success();
 }
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
@@ -504,18 +526,22 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  auto interfaceOp = dyn_cast<GeneratorInterfaceOp>(defOp);
-  auto funcOp = dyn_cast<LITFuncOp>(defOp);
-  assert((interfaceOp || funcOp) &&
-         "defOp must be a GeneratorInterfaceOp or a LITFuncOp");
-
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (funcOp && checkFunctionSignature(decl, funcOp, metaSignature, params,
-                                       resultType, sharedState)) {
+  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType,
+                             sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
     decl.hasReferenceError = true;
+
+    // Set any unspecifies argument types to error type.
+    for (auto &param : params) {
+      if (!param.type.first) {
+        param.type.second = sharedState.getTypeCheckErrorType();
+        param.type.first =
+            sharedState.getMLIRType(param.type.second, param.loc);
+      }
+    }
   }
 
   // The resolvedType for a function is the return type of the function.
@@ -529,18 +555,6 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   for (auto &param : params) {
     paramLocs.push_back(p.translateLocation(param.loc));
     paramNames.push_back(param.name);
-
-    // If the parameter is missing a type, infer object type.
-    // TODO(fn): /require/ types on parameters instead of defaulting to
-    // object.
-    // TODO: I think there are some other special cases to evaluate, e.g.
-    // "self" arguments should be containing type in methods?
-    // TODO(default args): Get the type from the default arg when present.
-    if (!param.type.first) {
-      param.type.second = sharedState.getObjectType();
-      param.type.first = sharedState.getMLIRType(param.type.second, param.loc);
-    }
-
     paramTypes.push_back(param.type.first);
 
     // TODO: add support for default parameter expressions.
@@ -549,7 +563,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   }
 
   // Interfaces are simpler than functions, process them and get out.
-  if (interfaceOp) {
+  if (auto interfaceOp = dyn_cast<GeneratorInterfaceOp>(defOp)) {
     auto context = getContext();
     assert(interfaceOp);
     interfaceOp.setType(
@@ -559,6 +573,9 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
     // Interface specific.
     return success();
   }
+
+  auto funcOp = dyn_cast<LITFuncOp>(defOp);
+  assert(funcOp && "defOp must be a GeneratorInterfaceOp or a LITFuncOp");
 
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
