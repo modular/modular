@@ -167,14 +167,6 @@ kgen.generator @simd_shuffle<type: dtype>(%a: !pop.simd<2, f32>) {
 // -----
 
 kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
-  // expected-error @below {{expected result to be a vector of 1 elements}}
-  %0 = pop.simd.shuffle %a, %a [1] : !pop.simd<2, f32> -> !pop.simd<size, f32>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
   // expected-error @below {{mask element 4 is out of bounds}}
   %0 = pop.simd.shuffle %a, %a [4] : !pop.simd<2, f32> -> !pop.scalar<f32>
   kgen.return
