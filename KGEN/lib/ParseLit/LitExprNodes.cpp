@@ -58,12 +58,7 @@ ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
   // Finally, if this is an LValue, emit a load.
   Value load = builder->create<POP::LoadOp>(translateLocation(loc), pointer,
                                             /*alignment*/ None);
-
-  if (auto eltType = rep.type.getLValueElementType().getIfMTValue())
-    return {DRValue(load), eltType};
-
-  emitError(loc, "TODO: cannot load parameterized pointer yet") << rep.type;
-  return {};
+  return {DRValue(load), rep.type};
 }
 
 ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
@@ -318,8 +313,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
-    return {LValue(var.getResult()),
-            emitter.shared.getPointerType(decl->getResolvedType())};
+    return {LValue(var.getResult()), decl->getResolvedType()};
 
   // Functions form an address.
   if (auto fnDecl = dyn_cast<LITFuncOp>(*decl)) {
@@ -407,19 +401,11 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     return {};
 
   if (LValue baseLV = baseVal.ir.getIfLValue()) {
-    // Look through the ASTType of the receiver.
-    auto baseValMType = baseVal.type.getLValueElementType();
-    ASTType baseValType = baseValMType.getIfMTValue();
-    if (!baseValType) {
-      emitter.emitError(getLoc(), "TODO: Cannot handle parameterized pointers")
-          << baseValMType;
-    }
-
-    ASTDecl &typeDecl = baseValType.getDecl();
-    auto typeParams = baseValType.getParamValues();
+    ASTDecl &typeDecl = baseVal.type.getDecl();
+    auto typeParams = baseVal.type.getParamValues();
     if (!typeParams.empty()) {
       emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-          << baseValType;
+          << baseVal.type;
       return {};
     }
 
@@ -454,8 +440,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     Value resultGEP = emitter.builder->create<LITStructGEPOp>(
         emitter.translateLocation(getLoc()), varOp.getType(),
         varOp.getNameAttr(), baseLV);
-    return {LValue(resultGEP),
-            emitter.shared.getPointerType(fieldDecl->getResolvedType())};
+    return {LValue(resultGEP), fieldDecl->getResolvedType()};
   }
 
   // Handle member references on types.
