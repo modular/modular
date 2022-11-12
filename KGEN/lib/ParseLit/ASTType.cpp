@@ -33,11 +33,6 @@ ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
   return pointer->paramValues;
 }
 
-/// Return true if this type is the specified 'magic' type.
-bool ASTType::isMagicType(MagicDeclKind kind) const {
-  return getDecl().magicKind == kind;
-}
-
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   if (&getDecl() != &other.getDecl() ||

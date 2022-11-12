@@ -321,21 +321,35 @@ struct ParsedMetaSignature {
 } // namespace
 
 namespace {
+/// Parsing support for a function value (not meta) parameter:
+///
+/// value_param_list  ::= value_param ("," value_param)*
+/// value_param       ::= value_parammarker identifier_opt_type ["=" expression]
+/// value_parammarker ::= "/" | "*" | "**" | "&"
+///
 struct ParsedParam {
   SMLoc loc;
+  // True if this is a `&` byref argument. TODO: Expand this to being an enum so
+  // we can do move semantics etc.
+  bool isByRef = false;
   StringAttr name;
   ASTType type;
   ExprNode *initValue = nullptr;
 
-  // TODO: Implement support for variadic parameter markers:
-  // Python's parameter grammar embeds checking for `/` and `*` and `**` into
-  // the grammar, we can just check for it using ad-hoc logic for simplicity,
-  // according to the following rules:
-  //   1) Only one /, *, and ** parameter may exist in the parameter list.
-  //   2) They are specified in that order.
-  //   3) These do not permit default arguments.
   ParseResult parse(LitParserBase &p, ASTDecl &declScope) {
     loc = p.getToken().getLoc();
+
+    // TODO: Implement support for variadic parameter markers:
+    // Python's parameter grammar embeds checking for `/` and `*` and `**` into
+    // the grammar, we can just check for it using ad-hoc logic for simplicity,
+    // according to the following rules:
+    //   1) Only one /, *, and ** parameter may exist in the parameter list.
+    //   2) They are specified in that order.
+    //   3) These do not permit default arguments.
+
+    // Handle & for by-ref arguments.
+    if (p.consumeIf(LitToken::amp))
+      isByRef = true;
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -401,14 +415,10 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
 
   // If this is an instance method, enforce that self is declared correctly.
   if (selfType && !isStatic) {
-    // Methods on structs (but not classes) always take the struct implicitly
-    // by pointer so they can mutate it.
-    // TODO: Revise this by adding mutation model.
-    selfType = shared.getPointerType(selfType);
-
-    // If there are no parameters, install an implicit self parameter.
+    // If there are no parameters, install an implicit by-val self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
+                        /*isByRef=*/false,
                         StringAttr::get(shared.getContext(), "self"), selfType,
                         /*initPtr*/ nullptr});
     }
@@ -425,16 +435,21 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
       return op->emitError("special function must be a method");
     return success();
   };
-
-  auto checkInstanceMethod = [&]() -> ParseResult {
+  auto checkInstanceMethod = [&](bool isByRef) -> ParseResult {
     if (checkMethod())
       return failure();
     if (isStatic)
       return op->emitError("special method may not be a static method");
+    // TODO: Instead of enforcing byref is specified correctly, we could reject
+    // invalid explicit settings and default it correctly.
+    if (isByRef != params[0].isByRef)
+      return op->emitError("self parameter must ")
+             << (isByRef ? "" : "not ") << "be passed by reference";
+
     return success();
   };
   auto checkResultNoneType = [&]() -> ParseResult {
-    if (!resultType.isMagicType(MagicDeclKind::kNoneType))
+    if (!resultType.isEqualCanon(shared.getNoneType()))
       return op->emitError("result type must be elided (or None)");
     return success();
   };
@@ -444,12 +459,13 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
     break;
 
   case SpecialFunctionKind::kInit:
-    // __init__ must be a method and return NoneType.
-    if (checkInstanceMethod() || checkResultNoneType())
-      return failure();
     if (isa<LITStructDeclOp>(selfType.getDecl()))
       return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
+
+    // __init__ on classes must be a method and return NoneType.
+    if (checkInstanceMethod(/*isByRef=*/false) || checkResultNoneType())
+      return failure();
     break;
 
   case SpecialFunctionKind::kNew:
@@ -475,10 +491,6 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
-///
-/// value_param_list  ::= value_parameter ("," value_parameter)*
-/// value_parameter   ::= value_parammarker identifier_opt_type ["="
-/// expression] value_parammarker ::= "/" | "*" | "**"
 ///
 LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
                                              ASTDecl &decl) {
@@ -541,8 +553,6 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   decl.setResolvedType(resultType);
   auto resultIRType = sharedState.getMLIRType(resultType, resultLoc);
 
-  // We have parsed the signature but skipped over the actual types, we use
-  // unresolved types for now.
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
   SmallVector<Type> paramTypes;
@@ -599,10 +609,8 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   for (auto [arg, param] :
        llvm::zip(funcOp.getBody()->getArguments(), params)) {
     // We need to know what parameter convention that argument is passed
-    // with, e.g. by-value, by-ref, by-transfer, etc.
-
-    // FIXME: For now, hard code this based on whether it has a pointer.  This
-    // will be incorrect when you want to pass a pointer by value etc.
+    // with, e.g. by-value, by-ref, by-transfer, etc.  By-reference arguments
+    // are modeled with the IR-level POP::PointerType.
     if (isa<POP::PointerType>(arg.getType())) {
       // Arguments passed by-reference can be directly used.
       addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(), param.type,
