@@ -167,8 +167,6 @@ enum class MagicDeclKind : uint8_t {
   kIndexType,
   // This is the __builtin.mlirtype["lit.none"] type.
   kNoneType,
-  // This is a PointerType type which is lowered into POP::PointerType.
-  kPointerType,
   // This is a FunctionType that is lowered to a KGEN::SignatureType.
   kFunctionType,
 };

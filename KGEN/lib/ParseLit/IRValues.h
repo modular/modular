@@ -48,8 +48,8 @@ public:
 /// type.  It is described with an explicit C++ type so the expression emission
 /// logic can better reason about it.
 ///
-/// When produced by the emitter, the AST Type of an LValue is always a lit
-/// Pointer type, the element type can be accessed with getLValueElementType().
+/// When produced by the emitter, the ASTType of an LValue is always the type
+/// of dereferencing the LValue, there is no extra level of pointer added.
 ///
 class LValue : public Value {
 public:
