@@ -208,6 +208,9 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 static ASTTypeAnd<AnyValue>
 emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
                  ExprEmitter &emitter) {
+  if (!calleeValAndType)
+    return {};
+
   auto emitError = [&](const Twine &message) {
     return emitter.emitError(call.getLoc(), message);
   };
@@ -298,40 +301,58 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
 
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
-static ASTTypeAnd<RValue> emitTypeMemberReference(ASTType containerType,
-                                                  StringRef memberName,
-                                                  SMLoc loc,
-                                                  ExprEmitter &emitter) {
-  ASTDecl *callee = emitter.lookupDecl(
-      memberName, loc, containerType.getDecl(), [&](InFlightDiagnostic diag) {
-        diag << containerType << " has no '" << memberName << "' method";
-      });
-  if (!callee)
+/// TODO: This should take the parameters on the enclosing decl being referenced
+/// to support things like SomeType[42].member()
+static ASTTypeAnd<AnyValue>
+emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
+                        ExprEmitter &emitter, FullType implicitDeclType = {}) {
+  ASTDecl *decl = emitter.lookupDecl(
+      memberName, loc, container,
+      [&](InFlightDiagnostic diag) {
+        if (auto structDecl = dyn_cast<LITStructDeclOp>(container)) {
+          diag << structDecl.getName() << " has no '" << memberName
+               << "' member";
+        } else {
+          diag << "use of unknown declaration \"" << memberName << '"';
+        }
+      },
+      implicitDeclType);
+  if (!decl)
     return {};
 
-  auto newFnDecl = dyn_cast<LITFuncOp>(*callee);
-  if (!newFnDecl) {
-    emitter.emitError(loc, "'")
-        << memberName << "' member on " << containerType << " isn't a function";
-    return {};
+  // Variable references resolve to an lvalue addressing the variable.
+  if (auto var = dyn_cast<VarDeclOp>(*decl))
+    return {LValue(var.getResult()),
+            emitter.shared.getPointerType(decl->getResolvedType())};
+
+  // Functions form an address.
+  if (auto fnDecl = dyn_cast<LITFuncOp>(*decl)) {
+    // Generate a nested symbol ref if we are a method in a struct.
+    SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnDecl.getNameAttr());
+    if (auto containerStructDecl = dyn_cast<LITStructDeclOp>(container))
+      symbolRef = SymbolRefAttr::get(containerStructDecl.getNameAttr(),
+                                     cast<FlatSymbolRefAttr>(symbolRef));
+    auto fnAttr = SymbolConstantAttr::get(symbolRef, fnDecl.getSignature());
+
+    // TODO: Correct argument/parameter type.
+    ASTType astType = emitter.shared.getFunctionType(decl->getResolvedType());
+    return {MValue(fnAttr), astType};
   }
 
-  auto calledStructDecl = dyn_cast<LITStructDeclOp>(containerType.getDecl());
-  if (!calledStructDecl) {
-    emitter.emitError(loc, "cannot get member of type ") << containerType;
-    return {};
+  // RValue's and LValues always resolve to their known value.
+  if (auto rvalue = decl->getIfRValue())
+    return {rvalue, decl->getResolvedType()};
+  if (auto lvalue = decl->getIfLValue())
+    return {lvalue, decl->getResolvedType()};
+
+  if (isa<LITStructDeclOp>(*decl) || decl->isMagic()) {
+    auto astType = emitter.shared.getASTType(*decl, {});
+    return {MValue(astType), emitter.shared.getTypeType()};
   }
 
-  auto symbolRef =
-      SymbolRefAttr::get(calledStructDecl.getNameAttr(),
-                         FlatSymbolRefAttr::get(newFnDecl.getNameAttr()));
-
-  auto newFnAttr = SymbolConstantAttr::get(symbolRef, newFnDecl.getSignature());
-
-  // TODO: Correct argument/parameter type.
-  ASTType newASTType =
-      emitter.shared.getFunctionType(callee->getResolvedType());
-  return {RValue(newFnAttr), newASTType};
+  emitter.emitError(loc, "use of declaration \"")
+      << memberName << "\" as a value isn't supported yet";
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -379,44 +400,8 @@ ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
 
 ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
                                          FullType contextualType) const {
-  // Look up the name.
-  ASTDecl *decl = emitter.lookupDecl(
-      spelling, getLoc(), emitter.declScope,
-      [&](InFlightDiagnostic diag) {
-        diag << "use of unknown declaration \"" << spelling << '"';
-      },
-      contextualType);
-  if (!decl)
-    return {};
-
-  // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(*decl))
-    return {LValue(var.getResult()),
-            emitter.shared.getPointerType(decl->getResolvedType())};
-
-  // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(*decl)) {
-    auto attr = SymbolConstantAttr::get(
-        FlatSymbolRefAttr::get(fnDecl.getNameAttr()), fnDecl.getSignature());
-    return {MValue(attr),
-            // TODO: Correct argument/parameter type.
-            emitter.shared.getFunctionType(decl->getResolvedType())};
-  }
-
-  // RValue's and LValues always resolve to their known value.
-  if (auto rvalue = decl->getIfRValue())
-    return {rvalue, decl->getResolvedType()};
-  if (auto lvalue = decl->getIfLValue())
-    return {lvalue, decl->getResolvedType()};
-
-  if (isa<LITStructDeclOp>(*decl) || decl->isMagic()) {
-    auto astType = emitter.shared.getASTType(*decl, {});
-    return {MValue(astType), emitter.shared.getTypeType()};
-  }
-
-  emitter.emitError(getLoc(), "use of declaration \"")
-      << spelling << "\" as a value isn't supported yet";
-  return {};
+  return emitDeclMemberReference(emitter.declScope, spelling, getLoc(), emitter,
+                                 contextualType);
 }
 
 ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
@@ -479,8 +464,8 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // Handle member references on types.
   if (ASTType baseType = baseVal.ir.getIfMTValue()) {
-    auto rValueAnd =
-        emitTypeMemberReference(baseType, attrSpelling, getLoc(), emitter);
+    auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
+                                             getLoc(), emitter);
     return {rValueAnd.ir, rValueAnd.type};
   }
 
@@ -499,11 +484,10 @@ static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
           call.getLoc())))
     return {};
 
-  auto newMemberVal =
-      emitTypeMemberReference(calledType, "__new__", call.getLoc(), emitter);
-  if (!newMemberVal)
-    return {};
-  return emitFunctionCall(call, newMemberVal, emitter);
+  auto newMemberVal = emitDeclMemberReference(calledType.getDecl(), "__new__",
+                                              call.getLoc(), emitter);
+  return emitFunctionCall(call, emitter.emitRValue(newMemberVal, call.getLoc()),
+                          emitter);
 }
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
@@ -517,8 +501,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
     return emitInitializerCall(*this, calledType, emitter);
 
   // Otherwise, handle callable functions.
-  auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
-  if (auto calleeType = dyn_cast<SignatureType>(calleeAnyType))
+  if (isa<SignatureType>(calleeVal.ir.getType(emitter.getContext())))
     return emitFunctionCall(*this, calleeVal, emitter);
 
   emitter.emitError(getLoc(), "unable to call value of type ")
