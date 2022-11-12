@@ -286,13 +286,15 @@ struct ParsedMetaSignature {
         return failure();
       }
 
-      FullType paramType;
+      ASTType paramType;
+      auto loc = p.getToken().getLoc();
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
           p.parseType(paramType, decl, None))
         return failure();
-      inputDecls.push_back(ParamDeclAttr::get(name, paramType.first));
-      inputASTTypes.push_back(paramType.second);
+      inputDecls.push_back(ParamDeclAttr::get(
+          name, p.getSharedState().getMLIRType(paramType, loc)));
+      inputASTTypes.push_back(paramType);
       return success();
     };
 
@@ -322,7 +324,7 @@ namespace {
 struct ParsedParam {
   SMLoc loc;
   StringAttr name;
-  FullType type;
+  ASTType type;
   ExprNode *initValue = nullptr;
 
   // TODO: Implement support for variadic parameter markers:
@@ -363,7 +365,7 @@ struct ParsedParam {
 static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
-                                          FullType &resultType,
+                                          ASTType &resultType,
                                           LitSharedState &shared) {
   auto specialFunctionKind = SpecialFunctionKind::kNormal;
   bool isStatic = false;
@@ -402,24 +404,20 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
     // Methods on structs (but not classes) always take the struct implicitly
     // by pointer so they can mutate it.
     // TODO: Revise this by adding mutation model.
-    FullType selfFullType;
-    selfFullType.second = shared.getPointerType(selfType);
-    selfFullType.first = shared.getMLIRType(selfFullType.second, op->getLoc());
+    selfType = shared.getPointerType(selfType);
 
     // If there are no parameters, install an implicit self parameter.
     if (params.empty()) {
       params.push_back({declScope.getCursor().getToken().getLoc(),
-                        StringAttr::get(shared.getContext(), "self"),
-                        selfFullType,
+                        StringAttr::get(shared.getContext(), "self"), selfType,
                         /*initPtr*/ nullptr});
     }
 
     // Check that the first method has the right type.
-    if (!params[0].type.first)
-      params[0].type = selfFullType;
-    if (params[0].type.first != selfFullType.first)
-      return op->emitError("'self' argument must have type ")
-             << selfFullType.second;
+    if (!params[0].type)
+      params[0].type = selfType;
+    else if (!params[0].type.isEqualCanon(selfType))
+      return op->emitError("'self' argument must have type ") << selfType;
   }
 
   auto checkMethod = [&]() -> ParseResult {
@@ -436,7 +434,7 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
     return success();
   };
   auto checkResultNoneType = [&]() -> ParseResult {
-    if (!isa<KGEN::NoneType>(resultType.first))
+    if (!resultType.isMagicType(MagicDeclKind::kNoneType))
       return op->emitError("result type must be elided (or None)");
     return success();
   };
@@ -459,7 +457,7 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
       return failure();
     // __new__ must return containing type.
     // TODO: We could allow omitting result type.
-    if (resultType.first != shared.getMLIRType(selfType, op->getLoc()))
+    if (!resultType.isEqualCanon(selfType))
       return op->emitError("result type must be ") << selfType;
     break;
   }
@@ -468,12 +466,9 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
   // TODO(fn): /require/ types on parameters instead of defaulting to
   // object.
   // TODO(default args): Get the type from the default arg when present.
-  for (auto &param : params) {
-    if (!param.type.first) {
-      param.type.second = shared.getObjectType();
-      param.type.first = shared.getMLIRType(param.type.second, param.loc);
-    }
-  }
+  for (auto &param : params)
+    if (!param.type)
+      param.type = shared.getObjectType();
 
   return success();
 }
@@ -515,12 +510,13 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   // a def should default to returning a (default initialized) Object, whereas
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
-  FullType resultType;
+  ASTType resultType;
+  SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, decl, None))
       return failure();
   } else {
-    resultType = {KGEN::NoneType::get(getContext()), sharedState.getNoneType()};
+    resultType = sharedState.getNoneType();
   }
 
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
@@ -536,16 +532,14 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
 
     // Set any unspecifies argument types to error type.
     for (auto &param : params) {
-      if (!param.type.first) {
-        param.type.second = sharedState.getTypeCheckErrorType();
-        param.type.first =
-            sharedState.getMLIRType(param.type.second, param.loc);
-      }
+      if (!param.type)
+        param.type = sharedState.getTypeCheckErrorType();
     }
   }
 
   // The resolvedType for a function is the return type of the function.
-  decl.setResolvedType(resultType.second);
+  decl.setResolvedType(resultType);
+  auto resultIRType = sharedState.getMLIRType(resultType, resultLoc);
 
   // We have parsed the signature but skipped over the actual types, we use
   // unresolved types for now.
@@ -555,7 +549,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   for (auto &param : params) {
     paramLocs.push_back(p.translateLocation(param.loc));
     paramNames.push_back(param.name);
-    paramTypes.push_back(param.type.first);
+    paramTypes.push_back(sharedState.getMLIRType(param.type, param.loc));
 
     // TODO: add support for default parameter expressions.
     if (param.initValue)
@@ -566,8 +560,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   if (auto interfaceOp = dyn_cast<GeneratorInterfaceOp>(defOp)) {
     auto context = getContext();
     assert(interfaceOp);
-    interfaceOp.setType(
-        FunctionType::get(context, paramTypes, resultType.first));
+    interfaceOp.setType(FunctionType::get(context, paramTypes, resultIRType));
     interfaceOp.setParamDeclsAttr(
         ParamDeclArrayAttr::get(context, metaSignature.inputDecls));
     // Interface specific.
@@ -579,7 +572,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
 
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
-  funcOp.setType(builder.getFunctionType(paramTypes, resultType.first));
+  funcOp.setType(builder.getFunctionType(paramTypes, resultIRType));
   funcOp.setParamDeclsAttr(
       builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
@@ -612,8 +605,8 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
     // will be incorrect when you want to pass a pointer by value etc.
     if (isa<POP::PointerType>(arg.getType())) {
       // Arguments passed by-reference can be directly used.
-      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(),
-                           param.type.second, &decl);
+      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(), param.type,
+                           &decl);
       continue;
     }
 
@@ -623,7 +616,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
-    addFullyResolvedDecl(varDecl, param.name, param.type.second, &decl);
+    addFullyResolvedDecl(varDecl, param.name, param.type, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -667,15 +660,17 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
-  FullType type;
+  SMLoc typeLoc;
+  ASTType type;
   ExprNode *initValue = nullptr;
   // Parse the type if present.
   // TODO: Make type optional.
   if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
-      p.parseType(type, decl, decl.getIndentation()))
+      p.getLocation(typeLoc) || p.parseType(type, decl, decl.getIndentation()))
     return failure();
 
-  varOp.getResult().setType(POP::PointerType::get(type.first));
+  varOp.getResult().setType(
+      POP::PointerType::get(sharedState.getMLIRType(type, typeLoc)));
 
   if (p.consumeIf(LitToken::equal)) {
     p.emitError("var initializers not supported yet");
@@ -684,7 +679,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   }
 
   // The resolvedType of a variable declaration is the type of the decl.
-  decl.setResolvedType(type.second);
+  decl.setResolvedType(type);
   return success();
 }
 

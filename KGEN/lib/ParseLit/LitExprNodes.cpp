@@ -130,26 +130,22 @@ ASTTypeAnd<LValue> ExprEmitter::emitLValue(const ExprNode *node,
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This never returns null - if the expression
 /// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
-FullType ExprEmitter::emitType(const ExprNode *node) {
+ASTType ExprEmitter::emitType(const ExprNode *node) {
   auto value = emitMValue(node, "expected a type");
   if (!value)
-    return {TypeCheckErrorType::get(getContext()),
-            shared.getTypeCheckErrorType()};
+    return shared.getTypeCheckErrorType();
 
   // If this emitted a type, we can lower it.
-  if (auto astType = value.ir.getIfMTValue()) {
-    Type mlirType = shared.getMLIRType(astType, node->getLoc());
-    return {mlirType, astType};
-  }
+  if (auto astType = value.ir.getIfMTValue())
+    return astType;
 
   // If we emitted a NoneAttr then convert it to a NoneType.  This is a special
   // case because "None" is both a value and a type, and defaults to a value.
   if (isa<KGEN::NoneAttr>(value.ir.getIfMAValue().get()))
-    return {KGEN::NoneType::get(getContext()), shared.getNoneType()};
+    return shared.getNoneType();
 
   emitError(node->getLoc(), "expected a type, not a value");
-  return {TypeCheckErrorType::get(getContext()),
-          shared.getTypeCheckErrorType()};
+  return shared.getTypeCheckErrorType();
 }
 
 /// Perform a name lookup in the specified scope and return the named

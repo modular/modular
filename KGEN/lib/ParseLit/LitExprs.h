@@ -188,7 +188,7 @@ public:
   /// "Int" into the type for it.  This never returns null MLIR Types - if the
   /// expression is erroneous, it is diagnosed and a TypeCheckErrorType is
   /// returned, along with an erroneous AST type.
-  FullType emitType(const ExprNode *node);
+  ASTType emitType(const ExprNode *node);
 
   /// Perform a name lookup in the current scope and return the named
   /// declaration.  This emits an error and returns null on error.  When
