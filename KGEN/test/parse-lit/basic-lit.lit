@@ -247,6 +247,7 @@ struct StructExample:
     # CHECK: %2 = kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%1)
     StructExample.static(Int(4))
     pass
+
 # CHECK: }
 # CHECK-NEXT: }
 
@@ -262,11 +263,13 @@ struct Int:
     result.value = value
     return result
 
-  # CHECK: lit.func @"Int::__add__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  # CHECK: lit.func @"Int::__add__"(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
   def __add__(self, rhs: Int) -> Int:
-    # CHECK: %rhs_0 = lit.var.decl "rhs" : <@Int>
-    # CHECK: pop.store %rhs, %rhs_0
-    # CHECK: %0 = lit.struct.gep %rhs_0[value]
+    # CHECK: %self_0 = lit.var.decl "self" : <@Int>
+    # CHECK: pop.store %self, %self_0 : !pop.pointer<@Int>
+    # CHECK: %rhs_1 = lit.var.decl "rhs" : <@Int>
+    # CHECK: pop.store %rhs, %rhs_1
+    # CHECK: %0 = lit.struct.gep %rhs_1[value]
     # CHECK: %1 = pop.load %0
     # CHECK: %2 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%1)
     return Int(rhs.value)      # TODO: Use this somehow. :)
@@ -350,3 +353,6 @@ def func_interface2[type: DType](x: index) -> index:
 #CHECK:    implements @func_interface2 {
 def func_impl[type: DType](x: index) -> index:
   return x
+
+# CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !kgen.ref<@Int>) -> !lit.none
+def byval_byref_function(a: Int, &b: Int):

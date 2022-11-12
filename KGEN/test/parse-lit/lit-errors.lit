@@ -164,13 +164,13 @@ struct WrongType:
   def __new__() -> Int: pass
 
 struct WrongSelfType[a: Int]:
-  # expected-error @+1 {{'self' argument must have type '&WrongSelfType[a]'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   def badMethod(self: Int): pass
 
-  # expected-error @+1 {{'self' argument must have type '&WrongSelfType[a]'}}
-  def badMethod2(self: WrongSelfType[a]): pass
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
+  def badMethod2(self: &WrongSelfType[a]): pass
 
-  def goodMethod(self: &WrongSelfType[a]): pass
+  def goodMethod(&self: WrongSelfType[a]): pass
 
 
 @interface
@@ -187,7 +187,7 @@ def bad_interface_with_body1(x: index) -> index:
 struct NoNestedInterface:
   @interface
   # expected-error @+1 {{interfaces cannot be nested inside a struct}}
-  def foo(self: &NoNestedInterface) -> index:
+  def foo(self) -> index:
 
 @interface
 def good_interface(x: index) -> index:

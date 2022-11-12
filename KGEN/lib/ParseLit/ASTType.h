@@ -77,9 +77,6 @@ public:
   explicit operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
 
-  /// Return true if this type is the specified 'magic' type.
-  bool isMagicType(MagicDeclKind kind) const;
-
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
