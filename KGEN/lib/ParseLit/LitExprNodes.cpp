@@ -154,11 +154,14 @@ FullType ExprEmitter::emitType(const ExprNode *node) {
 
 /// Perform a name lookup in the current scope and return the named
 /// declaration.  This emits an error and returns null on error.
-ASTDecl *ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
-                                 Twine errorMessage) {
+ASTDecl *
+ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
+                        std::function<void(InFlightDiagnostic)> errorFn) {
   ASTDecl *lookupResult = scope.lookup(StringAttr::get(getContext(), name));
-  if (!lookupResult)
-    return emitError(loc, errorMessage + " '" + name + "'"), nullptr;
+  if (!lookupResult) {
+    errorFn(emitError(loc, ""));
+    return nullptr;
+  }
 
   // We need the signature for the struct to be resolved in order to know how
   // to refer to it.
@@ -290,6 +293,8 @@ ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
 ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
                                               FullType contextualType) const {
   auto baseVal = base->emitIR(emitter);
+  if (!baseVal)
+    return {};
 
   if (LValue baseLV = baseVal.ir.getIfLValue()) {
     // Look through the ASTType of the receiver.
@@ -315,8 +320,10 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     }
 
     // Find the field.
-    ASTDecl *fieldDecl = emitter.lookupDecl(attrSpelling, getLoc(), typeDecl,
-                                            "object has no attribute");
+    ASTDecl *fieldDecl = emitter.lookupDecl(
+        attrSpelling, getLoc(), typeDecl, [&](InFlightDiagnostic diag) {
+          diag << "object has no attribute '" << attrSpelling << "'";
+        });
     if (!fieldDecl)
       return {};
 
@@ -337,7 +344,8 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     Value resultGEP = emitter.builder->create<LITStructGEPOp>(
         emitter.translateLocation(getLoc()), varOp.getType(),
         varOp.getNameAttr(), baseLV);
-    return {LValue(resultGEP), fieldDecl->getResolvedType()};
+    return {LValue(resultGEP),
+            emitter.shared.getPointerType(fieldDecl->getResolvedType())};
   }
 
   // TODO: Handle parameter member references.
@@ -345,27 +353,13 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
-ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
-                                      FullType contextualType) const {
-  auto calleeVal = emitter.emitRValue(callee);
-  if (!calleeVal)
-    return {};
+static ASTTypeAnd<AnyValue>
+emitFunctionCall(const CallNode &call, RValue calleeVal, ASTType calleeASTType,
+                 SignatureType calleeType, ExprEmitter &emitter) {
+  auto emitError = [&](const Twine &message) {
+    return emitter.emitError(call.getLoc(), message);
+  };
 
-  // The only callable thing we have right now are functions.
-  // TODO: Support struct initialization.
-  auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
-  if (auto calleeType = dyn_cast<SignatureType>(calleeAnyType))
-    return emitFunctionCall(emitter, calleeVal.ir, calleeVal.type, calleeType);
-
-  emitter.emitError(getLoc(), "unable to call value of type ")
-      << calleeVal.type;
-  return {};
-}
-
-ASTTypeAnd<AnyValue>
-CallNode ::emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
-                            ASTType calleeASTType,
-                            SignatureType calleeType) const {
   // The ASTType of calleeVal must be a magic function type, for the IR to have
   // signature type.  We cannot have error types or anything else here.
   // TODO: Switch to key off the AST type when it carries everything we need.
@@ -376,18 +370,15 @@ CallNode ::emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
 
   auto resultASTType = resultASTTypeVal.getIfMTValue();
   if (!resultASTType) {
-    // TODO: We have no way to represent a symbolic value of ASTType.  The best
-    // we can do is
-    emitter.emitError(
-        getLoc(), "unable to call function value with parametric result type");
+    // TODO: We have no way to represent a symbolic value of ASTType.
+    emitError("unable to call function value with parametric result type");
     return {};
   }
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
   if (!calleeType.getInputParams().empty()) {
-    emitter.emitError(getLoc(),
-                      "unable to call parameterized value that expects ")
+    emitError("unable to call parameterized value that expects ")
         << calleeType.getInputParams().size() << " bound parameters";
     return {};
   }
@@ -396,16 +387,15 @@ CallNode ::emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
          "TODO: meta results not implemented yet");
 
   size_t numArgs = calleeType.getValues().getNumInputs();
-  if (numArgs != args.size()) {
-    emitter.emitError(getLoc(), "callee expects ")
-        << numArgs << " argument" << plural(numArgs);
+  if (numArgs != call.args.size()) {
+    emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
     return {};
   }
 
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
   for (auto [arg, expectedType] :
-       llvm::zip(args, calleeType.getValues().getInputs())) {
+       llvm::zip(call.args, calleeType.getValues().getInputs())) {
     auto argVal = emitter.emitDRValue(arg);
     if (!argVal.ir)
       return {};
@@ -424,25 +414,92 @@ CallNode ::emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
 
   auto calleeParam = calleeVal.getIfMAValue();
   if (!calleeParam) {
-    emitter.emitError(getLoc(), "TODO: indirect value call not supported yet");
+    emitError("TODO: indirect value call not supported yet");
     return {};
   }
 
   if (!emitter.builder) {
-    emitter.emitError(getLoc(),
-                      "TODO: cannot call function in parameter context");
+    emitError("TODO: cannot call function in parameter context");
     return {};
   }
 
-  auto call = emitter.builder->create<CallParamOp>(
-      emitter.translateLocation(getLoc()),
+  auto callOp = emitter.builder->create<CallParamOp>(
+      emitter.translateLocation(call.getLoc()),
       /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
       /*inputParams*/ ArrayRef<ParamBindAttr>(),
       /*resultParams*/ ArrayRef<ParamDeclAttr>(),
       /*operands*/ valueArguments);
 
   // Value returning call returns its result.
-  return {DRValue(call.getResult(0)), resultASTType};
+  return {DRValue(callOp.getResult(0)), resultASTType};
+}
+
+/// Given a call of a type value, figure out how to invoke __new__ to get the
+/// value.
+static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
+                                                RValue calleeVal,
+                                                ExprEmitter &emitter) {
+  ASTType calledType = calleeVal.getIfMTValue();
+  if (!calledType) {
+    emitter.emitError(call.getLoc(),
+                      "TODO: Support calls through parameters of type 'type'");
+    return {};
+  }
+
+  auto calledStructDecl = dyn_cast<LITStructDeclOp>(calledType.getDecl());
+  if (!calledStructDecl) {
+    emitter.emitError(call.getLoc(), "unknown type to initialize ")
+        << calledType;
+    return {};
+  }
+
+  ASTDecl *callee =
+      emitter.lookupDecl("__new__", call.getLoc(), calledType.getDecl(),
+                         [&](InFlightDiagnostic diag) {
+                           diag << calledType << " has no __new__ method";
+                         });
+  if (!callee)
+    return {};
+
+  auto newFnDecl = dyn_cast<LITFuncOp>(*callee);
+  if (!newFnDecl) {
+    emitter.emitError(call.getLoc(), "'__new__' member on ")
+        << calledType << " isn't a function";
+    return {};
+  }
+
+  auto symbolRef =
+      SymbolRefAttr::get(calledStructDecl.getNameAttr(),
+                         FlatSymbolRefAttr::get(newFnDecl.getNameAttr()));
+
+  auto newFnAttr = SymbolConstantAttr::get(symbolRef, newFnDecl.getSignature());
+
+  // TODO: Correct argument/parameter type.
+  ASTType newASTType =
+      emitter.shared.getFunctionType(callee->getResolvedType());
+  return emitFunctionCall(call, MValue(newFnAttr), newASTType,
+                          newFnDecl.getSignature(), emitter);
+}
+
+ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
+                                      FullType contextualType) const {
+  auto calleeVal = emitter.emitRValue(callee);
+  if (!calleeVal)
+    return {};
+
+  // The only callable thing we have right now are functions.
+  auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
+  if (auto calleeType = dyn_cast<SignatureType>(calleeAnyType))
+    return emitFunctionCall(*this, calleeVal.ir, calleeVal.type, calleeType,
+                            emitter);
+
+  // Invoking a type is a call to an initialize for the type.
+  if (calleeVal.type.isMagicType(MagicDeclKind::kTypeType))
+    return emitInitializerCall(*this, calleeVal.ir, emitter);
+
+  emitter.emitError(getLoc(), "unable to call value of type ")
+      << calleeVal.type;
+  return {};
 }
 
 ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,

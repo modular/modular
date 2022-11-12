@@ -276,9 +276,10 @@ struct Int:
     # CHECK: %rhs_0 = lit.var.decl "rhs" : <@Int>
     # CHECK: pop.store %rhs, %rhs_0
     # CHECK: %0 = lit.struct.gep %rhs_0[value]
-    # CHECK: %1 = pop.load %rhs_0
-    rhs.value      # TODO: Use this somehow. :)
-    return rhs
+    # CHECK: %1 = pop.load %0
+    # CHECK: %2 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%1)
+    return Int(rhs.value)      # TODO: Use this somehow. :)
+    # CHECK: kgen.return %2
   # CHECK: }
 # CHECK: }
 

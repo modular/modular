@@ -24,6 +24,7 @@ class ParamBindAttr;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class MValue;
+enum class MagicDeclKind : uint8_t;
 
 /// This is the underlying storage for an ASTType and shouldn't be interacted
 /// with directly.  Use ASTType instead.
@@ -84,6 +85,9 @@ public:
   bool isNull() const { return pointer == nullptr; }
   explicit operator bool() const { return pointer != nullptr; }
   bool operator!() const { return pointer == nullptr; }
+
+  /// Return true if this type is the specified 'magic' type.
+  bool isMagicType(MagicDeclKind kind) const;
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
