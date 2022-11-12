@@ -33,13 +33,49 @@ ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
   return pointer->paramValues;
 }
 
+/// Return true if this type is the specified 'magic' type.
+bool ASTType::isMagicType(MagicDeclKind kind) const {
+  return getDecl().magicKind == kind;
+}
+
+bool ASTType::isEqualCanon(ASTType other) const {
+  // We have no type sugar yet so we can just do pointer equality tests.
+  if (&getDecl() != &other.getDecl() ||
+      getParamValues().size() != other.getParamValues().size())
+    return false;
+
+  for (auto [p1, p2] : llvm::zip(getParamValues(), other.getParamValues())) {
+    // Compare the names of the parameters.
+    if (p1.first != p2.first)
+      return false;
+    // If both values are attributes, compare with pointer equality.
+    if (auto lhsAttr = p1.second.getIfMAValue())
+      if (auto rhsAttr = p2.second.getIfMAValue()) {
+        if (lhsAttr.get() != rhsAttr.get())
+          return false;
+        continue;
+      }
+    // If both are ASTTypes, recurse.
+    if (auto lhsType = p1.second.getIfMTValue())
+      if (auto rhsType = p2.second.getIfMTValue()) {
+        if (!lhsType.isEqualCanon(rhsType))
+          return false;
+        continue;
+      }
+    // Otherwise they are different kinds.
+    return false;
+  }
+  return true;
+}
+
 /// If this is a builtin lit Pointer type, return the element type, otherwise
 /// return null.
 MValue ASTType::getPointerElementType() const {
   if (isNull())
     return {};
 
-  // Ensure that this is a Pointer type and that its parameters have been bound.
+  // Ensure that this is a Pointer type and that its parameters have been
+  // bound.
   ASTDecl &decl = getDecl();
   auto params = getParamValues();
   if (decl.magicKind != MagicDeclKind::kPointerType || params.size() != 1)
@@ -51,11 +87,6 @@ MValue ASTType::getLValueElementType() const {
   auto result = getPointerElementType();
   assert(result && "LValues always have a valid element type");
   return result;
-}
-
-/// Return true if this type is the specified 'magic' type.
-bool ASTType::isMagicType(MagicDeclKind kind) const {
-  return getDecl().magicKind == kind;
 }
 
 /// Convert this type to a human readable string representation so it can be
@@ -132,5 +163,5 @@ mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
   return diag << '\'' << type.getAsString() << '\'';
 }
 
-/// Print to standard error with newline after it, for use in a debugger.
-void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
+  /// Print to standard error with newline after it, for use in a debugger.
+  void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }

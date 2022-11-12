@@ -72,6 +72,18 @@ public:
   using ParamBinding = std::pair<ParamDeclAttr, MValue>;
   ArrayRef<ParamBinding> getParamValues() const;
 
+  /// ASTType is nullable.
+  bool isNull() const { return pointer == nullptr; }
+  explicit operator bool() const { return pointer != nullptr; }
+  bool operator!() const { return pointer == nullptr; }
+
+  /// Return true if this type is the specified 'magic' type.
+  bool isMagicType(MagicDeclKind kind) const;
+
+  /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
+  /// the specified other type.
+  bool isEqualCanon(ASTType other) const;
+
   /// If this is a bound builtin lit Pointer type, return the element type,
   /// otherwise return null.
   MValue getPointerElementType() const;
@@ -80,14 +92,6 @@ public:
   /// have pointer type.  This is just an asserting form of
   /// getPointerElementType.
   MValue getLValueElementType() const;
-
-  /// ASTType is nullable.
-  bool isNull() const { return pointer == nullptr; }
-  explicit operator bool() const { return pointer != nullptr; }
-  bool operator!() const { return pointer == nullptr; }
-
-  /// Return true if this type is the specified 'magic' type.
-  bool isMagicType(MagicDeclKind kind) const;
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream

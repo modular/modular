@@ -110,6 +110,13 @@ public:
     return consumedToken;
   }
 
+  /// Capture the location of the current token in a convenient way that can be
+  /// used in parsing pipelines.
+  ParseResult getLocation(SMLoc &result) {
+    result = getToken().getLoc();
+    return success();
+  }
+
   /// Consume the specified token if present and return success.  On failure,
   /// output a diagnostic and return failure.
   ParseResult parseToken(LitToken::Kind expectedToken, const Twine &message);
@@ -188,7 +195,7 @@ public:
                                   Optional<size_t> stmtIndent,
                                   bool *hadTrailingSep);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
-  ParseResult parseType(FullType &result, ASTDecl &declScope,
+  ParseResult parseType(ASTType &result, ASTDecl &declScope,
                         Optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
