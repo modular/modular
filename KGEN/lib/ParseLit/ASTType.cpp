@@ -63,6 +63,27 @@ bool ASTType::isEqualCanon(ASTType other) const {
   return true;
 }
 
+/// If this is a builtin lit Pointer type, return the element type, otherwise
+/// return null.
+MValue ASTType::getPointerElementType() const {
+  if (isNull())
+    return {};
+
+  // Ensure that this is a Pointer type and that its parameters have been
+  // bound.
+  ASTDecl &decl = getDecl();
+  auto params = getParamValues();
+  if (decl.magicKind != MagicDeclKind::kPointerType || params.size() != 1)
+    return {};
+  return params[0].second;
+}
+
+MValue ASTType::getLValueElementType() const {
+  auto result = getPointerElementType();
+  assert(result && "LValues always have a valid element type");
+  return result;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
@@ -70,6 +91,12 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     return os << "<<NULL ASTTYPE>>";
 
   ASTDecl &decl = type.getDecl();
+
+  // If this has sugar, use it.
+  if (decl.magicKind == MagicDeclKind::kPointerType)
+    if (auto eltType = type.getPointerElementType())
+      return os << '&' << eltType;
+
   if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();
@@ -77,6 +104,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::kPointerType:
     case MagicDeclKind::kFunctionType:
       llvm_unreachable("Implemented as a struct, so should be handled");
     case MagicDeclKind::kTypeType:

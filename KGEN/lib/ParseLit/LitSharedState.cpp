@@ -197,6 +197,14 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
     decl->resolvedness = DeclResolvedness::fullyResolved;
   };
 
+  // Add a declaration for `struct Pointer<ElementType: type>:` which gets a
+  // magic lowering to POP::PointerType.
+  auto pointerOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Pointer"));
+  pointerOp.setParamDecls(
+      ParamDeclAttr::get("ElementType", b.getType<MLIRTypeType>()));
+  addCompletedStructDecl(pointerOp, impl->pointerDecl);
+  impl->pointerDecl->magicKind = MagicDeclKind::kPointerType;
+
   // Add a declaration for `struct Function<ResultType: type>:` which gets a
   // magic lowering to KGEN::SignatureType.
   // TODO: This currently only carries result type, it should carry variadic
@@ -211,13 +219,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // standard library.
   auto objectOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
   addCompletedStructDecl(objectOp, impl->objectDecl);
-
-  // Add a declaration for `struct Pointer<ElementType: type>:`.  This is used
-  // by '&type' sugar.  It should be moved to the standard library.
-  auto pointerOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Pointer"));
-  pointerOp.setParamDecls(
-      ParamDeclAttr::get("ElementType", b.getType<MLIRTypeType>()));
-  addCompletedStructDecl(pointerOp, impl->pointerDecl);
 }
 
 auto LitSharedState::getUniquedParams(ArrayRef<ParamBinding> params)
@@ -273,6 +274,12 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
       return result = KGEN::NoneType::get(context);
     case MagicDeclKind::kTypeCheckErrorType:
       return result = TypeCheckErrorType::get(context);
+    case MagicDeclKind::kPointerType: {
+      assert(type.getParamValues().size() == 1 &&
+             "PointerType should have one parameter");
+      auto eltType = getMLIRType(type.getParamValues()[0].second, loc);
+      return result = POP::PointerType::get(eltType);
+    }
     case MagicDeclKind::kFunctionType:
       // TODO: Support argument signature.
       emitError(loc, "TODO: Cannot emit parameterized builtin type yet");
