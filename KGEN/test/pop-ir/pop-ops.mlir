@@ -580,10 +580,12 @@ kgen.generator @pop_simd_insertelement<size, type: dtype>(
 }
 
 // CHECK-LABEL: @pop_simd_shuffle
-kgen.generator @pop_simd_shuffle<size>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) -> !pop.simd<2, f32> {
+kgen.generator @pop_simd_shuffle<size>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) {
   // CHECK: pop.simd.shuffle %{{.*}}, %{{.*}} [1, 2] : !pop.simd<size, f32> -> !pop.simd<2, f32>
   %0 = pop.simd.shuffle %a, %b [1, 2] : !pop.simd<size, f32> -> !pop.simd<2, f32>
-  kgen.return %0 : !pop.simd<2, f32>
+  // CHECK: pop.simd.shuffle %{{.*}}, %{{.*}} [1, 2, 3, 4] : !pop.simd<size, f32> -> !pop.simd<size, f32>
+  %1 = pop.simd.shuffle %a, %b [1, 2, 3, 4] : !pop.simd<size, f32> -> !pop.simd<size, f32>
+  kgen.return
 }
 
 // CHECK-LABEL: @pop_simd_splat

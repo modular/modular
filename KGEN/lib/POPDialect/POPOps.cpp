@@ -431,7 +431,9 @@ LogicalResult CastOp::verify() {
 
 LogicalResult SIMDShuffleOp::verify() {
   Optional<int64_t> size = getType().getResolvedSize();
-  if (!size || static_cast<size_t>(*size) != getMask().size())
+  if (!size)
+    return success();
+  if (static_cast<size_t>(*size) != getMask().size())
     return emitOpError("expected result to be a vector of ")
            << getMask().size() << " elements";
 
