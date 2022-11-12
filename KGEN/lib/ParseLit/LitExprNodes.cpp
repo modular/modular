@@ -152,19 +152,45 @@ FullType ExprEmitter::emitType(const ExprNode *node) {
           shared.getTypeCheckErrorType()};
 }
 
-/// Perform a name lookup in the current scope and return the named
+/// Perform a name lookup in the specified scope and return the named
 /// declaration.  This emits an error and returns null on error.
 ASTDecl *
 ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
-                        std::function<void(InFlightDiagnostic)> errorFn) {
-  ASTDecl *lookupResult = scope.lookup(StringAttr::get(getContext(), name));
+                        std::function<void(InFlightDiagnostic)> errorFn,
+                        FullType implicitDeclType) {
+
+  // Look up the name.
+  auto nameAttr = StringAttr::get(getContext(), name);
+  ASTDecl *lookupResult = scope.lookup(nameAttr);
+
+  // Handle the case where lookup fails.
   if (!lookupResult) {
-    errorFn(emitError(loc, ""));
-    return nullptr;
+    // If there is a contextual type available then this is an implicit variable
+    // definition, otherwise it is an error.
+    if (!implicitDeclType.first || !varDeclCursor) {
+      errorFn(emitError(loc, ""));
+      return nullptr;
+    }
+
+    // Otherwise, introduce a new lit.var.decl node whose type matches the
+    // implicitDeclType.
+    //
+    // TODO(autopromotions): turn infinite integers into concrete ones as
+    // needed.
+    auto declType = POP::PointerType::get(implicitDeclType.first);
+
+    // Use this builder to place any VarDeclOps. In Python there is only one
+    // scope per function and all variables belong to that scope, so builders
+    // should reflect that.
+    auto varDecl =
+        OpBuilder(varDeclCursor)
+            .create<VarDeclOp>(translateLocation(loc), declType, nameAttr);
+    lookupResult = &shared.declResolver->addFullyResolvedDecl(
+        varDecl, nameAttr, implicitDeclType.second, &scope);
   }
 
-  // We need the signature for the struct to be resolved in order to know how
-  // to refer to it.
+  // If the lookup succeeded, make sure the signature for the referenced decl is
+  // understood.
   auto resolveResult = shared.declResolver->resolve(
       *lookupResult, DeclResolvedness::signatureResolved, loc);
 
@@ -276,12 +302,6 @@ static ASTTypeAnd<RValue> emitTypeMemberReference(ASTType containerType,
                                                   StringRef memberName,
                                                   SMLoc loc,
                                                   ExprEmitter &emitter) {
-  auto calledStructDecl = dyn_cast<LITStructDeclOp>(containerType.getDecl());
-  if (!calledStructDecl) {
-    emitter.emitError(loc, "cannot get member of type ") << containerType;
-    return {};
-  }
-
   ASTDecl *callee = emitter.lookupDecl(
       memberName, loc, containerType.getDecl(), [&](InFlightDiagnostic diag) {
         diag << containerType << " has no '" << memberName << "' method";
@@ -293,6 +313,12 @@ static ASTTypeAnd<RValue> emitTypeMemberReference(ASTType containerType,
   if (!newFnDecl) {
     emitter.emitError(loc, "'")
         << memberName << "' member on " << containerType << " isn't a function";
+    return {};
+  }
+
+  auto calledStructDecl = dyn_cast<LITStructDeclOp>(containerType.getDecl());
+  if (!calledStructDecl) {
+    emitter.emitError(loc, "cannot get member of type ") << containerType;
     return {};
   }
 
@@ -354,43 +380,13 @@ ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
 ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
                                          FullType contextualType) const {
   // Look up the name.
-  auto nameAttr = StringAttr::get(emitter.getContext(), spelling);
-  ASTDecl *decl = emitter.declScope.lookup(nameAttr);
-
-  // Handle the case where lookup fails.
-  if (!decl) {
-    // If there is a contextual type available then this is an implicit variable
-    // definition, otherwise it is an error.
-    if (!contextualType.first || !emitter.varDeclCursor) {
-      emitter.emitError(getLoc(), "use of unknown declaration \"")
-          << spelling << '"';
-      return {};
-    }
-
-    // Otherwise, introduce a new lit.var.decl node whose type matches the
-    // initializer expression.
-    //
-    // TODO(autopromotions): turn infinite integers into concrete ones as
-    // needed.
-    auto declType = POP::PointerType::get(contextualType.first);
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope per function and all variables belong to that scope, so builders
-    // should reflect that.
-    auto varDecl = OpBuilder(emitter.varDeclCursor)
-                       .create<VarDeclOp>(emitter.translateLocation(getLoc()),
-                                          declType, nameAttr);
-    decl = &emitter.shared.declResolver->addFullyResolvedDecl(
-        varDecl, nameAttr, contextualType.second, &emitter.declScope);
-  }
-
-  // We need the signature for the struct to be resolved in order to know how
-  // to refer to it.
-  auto resolveResult = emitter.shared.declResolver->resolve(
-      *decl, DeclResolvedness::signatureResolved, getLoc());
-
-  // If the decl was erroneous somehow, then don't form a reference to it.
-  if (failed(resolveResult))
+  ASTDecl *decl = emitter.lookupDecl(
+      spelling, getLoc(), emitter.declScope,
+      [&](InFlightDiagnostic diag) {
+        diag << "use of unknown declaration \"" << spelling << '"';
+      },
+      contextualType);
+  if (!decl)
     return {};
 
   // Variable references resolve to an lvalue addressing the variable.
@@ -497,6 +493,12 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
                                                 ASTType calledType,
                                                 ExprEmitter &emitter) {
+  // Ensure the type specified is fully resolved, so all its members are known.
+  if (failed(emitter.shared.declResolver->resolve(
+          calledType.getDecl(), DeclResolvedness::fullyResolved,
+          call.getLoc())))
+    return {};
+
   auto newMemberVal =
       emitTypeMemberReference(calledType, "__new__", call.getLoc(), emitter);
   if (!newMemberVal)

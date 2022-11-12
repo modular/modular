@@ -191,9 +191,12 @@ public:
   FullType emitType(const ExprNode *node);
 
   /// Perform a name lookup in the current scope and return the named
-  /// declaration.  This emits an error and returns null on error.
+  /// declaration.  This emits an error and returns null on error.  When
+  /// 'implicitDeclType' is non-null, a name lookup failure will insert a new
+  /// variable declaration in the scope.
   ASTDecl *lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
-                      std::function<void(InFlightDiagnostic)> errorFn);
+                      std::function<void(InFlightDiagnostic)> errorFn,
+                      FullType implicitDeclType = {});
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
