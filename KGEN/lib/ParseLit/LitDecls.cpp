@@ -559,7 +559,13 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   for (auto &param : params) {
     paramLocs.push_back(p.translateLocation(param.loc));
     paramNames.push_back(param.name);
-    paramTypes.push_back(sharedState.getMLIRType(param.type, param.loc));
+
+    // Install the correct MLIR Type, which is the MLIR projection of the AST
+    // type with any convention changes applied.
+    auto mlirType = sharedState.getMLIRType(param.type, param.loc);
+    if (param.isByRef)
+      mlirType = POP::PointerType::get(mlirType);
+    paramTypes.push_back(mlirType);
 
     // TODO: add support for default parameter expressions.
     if (param.initValue)

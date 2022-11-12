@@ -248,6 +248,9 @@ struct StructExample:
     StructExample.static(Int(4))
     pass
 
+  # CHECK: lit.func @"StructExample::mutatingMethod"(%self: !pop.pointer<@StructExample>) -> !lit.none
+  def mutatingMethod(&self):
+
 # CHECK: }
 # CHECK-NEXT: }
 
@@ -275,6 +278,15 @@ struct Int:
     return Int(rhs.value)      # TODO: Use this somehow. :)
     # CHECK: kgen.return %2
   # CHECK: }
+
+  # In place addition is mutating.
+
+  # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  def __iadd__(&self, rhs: Int) -> Int:
+    # TODO: Need method calls.
+    #self = self.__add__(rhs)
+    return self
+
 # CHECK: }
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.ref<@DType>> {
@@ -354,5 +366,10 @@ def func_interface2[type: DType](x: index) -> index:
 def func_impl[type: DType](x: index) -> index:
   return x
 
-# CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !kgen.ref<@Int>) -> !lit.none
+# CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
+# CHECK: %a_0 = lit.var.decl "a" : <@Int>
+# CHECK: pop.store %a, %a_0 : !pop.pointer<@Int>
+# CHECK: %0 = pop.load %a_0 : !pop.pointer<@Int>
+# CHECK: pop.store %0, %b : !pop.pointer<@Int>
 def byval_byref_function(a: Int, &b: Int):
+  b = a
