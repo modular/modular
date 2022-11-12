@@ -56,7 +56,7 @@ def LITFuncOp
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
 
-    /// If this is a special function like __init__ return the enum that
+    /// If this is a special function like __new__ return the enum that
     /// identifies it, otherwise return kNormal.
     SpecialFunctionKind getSpecialFunctionKind();
   }];
