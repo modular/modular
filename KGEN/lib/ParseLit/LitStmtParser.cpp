@@ -310,9 +310,9 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
 
   // Check to see if the destination type and the source type are compatible.
   // TODO: Implement implicit conversions.
-  if (!lValue.type.isEqualCanon(rhsValue.type)) {
+  if (lValue.ir.getType() != POP::PointerType::get(rhsValue.ir.getType())) {
     emitError(rhs->getLoc(), "cannot convert value of type ")
-        << rhsValue.type << " to " << lValue.type;
+        << rhsValue.type << " to " << lValue.type.getLValueElementType();
     return success();
   }
 

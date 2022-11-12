@@ -81,6 +81,15 @@ public:
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
 
+  /// If this is a bound builtin lit Pointer type, return the element type,
+  /// otherwise return null.
+  MValue getPointerElementType() const;
+
+  /// This is used for types that are known on valid LValues, which must always
+  /// have pointer type.  This is just an asserting form of
+  /// getPointerElementType.
+  MValue getLValueElementType() const;
+
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
