@@ -14,6 +14,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -193,8 +194,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<index::IndexDialect, mlir::LLVM::LLVMDialect,
-                  mlir::scf::SCFDialect>();
+  registry.insert<HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect,
+                  scf::SCFDialect>();
 
   mlir::registerLLVMDialectTranslation(registry);
 

@@ -77,6 +77,10 @@ LogicalResult ControlFlowVerifier::verifyTerminator(Operation *op) {
                  .attachNote(root->getLoc())
              << "see control-flow root here";
     }
+    // FIXME: LLVM functions with no results return `LLVMVoidType`. Let
+    // verifications fall through here so that HLCF lowerings can be composed.
+    if (function->getName().getStringRef() == "llvm.func")
+      return success();
     return verifyTypes(op->getOperandTypes(), function.getResultTypes(), op,
                        function, "return value", "function");
   }

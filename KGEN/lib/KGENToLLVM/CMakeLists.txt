@@ -15,6 +15,7 @@ add_modular_conversion_library(KGENToLLVM
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  HLCFToLLVM
   KGENDialect
   POPDialect
   MCompilerSupport
