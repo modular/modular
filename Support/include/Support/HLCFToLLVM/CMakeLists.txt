@@ -4,14 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
-
-  LINK_LIBS PRIVATE
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-)
+set(LLVM_TARGET_DEFINITIONS HLCFToLLVM.td)
+mlir_tablegen(HLCFToLLVM.h.inc -gen-pass-decls)
+add_public_tablegen_target(HLCFToLLVMIncGen)

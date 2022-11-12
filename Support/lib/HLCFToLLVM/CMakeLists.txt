@@ -4,14 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
+add_modular_conversion_library(HLCFToLLVM
+  HLCFToLLVM.cpp
 
-  LINK_LIBS PRIVATE
+  DEPENDS
+  HLCFToLLVMIncGen
+
+  LINK_LIBS PUBLIC
   HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
+
+  MLIRLLVMCommonConversion
+  MLIRLLVMDialect
+  MLIRPass
 )
