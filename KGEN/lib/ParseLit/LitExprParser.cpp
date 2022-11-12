@@ -66,7 +66,9 @@ public:
   ~ExprParser() {}
 
   // Expressions.
-  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results);
+  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
+                                  LitToken::Kind terminator,
+                                  bool *hadTrailingSep = nullptr);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowest);
 
@@ -126,11 +128,14 @@ bool ExprParser::isTokenStartOfNextStatement() {
 
 /// expression_list ::= expression ("," expression)* [","]
 ParseResult
-ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results) {
-  // TODO: Support trailing comma for singleton tuple.
-  return parseCommaSeparatedList([&]() -> ParseResult {
-    return parseExpression(results.emplace_back(nullptr));
-  });
+ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
+                                LitToken::Kind terminator,
+                                bool *hadTrailingSep) {
+  return parseCommaSeparatedList(
+      [&]() -> ParseResult {
+        return parseExpression(results.emplace_back(nullptr));
+      },
+      terminator, hadTrailingSep);
 }
 
 namespace {
@@ -287,7 +292,9 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
 /// enclosure ::= parenth_form | list_display | dict_display | set_display
 ///             | generator_expression | yield_atom
 /// parenth_form ::= "(" [starred_expression] ")"
-///
+/// list_display ::=  "[" [starred_list | comprehension [TODO]] "]"
+/// starred_list       ::=  starred_item ("," starred_item)* [","]
+/// starred_item       ::=  assignment_expression[TODO] | "*" or_expr [TODO]
 /// literal ::=
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
@@ -340,6 +347,23 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
                    "expected ')' in parenthesized expression"))
       return failure();
     result = alloc<ParenExprNode>(lpLoc, result, rpLoc);
+    break;
+  }
+  case LitToken::l_square: { // list_display
+    SMLoc lsLoc = consumeToken(LitToken::l_square).getLoc();
+    SMLoc rsLoc;
+    SmallVector<ExprNode *> exprs;
+    if (consumeIf(LitToken::r_square, &rsLoc)) {
+      // Empty list: []
+      result = alloc<ListExprNode>(lsLoc, exprs, rsLoc);
+      break;
+    }
+    if (parseExpressionList(exprs, LitToken::r_square))
+      return failure();
+    rsLoc = getToken().getLoc();
+    if (parseToken(LitToken::r_square, "expected ']' in list expression"))
+      return failure();
+    result = alloc<ListExprNode>(lsLoc, copyArrayRef<ExprNode *>(exprs), rsLoc);
     break;
   }
 
@@ -411,7 +435,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   if (!consumeIf(LitToken::r_paren)) {
     // Expressions continue maximally because we are within ()'s.
     llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
-    if (parseExpressionList(args) ||
+    if (parseExpressionList(args, LitToken::r_paren) ||
         parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
       return failure();
     }
@@ -436,7 +460,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
   // TODO: Add support for slices.
   SmallVector<ExprNode *> indices;
-  if (parseExpressionList(indices) ||
+  if (parseExpressionList(indices, LitToken::r_square) ||
       parseToken(LitToken::r_square, "expected ']' in call argument list"))
     return failure();
 
@@ -451,8 +475,10 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
 ParseResult
 LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                   Optional<size_t> stmtIndent) {
-  return ExprParser(getLexer(), stmtIndent).parseExpressionList(results);
+                                   Optional<size_t> stmtIndent,
+                                   bool *hadTrailingSep) {
+  return ExprParser(getLexer(), stmtIndent)
+      .parseExpressionList(results, LitToken::Kind::eof, hadTrailingSep);
 }
 
 ParseResult LitParserBase::parseExpression(ExprNode *&result,

@@ -304,7 +304,7 @@ struct ParsedMetaSignature {
       return success();
     };
 
-    if (p.parseCommaSeparatedList(parseMetaParameter) ||
+    if (p.parseCommaSeparatedList(parseMetaParameter, LitToken::r_square) ||
         p.parseToken(LitToken::r_square, "expected ']' for parameter list"))
       return failure();
     return success();
@@ -483,9 +483,9 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   metaSignature.addToScope(sharedState, decl);
 
   if (!p.consumeIf(LitToken::r_paren)) {
-    if (p.parseCommaSeparatedList([&]() {
-          return params.emplace_back(ParsedParam()).parse(p, decl);
-        }) ||
+    if (p.parseCommaSeparatedList(
+            [&]() { return params.emplace_back(ParsedParam()).parse(p, decl); },
+            LitToken::r_paren) ||
         p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
       return failure();
   }

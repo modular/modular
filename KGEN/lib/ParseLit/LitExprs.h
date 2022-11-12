@@ -54,6 +54,7 @@ public:
     kCall,          // thing(a, b)
     kSubscript,     // thing[a, b:c]
     kParenExprNode, // (x+y)
+    kListExprNode,  // [x, y]
 
     // Unary expressions.
     kUnaryMinus,
