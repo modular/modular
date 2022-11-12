@@ -165,6 +165,23 @@ struct ParenExprNode final : public ExprNode {
                               FullType contextualType) const override;
 };
 
+struct ListExprNode final : public ExprNode {
+  ListExprNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)
+      : ExprNode(kListExprNode), lsquareLoc(lsquareLoc), exprs(exprs),
+        rsquareLoc(rsquareLoc) {}
+
+  const SMLoc lsquareLoc;
+  llvm::SmallVector<ExprNode *> exprs;
+  const SMLoc rsquareLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kListExprNode;
+  }
+  SMLoc getLoc() const override { return lsquareLoc; }
+  ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
+                              FullType contextualType) const override;
+};
+
 struct TernaryOpNode final : public ExprNode {
   TernaryOpNode(Kind kind, ExprNode *condExpr, ExprNode *trueExpr,
                 ExprNode *falseExpr, SMLoc opLoc)

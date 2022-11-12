@@ -57,15 +57,29 @@ ParseResult LitParserBase::parseListUntil(
 }
 
 /// Parse a list of elements continued with a separator token, like a comma.
+/// The list ends either with a terminator, which is not consumed, or a new
+/// line. hadTrailingSep is set to true if a trailing separator was found.
 ///
-/// separated_list ::= (element (SEPARATOR element)*
+/// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
 ///
 ParseResult LitParserBase::parseSeparatedList(
-    LitToken::Kind separator,
-    const std::function<ParseResult()> &parseElement) {
+    LitToken::Kind separator, const std::function<ParseResult()> &parseElement,
+    LitToken::Kind terminator, bool *hadTrailingSep) {
+  if (hadTrailingSep)
+    *hadTrailingSep = false;
   if (parseElement())
     return failure();
   while (consumeIf(separator)) {
+    // terminator = eof signals no terminator was given as input so check for
+    // "new line": if we have indentation it means we are starting a line
+    // after the last separator.
+    if (getToken().is(terminator) ||
+        (terminator == LitToken::eof &&
+         getToken().getIndentation().has_value())) {
+      if (hadTrailingSep)
+        *hadTrailingSep = true;
+      break;
+    }
     if (parseElement())
       return failure();
   }

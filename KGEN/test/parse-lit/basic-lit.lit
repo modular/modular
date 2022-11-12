@@ -8,6 +8,30 @@
 def empty_def():
   # Pass isn't required.
 
+# CHECK-LABEL: lit.func @listValues() -> index {
+def listValues() -> index:
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2, 2+1]
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2, 2+1,]
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2,
+            2+1]
+  # CHECK:      %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: pop.store %[[ZERO:.*]], %a : !pop.pointer<index>
+  a = []
+  return a
+
+
 # CHECK-LABEL: lit.func @test_if_cond(%a: index) -> !lit.none {
 def test_if_cond(a: index):
     # CHECK:      %[[ONE0:.*]] = index.constant 1

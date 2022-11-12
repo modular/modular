@@ -577,6 +577,32 @@ ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
   return subExpr->emitIR(emitter, contextualType);
 }
 
+ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
+                                          FullType contextualType) const {
+  // TODO: here we return the last expression, we should return a list object
+  // instead.
+  DRValue last;
+  for (ExprNode *expr : exprs) {
+    auto exprRep = emitter.emitRValue(expr);
+    if (!exprRep)
+      return {};
+
+    // TODO(types): allow all types.
+    if (exprRep.type.getDecl().magicKind != MagicDeclKind::kIndexType) {
+      emitter.emitError(
+          getLoc(), "List expression with interesting types not implemented");
+      return {};
+    }
+    assert(emitter.builder && "cannot have dynamic values without a builder");
+    last = emitter.emitDRValue(exprRep, expr->getLoc()).ir;
+  }
+  if (exprs.empty()) {
+    auto loc = emitter.translateLocation(getLoc());
+    last = DRValue(emitter.builder->create<mlir::index::ConstantOp>(loc, 0));
+  }
+  return {last, emitter.shared.getIndexType()};
+}
+
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
                                        FullType contextualType) const {
   auto lhsRep = emitter.emitRValue(lhs);

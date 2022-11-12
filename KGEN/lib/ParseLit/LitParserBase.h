@@ -127,15 +127,21 @@ public:
                              const std::function<ParseResult()> &parseElement);
 
   /// Parse a list of elements continued with a separator token, like a comma.
+  /// The list ends either with a terminator, which is not consumed, or a new
+  /// line. hadTrailingSep is set to true if a trailing separator was found.
   ///
-  /// separated_list ::= (element (SEPARATOR element)*
+  /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
   ///
   ParseResult
   parseSeparatedList(LitToken::Kind separator,
-                     const std::function<ParseResult()> &parseElement);
+                     const std::function<ParseResult()> &parseElement,
+                     LitToken::Kind terminator, bool *hadTrailingSep);
   ParseResult
-  parseCommaSeparatedList(const std::function<ParseResult()> &parseElement) {
-    return parseSeparatedList(LitToken::comma, parseElement);
+  parseCommaSeparatedList(const std::function<ParseResult()> &parseElement,
+                          LitToken::Kind terminator,
+                          bool *hadTrailingSep = nullptr) {
+    return parseSeparatedList(LitToken::comma, parseElement, terminator,
+                              hadTrailingSep);
   }
 
   /// Skip tokens until we get to a token at start of line that has indentation
@@ -179,7 +185,8 @@ public:
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  Optional<size_t> stmtIndent);
+                                  Optional<size_t> stmtIndent,
+                                  bool *hadTrailingSep);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
   ParseResult parseType(FullType &result, ASTDecl &declScope,
                         Optional<size_t> stmtIndent);
