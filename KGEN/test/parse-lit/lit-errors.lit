@@ -154,26 +154,24 @@ def BadDecorator(): pass
 def StaticMethod(): pass
 
 # expected-error @+1 {{special function must be a method}}
-def __init__(): pass
+def __new__(): pass
 
 struct WrongType:
+  # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
+  def __init__(self): pass
+
   # expected-error @+1 {{result type must be 'WrongType'}}
   def __new__() -> Int: pass
 
-  # expected-error @+1 {{'self' argument must have type '&WrongType'}}
-  def __init__(self: Int): pass
-
-struct WrongSelfType2[a: Int]:
-  # expected-error @+1 {{'self' argument must have type '&WrongSelfType2[a]'}}
+struct WrongSelfType[a: Int]:
+  # expected-error @+1 {{'self' argument must have type '&WrongSelfType[a]'}}
   def badMethod(self: Int): pass
 
-struct WrongSelfType3:
-  # expected-error @+1 {{'self' argument must have type '&WrongSelfType3'}}
-  def __init__(self: WrongSelfType3): pass
+  # expected-error @+1 {{'self' argument must have type '&WrongSelfType[a]'}}
+  def badMethod2(self: WrongSelfType[a]): pass
 
-struct WrongInitResult:
-  # expected-error @+1 {{result type must be elided (or None)}}
-  def __init__(self) -> Int: pass
+  def goodMethod(self: &WrongSelfType[a]): pass
+
 
 @interface
 def bad_interface_with_body0(x: index) -> index:

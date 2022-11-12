@@ -417,6 +417,7 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
       return defDecl.emitError("special function must be a method");
     return success();
   };
+
   auto checkInstanceMethod = [&]() -> ParseResult {
     if (checkMethod())
       return failure();
@@ -433,10 +434,14 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, LITFuncOp defDecl,
   switch (specialFunctionKind) {
   case SpecialFunctionKind::kNormal:
     return success();
+
   case SpecialFunctionKind::kInit:
     // __init__ must be a method and return NoneType.
     if (checkInstanceMethod() || checkResultNoneType())
       return failure();
+    if (isa<LITStructDeclOp>(selfType.getDecl()))
+      return defDecl.emitError(
+          "__init__ is not allowed on structs, use __new__ instead");
     return success();
 
   case SpecialFunctionKind::kNew:
