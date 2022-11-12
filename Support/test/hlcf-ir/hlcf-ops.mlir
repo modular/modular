@@ -1,4 +1,4 @@
-// RUN: index-opt %s | index-opt | FileCheck %s
+// RUN: index-opt -allow-unregistered-dialect %s | index-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: func @loop
 func.func @loop(%arg0: i32, %arg1: i64) {
@@ -62,4 +62,32 @@ func.func @if(%arg0: i1, %arg1: i32, %arg2: i64) {
   }
 
   return
+}
+
+// CHECK-LABEL: func.func @func_loop_if
+func.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
+  // CHECK: %[[V0:.*]] = hlcf.loop (%[[A:.*]] = %arg2 : i64) -> i32
+  %2 = hlcf.loop (%0 = %arg2 : i64) -> i32 {
+    // CHECK: %[[V1:.*]] = hlcf.if %arg0 -> i64
+    %1 = hlcf.if %arg0 -> i64 {
+      // CHECK: hlcf.return %arg1 : i32
+      hlcf.return %arg1 : i32
+    } else {
+      // CHECK: hlcf.yield %[[A]] : i64
+      hlcf.yield %0 : i64
+    }
+    // CHECK: hlcf.if %arg0
+    hlcf.if %arg0 {
+      "foo.terminator"() [^bb0] : () -> ()
+
+    ^bb0:
+      // CHECK: hlcf.continue %[[A]] : i64
+      hlcf.continue %0 : i64
+    } else {
+      hlcf.yield
+    }
+    // CHECK: hlcf.break %arg1 : i32
+    hlcf.break %arg1 : i32
+  }
+  return %2 : i32
 }
