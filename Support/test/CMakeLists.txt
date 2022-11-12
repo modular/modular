@@ -13,4 +13,5 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-support
   TOOLS
-  index-opt)
+  index-opt
+  system-info)

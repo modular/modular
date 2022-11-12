@@ -9,4 +9,5 @@ add_modular_tool(system-info
 
   LINK_LIBS PRIVATE
   LLVMSupport
+  MSupport
 )
