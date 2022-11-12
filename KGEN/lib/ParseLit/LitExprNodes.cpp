@@ -176,6 +176,139 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 }
 
 //===----------------------------------------------------------------------===//
+// IR Emission helpers
+//===----------------------------------------------------------------------===//
+
+static ASTTypeAnd<AnyValue>
+emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
+                 ExprEmitter &emitter) {
+  auto emitError = [&](const Twine &message) {
+    return emitter.emitError(call.getLoc(), message);
+  };
+
+  RValue calleeVal = calleeValAndType.ir;
+  ASTType calleeASTType = calleeValAndType.type;
+
+  auto calleeAnyType = calleeVal.getType(emitter.getContext());
+  SignatureType calleeType = dyn_cast<SignatureType>(calleeAnyType);
+  if (!calleeType) {
+    emitError("unable function to call");
+    return {};
+  }
+
+  // The ASTType of calleeVal must be a magic function type, for the IR to
+  // have signature type.  We cannot have error types or anything else here.
+  // TODO: Switch to key off the AST type when it carries everything we need.
+  assert(calleeASTType.getDecl().magicKind == MagicDeclKind::kFunctionType);
+  assert(calleeASTType.getParamValues().size() == 1 &&
+         "FunctionType should have one (result) parameter");
+  auto resultASTTypeVal = calleeASTType.getParamValues()[0].second;
+
+  auto resultASTType = resultASTTypeVal.getIfMTValue();
+  if (!resultASTType) {
+    // TODO: We have no way to represent a symbolic value of ASTType.
+    emitError("unable to call function value with parametric result type");
+    return {};
+  }
+
+  // If there are any unbound parameters then we cannot call it.
+  // TODO: infer the parameters from the types of the operands.
+  if (!calleeType.getInputParams().empty()) {
+    emitError("unable to call parameterized value that expects ")
+        << calleeType.getInputParams().size() << " bound parameters";
+    return {};
+  }
+
+  assert(calleeType.getResultParamTypes().empty() &&
+         "TODO: meta results not implemented yet");
+
+  size_t numArgs = calleeType.getValues().getNumInputs();
+  if (numArgs != call.args.size()) {
+    emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
+    return {};
+  }
+
+  // Emit all the arguments.
+  SmallVector<Value> valueArguments;
+  for (auto [arg, expectedType] :
+       llvm::zip(call.args, calleeType.getValues().getInputs())) {
+    auto argVal = emitter.emitDRValue(arg);
+    if (!argVal.ir)
+      return {};
+
+    if (argVal.ir.getType() != expectedType) {
+      // TODO: Handle implicit conversions.
+      emitter.emitError(arg->getLoc(), "value of type ")
+          << argVal.type
+          << " cannot be converted to expected type "
+          // TODO: Print pretty expected type.
+          << expectedType;
+      return {};
+    }
+    valueArguments.push_back(argVal.ir);
+  }
+
+  auto calleeParam = calleeVal.getIfMAValue();
+  if (!calleeParam) {
+    emitError("TODO: indirect value call not supported yet");
+    return {};
+  }
+
+  if (!emitter.builder) {
+    emitError("TODO: cannot call function in parameter context");
+    return {};
+  }
+
+  auto callOp = emitter.builder->create<CallParamOp>(
+      emitter.translateLocation(call.getLoc()),
+      /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
+      /*inputParams*/ ArrayRef<ParamBindAttr>(),
+      /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+      /*operands*/ valueArguments);
+
+  // Value returning call returns its result.
+  return {DRValue(callOp.getResult(0)), resultASTType};
+}
+
+/// Given an ASTType 'containingType', look up a named member of it and return
+/// the reference to its symbol as an RValue.
+static ASTTypeAnd<RValue> emitTypeMemberReference(ASTType containerType,
+                                                  StringRef memberName,
+                                                  SMLoc loc,
+                                                  ExprEmitter &emitter) {
+  auto calledStructDecl = dyn_cast<LITStructDeclOp>(containerType.getDecl());
+  if (!calledStructDecl) {
+    emitter.emitError(loc, "cannot get member of type ") << containerType;
+    return {};
+  }
+
+  ASTDecl *callee = emitter.lookupDecl(
+      memberName, loc, containerType.getDecl(), [&](InFlightDiagnostic diag) {
+        diag << containerType << " has no '" << memberName << "' method";
+      });
+  if (!callee)
+    return {};
+
+  auto newFnDecl = dyn_cast<LITFuncOp>(*callee);
+  if (!newFnDecl) {
+    emitter.emitError(loc, "'")
+        << memberName << "' member on " << containerType << " isn't a function";
+    return {};
+  }
+
+  auto symbolRef =
+      SymbolRefAttr::get(calledStructDecl.getNameAttr(),
+                         FlatSymbolRefAttr::get(newFnDecl.getNameAttr()));
+
+  auto newFnAttr = SymbolConstantAttr::get(symbolRef, newFnDecl.getSignature());
+
+  // TODO: Correct argument/parameter type.
+  ASTType newASTType =
+      emitter.shared.getFunctionType(callee->getResolvedType());
+  return {RValue(newFnAttr), newASTType};
+}
+
+//===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
@@ -348,137 +481,27 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
             emitter.shared.getPointerType(fieldDecl->getResolvedType())};
   }
 
+  // Handle member references on types.
+  if (ASTType baseType = baseVal.ir.getIfMTValue()) {
+    auto rValueAnd =
+        emitTypeMemberReference(baseType, attrSpelling, getLoc(), emitter);
+    return {rValueAnd.ir, rValueAnd.type};
+  }
+
   // TODO: Handle parameter member references.
-  emitter.emitError(getLoc(), "cannot emit members of rvalues yet");
+  emitter.emitError(getLoc(), "cannot emit members of ") << baseVal.type;
   return {};
 }
 
-static ASTTypeAnd<AnyValue>
-emitFunctionCall(const CallNode &call, RValue calleeVal, ASTType calleeASTType,
-                 SignatureType calleeType, ExprEmitter &emitter) {
-  auto emitError = [&](const Twine &message) {
-    return emitter.emitError(call.getLoc(), message);
-  };
-
-  // The ASTType of calleeVal must be a magic function type, for the IR to have
-  // signature type.  We cannot have error types or anything else here.
-  // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeASTType.getDecl().magicKind == MagicDeclKind::kFunctionType);
-  assert(calleeASTType.getParamValues().size() == 1 &&
-         "FunctionType should have one (result) parameter");
-  auto resultASTTypeVal = calleeASTType.getParamValues()[0].second;
-
-  auto resultASTType = resultASTTypeVal.getIfMTValue();
-  if (!resultASTType) {
-    // TODO: We have no way to represent a symbolic value of ASTType.
-    emitError("unable to call function value with parametric result type");
-    return {};
-  }
-
-  // If there are any unbound parameters then we cannot call it.
-  // TODO: infer the parameters from the types of the operands.
-  if (!calleeType.getInputParams().empty()) {
-    emitError("unable to call parameterized value that expects ")
-        << calleeType.getInputParams().size() << " bound parameters";
-    return {};
-  }
-
-  assert(calleeType.getResultParamTypes().empty() &&
-         "TODO: meta results not implemented yet");
-
-  size_t numArgs = calleeType.getValues().getNumInputs();
-  if (numArgs != call.args.size()) {
-    emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
-    return {};
-  }
-
-  // Emit all the arguments.
-  SmallVector<Value> valueArguments;
-  for (auto [arg, expectedType] :
-       llvm::zip(call.args, calleeType.getValues().getInputs())) {
-    auto argVal = emitter.emitDRValue(arg);
-    if (!argVal.ir)
-      return {};
-
-    if (argVal.ir.getType() != expectedType) {
-      // TODO: Handle implicit conversions.
-      emitter.emitError(arg->getLoc(), "value of type ")
-          << argVal.type
-          << " cannot be converted to expected type "
-          // TODO: Print pretty expected type.
-          << expectedType;
-      return {};
-    }
-    valueArguments.push_back(argVal.ir);
-  }
-
-  auto calleeParam = calleeVal.getIfMAValue();
-  if (!calleeParam) {
-    emitError("TODO: indirect value call not supported yet");
-    return {};
-  }
-
-  if (!emitter.builder) {
-    emitError("TODO: cannot call function in parameter context");
-    return {};
-  }
-
-  auto callOp = emitter.builder->create<CallParamOp>(
-      emitter.translateLocation(call.getLoc()),
-      /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
-      /*inputParams*/ ArrayRef<ParamBindAttr>(),
-      /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-      /*operands*/ valueArguments);
-
-  // Value returning call returns its result.
-  return {DRValue(callOp.getResult(0)), resultASTType};
-}
-
-/// Given a call of a type value, figure out how to invoke __new__ to get the
-/// value.
+/// Given a call of a type T value, lower it into a call of 'T.__new__'.
 static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
-                                                RValue calleeVal,
+                                                ASTType calledType,
                                                 ExprEmitter &emitter) {
-  ASTType calledType = calleeVal.getIfMTValue();
-  if (!calledType) {
-    emitter.emitError(call.getLoc(),
-                      "TODO: Support calls through parameters of type 'type'");
+  auto newMemberVal =
+      emitTypeMemberReference(calledType, "__new__", call.getLoc(), emitter);
+  if (!newMemberVal)
     return {};
-  }
-
-  auto calledStructDecl = dyn_cast<LITStructDeclOp>(calledType.getDecl());
-  if (!calledStructDecl) {
-    emitter.emitError(call.getLoc(), "unknown type to initialize ")
-        << calledType;
-    return {};
-  }
-
-  ASTDecl *callee =
-      emitter.lookupDecl("__new__", call.getLoc(), calledType.getDecl(),
-                         [&](InFlightDiagnostic diag) {
-                           diag << calledType << " has no __new__ method";
-                         });
-  if (!callee)
-    return {};
-
-  auto newFnDecl = dyn_cast<LITFuncOp>(*callee);
-  if (!newFnDecl) {
-    emitter.emitError(call.getLoc(), "'__new__' member on ")
-        << calledType << " isn't a function";
-    return {};
-  }
-
-  auto symbolRef =
-      SymbolRefAttr::get(calledStructDecl.getNameAttr(),
-                         FlatSymbolRefAttr::get(newFnDecl.getNameAttr()));
-
-  auto newFnAttr = SymbolConstantAttr::get(symbolRef, newFnDecl.getSignature());
-
-  // TODO: Correct argument/parameter type.
-  ASTType newASTType =
-      emitter.shared.getFunctionType(callee->getResolvedType());
-  return emitFunctionCall(call, MValue(newFnAttr), newASTType,
-                          newFnDecl.getSignature(), emitter);
+  return emitFunctionCall(call, newMemberVal, emitter);
 }
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
@@ -487,15 +510,14 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   if (!calleeVal)
     return {};
 
-  // The only callable thing we have right now are functions.
+  // Invoking a type is a call to an initialize for the type.
+  if (ASTType calledType = calleeVal.ir.getIfMTValue())
+    return emitInitializerCall(*this, calledType, emitter);
+
+  // Otherwise, handle callable functions.
   auto calleeAnyType = calleeVal.ir.getType(emitter.getContext());
   if (auto calleeType = dyn_cast<SignatureType>(calleeAnyType))
-    return emitFunctionCall(*this, calleeVal.ir, calleeVal.type, calleeType,
-                            emitter);
-
-  // Invoking a type is a call to an initialize for the type.
-  if (calleeVal.type.isMagicType(MagicDeclKind::kTypeType))
-    return emitInitializerCall(*this, calleeVal.ir, emitter);
+    return emitFunctionCall(*this, calleeVal, emitter);
 
   emitter.emitError(getLoc(), "unable to call value of type ")
       << calleeVal.type;

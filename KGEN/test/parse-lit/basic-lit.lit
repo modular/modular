@@ -242,6 +242,10 @@ struct StructExample:
   # CHECK: lit.func @"StructExample::static"(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   def static(x: Int):
+    # CHECK: %0 = index.constant 4
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
+    # CHECK: %2 = kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%1)
+    StructExample.static(Int(4))
     pass
 # CHECK: }
 # CHECK-NEXT: }
