@@ -59,13 +59,14 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   // https://docs.python.org/3/library/functions.html#built-in-funcs
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   ASTDecl &builtinsDecl = sharedState.declResolver->addDecl(
-      *module, nullptr, lexer.getCursor(), lexer.getCursor(), -1);
+      *module, StringAttr(), nullptr, lexer.getCursor(), lexer.getCursor(), -1);
   sharedState.addBuiltinTypes(builtinsDecl);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
   ASTDecl &fileScope = sharedState.declResolver->addDecl(
-      *module, &builtinsDecl, lexer.getCursor(), lexer.getCursor(), -1);
+      *module, StringAttr(), &builtinsDecl, lexer.getCursor(),
+      lexer.getCursor(), -1);
 
   // Parse the file.
   /// file ::= statements

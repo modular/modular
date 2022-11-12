@@ -191,8 +191,8 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Given a LITStructDeclOp that is completely initialized, add it to the
   // resolver.
   auto addCompletedStructDecl = [&](LITStructDeclOp structOp, ASTDecl *&decl) {
-    decl = &resolver.addDecl(structOp, &builtinsDecl, LitLexerCursor(),
-                             LitLexerCursor(), 0);
+    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
+                             LitLexerCursor(), LitLexerCursor(), 0);
     decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
     decl->resolvedness = DeclResolvedness::fullyResolved;
   };

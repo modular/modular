@@ -588,6 +588,7 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
 
   // Is this a method?
   bool isMethod = false;
+  StringAttr baseName = name; // Save the unmangled name.
   if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
     std::string mangledName =
         (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
@@ -619,7 +620,7 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(litDecl, &containingDecl, startCursor,
+  getDeclResolver().addDecl(litDecl, baseName, &containingDecl, startCursor,
                             getLexer().getCursor(), curIndent);
   return success();
 }
@@ -646,7 +647,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, &containingDecl, startCursor,
+  getDeclResolver().addDecl(varDecl, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
@@ -680,7 +681,7 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, &containingDecl, startCursor,
+  getDeclResolver().addDecl(newStruct, nameAttr, &containingDecl, startCursor,
                             getLexer().getCursor(), curIndent);
 
   return success();
