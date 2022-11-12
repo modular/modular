@@ -53,11 +53,12 @@ public:
   void resolveAll(llvm::SMLoc loc);
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(Operation *decl, ASTDecl *parentDecl, LitLexerCursor cursor,
-                   LitLexerCursor endCursor, ssize_t indentation);
+  ASTDecl &addDecl(Operation *decl, StringAttr name, ASTDecl *parentDecl,
+                   LitLexerCursor cursor, LitLexerCursor endCursor,
+                   ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(Operation *decl, ASTType type,
+  ASTDecl &addFullyResolvedDecl(Operation *decl, StringAttr name, ASTType type,
                                 ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.

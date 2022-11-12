@@ -117,25 +117,17 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(Operation *op, ASTDecl *parentDecl,
-                               LitLexerCursor cursor, LitLexerCursor endCursor,
-                               ssize_t indentation) {
-  // Get the name for the entity.
-  StringAttr name;
-  TypeSwitch<Operation *>(op)
-      .Case<VarDeclOp, LITFuncOp, GeneratorInterfaceOp, LITStructDeclOp>(
-          [&](auto op) { name = op.getNameAttr(); })
-      .Case([&](ModuleOp op) {})
-      .Default(
-          [&](auto attr) { llvm_unreachable("Unknown declaration kind"); });
-
+ASTDecl &DeclResolver::addDecl(Operation *op, StringAttr name,
+                               ASTDecl *parentDecl, LitLexerCursor cursor,
+                               LitLexerCursor endCursor, ssize_t indentation) {
   return addDecl(op, op->getLoc(), name, parentDecl, cursor, endCursor,
                  indentation);
 }
 
-ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, ASTType type,
-                                            ASTDecl *parentDecl) {
-  auto &decl = addDecl(op, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, StringAttr name,
+                                            ASTType type, ASTDecl *parentDecl) {
+  auto &decl =
+      addDecl(op, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   decl.setResolvedType(type);
   return decl;
@@ -609,7 +601,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
     // a notion of immutability.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
-    addFullyResolvedDecl(varDecl, param.type.second, &decl);
+    addFullyResolvedDecl(varDecl, param.name, param.type.second, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
