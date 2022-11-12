@@ -7,10 +7,135 @@
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 
 using namespace M;
 using namespace HLCF;
+
+//===----------------------------------------------------------------------===//
+// Control-Flow Verification
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This object contains context about control-flow trees and uses that to
+/// verify them. Keep a stack of control-flow scopes as we walk the tree and
+/// verify that each terminator has a valid parent somewhere up the stack and
+/// check that the return types match.
+class ControlFlowVerifier {
+public:
+  explicit ControlFlowVerifier(Operation *root) : root(root) {}
+
+  /// Verify the control-flow tree from this operation if it is a root node.
+  static LogicalResult verifyIfRoot(Operation *op);
+
+private:
+  /// The root of the control-flow tree.
+  Operation *root;
+
+  /// The current stack of control-flow scopes. We only need to track loops
+  /// since yield terminators are structurally required to have if parents.
+  SmallVector<LoopOp> scopes;
+
+  /// Verify a terminator.
+  LogicalResult verifyTerminator(Operation *op);
+
+  /// Verify a node.
+  LogicalResult verifyNode(Operation *op);
+};
+} // namespace
+
+/// Verify two type ranges match.
+static LogicalResult verifyTypes(TypeRange lhs, TypeRange rhs, Operation *op,
+                                 Operation *parent, StringRef kind,
+                                 StringRef node) {
+  if (lhs.size() != rhs.size()) {
+    return (op->emitOpError("specifies ")
+            << lhs.size() << ' ' << kind << "s but surrounding " << node
+            << " expects " << rhs.size())
+               .attachNote(parent->getLoc())
+           << "see " << node << " here";
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return (op->emitOpError("operand #")
+            << idx << " type " << lhsType << " does not match expected " << kind
+            << " type " << rhsType)
+               .attachNote(parent->getLoc())
+           << "see " << node << " here";
+  }
+  return success();
+}
+
+LogicalResult ControlFlowVerifier::verifyTerminator(Operation *op) {
+  if (isa<ReturnOp>(op)) {
+    auto function = dyn_cast<mlir::FunctionOpInterface>(root);
+    if (!function) {
+      return op->emitOpError("is not nested within a function")
+                 .attachNote(root->getLoc())
+             << "see control-flow root here";
+    }
+    return verifyTypes(op->getOperandTypes(), function.getResultTypes(), op,
+                       function, "return value", "function");
+  }
+
+  if (isa<YieldOp>(op)) {
+    // The parent must be an if.
+    return verifyTypes(op->getOperandTypes(),
+                       op->getParentOp()->getResultTypes(), op,
+                       op->getParentOp(), "result", "if");
+  }
+
+  assert((isa<BreakOp, ContinueOp>(op)));
+  if (scopes.empty()) {
+    return op->emitOpError("is not nested within an 'hlcf.loop' operation")
+               .attachNote(root->getLoc())
+           << "see control-flow root here";
+  }
+  if (isa<BreakOp>(op))
+    return verifyTypes(op->getOperandTypes(), scopes.back().getResultTypes(),
+                       op, scopes.back(), "result", "loop");
+  return verifyTypes(op->getOperandTypes(), scopes.back().getOperandTypes(), op,
+                     scopes.back(), "argument", "loop");
+}
+
+LogicalResult ControlFlowVerifier::verifyNode(Operation *op) {
+  // Push a loop scoe if this node defines a new one.
+  auto loop = dyn_cast<LoopOp>(op);
+  if (loop)
+    scopes.push_back(loop);
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      if (block.getTerminator()->hasTrait<OpTrait::ControlFlowTerminator>() &&
+          failed(verifyTerminator(block.getTerminator())))
+        return failure();
+      for (Operation &op : block.without_terminator())
+        if (op.hasTrait<OpTrait::ControlFlowNode>() && failed(verifyNode(&op)))
+          return failure();
+    }
+  }
+
+  // Pop a loop scope if this node defines one.
+  if (loop)
+    scopes.pop_back();
+  return success();
+}
+
+LogicalResult ControlFlowVerifier::verifyIfRoot(Operation *op) {
+  // Verify the operation if is a root operation or if it is the root of a
+  // subtree rooted at a function.
+  Operation *root;
+  if (isa<mlir::FunctionOpInterface>(op->getParentOp()))
+    root = op->getParentOp();
+  else if (!op->getParentOp()->hasTrait<OpTrait::ControlFlowNode>())
+    root = op;
+  else
+    return success();
+  return ControlFlowVerifier(root).verifyNode(op);
+}
 
 //===----------------------------------------------------------------------===//
 // Operation Traits
@@ -32,7 +157,9 @@ LogicalResult HLCF::verifyControlFlowNode(Operation *op) {
       }
     }
   }
-  return success();
+
+  // If this operation is a root, verify the tree starting from here.
+  return ControlFlowVerifier::verifyIfRoot(op);
 }
 
 LogicalResult HLCF::verifyControlFlowTerminator(Operation *op) {
