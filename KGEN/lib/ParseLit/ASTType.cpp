@@ -53,6 +53,11 @@ MValue ASTType::getLValueElementType() const {
   return result;
 }
 
+/// Return true if this type is the specified 'magic' type.
+bool ASTType::isMagicType(MagicDeclKind kind) const {
+  return getDecl().magicKind == kind;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {

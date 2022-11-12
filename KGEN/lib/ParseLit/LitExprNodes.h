@@ -126,9 +126,6 @@ struct CallNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               FullType contextualType) const override;
-  ASTTypeAnd<AnyValue> emitFunctionCall(ExprEmitter &emitter, RValue calleeVal,
-                                        ASTType calleeASTType,
-                                        SignatureType calleeType) const;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the

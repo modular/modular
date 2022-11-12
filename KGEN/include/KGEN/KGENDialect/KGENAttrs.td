@@ -390,7 +390,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
                         AttributeSelfTypeParameter<"">:$type);
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
                                         "Type":$type), [{
       auto *context = symbol.getContext();
       return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);

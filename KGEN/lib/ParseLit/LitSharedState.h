@@ -148,7 +148,7 @@ enum class DeclResolvedness : int8_t {
 
 /// This keeps track of specific kinds of "magic" declarations that do not have
 /// a standard AST representation.
-enum class MagicDeclKind {
+enum class MagicDeclKind : uint8_t {
   // This is not a magic declaration, process it as normal.
   kNormal,
 
