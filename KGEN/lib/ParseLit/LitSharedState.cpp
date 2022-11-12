@@ -69,12 +69,16 @@ public:
   ASTDecl *indexDecl = nullptr;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
-  /// This is the decl for the builtin lit.object type.
-  ASTDecl *objectDecl = nullptr;
-  /// This is a PointerType type which is lowered into POP::PointerType.
-  ASTDecl *pointerDecl = nullptr;
   /// This is the decl for the builtin signature type.
   ASTDecl *functionDecl = nullptr;
+
+  // These should move the standard library and be looked up from there on
+  // demand.
+
+  /// This is a lit.Pointer type which should move to the standard library.
+  ASTDecl *pointerDecl = nullptr;
+  /// This is the decl for the builtin lit.object type.
+  ASTDecl *objectDecl = nullptr;
 };
 
 /// Get the name of the main buffer so we can rapidly build Location objects
