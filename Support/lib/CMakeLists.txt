@@ -6,6 +6,7 @@
 
 add_subdirectory(Benchmark)
 add_subdirectory(HLCFDialect)
+add_subdirectory(HLCFToLLVM)
 add_subdirectory(MDialect)
 add_subdirectory(ML)
 add_subdirectory(Compiler)

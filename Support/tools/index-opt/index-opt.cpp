@@ -5,9 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/HLCFDialect/HLCFDialect.h"
+#include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -15,8 +17,10 @@ using namespace M;
 
 int main(int argc, char **argv) {
   DialectRegistry registry;
-  registry.insert<mlir::func::FuncDialect, HLCF::HLCFDialect, MDialect>();
+  registry.insert<mlir::func::FuncDialect, mlir::LLVM::LLVMDialect,
+                  HLCF::HLCFDialect, MDialect>();
   mlir::registerCanonicalizer();
+  M::HLCF::registerLowerHLCFToLLVMPass();
   return failed(
       mlir::MlirOptMain(argc, argv, "index optimizer driver", registry));
 }
