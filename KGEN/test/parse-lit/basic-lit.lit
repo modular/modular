@@ -302,8 +302,12 @@ struct Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
     # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@"Int::__add__">
     # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>
-    self.__add__
-    #self = self.__add__(rhs)
+    # CHECK: %3 = pop.load %rhs_0 : !pop.pointer<@Int>
+    # CHECK: %4 = kgen.call_indirect %2(%3) : (!kgen.ref<@Int>) -> !kgen.ref<@Int>
+    # CHECK: pop.store %4, %self
+    self = self.__add__(rhs)
+    # CHECK: %5 = pop.load %self
+    # CHECK: kgen.return %5
     return self
 
 # CHECK: }

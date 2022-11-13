@@ -207,22 +207,22 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   };
 
   RValue calleeVal = calleeValAndType.ir;
-  ASTType calleeASTType = calleeValAndType.type;
+  ASTType calleeType = calleeValAndType.type;
 
   auto calleeAnyType = calleeVal.getType(emitter.getContext());
-  SignatureType calleeType = dyn_cast<SignatureType>(calleeAnyType);
-  if (!calleeType) {
-    emitError("unable function to call");
+  SignatureType calleeIRType = dyn_cast<SignatureType>(calleeAnyType);
+  if (!calleeIRType) {
+    emitError("invalid function to call");
     return {};
   }
 
   // The ASTType of calleeVal must be a magic function type, for the IR to
   // have signature type.  We cannot have error types or anything else here.
   // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeASTType.getDecl().magicKind == MagicDeclKind::kFunctionType);
-  assert(calleeASTType.getParamValues().size() == 1 &&
+  assert(calleeType.getDecl().magicKind == MagicDeclKind::kFunctionType);
+  assert(calleeType.getParamValues().size() == 1 &&
          "FunctionType should have one (result) parameter");
-  auto resultASTTypeVal = calleeASTType.getParamValues()[0].second;
+  auto resultASTTypeVal = calleeType.getParamValues()[0].second;
 
   auto resultASTType = resultASTTypeVal.getIfMTValue();
   if (!resultASTType) {
@@ -233,16 +233,16 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
-  if (!calleeType.getInputParams().empty()) {
+  if (!calleeIRType.getInputParams().empty()) {
     emitError("unable to call parameterized value that expects ")
-        << calleeType.getInputParams().size() << " bound parameters";
+        << calleeIRType.getInputParams().size() << " bound parameters";
     return {};
   }
 
-  assert(calleeType.getResultParamTypes().empty() &&
+  assert(calleeIRType.getResultParamTypes().empty() &&
          "TODO: meta results not implemented yet");
 
-  size_t numArgs = calleeType.getValues().getNumInputs();
+  size_t numArgs = calleeIRType.getValues().getNumInputs();
   if (numArgs != call.args.size()) {
     emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
     return {};
@@ -251,7 +251,7 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
   for (auto [arg, expectedType] :
-       llvm::zip(call.args, calleeType.getValues().getInputs())) {
+       llvm::zip(call.args, calleeIRType.getValues().getInputs())) {
     auto argVal = emitter.emitDRValue(arg);
     if (!argVal.ir)
       return {};
@@ -268,26 +268,38 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
     valueArguments.push_back(argVal.ir);
   }
 
-  auto calleeParam = calleeVal.getIfMAValue();
-  if (!calleeParam) {
-    emitError("TODO: indirect value call not supported yet");
-    return {};
-  }
-
   if (!emitter.builder) {
     emitError("TODO: cannot call function in parameter context");
     return {};
   }
 
-  auto callOp = emitter.builder->create<CallParamOp>(
-      emitter.translateLocation(call.getLoc()),
-      /*resultTypes*/ calleeType.getValues().getResults(), calleeParam,
-      /*inputParams*/ ArrayRef<ParamBindAttr>(),
-      /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-      /*operands*/ valueArguments);
+  // If this is a call to something representable as an attribute, we can use
+  // a kgen.call_param.
+  Value resultVal;
+  auto loc = emitter.translateLocation(call.getLoc());
+  auto resultTypes = calleeIRType.getValues().getResults();
+  if (auto calleeParam = calleeVal.getIfMAValue()) {
+    resultVal =
+        emitter.builder
+            ->create<CallParamOp>(loc, resultTypes, calleeParam,
+                                  /*inputParams*/ ArrayRef<ParamBindAttr>(),
+                                  /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+                                  /*operands*/ valueArguments)
+            .getResult(0);
+  } else {
+    // Otherwise emit calls to SSA values with call_indirect.
+    auto calleeDRVal =
+        emitter.emitDRValue({AnyValue(calleeVal), calleeType}, call.getLoc());
+    if (!calleeDRVal)
+      return {};
+    resultVal = emitter.builder
+                    ->create<CallIndirectOp>(loc, resultTypes, calleeDRVal.ir,
+                                             /*operands*/ valueArguments)
+                    .getResult(0);
+  }
 
   // Value returning call returns its result.
-  return {DRValue(callOp.getResult(0)), resultASTType};
+  return {DRValue(resultVal), resultASTType};
 }
 
 /// Get a symbol for a direct reference to the specified function in its
