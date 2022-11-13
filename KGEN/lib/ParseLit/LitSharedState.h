@@ -153,6 +153,10 @@ enum class MagicDeclKind : uint8_t {
 
   // This type is produced when an error is detected to simplify clients.
   kTypeCheckErrorType,
+
+  /// This is the magic declaration for __mlir_type.
+  k__mlir_type,
+
   // This is the 'type' type.
   kTypeType,
   // TODO: builtin.IntegerLiteralType
