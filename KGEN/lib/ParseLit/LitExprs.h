@@ -30,8 +30,6 @@ struct ASTTypeAnd {
   bool isNull() const { return ir; }
   bool operator!() const { return !ir; }
   operator bool() const { return ir; }
-
-  FullType getFullType() const { return {ir.getType(), type}; }
 };
 
 //===----------------------------------------------------------------------===//
