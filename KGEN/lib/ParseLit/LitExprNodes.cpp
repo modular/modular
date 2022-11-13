@@ -400,35 +400,62 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   if (!baseVal)
     return {};
 
-  if (LValue baseLV = baseVal.ir.getIfLValue()) {
-    ASTDecl &typeDecl = baseVal.type.getDecl();
-    auto typeParams = baseVal.type.getParamValues();
-    if (!typeParams.empty()) {
-      emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-          << baseVal.type;
-      return {};
+  // Handle member references on types.
+  if (ASTType baseType = baseVal.ir.getIfMTValue()) {
+    auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
+                                             getLoc(), emitter);
+    return {rValueAnd.ir, rValueAnd.type};
+  }
+
+  // Otherwise, it must be an access to a field of a value.
+  ASTDecl &typeDecl = baseVal.type.getDecl();
+  auto typeParams = baseVal.type.getParamValues();
+  if (!typeParams.empty()) {
+    emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
+        << baseVal.type;
+    return {};
+  }
+
+  if (!isa<LITStructDeclOp>(typeDecl)) {
+    emitter.emitError(getLoc(), "cannot access fields in type ")
+        << baseVal.type;
+    return {};
+  }
+
+  // Find the member being accessed.
+  ASTDecl *memberDecl = emitter.lookupDecl(
+      attrSpelling, getLoc(), typeDecl, [&](InFlightDiagnostic diag) {
+        diag << "object has no attribute '" << attrSpelling << "'";
+      });
+  if (!memberDecl)
+    return {};
+
+  // If the field is a variable, emit a reference to it.
+  if (auto varOp = dyn_cast<VarDeclOp>(*memberDecl)) {
+    auto varASTType = memberDecl->getResolvedType();
+
+    // If the base is an lvalue, then we can return an lvalue to the field.
+    if (LValue baseLV = baseVal.ir.getIfLValue()) {
+      if (!emitter.builder) {
+        emitter.emitError(
+            getLoc(), "TODO: cannot access lvalue member in parameter context");
+        return {};
+      }
+      // TODO(Issue #4321): Perform parameter substitution
+      Value resultGEP = emitter.builder->create<LITStructGEPOp>(
+          emitter.translateLocation(getLoc()), varOp.getType(),
+          varOp.getNameAttr(), baseLV);
+      return {LValue(resultGEP), varASTType};
     }
 
-    if (!isa<LITStructDeclOp>(typeDecl)) {
-      emitter.emitError(getLoc(), "cannot access fields in type ")
-          << baseVal.type;
+    // Otherwise, it must be an rvalue.
+    // TODO: If this is an MValue, emit as a parameter field access, this would
+    // enable `size.value` in things like:
+    //
+    // fn f[size: Int](a: SomeType[size.value])
+    ASTTypeAnd<DRValue> baseRV = emitter.emitDRValue(baseVal, getLoc());
+    if (!baseRV)
       return {};
-    }
-
-    // Find the field.
-    ASTDecl *fieldDecl = emitter.lookupDecl(
-        attrSpelling, getLoc(), typeDecl, [&](InFlightDiagnostic diag) {
-          diag << "object has no attribute '" << attrSpelling << "'";
-        });
-    if (!fieldDecl)
-      return {};
-
-    // TODO: Support method references some day.
-    auto varOp = dyn_cast_or_null<VarDeclOp>(fieldDecl->getIfOperation());
-    if (!varOp) {
-      emitter.emitError(getLoc(), "'" + attrSpelling + "' is not a field");
-      return {};
-    }
 
     if (!emitter.builder) {
       emitter.emitError(
@@ -437,17 +464,11 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     }
 
     // TODO(Issue #4321): Perform parameter substitution
-    Value resultGEP = emitter.builder->create<LITStructGEPOp>(
-        emitter.translateLocation(getLoc()), varOp.getType(),
-        varOp.getNameAttr(), baseLV);
-    return {LValue(resultGEP), fieldDecl->getResolvedType()};
-  }
-
-  // Handle member references on types.
-  if (ASTType baseType = baseVal.ir.getIfMTValue()) {
-    auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
-                                             getLoc(), emitter);
-    return {rValueAnd.ir, rValueAnd.type};
+    Value resultVal = emitter.builder->create<LITStructExtractOp>(
+        emitter.translateLocation(getLoc()),
+        emitter.shared.getMLIRType(varASTType, getLoc()), varOp.getNameAttr(),
+        baseRV.ir);
+    return {DRValue(resultVal), varASTType};
   }
 
   // TODO: Handle parameter member references.

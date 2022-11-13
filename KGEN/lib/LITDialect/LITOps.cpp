@@ -185,6 +185,13 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
 }
 
 LogicalResult
+LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  Type structType = getStructVal().getType();
+  return verifyStructFieldAndType(symbolTable, *this, cast<RefType>(structType),
+                                  getFieldAttr(), getResult().getType());
+}
+
+LogicalResult
 LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(

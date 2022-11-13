@@ -283,7 +283,6 @@ struct Int:
 
   # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   def __iadd__(&self, rhs: Int) -> Int:
-    # TODO: Need method calls.
     #self = self.__add__(rhs)
     return self
 
@@ -331,7 +330,6 @@ def patterns():
 struct SIMD[size: index, dt: DType]:
   pass
 
-
 struct DType:
   pass
 
@@ -373,3 +371,11 @@ def func_impl[type: DType](x: index) -> index:
 # CHECK: pop.store %0, %b : !pop.pointer<@Int>
 def byval_byref_function(a: Int, &b: Int):
   b = a
+
+# CHECK: lit.func @lvaluesAndRValues()
+def lvaluesAndRValues() -> index:
+  # CHECK: [[FOUR:%.*]] = index.constant 4
+  # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"]([[FOUR]])
+  # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
+  # CHECK: kgen.return [[VALUE]] : index
+  return Int(4).value

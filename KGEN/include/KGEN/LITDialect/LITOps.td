@@ -110,6 +110,26 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
 }
 
 //===----------------------------------------------------------------------===//
+// LITStructExtractOp
+//===----------------------------------------------------------------------===//
+
+def LITStructExtractOp : LITOp<"struct.extract", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Extract an element from a struct field.";
+  let description = [{
+    The `lit.struct.extract` operation extracts a field from a struct by name.
+  }];
+
+  let arguments = (ins StrAttr:$field, RefType:$structVal);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $structVal `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($result) `from` type($structVal)
+  }];
+}
+
+
+//===----------------------------------------------------------------------===//
 // LITStructGEPOp
 //===----------------------------------------------------------------------===//
 
