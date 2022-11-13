@@ -239,6 +239,10 @@ struct OneLineStruct[size: Int]: pass; pass
 
 # CHECK-LABEL: lit.struct.decl @StructExample {
 struct StructExample:
+  def __new__() -> StructExample:
+    var result : StructExample
+    return result
+
   # CHECK: lit.func @"StructExample::static"(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   def static(x: Int):
@@ -253,6 +257,18 @@ struct StructExample:
 
 # CHECK: }
 # CHECK-NEXT: }
+
+# CHECK: lit.func @callStatic(%a: !kgen.ref<@Int>) -> !lit.none
+def callStatic(a: Int):
+  # CHECK: [[A:%.*]] = pop.load %a_0
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"]([[A]])
+  StructExample.static(a)
+
+  # CHECK: kgen.call_param[() -> !kgen.ref<@StructExample>: @StructExample::@"StructExample::__new__"]()
+  # CHECK: [[A:%.*]] = pop.load %a_0
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"]([[A]])
+  StructExample().static(a)
+
 
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:

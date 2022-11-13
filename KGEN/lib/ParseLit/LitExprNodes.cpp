@@ -290,6 +290,20 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   return {DRValue(callOp.getResult(0)), resultASTType};
 }
 
+static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
+                                            ExprEmitter &emitter) {
+  // Generate a nested symbol ref if we are a method in a struct.
+  SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnOp.getNameAttr());
+  if (auto parentStruct = dyn_cast<LITStructDeclOp>(*decl.getParentDecl()))
+    symbolRef = SymbolRefAttr::get(parentStruct.getNameAttr(),
+                                   cast<FlatSymbolRefAttr>(symbolRef));
+  auto fnAttr = SymbolConstantAttr::get(symbolRef, fnOp.getSignature());
+
+  // TODO: Correct argument/parameter type.
+  ASTType astType = emitter.shared.getFunctionType(decl.getResolvedType());
+  return {MValue(fnAttr), astType};
+}
+
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
 /// TODO: This should take the parameters on the enclosing decl being referenced
@@ -316,17 +330,9 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
     return {LValue(var.getResult()), decl->getResolvedType()};
 
   // Functions form an address.
-  if (auto fnDecl = dyn_cast<LITFuncOp>(*decl)) {
-    // Generate a nested symbol ref if we are a method in a struct.
-    SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnDecl.getNameAttr());
-    if (auto containerStructDecl = dyn_cast<LITStructDeclOp>(container))
-      symbolRef = SymbolRefAttr::get(containerStructDecl.getNameAttr(),
-                                     cast<FlatSymbolRefAttr>(symbolRef));
-    auto fnAttr = SymbolConstantAttr::get(symbolRef, fnDecl.getSignature());
-
-    // TODO: Correct argument/parameter type.
-    ASTType astType = emitter.shared.getFunctionType(decl->getResolvedType());
-    return {MValue(fnAttr), astType};
+  if (auto fnOp = dyn_cast<LITFuncOp>(*decl)) {
+    auto mv = emitFuncReference(fnOp, *decl, emitter);
+    return {mv.ir, mv.type};
   }
 
   // RValue's and LValues always resolve to their known value.
@@ -469,6 +475,20 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
         emitter.shared.getMLIRType(varASTType, getLoc()), varOp.getNameAttr(),
         baseRV.ir);
     return {DRValue(resultVal), varASTType};
+  }
+
+  // Handle method references.
+  if (auto fnOp = dyn_cast<LITFuncOp>(*memberDecl)) {
+    // Get a symbol for the underlying function.
+    auto fnRef = emitFuncReference(fnOp, *memberDecl, emitter);
+    assert(fnRef.ir && "always succeeds");
+
+    // If the callee is a static method, we can directly reference it without
+    // binding a self parameter.
+    if (fnOp.getIsStatic())
+      return {fnRef.ir, fnRef.type};
+
+    // TODO: Handle instance methods.
   }
 
   // TODO: Handle parameter member references.
