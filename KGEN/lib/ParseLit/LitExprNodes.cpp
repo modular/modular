@@ -111,7 +111,7 @@ ASTTypeAnd<MValue> ExprEmitter::emitMValue(const ExprNode *node,
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
 ASTTypeAnd<LValue> ExprEmitter::emitLValue(const ExprNode *node,
-                                           FullType contextualType,
+                                           ASTType contextualType,
                                            const Twine &message) {
   ASTTypeAnd<AnyValue> anyValue = node->emitIR(*this, contextualType);
   if (!anyValue)
@@ -148,7 +148,7 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
 ASTDecl *
 ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
                         std::function<void(InFlightDiagnostic)> errorFn,
-                        FullType implicitDeclType) {
+                        ASTType implicitDeclType) {
 
   // Look up the name.
   auto nameAttr = StringAttr::get(getContext(), name);
@@ -159,7 +159,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
     // type in a `fn`, only a `def`.
-    if (!implicitDeclType.first || !varDeclCursor) {
+    if (!implicitDeclType || !varDeclCursor) {
       errorFn(emitError(loc, ""));
       return nullptr;
     }
@@ -169,16 +169,17 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     //
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    auto declType = POP::PointerType::get(implicitDeclType.first);
+    Type declIRType = shared.getMLIRType(implicitDeclType, loc);
+    declIRType = POP::PointerType::get(declIRType);
 
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     auto varDecl =
         OpBuilder(varDeclCursor)
-            .create<VarDeclOp>(translateLocation(loc), declType, nameAttr);
+            .create<VarDeclOp>(translateLocation(loc), declIRType, nameAttr);
     lookupResult = &shared.declResolver->addFullyResolvedDecl(
-        varDecl, nameAttr, implicitDeclType.second, &scope);
+        varDecl, nameAttr, implicitDeclType, &scope);
   }
 
   // If the lookup succeeded, make sure the signature for the referenced decl is
@@ -325,7 +326,7 @@ static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
 /// to support things like SomeType[42].member()
 static ASTTypeAnd<AnyValue>
 emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
-                        ExprEmitter &emitter, FullType implicitDeclType = {}) {
+                        ExprEmitter &emitter, ASTType implicitDeclType = {}) {
   ASTDecl *decl = emitter.lookupDecl(
       memberName, loc, container,
       [&](InFlightDiagnostic diag) {
@@ -373,7 +374,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 
 ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
-                                            FullType contextualType) const {
+                                            ASTType contextualType) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -387,7 +388,7 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
-                                              FullType contextualType) const {
+                                              ASTType contextualType) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
@@ -396,27 +397,27 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
-                                               FullType contextualType) const {
+                                               ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   return {AnyValue(StringAttr::get(emitter.getContext(), value)),
           emitter.shared.getStringLiteralType()};
 }
 
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
-                                             FullType contextualType) const {
+                                             ASTType contextualType) const {
   auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
   return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
           emitter.shared.getNoneType()};
 }
 
 ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
-                                         FullType contextualType) const {
+                                         ASTType contextualType) const {
   return emitDeclMemberReference(emitter.declScope, spelling, getLoc(), emitter,
                                  contextualType);
 }
 
 ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
-                                              FullType contextualType) const {
+                                              ASTType contextualType) const {
   auto baseVal = base->emitIR(emitter);
   if (!baseVal)
     return {};
@@ -594,7 +595,7 @@ static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
 }
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
-                                      FullType contextualType) const {
+                                      ASTType contextualType) const {
   auto calleeVal = emitter.emitRValue(callee);
   if (!calleeVal)
     return {};
@@ -613,7 +614,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
-                                           FullType contextualType) const {
+                                           ASTType contextualType) const {
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitIR(emitter);
   if (!subValue)
@@ -740,12 +741,12 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> ParenExprNode::emitIR(ExprEmitter &emitter,
-                                           FullType contextualType) const {
+                                           ASTType contextualType) const {
   return subExpr->emitIR(emitter, contextualType);
 }
 
 ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
-                                          FullType contextualType) const {
+                                          ASTType contextualType) const {
   // TODO: here we return the last expression, we should return a list object
   // instead.
   DRValue last;
@@ -771,7 +772,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
-                                       FullType contextualType) const {
+                                       ASTType contextualType) const {
   auto lhsRep = emitter.emitRValue(lhs);
   auto rhsRep = emitter.emitRValue(rhs);
   if (!lhsRep.ir || !rhsRep.ir)
@@ -859,7 +860,7 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
-                                         FullType contextualType) const {
+                                         ASTType contextualType) const {
   auto exprRep = emitter.emitRValue(subExpr);
   if (!exprRep)
     return {};
@@ -907,7 +908,7 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
 }
 
 ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
-                                           FullType contextualType) const {
+                                           ASTType contextualType) const {
   Value cond = emitter.emitDRValue(condExpr).ir;
   if (!cond)
     return {};
