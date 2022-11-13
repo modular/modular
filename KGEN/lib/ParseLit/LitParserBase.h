@@ -18,7 +18,6 @@
 namespace M::KGEN::LIT {
 class ExprNode;
 class ASTDecl;
-using FullType = std::pair<Type, ASTType>;
 
 //===----------------------------------------------------------------------===//
 // LitParserBase
