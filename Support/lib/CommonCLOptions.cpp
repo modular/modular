@@ -68,8 +68,8 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
     exit(reportError("Cannot get absolute path for output file: '" + outFile +
                      "': " + errorCode.message()));
 
-  llvm::outs() << "Emitting intermediate file to '" << absoluteOutputFile
-               << "'.\n";
+  llvm::outs() << "Emitting intermediate file to '"
+               << absoluteOutputFile.string() << "'.\n";
 
   std::string errorMessage;
   auto result =
