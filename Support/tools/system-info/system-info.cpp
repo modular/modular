@@ -132,46 +132,48 @@ int main(int argc, char **argv) {
   raw_ostream &os(outs());
   switch (cli.QueryProperty) {
   case QuerySystemProperty::TargetTriple:
-    os << sys::getDefaultTargetTriple() << "\n";
+    os << sys::getDefaultTargetTriple();
     break;
   case QuerySystemProperty::Arch:
-    os << sys::getHostCPUName() << "\n";
+    os << sys::getHostCPUName();
     break;
   case QuerySystemProperty::Features: {
     StringMap<bool> features;
-    if (!sys::getHostCPUFeatures(features)) {
-      os << "\n";
-      break;
+    if (sys::getHostCPUFeatures(features)) {
+      llvm::interleaveComma(
+          llvm::make_filter_range(
+              features, [](const auto &feature) { return feature.getValue(); }),
+          os, [&](const auto &feature) { os << feature.getKey(); });
     }
-    llvm::interleaveComma(
-        llvm::make_filter_range(
-            features, [](const auto &feature) { return feature.getValue(); }),
-        os, [&](const auto &feature) { os << feature.getKey(); });
-    os << "\n";
     break;
   }
   case QuerySystemProperty::CoreCount:
-    os << sys::getHostNumPhysicalCores() << "\n";
+    os << sys::getHostNumPhysicalCores();
     break;
   case QuerySystemProperty::SIMDBitWidth:
-    os << kPreferredSIMDBitWidth << "\n";
+    os << kPreferredSIMDBitWidth;
     break;
-  case QuerySystemProperty::L1CacheSize:
+  case QuerySystemProperty::L1CacheSize: {
     if (auto val = cacheSize<1>(); succeeded(val))
-      os << *val << "\n";
-    break;
-  case QuerySystemProperty::L2CacheSize:
-    if (auto val = cacheSize<2>(); succeeded(val))
-      os << *val << "\n";
-    break;
-  case QuerySystemProperty::L3CacheSize:
-    if (auto val = cacheSize<3>(); succeeded(val))
-      os << *val << "\n";
-    break;
-  case QuerySystemProperty::L4CacheSize:
-    if (auto val = cacheSize<4>(); succeeded(val))
-      os << *val << "\n";
+      os << *val;
     break;
   }
+  case QuerySystemProperty::L2CacheSize: {
+    if (auto val = cacheSize<2>(); succeeded(val))
+      os << *val;
+    break;
+  }
+  case QuerySystemProperty::L3CacheSize: {
+    if (auto val = cacheSize<3>(); succeeded(val))
+      os << *val;
+    break;
+  }
+  case QuerySystemProperty::L4CacheSize: {
+    if (auto val = cacheSize<4>(); succeeded(val))
+      os << *val;
+    break;
+  }
+  }
+  os << "\n";
   return EXIT_SUCCESS;
 }
