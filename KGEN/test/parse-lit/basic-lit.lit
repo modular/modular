@@ -259,14 +259,12 @@ struct StructExample:
 # CHECK-NEXT: }
 
 # CHECK: lit.func @callStatic(%a: !kgen.ref<@Int>) -> !lit.none
-def callStatic(a: Int):
-  # CHECK: [[A:%.*]] = pop.load %a_0
-  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"]([[A]])
+fn callStatic(a: Int):
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%a)
   StructExample.static(a)
 
   # CHECK: kgen.call_param[() -> !kgen.ref<@StructExample>: @StructExample::@"StructExample::__new__"]()
-  # CHECK: [[A:%.*]] = pop.load %a_0
-  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"]([[A]])
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%a)
   StructExample().static(a)
 
 
@@ -283,31 +281,25 @@ struct Int:
     return result
 
   # CHECK: lit.func @"Int::__add__"(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
-  def __add__(self, rhs: Int) -> Int:
-    # CHECK: %self_0 = lit.var.decl "self" : <@Int>
-    # CHECK: pop.store %self, %self_0 : !pop.pointer<@Int>
-    # CHECK: %rhs_1 = lit.var.decl "rhs" : <@Int>
-    # CHECK: pop.store %rhs, %rhs_1
-    # CHECK: %0 = lit.struct.gep %rhs_1[value]
-    # CHECK: %1 = pop.load %0
-    # CHECK: %2 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%1)
+  fn __add__(self, rhs: Int) -> Int:
+    # CHECK: %0 = lit.struct.extract %rhs[value]
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
     return Int(rhs.value)      # TODO: Use this somehow. :)
-    # CHECK: kgen.return %2
+    # CHECK: kgen.return %1
   # CHECK: }
 
   # In place addition is mutating.
 
   # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
-  def __iadd__(&self, rhs: Int) -> Int:
+  fn __iadd__(&self, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
     # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@"Int::__add__">
     # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>
-    # CHECK: %3 = pop.load %rhs_0 : !pop.pointer<@Int>
-    # CHECK: %4 = kgen.call_indirect %2(%3) : (!kgen.ref<@Int>) -> !kgen.ref<@Int>
-    # CHECK: pop.store %4, %self
+    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.ref<@Int>) -> !kgen.ref<@Int>
+    # CHECK: pop.store %3, %self
     self = self.__add__(rhs)
-    # CHECK: %5 = pop.load %self
-    # CHECK: kgen.return %5
+    # CHECK: %4 = pop.load %self
+    # CHECK: kgen.return %4
     return self
 
 # CHECK: }

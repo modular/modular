@@ -157,7 +157,8 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
   // Handle the case where lookup fails.
   if (!lookupResult) {
     // If there is a contextual type available then this is an implicit variable
-    // definition, otherwise it is an error.
+    // definition, otherwise it is an error.  There will never be a contextual
+    // type in a `fn`, only a `def`.
     if (!implicitDeclType.first || !varDeclCursor) {
       errorFn(emitError(loc, ""));
       return nullptr;

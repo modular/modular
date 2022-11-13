@@ -77,7 +77,7 @@ struct LitStmtParser : public LitParserBase {
                                   size_t stmtIndent);
 
   // Declarations.
-  ParseResult parseDefStmt(ArrayRef<ExprNode *> decorators, size_t curIndent);
+  ParseResult parseDefFnStmt(ArrayRef<ExprNode *> decorators, size_t curIndent);
   ParseResult parseStructStmt(ArrayRef<ExprNode *> decorators,
                               size_t curIndent);
   ParseResult parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
@@ -205,8 +205,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseWhileStmt(stmtIndent);
   case LitToken::kw_def:
+  case LitToken::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseDefStmt(/*decorators=*/{}, stmtIndent);
+    return parseDefFnStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_struct:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseStructStmt(/*decorators=*/{}, stmtIndent);
@@ -221,8 +222,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
     switch (getToken().getKind()) {
     case LitToken::kw_def:
+    case LitToken::kw_fn:
       rejectSimpleStmt(); // Not a simple_stmt.
-      return parseDefStmt(decorators, stmtIndent);
+      return parseDefFnStmt(decorators, stmtIndent);
     case LitToken::kw_struct:
       rejectSimpleStmt(); // Not a simple_stmt.
       return parseStructStmt(decorators, stmtIndent);
@@ -302,9 +304,15 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
   if (!rhsValue)
     return success(); // Parse succeeded.
 
+  // If this variable is being declared in a `def` definition, then we allow
+  // implicit declarations of variables.  In `fn` and top level, we do not.
+  FullType lhsContextualType;
+  if (getDecl().isDef)
+    lhsContextualType = rhsValue.getFullType();
+
   // Resolve LHS expression into an lvalue that we can store into.
   ASTTypeAnd<LValue> lValue = getExprEmitter().emitLValue(
-      lhs, rhsValue.getFullType(), "cannot assign to expression");
+      lhs, lhsContextualType, "cannot assign to immutable expression");
   if (!lValue)
     return success(); // Parse succeeded.
 
@@ -518,7 +526,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct DefAttributes {
+struct FnAttributes {
   /// This is set to true by @staticmethod.
   bool isStatic = false;
   // This is set to true by @interface.
@@ -531,8 +539,8 @@ struct DefAttributes {
 } // namespace
 
 // Process a function decorator.
-void DefAttributes::processDecorator(ExprNode *decorator,
-                                     LitStmtParser &parser) {
+void FnAttributes::processDecorator(ExprNode *decorator,
+                                    LitStmtParser &parser) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "staticmethod")
       isStatic = true;
@@ -571,18 +579,19 @@ void DefAttributes::processDecorator(ExprNode *decorator,
   parser.emitError(decorator->getLoc(), "unsupported decorator");
 }
 
-ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
-                                        size_t curIndent) {
+ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
+                                          size_t curIndent) {
+  // isDef is true when introduced by the 'def' keywords instead of 'fn'.
+  bool isDef = getToken().is(LitToken::kw_def);
   Location loc = getTokenLocation();
+  consumeToken();
 
   StringAttr name;
-  consumeToken(LitToken::kw_def);
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
-  DefAttributes attrs;
-
   // Process any decorators we will eventually want when they come up.
+  FnAttributes attrs;
   for (ExprNode *decorator : decorators)
     attrs.processDecorator(decorator, *this);
 
@@ -620,8 +629,14 @@ ParseResult LitStmtParser::parseDefStmt(ArrayRef<ExprNode *> decorators,
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(litDecl, baseName, &containingDecl, startCursor,
-                            getLexer().getCursor(), curIndent);
+  auto &decl =
+      getDeclResolver().addDecl(litDecl, baseName, &containingDecl, startCursor,
+                                getLexer().getCursor(), curIndent);
+
+  // Remember if this was declared as a 'def' or 'fn' because this affects
+  // certain downstream behavior.
+  decl.isDef = isDef;
+
   return success();
 }
 

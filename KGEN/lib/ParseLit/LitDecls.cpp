@@ -376,7 +376,7 @@ struct ParsedParam {
 ///
 /// This returns failure after emitting an error when a type checking problem
 /// is detected.
-static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
+static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           ASTType &resultType,
@@ -395,13 +395,13 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
   // If this definition is a struct/class member, return the self type
   // otherwise return a null type.
   ASTType selfType;
-  if (auto *parentDecl = declScope.getParentDecl())
+  if (auto *parentDecl = decl.getParentDecl())
     if (isa<LITStructDeclOp>(*parentDecl)) {
       // If this is a method, the signature for the enclosing type must be
       // resolved.
-      (void)shared.declResolver->resolve(
-          *parentDecl, DeclResolvedness::signatureResolved,
-          declScope.getCursor().getToken().getLoc());
+      (void)shared.declResolver->resolve(*parentDecl,
+                                         DeclResolvedness::signatureResolved,
+                                         decl.getCursor().getToken().getLoc());
       // The self type is stored as the resolved type.
       selfType = parentDecl->getResolvedType();
     }
@@ -417,7 +417,7 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
   if (selfType && !isStatic) {
     // If there are no parameters, install an implicit by-val self parameter.
     if (params.empty()) {
-      params.push_back({declScope.getCursor().getToken().getLoc(),
+      params.push_back({decl.getCursor().getToken().getLoc(),
                         /*isByRef=*/false,
                         StringAttr::get(shared.getContext(), "self"), selfType,
                         /*initPtr*/ nullptr});
@@ -478,13 +478,20 @@ static ParseResult checkFunctionSignature(ASTDecl &declScope, Operation *op,
     break;
   }
 
-  // If the parameter is missing a type, infer object type.
-  // TODO(fn): /require/ types on parameters instead of defaulting to
-  // object.
+  // Handle any parameters that are still missing a type.
   // TODO(default args): Get the type from the default arg when present.
-  for (auto &param : params)
-    if (!param.type)
-      param.type = shared.getObjectType();
+  for (auto &param : params) {
+    if (!param.type) {
+      // If we are in a 'def', we infer object type for Python compatibility, in
+      // an 'fn' we report an error.
+      if (decl.isDef) {
+        param.type = shared.getObjectType();
+      } else {
+        op->emitError("'fn' parameter type must be specified");
+        param.type = shared.getTypeCheckErrorType();
+      }
+    }
+  }
 
   return success();
 }
@@ -624,10 +631,14 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
       continue;
     }
 
-    // If this was passed by-value, then create a mutable var.decl that
-    // references to the name can load from.
-    // TODO: This is the wrong default, reconsider this for 'fn's when we have
-    // a notion of immutability.
+    // If this was passed by-value, then it becomes an rvalue in a `fn`.
+    if (!decl.isDef) {
+      addFullyResolvedDecl(DRValue(arg), param.name, arg.getLoc(), param.type,
+                           &decl);
+      continue;
+    }
+
+    // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
     addFullyResolvedDecl(varDecl, param.name, param.type, &decl);
