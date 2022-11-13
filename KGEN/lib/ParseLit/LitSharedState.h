@@ -70,9 +70,6 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
-  /// This is the decl for the lit.Pointer struct type.
-  ASTType getPointerType(MValue elementType);
-
   /// This is the decl for the Function type.
   // FIXME: This isn't correctly parameterized; we need variadics.
   ASTType getFunctionType(MValue resultType);
