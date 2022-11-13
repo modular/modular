@@ -400,3 +400,5 @@ def mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):
   var a : __mlir_type.index
   # CHECK: %b = lit.var.decl "b" : <f64>
   var b : __mlir_type.f64
+  # CHECK: %c = lit.var.decl "c" : <pointer<pointer<f32>>>
+  var c : __mlir_type.`!pop.pointer<!pop.pointer<f32>>`

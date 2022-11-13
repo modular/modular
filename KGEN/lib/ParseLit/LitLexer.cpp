@@ -167,6 +167,8 @@ LitToken LitLexer::lexTokenImpl() {
     case '_':
       // Handle identifiers.
       return lexIdentifierOrKeyword(tokStart, indentation);
+    case '`':
+      return lexBacktickIdentifier(tokStart, indentation);
     case '"':
     case '\'':
       return lexString(tokStart, indentation);
@@ -321,6 +323,39 @@ LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart,
   return LitToken(kind, spelling, indentation);
 }
 
+/// Lex an identifier with backtick syntax, e.g. `ide nt if ier` or `fn`.  These
+/// may contain any character other than vertical whitespace and `'s in them and
+/// are otherwise interpreted verbatim as an identifier.
+LitToken LitLexer::lexBacktickIdentifier(const char *tokStart,
+                                         ssize_t indentation) {
+  assert(curPtr[-1] == '`');
+  while (true) {
+    switch (*curPtr++) {
+    case '`':
+      // Found the end character.
+      return LitToken(LitToken::identifier,
+                      StringRef(tokStart + 1, curPtr - tokStart - 2),
+                      indentation);
+    case '\n':
+    case '\r':
+    case '\v':
+    case '\f':
+      // Vertical whitespace within a ` is invalid is the end of the comment.
+      return emitError(tokStart, "unterminated backtick identifier");
+    case 0:
+      // If this is the end of the buffer, end the comment.
+      if (curPtr - 1 == curBuffer.end()) {
+        --curPtr;
+        return emitError(tokStart, "unterminated backtick identifier");
+      }
+      [[fallthrough]];
+    default:
+      // Skip over other characters.
+      break;
+    }
+  }
+}
+
 /// Skip a comment line, starting with a '#' and going to end of line.
 void LitLexer::skipComment() {
   while (true) {
@@ -346,7 +381,7 @@ void LitLexer::skipComment() {
 }
 
 /// Checks if character \p C is one of the 8 octal digits.
-inline bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
+static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
 /// Lex a string literal.
 ///
@@ -357,19 +392,17 @@ inline bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 /// shortstringchar ::=  <any source character except "\" or newline or the
 /// quote> stringescapeseq ::=  "\" <any source character>
 ///
-/*
-TODO: support full Python grammar below:
-stringliteral   ::=  [stringprefix](shortstring | longstring)
-stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
-                     | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
-shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
-longstring      ::=  "'''" longstringitem* "'''" | '"""' longstringitem* '"""'
-shortstringitem ::=  shortstringchar | stringescapeseq
-longstringitem  ::=  longstringchar | stringescapeseq
-shortstringchar ::=  <any source character except "\" or newline or the quote>
-longstringchar  ::=  <any source character except "\">
-stringescapeseq ::=  "\" <any source character>
- */
+///
+// TODO: support full Python grammar below:
+// stringliteral   ::=  [stringprefix](shortstring | longstring)
+// stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
+//                      | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
+// shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
+// longstring      ::=  "'''" longstringitem* "'''" | '"""' longstringitem*
+// '"""' shortstringitem ::=  shortstringchar | stringescapeseq longstringitem
+// ::=  longstringchar | stringescapeseq shortstringchar ::=  <any source
+// character except "\" or newline or the quote> longstringchar  ::=  <any
+// source character except "\"> stringescapeseq ::=  "\" <any source character>
 LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
   curPtr = tokStart;
   bool isRaw = false;
