@@ -238,7 +238,7 @@ raw_ostream &operator<<(raw_ostream &os, RValue value);
 mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, RValue value);
 
 /// AnyValue = RValue|LValue.
-class AnyValue : public VariantValueStorage<RValue> {
+class AnyValue : public VariantValueStorage<AnyValue> {
 public:
   AnyValue() {}
   AnyValue(MValue value) : VariantValueStorage(value.getStorage()) {}
