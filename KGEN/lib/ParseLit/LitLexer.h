@@ -143,6 +143,7 @@ private:
 
   // Lexer implementation methods.
   LitToken lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
+  LitToken lexBacktickIdentifier(const char *tokStart, ssize_t indentation);
   LitToken lexInteger(const char *tokStart, ssize_t indentation);
   LitToken lexFloat(const char *tokStart, ssize_t indentation);
   LitToken lexString(const char *tokStart, ssize_t indentation);
