@@ -290,6 +290,8 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   return {DRValue(callOp.getResult(0)), resultASTType};
 }
 
+/// Get a symbol for a direct reference to the specified function in its
+/// enclosing context.  This does not bind any values to arguments.
 static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
                                             ExprEmitter &emitter) {
   // Generate a nested symbol ref if we are a method in a struct.
@@ -331,7 +333,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 
   // Functions form an address.
   if (auto fnOp = dyn_cast<LITFuncOp>(*decl)) {
-    auto mv = emitFuncReference(fnOp, *decl, emitter);
+    ASTTypeAnd<MValue> mv = emitFuncReference(fnOp, *decl, emitter);
     return {mv.ir, mv.type};
   }
 
@@ -464,8 +466,8 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
 
     if (!emitter.builder) {
-      emitter.emitError(
-          getLoc(), "TODO: cannot access lvalue member in parameter context");
+      emitter.emitError(getLoc(),
+                        "TODO: cannot access member in parameter context");
       return {};
     }
 
@@ -480,7 +482,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   // Handle method references.
   if (auto fnOp = dyn_cast<LITFuncOp>(*memberDecl)) {
     // Get a symbol for the underlying function.
-    auto fnRef = emitFuncReference(fnOp, *memberDecl, emitter);
+    ASTTypeAnd<MValue> fnRef = emitFuncReference(fnOp, *memberDecl, emitter);
     assert(fnRef.ir && "always succeeds");
 
     // If the callee is a static method, we can directly reference it without
@@ -488,7 +490,73 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     if (fnOp.getIsStatic())
       return {fnRef.ir, fnRef.type};
 
-    // TODO: Handle instance methods.
+    // If this is an instance method, we partially apply the base value to the
+    // function as the first self argument.  Handle the case of a mutating
+    // method first since that requires an lvalue.
+    // TODO: Move this to ASTType checking when it can represent parameter
+    // types.
+    auto symbolIRType =
+        cast<SignatureType>(fnRef.ir.getType(emitter.getContext()));
+    Type firstArgIRType = symbolIRType.getValues().getInputs()[0];
+    Value firstArgValue;
+    if (isa<POP::PointerType>(firstArgIRType)) {
+      LValue baseLV = baseVal.ir.getIfLValue();
+      if (!baseLV) {
+        emitter.emitError(getLoc(),
+                          "invalid use of mutating method on rvalue of type ")
+            << baseVal.type;
+        return {};
+      }
+
+      // TODO: Using partial application over an lvalue like this isn't
+      // technically safe.  We need to extend the lifetime of the pointer
+      // captured for as long as the partial application thunk is alive.  This
+      // will require some sort of borrow model.  In practice, this will be fine
+      // in the short term of Lit bringup because the thunk cannot be emitted
+      // independently anyway, it must always be canonicalized into another
+      // call.
+      firstArgValue = baseLV;
+    } else {
+      // Otherwise we can have either an lvalue or rvalue, but we need to
+      // convert to an rvalue if we have an lvalue.
+      auto drValue = emitter.emitDRValue(baseVal, getLoc());
+      if (!drValue)
+        return {};
+      firstArgValue = drValue.ir;
+    }
+
+    if (!emitter.builder) {
+      emitter.emitError(getLoc(),
+                        "TODO: cannot access method in parameter context");
+      return {};
+    }
+
+    assert(firstArgIRType == firstArgValue.getType() &&
+           "base types should always structurally line up");
+
+    // PartialApply takes the callee as a Value.
+    auto calleeDRVal =
+        emitter.emitDRValue({AnyValue(fnRef.ir), fnRef.type}, getLoc());
+
+    // Partial apply wants to know what operands to bind, we always bind the
+    // first one.
+    auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
+
+    // The result type will be a signature type with one fewer value argument.
+    auto resultFnType = emitter.builder->getFunctionType(
+        symbolIRType.getValues().getInputs().drop_front(),
+        symbolIRType.getValues().getResults());
+    auto resultSigType =
+        SignatureType::get(symbolIRType.getInputParams(),
+                           symbolIRType.getResultParamTypes(), resultFnType);
+
+    // TODO(Issue #4321): Perform parameter substitution
+    Value result = emitter.builder->create<PartialApplyOp>(
+        emitter.translateLocation(getLoc()), resultSigType, calleeDRVal.ir,
+        mlir::ValueRange(firstArgValue), zeroAttr);
+
+    // TODO: We should have proper function argument types.
+    return {DRValue(result), calleeDRVal.type};
   }
 
   // TODO: Handle parameter member references.

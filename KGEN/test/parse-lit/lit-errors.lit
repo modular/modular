@@ -221,3 +221,26 @@ struct struct_bar:
 # expected-error @+1 {{not an interface: struct_bar}}
 def func_impl4(x: index) -> index:
   return x
+
+
+struct LValuesRvalues:
+  def __new__() -> LValuesRvalues:
+    var result : LValuesRvalues
+    return result
+
+  def normalMethod(self):
+  def mutatingMethod(&self):
+
+
+def testLValuesRvalues():
+  # Test with lvalues
+  var lv: LValuesRvalues
+  # expected-error @+1 {{indirect value call not supported yet}}
+  lv.normalMethod()
+  # expected-error @+1 {{indirect value call not supported yet}}
+  lv.mutatingMethod()
+
+  # Test with rvalues
+  # expected-error @+1 {{indirect value call not supported yet}}
+  LValuesRvalues().normalMethod()
+  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
