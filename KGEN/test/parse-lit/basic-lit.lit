@@ -299,6 +299,10 @@ struct Int:
 
   # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   def __iadd__(&self, rhs: Int) -> Int:
+    # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
+    # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@"Int::__add__">
+    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>
+    self.__add__
     #self = self.__add__(rhs)
     return self
 
