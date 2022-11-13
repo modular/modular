@@ -54,6 +54,9 @@ public:
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
 
+  /// If this is a builtin MLIR type, return it.
+  Type getIfMLIRType() const { return dyn_cast<Type>(irValue); }
+
   /// Return true if this is a "magic" declaration that has custom lowering,
   /// and possibly no IR representation.
   bool isMagic() const { return magicKind != MagicDeclKind::kNormal; }

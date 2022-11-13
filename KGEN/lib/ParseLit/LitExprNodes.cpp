@@ -21,6 +21,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitSharedState.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -143,6 +144,36 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   return shared.getTypeCheckErrorType();
 }
 
+/// When a lookup in __mlir_type fails for a named field, this method tries to
+/// resolve it.  On success, it lazily creates a resolved declaration.  On
+/// failure, it bails out.
+static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
+                                            ASTDecl &scope,
+                                            ExprEmitter &emitter) {
+  auto &shared = emitter.shared;
+
+  // Capture errors thrown by parseType and ignore them.
+  // FIXME: This doesn't silence errors!
+  mlir::ScopedDiagnosticHandler handler(shared.getContext(),
+                                        [](Diagnostic &diag) {});
+
+  // FIXME(https://github.com/llvm/llvm-project/issues/58964)
+  // Copy the string into a temporary smallvector so we can make sure it is
+  // nul terminated for the MLIR asmparser.
+  SmallString<64> tmpBuf(name.begin(), name.end());
+  tmpBuf.push_back(0);
+  Type result =
+      mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
+  if (!result) {
+    emitter.emitError(loc, "unknown MLIR type");
+    return nullptr;
+  }
+
+  return &shared.declResolver->addFullyResolvedDecl(
+      result, StringAttr::get(shared.getContext(), name),
+      emitter.translateLocation(loc), shared.getTypeType(), &scope);
+}
+
 /// Perform a name lookup in the specified scope and return the named
 /// declaration.  This emits an error and returns null on error.
 ASTDecl *
@@ -156,6 +187,11 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
   // Handle the case where lookup fails.
   if (!lookupResult) {
+    // If this is a lookup in __mlir_type, then try to lazily synthesize the
+    // type in question.
+    if (scope.magicKind == MagicDeclKind::k__mlir_type)
+      return synthesizeMLIRTypeDeclEntry(name, loc, scope, *this);
+
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
     // type in a `fn`, only a `def`.
@@ -357,7 +393,8 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   if (auto lvalue = decl->getIfLValue())
     return {lvalue, decl->getResolvedType()};
 
-  if (isa<LITStructDeclOp>(*decl) || decl->isMagic()) {
+  // If this is a type declaration, return it as a type.
+  if (isa<LITStructDeclOp>(*decl) || decl->isMagic() || decl->getIfMLIRType()) {
     auto astType = emitter.shared.getASTType(*decl, {});
     return {MValue(astType), emitter.shared.getTypeType()};
   }

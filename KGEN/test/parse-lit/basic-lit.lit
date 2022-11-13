@@ -381,11 +381,8 @@ def func_impl[type: DType](x: index) -> index:
   return x
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
-# CHECK: %a_0 = lit.var.decl "a" : <@Int>
-# CHECK: pop.store %a, %a_0 : !pop.pointer<@Int>
-# CHECK: %0 = pop.load %a_0 : !pop.pointer<@Int>
-# CHECK: pop.store %0, %b : !pop.pointer<@Int>
-def byval_byref_function(a: Int, &b: Int):
+# CHECK: pop.store %a, %b : !pop.pointer<@Int>
+fn byval_byref_function(a: Int, &b: Int):
   b = a
 
 # CHECK: lit.func @lvaluesAndRValues()
@@ -395,3 +392,11 @@ def lvaluesAndRValues() -> index:
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value
+
+
+# CHECK: lit.func @mlirMagicTest(%x: bf16, %y: f8E5M2)
+def mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):
+  # CHECK: %a = lit.var.decl "a" : <index>
+  var a : __mlir_type.index
+  # CHECK: %b = lit.var.decl "b" : <f64>
+  var b : __mlir_type.f64

@@ -77,6 +77,9 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::k__mlir_type:
+      os << "__mlir_type";
+      break;
     case MagicDeclKind::kFunctionType:
       llvm_unreachable("Implemented as a struct, so should be handled");
     case MagicDeclKind::kTypeType:
@@ -98,6 +101,8 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
       os << "<<TypeCheckError>>";
       break;
     }
+  } else if (auto type = decl.getIfMLIRType()) {
+    os << "__mlir_type." << type;
   } else {
     // TODO: Add "aka" information when we have "type defs".
     os << "<<unknown ASTType>>";

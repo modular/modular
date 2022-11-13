@@ -242,3 +242,7 @@ def testLValuesRvalues():
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
   a = a  # expected-error {{cannot assign to immutable expression}}
   c = a  # expected-error {{use of unknown declaration "c"}}
+
+
+fn testMLIR():
+  var a : __mlir_type # expected-error {{cannot use __mlir_type directly, use properties of it instead}}
