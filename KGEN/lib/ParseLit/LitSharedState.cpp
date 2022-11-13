@@ -75,8 +75,6 @@ public:
   // These should move the standard library and be looked up from there on
   // demand.
 
-  /// This is a lit.Pointer type which should move to the standard library.
-  ASTDecl *pointerDecl = nullptr;
   /// This is the decl for the builtin lit.object type.
   ASTDecl *objectDecl = nullptr;
 };
@@ -149,13 +147,6 @@ ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getResolvedType();
 }
 
-ASTType LitSharedState::getPointerType(MValue elementType) {
-  auto pointerStruct = cast<LITStructDeclOp>(*impl->pointerDecl);
-  assert(pointerStruct.getParamDecls().size() == 1 && "Have an element type");
-  ParamDeclAttr elementDecl = pointerStruct.getParamDecls()[0];
-  return getASTType(*impl->pointerDecl, ParamBinding{elementDecl, elementType});
-}
-
 // FIXME: This isn't correctly parameterized; we need variadics.
 ASTType LitSharedState::getFunctionType(MValue resultType) {
   auto functionStruct = cast<LITStructDeclOp>(*impl->functionDecl);
@@ -215,13 +206,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // standard library.
   auto objectOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
   addCompletedStructDecl(objectOp, impl->objectDecl);
-
-  // Add a declaration for `struct Pointer<ElementType: type>:`.  This is used
-  // by '&type' sugar.  It should be moved to the standard library.
-  auto pointerOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Pointer"));
-  pointerOp.setParamDecls(
-      ParamDeclAttr::get("ElementType", b.getType<MLIRTypeType>()));
-  addCompletedStructDecl(pointerOp, impl->pointerDecl);
 }
 
 auto LitSharedState::getUniquedParams(ArrayRef<ParamBinding> params)

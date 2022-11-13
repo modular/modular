@@ -166,10 +166,6 @@ struct WrongType:
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   def badMethod(self: Int): pass
-
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
-  def badMethod2(self: &WrongSelfType[a]): pass
-
   def goodMethod(&self: WrongSelfType[a]): pass
 
 

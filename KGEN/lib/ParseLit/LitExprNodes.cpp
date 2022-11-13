@@ -867,9 +867,6 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   // If the sub-value is an ASTType, apply type sugar.
   if (auto astType = exprRep.ir.getIfMTValue()) {
-    if (kind == kUnaryAmp)
-      return {MValue(emitter.shared.getPointerType(astType)), exprRep.type};
-
     emitter.emitError(getLoc(), "cannot emit this expression as a type");
     return {};
   }
