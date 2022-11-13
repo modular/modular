@@ -108,7 +108,7 @@ public:
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
   virtual ASTTypeAnd<AnyValue> emitIR(ExprEmitter &state,
-                                      FullType contextualType = {}) const = 0;
+                                      ASTType contextualType = {}) const = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -181,7 +181,7 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  ASTTypeAnd<LValue> emitLValue(const ExprNode *node, FullType contextualType,
+  ASTTypeAnd<LValue> emitLValue(const ExprNode *node, ASTType contextualType,
                                 const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
@@ -196,7 +196,7 @@ public:
   /// variable declaration in the scope.
   ASTDecl *lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
                       std::function<void(InFlightDiagnostic)> errorFn,
-                      FullType implicitDeclType = {});
+                      ASTType implicitDeclType = {});
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {

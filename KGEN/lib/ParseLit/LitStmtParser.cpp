@@ -306,9 +306,9 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
 
   // If this variable is being declared in a `def` definition, then we allow
   // implicit declarations of variables.  In `fn` and top level, we do not.
-  FullType lhsContextualType;
+  ASTType lhsContextualType;
   if (getDecl().isDef)
-    lhsContextualType = rhsValue.getFullType();
+    lhsContextualType = rhsValue.type;
 
   // Resolve LHS expression into an lvalue that we can store into.
   ASTTypeAnd<LValue> lValue = getExprEmitter().emitLValue(
