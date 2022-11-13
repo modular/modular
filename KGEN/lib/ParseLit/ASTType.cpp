@@ -92,7 +92,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
       os << "!builtin.index";
       break;
     case MagicDeclKind::kNoneType:
-      os << "!lit.none";
+      os << "None";
       break;
     case MagicDeclKind::kTypeCheckErrorType:
       os << "<<TypeCheckError>>";
