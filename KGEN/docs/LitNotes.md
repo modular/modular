@@ -75,14 +75,34 @@ In addition to specific differences, we support the following extensions:
    We support implicit local variable definitions, but allow them to be
    optionally explicitly declared as well.
 
-5) In addition to loosely typed `def` statements, we (will) support a more
-    strict `fn` statement.  The difference is not about capabilities - a `fn`
-    can include dynamic operations and interact with Python objects directly,
-    the difference is that a `fn` statement is more strict and doesn't allow
-    error of omission as easily.  For example, all arguments must have types,
-    and we may require introducers on local variables.
+5) In addition to loosely typed `def` statements, we support a more strict `fn`
+   statement, described below.
 
 ## Various Design notes
+
+### New `fn` introducer
+
+Lit supports a new `fn` introducer that can be used in place of `def`.  Both
+form of declaration have the same capabilities - a `fn` can include dynamic
+operations and interact with Python objects directly.
+
+`fn` is effectively a more strict `def` that has different defaults.  Notably
+a `fn` disables the following behavior that `def` maintains for Python
+compatibility / familiarity, and to make it easier to migrate large swaths of
+Python code to Lit someday.
+
+More specific differences:
+
+1) `fn` definitions require type annotations on the function signature.  In a
+   `def`, they are optional and default to `object`.
+2) Formal arguments in a `def` are mutable l-values, in a `fn` they are
+   immutable.
+3) `def` definitions allow local variables to be implicitly declared on their
+   first use, a `fn` definition requires `let` and `var` introducers.
+
+The choice of `fn` for this is arbitrary, we could have picked `func` (like
+Swift/Go) or `function` like Javascript.  `fn` aligns with Rust/Zig which are
+cool kids on the block these days.
 
 ### Expression parsing happens in two phases
 

@@ -145,6 +145,10 @@ public:
 
   MagicDeclKind magicKind = MagicDeclKind::kNormal;
 
+  /// For LitFuncOp declarations, this indicates whether it was defined with a
+  /// 'def' keyword.  False means it was defined as a 'fn'.
+  bool isDef = false;
+
 private:
   friend class DeclResolver;
   friend class LitSharedState;

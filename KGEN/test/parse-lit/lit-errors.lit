@@ -19,7 +19,7 @@ def fn_redecl():
 def fn_redecl():
   pass
 
-def fn():
+def func():
   never_declared_fn() # expected-error {{use of unknown declaration "never_declared_fn"}}
   pass
 
@@ -32,7 +32,7 @@ def elif_parse_error(a: index):
   else:
     pass
 
-42 = 17 # expected-error {{cannot assign to expression}}
+42 = 17 # expected-error {{cannot assign to immutable expression}}
 
 return 32 # expected-error {{cannot return from this context}}
 
@@ -241,3 +241,8 @@ def testLValuesRvalues():
   # Test with rvalues
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
+
+# Test differences between fn and def.
+fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
+  a = a  # expected-error {{cannot assign to immutable expression}}
+  c = a  # expected-error {{use of unknown declaration "c"}}
