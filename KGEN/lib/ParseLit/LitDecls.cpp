@@ -21,6 +21,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitSharedState.h"
+#include "SpecialFunctions.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -368,6 +369,27 @@ struct ParsedParam {
 };
 } // namespace
 
+/// If this is a special function like __init__ return the enum that
+/// identifies it, otherwise return kNormal.
+SpecialFunctionKind LIT::getSpecialFunctionKind(StringRef name) {
+  // FIXME: Remove name mangling.
+  size_t methodSepIdx = name.rfind("::");
+  // If this is a method, strip struct/class container name.
+  if (methodSepIdx != StringRef::npos)
+    name = name.substr(methodSepIdx + 2, name.size());
+
+  if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
+    return SpecialFunctionKind::kNormal;
+  name = name.drop_front(2).drop_back(2);
+  if (name == "init")
+    return SpecialFunctionKind::kInit;
+  if (name == "new")
+    return SpecialFunctionKind::kNew;
+
+  // Otherwise, this declaration isn't known.
+  return SpecialFunctionKind::kNormal;
+}
+
 /// Perform type checking for a function signature that has just been parsed
 /// but that has not been installed into the specified decl.  This allows
 /// magic behavior (like __new__ being static, self getting implicitly
@@ -388,7 +410,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
   // therefore have more checking to perform.
   auto funcOp = dyn_cast<LITFuncOp>(op);
   if (funcOp) {
-    specialFunctionKind = funcOp.getSpecialFunctionKind();
+    specialFunctionKind = getSpecialFunctionKind(funcOp.getName());
     isStatic = funcOp.getIsStatic();
   }
 

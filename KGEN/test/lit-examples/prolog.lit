@@ -14,7 +14,7 @@ struct Int:
   var value : index
 
   # CHECK: lit.func @"Int::__new__"(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
-  def __new__(value: index) -> Int:
+  fn __new__(value: index) -> Int:
     # TODO: Enable dict_display somehow so we can use "return {value: value}"
     var result: Int
     result.value = value

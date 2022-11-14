@@ -99,28 +99,6 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
   result.regions[0]->push_back(new Block());
 }
 
-/// If this is a special function like __init__ return the enum that
-/// identifies it, otherwise return kNormal.
-SpecialFunctionKind LITFuncOp::getSpecialFunctionKind() {
-  StringRef nameStr = getName();
-  size_t methodSepIdx = nameStr.rfind("::");
-  // If this is a method, strip struct/class container name.
-  if (methodSepIdx != StringRef::npos)
-    nameStr = nameStr.substr(methodSepIdx + 2, nameStr.size());
-
-  if (nameStr.size() < 5 || !nameStr.startswith("__") ||
-      !nameStr.endswith("__"))
-    return SpecialFunctionKind::kNormal;
-  nameStr = nameStr.drop_front(2).drop_back(2);
-  if (nameStr == "init")
-    return SpecialFunctionKind::kInit;
-  if (nameStr == "new")
-    return SpecialFunctionKind::kNew;
-
-  // Otherwise, this declaration isn't known.
-  return SpecialFunctionKind::kNormal;
-}
-
 //===----------------------------------------------------------------------===//
 // LITStructGEPOp
 //===----------------------------------------------------------------------===//
