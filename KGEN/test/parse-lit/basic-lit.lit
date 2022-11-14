@@ -187,9 +187,17 @@ fn func_impl[type: DType](x: index) -> index:
   return x
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
-# CHECK: pop.store %a, %b : !pop.pointer<@Int>
 fn byval_byref_function(a: Int, &b: Int):
+  # CHECK-NEXT: %x = lit.var.decl "x"
+  # CHECK-NEXT: pop.store %a, %b
   b = a
+
+  var x : Int
+  # This needs to load 'b' to pass it by value for the first arg, but pass its
+  # address in directly for the second.
+  # CHECK: %0 = pop.load %b : !pop.pointer<@Int>
+  # CHECK: %1 = kgen.call_param[(!kgen.ref<@Int>, !pop.pointer<@Int>) -> !lit.none: @byval_byref_function](%0, %b)
+  byval_byref_function(b, b)
 
 # CHECK: lit.func @lvaluesAndRValues()
 fn lvaluesAndRValues() -> index:
@@ -204,8 +212,6 @@ def defTests(a: Int, b: Int):
   # CHECK: %[[TMP:.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store %[[TMP]], %a_0
   a = b # Parameters are mutable!
-
-
 
 # CHECK: lit.func @mlirMagicTest(%x: bf16, %y: f8E5M2)
 fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):

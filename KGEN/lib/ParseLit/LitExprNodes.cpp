@@ -20,6 +20,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "LitExprs.h"
 #include "LitSharedState.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -232,14 +233,19 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
+using ArgumentValueType = std::pair<ASTTypeAnd<AnyValue>, SMLoc>;
+
+/// Emit a function call to the specified callee with the specified operand
+/// values.
 static ASTTypeAnd<AnyValue>
-emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
+emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
+                 ArrayRef<ArgumentValueType> operands, SMLoc callLoc,
                  ExprEmitter &emitter) {
   if (!calleeValAndType)
     return {};
 
   auto emitError = [&](const Twine &message) {
-    return emitter.emitError(call.getLoc(), message);
+    return emitter.emitError(callLoc, message);
   };
 
   RValue calleeVal = calleeValAndType.ir;
@@ -279,29 +285,47 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
          "TODO: meta results not implemented yet");
 
   size_t numArgs = calleeIRType.getValues().getNumInputs();
-  if (numArgs != call.args.size()) {
+  if (numArgs != operands.size()) {
     emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
     return {};
   }
 
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
-  for (auto [arg, expectedType] :
-       llvm::zip(call.args, calleeIRType.getValues().getInputs())) {
-    auto argVal = emitter.emitDRValue(arg);
-    if (!argVal.ir)
+  for (auto [argAnyValueTypeAndLoc, expectedType] :
+       llvm::zip(operands, calleeIRType.getValues().getInputs())) {
+    // If the callee takes the operand as a by-ref argument, we require an
+    // lvalue.
+    Value argVal;
+    if (isa<POP::PointerType>(expectedType)) {
+      argVal = argAnyValueTypeAndLoc.first.ir.getIfLValue();
+      if (!argVal) {
+        emitter.emitError(
+            argAnyValueTypeAndLoc.second,
+            "operand must be mutable in order to pass as a by-ref argument");
+        return {};
+      }
+    } else {
+      // Otherwise, we pass as an r-value.
+      argVal = emitter
+                   .emitDRValue(argAnyValueTypeAndLoc.first,
+                                argAnyValueTypeAndLoc.second)
+                   .ir;
+    }
+
+    if (!argVal)
       return {};
 
-    if (argVal.ir.getType() != expectedType) {
-      // TODO: Handle implicit conversions.
-      emitter.emitError(arg->getLoc(), "value of type ")
-          << argVal.type
+    // TODO: Handle implicit conversions.
+    if (argVal.getType() != expectedType) {
+      emitter.emitError(argAnyValueTypeAndLoc.second, "value of type ")
+          << argAnyValueTypeAndLoc.first.type
           << " cannot be converted to expected type "
-          // TODO: Print pretty expected type.
+          // TODO: Print pretty expected type when we have it.
           << expectedType;
       return {};
     }
-    valueArguments.push_back(argVal.ir);
+    valueArguments.push_back(argVal);
   }
 
   if (!emitter.builder) {
@@ -312,7 +336,7 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   // If this is a call to something representable as an attribute, we can use
   // a kgen.call_param.
   Value resultVal;
-  auto loc = emitter.translateLocation(call.getLoc());
+  auto loc = emitter.translateLocation(callLoc);
   auto resultTypes = calleeIRType.getValues().getResults();
   if (auto calleeParam = calleeVal.getIfMAValue()) {
     resultVal =
@@ -325,7 +349,7 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
     auto calleeDRVal =
-        emitter.emitDRValue({AnyValue(calleeVal), calleeType}, call.getLoc());
+        emitter.emitDRValue({AnyValue(calleeVal), calleeType}, callLoc);
     if (!calleeDRVal)
       return {};
     resultVal = emitter.builder
@@ -336,6 +360,19 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
 
   // Value returning call returns its result.
   return {DRValue(resultVal), resultASTType};
+}
+
+/// Emit a function call for a call node with the specified operands.
+static ASTTypeAnd<AnyValue>
+emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
+                 ExprEmitter &emitter) {
+  SmallVector<ArgumentValueType> operands;
+  for (ExprNode *arg : call.args) {
+    operands.push_back({arg->emitIR(emitter), arg->getLoc()});
+    if (!operands.back().first)
+      return {};
+  }
+  return emitFunctionCall(calleeValAndType, operands, call.getLoc(), emitter);
 }
 
 /// Get a symbol for a direct reference to the specified function in its
