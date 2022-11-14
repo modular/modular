@@ -20,10 +20,12 @@
 # CHECK-NEXT:    %[[LOAD_B:.*]] = pop.load %[[VAR_B:.*]] : !pop.pointer<index>
 # CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
 # CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_B]], %[[ONE]])
-# CHECK-NEXT:    scf.if %[[CMP]] {
+# CHECK-NEXT:    hlcf.if %[[CMP]] {
 # CHECK-NEXT:      {{.+}} = index.constant 1
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b : !pop.pointer<index>
+# CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
 # CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
@@ -62,7 +64,7 @@ def test_simple(a: index):
 
 # CHECK-LABEL: lit.func @test_else_outside_while
 def test_else_outside_while(a: index, b: index) -> index:
-    # CHECK: scf.if {{.+}} {
+    # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
         # CHECK: {{.+}} = pop.load %a

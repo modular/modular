@@ -10,22 +10,25 @@ def test_if(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
-  # CHECK:          scf.if
+  # CHECK:          hlcf.if
   if a:
     inside_a = 0
   # CHECK:          } else {
-  # CHECK:            scf.if
+  # CHECK:            hlcf.if
   elif b:
     var inside_b : Int
-  # CHECK:          } else {
-  # CHECK:            scf.if
+  # CHECK:            } else {
+  # CHECK:              hlcf.if
   elif c:
     inside_c = 2
-  # CHECK:          } else {
+  # CHECK:              } else {
   else:
     inside_else = 3
-  # CHECK:                }
-  # CHECK-NEXT:        }
+  # CHECK:                hlcf.yield
+  # CHECK-NEXT:         }
+  # CHECK-NEXT:         hlcf.yield
+  # CHECK-NEXT:       }
+  # CHECK-NEXT:       hlcf.yield
   # CHECK-NEXT:     }
   z = 4
   return a
@@ -37,24 +40,27 @@ def test_if_nested(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
   # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
-  # CHECK:                    scf.if
+  # CHECK:                    hlcf.if
   if a:
     inside_a = 0
   # CHECK:                   } else {
-  # CHECK:                     scf.if
+  # CHECK:                     hlcf.if
   else:
     if b:
       var inside_b : Int
-  # CHECK:                   } else {
-  # CHECK:                     scf.if
+  # CHECK:                     } else {
+  # CHECK:                       hlcf.if
     else:
       if c:
         inside_c = 2
-  # CHECK:                   } else {
+  # CHECK:                       } else {
       else:
         inside_else = 3
-  # CHECK:                         }
-  # CHECK-NEXT:                 }
-  # CHECK-NEXT:              }
+  # CHECK:                         hlcf.yield
+  # CHECK:                       }
+  # CHECK:                       hlcf.yield
+  # CHECK-NEXT:               }
+  # CHECK:                    hlcf.yield
+  # CHECK-NEXT:             }
   z = 4
   return a
