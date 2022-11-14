@@ -1,0 +1,30 @@
+
+
+
+
+
+enum class SpecialFunctionKind {
+  // This is not a special function.  This enumerator should always have value
+  // zero so it can be used as a false condition in an if.
+  kNormal = 0,
+
+  kNew,  //< __new__
+  kInit, //< __init__
+
+  // Normal arithmetic operators.
+  kAdd, //< __add__
+  kSub, //< __sub__
+  kMul, //< __mul__
+  // ... more: https://docs.python.org/3/reference/datamodel.html#object.__add__
+
+  // Reversed arithmetic operators.
+  kRAdd, //< __radd__
+  kRSub, //< __rsub__
+  kRMul, //< __rmul__
+  // ... more
+
+  // In place operators like +=
+  kIAdd, //< __iadd__
+  kISub, //< __isub__
+  kIMul, //< __imul__
+};
