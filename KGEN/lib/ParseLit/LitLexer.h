@@ -101,7 +101,7 @@ private:
 /// This implements a lexer for .lit files.
 class LitLexer {
 public:
-  LitLexer(LitSharedState &sharedState);
+  LitLexer(LitSharedState &sharedState, const llvm::MemoryBuffer *buffer);
   LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor);
 
   const llvm::SourceMgr &getSourceMgr() const { return sharedState.sourceMgr; }

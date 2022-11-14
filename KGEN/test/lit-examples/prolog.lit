@@ -1,0 +1,50 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
+
+# This is the start of a standard Prolog for Lit to use.
+
+struct DType:
+  pass
+
+struct Scalar[type: DType]:
+  pass
+
+# CHECK-LABEL: lit.struct.decl @Int {
+struct Int:
+  # CHECK-NEXT: %value = lit.var.decl "value" : <index>
+  var value : index
+
+  # CHECK: lit.func @"Int::__new__"(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
+  def __new__(value: index) -> Int:
+    # TODO: Enable dict_display somehow so we can use "return {value: value}"
+    var result: Int
+    result.value = value
+    return result
+
+  # CHECK: lit.func @"Int::__add__"(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  fn __add__(self, rhs: Int) -> Int:
+    # CHECK: %0 = lit.struct.extract %rhs[value]
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
+    return Int(rhs.value)      # TODO: Use this somehow. :)
+    # CHECK: kgen.return %1
+  # CHECK: }
+
+  # In place addition is mutating.
+
+  # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  fn __iadd__(&self, rhs: Int) -> Int:
+    # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
+    # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@"Int::__add__">
+    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>
+    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.ref<@Int>) -> !kgen.ref<@Int>
+    # CHECK: pop.store %3, %self
+    self = self.__add__(rhs)
+    # CHECK: %4 = pop.load %self
+    # CHECK: kgen.return %4
+    return self
+
+# CHECK: }
+
+
+# TODO: Enable this with & sugar on 'type' type.
+struct Pointer[ElementType: type]:
+  pass
