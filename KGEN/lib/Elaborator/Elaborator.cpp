@@ -1630,18 +1630,18 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
   SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
 
-  // If there is no evaluator, return the full vector of instantiations. If the
-  // interface is being inlined, we can't benchmark the instantiations because
-  // they would not be well-formed.
-  if (!evaluator || inlined)
-    return result;
-
   // Truncate the result vector to contain only the successful implementations.
   result.erase(newEnd, result.end());
 
   // If we don't want to do search, we're done.
   if (!enableSearch)
     return {*result.begin()};
+
+  // If there is no evaluator, return the full vector of instantiations. If the
+  // interface is being inlined, we can't benchmark the instantiations because
+  // they would not be well-formed.
+  if (!evaluator || inlined)
+    return result;
 
   // Pull out the elaboration results that succeeded to provide to the search
   // inputs.
