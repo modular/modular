@@ -106,6 +106,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     `` custom<Loop>($operands, type($operands), type($results), $body) attr-dict
   }];
 
+  let builders = [OpBuilder<(ins)>];
+
   let hasVerifier = 1;
 }
 
@@ -171,13 +173,15 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
 
   let arguments = (ins I1:$cond);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region MinSizedRegion<1>:$ifRegion,
+  let regions = (region MinSizedRegion<1>:$thenRegion,
                         MinSizedRegion<1>:$elseRegion);
 
   let assemblyFormat = [{
-    $cond (`->` type($results)^)? $ifRegion `else` $elseRegion
+    $cond (`->` type($results)^)? $thenRegion `else` $elseRegion
     attr-dict
   }];
+
+  let builders = [OpBuilder<(ins "Value":$cond)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,6 +207,8 @@ def HLCF_ContinueOp : HLCFTerminatorOp<"continue"> {
     This operation is never pure because the control-flow edge from this
     terminator will always lead to an earlier point in the IR.
   }];
+
+  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -231,6 +237,8 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
     is nested directly beneath a loop operation because the control-flow edge
     from this terminator will always go to after the parent operation.
   }];
+
+  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -258,6 +266,8 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">]> {
     This operation can always be marked pure because the control-flow edge from
     this operation leads only to after the parent operation.
   }];
+
+  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//

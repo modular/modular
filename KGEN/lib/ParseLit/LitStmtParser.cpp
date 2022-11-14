@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -440,31 +441,32 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   // we end up after it when this is done.
   llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
 
-  auto whileOp = builder.create<scf::WhileOp>(whileLoc, ArrayRef<Type>(),
-                                              ArrayRef<Value>());
-  Block *before = builder.createBlock(&whileOp.getBefore());
-  Block *after = builder.createBlock(&whileOp.getAfter());
-
-  // Create the condition block.
-  builder = OpBuilder::atBlockEnd(before);
+  auto loopOp = builder.create<HLCF::LoopOp>(whileLoc);
+  Block *body = builder.createBlock(&loopOp.getBody());
+  builder = OpBuilder::atBlockEnd(body);
 
   Value condVal;
   if (emitExprAsCondition(condExp, condVal, *this))
     return success(); // IRGen error already emitted; parse succeeded!
 
-  builder.create<scf::ConditionOp>(whileLoc, condVal, ArrayRef<Value>());
+  // Generate the while condition check.
+  auto condOp = builder.create<HLCF::IfOp>(whileLoc, condVal);
+  builder.createBlock(&condOp.getThenRegion());
+  builder.create<HLCF::YieldOp>(whileLoc);
+  Block *exit = builder.createBlock(&condOp.getElseRegion());
+  builder.create<HLCF::BreakOp>(whileLoc);
 
-  // Create the after block.
-  builder = OpBuilder::atBlockEnd(after);
+  // Create the body.
+  builder.setInsertionPointAfter(condOp);
   if (failed(parseSuite(curIndent)))
     return failure();
-  builder.create<scf::YieldOp>(whileLoc);
+  builder.create<HLCF::ContinueOp>(whileLoc);
 
-  // If there is an else block, emit it after the while op.
+  // The 'else' block is executed only when the condition check fails.
   if (getToken().getIndentation().has_value() &&
       getToken().getIndentation().value() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
-    builder.setInsertionPointAfter(whileOp);
+    builder.setInsertionPointToStart(exit);
     if (parseToken(LitToken::colon, "expected ':' after else") ||
         parseSuite(curIndent))
       return failure();

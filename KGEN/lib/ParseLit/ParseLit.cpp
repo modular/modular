@@ -18,6 +18,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -41,8 +42,9 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                                              mlir::TimingScope &ts) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-  context->loadDialect<POP::POPDialect, LITDialect, mlir::index::IndexDialect,
-                       KGENDialect, mlir::scf::SCFDialect>();
+  context->loadDialect<HLCF::HLCFDialect, POP::POPDialect, LITDialect,
+                       mlir::index::IndexDialect, KGENDialect,
+                       mlir::scf::SCFDialect>();
 
   // This is the result module we are parsing into.
   auto fileLoc =

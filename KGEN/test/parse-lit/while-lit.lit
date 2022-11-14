@@ -4,12 +4,17 @@
 # CHECK:       %inside_a = lit.var.decl "inside_a" : <index>
 # CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
 # CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
-# CHECK:       scf.while : () -> () {
+# CHECK:       hlcf.loop {
 # CHECK-NEXT:    %[[LOAD_A:.*]] = pop.load  %[[VAR_A:.*]] : !pop.pointer<index>
 # CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
 # CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
-# CHECK-NEXT:    scf.condition(%[[CMP]])
-# CHECK-NEXT:  } do {
+# CHECK-NEXT:    hlcf.if %[[CMP]] {
+# CHECK-NEXT:     hlcf.yield
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:     index.constant 2
+# CHECK-NEXT:     pop.store {{.+}}, %inside_else : !pop.pointer<index>
+# CHECK-NEXT:     hlcf.break
+# CHECK-NEXT:    }
 # CHECK-NEXT:    index.constant 0
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a : !pop.pointer<index>
 # CHECK-NEXT:    %[[LOAD_B:.*]] = pop.load %[[VAR_B:.*]] : !pop.pointer<index>
@@ -20,10 +25,8 @@
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b : !pop.pointer<index>
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:    }
-# CHECK-NEXT:    scf.yield
+# CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
-# CHECK-NEXT:  index.constant 2
-# CHECK-NEXT:  pop.store {{.+}}, %inside_else : !pop.pointer<index>
 # CHECK-NEXT:  pop.load
 # CHECK-NEXT:  kgen.return
 # CHECK-NEXT:  }
@@ -38,13 +41,16 @@ def test_while(a: index, b: index) -> index:
 
 
 # CHECK-LABEL: lit.func @test_simple(%a: index)
-# CHECK:       scf.while : () -> () {
+# CHECK:       hlcf.loop {
 # CHECK-NEXT:     %[[LOAD_A:.*]] = pop.load %[[VAR_A:.*]] : !pop.pointer<index>
 # CHECK-NEXT:     %[[ONE:.*]] = index.constant 1
 # CHECK-NEXT:     %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
-# CHECK-NEXT:     scf.condition(%[[CMP]])
-# CHECK-NEXT:   } do {
-# CHECK-NEXT:     scf.yield
+# CHECK-NEXT:     hlcf.if %[[CMP]] {
+# CHECK-NEXT:       hlcf.yield
+# CHECK-NEXT:     } else {
+# CHECK-NEXT:       hlcf.break
+# CHECK-NEXT:     }
+# CHECK-NEXT:     hlcf.continue
 # CHECK-NEXT:   }
 # CHECK-NEXT:   [[NONE:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:   kgen.return [[NONE]]
@@ -58,13 +64,12 @@ def test_simple(a: index):
 def test_else_outside_while(a: index, b: index) -> index:
     # CHECK: scf.if {{.+}} {
     if b:
-        # CHECK: scf.while :
+        # CHECK: hlcf.loop
         # CHECK: {{.+}} = pop.load %a
-        # CHECK: } do {
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
             inside_a = 0
-            # CHECK: scf.yield
+            # CHECK: hlcf.continue
     # CHECK: } else {
     else:
         # CHECK: pop.store {{.+}}, %inside_else
