@@ -24,6 +24,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <filesystem>
 
@@ -403,9 +404,16 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  // TODO: Support result parameters.
-  builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
-                           operandValues);
+  if (isa<LITFuncOp>(builder.getInsertionBlock()->getParentOp())) {
+    // TODO: Support result parameters.
+    builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
+                             operandValues);
+  } else {
+    builder.create<HLCF::ReturnOp>(translateLocation(loc), operandValues);
+  }
+  // Split the block here. Subsequent statements are dead code.
+  builder.setInsertionPointToStart(
+      builder.getInsertionBlock()->splitBlock(builder.getInsertionPoint()));
   return success();
 }
 
@@ -798,6 +806,13 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 /// This is the main entrypoint to this file.
 ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl,
                                       LitLexer &lexer) {
-  return LitStmtParser(lexer, containingDecl)
-      .parseSuite(containingDecl.getIndentation());
+  if (failed(LitStmtParser(lexer, containingDecl)
+                 .parseSuite(containingDecl.getIndentation())))
+    return failure();
+  // Run region DCE to remove dead code.
+  mlir::IRRewriter rewriter(containingDecl.getContext());
+  containingDecl.getIfOperation()->walk([&](Operation *op) {
+    (void)mlir::eraseUnreachableBlocks(rewriter, op->getRegions());
+  });
+  return success();
 }
