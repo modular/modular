@@ -51,7 +51,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
   LitSharedState sharedState(sourceMgr, context);
-  LitLexer lexer(sharedState);
+  LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
 
   // The outermost scope contains the __builtins__ function definitions.

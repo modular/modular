@@ -246,3 +246,6 @@ fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
 
 fn testMLIR():
   var a : __mlir_type # expected-error {{cannot use __mlir_type directly, use properties of it instead}}
+
+
+__include "non-existant-file.lit" # expected-error {{could not find file 'non-existant-file.lit'}}

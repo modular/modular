@@ -83,9 +83,10 @@ public:
 
 /// Get the name of the main buffer so we can rapidly build Location objects
 /// on demand.
-static StringAttr getMainBufferNameIdentifier(const SourceMgr &sourceMgr,
-                                              MLIRContext *context) {
-  auto mainBuffer = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+static StringAttr getBufferNameIdentifier(const SourceMgr &sourceMgr,
+                                          unsigned bufferID,
+                                          MLIRContext *context) {
+  auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
   StringRef bufferName = mainBuffer->getBufferIdentifier();
   if (bufferName.empty())
     bufferName = "<unknown>";
@@ -95,7 +96,8 @@ static StringAttr getMainBufferNameIdentifier(const SourceMgr &sourceMgr,
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
     : sourceMgr(sourceMgr), context(context),
       declResolver(std::make_unique<DeclResolver>(*this)),
-      bufferNameIdentifier(getMainBufferNameIdentifier(sourceMgr, context)),
+      bufferNameIdentifier(getBufferNameIdentifier(
+          sourceMgr, sourceMgr.getMainFileID(), context)),
       impl(std::make_unique<Impl>()) {}
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
@@ -115,9 +117,17 @@ InFlightDiagnostic LitSharedState::emitError(llvm::SMLoc loc,
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.
 Location LitSharedState::translateLocation(SMLoc loc) const {
-  unsigned mainFileID = sourceMgr.getMainFileID();
-  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, mainFileID);
-  return FileLineColLoc::get(bufferNameIdentifier, lineAndColumn.first,
+  // TODO: Implement a cache here to speed up location translation.
+  unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
+  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
+
+  StringAttr bufferName;
+  if (bufferID == sourceMgr.getMainFileID())
+    bufferName = bufferNameIdentifier;
+  else
+    bufferName = getBufferNameIdentifier(sourceMgr, bufferID, getContext());
+
+  return FileLineColLoc::get(bufferName, lineAndColumn.first,
                              lineAndColumn.second);
 }
 

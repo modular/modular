@@ -11,6 +11,7 @@
 #include "ASTDecl.h"
 #include "LitDecls.h"
 #include "LitExprNodes.h"
+#include "LitLexer.h"
 #include "LitParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -22,6 +23,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include <filesystem>
 
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
@@ -77,6 +79,7 @@ struct LitStmtParser : public LitParserBase {
                                   size_t stmtIndent);
 
   // Declarations.
+  ParseResult parseIncludeHack();
   ParseResult parseDefFnStmt(ArrayRef<ExprNode *> decorators, size_t curIndent);
   ParseResult parseStructStmt(ArrayRef<ExprNode *> decorators,
                               size_t curIndent);
@@ -239,6 +242,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     //===------------------------------------------------------------------===//
     // Simple statements.
     //===------------------------------------------------------------------===//
+  case LitToken::kw___include:
+    return parseIncludeHack();
+
   case LitToken::kw_pass:
     // pass_stmt ::= "pass"
     consumeToken(LitToken::kw_pass);
@@ -519,6 +525,48 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       return failure();
   }
   return success();
+}
+
+/// Parse the __include "somePath" directive.
+ParseResult LitStmtParser::parseIncludeHack() {
+  SMLoc includeLoc = consumeToken(LitToken::kw___include).getLoc();
+  StringRef path = getTokenSpelling();
+  if (parseToken(LitToken::string, "expected path in __include directive"))
+    return failure();
+
+  // Strip off the ""'s.
+  path = path.drop_front().drop_back();
+
+  llvm::SourceMgr &sourceMgr = getSharedState().sourceMgr;
+
+  // Resolve the absolute filename of the target.
+  std::string absolutePath;
+  if (std::filesystem::path(path.str()).is_absolute()) {
+    absolutePath = path.str();
+  } else {
+    // Resolve relative paths w.r.t. the including file.
+    const llvm::MemoryBuffer *includerBuffer = sourceMgr.getMemoryBuffer(
+        sourceMgr.FindBufferContainingLoc(includeLoc));
+    assert(includerBuffer && "Must be in a source buffer");
+    auto includerPath =
+        std::filesystem::path(includerBuffer->getBufferIdentifier().str());
+    absolutePath = includerPath.replace_filename(path.str());
+  }
+
+  // Ask SourceMgr to open the file in question.
+  std::string fullPath;
+  unsigned fileID =
+      sourceMgr.AddIncludeFile(absolutePath, includeLoc, fullPath);
+  if (fileID == 0) {
+    emitError(includeLoc, "could not find file '") << path << "'";
+    return success(); // Parse success, semantic failure.
+  }
+
+  // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
+  // do so.
+  const llvm::MemoryBuffer *includerBuffer = sourceMgr.getMemoryBuffer(fileID);
+  LitLexer lexer(getSharedState(), includerBuffer);
+  return LitParserBase::parseSuite(containingDecl, lexer);
 }
 
 //===----------------------------------------------------------------------===//

@@ -1,5 +1,7 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
+__include "../lit-examples/prolog.lit"
+
 # CHECK: module {
 
 # CHECK-LABEL: lit.func @empty_def() -> !lit.none {
@@ -75,34 +77,34 @@ fn callStatic(a: Int):
   StructExample().static(a)
 
 
-# CHECK-LABEL: lit.struct.decl @Int {
-struct Int:
+# CHECK-LABEL: lit.struct.decl @SomeInteger {
+struct SomeInteger:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
   var value : index
 
-  # CHECK: lit.func @"Int::__new__"(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
-  fn __new__(value: index) -> Int:
+  # CHECK: lit.func @"SomeInteger::__new__"(%value_0: index) -> !kgen.ref<@SomeInteger> attributes {isStatic} {
+  fn __new__(value: index) -> SomeInteger:
     # TODO: Enable dict_display somehow so we can use "return {value: value}"
-    var result: Int
+    var result: SomeInteger
     result.value = value
     return result
 
-  # CHECK: lit.func @"Int::__add__"(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
-  fn __add__(self, rhs: Int) -> Int:
+  # CHECK: lit.func @"SomeInteger::__add__"(%self: !kgen.ref<@SomeInteger>, %rhs: !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
+  fn __add__(self, rhs: SomeInteger) -> SomeInteger:
     # CHECK: %0 = lit.struct.extract %rhs[value]
-    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@SomeInteger>: @SomeInteger::@"SomeInteger::__new__"](%0)
+    return SomeInteger(rhs.value)      # TODO: Use this somehow. :)
     # CHECK: kgen.return %1
   # CHECK: }
 
   # In place addition is mutating.
 
-  # CHECK: lit.func @"Int::__iadd__"(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
-  fn __iadd__(&self, rhs: Int) -> Int:
-    # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
-    # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@"Int::__add__">
-    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>
-    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.ref<@Int>) -> !kgen.ref<@Int>
+  # CHECK: lit.func @"SomeInteger::__iadd__"(%self: !pop.pointer<@SomeInteger>, %rhs: !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger> {
+  fn __iadd__(&self, rhs: SomeInteger) -> SomeInteger:
+    # CHECK: %0 = pop.load %self : !pop.pointer<@SomeInteger>
+    # CHECK: %1 = kgen.param.constant: (!kgen.ref<@SomeInteger>, !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger> = <@SomeInteger::@"SomeInteger::__add__">
+    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@SomeInteger>, !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
+    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
     # CHECK: pop.store %3, %self
     self = self.__add__(rhs)
     # CHECK: %4 = pop.load %self
@@ -151,9 +153,6 @@ def patterns():
 
 # CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.ref<@DType>> {
 struct SIMD[size: index, dt: DType]:
-  pass
-
-struct DType:
   pass
 
 fn generic_fn[a: DType, b: index, c: type](d : index):

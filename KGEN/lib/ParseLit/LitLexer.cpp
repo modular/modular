@@ -55,20 +55,24 @@ bool LitToken::isKeyword() const {
 // LitLexer
 //===----------------------------------------------------------------------===//
 
-static StringRef getBuffer(LitSharedState &sharedState) {
-  return sharedState.sourceMgr
-      .getMemoryBuffer(sharedState.sourceMgr.getMainFileID())
-      ->getBuffer();
-}
-
-LitLexer::LitLexer(LitSharedState &sharedState)
-    : sharedState(sharedState), curBuffer(getBuffer(sharedState)),
+LitLexer::LitLexer(LitSharedState &sharedState,
+                   const llvm::MemoryBuffer *buffer)
+    : sharedState(sharedState), curBuffer(buffer->getBuffer()),
       curPtr(curBuffer.begin()),
       // Prime the first token.
       curToken(lexTokenImpl()) {}
 
+static StringRef getBuffer(LitSharedState &sharedState,
+                           const LitLexerCursor &cursor) {
+  unsigned cursorBufferId =
+      sharedState.sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
+  assert(cursorBufferId && "invalid cursor!");
+  const auto *buffer = sharedState.sourceMgr.getMemoryBuffer(cursorBufferId);
+  return buffer->getBuffer();
+}
+
 LitLexer::LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor)
-    : sharedState(sharedState), curBuffer(getBuffer(sharedState)),
+    : sharedState(sharedState), curBuffer(getBuffer(sharedState, cursor)),
       curToken(LitToken::eof, {}, 0) {
   cursor.restore(*this);
 }
