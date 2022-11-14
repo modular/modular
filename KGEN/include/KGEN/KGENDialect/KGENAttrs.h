@@ -26,6 +26,7 @@ namespace M::KGEN {
 class ConcreteTypeConstantAttr;
 class ConstraintAttr;
 class DTypeConstantAttr;
+class ListType;
 class ParamDeclArrayAttr;
 class ParamDeclAttr;
 class ParameterizedTypeConstantAttr;

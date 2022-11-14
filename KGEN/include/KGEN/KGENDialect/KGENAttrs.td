@@ -119,10 +119,7 @@ def KTypeArrayAttr
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
 def ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
-      "walkImmediateSubElements", "replaceImmediateSubElements"
-    ]
-  >]> {
+    DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "ParamDeclAttr":$decl, "TypedAttr":$value);
 
@@ -154,6 +151,32 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
 /// An array of ParamBindAttr's.
 def ParamBindArrayAttr
     : ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
+
+//===----------------------------------------------------------------------===//
+// ListAttr
+//===----------------------------------------------------------------------===//
+
+def ListAttr : ExprAttr<"List", "list", [SubElementAttrInterface]> {
+  let summary = "homogenous list attribute";
+  let description = [{
+    The `#kgen.list` attribute contains a variable number of attributes of the
+    same type. The type of this attribute must always be a `!kgen.list`.
+
+    Example:
+
+    ```mlir
+    #kgen.list<fooParam, 1, add(lhsParam, 2)> : !kgen.list<index>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "ListType">:$type);
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<ListValue>($values, ref($type))^ `>`)?
+  }];
+
+  let genVerifyDecl = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // ParamRegionRefAttr

@@ -96,6 +96,56 @@ def StringType : KGENType<"String", "string"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ListType
+//===----------------------------------------------------------------------===//
+
+def ListType : KGENType<"List", "list"> {
+  let summary = "homogenous list type";
+  let description = [{
+    The `!kgen.list` type represents a homogenous variable-size list. The list
+    type is the building block for variadic parameters. Lists have special
+    behaviour in elaboration. List operands to operations are expanded in-place
+    during elaboration, and consequently they have no runtime representation.
+
+    Example:
+
+    ```mlir
+    %out = "foo.op"(%list) : (!kgen.list<index>) -> !kgen.list<index>
+    ```
+
+    Could become:
+
+    ```mlir
+    %out:2 = "foo.op"(%0, %1, %2) : (index, index, index) -> (index, index)
+    ```
+
+    List constants can be materialized with `kgen.param.constant`.
+
+    Example:
+
+    ```mlir
+    %list = kgen.param.constant: list<index> = <[1, 2, 3]>
+    ```
+
+    Becomes:
+
+    ```mlir
+    %0 = kgen.param.constant = <1>
+    %1 = kgen.param.constant = <2>
+    %2 = kgen.param.constant = <3>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$elementType);
+  let assemblyFormat = "`<` custom<TypeParamValue>($elementType) `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
