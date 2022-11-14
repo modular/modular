@@ -130,10 +130,10 @@ inline auto percentile(const Range &values, double percent)
 /// random" values.
 template <typename EltType, typename Distribution>
 void fillWithRandomDistribution(MutableArrayRef<EltType> buffer,
-                                Distribution distibution) {
+                                Distribution distribution) {
   std::default_random_engine randEngine(/*seed=*/0);
   std::generate(buffer.begin(), buffer.end(),
-                [&]() { return distibution(randEngine); });
+                [&]() { return distribution(randEngine); });
 }
 
 /// Fill the provided buffer with random floating point values. This function
@@ -146,8 +146,16 @@ void fillWithRandomFloats(MutableArrayRef<EltType> buffer, EltType lb,
 }
 
 /// Fill the provided buffer with random integer values. This function accepts a
-/// lower and upper bound on the random values.
-template <typename EltType, typename DistributionT = EltType>
+/// lower and upper bound on the random values. The default DistributionT is
+/// EltType, but since the MSVC does not define
+/// std::uniform_int_distribution on character types, so use short or unsigned
+/// short if the input is character width.
+template <
+    typename EltType,
+    typename DistributionT = std::conditional_t<
+        sizeof(EltType) == 1,
+        std::conditional_t<std::is_unsigned_v<EltType>, unsigned short, short>,
+        EltType>>
 void fillWithRandomInts(MutableArrayRef<EltType> buffer, EltType lb,
                         EltType ub) {
   fillWithRandomDistribution(
