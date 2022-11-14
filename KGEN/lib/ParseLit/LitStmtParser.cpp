@@ -494,10 +494,11 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
     return success();
 
   // Create the 'if' and parse the body into its "then" region.
-  auto ifOp = builder.create<scf::IfOp>(ifLoc, cond, /*withElse=*/true);
-  builder = ifOp.getThenBodyBuilder();
+  auto ifOp = builder.create<HLCF::IfOp>(ifLoc, cond);
+  builder.createBlock(&ifOp.getThenRegion());
   if (failed(parseSuite(curIndent)))
     return failure();
+  builder.create<HLCF::YieldOp>(ifLoc);
 
   while (getToken().is(LitToken::kw_elif) &&
          getToken().getIndentation().has_value() &&
@@ -508,24 +509,27 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
         parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
       return failure();
 
-    builder = ifOp.getElseBodyBuilder();
+    builder.createBlock(&ifOp.getElseRegion());
     if (emitExprAsCondition(condExp, cond, *this))
       return success();
-    ifOp = builder.create<scf::IfOp>(elifLoc, cond, /*withElse=*/true);
-    builder = ifOp.getThenBodyBuilder();
+    ifOp = builder.create<HLCF::IfOp>(elifLoc, cond);
+    builder.create<HLCF::YieldOp>(elifLoc);
+    builder.createBlock(&ifOp.getThenRegion());
     if (failed(parseSuite(curIndent)))
       return failure();
+    builder.create<HLCF::YieldOp>(ifLoc);
   }
 
+  builder.createBlock(&ifOp.getElseRegion());
   if (getToken().getIndentation().has_value() &&
       getToken().getIndentation().value() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
-    builder = ifOp.getElseBodyBuilder();
     if (failed(parseSuite(curIndent)))
       return failure();
   }
+  builder.create<HLCF::YieldOp>(ifLoc);
   return success();
 }
 
