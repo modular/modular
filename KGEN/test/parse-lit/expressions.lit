@@ -1,0 +1,182 @@
+# RUN: kgen-translate -import-lit %s | FileCheck %s
+
+# CHECK: module {
+
+fn noop():
+
+# CHECK-LABEL: lit.func @precedence_associativity(%a: index)
+fn precedence_associativity(a: index):
+  # CHECK-NEXT: %z = lit.var.decl "z"
+  var z: index
+  z = 0
+  # CHECK:      %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT: %[[POW0:.*]] = index.rems %a, %[[Z]]
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
+  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
+  z = 2**(a**z)
+  # CHECK-NEXT: %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT: %[[POW0:.*]] = index.rems %a, %[[Z]]
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
+  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
+  z = 2**a**z
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MUL]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 * -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[MATRIX_MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MATRIX_MUL]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 @ -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = index.divs %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[FLOOR_DIV]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 // -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[REMINDER:.*]] = index.rems %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[REMINDER]]
+  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = z + 3 % -2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[THREE]]
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[TWOPLUSZERO:.*]] = index.add %[[ZERO]], %[[TWO]]
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWOPLUSZERO]]
+  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[ADD]], %[[SUB]]
+  # CHECK-NEXT:  pop.store %[[MUL]], %z : !pop.pointer<index>
+  z = (z + 3) * -+2
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT:  %[[POW:.*]] = index.rems %[[TWO]], %[[Z]]
+  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[POW]]
+  # CHECK-NEXT:  pop.store %[[SUB]], %z : !pop.pointer<index>
+  z = -2**z
+
+# CHECK-LABEL: lit.func @precedence_bitwise(%a: index, %b: index, %c: index) -> index {
+fn precedence_bitwise(a: index, b: index, c: index) -> index:
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %a, %[[TWO]]
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[MUL]], %b
+  # CHECK-NEXT: %[[FOUR:.*]] = index.constant 4
+  # CHECK-NEXT: %[[XOR:.*]] = index.divs %[[FOUR]], %c
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[XOR]]
+  # CHECK-NEXT: kgen.return %[[OR]]
+  return a * 2 & b | 4 ^ c
+
+# CHECK-LABEL: lit.func @precedence_comparison(%a: index, %b: index, %c: index, %d: index) -> !lit.none {
+fn precedence_comparison(a: index, b: index, c: index, d: index):
+  # CHECK-NEXT: %tmp = lit.var.decl "tmp"
+  var tmp : index
+  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %a, %b
+  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %c
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %d
+  # CHECK-NEXT: store %[[OR]], %tmp
+  tmp = ((a == b) and (not c)) or d
+  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %a, %b
+  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %c
+  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
+  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %d
+  # CHECK-NEXT: store %[[OR]], %tmp
+  tmp = a == b and not c or d
+
+# CHECK-LABEL: lit.func @do_math(%a: index, %b: index, %c: index) -> index {
+fn do_math(a: index, b: index, c: index) -> index:
+  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
+  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
+
+  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %a
+  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
+  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
+  var z : index
+  z = 42 + 5*a
+
+  # CHECK-NEXT: %[[MUL:.*]] = index.constant 210
+  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %c
+  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
+  z = 42 * 5 + c
+
+  # CHECK-NEXT: %[[ADD:.*]] = index.constant 11
+  # CHECK-NEXT: %[[MUL:.*]] = index.mul %a, %[[ADD]]
+  # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
+  z = a * (5 + 6)
+
+  # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
+  # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
+  # This is checking the lexer handles \ at end of line correctly.
+  var x : index
+  x = \
+z
+
+  # CHECK-NEXT: kgen.call_param[() -> !lit.none: @noop]()
+  noop()
+
+  # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
+  # CHECK-NEXT: kgen.return %[[TMP]]
+  return x
+
+# CHECK-LABEL: lit.func @listValues() -> index {
+def listValues() -> index:
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2, 2+1]
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2, 2+1,]
+  # CHECK:      %[[ONE:.*]] = index.constant 1
+  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
+  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
+  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
+  a = [1, 2,
+            2+1]
+  # CHECK:      %[[ZERO:.*]] = index.constant 0
+  # CHECK-NEXT: pop.store %[[ZERO:.*]], %a : !pop.pointer<index>
+  a = []
+  return a
+
+# CHECK-LABEL: lit.func @test_if_cond(%a: index) -> !lit.none {
+def test_if_cond(a: index):
+    # CHECK:      %[[ONE0:.*]] = index.constant 1
+    # CHECK-NEXT: %[[ONE1:.*]] = index.constant 1
+    # CHECK-NEXT: %[[CMP:.*]] = index.cmp eq(%[[ONE0]], %[[ONE1]])
+    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[CMP]] -> (index) {
+    # CHECK-NEXT:   %[[TWO:.*]] = index.constant 2
+    # CHECK-NEXT:   scf.yield %[[TWO]] : index
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   %[[THREE:.*]] = index.constant 3
+    # CHECK-NEXT:   scf.yield %[[THREE]] : index
+    # CHECK-NEXT: }
+    # CHECK-NEXT: pop.store %[[IF_RES:.*]], %a_0 : !pop.pointer<index>
+    a = 2 if 1 else 3

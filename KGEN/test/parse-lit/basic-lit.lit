@@ -5,204 +5,11 @@
 # CHECK-LABEL: lit.func @empty_def() -> !lit.none {
 # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK: kgen.return %0 : !lit.none
-def empty_def():
+fn empty_def():
   # Pass isn't required.
 
-# CHECK-LABEL: lit.func @listValues() -> index {
-def listValues() -> index:
-  # CHECK:      %[[ONE:.*]] = index.constant 1
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
-  a = [1, 2, 2+1]
-  # CHECK:      %[[ONE:.*]] = index.constant 1
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
-  a = [1, 2, 2+1,]
-  # CHECK:      %[[ONE:.*]] = index.constant 1
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a : !pop.pointer<index>
-  a = [1, 2,
-            2+1]
-  # CHECK:      %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT: pop.store %[[ZERO:.*]], %a : !pop.pointer<index>
-  a = []
+fn take_3index(a: index, b: index, c: index) -> index:
   return a
-
-
-# CHECK-LABEL: lit.func @test_if_cond(%a: index) -> !lit.none {
-def test_if_cond(a: index):
-    # CHECK:      %[[ONE0:.*]] = index.constant 1
-    # CHECK-NEXT: %[[ONE1:.*]] = index.constant 1
-    # CHECK-NEXT: %[[CMP:.*]] = index.cmp eq(%[[ONE0]], %[[ONE1]])
-    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[CMP]] -> (index) {
-    # CHECK-NEXT:   %[[TWO:.*]] = index.constant 2
-    # CHECK-NEXT:   scf.yield %[[TWO]] : index
-    # CHECK-NEXT: } else {
-    # CHECK-NEXT:   %[[THREE:.*]] = index.constant 3
-    # CHECK-NEXT:   scf.yield %[[THREE]] : index
-    # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_RES:.*]], %a_0 : !pop.pointer<index>
-    a = 2 if 1 else 3
-
-# CHECK-LABEL: lit.func @precedence_associativity(%a: index)
-def precedence_associativity(a: index):
-  z = 0
-  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT: %[[POW0:.*]] = index.rems %[[A]], %[[Z]]
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
-  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
-  z = 2**(a**z)
-  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT: %[[POW0:.*]] = index.rems %[[A]], %[[Z]]
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
-  # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
-  z = 2**a**z
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
-  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
-  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MUL]]
-  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = z + 3 * -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
-  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT:  %[[MATRIX_MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
-  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MATRIX_MUL]]
-  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = z + 3 @ -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
-  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = index.divs %[[THREE]], %[[SUB]]
-  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[FLOOR_DIV]]
-  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = z + 3 // -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
-  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT:  %[[REMINDER:.*]] = index.rems %[[THREE]], %[[SUB]]
-  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[REMINDER]]
-  # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = z + 3 % -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
-  # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[THREE]]
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[TWOPLUSZERO:.*]] = index.add %[[ZERO]], %[[TWO]]
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWOPLUSZERO]]
-  # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[ADD]], %[[SUB]]
-  # CHECK-NEXT:  pop.store %[[MUL]], %z : !pop.pointer<index>
-  z = (z + 3) * -+2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT:  %[[POW:.*]] = index.rems %[[TWO]], %[[Z]]
-  # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[POW]]
-  # CHECK-NEXT:  pop.store %[[SUB]], %z : !pop.pointer<index>
-  z = -2**z
-
-# CHECK-LABEL: lit.func @precedence_bitwise(%a: index, %b: index, %c: index) -> !lit.none {
-def precedence_bitwise(a: index, b: index, c: index):
-  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
-  # CHECK-NEXT: %[[TWO:.*]] = index.constant 2
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[A]], %[[TWO]]
-  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
-  # CHECK-NEXT: %[[AND:.*]] = index.add %[[MUL]], %[[B]]
-  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
-  # CHECK-NEXT: %[[FOUR:.*]] = index.constant 4
-  # CHECK-NEXT: %[[XOR:.*]] = index.divs %[[FOUR]], %[[C]]
-  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[XOR]]
-  # CHECK-NEXT: pop.store %[[OR]], %a_0 : !pop.pointer<index>
-  a = a * 2 & b | 4 ^ c
-
-# CHECK-LABEL: lit.func @precedence_comparison(%a: index, %b: index, %c: index, %d: index) -> !lit.none {
-def precedence_comparison(a: index, b: index, c: index, d: index):
-  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
-  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
-  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %[[A]], %[[B:.*]]
-  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
-  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %[[C]]
-  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
-  # CHECK-NEXT: %[[D:.*]] = pop.load %d_3 : !pop.pointer<index>
-  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[D]]
-  a = ((a == b) and (not c)) or d
-  # CHECK:      %[[A:.*]] = pop.load %a_0 : !pop.pointer<index>
-  # CHECK-NEXT: %[[B:.*]] = pop.load %b_1 : !pop.pointer<index>
-  # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %[[A]], %[[B:.*]]
-  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2 : !pop.pointer<index>
-  # CHECK-NEXT: %[[ZERO:.*]] = index.constant 0
-  # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %[[C]]
-  # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
-  # CHECK-NEXT: %[[D:.*]] = pop.load %d_3 : !pop.pointer<index>
-  # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %[[D]]
-  a = a == b and not c or d
-
-# CHECK-LABEL: lit.func @do_math(%a: index, %b: index, %c: index) -> index {
-def do_math(a: index, b: index, c: index) -> index:
-  # CHECK-NEXT: %a_0 = lit.var.decl "a"
-  # CHECK-NEXT: pop.store %a, %a_0
-  # CHECK-NEXT: %b_1 = lit.var.decl "b"
-  # CHECK-NEXT: pop.store %b, %b_1
-  # CHECK-NEXT:  %c_2 = lit.var.decl "c"
-  # CHECK-NEXT: pop.store %c, %c_2
-  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
-  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
-
-  # CHECK-NEXT: %[[TMP:.*]] = pop.load %b_1
-  # CHECK-NEXT: pop.store %[[TMP]], %c_2
-  c = b # Parameters are mutable!
-
-  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
-  # CHECK-NEXT: %[[I5:.*]] = index.constant 5
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %[[A]]
-  # CHECK-NEXT: %[[I42:.*]] = index.constant 42
-  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
-  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = 42 + 5*a
-
-  # CHECK-NEXT: %[[C:.*]] = pop.load %c_2
-  # CHECK-NEXT: %[[MUL:.*]] = index.constant 210
-  # CHECK-NEXT: %[[ADD:.*]] = index.add %[[MUL]], %[[C]]
-  # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
-  z = 42 * 5 + c
-
-  # CHECK-NEXT: %[[A:.*]] = pop.load %a_0
-  # CHECK-NEXT: %[[ADD:.*]] = index.constant 11
-  # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[A]], %[[ADD]]
-  # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
-  z = a * (5 + 6)
-
-  # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
-  # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
-  # This is checking the lexer handles \ at end of line correctly.
-  x = \
-z
-
-  # CHECK-NEXT: kgen.call_param[() -> !lit.none: @noop]()
-  noop()
-
-  # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
-  # CHECK-NEXT: kgen.return %[[TMP]]
-  return x
 
 # CHECK-LABEL: lit.func @fancy_signature
 # CHECK-SAME: <dt: !kgen.ref<@DType>, size>
@@ -215,9 +22,9 @@ def fancy_signature[dt: DType, size: index]
   # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant = <size>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant = <size>
-  # CHECK: %[[RES:.*]] = kgen.call_param[(index, index, index) -> index: @do_math](%[[TMP1]], %[[TMP2]], %[[TMP3]])
+  # CHECK: %[[RES:.*]] = kgen.call_param[(index, index, index) -> index: @take_3index](%[[TMP1]], %[[TMP2]], %[[TMP3]])
   # CHECK: pop.store %[[RES]], %local : !pop.pointer<index>
-  local = do_math(size, size, size)
+  local = take_3index(size, size, size)
 
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
@@ -239,13 +46,13 @@ struct OneLineStruct[size: Int]: pass; pass
 
 # CHECK-LABEL: lit.struct.decl @StructExample {
 struct StructExample:
-  def __new__() -> StructExample:
+  fn __new__() -> StructExample:
     var result : StructExample
     return result
 
   # CHECK: lit.func @"StructExample::static"(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
-  def static(x: Int):
+  fn static(x: Int):
     # CHECK: %0 = index.constant 4
     # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
     # CHECK: %2 = kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%1)
@@ -253,7 +60,7 @@ struct StructExample:
     pass
 
   # CHECK: lit.func @"StructExample::mutatingMethod"(%self: !pop.pointer<@StructExample>) -> !lit.none
-  def mutatingMethod(&self):
+  fn mutatingMethod(&self):
 
 # CHECK: }
 # CHECK-NEXT: }
@@ -274,7 +81,7 @@ struct Int:
   var value : index
 
   # CHECK: lit.func @"Int::__new__"(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
-  def __new__(value: index) -> Int:
+  fn __new__(value: index) -> Int:
     # TODO: Enable dict_display somehow so we can use "return {value: value}"
     var result: Int
     result.value = value
@@ -312,7 +119,7 @@ struct Pair[dt: DType]:
   var b : Int
 
   # CHECK: lit.func @"Pair::__new__"() -> !kgen.ref<@Pair<dt: !kgen.ref<@DType> = dt>> attributes {isStatic}
-  def __new__() -> Pair[dt]:
+  fn __new__() -> Pair[dt]:
     var result : Pair[dt]
     # TODO: Fill this in.
     return result
@@ -349,10 +156,10 @@ struct SIMD[size: index, dt: DType]:
 struct DType:
   pass
 
-def generic_fn[a: DType, b: index, c: type](d : index):
+fn generic_fn[a: DType, b: index, c: type](d : index):
 
 # CHECK: @call_generic<dt: !kgen.ref<@DType>>()
-def call_generic[dt: DType]():
+fn call_generic[dt: DType]():
   # CHECK: %0 = index.constant 57
   # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.ref<@DType> = dt, b = 42, c: type = !kgen.ref<@DType>>](%0)
   generic_fn[dt, 42, DType](57)
@@ -363,21 +170,21 @@ def call_generic[dt: DType]():
 
 @interface
 #CHECK: kgen.generator.interface @func_interface0<type: !kgen.ref<@DType>>(index) -> index
-def func_interface0[type: DType](x: index) -> index:
+fn func_interface0[type: DType](x: index) -> index:
 
 @interface
 #CHECK: kgen.generator.interface @func_interface1<type: !kgen.ref<@DType>>(index) -> index
-def func_interface1[type: DType](x: index) -> index: pass
+fn func_interface1[type: DType](x: index) -> index: pass
 
 @interface
 #CHECK: kgen.generator.interface @func_interface2<type: !kgen.ref<@DType>>(index) -> index
-def func_interface2[type: DType](x: index) -> index:
+fn func_interface2[type: DType](x: index) -> index:
   ...
 
 @implements(func_interface2)
 #CHECK: lit.func @func_impl<type: !kgen.ref<@DType>>(%x: index) -> index
 #CHECK:    implements @func_interface2 {
-def func_impl[type: DType](x: index) -> index:
+fn func_impl[type: DType](x: index) -> index:
   return x
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
@@ -386,16 +193,23 @@ fn byval_byref_function(a: Int, &b: Int):
   b = a
 
 # CHECK: lit.func @lvaluesAndRValues()
-def lvaluesAndRValues() -> index:
+fn lvaluesAndRValues() -> index:
   # CHECK: [[FOUR:%.*]] = index.constant 4
   # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"]([[FOUR]])
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value
 
+# CHECK: lit.func @defTests
+def defTests(a: Int, b: Int):
+  # CHECK: %[[TMP:.*]] = pop.load %b_1
+  # CHECK-NEXT: pop.store %[[TMP]], %a_0
+  a = b # Parameters are mutable!
+
+
 
 # CHECK: lit.func @mlirMagicTest(%x: bf16, %y: f8E5M2)
-def mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):
+fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):
   # CHECK: %a = lit.var.decl "a" : <index>
   var a : __mlir_type.index
   # CHECK: %b = lit.var.decl "b" : <f64>
