@@ -71,7 +71,8 @@ def LITFuncOp
 
 def LITStructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
                   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                  DeclareOpInterfaceMethods<KGENDeclInterface>, NoTerminator]> {
+                  DeclareOpInterfaceMethods<KGENDeclInterface>, SingleBlock,
+                  NoTerminator]> {
   let summary = "Struct declaration.";
   let description = [{
     The `lit.struct.decl` operation represents a Lightning struct declaration.
