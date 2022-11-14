@@ -23,6 +23,7 @@
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/PatternMatch.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <filesystem>
 
@@ -78,6 +79,8 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseReturnStmt(size_t returnIndent);
   ParseResult parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
                                   size_t stmtIndent);
+  ParseResult parseBreakOrContinueStmt(LitToken::Kind kind, StringRef name,
+                                       StringRef opName);
 
   // Declarations.
   ParseResult parseIncludeHack();
@@ -254,6 +257,12 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return parseVarDeclStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_return:
     return parseReturnStmt(stmtIndent);
+  case LitToken::kw_continue:
+    return parseBreakOrContinueStmt(LitToken::kw_continue, "continue",
+                                    HLCF::ContinueOp::getOperationName());
+  case LitToken::kw_break:
+    return parseBreakOrContinueStmt(LitToken::kw_break, "break",
+                                    HLCF::BreakOp::getOperationName());
   default:
     break;
   }
@@ -397,6 +406,31 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // TODO: Support result parameters.
   builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
                            operandValues);
+  return success();
+}
+
+/// break_stmt ::= "break"
+/// continue_stmt ::= "continue"
+ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
+                                                    StringRef name,
+                                                    StringRef opName) {
+  llvm::SMLoc loc = consumeToken(kind).getLoc();
+  Block *block = builder.getInsertionBlock();
+
+  // Ensure the break statement is being parsed within a loop context.
+  if (!isa<HLCF::LoopOp>(block->getParentOp()) &&
+      !block->getParentOp()->getParentOfType<HLCF::LoopOp>()) {
+    emitError(loc, "'" + name + "' not inside a loop");
+    return success();
+  }
+
+  // Split the block at the insertion point. Any subsequent statements are dead
+  // code. Let region DCE handle it.
+  Block *after = block->splitBlock(builder.getInsertionPoint());
+  builder.setInsertionPointToEnd(block);
+  OperationState state(translateLocation(loc), opName);
+  builder.create(state);
+  builder.setInsertionPointToStart(after);
   return success();
 }
 
