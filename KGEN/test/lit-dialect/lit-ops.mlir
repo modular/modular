@@ -105,3 +105,7 @@ lit.func @main(%a: !kgen.ref<@A<N = 1>>) {
   %1 = kgen.call_param[(!kgen.ref<@A<N = 1>>) -> index: @A::@"A::foo"<N = 1, M = 2>](%a)
   kgen.return
 }
+
+// CHECK-LABEL: lit.struct.decl @NoFields {
+// CHECK-NEXT: }
+lit.struct.decl @NoFields {}
