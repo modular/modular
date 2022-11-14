@@ -226,7 +226,7 @@ struct LValuesRvalues:
 
   def normalMethod(self):
   def mutatingMethod(&self):
-
+  def takesByRef(self, &x: LValuesRvalues):
 
 def testLValuesRvalues():
   # Test with lvalues
@@ -237,6 +237,9 @@ def testLValuesRvalues():
   # Test with rvalues
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
+
+  # expected-error @+1 {{operand must be mutable in order to pass as a by-ref argument}}
+  LValuesRvalues().takesByRef(LValuesRvalues())
 
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
