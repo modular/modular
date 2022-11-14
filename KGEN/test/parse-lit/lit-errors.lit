@@ -249,3 +249,11 @@ fn testMLIR():
 
 
 __include "non-existant-file.lit" # expected-error {{could not find file 'non-existant-file.lit'}}
+
+struct SpecialFunctions:
+  # expected-error @+1 {{special function must have 2 operands}}
+  fn __add__():
+
+  # expected-error @+1 {{self parameter must be passed by reference}}
+  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions) -> SpecialFunctions:
+    return a
