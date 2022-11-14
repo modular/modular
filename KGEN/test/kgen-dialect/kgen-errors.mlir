@@ -892,3 +892,83 @@ kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>,
   kgen.partial_apply %arg0(%arg1, %arg2) : (i8) -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @iterate_not_a_list_type(%list: !kgen.list<index>) {
+  // expected-error @below {{custom op 'kgen.list.iterate' expected a list type}}
+  kgen.list.iterate %v in %list : i32 [0 : (d0, len) -> (d0 + 1)]
+  kgen.return
+}
+
+// -----
+
+kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index>) {
+  // expected-error @below {{custom op 'kgen.list.iterate' expected the same number of result types as arguments: 0 but got 1}}
+  kgen.list.iterate %v in %list : list<index> [0 : (d0, len) -> (d0 + 1)] () -> i32
+}
+
+// -----
+
+kgen.generator @iterate_wrong_region_arg_count(%list: !kgen.list<index>) {
+  // expected-error @below {{'kgen.list.iterate' op expected the number of region arguments to match the number of indices plus the number of loop-carried values}}
+  "kgen.list.iterate"(%list) ({
+    kgen.list.yield
+  }) {
+    map = affine_map<(d0, len) -> (d0 + 1)>, init = #kgen<exprs[1 : index]>
+  } : (!kgen.list<index>) -> ()
+}
+
+// -----
+
+kgen.generator @iterate_wrong_region_arg_count(%list: !kgen.list<index>) {
+  // expected-error @below {{'kgen.list.iterate' op expected first 1 argument types to be list element type 'index'}}
+  "kgen.list.iterate"(%list) ({
+  ^bb0(%arg0: i32):
+    kgen.list.yield
+  }) {
+    map = affine_map<(d0, len) -> (d0 + 1)>, init = #kgen<exprs[1 : index]>
+  } : (!kgen.list<index>) -> ()
+}
+
+// -----
+
+kgen.generator @iterate_wrong_region_arg_count(%list: !kgen.list<index>, %arg: i32) {
+  // expected-error @below {{'kgen.list.iterate' op expected last 1 argument types to be equal to the initial value types}}
+  %0 = "kgen.list.iterate"(%list, %arg) ({
+  ^bb0(%arg0: index, %arg1: i64):
+    kgen.list.yield
+  }) {
+    map = affine_map<(d0, len) -> (d0 + 1)>, init = #kgen<exprs[1 : index]>
+  } : (!kgen.list<index>, i32) -> i32
+}
+
+// -----
+
+kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index>) {
+  // expected-error @below {{'kgen.list.iterate' op expected map to have 1 variable inputs}}
+  kgen.list.iterate %v in %list : list<index> [0 : () -> (1)] {
+    kgen.list.yield
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index>) {
+  // expected-error @below {{'kgen.list.iterate' op expected map to have 1 results}}
+  kgen.list.iterate %v in %list : list<index> [0 : (d0) -> (d0 + 1, d0)] {
+    kgen.list.yield
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index>) {
+  // expected-error @below {{'kgen.list.iterate' op expected map to have 1 symbolic input for list size}}
+  kgen.list.iterate %v in %list : list<index> [0 : (d0) -> (d0 + 1)] {
+    kgen.list.yield
+  }
+  kgen.return
+}
