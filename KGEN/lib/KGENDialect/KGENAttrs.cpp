@@ -67,18 +67,34 @@ ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
   return success();
 }
 
-void ParamBindAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  walkAttrsFn(getName());
-  walkAttrsFn(getValue());
+//===----------------------------------------------------------------------===//
+// ListAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseListValue(AsmParser &p,
+                                  FailureOr<SmallVector<TypedAttr>> &values,
+                                  ListType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  values.emplace();
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamValue(p, values->emplace_back(), elementType); });
 }
 
-Attribute
-ParamBindAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                           ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.empty());
-  return ParamBindAttr::get(replAttrs[0].cast<StringAttr>(), replAttrs[1]);
+static void printListValue(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                           ListType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               ArrayRef<TypedAttr> values, ListType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  for (TypedAttr value : values) {
+    if (value.getType() != elementType)
+      return emitError() << "expected all list elements to have type "
+                         << elementType;
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

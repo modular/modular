@@ -62,17 +62,26 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // Check for sugared types before parsing standard ones.
   if (succeeded(parser.parseOptionalKeyword("type"))) {
     type = parser.getBuilder().getType<MLIRTypeType>();
-    return LogicalResult::success();
+    return success();
   }
 
   if (succeeded(parser.parseOptionalKeyword("dtype"))) {
     type = parser.getBuilder().getType<DTypeType>();
-    return LogicalResult::success();
+    return success();
   }
 
   if (succeeded(parser.parseOptionalKeyword("string"))) {
     type = parser.getBuilder().getType<StringType>();
-    return LogicalResult::success();
+    return success();
+  }
+
+  if (succeeded(parser.parseOptionalKeyword("list"))) {
+    FailureOr<TypedAttr> elementType;
+    if (parser.parseLess() || parseTypeParamValue(parser, elementType) ||
+        parser.parseGreater())
+      return failure();
+    type = ListType::get(*elementType);
+    return success();
   }
 
   // Helper for building (and checking) a Signature type.
@@ -89,7 +98,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     if (isSelfContained.isError())
       return parser.emitError(typeLoc, isSelfContained.takeError().get());
     type = sigTy;
-    return LogicalResult::success();
+    return success();
   };
 
   if (succeeded(parser.parseOptionalLess())) {
@@ -110,7 +119,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   }
 
   if (failed(parser.parseType(type)))
-    return LogicalResult::failure();
+    return failure();
 
   // We accept function type syntax as sugar for a SignatureType without
   // parameters.
@@ -121,19 +130,23 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return returnSignatureType(noInputParams, noResultParams, valuesType);
   }
 
-  return LogicalResult::success();
+  return success();
 }
 
 void KGEN::printKGENType(raw_ostream &os, Type type) {
   // Handle other special cases for parameters here.  These each are sugar for a
   // kgen type.
-  if (type.isa<MLIRTypeType>())
+  if (isa<MLIRTypeType>(type)) {
     os << "type";
-  else if (type.isa<DTypeType>())
+  } else if (isa<DTypeType>(type)) {
     os << "dtype";
-  else if (type.isa<StringType>())
+  } else if (isa<StringType>(type)) {
     os << "string";
-  else if (auto signature = dyn_cast<SignatureType>(type)) {
+  } else if (auto list = dyn_cast<ListType>(type)) {
+    os << "list<";
+    printParamValue(list.getElementType(), os);
+    os << '>';
+  } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters, print a SignatureType as a function type to
     // keep things concise.
     if (signature.getInputParams().empty() &&
@@ -144,8 +157,9 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
                                  signature.getResultParamTypes(), os);
       os << signature.getValues();
     }
-  } else
+  } else {
     os << type;
+  }
 }
 
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
@@ -753,6 +767,25 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return p.emitError(loc, "invalid signature parameter attribute");
   }
 
+  // If this is a list type, parse a comma-separated list of parameter values of
+  // the element type surrounded by square brackets.
+  if (auto list = dyn_cast<ListType>(type)) {
+    if (p.parseLSquare())
+      return failure();
+    if (succeeded(p.parseOptionalRSquare())) {
+      value = ListAttr::get(p.getContext(), {}, list);
+      return success();
+    }
+    SmallVector<TypedAttr> values;
+    auto type = ParamRefType::get(list.getElementType());
+    if (p.parseCommaSeparatedList(
+            [&] { return parseParamValue(p, values.emplace_back(), type); }) ||
+        p.parseRSquare())
+      return failure();
+    value = ListAttr::get(p.getContext(), values, list);
+    return success();
+  }
+
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, strings, etc.
   return p.parseAttribute(value, type);
@@ -879,11 +912,20 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // If this is an i1 integer attr, print it as zero or one; not true/false
   // keywords.  This simplifies the keyword processing logic.
-  if (auto intAttr = dyn_cast<IntegerAttr>(value))
+  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
     if (intAttr.getType().isSignlessInteger(1)) {
       os << (intAttr.getValue().isZero() ? 0 : 1);
       return;
     }
+  }
+
+  if (auto list = dyn_cast<ListAttr>(value)) {
+    os << '[';
+    llvm::interleaveComma(list.getValues(), os,
+                          [&](TypedAttr value) { printParamValue(value, os); });
+    os << ']';
+    return;
+  }
 
   value.print(os, /*elideType=*/true);
 }

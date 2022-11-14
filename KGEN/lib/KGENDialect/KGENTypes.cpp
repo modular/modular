@@ -50,6 +50,18 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
+// ListType
+//===----------------------------------------------------------------------===//
+
+ListType ListType::get(TypedAttr elementType) {
+  return get(elementType.getContext(), elementType);
+}
+
+ListType ListType::get(Type elementType) {
+  return get(TypeConstantAttr::get(elementType));
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
