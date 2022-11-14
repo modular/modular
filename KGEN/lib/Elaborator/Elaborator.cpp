@@ -1453,7 +1453,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   return b.getStringAttr(result);
 }
 
-/// Specialize a func body, generating one variant or each viable
+/// Specialize a func body, generating one variant of each viable
 /// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
 ///
