@@ -89,16 +89,33 @@ def test_break_continue_inside_while(a: index) -> index:
         if a:
             # CHECK-NEXT:   hlcf.break
             break
-            # CHECK-NEXT: ^bb1:
-            # CHECK-NEXT:   index.constant 1
-            # CHECK-NEXT:   pop.store
-            # CHECK-NEXT:   hlcf.yield
+            # CHECK-NOT: ^bb1:
+            # CHECK-NOT:   index.constant 1
+            # CHECK-NOT:   pop.store
+            # CHECK-NOT:   hlcf.yield
             a = 1
         else:
             # CHECK-NEXT: } else {
             # CHECK-NEXT:   hlcf.continue
             continue
-            # CHECK-NEXT: ^bb1:
-            # CHECK-NEXT:   hlcf.yield
+            # CHECK-NOT: ^bb1:
+            # CHECK-NOT:   hlcf.yield
         # CHECK: hlcf.continue
     return a
+
+# CHECK-LABEL: lit.func @test_early_return
+def test_early_return():
+    # CHECK: hlcf.if
+    a = 1
+    if a:
+        # CHECK: hlcf.return
+        return
+        # CHECK-NOT: hlcf.yield
+        a = 2
+    # CHECK: else
+    # CHECK-NEXT: yield
+    # CHECK: kgen.return
+    return
+    # CHECK-NOT: kgen.return
+    a = 3
+    return
