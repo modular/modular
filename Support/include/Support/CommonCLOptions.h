@@ -11,6 +11,7 @@
 #include "Support/ErrorOr.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -53,6 +54,16 @@ public:
     return Error(errorMsg);
   }
 
+  /// Open the filename with a given alignment specified as the argument and
+  /// return a memory buffer, or an error message on failure.
+  static ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  openInputFileAligned(StringRef inputFilename, llvm::Align align) {
+    std::string errorMsg;
+    if (auto result = mlir::openInputFile(inputFilename, align, &errorMsg))
+      return result;
+    return Error(errorMsg);
+  }
+
   cl::opt<bool> verifyDiagnostics{
       "verify-diagnostics",
       cl::desc("Check that emitted diagnostics match "
@@ -78,10 +89,16 @@ public:
   cl::opt<std::string> inputFilename{llvm::cl::Positional,
                                      cl::desc("<input file>"), cl::init("-")};
 
+  // Specify the alignment for a given binary file.
+  cl::opt<llvm::Align> inputFileAlignment{
+      "input-file-alignment", cl::desc("Alignment for opening input file"),
+      cl::init(llvm::Align(64))};
+
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openInputFile() {
-    return CLOptionsBase::openInputFile(inputFilename);
+    return CLOptionsBase::openInputFileAligned(inputFilename,
+                                               inputFileAlignment);
   }
 
   /// The common case for all our driver-like tools is to fail early with an
