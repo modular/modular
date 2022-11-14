@@ -42,6 +42,12 @@ struct Int:
     # CHECK: kgen.return %4
     return self
 
+  # CHECK: lit.func @"Int::__mul__"(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int>
+  fn __mul__(self, rhs: Int) -> Int:
+    return Int(rhs.value)      # TODO: Use this somehow. :)
+  # CHECK: }
+
+
 # CHECK: }
 
 

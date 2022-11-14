@@ -392,13 +392,11 @@ SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
 
 /// If this is a special function like __init__ return the enum that
 /// identifies it, otherwise return kNormal.
-const SpecialFunctionInfo &SpecialFunctionInfo::get(StringRef name) {
-  auto kind = getKind(name);
-
+const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
   static const SpecialFunctionInfo infos[] = {
-      {SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
+      {nullptr, SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
 #define SF(ENUM, NAME, NUMOPERANDS, FLAGS)                                     \
-  {SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
+  {NAME, SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
 #include "SpecialFunctions.def"
   };
 
@@ -473,8 +471,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
 
   // Check other invariants based on method flags.
   if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
-    bool isByRef = (fnInfo.flags & SpecialFunctionInfo::kByRefSelfInstMethod) ==
-                   SpecialFunctionInfo::kByRefSelfInstMethod;
+    bool isByRef = fnInfo.isByRefSelfInstMethod();
     if (!selfType)
       return op->emitError("special function must be a method");
     if (isStatic)

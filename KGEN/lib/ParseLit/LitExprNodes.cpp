@@ -22,6 +22,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitExprs.h"
 #include "LitSharedState.h"
+#include "SpecialFunctions.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -419,6 +420,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   // Functions form an address.
   if (auto fnOp = dyn_cast<LITFuncOp>(*decl)) {
     ASTTypeAnd<MValue> mv = emitFuncReference(fnOp, *decl, emitter);
+    assert(mv.ir && "always succeeds");
     return {mv.ir, mv.type};
   }
 
@@ -843,10 +845,74 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
   return {last, emitter.shared.getIndexType()};
 }
 
+/// Given a binary operator, return the SpecialFunction that implements it.
+/// TODO: Expand this to support multiple results, e.g. add/radd.
+static SpecialFunctionKind getBinOpSpecialFunctions(ExprNode::Kind kind) {
+  switch (kind) {
+  default:
+    // TODO: Add support for more of these.
+    return SpecialFunctionKind::kNormal;
+  case ExprNode::kAdd:
+    return SpecialFunctionKind::kAdd;
+  case ExprNode::kMul:
+    return SpecialFunctionKind::kMul;
+  }
+}
+
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
                                        ASTType contextualType) const {
-  auto lhsRep = emitter.emitRValue(lhs);
-  auto rhsRep = emitter.emitRValue(rhs);
+  ASTTypeAnd<AnyValue> lhsRep = lhs->emitIR(emitter);
+  ASTTypeAnd<AnyValue> rhsRep = rhs->emitIR(emitter);
+  if (!lhsRep || !rhsRep)
+    return {};
+
+  // If this operator maps onto a special function, attempt to lower it.
+  auto specialFnKind = getBinOpSpecialFunctions(kind);
+
+  // FIXME: We currently hack in index type support as transition to proper
+  // expression support.
+  if (lhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType ||
+      rhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType)
+    specialFnKind = SpecialFunctionKind::kNormal;
+
+  if (specialFnKind != SpecialFunctionKind::kNormal) {
+    // Get metadata about the special function that backs this expression.  This
+    // allows us to look up information about whether the operands implement
+    // support for it.
+    auto specialFnInfo = SpecialFunctionInfo::get(specialFnKind);
+
+    // Look up the normal function on the LHS type.
+    // TODO: Add support for radd, looking up on the RHS.
+    auto nameAttr = StringAttr::get(emitter.getContext(), specialFnInfo.name);
+    ASTDecl *lookupResult = lhsRep.type.getDecl().lookup(nameAttr);
+    if (!lookupResult) {
+      // TODO: Add support for radd, looking up on the RHS.  On a hit, notice
+      // its result and swap lhs/rhs rep values.
+      emitter.emitError(getLoc(), "")
+          << lhsRep.type << " does not implement the " << nameAttr
+          << " special method";
+      return {};
+    }
+
+    // Make sure the signature is resolved.
+    if (failed(emitter.shared.declResolver->resolve(
+            *lookupResult, DeclResolvedness::signatureResolved, getLoc())))
+      return {};
+
+    ASTTypeAnd<MValue> callee = emitFuncReference(
+        cast<LITFuncOp>(*lookupResult), *lookupResult, emitter);
+    assert(callee.ir && "always succeeds");
+    ArgumentValueType argValues[] = {{lhsRep, lhs->getLoc()},
+                                     {rhsRep, rhs->getLoc()}};
+
+    return emitFunctionCall({RValue(callee.ir), callee.type}, argValues,
+                            getLoc(), emitter);
+  }
+
+  // TODO: Remove all this legacy code.
+
+  auto lhsRVal = emitter.emitRValue(lhsRep, lhs->getLoc());
+  auto rhsRVal = emitter.emitRValue(rhsRep, rhs->getLoc());
   if (!lhsRep.ir || !rhsRep.ir)
     return {};
   if (lhsRep.type.getDecl().magicKind != MagicDeclKind::kIndexType ||
@@ -858,8 +924,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   // If these are both parameter values, we can fold them using parameter
   // expressions.
-  if (auto lhsParam = lhsRep.ir.getIfMAValue()) {
-    if (auto rhsParam = rhsRep.ir.getIfMAValue()) {
+  if (auto lhsParam = lhsRVal.ir.getIfMAValue()) {
+    if (auto rhsParam = rhsRVal.ir.getIfMAValue()) {
       POC opcode;
       switch (kind) {
       default:
@@ -878,8 +944,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   assert(emitter.builder && "cannot have dynamic values without a builder");
 
-  auto lhsVal = emitter.emitDRValue(lhsRep, lhs->getLoc()).ir;
-  auto rhsVal = emitter.emitDRValue(rhsRep, rhs->getLoc()).ir;
+  auto lhsVal = emitter.emitDRValue(lhsRVal, lhs->getLoc()).ir;
+  auto rhsVal = emitter.emitDRValue(rhsRVal, rhs->getLoc()).ir;
   auto loc = emitter.translateLocation(getLoc());
 
   // TODO: implement properly these operations once we have a real type system

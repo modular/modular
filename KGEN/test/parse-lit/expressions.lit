@@ -21,39 +21,39 @@ fn precedence_associativity(a: index):
   # CHECK-NEXT: %[[POW1:.*]] = index.rems %[[TWO]], %[[POW0]]
   # CHECK-NEXT: pop.store %[[POW1]], %z : !pop.pointer<index>
   z = 2**a**z
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
   # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
   # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
   # CHECK-NEXT:  %[[MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MUL]]
   # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
   z = z + 3 * -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
   # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
   # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
   # CHECK-NEXT:  %[[MATRIX_MUL:.*]] = index.mul %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[MATRIX_MUL]]
   # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
   z = z + 3 @ -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
   # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
   # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
   # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = index.divs %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[FLOOR_DIV]]
   # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
   z = z + 3 // -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[TWO:.*]] = index.constant 2
   # CHECK-NEXT:  %[[ZERO:.*]] = index.constant 0
   # CHECK-NEXT:  %[[SUB:.*]] = index.sub %[[ZERO]], %[[TWO]]
   # CHECK-NEXT:  %[[THREE:.*]] = index.constant 3
   # CHECK-NEXT:  %[[REMINDER:.*]] = index.rems %[[THREE]], %[[SUB]]
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT:  %[[ADD:.*]] = index.add %[[Z]], %[[REMINDER]]
   # CHECK-NEXT:  pop.store %[[ADD]], %z : !pop.pointer<index>
   z = z + 3 % -2

@@ -76,42 +76,13 @@ fn callStatic(a: Int):
   # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%a)
   StructExample().static(a)
 
+# CHECK-LABEL: lit.func @simpleMath
+fn simpleMath(a: Int, b: Int) -> Int:
+  # CHECK: %0 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@"Int::__mul__"](%b, %a)
+  # CHECK: %1 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@"Int::__add__"](%a, %0)
+  # CHECK: kgen.return %1 : !kgen.ref<@Int>
+  return a+b*a
 
-# CHECK-LABEL: lit.struct.decl @SomeInteger {
-struct SomeInteger:
-  # CHECK-NEXT: %value = lit.var.decl "value" : <index>
-  var value : index
-
-  # CHECK: lit.func @"SomeInteger::__new__"(%value_0: index) -> !kgen.ref<@SomeInteger> attributes {isStatic} {
-  fn __new__(value: index) -> SomeInteger:
-    # TODO: Enable dict_display somehow so we can use "return {value: value}"
-    var result: SomeInteger
-    result.value = value
-    return result
-
-  # CHECK: lit.func @"SomeInteger::__add__"(%self: !kgen.ref<@SomeInteger>, %rhs: !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
-  fn __add__(self, rhs: SomeInteger) -> SomeInteger:
-    # CHECK: %0 = lit.struct.extract %rhs[value]
-    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@SomeInteger>: @SomeInteger::@"SomeInteger::__new__"](%0)
-    return SomeInteger(rhs.value)      # TODO: Use this somehow. :)
-    # CHECK: kgen.return %1
-  # CHECK: }
-
-  # In place addition is mutating.
-
-  # CHECK: lit.func @"SomeInteger::__iadd__"(%self: !pop.pointer<@SomeInteger>, %rhs: !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger> {
-  fn __iadd__(&self, rhs: SomeInteger) -> SomeInteger:
-    # CHECK: %0 = pop.load %self : !pop.pointer<@SomeInteger>
-    # CHECK: %1 = kgen.param.constant: (!kgen.ref<@SomeInteger>, !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger> = <@SomeInteger::@"SomeInteger::__add__">
-    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.ref<@SomeInteger>, !kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
-    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.ref<@SomeInteger>) -> !kgen.ref<@SomeInteger>
-    # CHECK: pop.store %3, %self
-    self = self.__add__(rhs)
-    # CHECK: %4 = pop.load %self
-    # CHECK: kgen.return %4
-    return self
-
-# CHECK: }
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.ref<@DType>> {
 struct Pair[dt: DType]:
