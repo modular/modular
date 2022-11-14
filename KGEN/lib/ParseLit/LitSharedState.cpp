@@ -27,7 +27,6 @@ using namespace M::KGEN::LIT;
 
 using llvm::SMLoc;
 using llvm::SourceMgr;
-static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 
 namespace {
 struct AttributeVectorComparison {

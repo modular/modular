@@ -371,7 +371,7 @@ struct ParsedParam {
 
 /// If this is a special function like __init__ return the enum that
 /// identifies it, otherwise return kNormal.
-SpecialFunctionKind LIT::getSpecialFunctionKind(StringRef name) {
+SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
   // FIXME: Remove name mangling.
   size_t methodSepIdx = name.rfind("::");
   // If this is a method, strip struct/class container name.
@@ -380,14 +380,30 @@ SpecialFunctionKind LIT::getSpecialFunctionKind(StringRef name) {
 
   if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
     return SpecialFunctionKind::kNormal;
-  name = name.drop_front(2).drop_back(2);
-  if (name == "init")
-    return SpecialFunctionKind::kInit;
-  if (name == "new")
-    return SpecialFunctionKind::kNew;
+
+#define SF(ENUM, NAME, NUMOPERANDS, FLAGS)                                     \
+  if (name == NAME)                                                            \
+    return SpecialFunctionKind::ENUM;
+#include "SpecialFunctions.def"
 
   // Otherwise, this declaration isn't known.
   return SpecialFunctionKind::kNormal;
+}
+
+/// If this is a special function like __init__ return the enum that
+/// identifies it, otherwise return kNormal.
+const SpecialFunctionInfo &SpecialFunctionInfo::get(StringRef name) {
+  auto kind = getKind(name);
+
+  static const SpecialFunctionInfo infos[] = {
+      {SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
+#define SF(ENUM, NAME, NUMOPERANDS, FLAGS)                                     \
+  {SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
+#include "SpecialFunctions.def"
+  };
+
+  assert(unsigned(kind) < sizeof(infos) / sizeof(infos[0]));
+  return infos[unsigned(kind)];
 }
 
 /// Perform type checking for a function signature that has just been parsed
@@ -403,14 +419,14 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
                                           SmallVector<ParsedParam> &params,
                                           ASTType &resultType,
                                           LitSharedState &shared) {
-  auto specialFunctionKind = SpecialFunctionKind::kNormal;
+  SpecialFunctionInfo fnInfo;
   bool isStatic = false;
 
   // We either have a function or interface.  Functions are more general and
   // therefore have more checking to perform.
   auto funcOp = dyn_cast<LITFuncOp>(op);
   if (funcOp) {
-    specialFunctionKind = getSpecialFunctionKind(funcOp.getName());
+    fnInfo = SpecialFunctionInfo::get(funcOp.getName());
     isStatic = funcOp.getIsStatic();
   }
 
@@ -428,8 +444,11 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
       selfType = parentDecl->getResolvedType();
     }
 
-  // __new__ is implicitly static.
-  if (specialFunctionKind == SpecialFunctionKind::kNew) {
+  // __new__ and similar methods are implicitly static.
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) {
+    if (!selfType)
+      return op->emitError("special function must be a method");
+
     assert(funcOp && "Cannot have special function generators");
     funcOp.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
     isStatic = true;
@@ -452,49 +471,43 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
       return op->emitError("'self' argument must have type ") << selfType;
   }
 
-  auto checkMethod = [&]() -> ParseResult {
+  // Check other invariants based on method flags.
+  if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
+    bool isByRef = (fnInfo.flags & SpecialFunctionInfo::kByRefSelfInstMethod) ==
+                   SpecialFunctionInfo::kByRefSelfInstMethod;
     if (!selfType)
       return op->emitError("special function must be a method");
-    return success();
-  };
-  auto checkInstanceMethod = [&](bool isByRef) -> ParseResult {
-    if (checkMethod())
-      return failure();
     if (isStatic)
       return op->emitError("special method may not be a static method");
+
     // TODO: Instead of enforcing byref is specified correctly, we could reject
     // invalid explicit settings and default it correctly.
     if (isByRef != params[0].isByRef)
       return op->emitError("self parameter must ")
              << (isByRef ? "" : "not ") << "be passed by reference";
+  }
 
-    return success();
-  };
-  auto checkResultNoneType = [&]() -> ParseResult {
-    if (!resultType.isEqualCanon(shared.getNoneType()))
-      return op->emitError("result type must be elided (or None)");
-    return success();
-  };
+  // Verify the operand count lines up.
+  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != params.size())
+    return op->emitError("special function must have ")
+           << fnInfo.numOperands << " operand" << plural(fnInfo.numOperands);
 
-  switch (specialFunctionKind) {
-  case SpecialFunctionKind::kNormal:
+  switch (fnInfo.kind) {
+  default:
+    // Ignore methods without special handling.
     break;
-
   case SpecialFunctionKind::kInit:
     if (isa<LITStructDeclOp>(selfType.getDecl()))
       return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
-
-    // __init__ on classes must be a method and return NoneType.
-    if (checkInstanceMethod(/*isByRef=*/false) || checkResultNoneType())
-      return failure();
+    // __init__ on classes must return NoneType.
+    if (!resultType.isEqualCanon(shared.getNoneType()))
+      return op->emitError("__init__ result type must be elided (or None)");
     break;
 
   case SpecialFunctionKind::kNew:
-    if (checkMethod())
-      return failure();
     // __new__ must return containing type.
-    // TODO: We could allow omitting result type.
+    // TODO: We could allow omitting result type and default it.
     if (!resultType.isEqualCanon(selfType))
       return op->emitError("result type must be ") << selfType;
     break;

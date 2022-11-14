@@ -19,13 +19,41 @@ enum class SpecialFunctionKind {
   // zero so it can be used as a false condition in an if.
   kNormal = 0,
 
-  kInit = 1, //< __init__
-  kNew = 2,  //< __new__
+#define SF(ENUM, NAME, NUMOPERANDS, FLAGS) ENUM,
+#include "SpecialFunctions.def"
 };
 
-/// If this is a special function like __init__ return the enum that
-/// identifies it, otherwise return kNormal.
-SpecialFunctionKind getSpecialFunctionKind(StringRef name);
+struct SpecialFunctionInfo {
+  SpecialFunctionKind kind = SpecialFunctionKind::kNormal;
+
+  /// This is the number of operands that this special function requires, or -1
+  /// if variadic.
+  int numOperands = -1;
+
+  /// This is a bitmask of flags that describes requirements of the special
+  /// function.
+  enum {
+    /// This is an implicitly static method like __new__ even if not declared
+    /// as such.
+    kImplicitlyStaticMethod = 1 << 0,
+
+    /// This must be an instance method of a type.
+    kInstMethod = 1 << 1,
+
+    /// On a method of struct, the self must be passed ByRef.  This is true for
+    /// in-place operators like += / __iadd__.  This implies an instance method.
+    kByRefSelfInstMethod = (1 << 2) | kInstMethod,
+  };
+  unsigned flags = 0;
+
+  /// Return a record that describes special functions like __init__.  The
+  /// kind field identifies it.
+  static const SpecialFunctionInfo &get(StringRef name);
+
+  /// Given a function name like "__init__" return the special function kind
+  /// that corresponds to it.
+  static SpecialFunctionKind getKind(StringRef name);
+};
 
 } // namespace M::KGEN::LIT
 

@@ -1,30 +1,40 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file is intended to be #include'd multiple times to extract information
+// about special functions.
+//
+//===----------------------------------------------------------------------===//
 
+#ifndef SF
+#error "must define SF macro before including this header"
+#endif
 
+// SF should be defined like this:
+//     SF(ENUM, NAME, NUMOPERANDS, FLAGS)
+// Where numoperands is the number of operands required (when not -1).
 
+SF(kNew, "__new__", -1, kImplicitlyStaticMethod)
+SF(kInit, "__init__", -1, kInstMethod)
 
+// Normal arithmetic operators.
+SF(kAdd, "__add__", 2, kInstMethod)
+SF(kSub, "__sub__", 2, kInstMethod)
+SF(kMul, "__mul__", 2, kInstMethod)
+// ... more: https://docs.python.org/3/reference/datamodel.html#object.__add__
 
-enum class SpecialFunctionKind {
-  // This is not a special function.  This enumerator should always have value
-  // zero so it can be used as a false condition in an if.
-  kNormal = 0,
+// Reversed arithmetic operators.
+SF(kRAdd, "__radd__", 2, kInstMethod)
+SF(kRSub, "__rsub__", 2, kInstMethod)
+SF(kRMul, "__rmul__", 2, kInstMethod)
+// ... more
 
-  kNew,  //< __new__
-  kInit, //< __init__
+// In place operators like +=
+SF(kIAdd, "__iadd__", 2, kByRefSelfInstMethod)
+SF(kISub, "__isub__", 2, kByRefSelfInstMethod)
+SF(kIMul, "__imul__", 2, kByRefSelfInstMethod)
 
-  // Normal arithmetic operators.
-  kAdd, //< __add__
-  kSub, //< __sub__
-  kMul, //< __mul__
-  // ... more: https://docs.python.org/3/reference/datamodel.html#object.__add__
-
-  // Reversed arithmetic operators.
-  kRAdd, //< __radd__
-  kRSub, //< __rsub__
-  kRMul, //< __rmul__
-  // ... more
-
-  // In place operators like +=
-  kIAdd, //< __iadd__
-  kISub, //< __isub__
-  kIMul, //< __imul__
-};
+#undef SF

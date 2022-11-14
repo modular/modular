@@ -29,6 +29,8 @@ class ASTDecl;
 class ASTType;
 class MValue;
 
+inline const char *plural(size_t value) { return value == 1 ? "" : "s"; }
+
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
 class LitSharedState {

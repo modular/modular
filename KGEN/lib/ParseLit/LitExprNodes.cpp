@@ -31,8 +31,6 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 namespace scf = mlir::scf;
 
-static const char *plural(size_t value) { return value == 1 ? "" : "s"; }
-
 //===----------------------------------------------------------------------===//
 // ExprEmitter Implementation
 //===----------------------------------------------------------------------===//
