@@ -237,6 +237,26 @@ LogicalResult LoopOp::verify() {
   return success();
 }
 
+void LoopOp::build(OpBuilder &b, OperationState &state) {
+  build(b, state, {}, {});
+}
+
+//===----------------------------------------------------------------------===//
+// IfOp
+//===----------------------------------------------------------------------===//
+
+void IfOp::build(OpBuilder &b, OperationState &state, Value cond) {
+  build(b, state, {}, cond);
+}
+
+//===----------------------------------------------------------------------===//
+// ContinueOp
+//===----------------------------------------------------------------------===//
+
+void ContinueOp::build(OpBuilder &b, OperationState &state) {
+  build(b, state, {});
+}
+
 //===----------------------------------------------------------------------===//
 // BreakOp
 //===----------------------------------------------------------------------===//
@@ -251,6 +271,18 @@ mlir::Speculation::Speculatability BreakOp::getSpeculatability() {
   return isa<LoopOp>((*this)->getParentOp())
              ? mlir::Speculation::Speculatable
              : mlir::Speculation::NotSpeculatable;
+}
+
+void BreakOp::build(OpBuilder &b, OperationState &state) {
+  build(b, state, {});
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+void YieldOp::build(OpBuilder &b, OperationState &state) {
+  build(b, state, {});
 }
 
 //===----------------------------------------------------------------------===//
