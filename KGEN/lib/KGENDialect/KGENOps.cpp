@@ -1499,6 +1499,149 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ListIterateOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseIteratePreamble(OpAsmParser &p, OpAsmParser::UnresolvedOperand &list,
+                     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &arguments,
+                     ParameterExprArrayAttr &init, mlir::AffineMapAttr &map,
+                     SmallVectorImpl<Type> &argumentTypes, Type &listType,
+                     Region &body) {
+  SmallVector<OpAsmParser::Argument> args;
+  SmallVector<TypedAttr> initExprs;
+  mlir::AffineMap mapValue;
+  llvm::SMLoc loc;
+
+  OpAsmParser::Argument singleArg;
+  mlir::OptionalParseResult result = p.parseOptionalArgument(singleArg);
+  if (result.has_value()) {
+    if (failed(*result))
+      return failure();
+    args.push_back(singleArg);
+  } else if (p.parseArgumentList(args, AsmParser::Delimiter::Paren)) {
+    return failure();
+  }
+
+  if (p.parseKeyword("in") || p.parseOperand(list) || p.parseColon() ||
+      p.getCurrentLocation(&loc) || parseKGENType(p, listType) ||
+      p.parseLSquare() || p.parseCommaSeparatedList([&] {
+        return parseIndexParamValue(p, initExprs.emplace_back());
+      }) ||
+      p.parseColon() || p.parseAffineMap(mapValue) || p.parseRSquare())
+    return failure();
+
+  auto listTy = dyn_cast<ListType>(listType);
+  if (!listTy)
+    return p.emitError(loc, "expected a list type");
+  for (OpAsmParser::Argument &arg : args)
+    arg.type = ParamRefType::get(listTy.getElementType());
+
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseOptionalRParen()) {
+      auto parseArg = [&]() -> ParseResult {
+        if (p.parseArgument(args.emplace_back()) || p.parseEqual() ||
+            p.parseOperand(arguments.emplace_back()))
+          return failure();
+        return success();
+      };
+      if (p.parseCommaSeparatedList(parseArg) || p.parseRParen())
+        return failure();
+    }
+    loc = p.getCurrentLocation();
+    if (p.parseArrowTypeList(argumentTypes))
+      return failure();
+    if (argumentTypes.size() != arguments.size())
+      return p.emitError(
+                 loc, "expected the same number of result types as arguments: ")
+             << arguments.size() << " but got " << argumentTypes.size();
+    for (auto &[idx, arg] : llvm::enumerate(
+             MutableArrayRef<OpAsmParser::Argument>(args).drop_front(
+                 initExprs.size())))
+      arg.type = argumentTypes[idx];
+  }
+  init = ParameterExprArrayAttr::get(p.getContext(), initExprs);
+  map = mlir::AffineMapAttr::get(mapValue);
+  return p.parseRegion(body, args);
+}
+
+static void printIteratePreamble(OpAsmPrinter &p, Operation *op, Value list,
+                                 ValueRange arguments,
+                                 ParameterExprArrayAttr init,
+                                 mlir::AffineMapAttr map,
+                                 TypeRange argumentTypes, Type listType,
+                                 Region &body) {
+  if (init.size() != 1)
+    p << '(';
+  llvm::interleaveComma(body.getArguments().take_front(init.size()), p);
+  if (init.size() != 1)
+    p << ')';
+  p << " in ";
+  p << list << " : ";
+  printKGENType(p.getStream(), listType);
+  p << " [";
+  llvm::interleaveComma(
+      init, p, [&](TypedAttr initExpr) { printIndexParamValue(p, initExpr); });
+  p << " : ";
+  p << map.getValue();
+  p << ']';
+  if (!arguments.empty()) {
+    p << " (";
+    llvm::interleaveComma(
+        llvm::zip(arguments, body.getArguments().drop_front(init.size())), p,
+        [&](auto pair) {
+          p << std::get<1>(pair) << " = " << std::get<0>(pair);
+        });
+    p << ')';
+    p.printArrowTypeList(argumentTypes);
+  }
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+}
+
+LogicalResult ListIterateOp::verify() {
+  // Verify errors that are not structurally possible with the custom syntax.
+  if (getBody().getNumArguments() != getInit().size() + getArguments().size())
+    return emitOpError(
+        "expected the number of region arguments to match the number of "
+        "indices plus the number of loop-carried values");
+  auto elementType = ParamRefType::get(getList().getType().getElementType());
+  if (!llvm::all_of(
+          llvm::drop_end(getBody().getArgumentTypes(), getArguments().size()),
+          [&](Type type) { return type == elementType; }))
+    return emitOpError("expected first ")
+           << getInit().size() << " argument types to be list element type "
+           << elementType;
+  if (!llvm::equal(
+          llvm::drop_begin(getBody().getArgumentTypes(), getInit().size()),
+          getArguments().getTypes()))
+    return emitOpError("expected last ")
+           << getArguments().size()
+           << " argument types to be equal to the initial value types";
+  if (getMap().getNumDims() != getInit().size())
+    return emitOpError("expected map to have ")
+           << getInit().size() << " variable inputs";
+  if (getMap().getNumResults() != getInit().size())
+    return emitOpError("expected map to have ")
+           << getInit().size() << " results";
+  if (getMap().getNumSymbols() != 1)
+    return emitOpError("expected map to have 1 symbolic input for list size");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ListYieldOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ListYieldOp::verify() {
+  auto iterate = (*this)->getParentOfType<ListIterateOp>();
+  if (getOperandTypes() != iterate.getArguments().getTypes())
+    return emitOpError(
+        "operand types do not match surrounding iterate arguments");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
 

@@ -934,6 +934,111 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// ListLengthOp
+//===----------------------------------------------------------------------===//
+
+def ListLengthOp : KGENOp<"list.length", [Pure]> {
+  let summary = "Get the length of a list.";
+  let description = [{
+    The `kgen.list.length` operation takes a list value and returns the number
+    of elements in the list.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.list.length %list : <T>
+    ```
+
+    This operation is resolved by the elaborator. It is replaced by a
+    `kgen.param.constant` operation populated with the size of the list.
+  }];
+
+  let arguments = (ins ListType:$list);
+  let results = (outs Index:$size);
+  let assemblyFormat = "$list attr-dict `:` type($list)";
+}
+
+//===----------------------------------------------------------------------===//
+// ListIterateOp
+//===----------------------------------------------------------------------===//
+
+def ListIterateOp : KGENOp<"list.iterate", [
+    RecursivelySpeculatable, RecursiveMemoryEffects,
+    AllTypesMatch<["arguments", "results"]>]> {
+  let summary = "Bounded iteration over a list.";
+  let description = [{
+    The `kgen.list.iterate` operation iterates over the values in a list by
+    starting from an initial index and iteratively applying an affine map `f`
+    to form a series of indices. A loop body is executed with the list value of
+    each index with loop-carried values. This operation is useful since KGEN
+    forbids recursive elaboration, so we cannot iterate over variadic lists
+    using recursion like in C++. The `kgen.list.iterate` simulates recursive
+    expansion but with bound guarantees.
+
+    The operation takes an initial index `I(0)` and an affine map and forms a
+    sequence `I(i+1) = map(I(i), N)` where `N` is the length of the list. The
+    loop iterates until any index in `I(i)` exceeds the range `[0, N)` or when
+    the indices cycle: `I(b) = I(a)` where `b > a`. The affine map has `M`
+    inputs and `M` outputs where `M >= 0`. The affine map receives the length of
+    the list as a symbolic input.
+
+    Example of determining whether a list of indices is sorted ascending:
+
+    ```mlir
+    %values = kgen.param.constant: list<index> = <indicesList>
+    %true = index.bool.constant true
+    %isSorted = kgen.list.iterate (%lhs, %rhs) in %values : list<index>
+                [0, 1 : (d0, d1)[len] -> (d0 + 1, d1 + 1)]
+                (%sorted = %true) -> i1 {
+      %less = index.cmp sle(%lhs, %rhs)
+      %next = llvm.and %sorted, %less : i1
+      kgen.list.yield %next : i1
+    }
+    ```
+
+    Example of iterating backwards:
+
+    ```mlir
+    kgen.list.iterate (%value) in %values : list<T>
+                      [-1 : (d0)[len] -> ((d0 - 1) mod len)] {
+      kgen.list.yield
+    }
+    ```
+  }];
+
+  let arguments = (ins ListType:$list, Variadic<AnyType>:$arguments,
+                       ParameterExprArrayAttr:$init, AffineMapAttr:$map);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = [{
+    custom<IteratePreamble>($list, $arguments, $init, $map, type($arguments),
+                            type($list), $body)
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ListYieldOp
+//===----------------------------------------------------------------------===//
+
+def ListYieldOp : KGENOp<"list.yield", [Pure, Terminator,
+    HasParent<"ListIterateOp">]> {
+  let summary = "Terminator for list iterate.";
+  let description = [{
+    The `kgen.list.yield` operation is a terminator for `kgen.list.iterate`
+    operations. The operand types must match the loop-carried value types of the
+    surrounding iterate operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
 
