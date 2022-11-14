@@ -1,5 +1,7 @@
 # RUN: kgen-translate -import-lit -verify-diagnostics %s
 
+__include "prolog.lit"
+
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>
 #
@@ -16,13 +18,6 @@
 #     kgen.return %t1 : !pop.scalar<type>
 #   }
 
-
-struct Scalar[type: DType]:
-  pass
-
-struct DType:
-  pass
-
 def fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[type]:
   # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
   return x
@@ -32,5 +27,5 @@ def erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]: ...
 
 @implements(erf_scalar)
 def erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
-# expected-error @+1 {{binary operator with interesting types not implemented}}
+# expected-error @+1 {{'Scalar[type]' does not implement the "__mul__" special method}}
   return x * fma[type](x*x, -0.37612638903183752463, 1.1283791670955125739)

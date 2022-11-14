@@ -260,3 +260,7 @@ struct SpecialFunctions:
   # expected-error @+1 {{self parameter must be passed by reference}}
   fn __iadd__(a: SpecialFunctions, b: SpecialFunctions) -> SpecialFunctions:
     return a
+
+  fn failures(self):
+    self+self # Supports this, even though it isn't valid.  Shouldn't crash.
+    self*self # expected-error {{'SpecialFunctions' does not implement the "__mul__" special method}}
