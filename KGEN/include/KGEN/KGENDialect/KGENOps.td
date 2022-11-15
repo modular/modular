@@ -951,19 +951,18 @@ def ListIterateOp : KGENOp<"list.iterate", [
     expansion but with bound guarantees.
 
     The operation takes an initial index `I(0)` and an affine map and forms a
-    sequence `I(i+1) = map(I(i), N)` where `N` is the length of the list. The
-    loop iterates until any index in `I(i)` exceeds the range `[0, N)` or when
-    the indices cycle: `I(b) = I(a)` where `b > a`. The affine map has `M`
-    inputs and `M` outputs where `M >= 0`. The affine map receives the length of
-    the list as a symbolic input.
+    sequence `I(i+1) = map(I(i))`. The loop iterates until any index in `I(i)`
+    exceeds the range `[0, N)` where `N` is the length of the list or when the
+    indices cycle: `I(b) = I(a)` where `b > a`. The affine map has `M` inputs
+    and `M` outputs where `M >= 0`.
 
     Example of determining whether a list of indices is sorted ascending:
 
     ```mlir
-    %values = kgen.param.constant: list<index> = <indicesList>
+    %values = kgen.param.constant: list<index[N]> = <indicesList>
     %true = index.bool.constant true
     %isSorted = kgen.list.iterate (%lhs, %rhs) in %values : list<index>
-                [0, 1 : (d0, d1)[len] -> (d0 + 1, d1 + 1)]
+                [0, 1 : (d0, d1) -> (d0 + 1, d1 + 1)]
                 (%sorted = %true) -> i1 {
       %less = index.cmp sle(%lhs, %rhs)
       %next = llvm.and %sorted, %less : i1
@@ -974,8 +973,8 @@ def ListIterateOp : KGENOp<"list.iterate", [
     Example of iterating backwards:
 
     ```mlir
-    kgen.list.iterate (%value) in %values : list<T>
-                      [-1 : (d0)[len] -> ((d0 - 1) mod len)] {
+    kgen.list.iterate (%value) in %values : list<T[N]>
+                      [sub(N, 1) : (d0) -> (d0 - 1)] {
       kgen.list.yield
     }
     ```

@@ -1624,8 +1624,8 @@ LogicalResult ListIterateOp::verify() {
   if (getMap().getNumResults() != getInit().size())
     return emitOpError("expected map to have ")
            << getInit().size() << " results";
-  if (getMap().getNumSymbols() != 1)
-    return emitOpError("expected map to have 1 symbolic input for list size");
+  if (getMap().getNumSymbols())
+    return emitOpError("expected map to have 0 symbolic inputs");
   return success();
 }
 

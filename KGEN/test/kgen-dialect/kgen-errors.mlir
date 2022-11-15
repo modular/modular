@@ -966,8 +966,8 @@ kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index[3]>) {
 // -----
 
 kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index[3]>) {
-  // expected-error @below {{'kgen.list.iterate' op expected map to have 1 symbolic input for list size}}
-  kgen.list.iterate %v in %list : list<index[3]> [0 : (d0) -> (d0 + 1)] {
+  // expected-error @below {{'kgen.list.iterate' op expected map to have 0 symbolic inputs}}
+  kgen.list.iterate %v in %list : list<index[3]> [0 : (d0)[s0] -> (d0 + 1)] {
     kgen.list.yield
   }
   kgen.return
