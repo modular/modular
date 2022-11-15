@@ -258,13 +258,17 @@ SmallVector<Type> StructType::getParameterizedElementTypes() const {
   return elementTypes;
 }
 
-StructType StructType::get(ArrayRef<Type> elementTypes) {
-  assert(!elementTypes.empty() && "expected at least one element type");
+StructType StructType::get(MLIRContext *ctx, ArrayRef<Type> elementTypes) {
   SmallVector<TypedAttr> elementTypeExprs;
   elementTypeExprs.reserve(elementTypes.size());
   for (Type elementType : elementTypes)
     elementTypeExprs.push_back(TypeConstantAttr::get(elementType));
-  return get(elementTypes.front().getContext(), elementTypeExprs);
+  return get(ctx, elementTypeExprs);
+}
+
+StructType StructType::get(ArrayRef<Type> elementTypes) {
+  assert(!elementTypes.empty() && "expected at least one element type");
+  return get(elementTypes.front().getContext(), elementTypes);
 }
 
 Optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {

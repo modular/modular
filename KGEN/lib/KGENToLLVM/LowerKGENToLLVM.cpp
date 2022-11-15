@@ -57,7 +57,7 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENExtern
+// ConvertKGENExternFunc
 //===----------------------------------------------------------------------===//
 
 /// Convert `kgen.extern.func` to an extern `llvm.func`.
@@ -84,6 +84,10 @@ struct ConvertKGENExternFunc
     return success();
   }
 };
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENExternVariable
+//===----------------------------------------------------------------------===//
 
 /// Convert `kgen.extern.variable` to an extern global variable.
 struct ConvertKGENExternVariable
@@ -131,8 +135,7 @@ struct ConvertKGENAddressOf : public mlir::ConvertOpToLLVMPattern<AddressOfOp> {
 // ConvertKGENCall
 //===----------------------------------------------------------------------===//
 
-/// Convert `kgen.call` to `func.call` and re-use the latter's conversion to
-/// LLVM.
+/// Convert `kgen.call` to `llvm.call`, unpacking results if necessary.
 struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
@@ -173,6 +176,7 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
 // ConvertKGENReturn
 //===----------------------------------------------------------------------===//
 
+/// Convert `kgen.return` to `llvm.return`, packing the results if necessary.
 struct ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
@@ -216,141 +220,14 @@ struct ConvertKGENParamConstant
     if (auto dtype = dyn_cast<DTypeConstantAttr>(op.getValue())) {
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
           op, rewriter.getI8Type(), dtype.getDType().getValue());
-    } else if (auto attr = dyn_cast<TypedAttr>(op.getValue())) {
+    } else if (auto attr = dyn_cast<TypedAttr>(op.getValue());
+               attr && isa<IntegerAttr, FloatAttr>(attr)) {
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
           op, getTypeConverter()->convertType(attr.getType()), attr);
     } else {
-      return rewriter.notifyMatchFailure(op, "unknown parameter value type");
+      // No support for strings, type constants, or symbol references.
+      return op.emitError("unknown parameter value type");
     }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENStructOp
-//===----------------------------------------------------------------------===//
-
-/// Information about a struct declaration.
-struct StructDeclarations {
-  /// A map from struct name and field name to index. Used for lowering `insert`
-  /// and `extract` ops.
-  DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fieldIndices;
-
-  /// A map from struct name to field types. Used for type conversions.
-  DenseMap<StringAttr, SmallVector<Type>> fieldTypes;
-};
-
-/// Struct operations need to refer to the struct declaration symbol.
-class ConvertKGENStructOpBase {
-public:
-  explicit ConvertKGENStructOpBase(StructDeclarations &structDecls)
-      : structDecls(structDecls) {}
-
-  /// Get the index of the struct field.
-  Optional<int64_t> getFieldIndex(StringAttr name, RefType ref) const {
-    auto it = structDecls.fieldIndices.find({ref.getName(), name});
-    if (it == structDecls.fieldIndices.end())
-      return {};
-    return it->second;
-  }
-
-private:
-  StructDeclarations &structDecls;
-};
-
-template <typename StructOp>
-struct ConvertKGENStructOp : public mlir::ConvertOpToLLVMPattern<StructOp>,
-                             public ConvertKGENStructOpBase {
-  ConvertKGENStructOp(mlir::LLVMTypeConverter &typeConverter,
-                      StructDeclarations &structDecls)
-      : mlir::ConvertOpToLLVMPattern<StructOp>(typeConverter),
-        ConvertKGENStructOpBase(structDecls) {}
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENStructCreate
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENStructCreate : public ConvertKGENStructOp<StructCreateOp> {
-  using ConvertKGENStructOp::ConvertKGENStructOp;
-
-  LogicalResult
-  matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto type = dyn_cast_if_present<LLVM::LLVMStructType>(
-        getTypeConverter()->convertType(op.getType()));
-    if (!type)
-      return failure();
-
-    Value container = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
-    for (auto &operand : llvm::enumerate(adaptor.getOperands()))
-      container = rewriter.create<LLVM::InsertValueOp>(
-          op.getLoc(), container, operand.value(), operand.index());
-    rewriter.replaceOp(op, container);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENStructInsert
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENStructInsert : public ConvertKGENStructOp<StructInsertOp> {
-  using ConvertKGENStructOp::ConvertKGENStructOp;
-
-  LogicalResult
-  matchAndRewrite(StructInsertOp op, StructInsertOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Optional<int64_t> index =
-        getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
-    if (!index)
-      return op.emitError("could not find struct declaration");
-    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-        op, adaptor.getContainer(), adaptor.getValue(), *index);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENStructExtract
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENStructExtract : public ConvertKGENStructOp<StructExtractOp> {
-  using ConvertKGENStructOp::ConvertKGENStructOp;
-
-  LogicalResult
-  matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Optional<int64_t> index =
-        getFieldIndex(op.getFieldAttr(), op.getContainer().getType());
-    if (!index)
-      return op.emitError("could not find struct declaration");
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getContainer(), *index);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENStructGEP
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENStructGEP : public ConvertKGENStructOp<StructGEPOp> {
-  using ConvertKGENStructOp::ConvertKGENStructOp;
-
-  LogicalResult
-  matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type structType = op.getContainer().getType().getResolvedElementType();
-    Optional<int64_t> index =
-        getFieldIndex(op.getFieldAttr(), cast<RefType>(structType));
-    if (!index)
-      return op.emitError("could not find struct declaration");
-    Type ptrType = getTypeConverter()->convertType(op.getType());
-    if (!ptrType)
-      return op.emitError("failed to convert result type");
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrType, adaptor.getContainer(), ArrayRef<LLVM::GEPArg>{0, *index});
     return success();
   }
 };
@@ -368,8 +245,7 @@ static LogicalResult removeExportOps(ExportOp exportOp,
 }
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                       mlir::RewritePatternSet &patterns,
-                                       StructDeclarations &structDecls) {
+                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
       ConvertKGENAddressOf,
@@ -383,40 +259,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       >(typeConverter);
   // Just remove ExportOps.
   patterns.add(removeExportOps);
-  patterns.insert<
-      // clang-format off
-      ConvertKGENStructCreate,
-      ConvertKGENStructExtract,
-      ConvertKGENStructGEP,
-      ConvertKGENStructInsert
-      // clang-format on
-      >(typeConverter, structDecls);
-}
-
-//===----------------------------------------------------------------------===//
-// Type Lowering
-//===----------------------------------------------------------------------===//
-
-/// Replace a KGEN struct with an LLVM struct.
-static LLVM::LLVMStructType
-substituteStructDecl(const StructDeclarations &structDecls, RefType ref,
-                     function_ref<Type(Type)> transformElement) {
-  auto it = structDecls.fieldTypes.find(ref.getName());
-  if (it == structDecls.fieldTypes.end())
-    return {};
-  // Substitute parameters into the field types.
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : ref.getParamValues())
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-
-  SmallVector<Type> elementTypes;
-  for (Type type : it->second) {
-    Type elementType = transformElement(evaluator.getReboundType(type));
-    if (!elementType)
-      return {};
-    elementTypes.push_back(elementType);
-  }
-  return LLVM::LLVMStructType::getLiteral(ref.getContext(), elementTypes);
 }
 
 //===----------------------------------------------------------------------===//
@@ -622,32 +464,12 @@ void LowerKGENToLLVMPass::runOnOperation() {
   if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
     options.overrideIndexBitwidth(indexBitwidth);
 
-  // Collect all struct declarations and erase them.
-  StructDeclarations structDecls;
-  for (auto decl :
-       llvm::make_early_inc_range(theModule.getOps<StructDeclOp>())) {
-    SmallVector<Type> fieldTypes;
-    for (auto &field : llvm::enumerate(decl.getFieldDecls())) {
-      fieldTypes.push_back(field.value().getType());
-      structDecls.fieldIndices.try_emplace(
-          {decl.getNameAttr(), field.value().getNameAttr()}, field.index());
-    }
-    structDecls.fieldTypes.try_emplace(decl.getNameAttr(),
-                                       std::move(fieldTypes));
-    decl->erase();
-  }
-
   // Configure the type converter.
   POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
-  typeConverter.addConversion([&](RefType typeDef) -> Optional<Type> {
-    return substituteStructDecl(structDecls, typeDef, [&](Type elType) {
-      return typeConverter.convertType(elType);
-    });
-  });
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  populateKGENToLLVMPatterns(typeConverter, patterns, structDecls);
+  populateKGENToLLVMPatterns(typeConverter, patterns);
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
@@ -666,52 +488,5 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, topLevelFuncs)))
-    return signalPassFailure();
-
-  // Type references can be used in nested types. Walk through all the types and
-  // rewrite them in-place to use the lowered types.
-  std::function<Type(Type)> substituteRefs = [&](Type type) -> Type {
-    if (auto ref = dyn_cast<RefType>(type))
-      return substituteStructDecl(structDecls, ref, substituteRefs);
-    auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
-    if (!itf)
-      return type;
-    return itf.replaceSubElements([&](Type type) -> Type {
-      if (auto ref = dyn_cast<RefType>(type))
-        return substituteStructDecl(structDecls, ref, substituteRefs);
-      return type;
-    });
-  };
-  WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
-    // Substitute any references in attributes.
-    op->setAttrs(op->getAttrDictionary()
-                     .replaceSubElements(substituteRefs)
-                     .cast<DictionaryAttr>());
-
-    // Substitute the result types.
-    for (OpResult result : op->getOpResults()) {
-      Type replType = substituteRefs(result.getType());
-      if (!replType)
-        return op->emitError("failed to substitute result type #")
-               << result.getResultNumber();
-      result.setType(replType);
-    }
-
-    // Substitute the block argument types.
-    for (Region &region : op->getRegions()) {
-      for (Block &block : region) {
-        for (BlockArgument arg : block.getArguments()) {
-          Type replType = substituteRefs(arg.getType());
-          if (!replType)
-            return op->emitError("failed to substitute block argument type ")
-                   << arg.getType();
-          arg.setType(replType);
-        }
-      }
-    }
-
-    return WalkResult::advance();
-  });
-  if (result.wasInterrupted())
     return signalPassFailure();
 }

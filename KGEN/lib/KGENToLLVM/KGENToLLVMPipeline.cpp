@@ -19,6 +19,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
   // Run the canonicalizer before the lowering passes.
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
+  pm.addPass(createLowerKGENToPOP());
 
   SmallVector<std::string, 1> topLevelKernels;
   if (options.topLevelKernel.hasValue())

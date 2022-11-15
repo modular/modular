@@ -35,6 +35,22 @@ def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerKGENToPOP
+//===----------------------------------------------------------------------===//
+
+def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "mlir::ModuleOp"> {
+  let summary = "Perform staged lowering of KGEN structs and lists.";
+  let description = [{
+    The `lower-kgen-to-pop` pass is a staged lowering of "special" KGEN types:
+    structs and lists. Due to restrictions on how these compose with LLVM, we
+    handle these lowerings as a separate pass to POP, a smaller set of
+    operations to worry about than all of LLVM IR.
+  }];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerKGENToLLVM
 //===----------------------------------------------------------------------===//
 
