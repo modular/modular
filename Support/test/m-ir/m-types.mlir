@@ -1,4 +1,4 @@
-// RUN: index-opt -allow-unregistered-dialect %s | index-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: support-dialect-opt -allow-unregistered-dialect %s | support-dialect-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: !M.array<32xf32>
 "M"() {m = !M.array<32xf32>} : () -> ()

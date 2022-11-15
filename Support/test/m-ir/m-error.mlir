@@ -1,4 +1,4 @@
-// RUN: index-opt %s -split-input-file -allow-unregistered-dialect -verify-diagnostics
+// RUN: support-dialect-opt %s -split-input-file -allow-unregistered-dialect -verify-diagnostics
 
 // expected-error @below {{zero-width element type unsupported}}
 "M"() {a = #M.primitives_array<i0>} : () -> ()

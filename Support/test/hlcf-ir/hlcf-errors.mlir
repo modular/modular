@@ -1,4 +1,4 @@
-// RUN: index-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
+// RUN: support-dialect-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
 
 // expected-note @below {{see invalid parent here}}
 func.func @hlcf_parent_op() {

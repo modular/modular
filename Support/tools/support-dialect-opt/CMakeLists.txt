@@ -4,8 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(index-opt
-  index-opt.cpp
+add_modular_tool(support-dialect-opt
+  support-dialect-opt.cpp
 
   LINK_LIBS PRIVATE
   HLCFDialect
@@ -14,4 +14,4 @@ add_modular_tool(index-opt
   MLIRFuncDialect
   MLIROptLib
   MLIRTransforms
-)
+  )

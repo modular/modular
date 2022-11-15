@@ -1,4 +1,4 @@
-// RUN: index-opt -allow-unregistered-dialect %s | index-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: support-dialect-opt -allow-unregistered-dialect %s | support-dialect-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: ui7: 126, 0, 2, 20
 "M"() {a = #M.primitives_array<ui7: -2, 0, 2, 20>} : () -> ()

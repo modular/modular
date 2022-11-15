@@ -1,4 +1,4 @@
-// RUN: index-opt -allow-unregistered-dialect %s | index-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: support-dialect-opt -allow-unregistered-dialect %s | support-dialect-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: func @loop
 func.func @loop(%arg0: i32, %arg1: i64) {
