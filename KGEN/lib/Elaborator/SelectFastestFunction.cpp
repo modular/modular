@@ -20,38 +20,28 @@ ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
-  auto engineOr = ExecutionEngine::create();
-  if (failed(engineOr))
-    return engineOr.takeError();
-  ExecutionEngine engine = std::move(*engineOr);
+  UNWRAP_ERROR(engine, ExecutionEngine::create());
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  if (ErrorOrSuccess err =
-          engine.add(cast<ModuleOp>(symtab.getOp()), funcsToCompile,
-                     "evaluateSpecializations"))
+  if (auto err = engine.add(cast<ModuleOp>(symtab.getOp()), funcsToCompile,
+                            "evaluateSpecializations"))
     return err.takeError();
 
   // Get pointers to all the candidates.
   SmallVector<void *> candidatePtrs;
   for (FuncOp candidate : specializations) {
-    ErrorOr<CompiledFunc> func =
-        engine.lookup("evaluateSpecializations", candidate);
-    if (func.isError())
-      return func.takeError();
-
-    candidatePtrs.push_back(func->getFunctionPointer());
+    UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations", candidate));
+    candidatePtrs.push_back(func.getFunctionPointer());
   }
 
   // Lookup the evaluator function
-  ErrorOr<CompiledFunc> evaluatorFunc =
-      engine.lookup("evaluateSpecializations", evaluator);
-  if (evaluatorFunc.isError())
-    return evaluatorFunc.takeError();
+  UNWRAP_ERROR(evaluatorFunc,
+               engine.lookup("evaluateSpecializations", evaluator));
 
   // Invoke the evaluator.
-  ssize_t bestIdx = evaluatorFunc->invoke<ssize_t, void **, ssize_t>(
+  ssize_t bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
       candidatePtrs.data(), candidatePtrs.size());
   if (bestIdx == -1)
     return Error("user-provided evaluator returned failure");

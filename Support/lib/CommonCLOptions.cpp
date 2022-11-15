@@ -64,9 +64,10 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
 
   std::error_code errorCode;
   auto absoluteOutputFile = std::filesystem::absolute(outFile, errorCode);
-  if (errorCode)
+  if (errorCode) {
     exit(reportError("Cannot get absolute path for output file: '" + outFile +
                      "': " + errorCode.message()));
+  }
 
   llvm::outs() << "Emitting intermediate file to '"
                << absoluteOutputFile.string() << "'.\n";

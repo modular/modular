@@ -109,34 +109,28 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, KGENDType dtype) {
         !dtype.isBool())
       return Error("cannot coerce constant value to " + dtype.getAsString());
 
-    if (dtype.isBool() && type.getWidth() != 1)
+    if (dtype.isBool() && type.getWidth() != 1) {
       return Error("cannot coerce i" + Twine(type.getWidth()) +
                    " value to bool");
+    }
 
     if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
-      ErrorOr<APSInt> intValue = reifyIntToInt(value.getValue(), type, dtype);
-      if (intValue.isError())
-        return intValue.takeError();
-      return IntegerAttr::get(attr.getContext(), intValue.takeValue());
+      UNWRAP_ERROR(intValue, reifyIntToInt(value.getValue(), type, dtype));
+      return IntegerAttr::get(attr.getContext(), intValue);
     }
 
     // Integer to float conversion. Check for a valid floating point type.
     FloatType fpType = getEquivalentFloatType(type.getContext(), dtype);
     if (!fpType)
       return Error("unsupported floating point type: " + dtype.getAsString());
-    ErrorOr<APFloat> apFp =
-        reifyIntToFloat(value.getValue(), type, fpType, dtype);
-    if (apFp.isError())
-      return apFp.takeError();
-    return FloatAttr::get(fpType, apFp.takeValue());
+    UNWRAP_ERROR(apFp, reifyIntToFloat(value.getValue(), type, fpType, dtype));
+    return FloatAttr::get(fpType, apFp);
   }
 
   auto value = attr.cast<FloatAttr>();
   if (dtype.isInt()) {
-    ErrorOr<APSInt> apInt = reifyFloatToInt(value.getValue(), dtype);
-    if (apInt.isError())
-      return apInt.takeError();
-    return IntegerAttr::get(attr.getContext(), apInt.takeValue());
+    UNWRAP_ERROR(apInt, reifyFloatToInt(value.getValue(), dtype));
+    return IntegerAttr::get(attr.getContext(), apInt);
   }
 
   // Float to float conversion. Check for a valid floating point type.
@@ -156,10 +150,8 @@ static ErrorOr<TypedAttr> reifyArray(InAttrT attr, ConvertValueFn &&convert,
   SmallVector<decltype(convert(std::declval<T>()).takeValue())> values;
   values.reserve(attr.size());
   for (T value : attr.getValues()) {
-    auto newValue = convert(value);
-    if (newValue.isError())
-      return newValue.takeError();
-    values.push_back(newValue.takeValue());
+    UNWRAP_ERROR(newValue, convert(value));
+    values.push_back(std::move(newValue));
   }
   ShapedType newShapedType = attr.getType().cloneWith({}, newElementType);
   return OutAttrT::get(newShapedType, values);
@@ -172,24 +164,23 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
   // If the value is an integer or float attribute, reify it to according to the
   // result dtype.
   if (attr.isa<IntegerAttr, FloatAttr>()) {
-    ErrorOr<TypedAttr> result = reifyOneAttribute(attr, dtype);
-    if (result.isError())
-      return result.takeError();
+    UNWRAP_ERROR(result, reifyOneAttribute(attr, dtype));
     // If the result is an array or vector, splat the constant.
     ShapedType shapedType;
-    if (auto simd = dyn_cast<SIMDType>(type))
-      shapedType = VectorType::get(*simd.getResolvedSize(), result->getType());
-    else if (auto array = dyn_cast<POP::ArrayType>(type))
+    if (auto simd = dyn_cast<SIMDType>(type)) {
+      shapedType = VectorType::get(*simd.getResolvedSize(), result.getType());
+    } else if (auto array = dyn_cast<POP::ArrayType>(type)) {
       shapedType =
-          M::ArrayType::get(*array.getResolvedSize(), result->getType());
+          M::ArrayType::get(*array.getResolvedSize(), result.getType());
+    }
     if (shapedType) {
-      if (auto fpVal = dyn_cast<FloatAttr>(result.get())) {
+      if (auto fpVal = dyn_cast<FloatAttr>(result)) {
         SmallVector<APFloat> values(shapedType.getNumElements(),
                                     fpVal.getValue());
         result = FloatArrayElementsAttr::get(shapedType, values);
       } else {
         SmallVector<APInt> values(shapedType.getNumElements(),
-                                  result->cast<IntegerAttr>().getValue());
+                                  result.cast<IntegerAttr>().getValue());
         result = IntArrayElementsAttr::get(shapedType, values);
       }
     }
@@ -301,12 +292,11 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
 }
 
 ErrorOrSuccess ConstantOp::finalizeElaboration() {
-  ErrorOr<TypedAttr> value = reifyConstant(
-      getValue(), *getType().cast<DTypeInterface>().getResolvedDType(),
-      getType());
-  if (value.isError())
-    return value.takeError();
-  setValueAttr(value.takeValue());
+  UNWRAP_ERROR(
+      value, reifyConstant(getValue(),
+                           *getType().cast<DTypeInterface>().getResolvedDType(),
+                           getType()));
+  setValueAttr(value);
   return success();
 }
 
@@ -758,10 +748,8 @@ ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
   else
     dtype = *type.cast<DTypeInterface>().getResolvedDType();
 
-  ErrorOr<TypedAttr> value = reifyConstant(getValue(), dtype, type);
-  if (value.isError())
-    return value.takeError();
-  setValueAttr(value.takeValue());
+  UNWRAP_ERROR(value, reifyConstant(getValue(), dtype, type));
+  setValueAttr(value);
   return success();
 }
 
