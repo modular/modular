@@ -934,31 +934,6 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// ListLengthOp
-//===----------------------------------------------------------------------===//
-
-def ListLengthOp : KGENOp<"list.length", [Pure]> {
-  let summary = "Get the length of a list.";
-  let description = [{
-    The `kgen.list.length` operation takes a list value and returns the number
-    of elements in the list.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.list.length %list : <T>
-    ```
-
-    This operation is resolved by the elaborator. It is replaced by a
-    `kgen.param.constant` operation populated with the size of the list.
-  }];
-
-  let arguments = (ins ListType:$list);
-  let results = (outs Index:$size);
-  let assemblyFormat = "$list attr-dict `:` type($list)";
-}
-
-//===----------------------------------------------------------------------===//
 // ListIterateOp
 //===----------------------------------------------------------------------===//
 

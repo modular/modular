@@ -99,18 +99,18 @@ def StringType : KGENType<"String", "string"> {
 // ListType
 //===----------------------------------------------------------------------===//
 
-def ListType : KGENType<"List", "list"> {
+def ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
   let summary = "homogenous list type";
   let description = [{
-    The `!kgen.list` type represents a homogenous variable-size list. The list
-    type is the building block for variadic parameters. Lists have special
-    behaviour in elaboration. List operands to operations are expanded in-place
-    during elaboration, and consequently they have no runtime representation.
+    The `!kgen.list` type represents a homogenous sized list. The list type is
+    the building block for variadic parameters. Lists have special behaviour in
+    lowering. List operands to operations are expanded in-place during
+    lowering, and consequently it has no runtime representation.
 
     Example:
 
     ```mlir
-    %out = "foo.op"(%list) : (!kgen.list<index>) -> !kgen.list<index>
+    %out = "foo.op"(%list) : (!kgen.list<index[N]>) -> !kgen.list<index[M]>
     ```
 
     Could become:
@@ -124,24 +124,23 @@ def ListType : KGENType<"List", "list"> {
     Example:
 
     ```mlir
-    %list = kgen.param.constant: list<index> = <[1, 2, 3]>
-    ```
-
-    Becomes:
-
-    ```mlir
-    %0 = kgen.param.constant = <1>
-    %1 = kgen.param.constant = <2>
-    %2 = kgen.param.constant = <3>
+    %list = kgen.param.constant: list<index[3]> = <[1, 2, 3]>
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$elementType);
-  let assemblyFormat = "`<` custom<TypeParamValue>($elementType) `>`";
+  let parameters = (ins "TypedAttr":$elementType, "TypedAttr":$numElements);
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($elementType) `[`
+    custom<IndexParamValue>($numElements) `]` `>`
+  }];
+
+  let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType)>
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
+                                        "TypedAttr":$numElements)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        "int64_t":$numElements)>
   ];
 }
 
