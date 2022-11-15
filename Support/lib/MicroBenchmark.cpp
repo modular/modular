@@ -197,10 +197,10 @@ static StringRef toString(MicroBenchmark::ReportMetric metric) {
     return "trimmed_mean_latency";
   case MicroBenchmark::ReportMetric::kMedianLatency:
     return "median_latency";
-  case MicroBenchmark::ReportMetric::k95PercentileLatency:
-    return "95_percentile_latency";
-  case MicroBenchmark::ReportMetric::k99PercentileLatency:
-    return "99_percentile_latency";
+  case MicroBenchmark::ReportMetric::kPercentileLatency95:
+    return "percentile_latency_95";
+  case MicroBenchmark::ReportMetric::kPercentileLatency99:
+    return "percentile_latency_99";
   case MicroBenchmark::ReportMetric::kWarmupCount:
     return "warmup_count";
   case MicroBenchmark::ReportMetric::kIterationCount:
@@ -284,7 +284,7 @@ getMedianLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
 /// Computes the 95th percentile latency and returns the value as a double in
 /// the specified time unit.
 static double
-get95PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+getPercentileLatency95(ArrayRef<MicroBenchmark::Measurement> measurements,
                        MicroBenchmark::TimeUnit timeUnit) {
   auto timings = getTimings(measurements);
   llvm::sort(timings);
@@ -294,7 +294,7 @@ get95PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
 /// Computes the 99th percentile latency and returns the value as a double in
 /// the specified time unit.
 static double
-get99PercentileLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
+getPercentileLatency99(ArrayRef<MicroBenchmark::Measurement> measurements,
                        MicroBenchmark::TimeUnit timeUnit) {
   auto timings = getTimings(measurements);
   llvm::sort(timings);
@@ -323,10 +323,10 @@ double MicroBenchmark::measurement(MicroBenchmark::ReportMetric metric,
     return getTrimmedMeanLatency(measurements, timeUnit);
   case ReportMetric::kMedianLatency:
     return getMedianLatency(measurements, timeUnit);
-  case ReportMetric::k95PercentileLatency:
-    return get95PercentileLatency(measurements, timeUnit);
-  case ReportMetric::k99PercentileLatency:
-    return get99PercentileLatency(measurements, timeUnit);
+  case ReportMetric::kPercentileLatency95:
+    return getPercentileLatency95(measurements, timeUnit);
+  case ReportMetric::kPercentileLatency99:
+    return getPercentileLatency99(measurements, timeUnit);
   case ReportMetric::kWarmupCount:
     return runOptions.warmupIterations;
   case ReportMetric::kIterationCount:

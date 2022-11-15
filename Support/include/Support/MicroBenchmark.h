@@ -125,8 +125,8 @@ struct MicroBenchmark {
     kMeanLatency,
     kTrimmedMeanLatency,
     kMedianLatency,
-    k95PercentileLatency,
-    k99PercentileLatency,
+    kPercentileLatency95,
+    kPercentileLatency99,
     kWarmupCount,
     kIterationCount,
     kBatchCount
@@ -180,8 +180,8 @@ struct MicroBenchmark {
                                           ReportMetric::kMinLatency,
                                           ReportMetric::kMeanLatency,
                                           ReportMetric::kMedianLatency,
-                                          ReportMetric::k95PercentileLatency,
-                                          ReportMetric::k99PercentileLatency,
+                                          ReportMetric::kPercentileLatency95,
+                                          ReportMetric::kPercentileLatency99,
                                           ReportMetric::kIterationCount,
                                           ReportMetric::kBatchCount};
   };
