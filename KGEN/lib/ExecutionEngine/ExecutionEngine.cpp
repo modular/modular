@@ -107,9 +107,7 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
 
   // Create the target machine.
-  auto machineOr = createHostTargetMachine();
-  if (machineOr.isError())
-    return machineOr.takeError();
+  RETURN_ERROR(createHostTargetMachine());
 
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.

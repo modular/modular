@@ -31,12 +31,10 @@ std::string M::Detail::finalizeBlobKeyHash(StringRef hash) {
 
 ErrorOrSuccess BlobCacheBackend::insert(StringRef keyHash,
                                         llvm::MemoryBufferRef obj) {
-  if (auto err = insertImpl(keyHash, obj))
-    return err.takeError();
+  RETURN_ERROR(insertImpl(keyHash, obj));
 
   if (delegate)
-    if (auto err = delegate->insert(keyHash, obj))
-      return err.takeError();
+    RETURN_ERROR(delegate->insert(keyHash, obj));
 
   return success();
 }
