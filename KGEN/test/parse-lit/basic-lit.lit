@@ -139,15 +139,15 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 13, SIMD[4, dt]](57)
 
 @interface
-#CHECK: kgen.generator.interface @func_interface0<type: !kgen.ref<@DType>>(index) -> index
+#CHECK: lit.func @func_interface0<type: !kgen.ref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface0[type: DType](x: index) -> index:
 
 @interface
-#CHECK: kgen.generator.interface @func_interface1<type: !kgen.ref<@DType>>(index) -> index
+#CHECK: lit.func @func_interface1<type: !kgen.ref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface1[type: DType](x: index) -> index: pass
 
 @interface
-#CHECK: kgen.generator.interface @func_interface2<type: !kgen.ref<@DType>>(index) -> index
+#CHECK: lit.func @func_interface2<type: !kgen.ref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface2[type: DType](x: index) -> index:
   ...
 

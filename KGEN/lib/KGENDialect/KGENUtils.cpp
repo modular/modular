@@ -1099,20 +1099,30 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   addArgAndResultAttrs(builder, result, entryArgs, resultAttrs);
 
   // Parse the required function body.
-  auto *body = result.addRegion();
+  auto *region = result.addRegion();
 
   // If this is a generator interface, no body block is allowed.
   if (opKind == GeneratorOrFuncKind::interface)
     return success();
 
   llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseRegion(*body, entryArgs,
+  if (parser.parseRegion(*region, entryArgs,
                          /*enableNameShadowing=*/false))
     return failure();
 
-  // Function body was parsed, make sure its not empty.
-  if (body->empty())
+  if (region->empty()) {
+    if (opKind != GeneratorOrFuncKind::litfunc)
+      return parser.emitError(loc, "expected non-empty function body");
+    region->push_back(new Block());
+  }
+
+  // Function body was parsed, make sure it's not empty.
+  Attribute isInterface = parsedAttributes.get("isInterface");
+  Block &body = region->back();
+  if (!isInterface && body.empty())
     return parser.emitError(loc, "expected non-empty function body");
+  if (isInterface && !body.empty())
+    return parser.emitError(loc, "expected empty function body");
 
   return success();
 }
