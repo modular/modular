@@ -245,19 +245,38 @@ public:
     return err.takeError();                                                    \
   }
 
+/// DO NOT USE THIS MACRO.
+#define _UNWRAP_ERROR_IMPL(VARIABLE, LHS, EXPRESSION)                          \
+  auto VARIABLE##OrError = (EXPRESSION);                                       \
+  if (VARIABLE##OrError.isError())                                             \
+    return VARIABLE##OrError.takeError();                                      \
+  LHS = VARIABLE##OrError.takeValue();
+
+/// Given an expression that returns an `ErrorOr`:
+///  1) evaluate the expression
+///  2) if it contains an `Error`, `return` it, exiting this function/lambda
+///  3) otherwise bind the normal value to an existing local variable named
+///     `VARIABLE`
+/// This differs from UNWRAP_ERROR in that it moves the unwrapped value into an
+/// existing local variable instead creating a new one.
+///
+/// WARNING: This macro contains multiple statements, so it should not be used
+/// in the body of an if statement without braces.
+#define UNWRAP_ERROR_OR_SET(VARIABLE, EXPRESSION)                              \
+  _UNWRAP_ERROR_IMPL(VARIABLE, VARIABLE, EXPRESSION)
+
 /// Given an expression that returns an `ErrorOr`:
 ///  1) evaluate the expression
 ///  2) if it contains an `Error`, `return` it, exiting this function/lambda
 ///  3) otherwise bind the normal value to a new local variable named `VARIABLE`
+/// This differs from UNWRAP_ERROR_OR_SET in that it creates a new variable
+/// instead of moving the unwrapped value into an existing one.
 ///
 /// WARNING: This macro contains multiple statements, so it should not be used
 /// in the body of an if statement without braces.  Such a thing doesn't make
 /// sense anyway though, because why would you want to bind the result name?
 #define UNWRAP_ERROR(VARIABLE, EXPRESSION)                                     \
-  auto VARIABLE##OrError = (EXPRESSION);                                       \
-  if (VARIABLE##OrError.isError())                                             \
-    return VARIABLE##OrError.takeError();                                      \
-  auto VARIABLE = VARIABLE##OrError.takeValue();
+  _UNWRAP_ERROR_IMPL(VARIABLE, auto VARIABLE, EXPRESSION)
 
 } // namespace M
 
