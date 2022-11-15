@@ -52,16 +52,16 @@ struct StructExample:
     var result : StructExample
     return result
 
-  # CHECK: lit.func @"StructExample::static"(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
+  # CHECK: lit.func @static(%x: !kgen.ref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
     # CHECK: %0 = index.constant 4
-    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"](%0)
-    # CHECK: %2 = kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%1)
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%0)
+    # CHECK: %2 = kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@static](%1)
     StructExample.static(Int(4))
     pass
 
-  # CHECK: lit.func @"StructExample::mutatingMethod"(%self: !pop.pointer<@StructExample>) -> !lit.none
+  # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample>) -> !lit.none
   fn mutatingMethod(&self):
 
 # CHECK: }
@@ -69,17 +69,17 @@ struct StructExample:
 
 # CHECK: lit.func @callStatic(%a: !kgen.ref<@Int>) -> !lit.none
 fn callStatic(a: Int):
-  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%a)
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@static](%a)
   StructExample.static(a)
 
-  # CHECK: kgen.call_param[() -> !kgen.ref<@StructExample>: @StructExample::@"StructExample::__new__"]()
-  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@"StructExample::static"](%a)
+  # CHECK: kgen.call_param[() -> !kgen.ref<@StructExample>: @StructExample::@__new__]()
+  # CHECK: kgen.call_param[(!kgen.ref<@Int>) -> !lit.none: @StructExample::@static](%a)
   StructExample().static(a)
 
 # CHECK-LABEL: lit.func @simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@"Int::__mul__"](%b, %a)
-  # CHECK: %1 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@"Int::__add__"](%a, %0)
+  # CHECK: %0 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__mul__](%b, %a)
+  # CHECK: %1 = kgen.call_param[(!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__add__](%a, %0)
   # CHECK: kgen.return %1 : !kgen.ref<@Int>
   return a+b*a
 
@@ -91,7 +91,7 @@ struct Pair[dt: DType]:
   var a : SIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"Pair::__new__"() -> !kgen.ref<@Pair<dt: !kgen.ref<@DType> = dt>> attributes {isStatic}
+  # CHECK: lit.func @__new__() -> !kgen.ref<@Pair<dt: !kgen.ref<@DType> = dt>> attributes {isStatic}
   fn __new__() -> Pair[dt]:
     var result : Pair[dt]
     # TODO: Fill this in.
@@ -173,7 +173,7 @@ fn byval_byref_function(a: Int, &b: Int):
 # CHECK: lit.func @lvaluesAndRValues()
 fn lvaluesAndRValues() -> index:
   # CHECK: [[FOUR:%.*]] = index.constant 4
-  # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@"Int::__new__"]([[FOUR]])
+  # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__]([[FOUR]])
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value

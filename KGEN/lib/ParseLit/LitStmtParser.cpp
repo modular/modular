@@ -695,12 +695,8 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   // Is this a method?
   bool isMethod = false;
   StringAttr baseName = name; // Save the unmangled name.
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl)) {
-    std::string mangledName =
-        (Twine(structDecl.getSymName()) + "::" + name.getValue()).str();
-    name = StringAttr::get(getContext(), mangledName);
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl))
     isMethod = true;
-  }
 
   if (attrs.isStatic && !isMethod) {
     emitError(loc, "only methods on structs may be declared static");

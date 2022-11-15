@@ -13,7 +13,7 @@ lit.struct.decl @Adder<size> {
   // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.ref<@Adder<size = size>>) {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
-  lit.func @"Adder::__add__"(%self: !kgen.ref<@Adder<size = size>>)  {
+  lit.func @__add__(%self: !kgen.ref<@Adder<size = size>>)  {
     %0 = lit.var.decl "a" : <index>
     %one = index.constant 1
     pop.store %one, %0 : !pop.pointer<index>
@@ -31,7 +31,7 @@ lit.struct.decl @Adder<size> {
 
 // CHECK-LABEL: kgen.struct.decl @A
 lit.struct.decl @A {
-  lit.func @"A::foo"(%self: !kgen.ref<@A>) {
+  lit.func @foo(%self: !kgen.ref<@A>) {
     kgen.return
   }
 }
@@ -41,8 +41,8 @@ lit.struct.decl @A {
 
 // CHECK-LABEL: kgen.struct.decl @B
 lit.struct.decl @B {
-  lit.func @"B::foo"(%self: !kgen.ref<@B>, %a: !kgen.ref<@A>) {
-    kgen.call_param[(!kgen.ref<@A>) -> (): @A::@"A::foo"](%a)
+  lit.func @foo(%self: !kgen.ref<@B>, %a: !kgen.ref<@A>) {
+    kgen.call_param[(!kgen.ref<@A>) -> (): @A::@foo](%a)
     kgen.return
   }
 }
@@ -50,9 +50,9 @@ lit.struct.decl @B {
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !kgen.ref<@A>, %b: !kgen.ref<@B>) {
   // CHECK-NEXT: call_param[(!kgen.ref<@B>, !kgen.ref<@A>) -> (): @"B::foo"]
-  kgen.call_param[(!kgen.ref<@B>, !kgen.ref<@A>) -> (): @B::@"B::foo"](%b, %a)
+  kgen.call_param[(!kgen.ref<@B>, !kgen.ref<@A>) -> (): @B::@foo](%b, %a)
   // CHECK-NEXT: constant: (!kgen.ref<@A>) -> () = <@"A::foo">
-  %0 = kgen.param.constant: (!kgen.ref<@A>) -> () = <@A::@"A::foo">
+  %0 = kgen.param.constant: (!kgen.ref<@A>) -> () = <@A::@foo>
   kgen.return
 }
 
@@ -62,7 +62,7 @@ lit.func @main(%a: !kgen.ref<@A>, %b: !kgen.ref<@B>) {
 
 // CHECK-LABEL: kgen.struct.decl @A<N>
 lit.struct.decl @A<N> {
-  lit.func @"A::foo"<M>(%self: !kgen.ref<@A<N = N>>) -> index {
+  lit.func @foo<M>(%self: !kgen.ref<@A<N = N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
     kgen.return %0 : index
   }
@@ -71,8 +71,8 @@ lit.struct.decl @A<N> {
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !kgen.ref<@A<N = 1>>) {
   // CHECK-NEXT: call_param[<N, M>(!kgen.ref<@A<N = N>>) -> index: @"A::foo"]<N = 1, M = 2>
-  %0 = kgen.call_param[<N, M>(!kgen.ref<@A<N = N>>) -> index: @A::@"A::foo"]<N = 1, M = 2>(%a)
+  %0 = kgen.call_param[<N, M>(!kgen.ref<@A<N = N>>) -> index: @A::@foo]<N = 1, M = 2>(%a)
   // CHECK-NEXT: call_param[(!kgen.ref<@A<N = 1>>) -> index: @"A::foo"<N = 1, M = 2>]
-  %1 = kgen.call_param[(!kgen.ref<@A<N = 1>>) -> index: @A::@"A::foo"<N = 1, M = 2>](%a)
+  %1 = kgen.call_param[(!kgen.ref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>](%a)
   kgen.return
 }
