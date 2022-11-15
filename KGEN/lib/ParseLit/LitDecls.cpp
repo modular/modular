@@ -359,12 +359,6 @@ struct ParsedParam {
 /// If this is a special function like __init__ return the enum that
 /// identifies it, otherwise return kNormal.
 SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
-  // FIXME: Remove name mangling.
-  size_t methodSepIdx = name.rfind("::");
-  // If this is a method, strip struct/class container name.
-  if (methodSepIdx != StringRef::npos)
-    name = name.substr(methodSepIdx + 2, name.size());
-
   if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
     return SpecialFunctionKind::kNormal;
 

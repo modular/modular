@@ -578,16 +578,14 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
     auto funcField = dyn_cast<KGEN::LITFuncOp>(field);
     if (!funcField)
       return field.emitError("unsupported op in lit lowering");
-    // Move the function from a field position inside the struct
-    // to freestanding global function. The name is already mangled by the
-    // parser.
-    if (symbolTable.lookup(funcField.getSymNameAttr()))
-      return funcField.emitError("duplicated function name '")
-             << funcField.getSymNameAttr().getValue()
-             << "' should be uniquely mangled with '" << structDecl.getSymName()
-             << "'";
-
+    // Move and rename the function from a field position inside the struct
+    // to freestanding global function.
     funcField->remove();
+    auto genOpNewName =
+        StringAttr::get(litStructDecl.getContext(),
+                        Twine(structDecl.getSymName()) +
+                            "::" + funcField.getSymNameAttr().getValue());
+    funcField.setSymName(genOpNewName);
     symbolTable.insert(funcField, Block::iterator(structDecl));
 
     // Prepend the parameters from the struct decl.
@@ -609,14 +607,20 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
   return success();
 }
 
-/// Member funtions are reference with nested symbol references. After lowering,
-/// the symbol tree will be flat. Remove all nested symbol references in symbol
-/// constants by taking just the leaf reference.
-static void trimNestedSymbolReferences(Operation *op) {
+/// Member functions are reference with nested symbol references. After
+/// lowering, the symbol tree will be flat. Concatenate all nested symbol
+/// references in symbol constants.
+static void renameSymbolReferences(Operation *op) {
   auto trimSymbolConstant = [](Attribute attr) -> Attribute {
     if (auto symbolCst = dyn_cast<SymbolConstantAttr>(attr)) {
+      SymbolRefAttr symRef = symbolCst.getSymbolRef();
+      SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
+      for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
+        qualifiedName.append("::");
+        qualifiedName.append(symRefAttr.getValue());
+      }
       return SymbolConstantAttr::get(
-          FlatSymbolRefAttr::get(symbolCst.getSymbolRef().getLeafReference()),
+          FlatSymbolRefAttr::get(attr.getContext(), qualifiedName),
           symbolCst.getParamValues(), symbolCst.getType());
     }
     return attr;
@@ -661,7 +665,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
           return signalPassFailure();
       }
     }
-    trimNestedSymbolReferences(module);
+    renameSymbolReferences(module);
   }
 };
 

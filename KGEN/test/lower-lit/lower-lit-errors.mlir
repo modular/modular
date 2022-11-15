@@ -173,17 +173,3 @@ kgen.generator.interface @itf<ty: dtype>()
 lit.func @impl3() implements @itf {
   kgen.return
 }
-
-
-// -----
-
-lit.func @foo()  {
-  kgen.return
-}
-
-lit.struct.decl @Adder<size> {
-  // expected-error @+1 {{duplicated function name 'foo' should be uniquely mangled with 'Adder'}}
-  lit.func @foo()  {
-    kgen.return
-  }
-}
