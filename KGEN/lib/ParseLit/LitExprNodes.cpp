@@ -825,7 +825,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
   // instead.
   DRValue last;
   for (ExprNode *expr : exprs) {
-    auto exprRep = emitter.emitRValue(expr);
+    ASTTypeAnd<RValue> exprRep = emitter.emitRValue(expr);
     if (!exprRep)
       return {};
 
@@ -839,7 +839,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
     last = emitter.emitDRValue(exprRep, expr->getLoc()).ir;
   }
   if (exprs.empty()) {
-    auto loc = emitter.translateLocation(getLoc());
+    Location loc = emitter.translateLocation(getLoc());
     last = DRValue(emitter.builder->create<mlir::index::ConstantOp>(loc, 0));
   }
   return {last, emitter.shared.getIndexType()};
