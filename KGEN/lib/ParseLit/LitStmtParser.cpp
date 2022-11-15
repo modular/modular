@@ -598,7 +598,7 @@ ParseResult LitStmtParser::parseIncludeHack() {
     assert(includerBuffer && "Must be in a source buffer");
     auto includerPath =
         std::filesystem::path(includerBuffer->getBufferIdentifier().str());
-    absolutePath = includerPath.replace_filename(path.str());
+    absolutePath = includerPath.replace_filename(path.str()).string();
   }
 
   // Ask SourceMgr to open the file in question.
