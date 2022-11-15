@@ -279,6 +279,7 @@ def POP_StructType : POPType<"Struct", "struct"> {
   let genVerifyDecl = 1;
 
   let builders = [
+    TypeBuilder<(ins "ArrayRef<Type>":$elementTypes)>,
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>
   ];
 

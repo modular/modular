@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-llvm | FileCheck %s
+// RUN: kgen-opt %s -lower-kgen-to-pop | FileCheck %s
 
 // CHECK-NOT: kgen.struct.decl
 kgen.struct.decl @SmallVector<N, T: type> {
@@ -13,9 +13,9 @@ kgen.func @two_vectors(
   %arg0: !pop.array<2, simd<4, f32>>,
   %arg1: !pop.array<4, simd<1, f64>>
 ) -> (!size2, !size4) {
-  // CHECK: llvm.mlir.undef : !llvm.struct<(array<2 x vector<4xf32>>)>
-  // CHECK: llvm.mlir.undef : !llvm.struct<(array<4 x f64>)>
+  // CHECK: pop.struct.construct(%arg0) : !pop.struct<array<2, simd<4, f32>>>
   %0 = kgen.struct.create(%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
+  // CHECK: pop.struct.construct(%arg1) : !pop.struct<array<4, scalar<f64>>>
   %1 = kgen.struct.create(%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
@@ -33,8 +33,7 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 
 // CHECK-LABEL: @make_box
 kgen.func @make_box(%v: f32) -> !kgen.ref<@Box<T:type = f32>> {
-  // CHECK: %[[BOX:.*]] = llvm.mlir.undef
-  // CHECK: llvm.insertvalue %{{.*}}, %[[BOX]][0]
+  // CHECK: pop.struct.construct(%arg0) : !pop.struct<f32>
   %0 = kgen.struct.create(%v) : (f32) -> !kgen.ref<@Box<T:type = f32>>
   kgen.return %0 : !kgen.ref<@Box<T:type = f32>>
 }
@@ -44,8 +43,7 @@ kgen.func @make_box(%v: f32) -> !kgen.ref<@Box<T:type = f32>> {
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
 kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
-  // CHECK: llvm.insertvalue %[[B]], %{{.*}}[0]
-  // CHECK: llvm.insertvalue %[[A]], %{{.*}}[1]
+  // CHECK: pop.struct.construct(%arg1, %arg0) : !pop.struct<i8, i8>
   %0 = kgen.struct.create(%b, %a) : (i8, i8) -> !i8Pair
   kgen.return %0 : !i8Pair
 }
@@ -53,21 +51,21 @@ kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
 // CHECK-LABEL: @struct_insert
 kgen.func @struct_insert(%pair: !i8Pair) -> !i8Pair {
   %c1 = llvm.mlir.constant(2 : i8) : i8
-  // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[1]
+  // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1]
   %0 = kgen.struct.insert %c1, %pair[second] : i8 into !i8Pair
   kgen.return %0 : !i8Pair
 }
 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
-  // CHECK: llvm.extractvalue %{{.*}}[1]
+  // CHECK: pop.struct.get %{{.*}}[1]
   %0 = kgen.struct.extract %pair[second] : i8 from !i8Pair
   kgen.return %0 : i8
 }
 
 // CHECK-LABEL: @struct_gep
 kgen.func @struct_gep(%pair: !pop.pointer<!i8Pair>) -> !pop.pointer<i8> {
-  // CHECK: llvm.getelementptr %{{.*}}[0, 1]
+  // CHECK: pop.struct.gep %{{.*}}[1]
   %0 = kgen.struct.gep %pair[second] : <i8> from <!i8Pair>
   kgen.return %0 : !pop.pointer<i8>
 }
@@ -83,13 +81,13 @@ kgen.struct.decl @NestedC {
 }
 
 // CHECK-LABEL: @use_nested
-// CHECK-SAME: !llvm.struct<(struct<(struct<(f32)>)>)>
+// CHECK-SAME: !pop.struct<struct<struct<scalar<f32>>>>
 kgen.func @use_nested(%a: !kgen.ref<@NestedC>) {
   kgen.return
 }
 
 // CHECK-LABEL: @struct_element
-// CHECK-SAME: !llvm.ptr<struct<(vector<2xf32>)>>
+// CHECK-SAME: !pop.pointer<struct<simd<2, f32>>>
 kgen.func @struct_element(%a: !pop.pointer<!kgen.ref<@NestedA<T:type = !pop.simd<2, f32>>>>) {
   kgen.return
 }
