@@ -1099,3 +1099,17 @@ kgen.generator @bindResult() {
 kgen.generator @makeResult<() -> index>() {
   kgen.return<0>
 }
+
+// -----
+
+// CHECK-LABEL: @"makeListConst,A=1"
+kgen.generator @makeListConst<A>() {
+  // CHECK-NEXT: kgen.param.constant: list<index> = <[1, 1]>
+  %0 = kgen.param.constant: list<index> = <[A, A]>
+  kgen.return
+}
+
+kgen.generator @doIt() {
+  kgen.call @makeListConst<A = 1>() : () -> ()
+  kgen.return
+}

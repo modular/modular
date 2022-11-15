@@ -18,32 +18,11 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
-
-// Pull in all enum type definitions and utility function declarations.
-#include "KGEN/KGENDialect/KGENEnums.h.inc"
+#include "llvm/ADT/STLExtras.h"
 
 namespace M::KGEN {
-class ConcreteTypeConstantAttr;
-class ConstraintAttr;
-class DTypeConstantAttr;
 class ListType;
-class ParamDeclArrayAttr;
-class ParamDeclAttr;
-class ParameterizedTypeConstantAttr;
 class SignatureType;
-class SymbolConstantAttr;
-
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.
-ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
-
-/// We expect all parameter expressions to simplify down to concrete constants
-/// after elaboration.  We don't want anything left as a ParamOperatorAttr or
-/// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
-inline bool isSimpleConstant(Attribute attr) {
-  return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
-                  ConcreteTypeConstantAttr, SymbolConstantAttr>();
-}
 
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr
@@ -67,6 +46,13 @@ public:
 
 } // namespace M::KGEN
 
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
+
+// Pull in all enum type definitions and utility function declarations.
+#include "KGEN/KGENDialect/KGENEnums.h.inc"
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.h.inc"
 
@@ -83,5 +69,25 @@ struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
   }
 };
 } // namespace llvm
+
+//===----------------------------------------------------------------------===//
+// Utility Functions
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.
+ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
+
+/// We expect all parameter expressions to simplify down to concrete constants
+/// after elaboration.  We don't want anything left as a ParamOperatorAttr or
+/// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
+inline bool isSimpleConstant(Attribute attr) {
+  if (auto list = dyn_cast<ListAttr>(attr))
+    return llvm::all_of(list.getValues(), isSimpleConstant);
+  return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
+                  ConcreteTypeConstantAttr, SymbolConstantAttr>();
+}
+} // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H
