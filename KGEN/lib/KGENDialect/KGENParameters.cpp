@@ -315,7 +315,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
 
     ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> uses;
-    bool hasConstExpr;
+    bool hasConstExpr = false;
 
     curLocationCollecting = bodyOp->getLoc();
 
