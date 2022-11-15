@@ -193,17 +193,16 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, GeneratorInterfaceOp, LITStructDeclOp, VarDeclOp>(
-            [&](auto op) {
-              LitLexer lexer(sharedState, decl.getCursor());
+        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+          LitLexer lexer(sharedState, decl.getCursor());
 
-              // Resolve the signature: on a parse error, we note that the decl
-              // is malformed and should not be referenced to silence downstream
-              // errors.
-              if (failed(resolveSignature(op, lexer, decl)))
-                decl.hasReferenceError = true;
-              decl.getCursor() = lexer.getCursor();
-            })
+          // Resolve the signature: on a parse error, we note that the decl
+          // is malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, lexer, decl)))
+            decl.hasReferenceError = true;
+          decl.getCursor() = lexer.getCursor();
+        })
         .Case([&](ModuleOp op) { /*Nothing*/ })
         .Default([&](auto attr) {
           emitError(decl.getLoc(),
@@ -235,18 +234,6 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             else
               lexer.emitError("unknown tokens at the end of a declaration");
           }
-        })
-        .Case<GeneratorInterfaceOp>([&](auto op) {
-          LitLexer lexer(sharedState, decl.getCursor());
-          LitToken currToken = lexer.getToken();
-          // Allow an empty body
-          if (currToken.is(LitToken::Kind::kw_pass) ||
-              currToken.is(LitToken::Kind::dot_dot_dot))
-            lexer.lexToken();
-
-          if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
-              !decl.hasReferenceError)
-            lexer.emitError("interfaces have no body: unknown tokens found");
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto attr) {
@@ -531,7 +518,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
-LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
+LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
 
@@ -575,7 +562,7 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
 
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (checkFunctionSignature(decl, defOp, metaSignature, params, resultType,
+  if (checkFunctionSignature(decl, funcOp, metaSignature, params, resultType,
                              sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
@@ -611,20 +598,6 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
       p.emitError(param.loc, "TODO: No default values yet");
   }
 
-  // Interfaces are simpler than functions, process them and get out.
-  if (auto interfaceOp = dyn_cast<GeneratorInterfaceOp>(defOp)) {
-    auto context = getContext();
-    assert(interfaceOp);
-    interfaceOp.setType(FunctionType::get(context, paramTypes, resultIRType));
-    interfaceOp.setParamDeclsAttr(
-        ParamDeclArrayAttr::get(context, metaSignature.inputDecls));
-    // Interface specific.
-    return success();
-  }
-
-  auto funcOp = dyn_cast<LITFuncOp>(defOp);
-  assert(funcOp && "defOp must be a GeneratorInterfaceOp or a LITFuncOp");
-
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
   funcOp.setType(builder.getFunctionType(paramTypes, resultIRType));
@@ -635,8 +608,9 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
     StringRef interfaceName = implementsAttr.getAttr().getValue();
     if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
-      if (!dyn_cast_or_null<GeneratorInterfaceOp>(
-              interfaceDecl->getIfOperation()))
+      if (auto funcInterface =
+              dyn_cast_or_null<LITFuncOp>(interfaceDecl->getIfOperation());
+          !funcInterface || !funcInterface.getIsInterface())
         p.emitError(funcOp->getLoc(), "not an interface: ") << interfaceName;
 
       // FIXME: This needs to type check the signature here, not defer to
@@ -648,6 +622,9 @@ LogicalResult DeclResolver::resolveSignature(Operation *defOp, LitLexer &lexer,
       funcOp.setImplements(llvm::None);
     }
   }
+
+  if (funcOp.getIsInterface())
+    return success();
 
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
@@ -689,6 +666,14 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
   Block *bodyBlock = defOp.getBody();
+  auto loc = decl.getLoc();
+  bool isInterface = defOp.getIsInterface();
+
+  if (isInterface) {
+    if (!bodyBlock->empty())
+      emitError(loc, "interfaces must have no body");
+    return success();
+  }
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
     auto loc = decl.getLoc();
     if (isa<KGEN::NoneType>(defOp.getResultType()) &&

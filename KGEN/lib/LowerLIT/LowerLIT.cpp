@@ -512,6 +512,17 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   lowerLITStructGEP(gen);
   OpBuilder b(gen);
 
+  // Is a LITFuncOp with empy body representing an interface?
+  if (gen.getIsInterface()) {
+    auto result = b.create<GeneratorInterfaceOp>(
+        gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
+        gen.getParamDeclsAttr(), gen.getResultParamTypesAttr(),
+        gen.getConstraintsAttr(), nullptr, nullptr);
+    // Move over the symbol.
+    symbolTable.erase(gen);
+    symbolTable.insert(result);
+    return success();
+  }
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),

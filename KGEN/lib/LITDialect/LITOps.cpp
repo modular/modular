@@ -55,9 +55,21 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
+  bool isInterface = getIsInterface();
+  Block *body = getBody();
+  if (!isInterface && body->empty())
+    return emitOpError("expected non-empty function body");
+
+  if (isInterface && !body->empty())
+    return emitOpError("expected empty function body");
+
+  if (isInterface && getImplements().has_value())
+    return emitOpError("@interface and @implements decorators "
+                       "cannot be set at the same time");
+
   // Check result types match the ReturnOp.
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              {getResultTypes()})))
+  if (!isInterface && failed(getReturnOp().checkArgumentTypes(
+                          getResultParamTypes(), {getResultTypes()})))
     return failure();
 
   // If this function is top-level, see if the parameter definitions and uses
@@ -75,12 +87,17 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
   auto module = KGENModule::from(*this, symbolTable);
   auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
-  if (!interface)
+  auto funcInterface = module.lookup<LITFuncOp>(interfaceSym);
+  if (!interface && (!funcInterface || !funcInterface.getIsInterface()))
     return emitError() << "'" << interfaceSym.getValue()
                        << "' does not reference a generator interface";
-
+  TypeArrayAttr interfaceResultParamTypesAttr;
+  if (funcInterface)
+    interfaceResultParamTypesAttr = funcInterface.getResultParamTypesAttr();
+  else
+    interfaceResultParamTypesAttr = interface.getResultParamTypesAttr();
   // Result parameters need to match, but input parameters may be inferred.
-  if (getResultParamTypesAttr() != interface.getResultParamTypesAttr())
+  if (getResultParamTypesAttr() != interfaceResultParamTypesAttr)
     return emitError() << "lit.func result parameter types must match "
                           "interface types";
 
@@ -95,7 +112,8 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, StringArrayAttr::get(context, {}),
         TypeAttr::get(functionType), ParamDeclArrayAttr::get(context, {}),
         TypeArrayAttr::get(context, {}), ConstraintArrayAttr::get(context, {}),
-        /*isStatic=*/mlir::UnitAttr(), FlatSymbolRefAttr());
+        /*isStatic=*/mlir::UnitAttr(), /*isInterface=*/mlir::UnitAttr(),
+        FlatSymbolRefAttr());
   result.regions[0]->push_back(new Block());
 }
 

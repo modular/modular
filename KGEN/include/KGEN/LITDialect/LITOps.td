@@ -28,11 +28,21 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 
 def LITFuncOp
   : LITOp<"func", [FunctionOpInterface, Symbol, IsolatedFromAbove,
-                   SingleBlockImplicitTerminator<"KGEN::ReturnOp">,
+                   NoTerminator,
                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                    DeclareOpInterfaceMethods<KGENDeclInterface>,
                    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "High level generator definition";
+
+let description = [{
+    The `lit.func` operation models a def/fn declaration at the Lit source
+    level.
+    @interface and @staticmethod decorators in Lit correspond to the
+    attributes `isInterface` and `isStatic` respectively.
+    When `isInterface` is set, `lit.func` has an empty body block.
+    The optional `implements` attribute refers to the interface name this
+    `lit.func` implement and cannot be set alongside `isInterface`.
+  }];
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
@@ -43,11 +53,12 @@ def LITFuncOp
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
+                       UnitAttr:$isInterface,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
-  let regions = (region SizedRegion<1>:$bodyRegion);
+  let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<LITFuncOp>::getBody;
+    Block *getBody() { return &getFunctionBody().back(); }
     ReturnOp getReturnOp();
 
     ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }

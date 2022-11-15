@@ -251,8 +251,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return parseIncludeHack();
 
   case LitToken::kw_pass:
+  case LitToken::dot_dot_dot:
     // pass_stmt ::= "pass"
-    consumeToken(LitToken::kw_pass);
+    consumeToken();
     return success();
   case LitToken::kw_var:
     return parseVarDeclStmt(/*decorators=*/{}, stmtIndent);
@@ -706,19 +707,19 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
     attrs.isStatic = false;
   }
 
-  Operation *litDecl;
-  if (attrs.isInterface) {
-    litDecl = builder.create<GeneratorInterfaceOp>(loc, name);
-    if (isMethod)
-      emitError(loc, "interfaces cannot be nested inside a struct");
-  } else {
-    auto funcDecl = builder.create<LITFuncOp>(loc, name);
-    if (attrs.implementedInterface)
-      funcDecl.setImplementsAttr(attrs.implementedInterface);
-    if (attrs.isStatic)
-      funcDecl.setIsStaticAttr(mlir::UnitAttr::get(getContext()));
-    litDecl = funcDecl;
-  }
+  if (attrs.isInterface && attrs.implementedInterface)
+    emitError(loc, "interfaces cannot implement other interfaces");
+
+  if (attrs.isInterface && isMethod)
+    emitError(loc, "interfaces cannot be nested inside a struct");
+
+  auto funcDecl = builder.create<LITFuncOp>(loc, name);
+  if (attrs.isInterface)
+    funcDecl.setIsInterfaceAttr(mlir::UnitAttr::get(getContext()));
+  if (attrs.implementedInterface)
+    funcDecl.setImplementsAttr(attrs.implementedInterface);
+  if (attrs.isStatic)
+    funcDecl.setIsStaticAttr(mlir::UnitAttr::get(getContext()));
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -726,8 +727,8 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   skipUntilIndentation(curIndent);
 
   auto &decl =
-      getDeclResolver().addDecl(litDecl, baseName, &containingDecl, startCursor,
-                                getLexer().getCursor(), curIndent);
+      getDeclResolver().addDecl(funcDecl, baseName, &containingDecl,
+                                startCursor, getLexer().getCursor(), curIndent);
 
   // Remember if this was declared as a 'def' or 'fn' because this affects
   // certain downstream behavior.

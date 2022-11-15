@@ -170,14 +170,14 @@ struct WrongSelfType[a: Int]:
 
 
 @interface
+# expected-error @+1 {{interfaces must have no body}}
 def bad_interface_with_body0(x: index) -> index:
-  # expected-error @+1 {{interfaces have no body: unknown tokens found}}
   return 0
 
 @interface
+# expected-error @+1 {{interfaces must have no body}}
 def bad_interface_with_body1(x: index) -> index:
   ...
-  # expected-error @+1 {{interfaces have no body: unknown tokens found}}
   return 0
 
 struct NoNestedInterface:
@@ -188,6 +188,13 @@ struct NoNestedInterface:
 @interface
 def good_interface(x: index) -> index:
   ...
+
+@implements(good_interface)
+@interface
+# expected-error @+2 {{interfaces cannot implement other interfaces}}
+# expected-error @+1 {{interfaces must have no body}}
+def incompatible_decorators(x: index) -> index:
+  return 1
 
 # expected-error @+1 {{unsupported decorator}}
 @impl(good_interface)

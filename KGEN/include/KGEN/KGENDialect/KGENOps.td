@@ -141,10 +141,6 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
-  let builders = [
-    OpBuilder<(ins "StringAttr":$name)>,
-  ];
-
   let hasCustomAssemblyFormat = 1;
 }
 
