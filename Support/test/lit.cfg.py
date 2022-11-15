@@ -60,6 +60,6 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["index-opt", "system-info"]
+tools = ["support-dialect-opt", "system-info"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

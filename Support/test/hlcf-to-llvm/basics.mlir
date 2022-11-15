@@ -1,4 +1,4 @@
-// RUN: index-opt -lower-hlcf-to-llvm -allow-unregistered-dialect %s | FileCheck %s
+// RUN: support-dialect-opt -lower-hlcf-to-llvm -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @nested_continue
 func.func @nested_continue(%arg0: i1) {
