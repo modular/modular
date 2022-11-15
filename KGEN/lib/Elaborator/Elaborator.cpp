@@ -1456,9 +1456,6 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// Specialize a func body, generating one variant of each viable
 /// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
-///
-/// FIXME(Issue##2703): This should go away completely.
-///
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
   // Get a partial ordering of parameter definitions and uses that is listed
