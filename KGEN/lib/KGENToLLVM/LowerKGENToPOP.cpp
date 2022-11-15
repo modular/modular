@@ -18,7 +18,7 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENStructOp
+// Struct Lowering
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -107,24 +107,6 @@ void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
   IRRewriter::replaceOp(op, source.getResult(0));
 }
 
-template <typename OpT>
-void StructOperationLowerer::materializeLowering(OpT op) {
-  SmallVector<Value> values;
-  values.reserve(op->getNumOperands());
-  for (Value value : op->getOperands()) {
-    auto dest = create<mlir::UnrealizedConversionCastOp>(
-        op->getLoc(), substituteTypes(value.getType()), value);
-    conversions.push_back(dest);
-    values.push_back(dest.getResult(0));
-  }
-  typename OpT::Adaptor adaptor(values, op->getAttrDictionary());
-  lowerStructOp(op, adaptor, *this);
-}
-
-//===----------------------------------------------------------------------===//
-// Struct Operation Lowerings
-//===----------------------------------------------------------------------===//
-
 static void lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
                           StructOperationLowerer &lowerer) {
   lowerer.replaceOpWithNewOp<POP::StructConstructOp>(
@@ -155,6 +137,20 @@ static void lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
       lowerer.getField(op.getFieldAttr(), cast<RefType>(structType));
   lowerer.replaceOpWithNewOp<POP::StructGEPOp>(op, adaptor.getContainer(),
                                                lowerer.getIndexAttr(index));
+}
+
+template <typename OpT>
+void StructOperationLowerer::materializeLowering(OpT op) {
+  SmallVector<Value> values;
+  values.reserve(op->getNumOperands());
+  for (Value value : op->getOperands()) {
+    auto dest = create<mlir::UnrealizedConversionCastOp>(
+        op->getLoc(), substituteTypes(value.getType()), value);
+    conversions.push_back(dest);
+    values.push_back(dest.getResult(0));
+  }
+  typename OpT::Adaptor adaptor(values, op->getAttrDictionary());
+  lowerStructOp(op, adaptor, *this);
 }
 
 //===----------------------------------------------------------------------===//
