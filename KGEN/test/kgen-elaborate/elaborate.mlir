@@ -1104,12 +1104,24 @@ kgen.generator @makeResult<() -> index>() {
 
 // CHECK-LABEL: @"makeListConst,A=1"
 kgen.generator @makeListConst<A>() {
-  // CHECK-NEXT: kgen.param.constant: list<index> = <[1, 1]>
-  %0 = kgen.param.constant: list<index> = <[A, A]>
+  // CHECK-NEXT: kgen.param.constant: list<index[2]> = <[1, 1]>
+  %0 = kgen.param.constant: list<index[2]> = <[A, A]>
   kgen.return
 }
 
 kgen.generator @doIt() {
   kgen.call @makeListConst<A = 1>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: @"variableList,N=2,Ts=[1,2]"
+kgen.generator @variableList<N, Ts: list<i32[N]>>() {
+  // CHECK-NEXT: kgen.param.constant: list<i32[2]> = <[1, 2]>
+  %0 = kgen.param.constant: list<i32[N]> = <Ts>
+  kgen.return
+}
+
+kgen.generator @passTypeList() {
+  kgen.call @variableList<N = 2, Ts: list<i32[2]> = [1, 2]>() : () -> ()
   kgen.return
 }

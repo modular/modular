@@ -867,6 +867,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   if (errorOrValue.isError())
     return error(op->getLoc(), errorOrValue.takeError());
 
+  op.getResult().setType(getEvaluator().getReboundType(op.getType()));
   op.setValueAttr(errorOrValue.takeValue());
   return success();
 }
@@ -1413,6 +1414,34 @@ CalleeExpansionError ParameterRewriter::takeDiagnosticAndEraseFunc() {
 // Elaborator::getAllInstantiations
 //===----------------------------------------------------------------------===//
 
+static void printParameterValue(TypedAttr value, llvm::raw_ostream &os) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+    os << intAttr.getValue();
+  } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
+    SmallString<32> str;
+    floatAttr.getValue().toString(str);
+    os << str;
+  } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
+    os << dtypeAttr.getDType();
+  } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
+    // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
+    // something if these get too verbose.
+    os << typeConstant.getValue();
+  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
+    os << symbolConstant.getName().getValue();
+  } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
+    os << stringConstant.strref();
+  } else if (auto listConstant = dyn_cast<ListAttr>(value)) {
+    os << '[';
+    llvm::interleave(
+        listConstant.getValues(), os,
+        [&](TypedAttr value) { printParameterValue(value, os); }, ",");
+    os << ']';
+  } else {
+    llvm_unreachable("not handling all simple constants");
+  }
+}
+
 /// This returns a name to use when the specified generator is specialized
 /// with the specified input parameters.
 static StringAttr mangleParameterValues(GeneratorOp generator,
@@ -1428,27 +1457,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   auto inputParamDecls = generator.getParamDeclsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
-
-    if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
-      os << intAttr.getValue();
-    } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
-      SmallString<32> str;
-      floatAttr.getValue().toString(str);
-      os << str;
-    } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
-      os << dtypeAttr.getDType();
-    } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
-      // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
-      // something if these get too verbose.
-      os << typeConstant.getValue();
-    } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-      os << symbolConstant.getName().getValue();
-    } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
-      os << stringConstant.strref();
-    } else {
-      assert(!isSimpleConstant(value) && "not handling all simple constants");
-      os << "??";
-    }
+    printParameterValue(value, os);
   }
   return b.getStringAttr(result);
 }

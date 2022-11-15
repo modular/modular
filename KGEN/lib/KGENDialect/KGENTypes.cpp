@@ -53,12 +53,23 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 // ListType
 //===----------------------------------------------------------------------===//
 
-ListType ListType::get(TypedAttr elementType) {
-  return get(elementType.getContext(), elementType);
+ListType ListType::get(TypedAttr elementType, TypedAttr numElements) {
+  return get(elementType.getContext(), elementType, numElements);
 }
 
-ListType ListType::get(Type elementType) {
-  return get(TypeConstantAttr::get(elementType));
+ListType ListType::get(Type elementType, int64_t numElements) {
+  return get(TypeConstantAttr::get(elementType),
+             Builder(elementType.getContext()).getIndexAttr(numElements));
+}
+
+LogicalResult ListType::verify(function_ref<InFlightDiagnostic()> emitError,
+                               TypedAttr elementType, TypedAttr numElements) {
+  if (!llvm::isa<MLIRTypeType>(elementType.getType()))
+    return emitError()
+           << "expected element type expression to be a '!kgen.mlirtype'";
+  if (!llvm::isa<IndexType>(numElements.getType()))
+    return emitError() << "expected length expression to be an 'index'";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
