@@ -63,9 +63,9 @@ struct LitStmtParser : public LitParserBase {
 
   // Expression emission.
 
-  ExprEmitter getExprEmitter() {
+  ExprEmitter getExprEmitter(bool allowImplicitVarDecl = false) {
     return ExprEmitter(getSharedState(), containingDecl, builder,
-                       varDeclCursor);
+                       allowImplicitVarDecl ? varDeclCursor : nullptr);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -290,7 +290,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return failure();
 
   if (BinOpNode::isAugmentedAssignment(expr)) {
-    (void)getExprEmitter().emitDRValue(expr);
+    // FIXME: This will allow things like "x += undefined" which isn't right.
+    (void)getExprEmitter(/*allowImplicitVarDecl=*/true).emitDRValue(expr);
     return success();
   }
 
@@ -303,8 +304,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // Materialize the expression statement in our current scope but discard the
   // result on the floor.  Note that this does not materialize an LValue, but
   // does evaluate side effects.
-  ExprEmitter state(getSharedState(), containingDecl, builder, nullptr);
-  (void)expr->emitIR(state);
+  auto emitter = getExprEmitter();
+  (void)expr->emitIR(emitter);
   return success();
 }
 
@@ -341,8 +342,10 @@ ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
     lhsContextualType = rhsValue.type;
 
   // Resolve LHS expression into an lvalue that we can store into.
-  ASTTypeAnd<LValue> lValue = getExprEmitter().emitLValue(
-      lhs, lhsContextualType, "cannot assign to immutable expression");
+  ASTTypeAnd<LValue> lValue =
+      getExprEmitter(/*allowImplicitVarDecl=*/true)
+          .emitLValue(lhs, lhsContextualType,
+                      "cannot assign to immutable expression");
   if (!lValue)
     return success(); // Parse succeeded.
 
@@ -753,8 +756,12 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(name, "expected name for 'var' declaration"))
     return failure();
 
+  // Emit the vardecl at the current insertion point.  Unlike implicitly
+  // declared variables, let/var declarations are always correctly scoped.
+  // TODO: Maintain scopes correctly so we don't have a conflict between things
+  // like "if cond: var x = 1 else var x = 2"
   auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
-  auto varDecl = OpBuilder(varDeclCursor).create<VarDeclOp>(loc, varType, name);
+  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
 
   // Process any decorators we will eventually want when they come up.
   if (!decorators.empty())

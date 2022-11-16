@@ -103,14 +103,14 @@ struct Pair[dt: DType]:
 # CHECK-LABEL:  lit.func @var_decls(%untyped: !kgen.ref<@object>)
 def var_decls(untyped):
   # CHECK: %x = lit.var.decl "x" : <index>
-  # CHECK: %y = lit.var.decl "y" : <@Int>
-  # CHECK: %z = lit.var.decl "z" : <index>
   x = 123
+  # CHECK: %y = lit.var.decl "y" : <@Int>
   var y : Int
   y = y #+1
   # CHECK: [[TMP:%.*]] = pop.load %y : !pop.pointer<@Int>
   # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int>
 
+  # CHECK: %z = lit.var.decl "z" : <index>
   var z : index
   z = 42
   # CHECK: [[TMP:%.*]] = index.constant 42
@@ -159,10 +159,10 @@ fn func_impl[type: DType](x: index) -> index:
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.ref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
 fn byval_byref_function(a: Int, &b: Int):
-  # CHECK-NEXT: %x = lit.var.decl "x"
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
+  # CHECK-NEXT: %x = lit.var.decl "x"
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
