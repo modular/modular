@@ -47,7 +47,7 @@ def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "mlir::ModuleOp"> {
     operations to worry about than all of LLVM IR.
   }];
 
-  let dependentDialects = ["POP::POPDialect"];
+  let dependentDialects = ["POP::POPDialect", "mlir::index::IndexDialect"];
 }
 
 //===----------------------------------------------------------------------===//

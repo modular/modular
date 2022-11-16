@@ -667,6 +667,8 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1032,7 +1034,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$ptr, "Optional<unsigned>":$alignment)>
+    OpBuilder<(ins "Value":$ptr, "Optional<unsigned>":$alignment)>,
+    OpBuilder<(ins "Value":$ptr, "TypedAttr":$alignment)>
   ];
 }
 
@@ -1236,6 +1239,10 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
   }];
 
   let hasVerifier = 1;
+
+  let builders = [
+    OpBuilder<(ins "Value":$value, "Value":$container, "int64_t":$index)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

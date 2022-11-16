@@ -128,20 +128,27 @@ def ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$elementType, "TypedAttr":$numElements);
+  let parameters = (ins "TypedAttr":$elementType, "TypedAttr":$length);
   let assemblyFormat = [{
     `<` custom<TypeParamValue>($elementType) `[`
-    custom<IndexParamValue>($numElements) `]` `>`
+    custom<IndexParamValue>($length) `]` `>`
   }];
 
   let genVerifyDecl = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        "TypedAttr":$numElements)>,
+                                        "TypedAttr":$length)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "int64_t":$numElements)>
+                                        "int64_t":$length)>
   ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the size expression of the SIMD type to an integer.
+    Optional<int64_t> getResolvedLength() const;
+    /// Try to narrow the type expression of the pointer type to an MLIR type.
+    Type getResolvedElementType() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
