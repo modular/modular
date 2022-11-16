@@ -211,3 +211,17 @@ kgen.generator @reify_i1() {
   %0 = pop.constant(1:i1) : !pop.scalar<bool>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @"materializeConstant,C=2.5
+kgen.generator @materializeConstant<C: f32>() -> !pop.scalar<f32> {
+  // CHECK-NEXT: pop.constant(#M.dense_array<2.5{{.*}}> : vector<1xf32>)
+  %0 = pop.constant(#kgen.param.decl.ref<"C"> : f32) : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+kgen.generator @doIt() -> !pop.scalar<f32> {
+  %0 = kgen.call @materializeConstant<C: f32 = 2.5>() : () -> !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}

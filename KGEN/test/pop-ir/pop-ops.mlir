@@ -59,6 +59,13 @@ kgen.generator @pop_constant2<type: dtype>() -> !pop.scalar<type> {
   kgen.return %0 : !pop.scalar<type>
 }
 
+// CHECK-LABEL: @pop_constant_paramref
+kgen.generator @pop_constant_paramref<C: f32>() {
+  // CHECK-NEXT: constant(#kgen.param.decl.ref<"C"> : f32)
+  %0 = pop.constant(#kgen.param.decl.ref<"C"> : f32) : !pop.scalar<f32>
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.func @pop_abs
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
 kgen.func @pop_abs(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {

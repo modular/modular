@@ -171,3 +171,44 @@ kgen.func @hlcf_scf_loops(%list: !kgen.list<!kgen.list<index[1]>[1]>, %cond: i1,
   }
   kgen.return %2 : !kgen.list<!kgen.list<index[1]>[1]>
 }
+
+// CHECK-LABEL: @list_iterate_accum
+kgen.func @list_iterate_accum() -> !pop.scalar<si32> {
+  // CHECK-NEXT: constant(0 : si32)
+  %cst = pop.constant(0 : si32) : !pop.scalar<si32>
+  // CHECK-NEXT: %0 = kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: %1 = kgen.param.constant: i32 = <2>
+  // CHECK-NEXT: %2 = kgen.param.constant: i32 = <3>
+  %values = kgen.param.constant: list<i32[3]> = <[1, 2, 3]>
+  // CHECK-NEXT: %3 = pop.cast_from_builtin %0 : i32 to !pop.scalar<si32>
+  // CHECK-NEXT: %4 = pop.add %3, %cst
+  // CHECK-NEXT: %5 = pop.cast_from_builtin %1 : i32 to !pop.scalar<si32>
+  // CHECK-NEXT: %6 = pop.add %5, %4
+  // CHECK-NEXT: %7 = pop.cast_from_builtin %2 : i32 to !pop.scalar<si32>
+  // CHECK-NEXT: %8 = pop.add %7, %6
+  // CHECK-NEXT: return %8
+  %result = kgen.list.iterate %c in %values : list<i32[3]> [0 : (d0) -> (d0 + 1)] (%acc = %cst) -> !pop.scalar<si32> {
+    %v = pop.cast_from_builtin %c : i32 to !pop.scalar<si32>
+    %r = pop.add %v, %acc : !pop.scalar<si32>
+    kgen.list.yield %r : !pop.scalar<si32>
+  }
+  kgen.return %result : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @list_is_sorted
+// CHECK-SAME: %arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>, %arg2: !pop.scalar<si32>
+kgen.func @list_is_sorted(%list: !kgen.list<!pop.scalar<si32>[3]>) -> !pop.scalar<bool> {
+  // CHECK-NEXT: %cst = pop.constant(true)
+  %init = pop.constant(true) : !pop.scalar<bool>
+  // CHECK-NEXT: %0 = pop.cmp le(%arg0, %arg1)
+  // CHECK-NEXT: %1 = pop.and %0, %cst
+  // CHECK-NEXT: %2 = pop.cmp le(%arg1, %arg2)
+  // CHECK-NEXT: %3 = pop.and %2, %1
+  // CHECK-NEXT: return %3
+  %result = kgen.list.iterate (%lhs, %rhs) in %list : list<!pop.scalar<si32>[3]> [0, 1 : (d0, d1) -> (d0 + 1, d1 + 1)] (%sorted = %init) -> !pop.scalar<bool> {
+    %pairwiseSorted = pop.cmp le(%lhs, %rhs) : !pop.scalar<si32>
+    %stillSorted = pop.and %pairwiseSorted, %sorted : !pop.scalar<bool>
+    kgen.list.yield %stillSorted : !pop.scalar<bool>
+  }
+  kgen.return %result : !pop.scalar<bool>
+}
