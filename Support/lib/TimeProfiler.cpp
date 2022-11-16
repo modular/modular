@@ -312,8 +312,8 @@ void M::timeTraceProfilerWrite(llvm::raw_pwrite_stream &OS) {
   TimeTraceProfilerInstance->write(OS);
 }
 
-llvm::Error M::timeTraceProfilerWrite(StringRef PreferredFileName,
-                                      StringRef FallbackFileName) {
+ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
+                                         StringRef FallbackFileName) {
   assert(TimeTraceProfilerInstance != nullptr &&
          "Profiler should be initialized");
 
@@ -326,10 +326,11 @@ llvm::Error M::timeTraceProfilerWrite(StringRef PreferredFileName,
   std::error_code EC;
   llvm::raw_fd_ostream OS(Path, EC, llvm::sys::fs::OF_TextWithCRLF);
   if (EC)
-    return llvm::createStringError(EC, "Could not open " + Path);
+    return Error(Twine("Could not open ") + Path + "(" + Twine(EC.message()) +
+                 ")");
 
   timeTraceProfilerWrite(OS);
-  return llvm::Error::success();
+  return success();
 }
 
 void M::Detail::timeTraceProfilerBeginImpl(
