@@ -51,7 +51,7 @@ private:
   /// The first time we encounter a SymbolConstantAttr, check to see if the
   /// declaration it refers to agrees with the value and parameter
   /// specification.
-  virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) = 0;
+  virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) {}
 
   /// When we encounter a RefType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
@@ -90,6 +90,11 @@ void ParameterCollector::collectUsesFromAttr(
   // Check any SymbolConstantAttr's we encounter.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr))
     verifySymbolConstantAttr(symbolConstant);
+
+  // Expression functions are isolated from above. They are verified to be
+  // self-contained on their own.
+  if (isa<ExprFuncAttr>(attr))
+    return;
 
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
@@ -230,6 +235,38 @@ ErrorOrSuccess SignatureType::checkSelfContained() {
   }
 
   // Otherwise we succeed.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ExprFuncAttr Verification
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+ExprFuncAttr::checkSelfContained(function_ref<InFlightDiagnostic()> emitError,
+                                 ParamDeclArrayAttr paramDecls,
+                                 ParamDeclArrayAttr inputs, TypedAttr expr) {
+  DenseMap<StringAttr, Type> paramsMap;
+  for (ParamDeclAttr decl : paramDecls)
+    paramsMap.try_emplace(decl.getName(), decl.getType());
+  for (ParamDeclAttr input : inputs) {
+    if (!paramsMap.try_emplace(input.getName(), input.getType()).second)
+      return emitError() << "redefinition of parameter " << input.getName();
+  }
+
+  ParameterCollector collector;
+  SmallVector<ParamDeclRefAttr> uses;
+  bool hasConstExpr;
+  collector.collectUsesFromAttr(expr, uses, hasConstExpr);
+  for (ParamDeclRefAttr use : uses) {
+    Type &entry = paramsMap[use.getName()];
+    if (!entry)
+      return emitError() << use.getName()
+                         << " parameter not defined in function";
+    if (entry != use.getType())
+      return emitError() << "use of " << use.getName()
+                         << " with incorrect type in function";
+  }
   return success();
 }
 

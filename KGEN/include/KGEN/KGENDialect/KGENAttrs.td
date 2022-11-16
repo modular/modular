@@ -395,7 +395,6 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
   }];
 }
 
-
 //===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
@@ -436,6 +435,47 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
     FlatSymbolRefAttr getSymbol() {
       return llvm::cast<FlatSymbolRefAttr>(getSymbolRef());
     }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ExprFuncAttr
+//===----------------------------------------------------------------------===//
+
+def ExprFuncAttr : ExprAttr<"ExprFunc", "expr.func",
+    [SubElementAttrInterface]> {
+  let summary = "constant expression function";
+  let description = [{
+    A `#kgen.expr.func` attribute is a meta-function defined entirely with
+    parameter expressions. The meta-function accepts any number of input
+    meta-parameters and argument parameters but must produce one result and no
+    meta-results (due to limitations of parameter expressions).
+
+    Example:
+
+    ```mlir
+    #kgen.expr.func<(A, B) -> add(mul(N, A), B)>
+        : !kgen.signature<[N : index], [], (index, index) -> index)>
+    ```
+  }];
+
+  let parameters = (ins "ParamDeclArrayAttr":$paramDecls,
+                        "ParamDeclArrayAttr":$inputs, "TypedAttr":$expr,
+                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
+
+  let assemblyFormat = [{
+    `<` custom<ExprFunc>($paramDecls, $inputs, $expr, ref($type)) `>`
+  }];
+
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Verify that this expression function is self-contained, all referenced
+    /// parameters are defined within the function.
+    static LogicalResult checkSelfContained(
+        function_ref<InFlightDiagnostic()> emitError,\
+        ParamDeclArrayAttr paramDecls, ParamDeclArrayAttr inputs,
+        TypedAttr expr);
   }];
 }
 

@@ -1155,6 +1155,89 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// ExprFuncAttr
+//===----------------------------------------------------------------------===//
+
+static LogicalResult
+verifyExprFuncType(function_ref<InFlightDiagnostic()> emitError,
+                   SignatureType type) {
+  if (!type.getResultParamTypes().empty())
+    return emitError() << "cannot have result parameters";
+  if (type.getValues().getNumResults() != 1)
+    return emitError() << "must have one result";
+  return success();
+}
+
+static ParseResult parseExprFunc(AsmParser &p,
+                                 FailureOr<ParamDeclArrayAttr> &paramDecls,
+                                 FailureOr<ParamDeclArrayAttr> &inputs,
+                                 FailureOr<TypedAttr> &expr,
+                                 SignatureType type) {
+  if (failed(verifyExprFuncType(
+          [&] { return p.emitError(p.getCurrentLocation()); }, type)))
+    return failure();
+
+  // We can infer the input parameters from the signature.
+  paramDecls = type.getInputParams();
+
+  // Parse the inputs and expression using the types from the signature type.
+  SmallVector<ParamDeclAttr> inputDecls;
+  ArrayRef<Type> inputTypes = type.getValues().getInputs();
+  auto typeIt = inputTypes.begin(), typeE = inputTypes.end();
+  auto parseInput = [&]() -> ParseResult {
+    if (typeIt == typeE)
+      return p.emitError(p.getCurrentLocation(), "too many input declarations");
+    StringAttr name;
+    if (parseParamName(p, name))
+      return failure();
+    inputDecls.push_back(ParamDeclAttr::get(name, *typeIt++));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseInput))
+    return failure();
+  if (typeIt != typeE)
+    return p.emitError(p.getCurrentLocation(), "not enough input declarations");
+  expr.emplace();
+  if (p.parseArrow() ||
+      parseParamValue(p, *expr, type.getValues().getResult(0)))
+    return failure();
+  inputs = ParamDeclArrayAttr::get(p.getContext(), inputDecls);
+  return success();
+}
+
+static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
+                          ParamDeclArrayAttr inputs, TypedAttr expr,
+                          SignatureType type) {
+  p << '(';
+  llvm::interleaveComma(
+      inputs, p, [&](ParamDeclAttr input) { p << input.getName().getValue(); });
+  p << ") -> ";
+  printParamValue(expr, p.getStream());
+}
+
+LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                   ParamDeclArrayAttr paramDecls,
+                                   ParamDeclArrayAttr inputs, TypedAttr expr,
+                                   SignatureType type) {
+  if (failed(verifyExprFuncType(emitError, type)))
+    return failure();
+  Type resultType = type.getValues().getResult(0);
+  if (expr.getType() != resultType)
+    return emitError() << "expected expression result type to be " << resultType
+                       << " but got " << expr.getType();
+  if (paramDecls != type.getInputParams())
+    return emitError() << "input parameters do not match signature";
+  if (inputs.size() != type.getValues().getNumInputs())
+    return emitError() << "wrong number of inputs";
+  for (auto [input, sigInputType] :
+       llvm::zip(inputs, type.getValues().getInputs()))
+    if (input.getType() != sigInputType)
+      return emitError() << "input types do not match";
+
+  return checkSelfContained(emitError, paramDecls, inputs, expr);
+}
+
+//===----------------------------------------------------------------------===//
 // Parameter Helper Functions
 //===----------------------------------------------------------------------===//
 
