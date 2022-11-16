@@ -93,13 +93,6 @@ struct TimeTraceProfiler {
   void end(TimeTraceProfilerEntry<true> &&E) {
     E.End = ClockType::now();
 
-    // Check that end times monotonically increase.
-    assert((Entries.empty() ||
-            (E.getFlameGraphStartUs(StartTime) + E.getFlameGraphDurUs() >=
-             Entries.back().getFlameGraphStartUs(StartTime) +
-                 Entries.back().getFlameGraphDurUs())) &&
-           "TimeProfiler scope ended earlier than previous scope");
-
     // Calculate duration at full precision for overall counts.
     DurationType Duration = E.End - E.Start;
 
