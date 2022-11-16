@@ -800,7 +800,8 @@ struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<POP::StructGEPOp> {
       return op.emitError("failed to convert result type");
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, ptrType, adaptor.getContainer(),
-        ArrayRef<LLVM::GEPArg>{0, op.getIndexAttr().getInt()});
+        ArrayRef<LLVM::GEPArg>{
+            0, static_cast<int32_t>(op.getIndexAttr().getInt())});
     return success();
   }
 };

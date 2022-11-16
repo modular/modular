@@ -553,8 +553,6 @@ LogicalResult
 AlignedBytesAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          Optional<uint64_t> align,
                          ::llvm::ArrayRef<uint8_t> data) {
-  if (align && *align < 0)
-    return emitError() << "alignment cannot be negative.";
   if (align && !llvm::isPowerOf2_64(*align))
     return emitError() << "alignment must be a power of two.";
   return success();
