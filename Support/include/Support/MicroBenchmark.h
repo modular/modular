@@ -90,7 +90,7 @@ struct MicroBenchmark {
     private:
       friend struct State;
       size_t iterationCount = 0;
-      [[maybe_unused]] State *const state = nullptr;
+      State *const state = nullptr;
 
       inline explicit Iterator(State *st)
           : iterationCount(st->hasError() ? 0 : st->getBatchSize()), state(st) {

@@ -192,7 +192,7 @@ bool NDBufferBitCastOp::areCastCompatible(TypeRange lhs, TypeRange rhs) {
 
 /// Parse just the size of the array. Infer the element type.
 static ParseResult parseStringSizeArray(AsmParser &p, Type &type) {
-  int64_t size;
+  int64_t size = 0;
   if (p.parseInteger(size))
     return failure();
   type = POP::PointerType::get(POP::ArrayType::get(
