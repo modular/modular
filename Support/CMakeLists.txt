@@ -6,6 +6,7 @@
 
 add_subdirectory(include/Support/HLCFDialect)
 add_subdirectory(include/Support/HLCFToLLVM)
+add_subdirectory(include/Support/CacheDialect)
 add_subdirectory(include/Support/MDialect)
 #add_subdirectory(integration_test)
 add_subdirectory(lib)
