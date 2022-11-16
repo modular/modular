@@ -179,7 +179,7 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///               | assert_stmt [TODO]
 ///               | var_decl_stmt
 ///               | assignment_stmt
-///               | augmented_assignment_stmt [TODO]
+///               | augmented_assignment_stmt
 ///               | annotated_assignment_stmt [TODO]
 ///               | pass_stmt
 ///               | del_stmt [TODO]
@@ -278,9 +278,21 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // assignment_stmt ::=
   //                 (target_list "=")+ (starred_expression |
   //                 yield_expression)
+  // augmented_assignment_stmt ::=
+  //                         augtarget augop (expression_list |
+  //                         yield_expression)
+  // augtarget ::=  identifier | attributeref | subscription | slicing
+  // augop ::=  "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
+  //            | ">>=" | "<<=" | "&=" | "^=" | "|="
+
   ExprNode *expr = nullptr;
-  if (parseExpression(expr, stmtIndent))
+  if (parseExpression(expr, stmtIndent, Precedence::kAugAssignStmt))
     return failure();
+
+  if (BinOpNode::isAugmentedAssignment(expr)) {
+    (void)getExprEmitter().emitDRValue(expr);
+    return success();
+  }
 
   // If the expression was followed by a `=` then we have an assignment.  If
   // not then we have an expression_stmt.

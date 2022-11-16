@@ -856,6 +856,32 @@ static SpecialFunctionKind getBinOpSpecialFunctions(ExprNode::Kind kind) {
     return SpecialFunctionKind::kAdd;
   case ExprNode::kMul:
     return SpecialFunctionKind::kMul;
+  case ExprNode::kPlusAssign:
+    return SpecialFunctionKind::kIAdd;
+  case ExprNode::kMinusAssign:
+    return SpecialFunctionKind::kISub;
+  case ExprNode::kMulAssign:
+    return SpecialFunctionKind::kIMul;
+  case ExprNode::kMatMulAssign:
+    return SpecialFunctionKind::kIMatmul;
+  case ExprNode::kDivAssign:
+    return SpecialFunctionKind::kITrueDiv;
+  case ExprNode::kModuloAssign:
+    return SpecialFunctionKind::kIMod;
+  case ExprNode::kBitwiseAndAssign:
+    return SpecialFunctionKind::kIAnd;
+  case ExprNode::kBitwiseOrAssign:
+    return SpecialFunctionKind::kIOr;
+  case ExprNode::kBitwiseXorAssign:
+    return SpecialFunctionKind::kIXor;
+  case ExprNode::kLeftShiftAssign:
+    return SpecialFunctionKind::kILshift;
+  case ExprNode::kRightShiftAssign:
+    return SpecialFunctionKind::kIRshift;
+  case ExprNode::kExpAssign:
+    return SpecialFunctionKind::kIPow;
+  case ExprNode::kFloorDivAssign:
+    return SpecialFunctionKind::kIFloorDiv;
   }
 }
 

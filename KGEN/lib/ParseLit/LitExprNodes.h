@@ -206,6 +206,11 @@ struct BinOpNode final : public ExprNode {
   static bool classof(const ExprNode *node) {
     return node->kind >= kFirstBinOp && node->kind <= kLastBinOp;
   }
+
+  static bool isAugmentedAssignment(const ExprNode *node) {
+    return node->kind >= kFirstAugAssign && node->kind <= kLastAugAssign;
+  }
+
   SMLoc getLoc() const override { return opLoc; }
   ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
                               ASTType contextualType) const override;

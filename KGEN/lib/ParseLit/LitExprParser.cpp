@@ -32,29 +32,6 @@ using namespace M;
 // Expression Parsing
 //===----------------------------------------------------------------------===//
 
-// See https://docs.python.org/3/reference/expressions.html#operator-precedence
-
-enum class Precedence {
-  kInvalid,    // No precedence
-  kLowest,     // Lowest precedence (most loosely bound).
-  kIfElse,     // infix: if - else
-  kBoolOr,     // infix: or
-  kBoolAnd,    // infix: and
-  kBoolNot,    // prefix: not
-  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kBitwiseOr,  // infix: |
-  kBitwiseXor, // infix: ^
-  kBitwiseAnd, // infix: &
-  kShift,      // infix: <<, >>
-  kSum,        // infix: +, -
-  kTerm,       // infix: *, @, /, //, %
-  kFactor,     // prefix: +, -, ~
-  kPower,      // infix: **
-  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-               //         foo.bar, foo[bar]
-  kHighest = kPrimary
-};
-
 namespace M::KGEN::LIT {
 /// This class implements the ExprParser interface, implemented with the pImpl
 /// idiom.
@@ -70,7 +47,7 @@ public:
                                   LitToken::Kind terminator,
                                   bool *hadTrailingSep = nullptr);
   ParseResult parseExpression(ExprNode *&result,
-                              Precedence minPrec = Precedence::kLowest);
+                              Precedence minPrec = Precedence::kLowestExpr);
 
   ExprNode *getNoneExpr(SMLoc loc) { return alloc<NoneLiteralNode>(loc); };
 
@@ -150,6 +127,32 @@ struct InfixInfo {
     switch (tokKind) {
     default:
       return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
+    case LitToken::plus_equal:
+      return {Precedence::kLowestExpr, ExprNode::kPlusAssign, false};
+    case LitToken::minus_equal:
+      return {Precedence::kLowestExpr, ExprNode::kMinusAssign, false};
+    case LitToken::star_equal:
+      return {Precedence::kLowestExpr, ExprNode::kMulAssign, false};
+    case LitToken::at_equal:
+      return {Precedence::kLowestExpr, ExprNode::kMatMulAssign, false};
+    case LitToken::slash_equal:
+      return {Precedence::kLowestExpr, ExprNode::kDivAssign, false};
+    case LitToken::percent_equal:
+      return {Precedence::kLowestExpr, ExprNode::kModuloAssign, false};
+    case LitToken::amp_equal:
+      return {Precedence::kLowestExpr, ExprNode::kBitwiseAndAssign, false};
+    case LitToken::pipe_equal:
+      return {Precedence::kLowestExpr, ExprNode::kBitwiseOrAssign, false};
+    case LitToken::circumflex_equal:
+      return {Precedence::kLowestExpr, ExprNode::kBitwiseXorAssign, false};
+    case LitToken::less_less_equal:
+      return {Precedence::kLowestExpr, ExprNode::kLeftShiftAssign, false};
+    case LitToken::right_right_equal:
+      return {Precedence::kLowestExpr, ExprNode::kRightShiftAssign, false};
+    case LitToken::star_star_equal:
+      return {Precedence::kLowestExpr, ExprNode::kExpAssign, false};
+    case LitToken::slash_slash_equal:
+      return {Precedence::kLowestExpr, ExprNode::kFloorDivAssign, false};
     case LitToken::plus:
       return {Precedence::kSum, ExprNode::kAdd, false};
     case LitToken::minus:
@@ -482,8 +485,9 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
 }
 
 ParseResult LitParserBase::parseExpression(ExprNode *&result,
-                                           Optional<size_t> stmtIndent) {
-  return ExprParser(getLexer(), stmtIndent).parseExpression(result);
+                                           Optional<size_t> stmtIndent,
+                                           Precedence minPrec) {
+  return ExprParser(getLexer(), stmtIndent).parseExpression(result, minPrec);
 }
 
 ParseResult LitParserBase::parseType(ASTType &result, ASTDecl &declScope,
