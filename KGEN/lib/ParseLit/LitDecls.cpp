@@ -691,27 +691,66 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 //===----------------------------------------------------------------------===//
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
-///                 | "var" identifier "=" expression [TODO]
+///                 | "var" identifier "=" expression
 ///
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
   SMLoc typeLoc;
   ASTType type;
-  ExprNode *initValue = nullptr;
   // Parse the type if present.
-  // TODO: Make type optional.
-  if (p.parseToken(LitToken::colon, "var declaration requires a type") ||
-      p.getLocation(typeLoc) || p.parseType(type, decl, decl.getIndentation()))
-    return failure();
+  if (p.consumeIf(LitToken::colon)) {
+    typeLoc = p.getToken().getLoc();
+    if (p.parseType(type, decl, decl.getIndentation()))
+      return failure();
+    varOp.getResult().setType(
+        POP::PointerType::get(sharedState.getMLIRType(type, typeLoc)));
+  }
 
-  varOp.getResult().setType(
-      POP::PointerType::get(sharedState.getMLIRType(type, typeLoc)));
-
+  // Parse the initializer if present.
+  ExprNode *initValue = nullptr;
   if (p.consumeIf(LitToken::equal)) {
-    p.emitError("var initializers not supported yet");
     if (p.parseExpression(initValue, decl.getIndentation()))
       return failure();
+
+    ASTDecl &parentDecl = *decl.getParentDecl();
+    OpBuilder builder(varOp->getBlock(), ++Block::iterator(varOp));
+    ExprEmitter emitter(sharedState, parentDecl, builder,
+                        /*varDeclCursor*/ nullptr);
+
+    // TODO: If the initializer is a parameter value/constant, we can install it
+    // directly on the var decl instead of doing a store.  This will work better
+    // in structs etc.
+    auto rhsValue = emitter.emitDRValue(initValue);
+    if (!rhsValue)
+      return success(); // Parse succeeded.
+
+    // If we had a declared type, coerce the expression value to it.
+    // TODO(implicit conversions etc).
+    if (type && !type.isEqualCanon(rhsValue.type)) {
+      p.emitError(initValue->getLoc(), "initializer has type ")
+          << rhsValue.type << " but declared type is " << type;
+      return failure(); // Not sure which type is right.
+    }
+
+    // Infer the type if we lack a declared type (`var x = 42`)
+    if (!type) {
+      type = rhsValue.type;
+      varOp.getResult().setType(POP::PointerType::get(
+          sharedState.getMLIRType(type, initValue->getLoc())));
+    }
+
+    // The types line up, do a store.
+    auto loc = sharedState.translateLocation(initValue->getLoc());
+    builder.create<POP::StoreOp>(loc, rhsValue.ir, varOp,
+                                 /*alignment*/ None);
+  }
+
+  // If there was neither a type or initializer, reject the var.
+  if (!type) {
+    p.emitError(varOp.getLoc(),
+                "declaration must have either a type or an initializer");
+    return failure();
   }
 
   // The resolvedType of a variable declaration is the type of the decl.

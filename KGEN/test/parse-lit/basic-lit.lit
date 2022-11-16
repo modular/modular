@@ -17,7 +17,7 @@ fn take_3index(a: index, b: index, c: index) -> index:
 # CHECK-SAME: <dt: !kgen.ref<@DType>, size>
 # CHECK-SAME: (%x: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>,
 # CHECK-SAME:  %exp: !kgen.ref<@SIMD<size = size, dt: !kgen.ref<@DType> = dt>>) -> index {
-def fancy_signature[dt: DType, size: index]
+fn fancy_signature[dt: DType, size: index]
   (x: SIMD[size, dt], exp: (SIMD)[size, dt]) -> index:
 
   # CHECK: %local = lit.var.decl "local" : <index>
@@ -26,7 +26,7 @@ def fancy_signature[dt: DType, size: index]
   # CHECK: %[[TMP3:.*]] = kgen.param.constant = <size>
   # CHECK: %[[RES:.*]] = kgen.call_param[(index, index, index) -> index: @take_3index](%[[TMP1]], %[[TMP2]], %[[TMP3]])
   # CHECK: pop.store %[[RES]], %local : !pop.pointer<index>
-  local = take_3index(size, size, size)
+  var local = take_3index(size, size, size)
 
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
   # CHECK: kgen.return %[[TMP]] : index
@@ -111,10 +111,12 @@ def var_decls(untyped):
   # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int>
 
   # CHECK: %z = lit.var.decl "z" : <index>
-  var z : index
+  # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
+  # CHECK-NEXT: pop.store [[TMP]], %z
+  var z = x
   z = 42
-  # CHECK: [[TMP:%.*]] = index.constant 42
-  # CHECK: pop.store [[TMP]], %z
+  # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
+  # CHECK-NEXT: pop.store [[TMP]], %z
 
 
 def patterns():
