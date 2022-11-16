@@ -293,6 +293,19 @@ struct ExpandListConstantOp : public mlir::OpRewritePattern<ParamConstantOp> {
   }
 };
 
+/// get(%list[i]) -> %li
+struct ExpandListGetOp : public mlir::OpRewritePattern<ListGetOp> {
+  ExpandListGetOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(ListGetOp op,
+                                PatternRewriter &b) const override {
+    b.replaceOp(
+        op, materializeListDestConversion(
+                b, op.getList())[cast<IntegerAttr>(op.getIndex()).getInt()]);
+    return success();
+  }
+};
+
 /// ```
 /// for (%e0, ...) in dot(map^i(I0), %list) do IV(i+1) = f(%e0, ..., IV(i))
 /// ```
@@ -745,11 +758,11 @@ void LowerKGENToPOPPass::runOnOperation() {
   mlir::GreedyRewriteConfig config;
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
-  patterns
-      .insert<ExpandListConstantOp, ExpandListIterateOp, ExpandListConstantOp,
-              ExpandListIterateOp, ExpandStructConstructOp, ExpandStructGetOp,
-              ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
-              ExpandListStore, ExpandGenericOperation>(&getContext());
+  patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListIterateOp,
+                  ExpandListConstantOp, ExpandListIterateOp,
+                  ExpandStructConstructOp, ExpandStructGetOp,
+                  ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
+                  ExpandListStore, ExpandGenericOperation>(&getContext());
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 

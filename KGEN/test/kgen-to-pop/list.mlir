@@ -212,3 +212,10 @@ kgen.func @list_is_sorted(%list: !kgen.list<!pop.scalar<si32>[3]>) -> !pop.scala
   }
   kgen.return %result : !pop.scalar<bool>
 }
+
+// CHECK-LABEL: @list_get_op
+kgen.func @list_get_op(%list: !kgen.list<index[3]>) -> index {
+  %0 = kgen.list.get %list[1] : <index[3]>
+  // CHECK: return %arg1 : index
+  kgen.return %0 : index
+}
