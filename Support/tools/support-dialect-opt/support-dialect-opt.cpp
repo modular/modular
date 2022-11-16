@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CacheDialect/CacheDialect.h"
+#include "Support/CachePasses/CachePasses.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -22,6 +23,7 @@ int main(int argc, char **argv) {
                   Cache::CacheDialect, HLCF::HLCFDialect, MDialect>();
   mlir::registerCanonicalizer();
   M::HLCF::registerLowerHLCFToLLVMPass();
+  M::Cache::registerPasses();
   return failed(
       mlir::MlirOptMain(argc, argv, "index optimizer driver", registry));
 }
