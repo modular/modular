@@ -14,7 +14,6 @@ add_modular_unittest(
   TEST_NAME
   SupportTests
 
-  BlobCacheTest.cpp
   FunctionExtrasTest.cpp
   HMACTest.cpp
   MathExtras.cpp

@@ -13,7 +13,6 @@ add_subdirectory(Compiler)
 
 add_modular_library(MSupport
   AlignedAlloc.cpp
-  BlobCache.cpp
   CommonCLOptions.cpp
   ConcatenationTree.cpp
   Error.cpp
@@ -29,6 +28,3 @@ add_modular_library(MSupport
   DEPENDS
   MConfig
   )
-
-add_subdirectory(CacheDialect)
-add_subdirectory(CachePasses)

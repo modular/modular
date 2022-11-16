@@ -4,13 +4,13 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
+add_modular_tool(cache-opt
+  cache-opt.cpp
 
   LINK_LIBS PRIVATE
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
+  CacheDialect
+  CachePasses
+  MCache
   MSupport
   MLIRFuncDialect
   MLIROptLib

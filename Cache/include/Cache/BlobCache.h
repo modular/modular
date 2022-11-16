@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_BLOBCACHE_H
-#define SUPPORT_BLOBCACHE_H
+#ifndef CACHE_BLOBCACHE_H
+#define CACHE_BLOBCACHE_H
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -212,4 +212,4 @@ std::unique_ptr<BlobCacheBackend>
 getDefaultBackendChain(const std::filesystem::path &basePath = "");
 } // namespace M
 
-#endif // SUPPORT_BLOBCACHE_H
+#endif // CACHE_BLOBCACHE_H

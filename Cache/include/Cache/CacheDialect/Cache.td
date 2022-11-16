@@ -7,8 +7,8 @@
 #ifndef CACHE_TD
 #define CACHE_TD
 
-include "Support/CacheDialect/CacheAttrs.td"
-include "Support/CacheDialect/CacheDialect.td"
-include "Support/CacheDialect/CacheOps.td"
+include "Cache/CacheDialect/CacheAttrs.td"
+include "Cache/CacheDialect/CacheDialect.td"
+include "Cache/CacheDialect/CacheOps.td"
 
 #endif // CACHE_TD

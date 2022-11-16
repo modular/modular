@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_CACHEDIALECT_CACHEOPS_H
-#define SUPPORT_CACHEDIALECT_CACHEOPS_H
+#ifndef CACHE_CACHEDIALECT_CACHEOPS_H
+#define CACHE_CACHEDIALECT_CACHEOPS_H
 
-#include "Support/BlobCache.h"
-#include "Support/CacheDialect/CacheAttrs.h"
+#include "Cache/BlobCache.h"
+#include "Cache/CacheDialect/CacheAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/OpDefinition.h"
@@ -41,6 +41,6 @@ LogicalResult inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache);
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "Support/CacheDialect/Cache.h.inc"
+#include "Cache/CacheDialect/Cache.h.inc"
 
-#endif // SUPPORT_CACHEDIALECT_CACHEOPS_H
+#endif // CACHE_CACHEDIALECT_CACHEOPS_H

@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CacheDialect/CacheOps.h"
-#include "Support/CacheDialect/CacheAttrs.h"
-#include "Support/CacheDialect/CacheDialect.h"
+#include "Cache/CacheDialect/CacheOps.h"
+#include "Cache/CacheDialect/CacheAttrs.h"
+#include "Cache/CacheDialect/CacheDialect.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Builders.h"
@@ -229,7 +229,7 @@ LogicalResult M::Cache::inflateOp(Operation *cached,
 void CacheDialect::registerOps() {
   addOperations<
 #define GET_OP_LIST
-#include "Support/CacheDialect/Cache.cpp.inc"
+#include "Cache/CacheDialect/Cache.cpp.inc"
       >();
 }
 
@@ -248,4 +248,4 @@ void ContainerOp::build(OpBuilder &builder, OperationState &state,
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "Support/CacheDialect/Cache.cpp.inc"
+#include "Cache/CacheDialect/Cache.cpp.inc"

@@ -34,7 +34,7 @@ class CacheDialect;
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
-#include "Support/CachePasses/CachePasses.h.inc"
+#include "Cache/CachePasses/CachePasses.h.inc"
 
 } // namespace M::Cache
 

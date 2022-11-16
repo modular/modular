@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt -allow-unregistered-dialect %s | support-dialect-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: cache-opt -allow-unregistered-dialect %s | cache-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: no.callees
 // CHECK-SAME: cache.region_hash

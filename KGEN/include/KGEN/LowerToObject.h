@@ -7,8 +7,8 @@
 #ifndef KGEN_LOWERTOOBJECT_H
 #define KGEN_LOWERTOOBJECT_H
 
+#include "Cache/BlobCache.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "Support/BlobCache.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/StringSet.h"
 #include <filesystem>

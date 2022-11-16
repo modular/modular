@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/BlobCache.h"
+#include "Cache/BlobCache.h"
 #include "Config/Config.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"

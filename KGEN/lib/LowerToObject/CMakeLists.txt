@@ -22,6 +22,8 @@ add_modular_mlir_library(KGENEmitObject
   KGENToLLVM
   LowerZAPToPOP
 
+  MCache
+
   MLIRIndexToLLVM
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport

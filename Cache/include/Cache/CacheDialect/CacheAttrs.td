@@ -7,7 +7,7 @@
 #ifndef CACHEATTRS_TD
 #define CACHEATTRS_TD
 
-include "Support/CacheDialect/CacheDialect.td"
+include "Cache/CacheDialect/CacheDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 

@@ -1,5 +1,5 @@
-// RUN: mkdir -p %t.dir && support-dialect-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | FileCheck %s
-// RUN: support-dialect-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | support-dialect-opt -inflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect | FileCheck %s -check-prefix=ROUNDTRIP
+// RUN: mkdir -p %t.dir && cache-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | FileCheck %s
+// RUN: cache-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | cache-opt -inflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect | FileCheck %s -check-prefix=ROUNDTRIP
 
 // CHECK-LABEL: func.func private @trivial(i32) attributes {region_hashes = #cache<regions[<"KZjGvTfYCCkbb9PgvO+mUGyo+jhy1GVXoPxy+BWmwwc=">]>}
 
