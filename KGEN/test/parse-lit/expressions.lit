@@ -108,15 +108,15 @@ fn precedence_comparison(a: index, b: index, c: index, d: index):
 
 # CHECK-LABEL: lit.func @do_math(%a: index, %b: index, %c: index) -> index {
 fn do_math(a: index, b: index, c: index) -> index:
+
   # CHECK-NEXT: %z = lit.var.decl "z" : <index>
-  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
+  var z : index
 
   # CHECK-NEXT: %[[I5:.*]] = index.constant 5
   # CHECK-NEXT: %[[MUL:.*]] = index.mul %[[I5]], %a
   # CHECK-NEXT: %[[I42:.*]] = index.constant 42
   # CHECK-NEXT: %[[ADD:.*]] = index.add %[[I42]], %[[MUL]]
   # CHECK-NEXT: pop.store %[[ADD]], %z : !pop.pointer<index>
-  var z : index
   z = 42 + 5*a
 
   # CHECK-NEXT: %[[MUL:.*]] = index.constant 210
@@ -129,6 +129,7 @@ fn do_math(a: index, b: index, c: index) -> index:
   # CHECK-NEXT: pop.store %[[MUL]], %z : !pop.pointer<index>
   z = a * (5 + 6)
 
+  # CHECK-NEXT: %x = lit.var.decl "x" : <index>
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %z : !pop.pointer<index>
   # CHECK-NEXT: pop.store %[[TMP]], %x : !pop.pointer<index>
   # This is checking the lexer handles \ at end of line correctly.
