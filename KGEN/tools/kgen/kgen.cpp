@@ -99,7 +99,7 @@ struct TraceProfiler {
       return;
 
     if (auto err = timeTraceProfilerWrite(outputFilePath.string(), "-"))
-      llvm::errs() << "unable to write trace file: " << err;
+      llvm::errs() << "unable to write trace file: " << err.getError();
     timeTraceProfilerCleanup();
   }
 

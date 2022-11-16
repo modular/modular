@@ -118,8 +118,9 @@
 #define SUPPORT_TIMEPROFILER_H
 
 #include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/Support/Error.h"
+#include "llvm/ADT/StringRef.h"
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include <chrono>
@@ -152,8 +153,8 @@ void timeTraceProfilerWrite(llvm::raw_pwrite_stream &OS);
 /// then will write to \p FallbackFileName appending .time-trace.
 /// Returns a StringError indicating a failure if the function is
 /// unable to open the file for writing.
-llvm::Error timeTraceProfilerWrite(StringRef PreferredFileName,
-                                   StringRef FallbackFileName);
+ErrorOrSuccess timeTraceProfilerWrite(StringRef PreferredFileName,
+                                      StringRef FallbackFileName);
 
 namespace Detail {
 // For internal use only. Begins a time section with Name and Detail if the

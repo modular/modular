@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Twine.h"
 #include <utility>
 
 namespace M::LLCL {
