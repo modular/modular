@@ -12,6 +12,7 @@
 #ifndef LIT_PARSER_BASE_H
 #define LIT_PARSER_BASE_H
 
+#include "LitExprs.h"
 #include "LitLexer.h"
 #include "mlir/IR/Diagnostics.h"
 
@@ -193,7 +194,8 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   Optional<size_t> stmtIndent,
                                   bool *hadTrailingSep);
-  ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
+  ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent,
+                              Precedence minPrec = Precedence::kLowestExpr);
   ParseResult parseType(ASTType &result, ASTDecl &declScope,
                         Optional<size_t> stmtIndent);
 

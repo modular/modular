@@ -36,5 +36,18 @@ SF(kRMul, "__rmul__", 2, kInstMethod)
 SF(kIAdd, "__iadd__", 2, kByRefSelfInstMethod)
 SF(kISub, "__isub__", 2, kByRefSelfInstMethod)
 SF(kIMul, "__imul__", 2, kByRefSelfInstMethod)
-
+SF(kIMatmul, "__imatmul__", 2, kByRefSelfInstMethod)
+SF(kITrueDiv, "__itruediv__", 2, kByRefSelfInstMethod)
+SF(kIFloorDiv, "__ifloordiv__", 2, kByRefSelfInstMethod)
+SF(kIMod, "__imod__", 2, kByRefSelfInstMethod)
+// TODO: ipow has 3 arguments: __ipow__(base, exp[, mod])
+// Only the two-argument form pow(base, exp) is equivalent
+// to using the power operator: base ** exp. Once we have default parameters
+// we can support mod=None, but for now we keep it as 2 arguments definition.
+SF(kIPow, "__ipow__", 2, kByRefSelfInstMethod)
+SF(kILshift, "__ilshift__", 2, kByRefSelfInstMethod)
+SF(kIRshift, "__irshift__", 2, kByRefSelfInstMethod)
+SF(kIAnd, "__iand__", 2, kByRefSelfInstMethod)
+SF(kIXor, "__ixor__", 2, kByRefSelfInstMethod)
+SF(kIOr, "__ior__", 2, kByRefSelfInstMethod)
 #undef SF

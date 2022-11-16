@@ -23,6 +23,14 @@ def func():
   never_declared_fn() # expected-error {{use of unknown declaration "never_declared_fn"}}
   pass
 
+def bad_assignment0(a: Int, b: Int):
+   # expected-error @+1 {{statements must start at the beginning of a line}}
+   a = b += b
+
+def bad_assignment1(a: Int, b: Int):
+   # expected-error @+1 {{expected ')' in parenthesized expression}}
+   a = (b += b)
+
 
 def elif_parse_error(a: index):
   if a:
