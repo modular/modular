@@ -54,4 +54,27 @@ def Cache_SymbolOp
   let hasCustomAssemblyFormat = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// Cache_SymbolOp
+//===----------------------------------------------------------------------===//
+
+def Cache_ContainerOp : CacheOp<"container"> {
+  let summary = "dummy op to hang regions off of";
+  let description = [{
+    This op provides an op we can serialize to hang regions off of. It can be
+    printed for debugging, but it should not appear in the IR very often, if
+    ever.
+  }];
+
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let builders = [
+    // Create a container with the given region as the body. It takes the body
+    // of `body`.
+    OpBuilder<(ins "Region &":$body)>
+  ];
+
+  let assemblyFormat = "attr-dict-with-keyword $bodyRegion";
+}
+
 #endif // CACHEOPS_TD
