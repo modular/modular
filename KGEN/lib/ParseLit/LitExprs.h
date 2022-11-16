@@ -32,30 +32,6 @@ struct ASTTypeAnd {
   operator bool() const { return ir; }
 };
 
-// See https://docs.python.org/3/reference/expressions.html#operator-precedence
-
-enum class Precedence {
-  kInvalid,       // No precedence
-  kAugAssignStmt, // infix: +=, -=, ... NOT an expression
-  kLowestExpr,    // Lowest precedence (most loosely bound).
-  kIfElse,        // infix: if - else
-  kBoolOr,        // infix: or
-  kBoolAnd,       // infix: and
-  kBoolNot,       // prefix: not
-  kComparison,    // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kBitwiseOr,     // infix: |
-  kBitwiseXor,    // infix: ^
-  kBitwiseAnd,    // infix: &
-  kShift,         // infix: <<, >>
-  kSum,           // infix: +, -
-  kTerm,          // infix: *, @, /, //, %
-  kFactor,        // prefix: +, -, ~
-  kPower,         // infix: **
-  kPrimary,       // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-                  //         foo.bar, foo[bar]
-  kHighest = kPrimary
-};
-
 //===----------------------------------------------------------------------===//
 // ExprNode
 //===----------------------------------------------------------------------===//

@@ -286,7 +286,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   //            | ">>=" | "<<=" | "&=" | "^=" | "|="
 
   ExprNode *expr = nullptr;
-  if (parseExpression(expr, stmtIndent, Precedence::kAugAssignStmt))
+  if (parseAugmentedAssignmentExpression(expr, stmtIndent))
     return failure();
 
   if (BinOpNode::isAugmentedAssignment(expr)) {
