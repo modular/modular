@@ -89,6 +89,16 @@ LogicalResult SymbolOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ContainerOp
+//===----------------------------------------------------------------------===//
+
+void ContainerOp::build(OpBuilder &builder, OperationState &state,
+                        Region &body) {
+  Region *region = state.addRegion();
+  region->takeBody(body);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
