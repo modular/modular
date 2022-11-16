@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/CacheDialect/CacheDialect.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -18,7 +19,7 @@ using namespace M;
 int main(int argc, char **argv) {
   DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, mlir::LLVM::LLVMDialect,
-                  HLCF::HLCFDialect, MDialect>();
+                  Cache::CacheDialect, HLCF::HLCFDialect, MDialect>();
   mlir::registerCanonicalizer();
   M::HLCF::registerLowerHLCFToLLVMPass();
   return failed(

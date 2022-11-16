@@ -4,15 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
+add_modular_dialect_library(CacheDialect
+  CacheAttrs.cpp
+  CacheDialect.cpp
 
-  LINK_LIBS PRIVATE
-  CacheDialect
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
+  DEPENDS
+  MLIRCacheIncGen
+
+  LINK_COMPONENTS
+
+  LINK_LIBS PUBLIC
+  MLIRIR
   )
