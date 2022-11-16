@@ -195,9 +195,9 @@ public:
                                   Optional<size_t> stmtIndent,
                                   bool *hadTrailingSep);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
-  /// Parse an expression, allowing `+=` and other 'augmented assignment exprs.
-  ParseResult parseAugmentedAssignmentExpression(ExprNode *&expr,
-                                                 Optional<size_t> stmtIndent);
+  /// Parse an expression, allowing `=`, and `+=`.
+  ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
+                                              Optional<size_t> stmtIndent);
   ParseResult parseType(ASTType &result, ASTDecl &declScope,
                         Optional<size_t> stmtIndent);
 

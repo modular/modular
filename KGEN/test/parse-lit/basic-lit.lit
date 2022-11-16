@@ -100,8 +100,8 @@ struct Pair[dt: DType]:
 
 # CHECK: }
 
-# CHECK-LABEL:  lit.func @var_decls(%untyped: !kgen.ref<@object>)
-def var_decls(untyped):
+# CHECK-LABEL:  lit.func @var_decls()
+def var_decls():
   # CHECK: %x = lit.var.decl "x" : <index>
   x = 123
   # CHECK: %y = lit.var.decl "y" : <@Int>
@@ -123,6 +123,10 @@ def patterns():
   (((z2))) = 42  # Paren patterns
   # CHECK: [[TMP:%.*]] = index.constant 42
   # CHECK: pop.store [[TMP]], %z2
+
+  var someInt : Int
+  (someInt) += someInt
+
 
 # CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.ref<@DType>> {
 struct SIMD[size: index, dt: DType]:
@@ -180,8 +184,8 @@ fn lvaluesAndRValues() -> index:
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value
 
-# CHECK: lit.func @defTests
-def defTests(a: Int, b: Int):
+# CHECK: lit.func @defTests({{.*}}, %untyped: !kgen.ref<@object>)
+def defTests(a: Int, b: Int, untyped):
   # CHECK: %[[TMP:.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store %[[TMP]], %a_0
   a = b # Parameters are mutable!

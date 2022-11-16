@@ -887,10 +887,61 @@ static SpecialFunctionKind getBinOpSpecialFunctions(ExprNode::Kind kind) {
 
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
                                        ASTType contextualType) const {
-  ASTTypeAnd<AnyValue> lhsRep = lhs->emitIR(emitter);
-  ASTTypeAnd<AnyValue> rhsRep = rhs->emitIR(emitter);
-  if (!lhsRep || !rhsRep)
-    return {};
+  ASTTypeAnd<AnyValue> lhsRep, rhsRep;
+
+  // We generally emit the LHS before the RHS, but need to do special things
+  // for an assignment statement.
+  if (!isAssignmentStmt()) {
+    lhsRep = lhs->emitIR(emitter);
+    rhsRep = rhs->emitIR(emitter);
+    if (!lhsRep || !rhsRep)
+      return {};
+  } else {
+    // In an assignment, we emit the RHS first as a value and the LHS as an
+    // lvalue with a contextual type.  This is required to enable the 'implicit
+    // declaration' behavior in a def.
+    rhsRep = rhs->emitIR(emitter);
+    if (!rhsRep)
+      return {};
+
+    // If this variable is being declared in a `def` definition, then we allow
+    // implicit declarations of variables.  In `fn` and top level, we do not.
+    ASTType lhsContextualType;
+    if (emitter.declScope.isDef)
+      lhsContextualType = rhsRep.type;
+
+    // Emit the LHS pattern as an lvalue.
+    auto lhsPat = emitter.emitLValue(lhs, lhsContextualType,
+                                     "cannot assign to immutable expression");
+    if (!lhsPat)
+      return {};
+
+    // Assignment expression (`=`) turns into a store, not into a method call.
+    if (kind == kAssign) {
+      auto rv = emitter.emitDRValue(rhsRep, rhs->getLoc());
+      if (!rv)
+        return {};
+
+      // Check to see if the destination type and the source type are
+      // compatible.
+      // TODO: Implement implicit conversions.
+      if (!lhsPat.type.isEqualCanon(rv.type)) {
+        emitter.emitError(rhs->getLoc(), "cannot convert value of type ")
+            << rv.type << " to " << lhsPat.type;
+        return {};
+      }
+
+      // If everything worked out, store the resultant value into the lvalue for
+      // the destination.  If things didn't work, just drop this on the floor.
+      emitter.builder->create<POP::StoreOp>(emitter.translateLocation(getLoc()),
+                                            rv.ir, lhsPat.ir,
+                                            /*alignment*/ None);
+      return {rv.ir, rv.type};
+    }
+
+    // Otherwise, handle as a normal binary operator.
+    lhsRep = {lhsPat.ir, lhsPat.type};
+  }
 
   // If this operator maps onto a special function, attempt to lower it.
   auto specialFnKind = getBinOpSpecialFunctions(kind);
@@ -980,7 +1031,10 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   Value result;
   switch (kind) {
   default:
-    llvm_unreachable("unknown binary operator");
+    emitter.emitError(getLoc(),
+                      "cannot emit binary operator on this index value yet");
+    return {};
+
   case kAdd:
     result = emitter.builder->create<mlir::index::AddOp>(loc, lhsVal, rhsVal);
     break;
