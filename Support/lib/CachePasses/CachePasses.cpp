@@ -29,17 +29,15 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    // Create a symbol table.
-    mlir::SymbolTable symtab(getOperation());
     // Bring up the cache.
     BlobCache<RegionCacheKey> cache(
         getFilesystemBackend(std::filesystem::path(cacheDir.getValue())));
     // Deflate each symbol.
-    for (auto &op : llvm::make_early_inc_range(getOperation().getOps())) {
+    for (auto &op : getOperation()) {
       if (!op.hasAttr(SymbolTable::getSymbolAttrName()))
         continue;
 
-      if (failed(deflateSymbol(&op, symtab, cache)))
+      if (failed(deflateOp(&op, cache)))
         return signalPassFailure();
     }
   }
@@ -61,16 +59,17 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    // Create a symbol table for the parent.
-    mlir::SymbolTable symtab(getOperation());
     // Bring up the cache.
     BlobCache<RegionCacheKey> cache(
         getFilesystemBackend(std::filesystem::path(cacheDir.getValue())));
-    // Inflate each symbol.
-    for (auto sym :
-         llvm::make_early_inc_range(getOperation().getOps<SymbolOp>()))
-      if (failed(inflateSymbol(sym, symtab, cache)))
+    // Inflate each deflated op.
+    for (auto &sym : getOperation()) {
+      if (!sym.hasAttr(getRegionHashAttrName()))
+        continue;
+
+      if (failed(inflateOp(&sym, cache)))
         signalPassFailure();
+    }
   }
 };
 } // namespace

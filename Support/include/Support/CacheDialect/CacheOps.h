@@ -15,9 +15,6 @@
 #include "mlir/IR/SymbolTable.h"
 
 namespace M::Cache {
-// Forward declare SymbolOp so we can use it here.
-class SymbolOp;
-
 /// The Cache dialect stores the region of an op - this defines the cache key.
 /// It can be a region (indicating that we need to hash the region) or a string
 /// (indicating that we already know the hash).
@@ -26,15 +23,17 @@ struct RegionCacheKey {
   static std::string hashKey(KeyTy key);
 };
 
-/// This function allows the user to deflate a symbol op, store its body
-/// in the cache, and replace it with a `cache.symbol`.
-FailureOr<SymbolOp> deflateSymbol(Operation *symbol, SymbolTable &symtab,
-                                  BlobCache<RegionCacheKey> &cache);
+/// Return the name used to denote that an op's regions have been cached.
+inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 
-/// This function allows the user to inflate a cached symbol into its original
-/// operation.
-FailureOr<Operation *> inflateSymbol(SymbolOp cached, SymbolTable &symtab,
-                                     BlobCache<RegionCacheKey> &cache);
+/// This function allows the user to deflate an operation by eliding the body
+/// and storing it in the cache.
+LogicalResult deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache);
+
+/// This function allows the user to inflate a cached op into its original
+/// form by pulling the regions attached to it from the cache and re-attaching
+/// them to the op.
+LogicalResult inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache);
 } // namespace M::Cache
 
 //===----------------------------------------------------------------------===//

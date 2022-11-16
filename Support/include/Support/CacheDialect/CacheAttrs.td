@@ -20,7 +20,7 @@ class CacheAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 // RegionHashAttr
 //===----------------------------------------------------------------------===//
 
-def SymbolListParameter : OptionalArrayRefParameter<"FlatSymbolRefAttr",
+def SymbolListParameter : OptionalArrayRefParameter<"SymbolRefAttr",
     "symbols in region">;
 
 def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash",

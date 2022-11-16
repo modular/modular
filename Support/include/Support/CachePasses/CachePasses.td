@@ -13,8 +13,8 @@ include "mlir/Pass/PassBase.td"
 def DeflateSymbols : Pass<"deflate-symbols", "mlir::ModuleOp"> {
   let summary = "Deflate symbols and put them in the cache.";
   let description = [{
-    This pass deflates symbols and replaces them with `cache.symbol`
-    ops, placing regions in the cache.
+    This pass deflates symbols by eliding their regions, storing said regions
+    in the cache.
   }];
 
   let options = [
@@ -32,8 +32,8 @@ def DeflateSymbols : Pass<"deflate-symbols", "mlir::ModuleOp"> {
 def InflateSymbols : Pass<"inflate-symbols", "mlir::ModuleOp"> {
   let summary = "Inflate symbols from the cache.";
   let description = [{
-    This pass inflates symbols from the cache and replaces the original
-    operation.
+    This pass inflates symbols' regions from the cache and restores the
+    original operation.
   }];
 
   let options = [
