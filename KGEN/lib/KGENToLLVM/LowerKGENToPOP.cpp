@@ -264,7 +264,16 @@ static bool structHasListElement(POP::StructType structType) {
   });
 }
 
-/// %list = <[l0, ...]> -> %l0 = <l0>, ...
+/// ```
+/// %list = kgen.param.constant: list<index[2]> = <[1, 2]>
+/// ```
+///
+/// becomes
+///
+/// ```
+/// %l0 = kgen.param.constant = <1>
+/// %l1 = kgen.param.constant = <2>
+/// ```
 struct ExpandListConstantOp : public mlir::OpRewritePattern<ParamConstantOp> {
   ExpandListConstantOp(MLIRContext *ctx)
       : OpRewritePattern(ctx, /*benefit=*/2) {}
@@ -284,8 +293,17 @@ struct ExpandListConstantOp : public mlir::OpRewritePattern<ParamConstantOp> {
   }
 };
 
-/// for (%e0, ...) in dot(map^i(I0), %list) do IV(i+1) = f(%e0, ..., IV(i)) ->
-/// IV1 = f(%list[map^0(I0)], IV0), IV2 = f(%list[map^1(I0)], IV1), ...
+/// ```
+/// for (%e0, ...) in dot(map^i(I0), %list) do IV(i+1) = f(%e0, ..., IV(i))
+/// ```
+///
+/// becomes
+///
+/// ```
+/// IV1 = f(%list[map^0(I0)], IV0),
+/// IV2 = f(%list[map^1(I0)], IV1),
+/// ...
+/// ```
 struct ExpandListIterateOp : public mlir::OpRewritePattern<ListIterateOp> {
   ExpandListIterateOp(MLIRContext *ctx)
       : OpRewritePattern(ctx, /*benefit=*/2) {}
@@ -727,10 +745,11 @@ void LowerKGENToPOPPass::runOnOperation() {
   mlir::GreedyRewriteConfig config;
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
-  patterns.insert<ExpandListConstantOp, ExpandListIterateOp,
-                  ExpandStructConstructOp, ExpandStructGetOp,
-                  ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
-                  ExpandListStore, ExpandGenericOperation>(&getContext());
+  patterns
+      .insert<ExpandListConstantOp, ExpandListIterateOp, ExpandListConstantOp,
+              ExpandListIterateOp, ExpandStructConstructOp, ExpandStructGetOp,
+              ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
+              ExpandListStore, ExpandGenericOperation>(&getContext());
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 
