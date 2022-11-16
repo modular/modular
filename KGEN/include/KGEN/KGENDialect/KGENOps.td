@@ -930,6 +930,36 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// ListGetOp
+//===----------------------------------------------------------------------===//
+
+def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
+    "list", "result",
+    "ParamRefType::get($_self.cast<ListType>().getElementType())">]> {
+  let summary = "Get a list element.";
+  let description = [{
+    The `kgen.list.get` operation returns the element of a list at the provided
+    index. The index can be an expression, but if it resolves to an out-of-range
+    index, an error is emitted.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.list.get %list[add(A, N)] : <index[N]>
+    ```
+  }];
+
+  let arguments = (ins ListType:$list, AttrOfType<Index>:$index);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = [{
+    $list `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($list)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ListIterateOp
 //===----------------------------------------------------------------------===//
 

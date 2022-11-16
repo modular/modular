@@ -1488,6 +1488,20 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ListGetOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ListGetOp::verify() {
+  auto index = dyn_cast<IntegerAttr>(getIndex());
+  Optional<int64_t> length = getList().getType().getResolvedLength();
+  if (!index || !length)
+    return success();
+  if (index.getInt() < 0 || index.getInt() >= *length)
+    return emitOpError("list index out-of-range");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ListIterateOp
 //===----------------------------------------------------------------------===//
 
