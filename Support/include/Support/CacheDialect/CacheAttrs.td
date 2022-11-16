@@ -47,6 +47,11 @@ def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash",
   }];
 }
 
+/// An array of RegionHashAttrs.
+def Cache_RegionHashArrayAttr :
+    ArrayOfAttr<CacheDialect, "RegionHashArray", "regions", "RegionHashAttr",
+                [SubElementAttrInterface]>;
+
 //===----------------------------------------------------------------------===//
 // SymbolIndexAttr
 //===----------------------------------------------------------------------===//
