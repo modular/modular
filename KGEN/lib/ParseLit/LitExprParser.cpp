@@ -32,6 +32,33 @@ using namespace M;
 // Expression Parsing
 //===----------------------------------------------------------------------===//
 
+// See https://docs.python.org/3/reference/expressions.html#operator-precedence
+enum class Precedence {
+  kInvalid, // No precedence
+
+  // infix: +=, -=: These are not a Python 'expression', and are not allowed in
+  // parens, they are only allowed as a top level statement.
+  kAugAssignStmt,
+
+  kLowestExpr, // Lowest expression precedence (most loosely bound).
+  kIfElse,     // infix: if - else
+  kBoolOr,     // infix: or
+  kBoolAnd,    // infix: and
+  kBoolNot,    // prefix: not
+  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+  kBitwiseOr,  // infix: |
+  kBitwiseXor, // infix: ^
+  kBitwiseAnd, // infix: &
+  kShift,      // infix: <<, >>
+  kSum,        // infix: +, -
+  kTerm,       // infix: *, @, /, //, %
+  kFactor,     // prefix: +, -, ~
+  kPower,      // infix: **
+  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
+               //         foo.bar, foo[bar]
+  kHighest = kPrimary
+};
+
 namespace M::KGEN::LIT {
 /// This class implements the ExprParser interface, implemented with the pImpl
 /// idiom.
@@ -484,10 +511,25 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
       .parseExpressionList(results, LitToken::Kind::eof, hadTrailingSep);
 }
 
+/// Expression parsing.  Each of these take a `stmtIndent` specifier that
+/// indicates the indentation level of the start of the statement that
+/// contains this expression if the expression can exist at the end of the
+/// line.  This allows the expression parser to know when to keep parsing the
+/// expression on the next line - when it is more indented than the start of
+/// the current statement.  This can be passed in as None when there is a
+/// trailing punctuator that naturally terminates the expression.
 ParseResult LitParserBase::parseExpression(ExprNode *&result,
-                                           Optional<size_t> stmtIndent,
-                                           Precedence minPrec) {
-  return ExprParser(getLexer(), stmtIndent).parseExpression(result, minPrec);
+                                           Optional<size_t> stmtIndent) {
+  return ExprParser(getLexer(), stmtIndent)
+      .parseExpression(result, Precedence::kLowestExpr);
+}
+
+/// Parse an expression, allowing `+=` and other 'augmented assignment exprs.
+ParseResult
+LitParserBase::parseAugmentedAssignmentExpression(ExprNode *&result,
+                                                  Optional<size_t> stmtIndent) {
+  return ExprParser(getLexer(), stmtIndent)
+      .parseExpression(result, Precedence::kAugAssignStmt);
 }
 
 ParseResult LitParserBase::parseType(ASTType &result, ASTDecl &declScope,

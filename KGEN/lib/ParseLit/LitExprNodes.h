@@ -207,6 +207,7 @@ struct BinOpNode final : public ExprNode {
     return node->kind >= kFirstBinOp && node->kind <= kLastBinOp;
   }
 
+  /// Return true if this is an "augmented assignment" node like += or *=.
   static bool isAugmentedAssignment(const ExprNode *node) {
     return node->kind >= kFirstAugAssign && node->kind <= kLastAugAssign;
   }
