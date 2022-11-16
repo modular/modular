@@ -197,4 +197,12 @@ def SI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
   let convertFromStorage = "$_self.asArrayRef<int64_t>()";
 }
 
+def UI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<CPred<
+    "$_self.cast<IntArrayElementsAttr>().getElementType().isUnsignedInteger(64)"
+>>]> {
+  let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Unsigned)";
+  let returnType = "ArrayRef<uint64_t>";
+  let convertFromStorage = "$_self.asArrayRef<uint64_t>()";
+}
+
 #endif // MATTRS_TD
