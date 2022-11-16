@@ -7,7 +7,7 @@
 #ifndef CACHEOPS_TD
 #define CACHEOPS_TD
 
-include "Support/CacheDialect/CacheDialect.td"
+include "Cache/CacheDialect/CacheDialect.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 

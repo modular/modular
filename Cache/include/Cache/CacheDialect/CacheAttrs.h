@@ -4,15 +4,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_CACHEDIALECT_CACHEDIALECT_H
-#define SUPPORT_CACHEDIALECT_CACHEDIALECT_H
+#ifndef CACHE_CACHEDIALECT_CACHEATTRS_H
+#define CACHE_CACHEDIALECT_CACHEATTRS_H
 
-#include "mlir/IR/Dialect.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MTypes.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "Support/CacheDialect/CacheDialect.h.inc"
+#define GET_ATTRDEF_CLASSES
+#include "Cache/CacheDialect/CacheAttrs.h.inc"
 
-#endif // SUPPORT_CACHEDIALECT_CACHEDIALECT_H
+#endif // CACHE_CACHEDIALECT_CACHEATTRS_H

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CacheDialect/CacheDialect.h"
+#include "Cache/CacheDialect/CacheDialect.h"
 
 void M::Cache::CacheDialect::initialize() {
   registerAttributes();
@@ -15,4 +15,4 @@ void M::Cache::CacheDialect::initialize() {
 // Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "Support/CacheDialect/CacheDialect.cpp.inc"
+#include "Cache/CacheDialect/CacheDialect.cpp.inc"

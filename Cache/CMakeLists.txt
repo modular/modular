@@ -4,15 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
-
-  LINK_LIBS PRIVATE
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MSupport
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-  )
+add_subdirectory(include/Cache/CacheDialect)
+add_subdirectory(include/Cache/CachePasses)
+add_subdirectory(lib)
+add_subdirectory(tools/cache-opt)
+add_subdirectory(test)
+add_subdirectory(unittests)

@@ -4,15 +4,19 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
+add_modular_unittest(
+  TOP_LEVEL_CHECK
+  check-cache
+
+  SUITE_NAME
+  CacheUnitTests
+
+  TEST_NAME
+  CacheTests
+
+  BlobCacheTest.cpp
 
   LINK_LIBS PRIVATE
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
   MSupport
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-  )
+  MCache
+)

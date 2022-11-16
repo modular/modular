@@ -20,6 +20,8 @@ add_modular_mlir_library(KGENExecutionEngine
   KGENToLLVM
   KGENEmitObject
 
+  MCache
+
   MLIRLLVMToLLVMIRTranslation
   MLIRIndexToLLVM
   MLIRTargetLLVMIRExport

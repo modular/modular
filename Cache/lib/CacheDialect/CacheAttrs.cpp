@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CacheDialect/CacheAttrs.h"
-#include "Support/CacheDialect/CacheDialect.h"
+#include "Cache/CacheDialect/CacheAttrs.h"
+#include "Cache/CacheDialect/CacheDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -49,7 +49,7 @@ static ParseResult parseBase64(AsmParser &parser,
 void CacheDialect::registerAttributes() {
   addAttributes<
 #define GET_ATTRDEF_LIST
-#include "Support/CacheDialect/CacheAttrs.cpp.inc"
+#include "Cache/CacheDialect/CacheAttrs.cpp.inc"
       >();
 }
 
@@ -58,4 +58,4 @@ void CacheDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
-#include "Support/CacheDialect/CacheAttrs.cpp.inc"
+#include "Cache/CacheDialect/CacheAttrs.cpp.inc"

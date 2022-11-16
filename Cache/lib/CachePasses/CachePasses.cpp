@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CachePasses/CachePasses.h"
-#include "Support/CacheDialect/CacheDialect.h"
-#include "Support/CacheDialect/CacheOps.h"
+#include "Cache/CachePasses/CachePasses.h"
+#include "Cache/CacheDialect/CacheDialect.h"
+#include "Cache/CacheDialect/CacheOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
@@ -20,7 +20,7 @@ using namespace Cache;
 
 namespace M::Cache {
 #define GEN_PASS_DEF_DEFLATESYMBOLS
-#include "Support/CachePasses/CachePasses.h.inc"
+#include "Cache/CachePasses/CachePasses.h.inc"
 } // namespace M::Cache
 
 namespace {
@@ -50,7 +50,7 @@ public:
 
 namespace M::Cache {
 #define GEN_PASS_DEF_INFLATESYMBOLS
-#include "Support/CachePasses/CachePasses.h.inc"
+#include "Cache/CachePasses/CachePasses.h.inc"
 } // namespace M::Cache
 
 namespace {
