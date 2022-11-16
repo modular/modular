@@ -25,6 +25,8 @@ def CacheDialect : Dialect {
   let extraClassDeclaration = [{
     /// Register all dialect attributes.
     void registerAttributes();
+    /// Register all dialect ops.
+    void registerOps();
   }];
 
   let cppNamespace = "::M::Cache";
