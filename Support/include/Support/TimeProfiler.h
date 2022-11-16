@@ -213,6 +213,7 @@ struct TimeTraceProfilerEntry<true> {
   // does not appear to impose any thread consistency on any of the clocks.
   using ClockType = std::chrono::high_resolution_clock;
   using TimePointType = std::chrono::time_point<ClockType>;
+  using FloatUsType = std::chrono::duration<double, std::micro>;
 
   TimePointType Start;
   TimePointType End;
@@ -225,19 +226,15 @@ struct TimeTraceProfilerEntry<true> {
                          std::string &&Dt)
       : Start(S), End(E), Name(std::move(N)), Detail(std::move(Dt)) {}
 
-  // Calculate timings for FlameGraph. Cast time points to microsecond precision
-  // rather than casting duration. This avoids truncation issues causing inner
-  // scopes overruning outer scopes.
-  ClockType::rep getFlameGraphStartUs(TimePointType StartTime) const {
-    return (std::chrono::time_point_cast<std::chrono::microseconds>(Start) -
-            std::chrono::time_point_cast<std::chrono::microseconds>(StartTime))
-        .count();
+  // Calculate timings for FlameGraph. Convert to floating point
+  // microsecond representation so that caller and callee aren't
+  // truncated to have the same start time
+  FloatUsType::rep getFlameGraphStartUs(TimePointType StartTime) const {
+    return FloatUsType(Start - StartTime).count();
   }
 
-  ClockType::rep getFlameGraphDurUs() const {
-    return (std::chrono::time_point_cast<std::chrono::microseconds>(End) -
-            std::chrono::time_point_cast<std::chrono::microseconds>(Start))
-        .count();
+  FloatUsType::rep getFlameGraphDurUs() const {
+    return FloatUsType(End - Start).count();
   }
 };
 
