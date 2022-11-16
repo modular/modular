@@ -395,6 +395,13 @@ bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
          outputs.front().isa<ParamRefType, PointerType, FunctionType>();
 }
 
+OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
+  auto cast = getInput().getDefiningOp<PointerBitcastOp>();
+  if (cast && cast.getInput().getType() == getType())
+    return cast.getInput();
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
@@ -446,12 +453,14 @@ LogicalResult SIMDShuffleOp::verify() {
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    Optional<unsigned> alignment) {
+  build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr());
+}
+
+void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
+                   TypedAttr alignment) {
   auto type =
       ParamRefType::get(ptr.getType().cast<PointerType>().getElementType());
-  TypedAttr alignmentAttr;
-  if (alignment)
-    alignmentAttr = b.getIndexAttr(*alignment);
-  build(b, state, type, ptr, alignmentAttr);
+  build(b, state, type, ptr, alignment);
 }
 
 //===----------------------------------------------------------------------===//
@@ -553,6 +562,11 @@ static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
 LogicalResult StructReplaceOp::verify() {
   return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getValue().getType(), "operand");
+}
+
+void StructReplaceOp::build(OpBuilder &b, OperationState &state, Value value,
+                            Value container, int64_t index) {
+  build(b, state, value, container, b.getIndexAttr(index));
 }
 
 //===----------------------------------------------------------------------===//

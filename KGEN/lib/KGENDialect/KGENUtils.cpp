@@ -147,7 +147,7 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     os << "list<";
     printParamValue(list.getElementType(), os);
     os << '[';
-    printParamValue(list.getNumElements(), os);
+    printParamValue(list.getLength(), os);
     os << "]>";
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters, print a SignatureType as a function type to
@@ -773,7 +773,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a list type, parse a comma-separated list of parameter values of
   // the element type surrounded by square brackets.
   if (auto list = dyn_cast<ListType>(type)) {
-    auto length = dyn_cast<IntegerAttr>(list.getNumElements());
+    Optional<int64_t> length = list.getResolvedLength();
     llvm::SMLoc loc = p.getCurrentLocation();
     if (!length)
       return p.emitError(
@@ -794,10 +794,9 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     value = ListAttr::get(p.getContext(), values, list);
 
     int64_t numParsedElements = cast<ListAttr>(value).getValues().size();
-    if (numParsedElements != length.getInt())
+    if (numParsedElements != *length)
       return p.emitError(loc, "expected ")
-             << length.getInt() << " list elements but got "
-             << numParsedElements;
+             << *length << " list elements but got " << numParsedElements;
     return success();
   }
 

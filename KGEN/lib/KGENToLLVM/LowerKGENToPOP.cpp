@@ -11,7 +11,10 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -39,11 +42,6 @@ public:
                                   StructDeclarations &structDecls)
       : IRRewriter(ctx), structDecls(structDecls) {}
 
-  ~StructOperationLowerer() {
-    for (mlir::UnrealizedConversionCastOp cast : conversions)
-      replaceOp(cast, cast.getOperands());
-  }
-
   /// Get the index of the struct field.
   int64_t getField(StringAttr name, RefType ref) const {
     return structDecls.fields.lookup({ref.getName(), name});
@@ -64,7 +62,6 @@ public:
 
 private:
   StructDeclarations &structDecls;
-  std::vector<mlir::UnrealizedConversionCastOp> conversions;
 };
 } // namespace
 
@@ -77,16 +74,14 @@ Type StructOperationLowerer::substituteStructRef(RefType ref) {
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
 
   SmallVector<Type> elementTypes;
-  for (Type type : it->second) {
-    Type elementType = substituteTypes(evaluator.getReboundType(type));
-    elementTypes.push_back(elementType);
-  }
+  for (Type type : it->second)
+    elementTypes.push_back(evaluator.getReboundType(type));
   return POP::StructType::get(ref.getContext(), elementTypes);
 }
 
 Type StructOperationLowerer::substituteTypes(Type type) {
   if (auto ref = dyn_cast<RefType>(type))
-    return substituteStructRef(ref);
+    type = substituteStructRef(ref);
   auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
   if (!itf)
     return type;
@@ -103,7 +98,6 @@ void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
     return IRRewriter::replaceOp(op, values);
   auto source = create<mlir::UnrealizedConversionCastOp>(op->getLoc(), type,
                                                          values.front());
-  conversions.push_back(source);
   IRRewriter::replaceOp(op, source.getResult(0));
 }
 
@@ -141,17 +135,434 @@ static void lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
 
 template <typename OpT>
 void StructOperationLowerer::materializeLowering(OpT op) {
+  setInsertionPoint(op);
   SmallVector<Value> values;
   values.reserve(op->getNumOperands());
   for (Value value : op->getOperands()) {
     auto dest = create<mlir::UnrealizedConversionCastOp>(
         op->getLoc(), substituteTypes(value.getType()), value);
-    conversions.push_back(dest);
     values.push_back(dest.getResult(0));
   }
   typename OpT::Adaptor adaptor(values, op->getAttrDictionary());
   lowerStructOp(op, adaptor, *this);
 }
+
+//===----------------------------------------------------------------------===//
+// List Lowering
+//===----------------------------------------------------------------------===//
+
+/// Lists can only be expanded as element types of POP structs and function
+/// types. Expand list types in-place: `struct<list<T[2]>>` becomes `struct<T,
+/// T>`. Return the modified index of a struct element. Anywhere else, we
+/// implicitly wrap the list types in a struct. For example,
+/// `pointer<list<T[N]>>` becomes `pointer<array<N, T>>`.
+static Type expandListsInType(Type type);
+
+/// Expand lists in a struct type.
+static std::pair<POP::StructType, int64_t>
+expandListsInStruct(POP::StructType structType, int64_t index = 0) {
+  SmallVector<Type> elementTypes, newTypes;
+  (void)structType.resolveElementTypes(elementTypes);
+  int64_t newIndex = index;
+  for (auto [idx, elementType] : llvm::enumerate(elementTypes)) {
+    if (auto list = dyn_cast<ListType>(elementType)) {
+      int64_t length = *list.getResolvedLength();
+      newTypes.append(length, list.getResolvedElementType());
+      if (index > static_cast<int64_t>(idx))
+        newIndex += length - 1;
+    } else {
+      newTypes.push_back(elementType);
+    }
+  }
+  return {POP::StructType::get(structType.getContext(), newTypes), newIndex};
+}
+
+/// Expand lists in a function type.
+static FunctionType expandListsInFunc(FunctionType funcType) {
+  auto expandInList = [](TypeRange types) {
+    SmallVector<Type> results;
+    for (Type type : types) {
+      if (auto list = dyn_cast<ListType>(type))
+        results.append(*list.getResolvedLength(),
+                       list.getResolvedElementType());
+      else
+        results.push_back(type);
+    }
+    return results;
+  };
+  return FunctionType::get(funcType.getContext(),
+                           expandInList(funcType.getInputs()),
+                           expandInList(funcType.getResults()));
+}
+
+/// Expand or rewrite list element types.
+static Type expandListsInType(Type type) {
+  auto flattenFirst = [](Type type) {
+    Type nextType;
+    while (true) {
+      if (auto structType = dyn_cast<POP::StructType>(type))
+        nextType = expandListsInStruct(structType).first;
+      else if (auto funcType = dyn_cast<FunctionType>(type))
+        nextType = expandListsInFunc(funcType);
+      else
+        return type;
+      if (nextType == type)
+        break;
+      type = nextType;
+    }
+    return type;
+  };
+  type = flattenFirst(type);
+
+  if (auto list = dyn_cast<ListType>(type))
+    return POP::ArrayType::get(list.getLength(), list.getElementType());
+
+  auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
+  if (!itf)
+    return type;
+  return itf.replaceSubElements([&](Type type) -> Type {
+    if (isa<POP::StructType, FunctionType>(type))
+      return flattenFirst(type);
+    if (auto list = dyn_cast<ListType>(type))
+      return POP::ArrayType::get(list.getLength(), list.getElementType());
+    return type;
+  });
+}
+
+/// Materialize a 1-to-N destination conversion for lists.
+static ValueRange
+materializeListDestConversion(mlir::RewriterBase &b,
+                              mlir::TypedValue<ListType> list) {
+  SmallVector<Type> resultTypes(*list.getType().getResolvedLength(),
+                                list.getType().getResolvedElementType());
+  return b
+      .create<mlir::UnrealizedConversionCastOp>(list.getLoc(), resultTypes,
+                                                list)
+      .getResults();
+}
+
+/// Materialize a N-to-1 source conversion for lists.
+static Value materializeListSourceConversion(mlir::RewriterBase &b,
+                                             Location loc, ValueRange values,
+                                             ListType list) {
+  return b.create<mlir::UnrealizedConversionCastOp>(loc, list, values)
+      .getResult(0);
+}
+
+/// Materialize a 1-to-1 conversion.
+static Value materializeConversion(PatternRewriter &b, Value value, Type type) {
+  return b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), type, value)
+      .getResult(0);
+}
+
+static bool isListType(Type type) { return isa<ListType>(type); }
+
+static bool structHasListElement(POP::StructType structType) {
+  return llvm::any_of(structType.getElementTypes(), [](TypedAttr type) {
+    return isListType(cast<ConcreteTypeConstantAttr>(type).getValue());
+  });
+}
+
+/// construct(%a, %list, %b) -> construct(%a, %l0, %l1, %l2, %b).
+struct ExpandStructConstructOp
+    : public mlir::OpRewritePattern<POP::StructConstructOp> {
+  ExpandStructConstructOp(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::StructConstructOp op,
+                                PatternRewriter &b) const override {
+    if (llvm::none_of(op.getOperandTypes(), isListType))
+      return failure();
+
+    SmallVector<Value> operands;
+    for (Value value : op.getElements()) {
+      if (auto list = dyn_cast<ListType>(value.getType())) {
+        ValueRange elements = materializeListDestConversion(b, value);
+        operands.append(elements.begin(), elements.end());
+      } else {
+        operands.push_back(value);
+      }
+    }
+    auto construct = b.create<POP::StructConstructOp>(
+        op.getLoc(), expandListsInStruct(op.getType()).first, operands);
+    b.replaceOp(op,
+                materializeConversion(b, construct.getResult(), op.getType()));
+    return success();
+  }
+};
+
+/// %list = get %struct[2] -> %li = get %struct[2 + i] for each i.
+struct ExpandStructGetOp : public mlir::OpRewritePattern<POP::StructGetOp> {
+  ExpandStructGetOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::StructGetOp op,
+                                PatternRewriter &b) const override {
+    if (!structHasListElement(op.getContainer().getType()))
+      return failure();
+
+    auto [type, index] = expandListsInStruct(op.getContainer().getType(),
+                                             op.getIndexAttr().getInt());
+    Value container = materializeConversion(b, op.getContainer(), type);
+    if (auto list = dyn_cast<ListType>(op.getType())) {
+      SmallVector<Value> results;
+      int64_t length = *list.getResolvedLength();
+      results.reserve(length);
+      for (int64_t i = 0; i < length; ++i)
+        results.push_back(
+            b.create<POP::StructGetOp>(op.getLoc(), container, i + index));
+      b.replaceOp(
+          op, materializeListSourceConversion(b, op.getLoc(), results, list));
+    } else {
+      b.startRootUpdate(op);
+      op.setOperand(container);
+      op.setIndexAttr(b.getIndexAttr(index));
+      b.finalizeRootUpdate(op);
+    }
+    return success();
+  }
+};
+
+/// %s = replace(%s0, %list) -> replace(replace(replace(%s0, %l0), %l1), %l2).
+struct ExpandStructReplaceOp
+    : public mlir::OpRewritePattern<POP::StructReplaceOp> {
+  ExpandStructReplaceOp(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::StructReplaceOp op,
+                                PatternRewriter &b) const override {
+    if (!structHasListElement(op.getType()))
+      return failure();
+
+    auto [type, index] = expandListsInStruct(op.getContainer().getType(),
+                                             op.getIndexAttr().getInt());
+    Value container = materializeConversion(b, op.getContainer(), type);
+    if (isa<ListType>(op.getValue().getType())) {
+      for (auto [i, value] :
+           llvm::enumerate(materializeListDestConversion(b, op.getValue())))
+        container = b.create<POP::StructReplaceOp>(op.getLoc(), value,
+                                                   container, i + index);
+    } else {
+      container = b.create<POP::StructReplaceOp>(op.getLoc(), op.getValue(),
+                                                 container, index);
+    }
+    b.replaceOp(op, materializeConversion(b, container, op.getType()));
+    return success();
+  }
+};
+
+/// gep %s[i] -> bitcast(gep %s[i])
+struct ExpandStructGEPOp : public mlir::OpRewritePattern<POP::StructGEPOp> {
+  ExpandStructGEPOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::StructGEPOp op,
+                                PatternRewriter &b) const override {
+    auto structType = cast<POP::StructType>(
+        op.getContainer().getType().getResolvedElementType());
+    if (!structHasListElement(structType))
+      return failure();
+
+    auto [type, index] =
+        expandListsInStruct(structType, op.getIndexAttr().getInt());
+    Value containerPtr = materializeConversion(b, op.getContainer(),
+                                               POP::PointerType::get(type));
+    if (auto list = dyn_cast<ListType>(op.getType().getResolvedElementType())) {
+      // If the list is empty, then we point to nothing. Generate a nullptr...
+      if (!*list.getResolvedLength()) {
+        Value zero = b.create<mlir::index::ConstantOp>(op.getLoc(), 0);
+        b.replaceOpWithNewOp<POP::IndexToPointerOp>(op, op.getType(), zero);
+        return success();
+      }
+
+      // Take the address of the first element in the expanded list.
+      Value startPtr = b.create<POP::StructGEPOp>(op.getLoc(), containerPtr,
+                                                  b.getIndexAttr(index));
+      // Bitcast it to ptr<array<N, T>>.
+      Value listPtr = b.create<POP::PointerBitcastOp>(
+          op.getLoc(),
+          POP::PointerType::get(
+              POP::ArrayType::get(list.getLength(), list.getElementType())),
+          startPtr);
+      b.replaceOp(op, materializeConversion(b, listPtr, op.getType()));
+    } else {
+      b.startRootUpdate(op);
+      op.setOperand(containerPtr);
+      op.setIndexAttr(b.getIndexAttr(index));
+      b.finalizeRootUpdate(op);
+    }
+    return success();
+  }
+};
+
+/// %list = load(%listPtr) -> %0 = load(%listPtr[0]), %1 = load(%listPtr[1])
+struct ExpandListLoad : public mlir::OpRewritePattern<POP::LoadOp> {
+  ExpandListLoad(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::LoadOp op,
+                                PatternRewriter &b) const override {
+    auto list =
+        dyn_cast<ListType>(op.getPtr().getType().getResolvedElementType());
+    if (!list)
+      return failure();
+
+    Type arrPtrType = POP::PointerType::get(
+        POP::ArrayType::get(list.getLength(), list.getElementType()));
+    Value arrPtr = materializeConversion(b, op.getPtr(), arrPtrType);
+    Value elPtr = b.create<POP::PointerBitcastOp>(
+        op.getLoc(), POP::PointerType::get(list.getElementType()), arrPtr);
+    SmallVector<Value> results;
+    int64_t length = *list.getResolvedLength();
+    results.reserve(length);
+    for (int64_t i = 0; i < length; ++i) {
+      Value offset = b.create<mlir::index::ConstantOp>(op.getLoc(), i);
+      Value curPtr = b.create<POP::OffsetOp>(op.getLoc(), elPtr, offset);
+      results.push_back(
+          b.create<POP::LoadOp>(op.getLoc(), curPtr, op.getAlignmentAttr()));
+    }
+    Value newList =
+        materializeListSourceConversion(b, op.getLoc(), results, list);
+    b.replaceOp(op, newList);
+    return success();
+  }
+};
+
+/// store(%list, %listPtr) -> store(%l0, %listPtr[0]), ...
+struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
+  ExpandListStore(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::StoreOp op,
+                                PatternRewriter &b) const override {
+    auto list =
+        dyn_cast<ListType>(op.getPtr().getType().getResolvedElementType());
+    if (!list)
+      return failure();
+
+    Type arrPtrType = POP::PointerType::get(
+        POP::ArrayType::get(list.getLength(), list.getElementType()));
+    Value arrPtr = materializeConversion(b, op.getPtr(), arrPtrType);
+    Value elPtr = b.create<POP::PointerBitcastOp>(
+        op.getLoc(), POP::PointerType::get(list.getElementType()), arrPtr);
+    ValueRange elements = materializeListDestConversion(b, op.getArg());
+    for (auto [idx, element] : llvm::enumerate(elements)) {
+      Value offset = b.create<mlir::index::ConstantOp>(op.getLoc(), idx);
+      Value curPtr = b.create<POP::OffsetOp>(op.getLoc(), elPtr, offset);
+      b.create<POP::StoreOp>(op.getLoc(), element, curPtr,
+                             op.getAlignmentAttr());
+    }
+    b.eraseOp(op);
+    return success();
+  }
+};
+
+/// Expand lists in a generic operation by expanding operands, results, and
+/// block arguments in-place.
+struct ExpandGenericOperation : public mlir::RewritePattern {
+  ExpandGenericOperation(MLIRContext *ctx)
+      : RewritePattern(MatchAnyOpTypeTag{}, /*benefit=*/1, ctx) {}
+
+  LogicalResult matchAndRewrite(Operation *op,
+                                PatternRewriter &b) const override {
+    // Don't recurse on the unrealized casts. They will be removed by DCE.
+    if (isa<mlir::UnrealizedConversionCastOp>(op))
+      return failure();
+
+    // Expand the operands.
+    SmallVector<Value> operands;
+    bool hasListOperand = false;
+    for (Value operand : op->getOperands()) {
+      if (isa<ListType>(operand.getType())) {
+        hasListOperand = true;
+        ValueRange expanded = materializeListDestConversion(b, operand);
+        operands.append(expanded.begin(), expanded.end());
+      } else {
+        operands.push_back(operand);
+      }
+    }
+    if (hasListOperand) {
+      b.updateRootInPlace(op, [&] { op->setOperands(operands); });
+      return success();
+    }
+
+    // Expand block arguments.
+    bool changed = false;
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region) {
+        // The number of arguments changes and iterators get invalidated.
+        b.setInsertionPointToStart(&block);
+        for (unsigned i = 0; i < block.getNumArguments();) {
+          BlockArgument arg = block.getArgument(i);
+          auto list = dyn_cast<ListType>(arg.getType());
+          if (!list) {
+            ++i;
+            continue;
+          }
+
+          if (!changed) {
+            changed = true;
+            b.startRootUpdate(op);
+          }
+          int64_t length = *list.getResolvedLength();
+          SmallVector<Value> expanded;
+          expanded.reserve(length);
+          for (int64_t j = 0; j < length; ++j)
+            expanded.push_back(block.insertArgument(
+                i + j + 1, list.getResolvedElementType(), arg.getLoc()));
+          arg.replaceAllUsesWith(
+              materializeListSourceConversion(b, arg.getLoc(), expanded, list));
+          block.eraseArgument(i);
+          i += length;
+        }
+      }
+    }
+    if (changed) {
+      b.finalizeRootUpdate(op);
+      return success();
+    }
+
+    // Expand the results. Results are immutable so we have to rebuild the op.
+    SmallVector<Type> results;
+    b.setInsertionPoint(op);
+    bool hasListResult = false;
+    for (Value result : op->getResults()) {
+      if (auto list = dyn_cast<ListType>(result.getType())) {
+        hasListResult = true;
+        results.append(*list.getResolvedLength(),
+                       list.getResolvedElementType());
+      } else {
+        results.push_back(result.getType());
+      }
+    }
+    if (hasListResult) {
+      // Copy everything over.
+      OperationState state(op->getLoc(), op->getName(), op->getOperands(),
+                           results, {}, op->getSuccessors());
+      state.attributes = op->getAttrDictionary();
+      for (Region &region : op->getRegions()) {
+        state.addRegion(std::make_unique<Region>());
+        state.regions.back()->takeBody(region);
+      }
+      Operation *newOp = b.create(state);
+      SmallVector<Value> results;
+      results.reserve(op->getNumResults());
+      // Slice out the expanded results and materialize conversions for them.
+      for (int64_t i = 0, j = 0, e = op->getNumResults(); i < e; ++i) {
+        if (auto list = dyn_cast<ListType>(op->getResult(i).getType())) {
+          int64_t length = *list.getResolvedLength();
+          ValueRange listValues = newOp->getResults().slice(j, length);
+          j += length;
+          results.push_back(materializeListSourceConversion(b, op->getLoc(),
+                                                            listValues, list));
+        } else {
+          results.push_back(newOp->getResult(j++));
+        }
+      }
+      b.replaceOp(op, results);
+      return success();
+    }
+
+    // Nothing changed.
+    return failure();
+  }
+};
 
 //===----------------------------------------------------------------------===//
 // Pass Definition
@@ -186,35 +597,75 @@ void LowerKGENToPOPPass::runOnOperation() {
                                        std::move(fieldTypes));
     decl->erase();
   }
-  StructOperationLowerer lowerer(&getContext(), structDecls);
+  StructOperationLowerer structLowerer(&getContext(), structDecls);
 
-  // Lower operations.
+  // Lower KGEN struct operations.
   getOperation()->walk([&](Operation *op) {
-    lowerer.setInsertionPoint(op);
     llvm::TypeSwitch<Operation *>(op)
-        .Case<StructInsertOp, StructExtractOp, StructCreateOp, StructGEPOp>(
-            [&](auto op) { lowerer.materializeLowering(op); });
+        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
+            [&](auto op) { structLowerer.materializeLowering(op); });
   });
 
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types.
-  auto substituteTypes = [&](Type type) -> Type {
-    return lowerer.substituteTypes(type);
-  };
   getOperation()->walk([&](Operation *op) {
     // Substitute any references in attributes.
     op->setAttrs(op->getAttrDictionary()
-                     .replaceSubElements(substituteTypes)
+                     .replaceSubElements([&](Type type) {
+                       return structLowerer.substituteTypes(type);
+                     })
                      .cast<DictionaryAttr>());
 
     // Substitute the result types.
     for (OpResult result : op->getOpResults())
-      result.setType(substituteTypes(result.getType()));
+      result.setType(structLowerer.substituteTypes(result.getType()));
 
     // Substitute the block argument types.
     for (Region &region : op->getRegions())
       for (Block &block : region)
         for (BlockArgument arg : block.getArguments())
-          arg.setType(substituteTypes(arg.getType()));
+          arg.setType(structLowerer.substituteTypes(arg.getType()));
   });
+
+  // Transpose boundary operations involving lists. We have to do this after
+  // KGEN structs are lowered so that we don't have to iterate between both. Use
+  // the greedy rewrite driver to apply the lowerings iteratively.
+  mlir::GreedyRewriteConfig config;
+  config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
+  RewritePatternSet patterns(&getContext());
+  patterns.insert<ExpandStructConstructOp, ExpandStructGetOp,
+                  ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
+                  ExpandListStore, ExpandGenericOperation>(&getContext());
+  (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
+                                           config);
+
+  // Okay, there should be no list operations at the boundary between nested
+  // types and values anymore. Expand lists in anything left.
+  std::vector<mlir::UnrealizedConversionCastOp> leftoverCasts;
+  getOperation()->walk([&](Operation *op) {
+    if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
+      leftoverCasts.push_back(cast);
+
+    // Expand any lists in attributes.
+    op->setAttrs(op->getAttrDictionary()
+                     .replaceSubElements(expandListsInType)
+                     .cast<DictionaryAttr>());
+
+    // Expand the result types.
+    for (OpResult result : op->getOpResults())
+      result.setType(expandListsInType(result.getType()));
+
+    // Expand the block argument types.
+    for (Region &region : op->getRegions())
+      for (Block &block : region)
+        for (BlockArgument arg : block.getArguments())
+          arg.setType(expandListsInType(arg.getType()));
+  });
+  // Clean up any leftover casts after substituting types.
+  for (mlir::UnrealizedConversionCastOp cast : leftoverCasts) {
+    if (cast.getOperandTypes() == cast.getResultTypes()) {
+      cast.replaceAllUsesWith(cast.getOperands());
+      cast->erase();
+    }
+  }
 }

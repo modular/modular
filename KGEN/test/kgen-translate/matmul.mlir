@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='builtin.module(lower-zap-to-pop,lower-kgen-to-llvm,kgen.func(lower-pop-to-llvm),lower-to-llvm)' %s | kgen-translate -mlir-to-llvmir | FileCheck %s
+// RUN: kgen-opt -pass-pipeline='builtin.module(lower-zap-to-pop,lower-to-llvm)' %s | kgen-translate -mlir-to-llvmir | FileCheck %s
 
 // CHECK-LABEL: define internal void @naive_matmul
 kgen.func @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,

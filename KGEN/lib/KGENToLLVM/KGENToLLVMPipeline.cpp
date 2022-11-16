@@ -38,6 +38,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 
   // And finally canonicalize again.
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
+  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCSEPass());
 }
 
 void M::KGEN::registerLowerToLLVMPipeline() {
