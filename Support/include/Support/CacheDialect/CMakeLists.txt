@@ -4,8 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_mlir_dialect(Cache cache)
-add_modular_doc(Cache -gen-dialect-doc CacheDialect Support/docs -dialect=Cache)
+add_mlir_dialect(Cache cache -dialect=cache)
+add_modular_doc(Cache -gen-dialect-doc CacheDialect Support/docs -dialect=cache)
 
 set(LLVM_TARGET_DEFINITIONS Cache.td)
 mlir_tablegen(CacheAttrs.h.inc -gen-attrdef-decls -dialect=Cache)
