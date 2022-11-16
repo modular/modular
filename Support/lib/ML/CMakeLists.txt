@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MSupportML
+  CompiledFrameworkLabel.cpp
   DType.cpp
   TensorShape.cpp
   TensorSpec.cpp
