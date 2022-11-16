@@ -24,7 +24,7 @@ def func():
   pass
 
 def bad_assignment0(a: Int, b: Int):
-   # expected-error @+1 {{statements must start at the beginning of a line}}
+   # expected-error @+1 {{cannot assign to immutable expression}}
    a = b += b
 
 def bad_assignment1(a: Int, b: Int):
@@ -259,6 +259,9 @@ def testLValuesRvalues():
   # expected-error @+1 {{operand must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
+  # We can implicitly declare things on the LHS but not on the RHS.
+  unknown1 += unknown2 # expected-error {{use of unknown declaration "unknown2"}}
+
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
   a = a  # expected-error {{cannot assign to immutable expression}}
@@ -282,3 +285,7 @@ struct SpecialFunctions:
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the "__mul__" special method}}
+
+fn expr_crash():
+  var x: index
+  x += x # expected-error {{cannot emit binary operator on this index value yet}}

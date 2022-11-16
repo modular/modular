@@ -89,6 +89,7 @@ public:
     kLeftShift,
     kRightShift,
     kExp,
+    kAssign,
     kPlusAssign,
     kMinusAssign,
     kMulAssign,
@@ -102,8 +103,8 @@ public:
     kRightShiftAssign,
     kExpAssign,
     kFloorDivAssign,
-    kFirstAugAssign = kPlusAssign,
-    kLastAugAssign = kFloorDivAssign,
+    kFirstAssignStmt = kAssign,
+    kLastAssignStmt = kFloorDivAssign,
     kFirstBinOp = kAdd,
     kLastBinOp = kFloorDivAssign,
 

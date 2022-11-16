@@ -78,8 +78,6 @@ struct LitStmtParser : public LitParserBase {
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
-  ParseResult parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
-                                  size_t stmtIndent);
   ParseResult parseBreakOrContinueStmt(LitToken::Kind kind, StringRef name,
                                        StringRef opName);
 
@@ -274,96 +272,19 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   if (isa<LITStructDeclOp>(containingDecl))
     emitError("invalid expression in this context");
 
-  // expression_stmt ::= starred_expression
-  // assignment_stmt ::=
-  //                 (target_list "=")+ (starred_expression |
-  //                 yield_expression)
-  // augmented_assignment_stmt ::=
-  //                         augtarget augop (expression_list |
-  //                         yield_expression)
-  // augtarget ::=  identifier | attributeref | subscription | slicing
-  // augop ::=  "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
-  //            | ">>=" | "<<=" | "&=" | "^=" | "|="
-
+  // Parse a single expression, an assignment stmt, or augmented assignment
+  // statement.
   ExprNode *expr = nullptr;
-  if (parseAugmentedAssignmentExpression(expr, stmtIndent))
+  if (parseExpressionOrAssignmentStmt(expr, stmtIndent))
     return failure();
 
-  if (BinOpNode::isAugmentedAssignment(expr)) {
-    // FIXME: This will allow things like "x += undefined" which isn't right.
-    (void)getExprEmitter(/*allowImplicitVarDecl=*/true).emitDRValue(expr);
-    return success();
-  }
-
-  // If the expression was followed by a `=` then we have an assignment.  If
-  // not then we have an expression_stmt.
-  SMLoc equalsLoc;
-  if (consumeIf(LitToken::equal, &equalsLoc))
-    return parseAssignmentStmt(expr, equalsLoc, stmtIndent);
-
-  // Materialize the expression statement in our current scope but discard the
-  // result on the floor.  Note that this does not materialize an LValue, but
-  // does evaluate side effects.
-  auto emitter = getExprEmitter();
-  (void)expr->emitIR(emitter);
+  (void)getExprEmitter(/*allowImplicitVarDecl=*/true).emitDRValue(expr);
   return success();
 }
 
 //===----------------------------------------------------------------------===//
 // Simple statements.
 //===----------------------------------------------------------------------===//
-
-/// Parse an assignment_stmt after having parsed a leading expression (which
-/// we need to resolve into a target_list) and an `=` sign.
-///
-/// assignment_stmt ::=
-///                 (target_list "=")+ (starred_expression | yield_expression)
-/// target_list     ::=  target ("," target)* [","]
-/// target ::= identifier
-///          | "(" [target_list] ")" | "[" [target_list] "]"
-///          | attributeref | subscription | slicing | "*" target
-///
-ParseResult LitStmtParser::parseAssignmentStmt(ExprNode *lhs, SMLoc equalsLoc,
-                                               size_t stmtIndent) {
-  // Finish parsing the assignment.
-  ExprNode *rhs = nullptr;
-  if (parseExpression(rhs, stmtIndent))
-    return failure();
-
-  // Materialize the expression statement.
-  auto rhsValue = getExprEmitter().emitDRValue(rhs);
-  if (!rhsValue)
-    return success(); // Parse succeeded.
-
-  // If this variable is being declared in a `def` definition, then we allow
-  // implicit declarations of variables.  In `fn` and top level, we do not.
-  ASTType lhsContextualType;
-  if (getDecl().isDef)
-    lhsContextualType = rhsValue.type;
-
-  // Resolve LHS expression into an lvalue that we can store into.
-  ASTTypeAnd<LValue> lValue =
-      getExprEmitter(/*allowImplicitVarDecl=*/true)
-          .emitLValue(lhs, lhsContextualType,
-                      "cannot assign to immutable expression");
-  if (!lValue)
-    return success(); // Parse succeeded.
-
-  // Check to see if the destination type and the source type are compatible.
-  // TODO: Implement implicit conversions.
-  if (!lValue.type.isEqualCanon(rhsValue.type)) {
-    emitError(rhs->getLoc(), "cannot convert value of type ")
-        << rhsValue.type << " to " << lValue.type;
-    return success();
-  }
-
-  // If everything worked out, store the resultant value into the lvalue for the
-  // destination.  If things didn't work, just drop this on the floor.
-  builder.create<POP::StoreOp>(translateLocation(equalsLoc), rhsValue.ir,
-                               lValue.ir, /*alignment*/ None);
-
-  return success();
-}
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {

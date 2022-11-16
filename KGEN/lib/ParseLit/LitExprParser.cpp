@@ -36,9 +36,9 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
-  // infix: +=, -=: These are not a Python 'expression', and are not allowed in
-  // parens, they are only allowed as a top level statement.
-  kAugAssignStmt,
+  // infix: =, +=, -=: These are not a Python 'expression', and are not allowed
+  // in parens, they are only allowed as a top level statement.
+  kAssignStmt,
 
   kLowestExpr, // Lowest expression precedence (most loosely bound).
   kIfElse,     // infix: if - else
@@ -154,6 +154,8 @@ struct InfixInfo {
     switch (tokKind) {
     default:
       return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
+    case LitToken::equal:
+      return {Precedence::kLowestExpr, ExprNode::kAssign, false};
     case LitToken::plus_equal:
       return {Precedence::kLowestExpr, ExprNode::kPlusAssign, false};
     case LitToken::minus_equal:
@@ -259,7 +261,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 
       ExprNode *falseExpr;
       if (parseToken(LitToken::Kind::kw_else,
-                     "expecting a 'else' followed by an expression") ||
+                     "expecting an 'else' followed by an expression") ||
           parseExpression(falseExpr, infixInfo.precedence))
         return failure();
       expr = alloc<TernaryOpNode>(infixInfo.nodeKind, condition, expr,
@@ -522,12 +524,27 @@ ParseResult LitParserBase::parseExpression(ExprNode *&result,
       .parseExpression(result, Precedence::kLowestExpr);
 }
 
-/// Parse an expression, allowing `+=` and other 'augmented assignment exprs.
+/// assignment_stmt ::=
+///                 (target_list "=")+ (starred_expression | yield_expression)
+/// target_list     ::=  target ("," target)* [","]
+/// target ::= identifier
+///          | "(" [target_list] ")" | "[" [target_list] "]"
+///          | attributeref | subscription | slicing | "*" target
+///
+/// expression_stmt ::= starred_expression
+/// augmented_assignment_stmt ::=
+///                         augtarget augop (expression_list |
+///                         yield_expression)
+/// augtarget ::=  identifier | attributeref | subscription | slicing
+/// augop ::=  "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
+///            | ">>=" | "<<=" | "&=" | "^=" | "|="
+///
+/// Parse an expression, allowing `=`, and `+=`.
 ParseResult
-LitParserBase::parseAugmentedAssignmentExpression(ExprNode *&result,
-                                                  Optional<size_t> stmtIndent) {
+LitParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
+                                               Optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kAugAssignStmt);
+      .parseExpression(result, Precedence::kAssignStmt);
 }
 
 ParseResult LitParserBase::parseType(ASTType &result, ASTDecl &declScope,
