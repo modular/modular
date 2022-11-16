@@ -2,6 +2,8 @@
 
 # CHECK: module {
 
+__include "../lit-examples/prolog.lit"
+
 fn noop():
 
 # CHECK-LABEL: lit.func @precedence_associativity(%a: index)
@@ -181,3 +183,8 @@ def test_if_cond(a: index):
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF_RES:.*]], %a_0 : !pop.pointer<index>
     a = 2 if 1 else 3
+
+    var i : Int
+    i += i
+    if a:     # 'if' stmt, not an 'if' expression.
+        i = i+i

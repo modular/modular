@@ -241,14 +241,12 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   if (parsePrefixExpr(expr))
     return failure();
 
-  if (isTokenStartOfNextStatement())
-    return success();
-
-  // It consumes tokens until it meets a token whose tokPrecedence is equal or
+  // Consume infix tokens until we meet a token whose tokPrecedence is equal or
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
-  while (unsigned(minPrec) < unsigned(infixInfo.precedence)) {
+  while (!isTokenStartOfNextStatement() &&
+         unsigned(minPrec) < unsigned(infixInfo.precedence)) {
     LitToken::Kind tokKind = getToken().getKind();
     auto loc = consumeToken().getLoc();
 
