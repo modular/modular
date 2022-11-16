@@ -230,9 +230,11 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
 static LogicalResult
 verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                TypedAttr value, Type type) {
-  // If the type is unresolved, allow only scalar constants.
+  // If the type is unresolved, allow only scalar constants or parameter
+  // expressions..
   if (type.isa<ParamRefType>()) {
-    if (!value.isa<IntegerAttr, FloatAttr>())
+    if (!value.isa<IntegerAttr, FloatAttr, ParamDeclRefAttr,
+                   ParamOperatorAttr>())
       return emitError(
           "expected integer or float attribute for unspecified result type");
     return success();
@@ -259,7 +261,8 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
       if (!type || type.getSize() != *size)
         return emitError("expected attribute type to be !M.array<")
                << *size << "xT>";
-    } else if (!value.isa<IntegerAttr, FloatAttr>()) {
+    } else if (!value.isa<IntegerAttr, FloatAttr, ParamDeclRefAttr,
+                          ParamOperatorAttr>()) {
       return emitError("expected integer or float attribute for array "
                        "constant of unspecified size");
     }
@@ -273,7 +276,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   // Verify vector constant.
   auto simd = type.cast<SIMDType>();
   // If the attribute is scalar, we only need to check its dtype.
-  if (value.isa<IntegerAttr, FloatAttr>())
+  if (value.isa<IntegerAttr, FloatAttr, ParamDeclRefAttr, ParamOperatorAttr>())
     return checkDType(simd.cast<DTypeInterface>());
 
   // The attribute is array, and its size needs to match the simd size.
