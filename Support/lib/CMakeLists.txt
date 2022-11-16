@@ -18,6 +18,7 @@ add_modular_library(MSupport
   ConcatenationTree.cpp
   Error.cpp
   HMAC.cpp
+  Host.cpp
   MicroBenchmark.cpp
   TempFile.cpp
   TimeProfiler.cpp
