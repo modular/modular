@@ -4,17 +4,13 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
+add_modular_conversion_library(CachePasses
+  CachePasses.cpp
 
-  LINK_LIBS PRIVATE
+  DEPENDS
+  MLIRCachePassesIncGen
+
+  LINK_LIBS PUBLIC
   CacheDialect
-  CachePasses
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MSupport
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
+  MLIRIR
   )

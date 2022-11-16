@@ -4,17 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_dialect_library(CacheDialect
-  CacheAttrs.cpp
-  CacheDialect.cpp
-  CacheOps.cpp
-
-  DEPENDS
-  MLIRCacheIncGen
-
-  LINK_COMPONENTS
-
-  LINK_LIBS PUBLIC
-  MLIRIR
-  MSupport
-  )
+set(LLVM_TARGET_DEFINITIONS CachePasses.td)
+mlir_tablegen(CachePasses.h.inc -gen-pass-decls)
+add_public_tablegen_target(MLIRCachePassesIncGen)
