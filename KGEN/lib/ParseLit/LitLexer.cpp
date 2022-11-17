@@ -618,8 +618,8 @@ APFloat LitLexer::getFloatLiteralValue(StringRef spelling) {
   assert(!errorToBool(StatusOrErr.takeError()) &&
          "Invalid floating point literal");
   APFloat::opStatus Status = *StatusOrErr;
-  assert(Status == APFloat::opOK ||
-         Status & APFloat::opInexact && "Invalid floating point literal");
+  assert((Status == APFloat::opOK || Status & APFloat::opInexact) &&
+         "Invalid floating point literal");
   return num;
 }
 
