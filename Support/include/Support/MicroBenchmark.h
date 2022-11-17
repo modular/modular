@@ -138,6 +138,8 @@ struct MicroBenchmark {
 
   /// Options which control the benchmark execution.
   struct RunOptions {
+    /// The maximum number of iterations to perform per time measurement.
+    size_t maxBatchSize = 0;
     /// The number of iterations to run as warmup.
     size_t warmupIterations = 0;
     /// The minimum time to run the benchmark for. The benchmark will run for

@@ -51,7 +51,8 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
   runOptions = options;
 
   size_t totalIterations = 0;
-  uint64_t batchSize = options.warmupIterations;
+  uint64_t batchSize =
+      options.maxBatchSize ? options.maxBatchSize : options.warmupIterations;
   bool isWarmupPhase = batchSize > 0;
   std::chrono::milliseconds totalTime(0);
   std::chrono::milliseconds minRuntime = options.minRuntime;
@@ -118,6 +119,13 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
             batchDuration);
         totalIterations += batchSize;
       }
+    }
+
+    // If the maxBatchSize is specified, then prefer that over the subsequent
+    // computations.
+    if (options.maxBatchSize) {
+      batchSize = options.maxBatchSize;
+      continue;
     }
 
     // We now count the next batchSize. A user might run the benchmark with no
