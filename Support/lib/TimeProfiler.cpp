@@ -25,6 +25,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/JSON.h"
@@ -129,6 +130,18 @@ struct TimeTraceProfiler {
     assert(llvm::all_of(Instances.List,
                         [](const auto &TTP) { return TTP->Stack.empty(); }) &&
            "All profiler sections should be ended when calling write");
+
+    // For visualization purposes only.
+    // Sometimes callers can have the same start time (in ns) as their callees.
+    // Since events are push to Entries when the trace event ends, callees
+    // appear before callers in Entries. When Perfetto sees 2 events with the
+    // same start time, it displays the first one (callee) above the second one
+    // (caller) which is not what we want. After reversing Entries, callers
+    // appear before callees, and therefore callers appear above callees in the
+    // profiler.
+    std::reverse(Entries.begin(), Entries.end());
+    for (TimeTraceProfiler *TTP : Instances.List)
+      std::reverse(TTP->Entries.begin(), TTP->Entries.end());
 
     llvm::json::OStream J(OS);
     J.objectBegin();
