@@ -13,6 +13,11 @@ struct DType:
 struct Scalar[type: DType]:
   pass
 
+struct Bool: #TODO
+  fn __new__() -> Bool:
+    var result: Bool
+    return result
+
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
@@ -29,6 +34,33 @@ struct Int:
     # CHECK: kgen.return %1
     return result
 
+  fn __lt__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __le__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __eq__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __ne__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __gt__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __ge__(self, rhs: Int) -> Bool:
+    return Bool() #TODO
+
+  fn __pos__(self) -> Int:
+    return Int(self.value)
+
+  fn __neg__(self) -> Int:
+    return Int(0) #TODO
+
+  fn __invert__(self) -> Int:
+    return Int(0) #TODO
+
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __add__(self, rhs: Int) -> Int:
     # CHECK: %0 = lit.struct.extract %self[value]
@@ -44,9 +76,6 @@ struct Int:
 
   fn __mul__(self, rhs: Int) -> Int:
     return Int(__mlir_op.`index.mul`(self.value, rhs.value))
-
-  fn __matmul__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
 
   fn __truediv__(self, rhs: Int) -> Int:
     return Int(rhs.value)      # TODO: Use this somehow. :)
@@ -79,7 +108,7 @@ struct Int:
   # In place operations.
   #===----------------------------------------------------------------------===#
 
-  # CHECK: lit.func @__iadd__(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  # CHECK-LABEL: lit.func @__iadd__(%self: !pop.pointer<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __iadd__(&self, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
     # CHECK: %1 = kgen.param.constant: (!kgen.ref<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int> = <@Int::@__add__>
@@ -97,10 +126,6 @@ struct Int:
 
   fn __imul__(&self, rhs: Int) -> Int:
     self = self.__mul__(rhs)
-    return self
-
-  fn __imatmul__(&self, rhs: Int) -> Int:
-    self = self.__matmul__(rhs)
     return self
 
   fn __itruediv__(&self, rhs: Int) -> Int:
