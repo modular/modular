@@ -20,9 +20,13 @@ struct Int:
 
   # CHECK-LABEL: lit.func @__new__(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
   fn __new__(value: __mlir_type.index) -> Int:
-    # TODO: Enable dict_display somehow so we can use "return {value: value}"
+    # CHECK: %result = lit.var.decl "result" : <@Int>
     var result: Int
+    # CHECK: %0 = lit.struct.gep %result[value] : <index> from <@Int>
+    # CHECK: pop.store %value_0, %0 : !pop.pointer<index>
     result.value = value
+    # CHECK: %1 = pop.load %result
+    # CHECK: kgen.return %1
     return result
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {

@@ -287,5 +287,11 @@ struct SpecialFunctions:
     self*self # expected-error {{'SpecialFunctions' does not implement the "__mul__" special method}}
 
 fn expr_crash():
-  var x: index
+  var x: __mlir_type.index
   x += x # expected-error {{cannot emit binary operator on this index value yet}}
+
+  # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
+  __mlir_op.`index.add`()
+
+  # expected-error @+1 {{cannot access fields in type '!builtin.index'}}
+  __mlir_op.`index.add`(x, x).x

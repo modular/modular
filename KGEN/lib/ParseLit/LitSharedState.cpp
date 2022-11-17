@@ -142,6 +142,10 @@ ASTType LitSharedState::getUnboundMLIROperatorType() const {
   return impl->unboundMLIROperatorTypeDecl->getResolvedType();
 }
 
+ASTDecl &LitSharedState::getMLIRTypeScope() const {
+  return *impl->mlirTypeDecl;
+}
+
 ASTType LitSharedState::getTypeType() const {
   return impl->typeTypeDecl->getResolvedType();
 }
