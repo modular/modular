@@ -14,6 +14,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include <__tuple>
 
 namespace llvm {
 class SourceMgr;
@@ -58,6 +59,9 @@ public:
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
+
+  /// This is the type of values like "__mlir_op.`pop.add`"
+  ASTType getUnboundMLIROperatorType() const;
 
   /// This is the "type" type, which can bind to any lit type.
   ASTType getTypeType() const;
@@ -156,8 +160,14 @@ enum class MagicDeclKind : uint8_t {
   // This type is produced when an error is detected to simplify clients.
   kTypeCheckErrorType,
 
-  /// This is the magic declaration for __mlir_type.
-  k__mlir_type,
+  k__mlir_type, // __mlir_type declaration itself.
+  k__mlir_op,   // __mlir_op declaration itself.
+
+  /// This is the type held by a partially bound MLIR operator, e.g.
+  ///   __mlir_op.`pop.abs` or
+  ///   __mlir_op.`pop.constant`[value: __mlir_type.i64: 42].
+  /// It is produced by synthesized declarations and cannot be written directly.
+  kUnboundMLIROperatorType,
 
   // This is the 'type' type.
   kTypeType,

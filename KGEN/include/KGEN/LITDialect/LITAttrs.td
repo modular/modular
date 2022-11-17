@@ -22,6 +22,26 @@ class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// UnboundMLIROperationAttr
+//===----------------------------------------------------------------------===//
+
+def UnboundMLIROperationAttr
+  : LITAttr<"UnboundMLIROperation", "unbound_mlir_operation",
+            [TypedAttrInterface]> {
+  let summary = "An unbound mlir operation";
+  let description = [{
+    This attribute is used by the Lit parser as a reference to an MLIR
+    operation by name: it may have bound attributes as well.  When applied to
+    value operands, it materializes into a specific MLIR operation instance
+  }];
+
+  // TODO: Support bound attributes.
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type,
+                        "StringAttr":$name);
+  let assemblyFormat = "$name $type";
+}
+
+//===----------------------------------------------------------------------===//
 // NoneAttr
 //===----------------------------------------------------------------------===//
 

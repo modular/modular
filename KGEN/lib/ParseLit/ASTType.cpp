@@ -80,6 +80,12 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     case MagicDeclKind::k__mlir_type:
       os << "__mlir_type";
       break;
+    case MagicDeclKind::k__mlir_op:
+      os << "<<k__mlir_op isn't a type>>";
+      break;
+    case MagicDeclKind::kUnboundMLIROperatorType:
+      os << "<<unbound MLIR operator type>>";
+      break;
     case MagicDeclKind::kFunctionType:
       llvm_unreachable("Implemented as a struct, so should be handled");
     case MagicDeclKind::kTypeType:

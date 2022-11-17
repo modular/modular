@@ -11,24 +11,26 @@ struct Scalar[type: DType]:
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
-  var value : index
+  var value : __mlir_type.index
 
-  # CHECK: lit.func @__new__(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
+  # CHECK-LABEL: lit.func @__new__(%value_0: index) -> !kgen.ref<@Int> attributes {isStatic} {
   fn __new__(value: index) -> Int:
     # TODO: Enable dict_display somehow so we can use "return {value: value}"
     var result: Int
     result.value = value
     return result
 
-  # CHECK: lit.func @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  # CHECK-LABEL: lit.func @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __add__(self, rhs: Int) -> Int:
-    # CHECK: %0 = lit.struct.extract %rhs[value]
-    # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%0)
-    return Int(rhs.value)      # TODO: Use this somehow. :)
-    # CHECK: kgen.return %1
+    # CHECK: %0 = lit.struct.extract %self[value]
+    # CHECK: %1 = lit.struct.extract %rhs[value]
+    # CHECK: %2 = index.add %0, %1
+    # CHECK: %3 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%2)
+    # CHECK: kgen.return %3
+    return Int(__mlir_op.`index.add`(self.value, rhs.value))
   # CHECK: }
 
-  # CHECK: lit.func @__sub__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  # CHECK-LABEL: lit.func @__sub__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __sub__(self, rhs: Int) -> Int:
     # CHECK: %0 = lit.struct.extract %rhs[value]
     # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%0)
@@ -36,7 +38,7 @@ struct Int:
     # CHECK: kgen.return %1
   # CHECK: }
 
-  # CHECK: lit.func @__mul__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  # CHECK-LABEL: lit.func @__mul__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __mul__(self, rhs: Int) -> Int:
     # CHECK: %0 = lit.struct.extract %rhs[value]
     # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%0)
@@ -44,7 +46,7 @@ struct Int:
     # CHECK: kgen.return %1
   # CHECK: }
 
-  # CHECK: lit.func @__matmul__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
+  # CHECK-LABEL: lit.func @__matmul__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __matmul__(self, rhs: Int) -> Int:
     # CHECK: %0 = lit.struct.extract %rhs[value]
     # CHECK: %1 = kgen.call_param[(index) -> !kgen.ref<@Int>: @Int::@__new__](%0)

@@ -59,6 +59,9 @@ public:
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTDecl *typeCheckErrorTypeDecl = nullptr;
+
+  /// This is the type of values like "__mlir_op.`pop.add`".
+  ASTDecl *unboundMLIROperatorTypeDecl = nullptr;
   /// This is the __mlir_type declaration.
   ASTDecl *mlirTypeDecl = nullptr;
   /// This is the "type" type, which can bind to any lit type.
@@ -134,6 +137,11 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorTypeDecl->getResolvedType();
 }
 
+/// This is the type of values like "__mlir_op.`pop.add`"
+ASTType LitSharedState::getUnboundMLIROperatorType() const {
+  return impl->unboundMLIROperatorTypeDecl->getResolvedType();
+}
+
 ASTType LitSharedState::getTypeType() const {
   return impl->typeTypeDecl->getResolvedType();
 }
@@ -177,8 +185,15 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
                              MagicDeclKind::kTypeCheckErrorType, &builtinsDecl);
   impl->typeCheckErrorTypeDecl->hasReferenceError = true;
 
+  // This is the type used by unbound MLIR operator types.
+  impl->unboundMLIROperatorTypeDecl = &resolver.addMagicDecl(
+      "<<unbound MLIR operator type>>", MagicDeclKind::kUnboundMLIROperatorType,
+      &builtinsDecl);
+
   impl->mlirTypeDecl = &resolver.addMagicDecl(
       "__mlir_type", MagicDeclKind::k__mlir_type, &builtinsDecl);
+  impl->mlirTypeDecl = &resolver.addMagicDecl(
+      "__mlir_op", MagicDeclKind::k__mlir_op, &builtinsDecl);
 
   // Add a declarations for builtin types.
   impl->typeTypeDecl =
@@ -262,9 +277,15 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
     switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
+    case MagicDeclKind::k__mlir_op:
+      emitError(loc, "__mlir_op is not a type");
+      return result = TypeCheckErrorType::get(context);
     case MagicDeclKind::k__mlir_type:
       emitError(
           loc, "cannot use __mlir_type directly, use properties of it instead");
+      return result = TypeCheckErrorType::get(context);
+    case MagicDeclKind::kUnboundMLIROperatorType:
+      emitError(loc, "cannot use __mlir_op operation as a type");
       return result = TypeCheckErrorType::get(context);
     case MagicDeclKind::kTypeType:
       return result = MLIRTypeType::get(context);
