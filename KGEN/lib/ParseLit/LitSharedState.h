@@ -14,7 +14,6 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include <__tuple>
 
 namespace llvm {
 class SourceMgr;
