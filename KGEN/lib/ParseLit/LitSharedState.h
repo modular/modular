@@ -61,6 +61,7 @@ public:
 
   /// This is the type of values like "__mlir_op.`pop.add`"
   ASTType getUnboundMLIROperatorType() const;
+  ASTDecl &getMLIRTypeScope() const; // decl for __mlir_type.
 
   /// This is the "type" type, which can bind to any lit type.
   ASTType getTypeType() const;

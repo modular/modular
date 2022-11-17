@@ -27,6 +27,7 @@
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Verifier.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -149,29 +150,31 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
 /// failure, it bails out.
 static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
                                             ASTDecl &scope,
-                                            ExprEmitter &emitter) {
-  auto &shared = emitter.shared;
+                                            LitSharedState &shared) {
+  Type result;
 
-  // Capture errors thrown by parseType and ignore them.
-  // FIXME: This doesn't silence errors!
-  mlir::ScopedDiagnosticHandler handler(shared.getContext(),
-                                        [](Diagnostic &diag) {});
+  {
+    // Capture errors thrown by parseType and ignore them.
+    // FIXME: This doesn't silence errors!
+    mlir::ScopedDiagnosticHandler handler(shared.getContext(),
+                                          [](Diagnostic &diag) {});
 
-  // FIXME(https://github.com/llvm/llvm-project/issues/58964)
-  // Copy the string into a temporary smallvector so we can make sure it is
-  // nul terminated for the MLIR asmparser.
-  SmallString<64> tmpBuf(name.begin(), name.end());
-  tmpBuf.push_back(0);
-  Type result =
-      mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
-  if (!result) {
-    emitter.emitError(loc, "unknown MLIR type");
-    return nullptr;
+    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
+    // Copy the string into a temporary smallvector so we can make sure it is
+    // nul terminated for the MLIR asmparser.
+    SmallString<64> tmpBuf(name.begin(), name.end());
+    tmpBuf.push_back(0);
+    result =
+        mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
+    if (!result) {
+      shared.emitError(loc, "unknown MLIR type");
+      return nullptr;
+    }
   }
 
   return &shared.declResolver->addFullyResolvedDecl(
       result, StringAttr::get(shared.getContext(), name),
-      emitter.translateLocation(loc), shared.getTypeType(), &scope);
+      shared.translateLocation(loc), shared.getTypeType(), &scope);
 }
 
 /// When a lookup in __mlir_op fails for a named field, this method tries to
@@ -206,7 +209,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     // If this is a lookup in __mlir_type or __mlir_op, then try to lazily
     // synthesize the element in question.
     if (scope.magicKind == MagicDeclKind::k__mlir_type)
-      return synthesizeMLIRTypeDeclEntry(name, loc, scope, *this);
+      return synthesizeMLIRTypeDeclEntry(name, loc, scope, shared);
     if (scope.magicKind == MagicDeclKind::k__mlir_op)
       return synthesizeMLIROpDeclEntry(name, loc, scope, *this);
 
@@ -459,6 +462,32 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   return {};
 }
 
+/// Given an MLIR type, return an ASTType that we can use for type system
+/// processing.  This should only be used for low level operations touching
+/// MLIR, it isn't efficient and shouldn't be used for general user defined
+/// types.
+static ASTType getASTTypeForMLIRType(Type mlirType, SMLoc loc,
+                                     LitSharedState &shared) {
+
+  // To get an ASTType from an MLIR type, we stringify the MLIR type and look it
+  // up on the __mlir_type declaration.
+  std::string typeStr;
+  llvm::raw_string_ostream(typeStr) << mlirType;
+
+  // See if we already have this declaration.
+  auto &mlirTypeScope = shared.getMLIRTypeScope();
+  ASTDecl *typeDecl =
+      mlirTypeScope.lookup(StringAttr::get(shared.getContext(), typeStr));
+
+  // If not, synthesize it.
+  if (!typeDecl) {
+    typeDecl = synthesizeMLIRTypeDeclEntry(typeStr, loc, mlirTypeScope, shared);
+    if (!typeDecl)
+      return {};
+  }
+
+  return shared.getASTType(*typeDecl, {});
+}
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
@@ -756,15 +785,32 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
 
   Operation *resultOp = emitter.builder->create(state);
 
+  // Explicitly run the verifier on the new operation so we make sure to catch
+  // problems early.
+  std::string errorMessage;
+  bool verificationError;
+  {
+    // FIXME: This doesn't silence errors!
+    mlir::ScopedDiagnosticHandler handler(
+        context, [&](Diagnostic &diag) { errorMessage = diag.str(); });
+    // Verify that the resulting op is correctly constructed.  If not, we fail.
+    verificationError = failed(mlir::verify(resultOp));
+  }
+  if (verificationError) {
+    resultOp->emitOpError("MLIR verification error: ") << errorMessage;
+    return {};
+  }
+
   // If we succeeded and have no types, then install a None type.
   if (resultOp->getNumResults() == 0) {
     auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
     return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
             emitter.shared.getNoneType()};
   }
-  // Otherwise return the new values.
-  // FIXME: TYPE.
-  return {DRValue(resultOp->getResult(0)), ASTType()};
+
+  auto astType = getASTTypeForMLIRType(resultOp->getResult(0).getType(),
+                                       call.getLoc(), emitter.shared);
+  return {DRValue(resultOp->getResult(0)), astType};
 }
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
