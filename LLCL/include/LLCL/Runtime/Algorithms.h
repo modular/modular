@@ -13,6 +13,7 @@
 
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
+#include "LLCL/Support/Profiling.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Twine.h"
 #include <utility>
@@ -340,6 +341,9 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(runtime, [state, elementIdx]() {
+      TIME_PROFILER_SCOPE(1, "parallelForEach", [&]() {
+        return Twine("subtask:").concat(Twine(elementIdx)).str();
+      });
       // Invoke the per-element function with the index and all of the captured
       // state.
       std::apply(
@@ -453,7 +457,12 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   // so it may be the straggler and a bit behind the rest of the pack. That
   // said, there is a reasonable likelihood that the last element will be
   // smaller than the rest, so this thread can catch up with the others.
-  elementFn(totalCount - 1, captures...);
+  {
+    TIME_PROFILER_SCOPE(1, "parallelForEach", [&]() {
+      return Twine("subtask:").concat(Twine(totalCount - 1)).str();
+    });
+    elementFn(totalCount - 1, captures...);
+  }
 
   // Donate the client thread to executing work until all the elements have
   // completed.
