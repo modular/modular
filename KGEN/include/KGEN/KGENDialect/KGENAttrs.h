@@ -85,6 +85,8 @@ ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
 inline bool isSimpleConstant(Attribute attr) {
   if (auto list = dyn_cast<ListAttr>(attr))
     return llvm::all_of(list.getValues(), isSimpleConstant);
+  if (auto expr = dyn_cast<ExprFuncAttr>(attr))
+    return expr.getParamDecls().empty();
   return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
                   ConcreteTypeConstantAttr, SymbolConstantAttr>();
 }

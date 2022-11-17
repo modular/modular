@@ -111,18 +111,15 @@ getBindAttrsForDeclsAndValues(ParamDeclArrayAttr decls,
   return binds;
 }
 
-static Type
+static FailureOr<SignatureType>
 verifyBindSignature(ArrayRef<TypedAttr> operands,
-                    llvm::function_ref<mlir::InFlightDiagnostic()> emitError) {
-  if (operands.empty()) {
-    emitError() << "'bind_signature' requires a function parameter";
-    return {};
-  }
+                    function_ref<InFlightDiagnostic()> emitError) {
+  if (operands.empty())
+    return emitError() << "'bind_signature' requires a function parameter";
   auto signature = dyn_cast<SignatureType>(operands[0].getType());
-  if (!signature) {
-    emitError() << "first operand of 'bind_signature' must have signature type";
-    return {};
-  }
+  if (!signature)
+    return emitError()
+           << "first operand of 'bind_signature' must have signature type";
 
   // Convert the input operands into a ParamBindAttr's for
   // getSpecializedSignature.
@@ -133,7 +130,7 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
   // substituted in.
   auto result = signature.getSpecializedSignature(inputParams, emitError);
   if (!result)
-    return {};
+    return failure();
 
   // The signature we just got back has all the parameter we just substituted in
   // as part of the signature.  These are now fully bound, so we don't need them
@@ -142,11 +139,48 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
                             result.getResultParamTypes(), result.getValues());
 }
 
+static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
+                                 function_ref<InFlightDiagnostic()> emitError) {
+  if (operands.empty())
+    return emitError() << "'apply' expected a function parameter";
+
+  auto signature = dyn_cast<SignatureType>(operands.front().getType());
+  if (!signature)
+    return emitError() << "first operand of 'apply' must have signature type";
+
+  if (!signature.getResultParamTypes().empty() ||
+      !signature.getInputParams().empty())
+    return emitError() << "'apply' function cannot be parametric";
+
+  FunctionType func = signature.getValues();
+  if (func.getNumResults() != 1)
+    return emitError() << "'apply' function must return one result";
+  if (func.getResult(0) != type)
+    return emitError() << "'apply' function result type must be " << type
+                       << " but got " << func.getResult(0);
+
+  operands = operands.drop_front();
+  if (operands.size() != func.getNumInputs())
+    return emitError() << "'apply' function expected " << func.getNumInputs()
+                       << " inputs but got " << operands.size();
+
+  for (auto [idx, type, input] :
+       llvm::zip(llvm::seq<unsigned>(0, operands.size()), func.getInputs(),
+                 operands)) {
+    if (type != input.getType())
+      return emitError() << "'apply' input #" << idx << " is "
+                         << input.getType() << " but function expected "
+                         << type;
+  }
+
+  return success();
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
-  // All the operand types must match except for bind_signature.
-  if (opcode != POC::BindSignature &&
+  // All the operand types must match except for 'bind_signature' and 'apply'.
+  if (opcode != POC::BindSignature && opcode != POC::Apply &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -238,14 +272,19 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_alignof' should return an index";
     break;
   case POC::BindSignature: {
-    Type actualType = verifyBindSignature(operands, emitError);
-    if (!actualType)
+    FailureOr<SignatureType> actualType =
+        verifyBindSignature(operands, emitError);
+    if (failed(actualType))
       return failure();
-    if (actualType != type)
+    if (*actualType != type)
       return emitError() << "bind_signature expected to return " << type
-                         << " but actually returns " << actualType;
+                         << " but actually returns " << *actualType;
     break;
   }
+  case POC::Apply:
+    if (failed(verifyApply(operands, type, emitError)))
+      return failure();
+    break;
   }
   return success();
 }
@@ -854,34 +893,70 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   return Builder(typeCst.getContext()).getIndexAttr(*size);
 }
 
-static Attribute simplifyBindSignature(SmallVectorImpl<TypedAttr> &operands,
+static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
                                        Type &resultType) {
   // If there is only a single operand, then nothing is bound.
   if (operands.size() == 1)
     return operands[0];
 
   // Otherwise, compute the result type. If an error is producted, just abort.
-  resultType = verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
+  resultType = *verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
     llvm_unreachable("invalid bind_signature operator");
   });
 
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
-  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands[0])) {
+  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
     assert(symbolConstant.getParamValues().empty() &&
            "cannot have already bound the input parmaeter, because we'd end up "
-           "with a nongeneric signature that would fail verif");
+           "with a nongeneric signature that would fail verification");
 
-    auto symbolSignature = cast<SignatureType>(symbolConstant.getType());
+    auto signature = cast<SignatureType>(symbolConstant.getType());
     SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
-        symbolSignature.getInputParams(),
-        ArrayRef<TypedAttr>(operands).drop_front());
+        signature.getInputParams(), operands.drop_front());
 
     return SymbolConstantAttr::get(
         symbolConstant.getSymbol(),
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
         resultType);
   }
+
+  // If the operand is an expression function, substitute the parameter
+  // declarations.
+  if (auto exprFunc = dyn_cast<ExprFuncAttr>(operands.front())) {
+    ParameterEvaluator evaluator;
+    for (auto [param, value] :
+         llvm::zip(exprFunc.getParamDecls(), operands.drop_front()))
+      evaluator.setParameterValue(param, value);
+    // Bind inputs to themselves.
+    for (ParamDeclAttr input : exprFunc.getInputs())
+      evaluator.setParameterValue(
+          input, ParamDeclRefAttr::get(input.getName(), input.getType()));
+
+    TypedAttr expr = evaluator.getReboundAttribute(exprFunc.getExpr());
+    return ExprFuncAttr::get(exprFunc.getInputs(), expr,
+                             cast<SignatureType>(resultType));
+  }
+
+  return {};
+}
+
+static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
+  TypedAttr func = operands.front();
+  operands = operands.drop_front();
+  resultType = cast<SignatureType>(func.getType()).getValues().getResult(0);
+
+  if (auto exprFunc = dyn_cast<ExprFuncAttr>(func)) {
+    // Evalute the function expression. Map the operands to the input
+    // parameters.
+    ParameterEvaluator evaluator;
+    for (auto [param, value] : llvm::zip(exprFunc.getInputs(), operands))
+      evaluator.setParameterValue(param, value);
+
+    return evaluator.getReboundAttribute(exprFunc.getExpr());
+  }
+
+  // TODO: handle symbol constants by interpreting the callee.
 
   return {};
 }
@@ -914,7 +989,7 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(opcode == POC::BindSignature ||
+  assert(opcode == POC::BindSignature || opcode == POC::Apply ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
@@ -985,6 +1060,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::BindSignature:
     result = simplifyBindSignature(operands, resultType);
+    break;
+  case POC::Apply:
+    result = simplifyApply(operands, resultType);
     break;
   }
 

@@ -469,6 +469,20 @@ def ExprFuncAttr : ExprAttr<"ExprFunc", "expr.func",
 
   let genVerifyDecl = 1;
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "ParamDeclArrayAttr":$paramDecls, "ParamDeclArrayAttr":$inputs,
+        "TypedAttr":$expr, "SignatureType":$type), [{
+      return get(expr.getContext(), paramDecls, inputs, expr, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputs,
+                                        "TypedAttr":$expr,
+                                        "SignatureType":$type), [{
+      return get(ParamDeclArrayAttr::get(expr.getContext(), {}), inputs, expr,
+                 type);
+    }]>
+  ];
+
   let extraClassDeclaration = [{
     /// Verify that this expression function is self-contained, all referenced
     /// parameters are defined within the function.

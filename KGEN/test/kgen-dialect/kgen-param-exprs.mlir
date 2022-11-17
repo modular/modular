@@ -298,6 +298,12 @@ kgen.generator @param_canonicalize<p1, p2>()  {
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
 
+  // CHECK: = <3>
+  kgen.param.constant = <apply(:(index) -> index #kgen.expr.func<(A) -> add(A, 1)>, 2)>
+
+  // CHECK: fn: (index) -> index = <#kgen.expr.func<(B) -> add(B, 1)>>
+  kgen.param.declare fn: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(B, A)>, 1)>
+
   kgen.return
 }
 

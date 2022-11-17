@@ -1125,3 +1125,20 @@ kgen.generator @passTypeList() {
   kgen.call @variableList<N = 2, Ts: list<i32[2]> = [1, 2]>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @"param_apply,fn=#kgen.expr.func
+kgen.generator @param_apply<fn: (index) -> index -> index>() {
+  kgen.param.declare result: index = <apply(:(index) -> index fn, 1)>
+  kgen.return<result>
+}
+
+// CHECK-LABEL: @do_it
+kgen.generator @do_it() -> index {
+  // CHECK-NEXT: kgen.call @"param_apply,fn=#kgen.expr.func
+  kgen.call @param_apply<fn: (index) -> index = #kgen.expr.func<(A) -> add(A, 1)> -> result>() : () -> ()
+  // CHECK-NEXT: kgen.param.constant = <2>
+  %0 = kgen.param.constant = <result>
+  kgen.return %0 : index
+}

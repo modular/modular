@@ -49,6 +49,7 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
   // Signature processing.
   I32EnumAttrCase<"BindSignature", 18, "bind_signature">,
+  I32EnumAttrCase<"Apply", 19, "apply">
 
   // TODO: Can add concat_string, etc as needed.
 ]>;
