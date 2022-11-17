@@ -530,6 +530,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::BindSignature:
+  case (uint32_t)POC::Apply:
+    if (!isa_and_nonnull<SignatureType>(type))
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a signature type for operator");
     // Parse each operand with a type.  TODO: We could do better here by using
     // the signature to infer the types of the parameters.
     if (parseParamValue(p, operands.emplace_back(), type))

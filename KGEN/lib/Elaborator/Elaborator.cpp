@@ -1438,7 +1438,7 @@ static void printParameterValue(TypedAttr value, llvm::raw_ostream &os) {
         [&](TypedAttr value) { printParameterValue(value, os); }, ",");
     os << ']';
   } else {
-    llvm_unreachable("not handling all simple constants");
+    value.print(os, /*elideType=*/true);
   }
 }
 
