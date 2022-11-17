@@ -2,45 +2,53 @@
 
 __include "../lit-examples/prolog.lit"
 
-def basic_assignments(a: Int, b: Int):
+struct M:
+  var value : index
+  fn __new__(value: index) -> M:
+    return M(0)
+
+  fn __imatmul__(&self, rhs: M) -> M:
+    return M(0)
+
+def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %a_0 = lit.var.decl "a" : <@Int>
   # CHECK:      %b_1 = lit.var.decl "b" : <@Int>
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__iadd__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__iadd__](%a_0, %[[LOAD_B]])
   a += b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__isub__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__isub__](%a_0, %[[LOAD_B]])
   a -= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__imul__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__imul__](%a_0, %[[LOAD_B]])
   a *= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__imatmul__](%a_0, %[[LOAD_B]])
-  a @= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__itruediv__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_C:.*]] = pop.load %c_2  : !pop.pointer<@M>
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @M::@__imatmul__](%d_3, %[[LOAD_C]])
+  d @= c
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__itruediv__](%a_0, %[[LOAD_B]])
   a /= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__ifloordiv__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__ifloordiv__](%a_0, %[[LOAD_B]])
   a //= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__imod__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__imod__](%a_0, %[[LOAD_B]])
   a %= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__ipow__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__ipow__](%a_0, %[[LOAD_B]])
   a **= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__irshift__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__irshift__](%a_0, %[[LOAD_B]])
   a >>= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__ilshift__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__ilshift__](%a_0, %[[LOAD_B]])
   a <<= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__iand__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__iand__](%a_0, %[[LOAD_B]])
   a &= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__ixor__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__ixor__](%a_0, %[[LOAD_B]])
   a ^= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1  : !pop.pointer<@Int>
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param[(!pop.pointer<@Int>, !kgen.ref<@Int>) -> !kgen.ref<@Int>: @Int::@__ior__](%a_0, %[[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call_param{{.*}} @Int::@__ior__](%a_0, %[[LOAD_B]])
   a |= b

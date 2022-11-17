@@ -996,17 +996,57 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
   return {last, emitter.shared.getIndexType()};
 }
 
-/// Given a binary operator, return the SpecialFunction that implements it.
+/// Given an operator, return the SpecialFunction that implements it.
 /// TODO: Expand this to support multiple results, e.g. add/radd.
-static SpecialFunctionKind getBinOpSpecialFunctions(ExprNode::Kind kind) {
+static SpecialFunctionKind getOpSpecialFunctions(ExprNode::Kind kind) {
   switch (kind) {
   default:
     // TODO: Add support for more of these.
     return SpecialFunctionKind::kNormal;
+  case ExprNode::Kind::kUnaryPlus:
+    return SpecialFunctionKind::kPos;
+  case ExprNode::Kind::kUnaryMinus:
+    return SpecialFunctionKind::kNeg;
+  case ExprNode::Kind::kUnaryTilde:
+    return SpecialFunctionKind::kInvert;
   case ExprNode::kAdd:
     return SpecialFunctionKind::kAdd;
+  case ExprNode::kSub:
+    return SpecialFunctionKind::kSub;
   case ExprNode::kMul:
     return SpecialFunctionKind::kMul;
+  case ExprNode::kMatrixMul:
+    return SpecialFunctionKind::kMatmul;
+  case ExprNode::kDiv:
+    return SpecialFunctionKind::kTrueDiv;
+  case ExprNode::kModulo:
+    return SpecialFunctionKind::kMod;
+  case ExprNode::kBitwiseAnd:
+    return SpecialFunctionKind::kAnd;
+  case ExprNode::kBitwiseOr:
+    return SpecialFunctionKind::kOr;
+  case ExprNode::kBitwiseXor:
+    return SpecialFunctionKind::kXor;
+  case ExprNode::kLeftShift:
+    return SpecialFunctionKind::kLshift;
+  case ExprNode::kRightShift:
+    return SpecialFunctionKind::kRshift;
+  case ExprNode::kExp:
+    return SpecialFunctionKind::kPow;
+  case ExprNode::kFloorDiv:
+    return SpecialFunctionKind::kFloorDiv;
+  case ExprNode::kCmpLess:
+    return SpecialFunctionKind::kCmpLess;
+  case ExprNode::kCmpLessEqual:
+    return SpecialFunctionKind::kCmpLessEqual;
+  case ExprNode::kCmpEqual:
+    return SpecialFunctionKind::kCmpEqual;
+  case ExprNode::kCmpNotEqual:
+    return SpecialFunctionKind::kCmpNotEqual;
+  case ExprNode::kCmpGreater:
+    return SpecialFunctionKind::kCmpGreater;
+  case ExprNode::kCmpGreaterEqual:
+    return SpecialFunctionKind::kCmpGreaterEqual;
   case ExprNode::kPlusAssign:
     return SpecialFunctionKind::kIAdd;
   case ExprNode::kMinusAssign:
@@ -1095,7 +1135,7 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   }
 
   // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getBinOpSpecialFunctions(kind);
+  auto specialFnKind = getOpSpecialFunctions(kind);
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
@@ -1230,47 +1270,42 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
                                          ASTType contextualType) const {
-  auto exprRep = emitter.emitRValue(subExpr);
+  auto exprRep = subExpr->emitIR(emitter);
   if (!exprRep)
     return {};
 
-  // If the sub-value is an ASTType, apply type sugar.
-  if (auto astType = exprRep.ir.getIfMTValue()) {
-    emitter.emitError(getLoc(), "cannot emit this expression as a type");
+  // If this operator maps onto a special function, attempt to lower it.
+  auto specialFnKind = getOpSpecialFunctions(kind);
+
+  assert(specialFnKind != SpecialFunctionKind::kNormal &&
+         "Unary operators are implemented via special methods");
+  // Get metadata about the special function that backs this expression.  This
+  // allows us to look up information about whether the operands implement
+  // support for it.
+  auto specialFnInfo = SpecialFunctionInfo::get(specialFnKind);
+
+  // Look up the normal function on the expr type.
+  auto nameAttr = StringAttr::get(emitter.getContext(), specialFnInfo.name);
+  ASTDecl *lookupResult = exprRep.type.getDecl().lookup(nameAttr);
+  if (!lookupResult) {
+    emitter.emitError(getLoc(), "")
+        << exprRep.type << " does not implement the " << nameAttr
+        << " special method";
     return {};
   }
 
-  // Otherwise we just have our hard coded expression stuff going on.
-  if (exprRep.type.getDecl().magicKind != MagicDeclKind::kIndexType) {
-    emitter.emitError(getLoc(),
-                      "unary operator with interesting types not implemented");
+  // Make sure the signature is resolved.
+  if (failed(emitter.shared.declResolver->resolve(
+          *lookupResult, DeclResolvedness::signatureResolved, getLoc())))
     return {};
-  }
 
-  assert(emitter.builder && "cannot have dynamic values without a builder");
+  ASTTypeAnd<MValue> callee =
+      emitFuncReference(cast<LITFuncOp>(*lookupResult), *lookupResult, emitter);
+  assert(callee.ir && "always succeeds");
+  ArgumentValueType argValue = {exprRep, subExpr->getLoc()};
 
-  auto exprVal = emitter.emitDRValue(exprRep, subExpr->getLoc()).ir;
-  auto loc = emitter.translateLocation(getLoc());
-  DRValue result;
-  switch (kind) {
-  default:
-    emitter.emitError(getLoc(), "TODO: cannot emit this operator yet");
-    return {};
-  case kUnaryPlus: {
-    // TODO:  this should eventually implement a call to object.__pos__(self)
-    auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
-    result = emitter.builder->create<mlir::index::AddOp>(loc, zero, exprVal);
-    break;
-  }
-  case kBoolNot:
-  case kUnaryMinus: {
-    // TODO:  this should eventually implement a call to object.__neg__(self)
-    auto zero = emitter.builder->create<mlir::index::ConstantOp>(loc, 0);
-    result = emitter.builder->create<mlir::index::SubOp>(loc, zero, exprVal);
-    break;
-  }
-  }
-  return {result, emitter.shared.getIndexType()};
+  return emitFunctionCall({RValue(callee.ir), callee.type}, argValue, getLoc(),
+                          emitter);
 }
 
 ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,

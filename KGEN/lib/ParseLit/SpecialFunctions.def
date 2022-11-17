@@ -20,11 +20,37 @@
 SF(kNew, "__new__", -1, kImplicitlyStaticMethod)
 SF(kInit, "__init__", -1, kInstMethod)
 
+// Unary arithmetic operators.
+SF(kNeg, "__neg__", 1, kInstMethod)
+SF(kPos, "__pos__", 1, kInstMethod)
+SF(kInvert, "__invert__", 1, kInstMethod)
+
+// Normal comparison operators.
+SF(kCmpLess, "__lt__", 2, kInstMethod)
+SF(kCmpLessEqual, "__le__", 2, kInstMethod)
+SF(kCmpEqual, "__eq__", 2, kInstMethod)
+SF(kCmpNotEqual, "__ne__", 2, kInstMethod)
+SF(kCmpGreater, "__gt__", 2, kInstMethod)
+SF(kCmpGreaterEqual, "__ge__", 2, kInstMethod)
+
 // Normal arithmetic operators.
 SF(kAdd, "__add__", 2, kInstMethod)
 SF(kSub, "__sub__", 2, kInstMethod)
 SF(kMul, "__mul__", 2, kInstMethod)
-// ... more: https://docs.python.org/3/reference/datamodel.html#object.__add__
+SF(kMatmul, "__matmul__", 2, kInstMethod)
+SF(kTrueDiv, "__truediv__", 2, kInstMethod)
+SF(kFloorDiv, "__floordiv__", 2, kInstMethod)
+SF(kMod, "__mod__", 2, kInstMethod)
+// TODO: pow has 3 arguments: __pow__(base, exp[, mod])
+// Only the two-argument form pow(base, exp) is equivalent
+// to using the power operator: base ** exp. Once we have default parameters
+// we can support mod=None, but for now we keep it as 2 arguments definition.
+SF(kPow, "__pow__", 2, kInstMethod)
+SF(kLshift, "__lshift__", 2, kInstMethod)
+SF(kRshift, "__rshift__", 2, kInstMethod)
+SF(kAnd, "__and__", 2, kInstMethod)
+SF(kXor, "__xor__", 2, kInstMethod)
+SF(kOr, "__or__", 2, kInstMethod)
 
 // Reversed arithmetic operators.
 SF(kRAdd, "__radd__", 2, kInstMethod)
