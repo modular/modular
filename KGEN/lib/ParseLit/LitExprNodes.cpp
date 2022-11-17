@@ -174,6 +174,22 @@ static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
       emitter.translateLocation(loc), shared.getTypeType(), &scope);
 }
 
+/// When a lookup in __mlir_op fails for a named field, this method tries to
+/// resolve it.  On success, it lazily creates a resolved declaration.  On
+/// failure, it bails out.
+static ASTDecl *synthesizeMLIROpDeclEntry(StringRef name, SMLoc loc,
+                                          ASTDecl &scope,
+                                          ExprEmitter &emitter) {
+  auto &shared = emitter.shared;
+  auto nameStr = StringAttr::get(shared.getContext(), name);
+
+  auto result = UnboundMLIROperationAttr::get(emitter.getContext(),
+                                              nameStr.getType(), nameStr);
+  return &shared.declResolver->addFullyResolvedDecl(
+      MAValue(result), nameStr, emitter.translateLocation(loc),
+      shared.getUnboundMLIROperatorType(), &scope);
+}
+
 /// Perform a name lookup in the specified scope and return the named
 /// declaration.  This emits an error and returns null on error.
 ASTDecl *
@@ -187,10 +203,12 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
   // Handle the case where lookup fails.
   if (!lookupResult) {
-    // If this is a lookup in __mlir_type, then try to lazily synthesize the
-    // type in question.
+    // If this is a lookup in __mlir_type or __mlir_op, then try to lazily
+    // synthesize the element in question.
     if (scope.magicKind == MagicDeclKind::k__mlir_type)
       return synthesizeMLIRTypeDeclEntry(name, loc, scope, *this);
+    if (scope.magicKind == MagicDeclKind::k__mlir_op)
+      return synthesizeMLIROpDeclEntry(name, loc, scope, *this);
 
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
@@ -668,6 +686,87 @@ static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
                           emitter);
 }
 
+/// Given a call to an UnboundMLIROperator, generate an MLIR operation with
+/// the operands as SSA values.
+static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
+                                                 RValue calleeVal,
+                                                 ExprEmitter &emitter) {
+  if (!emitter.builder) {
+    emitter.emitError(call.getLoc(), "cannot emit operation in this context");
+    return {};
+  }
+  auto maVal = calleeVal.getIfMAValue();
+  if (!maVal) {
+    emitter.emitError(call.getLoc(), "unknown unbound MLIR operator");
+    return {};
+  }
+  auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(maVal.get());
+  if (!unboundOp) {
+    emitter.emitError(call.getLoc(), "unknown unbound MLIR operator");
+    return {};
+  }
+
+  // Emit all the arguments so we can encode them as SSA values.
+  SmallVector<Value> opOperands;
+  for (auto operand : call.args) {
+    opOperands.push_back(emitter.emitDRValue(operand).ir);
+    if (!opOperands.back())
+      return {};
+  }
+
+  OperationState state(emitter.translateLocation(call.getLoc()),
+                       unboundOp.getName());
+  state.addOperands(opOperands);
+  // TODO: Translate attributes from opAttr when it can hold them.
+
+  // Finally, figure out the return types using InferTypeOpInterface if the
+  // operation is registered and if it is present.
+  auto *context = emitter.getContext();
+  bool inferredTypes = false;
+  if (auto opNameInfo =
+          mlir::RegisteredOperationName::lookup(unboundOp.getName(), context)) {
+    if (auto inferTypesItf =
+            opNameInfo->getInterface<mlir::InferTypeOpInterface>()) {
+      if (failed(inferTypesItf->inferReturnTypes(
+              context, state.location, state.operands,
+              DictionaryAttr::get(context, state.attributes), state.regions,
+              state.types))) {
+        emitter.emitError(call.getLoc(),
+                          "unable to infer result type from MLIR operation ")
+            << unboundOp.getName();
+        return {};
+      }
+
+      if (state.types.size() > 1) {
+        emitter.emitError(call.getLoc(),
+                          "cannot use operations with multiple results (yet) ")
+            << unboundOp.getName();
+      }
+
+      inferredTypes = true;
+    }
+  }
+  // If a result type wasn't specified, it must be set as an attribute.
+  if (!inferredTypes) {
+    emitter.emitError(call.getLoc(),
+                      "unable to infer result type from MLIR operation ")
+        << unboundOp.getName();
+    return {};
+  }
+
+  Operation *resultOp = emitter.builder->create(state);
+
+  // If we succeeded and have no types, then install a None type.
+  if (resultOp->getNumResults() == 0) {
+    auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
+    return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
+            emitter.shared.getNoneType()};
+  }
+  // Otherwise return the new values.
+  // FIXME: TYPE.
+  return {DRValue(resultOp->getResult(0)), ASTType()};
+}
+
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
                                       ASTType contextualType) const {
   auto calleeVal = emitter.emitRValue(callee);
@@ -681,6 +780,12 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   // Otherwise, handle callable functions.
   if (isa<SignatureType>(calleeVal.ir.getType(emitter.getContext())))
     return emitFunctionCall(*this, calleeVal, emitter);
+
+  // If this is the invocation of an unbound MLIR operator, bind it into an
+  // actual operator!
+  if (calleeVal.type.getDecl().magicKind ==
+      MagicDeclKind::kUnboundMLIROperatorType)
+    return emitMLIROperatorCall(*this, calleeVal.ir, emitter);
 
   emitter.emitError(getLoc(), "unable to call value of type ")
       << calleeVal.type;
