@@ -217,8 +217,8 @@ struct TimeTraceProfilerEntry<true> {
 
   TimePointType Start;
   TimePointType End;
-  const std::string Name;
-  const std::string Detail;
+  std::string Name;
+  std::string Detail;
 
   TimeTraceProfilerEntry() : Start(TimePointType()), End(TimePointType()) {}
 
