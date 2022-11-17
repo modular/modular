@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Compiler/VerifyUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -1227,18 +1228,7 @@ LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
   if (!types)
     return success();
 
-  // Verify our result types match up with the enclosing result type.
-  if (getNumOperands() != types->size())
-    return emitOpError("expected ")
-           << types->size() << " operands for enclosing op";
-
-  for (size_t i = 0, e = getNumOperands(); i != e; ++i) {
-    if (getOperand(i).getType() != (*types)[i])
-      return emitOpError("operand #")
-             << i << " has type " << getOperand(i).getType()
-             << " but should be " << (*types)[i];
-  }
-  return success();
+  return checkResultTypes(getOperation(), *types);
 }
 
 //===----------------------------------------------------------------------===//
