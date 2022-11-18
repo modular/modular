@@ -41,6 +41,7 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
     HLCFOp<mnemonic, traits # [Terminator, HLCF_ControlFlowTermiantor]> {
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -106,7 +107,7 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     `` custom<Loop>($operands, type($operands), type($results), $body) attr-dict
   }];
 
-  let builders = [OpBuilder<(ins)>];
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}, {}); }]>];
 
   let hasVerifier = 1;
 }
@@ -181,7 +182,9 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     attr-dict
   }];
 
-  let builders = [OpBuilder<(ins "Value":$cond)>];
+  let builders = [OpBuilder<(ins "Value":$cond), [{
+    build($_builder, $_state, {}, cond);
+  }]>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -207,8 +210,6 @@ def HLCF_ContinueOp : HLCFTerminatorOp<"continue"> {
     This operation is never pure because the control-flow edge from this
     terminator will always lead to an earlier point in the IR.
   }];
-
-  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -237,8 +238,6 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
     is nested directly beneath a loop operation because the control-flow edge
     from this terminator will always go to after the parent operation.
   }];
-
-  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -266,8 +265,6 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">]> {
     This operation can always be marked pure because the control-flow edge from
     this operation leads only to after the parent operation.
   }];
-
-  let builders = [OpBuilder<(ins)>];
 }
 
 //===----------------------------------------------------------------------===//
