@@ -569,6 +569,17 @@ void DeclParameterVerifier::verifyRefType(RefType refType) {
     return;
   }
 
+  // We have to specialize the type's parameter decls.
+  ParameterEvaluator evaluator;
+  for (auto [value, decl] :
+       llvm::zip(refType.getParamValues(), decl.getParamDeclsAttr()))
+    evaluator.setParameterValue(decl, value.getValue());
+  SmallVector<ParamDeclAttr> specializedDecls;
+  specializedDecls.reserve(refType.getParamValues().size());
+  for (ParamDeclAttr decl : decl.getParamDeclsAttr())
+    specializedDecls.push_back(
+        cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
+
   SmallString<32> paramName("@");
   paramName.append(refType.getName());
   if (failed(verifyParamDeclsMatch(
@@ -576,8 +587,8 @@ void DeclParameterVerifier::verifyRefType(RefType refType) {
           llvm::to_vector(llvm::map_range(
               refType.getParamValues(),
               [](ParamBindAttr value) { return value.getDecl(); })),
-          curLocationCollecting.value(), paramName.c_str(),
-          decl.getParamDeclsAttr(), decl.getLoc())))
+          curLocationCollecting.value(), paramName.c_str(), specializedDecls,
+          decl.getLoc())))
     hadError = true;
 }
 

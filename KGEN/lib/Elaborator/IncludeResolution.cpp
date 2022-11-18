@@ -91,10 +91,10 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
 
     // Emit nice diagnostics for for the obvious possible differences: input
     // parameters.
-    if (failed(verifyParamDeclsMatch(
-            "struct redeclaration", type.getParamDecls(), type.getLoc(),
-            "previous struct declaration", incType.getParamDeclsAttr(),
-            incType.getLoc())))
+    if (failed(
+            verifyParamDeclsMatch("struct redeclaration", type.getParamDecls(),
+                                  type.getLoc(), "previous struct declaration",
+                                  incType.getParamDecls(), incType.getLoc())))
       return failure();
 
     // Check other attributes.

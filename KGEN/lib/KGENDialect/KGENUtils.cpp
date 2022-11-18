@@ -1317,7 +1317,7 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
   /// is ok.
   if (failed(verifyParamDeclsMatch(
           originatorName, originatorParamDecls.getValue(), originatorLoc,
-          targetName, targetParamDecls, targetLoc)) ||
+          targetName, targetParamDecls.getValue(), targetLoc)) ||
       verifyMatchingLists(originatorSignature.getResultParamTypes(),
                           targetSignature.getResultParamTypes(), originatorName,
                           originatorLoc, targetName, targetLoc,
@@ -1335,7 +1335,7 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
 LogicalResult KGEN::verifyParamDeclsMatch(
     const char *originatorName, ArrayRef<ParamDeclAttr> originatorParamDecls,
     Location originatorLoc, const char *targetName,
-    ParamDeclArrayAttr targetParamDecls, Location targetLoc) {
+    ArrayRef<ParamDeclAttr> targetParamDecls, Location targetLoc) {
   using llvm::map_range;
   auto getType = [](auto attr) -> Type { return attr.getType(); };
   auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
