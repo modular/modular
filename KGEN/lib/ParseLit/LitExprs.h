@@ -51,6 +51,7 @@ public:
     kAttributeRef,  // x.y
     kCall,          // thing(a, b)
     kSubscript,     // thing[a, b:c]
+    kSlice,         // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kParenExprNode, // (x+y)
     kListExprNode,  // [x, y]
 

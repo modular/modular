@@ -145,6 +145,30 @@ struct SubscriptNode final : public ExprNode {
                               ASTType contextualType) const override;
 };
 
+/// This is an expression that produces a slice value in a SubscriptNode index
+/// expression.  These have at least one colon in them, and one, two, or three
+/// expressions, e.g. `:`, `: :`, `a:b`, `a::b` etc.
+///
+/// All the elements of the syntax are optional (and thus may be null!) except
+/// for the first colon.
+struct SliceNode final : public ExprNode {
+  SliceNode(ExprNode *lower, SMLoc colon1Loc, ExprNode *upper, SMLoc colon2Loc,
+            ExprNode *stride)
+      : ExprNode(kSlice), lower(lower), colon1Loc(colon1Loc), upper(upper),
+        colon2Loc(colon2Loc), stride(stride) {}
+
+  ExprNode *const lower;
+  SMLoc colon1Loc;
+  ExprNode *const upper;
+  SMLoc colon2Loc;
+  ExprNode *const stride;
+
+  static bool classof(const ExprNode *node) { return node->kind == kSlice; }
+  SMLoc getLoc() const override { return colon1Loc; }
+  ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
+                              ASTType contextualType) const override;
+};
+
 struct ParenExprNode final : public ExprNode {
   ParenExprNode(SMLoc lparenLoc, ExprNode *subExpr, SMLoc rparenLoc)
       : ExprNode(kParenExprNode), lparenLoc(lparenLoc), subExpr(subExpr),

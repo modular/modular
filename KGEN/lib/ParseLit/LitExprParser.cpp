@@ -488,9 +488,48 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   // Expressions continue maximally because we are within []'s.
   llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
 
-  // TODO: Add support for slices.
   SmallVector<ExprNode *> indices;
-  if (parseExpressionList(indices, LitToken::r_square) ||
+
+  auto parseExprOrSlice = [&]() -> ParseResult {
+    ExprNode *firstExpr = nullptr;
+    // If this has a leading expr it could be an expr only or could be the first
+    // (optional) part of a slice.
+    if (getToken().isNot(LitToken::colon)) {
+      if (parseExpression(firstExpr))
+        return failure();
+      // If we had an expr with no trailing colon, then we are done with the
+      // expr case.
+      if (getToken().isNot(LitToken::colon)) {
+        indices.push_back(firstExpr);
+        return success();
+      }
+    }
+
+    // Okay we have at least one colon, so we have a slice.
+    SMLoc colon1Loc = consumeToken(LitToken::colon).getLoc(), colon2Loc;
+    ExprNode *secondExpr = nullptr, *thirdExpr = nullptr;
+
+    // Parse the second expr if present.
+    if (getToken().isNot(LitToken::colon, LitToken::comma,
+                         LitToken::r_square)) {
+      if (parseExpression(secondExpr))
+        return failure();
+    }
+
+    // Parse a second colon if present and stride expression.
+    if (getToken().is(LitToken::colon)) {
+      colon2Loc = consumeToken(LitToken::colon).getLoc();
+      if (getToken().isNot(LitToken::comma, LitToken::r_square)) {
+        if (parseExpression(thirdExpr))
+          return failure();
+      }
+    }
+    indices.push_back(alloc<SliceNode>(firstExpr, colon1Loc, secondExpr,
+                                       colon2Loc, thirdExpr));
+    return success();
+  };
+
+  if (parseCommaSeparatedList(parseExprOrSlice, LitToken::r_square) ||
       parseToken(LitToken::r_square, "expected ']' in call argument list"))
     return failure();
 
