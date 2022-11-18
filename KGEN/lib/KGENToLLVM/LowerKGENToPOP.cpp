@@ -759,7 +759,6 @@ void LowerKGENToPOPPass::runOnOperation() {
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
   patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListIterateOp,
-                  ExpandListConstantOp, ExpandListIterateOp,
                   ExpandStructConstructOp, ExpandStructGetOp,
                   ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
                   ExpandListStore, ExpandGenericOperation>(&getContext());
