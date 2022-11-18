@@ -1,28 +1,27 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
-# CHECK-LABEL: lit.func @test_while(%a: index, %b: index) -> index {
-# CHECK:       %inside_a = lit.var.decl "inside_a" : <index>
-# CHECK:       %inside_b = lit.var.decl "inside_b" : <index>
-# CHECK:       %inside_else = lit.var.decl "inside_else" : <index>
+__include "../lit-examples/prolog.lit"
+
+# CHECK-LABEL: lit.func @test_while(%a: !kgen.ref<@Bool>, %b: !kgen.ref<@Bool>) -> !kgen.ref<@Bool> {
+# CHECK:       %inside_a = lit.var.decl "inside_a" : <@Int>
+# CHECK:       %inside_b = lit.var.decl "inside_b" : <@Int>
+# CHECK:       %inside_else = lit.var.decl "inside_else" : <@Int>
 # CHECK:       hlcf.loop {
-# CHECK-NEXT:    %[[LOAD_A:.*]] = pop.load  %[[VAR_A:.*]] : !pop.pointer<index>
-# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
-# CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
-# CHECK-NEXT:    hlcf.if %[[CMP]] {
+# CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:     index.constant 2
-# CHECK-NEXT:     pop.store {{.+}}, %inside_else : !pop.pointer<index>
+# CHECK-NEXT:     kgen.call_param{{.+}} @Int::@__new__
+# CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
 # CHECK-NEXT:    index.constant 0
-# CHECK-NEXT:    pop.store {{.+}}, %inside_a : !pop.pointer<index>
-# CHECK-NEXT:    %[[LOAD_B:.*]] = pop.load %[[VAR_B:.*]] : !pop.pointer<index>
-# CHECK-NEXT:    %[[ONE:.*]] = index.constant 1
-# CHECK-NEXT:    %[[CMP:.*]] = index.cmp eq(%[[LOAD_B]], %[[ONE]])
-# CHECK-NEXT:    hlcf.if %[[CMP]] {
+# CHECK-NEXT:    kgen.call_param{{.+}} @Int::@__new__
+# CHECK-NEXT:    pop.store {{.+}}, %inside_a
+# CHECK:         hlcf.if
 # CHECK-NEXT:      {{.+}} = index.constant 1
-# CHECK-NEXT:      pop.store {{.+}}, %inside_b : !pop.pointer<index>
+# CHECK-NEXT:      kgen.call_param{{.+}} @Int::@__new__
+# CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      hlcf.yield
@@ -32,22 +31,19 @@
 # CHECK-NEXT:  pop.load
 # CHECK-NEXT:  kgen.return
 # CHECK-NEXT:  }
-def test_while(a: index, b: index) -> index:
+def test_while(a: Bool, b: Bool) -> Bool:
     while a:
-        inside_a = 0
+        inside_a = Int(0)
         if b:
-            inside_b = 1
+            inside_b = Int(1)
     else:
-        inside_else = 2
+        inside_else = Int(2)
     return a
 
 
-# CHECK-LABEL: lit.func @test_simple(%a: index)
+# CHECK-LABEL: lit.func @test_simple(%a: !kgen.ref<@Bool>)
 # CHECK:       hlcf.loop {
-# CHECK-NEXT:     %[[LOAD_A:.*]] = pop.load %[[VAR_A:.*]] : !pop.pointer<index>
-# CHECK-NEXT:     %[[ONE:.*]] = index.constant 1
-# CHECK-NEXT:     %[[CMP:.*]] = index.cmp eq(%[[LOAD_A]], %[[ONE]])
-# CHECK-NEXT:     hlcf.if %[[CMP]] {
+# CHECK:       hlcf.if
 # CHECK-NEXT:       hlcf.yield
 # CHECK-NEXT:     } else {
 # CHECK-NEXT:       hlcf.break
@@ -57,31 +53,31 @@ def test_while(a: index, b: index) -> index:
 # CHECK-NEXT:   [[NONE:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:   kgen.return [[NONE]]
 # CHECK-NEXT: }
-def test_simple(a: index):
+def test_simple(a: Bool):
     while a:
         pass
 
 
 # CHECK-LABEL: lit.func @test_else_outside_while
-def test_else_outside_while(a: index, b: index) -> index:
+def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
         # CHECK: {{.+}} = pop.load %a
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
-            inside_a = 0
+            inside_a = Int(0)
             # CHECK: hlcf.continue
     # CHECK: } else {
     else:
         # CHECK: pop.store {{.+}}, %inside_else
-        inside_else = 2
+        inside_else = Int(2)
     # CHECK: }
     # CHECK: kgen.return
     return a
 
 # CHECK-LABEL: lit.func @test_break_continue_inside_while
-def test_break_continue_inside_while(a: index) -> index:
+def test_break_continue_inside_while(a: Bool) -> Bool:
     # CHECK: hlcf.loop
     # CHECK: hlcf.if
     while a:
@@ -93,7 +89,7 @@ def test_break_continue_inside_while(a: index) -> index:
             # CHECK-NOT:   index.constant 1
             # CHECK-NOT:   pop.store
             # CHECK-NOT:   hlcf.yield
-            a = 1
+            c = 1
         else:
             # CHECK-NEXT: } else {
             # CHECK-NEXT:   hlcf.continue
@@ -106,16 +102,16 @@ def test_break_continue_inside_while(a: index) -> index:
 # CHECK-LABEL: lit.func @test_early_return
 def test_early_return():
     # CHECK: hlcf.if
-    a = 1
+    var a: Bool
     if a:
         # CHECK: hlcf.return
         return
         # CHECK-NOT: hlcf.yield
-        a = 2
+        b = 2
     # CHECK: else
     # CHECK-NEXT: yield
     # CHECK: kgen.return
     return
     # CHECK-NOT: kgen.return
-    a = 3
+    c = 3
     return

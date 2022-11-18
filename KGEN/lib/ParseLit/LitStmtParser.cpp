@@ -22,7 +22,6 @@
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -31,7 +30,6 @@
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
 using namespace M;
-namespace scf = mlir::scf;
 
 //===----------------------------------------------------------------------===//
 // LitStmtParser
@@ -385,23 +383,29 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
 
 static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
                                        LitStmtParser &parser) {
-  // TODO(types): add type checking: the condition should be bool.
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
   ASTTypeAnd<DRValue> cond = parser.getExprEmitter().emitDRValue(condExp);
   if (!cond)
     return failure();
 
-  // TODO(types): we only support 'index' values as a hack right now.
-  if (!cond.ir.getType().isIndex())
-    return parser.emitError(condExp->getLoc(), "value of type ")
-           << cond.type << " isn't convertible to Bool";
+  SMLoc condLoc = condExp->getLoc();
+  ArgumentValueType argValue = {{cond.ir, cond.type}, condLoc};
+  ASTTypeAnd<AnyValue> boolCall =
+      parser.getExprEmitter().emitSpecialFunctionCall(
+          cond, SpecialFunctionKind::kBool, argValue, condLoc);
+  if (!boolCall)
+    return failure();
 
-  auto &builder = parser.getBuilder();
-  auto loc = cond.ir.getLoc();
-  auto one = builder.create<mlir::index::ConstantOp>(loc, 1);
-  condValue = builder.create<mlir::index::CmpOp>(
-      loc, mlir::index::IndexCmpPredicate::EQ, cond.ir, one);
+  argValue = {boolCall, condLoc};
+  ASTTypeAnd<AnyValue> litBoolCall =
+      parser.getExprEmitter().emitSpecialFunctionCall(
+          {boolCall.ir.getIfDRValue(), boolCall.type},
+          SpecialFunctionKind::kLitBool, argValue, condLoc);
+  if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
+    return failure();
+
+  condValue = static_cast<Value>(litBoolCall.ir.getIfDRValue());
   return success();
 }
 

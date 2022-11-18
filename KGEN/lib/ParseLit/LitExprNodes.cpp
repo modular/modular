@@ -254,8 +254,6 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
-using ArgumentValueType = std::pair<ASTTypeAnd<AnyValue>, SMLoc>;
-
 /// Emit a function call to the specified callee with the specified operand
 /// values.
 static ASTTypeAnd<AnyValue>
@@ -487,6 +485,36 @@ static ASTType getASTTypeForMLIRType(Type mlirType, SMLoc loc,
 
   return shared.getASTType(*typeDecl, {});
 }
+
+/// This helper emits a method call to a special function (`kind`) on the
+/// `caller` object with the provided `operands`. If the special function
+/// is not implemented by the caller it emits an error.
+/// This returns null if emission fails.
+ASTTypeAnd<AnyValue> ExprEmitter::emitSpecialFunctionCall(
+    ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
+    ArrayRef<ArgumentValueType> operands, SMLoc callLoc) {
+
+  auto specialFnInfo = SpecialFunctionInfo::get(kind);
+  // Look up the special function on the expr type.
+  auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
+  ASTDecl *lookupResult = caller.type.getDecl().lookup(nameAttr);
+  if (!lookupResult) {
+    emitError(callLoc, "") << caller.type << " does not implement the "
+                           << nameAttr << " special method";
+    return {};
+  }
+
+  // Make sure the signature is resolved.
+  if (failed(shared.declResolver->resolve(
+          *lookupResult, DeclResolvedness::signatureResolved, callLoc)))
+    return {};
+  ASTTypeAnd<MValue> callee =
+      emitFuncReference(cast<LITFuncOp>(*lookupResult), *lookupResult, *this);
+  assert(callee.ir && "always succeeds");
+  return emitFunctionCall({RValue(callee.ir), callee.type}, operands, callLoc,
+                          *this);
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
@@ -1149,37 +1177,12 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
     specialFnKind = SpecialFunctionKind::kNormal;
 
   if (specialFnKind != SpecialFunctionKind::kNormal) {
-    // Get metadata about the special function that backs this expression.  This
-    // allows us to look up information about whether the operands implement
-    // support for it.
-    auto specialFnInfo = SpecialFunctionInfo::get(specialFnKind);
-
-    // Look up the normal function on the LHS type.
     // TODO: Add support for radd, looking up on the RHS.
-    auto nameAttr = StringAttr::get(emitter.getContext(), specialFnInfo.name);
-    ASTDecl *lookupResult = lhsRep.type.getDecl().lookup(nameAttr);
-    if (!lookupResult) {
-      // TODO: Add support for radd, looking up on the RHS.  On a hit, notice
-      // its result and swap lhs/rhs rep values.
-      emitter.emitError(getLoc(), "")
-          << lhsRep.type << " does not implement the " << nameAttr
-          << " special method";
-      return {};
-    }
-
-    // Make sure the signature is resolved.
-    if (failed(emitter.shared.declResolver->resolve(
-            *lookupResult, DeclResolvedness::signatureResolved, getLoc())))
-      return {};
-
-    ASTTypeAnd<MValue> callee = emitFuncReference(
-        cast<LITFuncOp>(*lookupResult), *lookupResult, emitter);
-    assert(callee.ir && "always succeeds");
     ArgumentValueType argValues[] = {{lhsRep, lhs->getLoc()},
                                      {rhsRep, rhs->getLoc()}};
-
-    return emitFunctionCall({RValue(callee.ir), callee.type}, argValues,
-                            getLoc(), emitter);
+    return emitter.emitSpecialFunctionCall(
+        {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
+        getLoc());
   }
 
   // TODO: Remove all this legacy code.
@@ -1284,54 +1287,41 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
-  // Get metadata about the special function that backs this expression.  This
-  // allows us to look up information about whether the operands implement
-  // support for it.
-  auto specialFnInfo = SpecialFunctionInfo::get(specialFnKind);
 
-  // Look up the normal function on the expr type.
-  auto nameAttr = StringAttr::get(emitter.getContext(), specialFnInfo.name);
-  ASTDecl *lookupResult = exprRep.type.getDecl().lookup(nameAttr);
-  if (!lookupResult) {
-    emitter.emitError(getLoc(), "")
-        << exprRep.type << " does not implement the " << nameAttr
-        << " special method";
-    return {};
-  }
-
-  // Make sure the signature is resolved.
-  if (failed(emitter.shared.declResolver->resolve(
-          *lookupResult, DeclResolvedness::signatureResolved, getLoc())))
-    return {};
-
-  ASTTypeAnd<MValue> callee =
-      emitFuncReference(cast<LITFuncOp>(*lookupResult), *lookupResult, emitter);
-  assert(callee.ir && "always succeeds");
   ArgumentValueType argValue = {exprRep, subExpr->getLoc()};
 
-  return emitFunctionCall({RValue(callee.ir), callee.type}, argValue, getLoc(),
-                          emitter);
+  return emitter.emitSpecialFunctionCall(
+      {exprRep.ir.getIfDRValue(), exprRep.type}, specialFnKind, argValue,
+      getLoc());
 }
 
 ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
                                            ASTType contextualType) const {
-  Value cond = emitter.emitDRValue(condExpr).ir;
+  ASTTypeAnd<DRValue> cond = emitter.emitDRValue(condExpr);
   if (!cond)
     return {};
 
-  // TODO(types): we only support 'index' values as a hack right now.
-  if (!cond.getType().isIndex()) {
-    emitter.emitError(condExpr->getLoc(), "value of type ")
-        << cond.getType() << " isn't convertible to Bool";
+  SMLoc condLoc = condExpr->getLoc();
+  ArgumentValueType argValue = {{cond.ir, cond.type}, condLoc};
+  ASTTypeAnd<AnyValue> boolCall = emitter.emitSpecialFunctionCall(
+      cond, SpecialFunctionKind::kBool, argValue, condLoc);
+  if (!boolCall)
     return {};
-  }
-  // TODO(types)
-  Type resType = mlir::IndexType::get(emitter.getContext());
+
+  argValue = {boolCall, condLoc};
+  ASTTypeAnd<AnyValue> litBoolCall = emitter.emitSpecialFunctionCall(
+      {boolCall.ir.getIfDRValue(), boolCall.type},
+      SpecialFunctionKind::kLitBool, argValue, condLoc);
+  if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
+    return {};
+
+  Value condValue = static_cast<Value>(litBoolCall.ir.getIfDRValue());
+
+  Type dummyType = mlir::IndexType::get(emitter.getContext());
   Location ifLoc = emitter.translateLocation(getLoc());
-  auto one = emitter.builder->create<mlir::index::ConstantOp>(cond.getLoc(), 1);
-  Value condValue = emitter.builder->create<mlir::index::CmpOp>(
-      cond.getLoc(), mlir::index::IndexCmpPredicate::EQ, cond, one);
-  auto ifOp = emitter.builder->create<scf::IfOp>(ifLoc, TypeRange{resType},
+  // At this point we don't know the type of trueExpr / falseExpr, use
+  // a dummy one.
+  auto ifOp = emitter.builder->create<scf::IfOp>(ifLoc, TypeRange{dummyType},
                                                  condValue, /*withElse=*/true);
   emitter.builder = ifOp.getThenBodyBuilder();
   ASTTypeAnd<DRValue> trueVal = emitter.emitDRValue(trueExpr);
@@ -1344,5 +1334,14 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
     return {};
   emitter.builder->create<scf::YieldOp>(ifLoc, falseVal.ir);
   emitter.builder->setInsertionPointAfter(ifOp);
-  return {(DRValue)ifOp.getResult(0), emitter.shared.getIndexType()};
+  if (!trueVal.type.isEqualCanon(falseVal.type)) {
+    emitter.emitError(
+        getLoc(), "the types of a conditional expression must be compatible:  ")
+        << trueVal.type << " is not compatible with " << falseVal.type;
+    return {};
+  }
+  Type resultType = emitter.shared.getMLIRType(trueVal.type, ifLoc);
+  // Ensure the correct type is used.
+  ifOp->getResult(0).setType(resultType);
+  return {(DRValue)ifOp.getResult(0), trueVal.type};
 }

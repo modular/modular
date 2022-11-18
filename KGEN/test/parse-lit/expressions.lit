@@ -195,22 +195,27 @@ def listValues() -> index:
   a = []
   return a
 
-# CHECK-LABEL: lit.func @test_if_cond(%a: index) -> !lit.none {
-def test_if_cond(a: index):
-    # CHECK:      %[[ONE0:.*]] = {{.*}} 1
-    # CHECK-NEXT: %[[ONE1:.*]] = {{.*}} 1
-    # CHECK-NEXT: %[[CMP:.*]] = index.cmp eq(%[[ONE0]], %[[ONE1]])
-    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[CMP]] -> (index) {
+# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.ref<@Bool>) -> !lit.none {
+def test_if_cond(cond: Bool):
+    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int>
+    # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
+    # CHECK-NEXT: %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%[[COND]])
+    # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__lit_bool](%[[BOOL]])
+    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOL]]
     # CHECK-NEXT:   %[[TWO:.*]] = {{.*}} 2
-    # CHECK-NEXT:   scf.yield %[[TWO]] : index
+    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])
+    # CHECK-NEXT:   scf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %[[THREE:.*]] = {{.*}} 3
-    # CHECK-NEXT:   scf.yield %[[THREE]] : index
+    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[THREE]])
+    # CHECK-NEXT:   scf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_RES:.*]], %a_0
-    a = 2 if 1 else 3
+    # CHECK-NEXT: pop.store %[[IF_RES]], %i
+    var i: Int = Int(2) if cond else Int(3)
 
-    var i : Int
+    # CHECK:      %[[TRUE:.+]] = kgen.call_param{{.+}} @Bool::@true]()
+    # CHECK-NEXT: pop.store %[[TRUE]], %cond
+    cond = Bool.true()
     i += i
-    if a:     # 'if' stmt, not an 'if' expression.
+    if cond:     # 'if' stmt, not an 'if' expression.
         i = i+i

@@ -34,14 +34,34 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
     return result
     #return Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
 
+
 #===------------------------------------------------------------------------===#
 # Bool
 #===------------------------------------------------------------------------===#
 
-struct Bool: #TODO
-  fn __new__() -> Bool:
+struct Bool:
+  var value : __mlir_type.index
+
+  fn __new__(value: __mlir_type.index) -> Bool:
     var result: Bool
+    result.value = value
     return result
+
+  fn __bool__(self: Bool) -> Bool:
+     return self
+
+  fn __lit_bool(self: Bool) -> __mlir_type.i1:
+     #return __mlir_op.`index.castu`(__mlir_type.i1, self.value)
+     var x: __mlir_type.i1
+     return x
+
+  @staticmethod
+  fn true() -> Bool:
+    return Bool(1)
+
+  @staticmethod
+  fn false() -> Bool:
+    return Bool(0)
 
 #===------------------------------------------------------------------------===#
 # Int
@@ -64,22 +84,22 @@ struct Int:
     return result
 
   fn __lt__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __le__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __eq__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __ne__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __gt__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __ge__(self, rhs: Int) -> Bool:
-    return Bool() #TODO
+    return Bool(0) #TODO
 
   fn __pos__(self) -> Int:
     return Int(self.value)

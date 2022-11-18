@@ -1,9 +1,6 @@
 # RUN: kgen-translate -import-lit -verify-diagnostics %s
 
-# "Standard library"
-struct Float:
-struct Int:
-struct DType:
+__include "../lit-examples/prolog.lit"
 
 # Tests
 
@@ -32,7 +29,7 @@ def bad_assignment1(a: Int, b: Int):
    a = (b += b)
 
 
-def elif_parse_error(a: index):
+def elif_parse_error(a: Bool):
   if a:
     pass
  elif a: # expected-error {{unexpected token in expression}}
@@ -83,7 +80,7 @@ struct StructMemberRedefinition:
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
-  var x : Float  # expected-error {{invalid redefinition of "x"}}
+  var x : Int  # expected-error {{invalid redefinition of "x"}}
   x+4   # no follow-on error.
 
 var globalvar : index
@@ -107,7 +104,7 @@ def invalid_conversion(a: Int, b: index):
 struct NotBoolConvertible:
 
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{value of type 'NotBoolConvertible' isn't convertible to Bool}}
+  if a: # expected-error {{'NotBoolConvertible' does not implement the "__bool__" special method}}
      pass
 
 struct Thing[a: index, b: index]:
