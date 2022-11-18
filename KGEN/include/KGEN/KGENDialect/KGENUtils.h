@@ -176,11 +176,10 @@ LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
                                         Location targetLoc);
 
 /// Check that the parameter declarations match.
-LogicalResult
-verifyParamDeclsMatch(const char *originatorName,
-                      ArrayRef<ParamDeclAttr> originatorParamDecls,
-                      Location originatorLoc, const char *targetName,
-                      ParamDeclArrayAttr targetParamDecls, Location targetLoc);
+LogicalResult verifyParamDeclsMatch(
+    const char *originatorName, ArrayRef<ParamDeclAttr> originatorParamDecls,
+    Location originatorLoc, const char *targetName,
+    ArrayRef<ParamDeclAttr> targetParamDecls, Location targetLoc);
 
 } // namespace M::KGEN
 
