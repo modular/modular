@@ -180,12 +180,12 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
 
   // If the interface requires something but the generator is ? then the
   // generator is more flexible than it needs to be.
-  if (!genParam)
+  if (isa<UnknownAttr>(genParam))
     return success();
 
   // If the interface is ? but the generator is more specific, then we cannot
   // support this: we cannot impose a constraint on a ?.
-  if (!itfParam) {
+  if (isa<UnknownAttr>(itfParam)) {
     // TODO: It is possible to add inferred dynamic constraints when we have an
     // error handling model.
     auto diag = emitError(inferenceLoc, inferenceContext)

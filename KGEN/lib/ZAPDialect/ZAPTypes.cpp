@@ -69,25 +69,22 @@ static POP::SIMDType getElementType(Op *op) {
 // NDBufferType
 //===----------------------------------------------------------------------===//
 
-/// Print an array of parameter values that either has an index type or is null
-/// (which prints as a `?`).
-void printOptionalIndicesParamValue(AsmPrinter &p, ArrayRef<TypedAttr> value) {
+void printIndicesParamValue(AsmPrinter &p, ArrayRef<TypedAttr> value) {
   p << '[';
-  interleaveComma(
-      value, p, [&](TypedAttr attr) { printOptionalIndexParamValue(p, attr); });
+  interleaveComma(value, p,
+                  [&](TypedAttr attr) { printIndexParamValue(p, attr); });
   p << ']';
 }
 
 /// Parse an array of parameter values that is known to be an index type or a
 /// `?` which results in a null attribute.
-ParseResult
-parseOptionalIndicesParamValue(AsmParser &p,
-                               FailureOr<SmallVector<TypedAttr>> &result) {
+ParseResult parseIndicesParamValue(AsmParser &p,
+                                   FailureOr<SmallVector<TypedAttr>> &result) {
   result.emplace();
   return p.parseCommaSeparatedList(
       AsmParser::Delimiter::Square, [&]() -> ParseResult {
         FailureOr<TypedAttr> attr;
-        if (auto err = parseOptionalIndexParamValue(p, attr); failed(err))
+        if (auto err = parseIndexParamValue(p, attr); failed(err))
           return err;
         result->emplace_back(attr.value());
         return success();

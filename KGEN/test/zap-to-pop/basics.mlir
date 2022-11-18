@@ -65,16 +65,16 @@ kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<scalar<f32>>,
 // -----
 
 // CHECK-LABEL: @zap_ndbuffer_construct
-// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<invalid>>
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<?>>
 // CHECK-SAME: %[[SIZE0:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
-kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<scalar<invalid>>,
+kgen.func @zap_ndbuffer_construct(%ptr: !pop.pointer<scalar<?>>,
                                 %size: index,
                                 %dtype: !kgen.dtype) {
   // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
   // CHECK-DAG: %[[FOUR:.*]] = index.constant 4
   // CHECK-DAG: %[[ARRAY:.*]] = pop.array.create [%[[SIZE]], %[[SIZE]], %[[SIZE]], %[[SIZE]], %[[ZERO]]] : !pop.array<5, index>
-  // CHECK: pop.struct.construct(%[[PTR]], %[[FOUR]], %[[ARRAY]], %[[DTYPE]]) : !pop.struct<pointer<scalar<invalid>>, index, array<5, index>, dtype>
+  // CHECK: pop.struct.construct(%[[PTR]], %[[FOUR]], %[[ARRAY]], %[[DTYPE]]) : !pop.struct<pointer<scalar<?>>, index, array<5, index>, dtype>
   %0 = zap.ndbuffer.construct %ptr[%size, %size, %size, %size] of %dtype : !zap.ndbuffer<[?, ?, ?, ?], ?>
   kgen.return
 }
@@ -133,7 +133,7 @@ kgen.generator @ndbuffer_stack_allocation_parametric_size<type: dtype, size>(%i:
 // CHECK-LABEL: @zap_ndbuffer_dim
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !pop.struct<pointer<scalar<f32>>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !pop.struct<pointer<scalar<si32>>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<invalid>>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<?>>
 kgen.func @zap_ndbuffer_dim(
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[?, 4, ?], si32>,
@@ -159,7 +159,7 @@ kgen.func @zap_ndbuffer_dim(
 // CHECK-LABEL: @zap_ndbuffer_rank
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !pop.struct<pointer<scalar<f32>>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !pop.struct<pointer<scalar<si32>>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<invalid>>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<?>>
 kgen.func @zap_ndbuffer_rank(
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[?], si32>,
@@ -178,7 +178,7 @@ kgen.func @zap_ndbuffer_rank(
 // CHECK-LABEL: @zap_ndbuffer_address
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !pop.struct<pointer<scalar<f32>>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !pop.struct<pointer<scalar<si32>>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<invalid>>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<?>>
 kgen.func @zap_ndbuffer_address(
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[?], si32>,
@@ -197,7 +197,7 @@ kgen.func @zap_ndbuffer_address(
 // CHECK-LABEL: @zap_ndbuffer_dtype
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !pop.struct<pointer<scalar<f32>>
 // CHECK-SAME: %[[NDBUFFER1:.*]]: !pop.struct<pointer<scalar<si32>>
-// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<invalid>>
+// CHECK-SAME: %[[NDBUFFER2:.*]]: !pop.struct<pointer<scalar<?>>
 kgen.func @zap_ndbuffer_dtype(
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[?], si32>,

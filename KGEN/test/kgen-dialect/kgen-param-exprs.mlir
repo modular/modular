@@ -274,7 +274,7 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 }
 
 // CHECK-LABEL: kgen.generator @param_canonicalize
-kgen.generator @param_canonicalize<p1, p2>()  {
+kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <add(mul(p1, 4), mul(p2, 4))>
   kgen.param.constant = <mul(add(p1, p2), 4)>
 
@@ -301,8 +301,27 @@ kgen.generator @param_canonicalize<p1, p2>()  {
   // CHECK: = <3>
   kgen.param.constant = <apply(:(index) -> index #kgen.expr.func<(A) -> add(A, 1)>, 2)>
 
-  // CHECK: fn: (index) -> index = <#kgen.expr.func<(B) -> add(B, 1)>>
-  kgen.param.declare fn: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(B, A)>, 1)>
+  // CHECK: fn1: (index) -> index = <#kgen.expr.func<(B) -> add(B, 1)>>
+  kgen.param.declare fn1: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(B, A)>, 1)>
+
+  // CHECK = <eq(p1, ?)>
+  kgen.param.declare unknown: i1 = <eq(?, p1)>
+  // CHECK: = <0>
+  kgen.param.declare unknownEq: i1 = <eq(:dtype ?, f32)>
+  // CHECK: = <1>
+  kgen.param.declare unknownEqItself: i1 = <eq(:dtype ?, ?)>
+  // CHECK: = <0>
+  kgen.param.declare unknownEqIndex: i1 = <eq(?, 1)>
+  // CHECK: = <1>
+  kgen.param.declare unknownEqItselfIndex: i1 = <eq(?, ?)>
+
+  // CHECK: <eq(:() -> index fn2, #kgen.expr.func<() -> 0>)>
+  kgen.param.declare fn2: () -> index = <#kgen.expr.func<() -> 1>>
+  kgen.param.declare compareFns: i1 = <eq(:() -> index fn2, #kgen.expr.func<() -> 0>)>
+
+  // CHECK: <eq(:list<index[2]> [1, 2], list)>
+  kgen.param.declare list: list<index[2]> = <[3, 4]>
+  kgen.param.declare compareLists: i1 = <eq(:list<index[2]> [1, 2], list)>
 
   kgen.return
 }

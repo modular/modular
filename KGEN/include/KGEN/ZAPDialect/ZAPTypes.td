@@ -74,8 +74,8 @@ def ZAP_NDBufferType : ZAP_MemoryLikeType<"NDBuffer", "ndbuffer"> {
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$shape,
                         "TypedAttr":$dType);
   let assemblyFormat = [{
-    `<` custom<OptionalIndicesParamValue>($shape) `,` ` `
-        custom<OptionalDTypeParamValue>($dType) `>`
+    `<` custom<IndicesParamValue>($shape) `,` ` `
+        custom<DTypeParamValue>($dType) `>`
   }];
 
   let classDeclaration = [{
@@ -105,8 +105,8 @@ def NDBufferKnownDType : ConfinedType<ZAP_NDBufferType,
 
 def ConcreteNDBuffer : ConfinedType<ZAP_NDBufferType,
     [CPred<"$_self.cast<ZAP::NDBufferType>().getDType() && " #
-           "!llvm::any_of($_self.cast<ZAP::NDBufferType>().getShape(), "#
-                    "[](TypedAttr shape) { return !shape; })">],
+           "llvm::none_of($_self.cast<ZAP::NDBufferType>().getShape(), "#
+           "[](TypedAttr shape) { return isa<UnknownAttr>(shape); })">],
     "ndbuffer with concrete size and dtype">;
 
 class NDBufferPointerType<string lhs, string rhs>

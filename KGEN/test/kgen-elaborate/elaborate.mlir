@@ -1142,3 +1142,17 @@ kgen.generator @do_it() -> index {
   %0 = kgen.param.constant = <result>
   kgen.return %0 : index
 }
+
+// -----
+
+kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> i1>() {
+  kgen.return<:i1 eq(:!kgen.paramref<T> value, ?)>
+}
+
+// CHECK-LABEL: @check
+kgen.generator @check() {
+  kgen.call @type_of_unknown<T: type = i32, value: i32 = 1 -> result: i1>() : () -> ()
+  // CHECK: = <0>
+  %0 = kgen.param.constant: i1 = <result>
+  kgen.return
+}

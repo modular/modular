@@ -267,46 +267,6 @@ ParseResult KGEN::parseIndexParamValue(AsmParser &p,
   return success();
 }
 
-/// Print a parameter value that either has an index type or is null (which
-/// prints as a `?`).
-void KGEN::printOptionalIndexParamValue(AsmPrinter &p, Attribute value) {
-  if (!value)
-    p << '?';
-  else
-    printIndexParamValue(p, value);
-}
-
-/// Parse a parameter value that is known to be an index type or a `?` which
-/// results in a null attribute.
-ParseResult KGEN::parseOptionalIndexParamValue(AsmParser &p,
-                                               FailureOr<TypedAttr> &result) {
-  if (succeeded(p.parseOptionalQuestion())) {
-    result = TypedAttr();
-    return success();
-  }
-  return parseIndexParamValue(p, result);
-}
-
-/// Print a parameter value that either has `dtype` type or is null (which
-/// prints as a `?`).
-void KGEN::printOptionalDTypeParamValue(AsmPrinter &p, Attribute value) {
-  if (!value)
-    p << '?';
-  else
-    printDTypeParamValue(p, value);
-}
-
-/// Parse a parameter value that is known to be an index type or a `?` which
-/// results in a null attribute.
-ParseResult KGEN::parseOptionalDTypeParamValue(AsmParser &p,
-                                               FailureOr<TypedAttr> &result) {
-  if (succeeded(p.parseOptionalQuestion())) {
-    result = TypedAttr();
-    return success();
-  }
-  return parseDTypeParamValue(p, result);
-}
-
 /// We need this for an ODS reason, it doesn't know that ParamDeclAttr is
 /// nullable or something :-/.
 ParseResult KGEN::parseParamDecl(AsmParser &p,
@@ -609,6 +569,12 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     }
   }
 
+  // A '?' represents an unknown parameter.
+  if (succeeded(p.parseOptionalQuestion())) {
+    value = UnknownAttr::get(type);
+    return success();
+  }
+
   // Barewords / MLIR keywords are implicitly parameter declaration references
   // or the start of a expression in function form.
   StringRef keyword;
@@ -855,6 +821,11 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
 /// dealing with a parameter specifically.  This utilize syntactic shortcuts to
 /// make the printed syntax easier to grok.
 void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
+  if (isa<UnknownAttr>(value)) {
+    os << '?';
+    return;
+  }
+
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(declRef.getName(), os);
     return;

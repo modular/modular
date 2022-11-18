@@ -42,12 +42,12 @@ kgen.generator @zap_ndbuffer_with_params<type:dtype, size>(
 
 // CHECK-LABEL: @zap_ndbuffer_construct
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<f32>>
-// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<invalid>>
+// CHECK-SAME: %[[OPAQUE:.*]]: !pop.pointer<scalar<?>>
 // CHECK-SAME: %[[SIZE:.*]]: index
 // CHECK-SAME: %[[DTYPE:.*]]: !kgen.dtype
 kgen.func @zap_ndbuffer_construct(
   %ptr: !pop.pointer<scalar<f32>>,
-  %opaque: !pop.pointer<scalar<invalid>>,
+  %opaque: !pop.pointer<scalar<?>>,
   %size: index,
   %dtype: !kgen.dtype) -> (!zap.ndbuffer<[4, 5, 3], f32>,
                            !zap.ndbuffer<[?, 4], f32>,

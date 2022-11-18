@@ -318,6 +318,13 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   // on the right. We handle all simple constants consistently here: they can
   // never occur in the same expression since they have different types.
   if (isSimpleConstant(rhs)) {
+    // Everything that isn't ? is less than ?.
+    if (isa<UnknownAttr>(rhs))
+      return !isa<UnknownAttr>(lhs);
+    // It isn't useful to sort function and list constants (yet).
+    if (isa<ExprFuncAttr, ListAttr>(rhs))
+      return false;
+
     if (auto intRhs = dyn_cast<IntegerAttr>(rhs)) {
       auto intLhs = dyn_cast<IntegerAttr>(lhs);
       return !intLhs || intLhs.getValue().slt(intRhs.getValue());
@@ -690,7 +697,7 @@ static IntegerAttr foldCompareOp(
 /// returns null if no folding is possible.
 static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   // foldCompareOp handles 32-bit truncation of input values correctly.
-  if (lhs.getType().isIndex())
+  if (lhs.getType().isIndex() && isa<IntegerAttr>(lhs) && isa<IntegerAttr>(rhs))
     return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
 
   // If the values have pointer equality, we know they are equal.

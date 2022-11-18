@@ -328,6 +328,26 @@ def ConcreteTypeConstantAttr
 }
 
 //===----------------------------------------------------------------------===//
+// UnknownAttr
+//===----------------------------------------------------------------------===//
+
+def UnknownAttr : ExprAttr<"Unknown", "unknown", [SubElementAttrInterface]> {
+  let summary = "An unknown parameter value.";
+  let description = [{
+    The `#kgen.unknown` attribute represents an unknown parameter value. It is
+    a special placeholder that represents a parameter that may only be known
+    dynamically.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    return get(type.getContext(), type);
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 

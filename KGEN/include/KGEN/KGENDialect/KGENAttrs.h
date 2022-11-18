@@ -87,8 +87,9 @@ inline bool isSimpleConstant(Attribute attr) {
     return llvm::all_of(list.getValues(), isSimpleConstant);
   if (auto expr = dyn_cast<ExprFuncAttr>(attr))
     return expr.getParamDecls().empty();
-  return attr.isa<FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
-                  ConcreteTypeConstantAttr, SymbolConstantAttr>();
+  return attr
+      .isa<UnknownAttr, FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
+           ConcreteTypeConstantAttr, SymbolConstantAttr>();
 }
 } // namespace M::KGEN
 
