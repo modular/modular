@@ -13,10 +13,39 @@ struct DType:
 struct Scalar[type: DType]:
   pass
 
+#===------------------------------------------------------------------------===#
+# Scalar2 - Scalar using !kgen.dtype, phase this in to replace Scalar for C.
+#===------------------------------------------------------------------------===#
+
+# CHECK-LABEL: lit.struct.decl @Scalar2<type: dtype> {
+struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
+  # CHECK: %value = lit.var.decl "value" : <scalar<type>>
+  # NOTE: We really need a better way to define this than using "type" magically!
+  var value: __mlir_type.`!pop.scalar<type>`
+
+  fn __new__(value: __mlir_type.`!pop.scalar<type>`) -> Scalar2[type]:
+    var result: Scalar2[type]
+    # TODO.
+    return result
+
+  fn __add__(self, rhs: Scalar2[type]) -> Scalar2[type]:
+    var result : Scalar2[type]
+    # TODO: Need proper parameterization support.
+    return result
+    #return Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
+
+#===------------------------------------------------------------------------===#
+# Bool
+#===------------------------------------------------------------------------===#
+
 struct Bool: #TODO
   fn __new__() -> Bool:
     var result: Bool
     return result
+
+#===------------------------------------------------------------------------===#
+# Int
+#===------------------------------------------------------------------------===#
 
 # CHECK-LABEL: lit.struct.decl @Int {
 struct Int:
