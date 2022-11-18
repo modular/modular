@@ -152,7 +152,6 @@ static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
                                             ASTDecl &scope,
                                             LitSharedState &shared) {
   Type result;
-
   {
     // Capture errors thrown by parseType and ignore them.
     // FIXME: This doesn't silence errors!
@@ -166,10 +165,10 @@ static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
     tmpBuf.push_back(0);
     result =
         mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
-    if (!result) {
-      shared.emitError(loc, "unknown MLIR type");
-      return nullptr;
-    }
+  }
+  if (!result) {
+    shared.emitError(loc, "unknown MLIR type: ") << name;
+    return nullptr;
   }
 
   return &shared.declResolver->addFullyResolvedDecl(
