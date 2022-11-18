@@ -837,6 +837,12 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
+ASTTypeAnd<AnyValue> SliceNode::emitIR(ExprEmitter &emitter,
+                                       ASTType contextualType) const {
+  emitter.emitError(getLoc(), "slice values not implemented yet");
+  return {};
+}
+
 ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
                                            ASTType contextualType) const {
   // Subscripting a generic function binds the parameter expressions.

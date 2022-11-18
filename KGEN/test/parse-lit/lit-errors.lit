@@ -298,3 +298,9 @@ fn expr_crash():
 
   # expected-error @+1 {{unknown MLIR type: kgen.dtype}}
   var y : __mlir_type.`kgen.dtype`  # should be !kgen.dtype
+
+fn slice_expression(a: Int):
+  a[:]    # expected-error {{slice values not implemented yet}}
+  a[::]   # expected-error {{slice values not implemented yet}}
+  a[1:2]  # expected-error {{slice values not implemented yet}}
+  a[:2:3] # expected-error {{slice values not implemented yet}}
