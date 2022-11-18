@@ -995,6 +995,16 @@ kgen.generator @iterate_wrong_result_type_count(%list: !kgen.list<index[3]>) {
 
 // -----
 
+// expected-error @below {{too many result expressions}}
+"someop"() {f = #kgen.expr.func<(A) -> (A, B)> : !kgen.signature<[B : index], [], (index) -> i32>} : () -> ()
+
+// -----
+
+// expected-error @below {{not enough result expressions}}
+"someop"() {f = #kgen.expr.func<(A) -> ()> : !kgen.signature<[B : index], [], (index) -> i32>} : () -> ()
+
+// -----
+
 kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
   // expected-error @below {{'kgen.list.get' op list index out-of-range}}
   %0 = kgen.list.get %list[0] : <index[0]>

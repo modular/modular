@@ -940,9 +940,14 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       evaluator.setParameterValue(
           input, ParamDeclRefAttr::get(input.getName(), input.getType()));
 
-    TypedAttr expr = evaluator.getReboundAttribute(exprFunc.getExpr());
-    return ExprFuncAttr::get(exprFunc.getInputs(), expr,
-                             cast<SignatureType>(resultType));
+    SmallVector<TypedAttr> exprs;
+    exprs.reserve(exprFunc.getExprs().size());
+    for (TypedAttr expr : exprFunc.getExprs())
+      exprs.push_back(evaluator.getReboundAttribute(expr));
+    return ExprFuncAttr::get(
+        exprFunc.getInputs(),
+        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs),
+        cast<SignatureType>(resultType));
   }
 
   return {};
@@ -960,7 +965,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     for (auto [param, value] : llvm::zip(exprFunc.getInputs(), operands))
       evaluator.setParameterValue(param, value);
 
-    return evaluator.getReboundAttribute(exprFunc.getExpr());
+    return evaluator.getReboundAttribute(exprFunc.getExprs().front());
   }
 
   // TODO: handle symbol constants by interpreting the callee.
@@ -1243,24 +1248,14 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
 // ExprFuncAttr
 //===----------------------------------------------------------------------===//
 
-static LogicalResult
-verifyExprFuncType(function_ref<InFlightDiagnostic()> emitError,
-                   SignatureType type) {
-  if (!type.getResultParamTypes().empty())
-    return emitError() << "cannot have result parameters";
-  if (type.getValues().getNumResults() != 1)
-    return emitError() << "must have one result";
-  return success();
-}
-
 static ParseResult parseExprFunc(AsmParser &p,
                                  FailureOr<ParamDeclArrayAttr> &paramDecls,
                                  FailureOr<ParamDeclArrayAttr> &inputs,
-                                 FailureOr<TypedAttr> &expr,
+                                 FailureOr<ParameterExprArrayAttr> &exprs,
                                  SignatureType type) {
-  if (failed(verifyExprFuncType(
-          [&] { return p.emitError(p.getCurrentLocation()); }, type)))
-    return failure();
+  if (!type.getResultParamTypes().empty())
+    return p.emitError(p.getCurrentLocation())
+           << "cannot have result parameters";
 
   // We can infer the input parameters from the signature.
   paramDecls = type.getInputParams();
@@ -1282,34 +1277,67 @@ static ParseResult parseExprFunc(AsmParser &p,
     return failure();
   if (typeIt != typeE)
     return p.emitError(p.getCurrentLocation(), "not enough input declarations");
-  expr.emplace();
-  if (p.parseArrow() ||
-      parseParamValue(p, *expr, type.getValues().getResult(0)))
+  if (p.parseArrow())
     return failure();
+
+  SmallVector<TypedAttr> exprVals;
+  ArrayRef<Type> resultTypes = type.getValues().getResults();
+  auto resultIt = resultTypes.begin(), resultE = resultTypes.end();
+  auto parseExpr = [&]() -> ParseResult {
+    if (resultIt == resultE)
+      return p.emitError(p.getCurrentLocation(), "too many result expressions");
+    return parseParamValue(p, exprVals.emplace_back(), *resultIt++);
+  };
+  if (p.parseOptionalLParen()) {
+    if (failed(parseExpr()))
+      return failure();
+  } else {
+    if (p.parseOptionalRParen())
+      if (p.parseCommaSeparatedList(parseExpr) || p.parseRParen())
+        return failure();
+  }
+  if (resultIt != resultE)
+    return p.emitError(p.getCurrentLocation(), "not enough result expressions");
+
   inputs = ParamDeclArrayAttr::get(p.getContext(), inputDecls);
+  exprs = ParameterExprArrayAttr::get(p.getContext(), exprVals);
   return success();
 }
 
 static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
-                          ParamDeclArrayAttr inputs, TypedAttr expr,
-                          SignatureType type) {
+                          ParamDeclArrayAttr inputs,
+                          ParameterExprArrayAttr exprs, SignatureType type) {
   p << '(';
   llvm::interleaveComma(
       inputs, p, [&](ParamDeclAttr input) { p << input.getName().getValue(); });
   p << ") -> ";
-  printParamValue(expr, p.getStream());
+  if (exprs.size() != 1)
+    p << '(';
+  llvm::interleaveComma(
+      exprs, p, [&](TypedAttr expr) { printParamValue(expr, p.getStream()); });
+  if (exprs.size() != 1)
+    p << ')';
 }
 
 LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    ParamDeclArrayAttr paramDecls,
-                                   ParamDeclArrayAttr inputs, TypedAttr expr,
+                                   ParamDeclArrayAttr inputs,
+                                   ParameterExprArrayAttr exprs,
                                    SignatureType type) {
-  if (failed(verifyExprFuncType(emitError, type)))
-    return failure();
-  Type resultType = type.getValues().getResult(0);
-  if (expr.getType() != resultType)
-    return emitError() << "expected expression result type to be " << resultType
-                       << " but got " << expr.getType();
+  if (!type.getResultParamTypes().empty())
+    return emitError() << "cannot have result parameters";
+  if (exprs.size() != type.getValues().getNumResults())
+    return emitError() << "has " << exprs.size() << " expressions but expected "
+                       << type.getValues().getNumResults();
+  for (auto [idx, expr, type] :
+       llvm::zip(llvm::seq<unsigned>(0, exprs.size()), exprs,
+                 type.getValues().getResults())) {
+    if (expr.getType() != type) {
+      return emitError() << "expected expression result #" << idx
+                         << " type to be " << type << " but got "
+                         << expr.getType();
+    }
+  }
   if (paramDecls != type.getInputParams())
     return emitError() << "input parameters do not match signature";
   if (inputs.size() != type.getValues().getNumInputs())
@@ -1319,7 +1347,7 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     if (input.getType() != sigInputType)
       return emitError() << "input types do not match";
 
-  return checkSelfContained(emitError, paramDecls, inputs, expr);
+  return checkSelfContained(emitError, paramDecls, inputs, exprs);
 }
 
 //===----------------------------------------------------------------------===//
