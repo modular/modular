@@ -1,17 +1,13 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
-struct Int:
-  pass
+__include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @test_if(%a: index, %b: index, %c: index) -> index {
-def test_if(a: index, b: index, c: index) -> index:
-  # CHECK: %inside_a = lit.var.decl "inside_a" : <index>
-  # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
-  # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
-  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
+# CHECK-LABEL: lit.func @test_if(%a: !kgen.ref<@Bool>, %b: !kgen.ref<@Bool>, %c: !kgen.ref<@Bool>) -> !kgen.ref<@Bool> {
+def test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   # CHECK:          hlcf.if
   if a:
-    inside_a = 0
+    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" : <@Int>
+    var inside_a: Int
   # CHECK:          } else {
   # CHECK:            hlcf.if
   elif b:
@@ -20,28 +16,31 @@ def test_if(a: index, b: index, c: index) -> index:
   # CHECK:            } else {
   # CHECK:              hlcf.if
   elif c:
-    inside_c = 2
+    # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <@Int>
+    var inside_c: Int
   # CHECK:              } else {
   else:
-    inside_else = 3
+    # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <@Int>
+    var inside_else: Int
   # CHECK:                hlcf.yield
   # CHECK-NEXT:         }
   # CHECK-NEXT:         hlcf.yield
   # CHECK-NEXT:       }
   # CHECK-NEXT:       hlcf.yield
   # CHECK-NEXT:     }
-  z = 4
+  var z: Int = Int(4)
   return a
 
-# CHECK-LABEL: lit.func @test_if_nested(%a: index, %b: index, %c: index) -> index {
-def test_if_nested(a: index, b: index, c: index) -> index:
-  # CHECK: %inside_a = lit.var.decl "inside_a" : <index>
-  # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <index>
-  # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <index>
-  # CHECK-NEXT: %z = lit.var.decl "z" : <index>
-  # CHECK:                    hlcf.if
+
+# CHECK-LABEL: lit.func @test_if_nested(%a: !kgen.ref<@Bool>, %b: !kgen.ref<@Bool>, %c: !kgen.ref<@Bool>) -> !kgen.ref<@Bool> {
+def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
+  #CHECK:        %[[LOAD_A:.*]] = pop.load %a_0  : !pop.pointer<@Bool>
+  #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%[[LOAD_A]])
+  #CHECK-NEXT:   %[[LIT_BOOL:.*]]  = kgen.call_param{{.*}}  @Bool::@__lit_bool](%[[BOOL]])
+  # CHECK-NEXT:              hlcf.if %[[LIT_BOOL]]
   if a:
-    inside_a = 0
+    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" : <@Int>
+    var inside_a: Int
   # CHECK:                   } else {
   # CHECK:                     hlcf.if
   else:
@@ -52,15 +51,17 @@ def test_if_nested(a: index, b: index, c: index) -> index:
   # CHECK:                       hlcf.if
     else:
       if c:
-        inside_c = 2
+        # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <@Int>
+        var inside_c: Int
   # CHECK:                       } else {
       else:
-        inside_else = 3
+        # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <@Int>
+        var inside_else: Int
   # CHECK:                         hlcf.yield
   # CHECK:                       }
   # CHECK:                       hlcf.yield
   # CHECK-NEXT:               }
   # CHECK:                    hlcf.yield
   # CHECK-NEXT:             }
-  z = 4
+  var z: Int = Int(4)
   return a

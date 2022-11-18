@@ -20,6 +20,9 @@
 SF(kNew, "__new__", -1, kImplicitlyStaticMethod)
 SF(kInit, "__init__", -1, kInstMethod)
 
+SF(kBool, "__bool__", 1, kInstMethod)
+SF(kLitBool, "__lit_bool", 1, kInstMethod)
+
 // Unary arithmetic operators.
 SF(kNeg, "__neg__", 1, kInstMethod)
 SF(kPos, "__pos__", 1, kInstMethod)

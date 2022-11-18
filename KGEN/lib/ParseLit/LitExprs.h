@@ -14,6 +14,7 @@
 
 #include "IRValues.h"
 #include "LitSharedState.h"
+#include "SpecialFunctions.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/Support/SMLoc.h"
 
@@ -31,6 +32,8 @@ struct ASTTypeAnd {
   bool operator!() const { return !ir; }
   operator bool() const { return ir; }
 };
+
+using ArgumentValueType = std::pair<ASTTypeAnd<AnyValue>, SMLoc>;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -176,6 +179,14 @@ public:
     assert(node && "cannot emit a null node");
     return emitDRValue(node->emitIR(*this), node->getLoc());
   }
+
+  /// This helper emits a method call to a special function (`kind`) on the
+  /// `caller` object with the provided `operands`. If the special function
+  /// is not implemented by the caller it emits an error.
+  /// This returns null if emission fails.
+  ASTTypeAnd<AnyValue>
+  emitSpecialFunctionCall(ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
+                          ArrayRef<ArgumentValueType> operands, SMLoc callLoc);
 
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
