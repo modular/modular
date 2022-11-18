@@ -242,10 +242,9 @@ ErrorOrSuccess SignatureType::checkSelfContained() {
 // ExprFuncAttr Verification
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-ExprFuncAttr::checkSelfContained(function_ref<InFlightDiagnostic()> emitError,
-                                 ParamDeclArrayAttr paramDecls,
-                                 ParamDeclArrayAttr inputs, TypedAttr expr) {
+LogicalResult ExprFuncAttr::checkSelfContained(
+    function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
+    ParamDeclArrayAttr inputs, ParameterExprArrayAttr exprs) {
   DenseMap<StringAttr, Type> paramsMap;
   for (ParamDeclAttr decl : paramDecls)
     paramsMap.try_emplace(decl.getName(), decl.getType());
@@ -254,18 +253,20 @@ ExprFuncAttr::checkSelfContained(function_ref<InFlightDiagnostic()> emitError,
       return emitError() << "redefinition of parameter " << input.getName();
   }
 
-  ParameterCollector collector;
-  SmallVector<ParamDeclRefAttr> uses;
-  bool hasConstExpr;
-  collector.collectUsesFromAttr(expr, uses, hasConstExpr);
-  for (ParamDeclRefAttr use : uses) {
-    Type &entry = paramsMap[use.getName()];
-    if (!entry)
-      return emitError() << use.getName()
-                         << " parameter not defined in function";
-    if (entry != use.getType())
-      return emitError() << "use of " << use.getName()
-                         << " with incorrect type in function";
+  for (TypedAttr expr : exprs) {
+    ParameterCollector collector;
+    SmallVector<ParamDeclRefAttr> uses;
+    bool hasConstExpr;
+    collector.collectUsesFromAttr(expr, uses, hasConstExpr);
+    for (ParamDeclRefAttr use : uses) {
+      Type &entry = paramsMap[use.getName()];
+      if (!entry)
+        return emitError() << use.getName()
+                           << " parameter not defined in function";
+      if (entry != use.getType())
+        return emitError() << "use of " << use.getName()
+                           << " with incorrect type in function";
+    }
   }
   return success();
 }
