@@ -61,12 +61,12 @@ LogicalResult NDBufferConstructOp::verify() {
   NDBufferType type = getType();
   size_t numUnknownDims =
       std::count_if(type.getShape().begin(), type.getShape().end(),
-                    [](auto shape) { return !shape; });
+                    [](TypedAttr shape) { return isa<UnknownAttr>(shape); });
   size_t numShapeParams = getShape().size();
   if (numShapeParams != numUnknownDims)
     return emitOpError("requires the shape operand to match the non-static "
                        "dimensions of the ndbuffer type");
-  if (!type.getDType() == !getDType())
+  if (isa<UnknownAttr>(type.getDType()) == !getDType())
     return emitOpError(
         "requires either a dtype operand or a ndbuffer type with static dtype");
   return success();

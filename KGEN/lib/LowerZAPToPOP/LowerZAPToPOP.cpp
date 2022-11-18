@@ -187,7 +187,7 @@ static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
     TypedAttr dim = type.getShape()[i];
     // If the dimension is not statically known, then we query the dimension
     // from the user-specified shape values (if available).
-    if (!dim) {
+    if (isa<UnknownAttr>(dim)) {
       shapeValues[i] = shape[shapeParamOffset++];
       continue;
     }
@@ -294,15 +294,16 @@ struct ConvertZAPNDBufferDim : public mlir::OpRewritePattern<NDBufferDimOp> {
 
   LogicalResult matchAndRewrite(NDBufferDimOp op,
                                 PatternRewriter &rewriter) const override {
-    if (TypedAttr dim =
-            op.getNDBuffer().getType().getShape()[op.getIndexAttr().getInt()]) {
+    TypedAttr dim =
+        op.getNDBuffer().getType().getShape()[op.getIndexAttr().getInt()];
+    if (!isa<UnknownAttr>(dim)) {
       rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dim);
-      return success();
+    } else {
+      Value shape = rewriter.create<StructGetOp>(
+          op->getLoc(), convertValue(op.getNDBuffer()), kNDBufferShapePosition);
+      rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
+                                              op.getIndex());
     }
-    Value shape = rewriter.create<StructGetOp>(
-        op->getLoc(), convertValue(op.getNDBuffer()), kNDBufferShapePosition);
-    rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
-                                            op.getIndex());
     return success();
   }
 };
@@ -318,7 +319,7 @@ static Value getDimensionAtIndex(OpBuilder &builder, Location loc,
                                  size_t idx) {
   ArrayRef<TypedAttr> ndBufferShape = ndBufferType.getShape();
   TypedAttr dim = ndBufferShape[idx];
-  if (!dim)
+  if (isa<UnknownAttr>(dim))
     // Emit op to get dimension from array if not known constant.
     return builder.create<ArrayGetOp>(loc, shape, idx);
 
@@ -369,12 +370,12 @@ struct ConvertZAPNDBufferDType
 
   LogicalResult matchAndRewrite(NDBufferDTypeOp op,
                                 PatternRewriter &rewriter) const override {
-    if (TypedAttr dtype = op.getNDBuffer().getType().getDType()) {
+    TypedAttr dtype = op.getNDBuffer().getType().getDType();
+    if (!isa<UnknownAttr>(dtype))
       rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dtype);
-      return success();
-    }
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getNDBuffer()),
-                                             kNDBufferDTypePosition);
+    else
+      rewriter.replaceOpWithNewOp<StructGetOp>(
+          op, convertValue(op.getNDBuffer()), kNDBufferDTypePosition);
     return success();
   }
 };
@@ -512,10 +513,10 @@ struct ConvertZAPNDBufferBitCast
 
     Value dtype;
     TypedAttr dtypeExpr;
-    if (auto outputDType = type.getDType())
-      dtypeExpr = outputDType;
-    else if (auto inputDType = inputType.getDType())
-      dtypeExpr = inputDType;
+    if (!isa<UnknownAttr>(type.getDType()))
+      dtypeExpr = type.getDType();
+    else if (!isa<UnknownAttr>(inputType.getDType()))
+      dtypeExpr = inputType.getDType();
 
     if (dtypeExpr)
       dtype = rewriter.create<ParamConstantOp>(op.getLoc(), dtypeExpr);
@@ -527,7 +528,7 @@ struct ConvertZAPNDBufferBitCast
     Value shapeArray;
     SmallVector<Value, 4> dynamicShapeValues;
     for (auto [idx, shape] : llvm::enumerate(type.getShape())) {
-      if (shape)
+      if (!isa<UnknownAttr>(shape))
         continue;
       if (!shapeArray)
         shapeArray = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,

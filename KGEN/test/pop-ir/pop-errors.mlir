@@ -262,20 +262,6 @@ kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
 
 // -----
 
-// expected-error @+1 {{expected attribute value}}
-kgen.func @unknown_size_simd(%arg0: !pop.simd<?, f32>) -> !pop.simd<?, f32> {
-  kgen.return %arg0 : !pop.simd<?, f32>
-}
-
-// -----
-
-// expected-error @+1 {{expected attribute value}}
-kgen.func @unknown_type_simd(%arg0: !pop.simd<4, ?>) -> !pop.simd<4, ?> {
-  kgen.return %arg0 : !pop.simd<4, ?>
-}
-
-// -----
-
 kgen.func @invalid_array_create(%arg0: i32) {
   // expected-error @below {{expected 2 operands to create array but got 1}}
   %0 = pop.array.create [%arg0] : !pop.array<2, i32>
