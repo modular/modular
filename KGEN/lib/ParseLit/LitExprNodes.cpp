@@ -150,19 +150,17 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   return shared.getTypeCheckErrorType();
 }
 
-/// When a lookup in __mlir_attr fails for a named field, this method tries to
-/// resolve it.  On success, it lazily creates a resolved declaration.  On
-/// failure, it bails out.
-static ASTTypeAnd<AnyValue>
-synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
-  auto &shared = emitter.shared;
-
+/// Given a StringRef for an MLIR attribute, invoke the MLIR parser to resolve
+/// it into an Attribute (which may not be a TypedAttr) and return it.  On
+/// error, emit a diagnostic and return null.
+static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
+                                         ExprEmitter &emitter) {
   Attribute result;
   std::string errorMsg;
   {
     // Capture errors thrown by parseAttribute and ignore them.
     // FIXME: This doesn't silence errors!
-    mlir::ScopedDiagnosticHandler handler(shared.getContext(),
+    mlir::ScopedDiagnosticHandler handler(emitter.shared.getContext(),
                                           [&](Diagnostic &diag) {
                                             errorMsg = diag.str();
                                             printf("hello\n");
@@ -174,21 +172,31 @@ synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
     SmallString<64> tmpBuf(name.begin(), name.end());
     tmpBuf.push_back(0);
     result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
-                                  shared.getContext());
+                                  emitter.shared.getContext());
   }
   if (!result) {
-    shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+    emitter.shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
     return {};
   }
+  return result;
+}
 
-  auto typedAttr = dyn_cast<TypedAttr>(result);
+/// This implements __mlir_attr.x lookup, synthesizing a MAValue for the
+/// attribute on demand.
+static ASTTypeAnd<AnyValue>
+synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
+  auto attr = parseMLIRAttrFromString(name, loc, emitter);
+  if (!attr)
+    return {};
+
+  auto typedAttr = dyn_cast<TypedAttr>(attr);
   if (!typedAttr) {
-    shared.emitError(loc, "MLIR attribute has no type: ") << result;
+    emitter.shared.emitError(loc, "MLIR attribute has no type: ") << attr;
     return {};
   }
 
-  auto astType = shared.getASTTypeForMLIRType(typedAttr.getType(), loc);
-  return {MAValue(result), astType};
+  auto astType = emitter.shared.getASTTypeForMLIRType(typedAttr.getType(), loc);
+  return {MAValue(typedAttr), astType};
 }
 
 /// When a lookup in __mlir_op fails for a named field, this method tries to
@@ -221,6 +229,28 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     return {};
   }
 
+  // Given an expression, try to resolve it into an Attribute that we can
+  // install on this operation.
+  auto getAttrFromExpr = [&](StringRef name, ExprNode *node) -> Attribute {
+    // Special case handling of __mlir_attr.`xxx` directly in this parser,
+    // because we want to be able to install arbitrary attributes into an
+    // operation's attribute list, and emitMAValue only supports TypedAttrs.
+    if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
+      auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
+      if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
+        return parseMLIRAttrFromString(attrRef->attrSpelling, attrRef->getLoc(),
+                                       emitter);
+    }
+
+    // Otherwise emit the value as an MAValue.  This allows references to
+    // parameter expressions.
+    auto value = emitter.emitMAValue(
+        node, "attribute value for '" + Twine(name) + "' must be constant");
+    if (!value)
+      return {};
+    return value.ir.get();
+  };
+
   SmallVector<NamedAttribute> attrValues;
 
   // Each element of the subscript must have a name identifier and a value as an
@@ -235,17 +265,10 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     }
 
     auto name = cast<DeclRefNode>(slice->lower)->spelling;
-
-    // Ok, we have a name and a value.  Emit the value and check to make sure it
-    // is an attribute value.
-    auto value = emitter.emitMAValue(slice->upper, "attribute value for '" +
-                                                       Twine(name) +
-                                                       "' must be constant");
+    auto value = getAttrFromExpr(name, slice->upper);
     if (!value)
       return {};
-
-    attrValues.push_back(
-        NamedAttribute(StringAttr::get(context, name), value.ir.get()));
+    attrValues.push_back(NamedAttribute(StringAttr::get(context, name), value));
   }
 
   // Check for duplicate attribute specifications.
@@ -480,8 +503,8 @@ static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
 
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
-/// TODO: This should take the parameters on the enclosing decl being
-/// referenced to support things like SomeType[42].member()
+/// TODO: This should take the parameters on the enclosing decl being referenced
+/// to support things like SomeType[42].member()
 static ASTTypeAnd<AnyValue>
 emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
                         ExprEmitter &emitter, ASTType implicitDeclType = {}) {

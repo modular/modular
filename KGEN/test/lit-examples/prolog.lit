@@ -81,25 +81,31 @@ struct Int:
     # CHECK: kgen.return %1
     return result
 
+  # CHECK-LABEL: lit.func @__lt__
   fn __lt__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
-    #return Bool(__mlir_op.`index.cmp`[pred:
-    #          __mlir_attr.`#index<cmp_predicate lt>`](self.value, rhs.value))
+    # CHECK: = index.cmp slt(%0, %1)
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate slt>`](self.value, rhs.value))
 
   fn __le__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sle>`](self.value, rhs.value))
 
   fn __eq__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate eq>`](self.value, rhs.value))
 
   fn __ne__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate ne>`](self.value, rhs.value))
 
   fn __gt__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sgt>`](self.value, rhs.value))
 
   fn __ge__(self, rhs: Int) -> Bool:
-    return Bool.false() #TODO
+    return Bool(__mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sge>`](self.value, rhs.value))
 
   fn __pos__(self) -> Int:
     return Int(self.value)
