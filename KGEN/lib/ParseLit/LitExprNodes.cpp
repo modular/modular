@@ -27,6 +27,7 @@
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
 
 using namespace M;
@@ -904,8 +905,35 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
             emitter.shared.getNoneType()};
   }
 
+  assert(resultOp->getNumResults() == 1 &&
+         "Only support single result ops so far");
+
   auto astType = getASTTypeForMLIRType(resultOp->getResult(0).getType(),
                                        call.getLoc(), emitter.shared);
+
+  // Check to see if we can fold this operation.  This enables use of __mlir_op
+  // to produce meta-values without forcing them into the dynamic value domain.
+  SmallVector<Attribute, 4> constOperands(resultOp->getNumOperands());
+  for (unsigned i = 0, e = constOperands.size(); i != e; ++i)
+    matchPattern(resultOp->getOperand(i), mlir::m_Constant(&constOperands[i]));
+  SmallVector<OpFoldResult, 4> foldResults;
+  if (succeeded(resultOp->fold(constOperands, foldResults)) &&
+      foldResults.size() == 1) {
+    auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
+    // If the result was some other value that already exists, use it.
+    if (auto val = dyn_cast<Value>(folded)) {
+      resultOp->erase();
+      return {DRValue(val), astType};
+    }
+
+    if (auto attr = dyn_cast<TypedAttr>(cast<Attribute>(folded))) {
+      // If it is a constant, make an MAValue result.
+      resultOp->erase();
+      return {MAValue(attr), astType};
+    }
+  }
+
+  // If folding failed, return the operation normally.
   return {DRValue(resultOp->getResult(0)), astType};
 }
 
