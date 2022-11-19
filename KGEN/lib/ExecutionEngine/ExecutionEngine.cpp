@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
-#include "Cache/BlobCache.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
@@ -27,44 +26,7 @@
 
 using namespace M;
 using namespace KGEN;
-
-//===----------------------------------------------------------------------===//
-// ObjectCache
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// This allows the BlobCache to key off of a module pointer by hashing the
-/// contents of the module.
-struct ModulePtrKeyInfo {
-  using KeyTy = const llvm::Module *;
-
-  /// Hash the signature of each function in the module, as well as each
-  /// instruction and its operands. This should produce a stable hash that is
-  /// unique between modules.
-  static std::string hashKey(KeyTy key) {
-    // Make sure we hash the data layout!
-    llvm::hash_code moduleHash = llvm::hash_value(key->getDataLayoutStr());
-    for (auto &func : key->functions()) {
-      moduleHash =
-          llvm::hash_combine(moduleHash, func.getReturnType()->getTypeID());
-      for (auto *in : func.getFunctionType()->params())
-        moduleHash = llvm::hash_combine(moduleHash, in->getTypeID());
-
-      for (auto &instruction : llvm::instructions(func)) {
-        // Add any instruction operands to the hash as well.
-        for (auto &operand : instruction.operands()) {
-          if (auto inst = dyn_cast<llvm::Instruction>(operand.get()))
-            moduleHash = llvm::hash_combine(moduleHash, inst->getOpcode());
-        }
-        // And finally add the opcode for this instruction itself to the hash.
-        moduleHash = llvm::hash_combine(moduleHash, instruction.getOpcode());
-      }
-    }
-
-    return std::to_string(size_t(moduleHash));
-  }
-};
-} // namespace
+using namespace Cache;
 
 /// Setup the machine properties from the current architecture.
 static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
@@ -166,7 +128,7 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 /// Add the given module to the execution engine. This slices all public funcs
 /// out of the module with their dependencies to generate self-contained object
 /// files.
-M::ErrorOrSuccess ExecutionEngine::add(ModuleOp module,
+M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
                                        ArrayRef<FuncOp> exports,
                                        StringRef libName) {
   // Create the set of symbols to export.
@@ -174,7 +136,7 @@ M::ErrorOrSuccess ExecutionEngine::add(ModuleOp module,
   for (auto e : exports)
     exportedSymbols.insert(e.getSymNameAttr());
 
-  compiler = std::make_unique<ObjectCompiler>(".kgen_cache", module,
+  compiler = std::make_unique<ObjectCompiler>(runtime, ".kgen_cache", module,
                                               std::move(exportedSymbols));
 
   // Produce a standalone object for all the exports.
@@ -186,8 +148,7 @@ M::ErrorOrSuccess ExecutionEngine::add(ModuleOp module,
   return add(libName, std::move(*objOr));
 }
 
-ErrorOrSuccess ExecutionEngine::add(StringRef name,
-                                    std::unique_ptr<llvm::MemoryBuffer> obj) {
+ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
   // Create a new dylib so that we don't have ODR violations.
   auto dylibOr = jit->createJITDylib(name.str());
   if (!dylibOr)
@@ -198,7 +159,11 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name,
       cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           jit->getDataLayout().getGlobalPrefix())));
 
-  if (auto err = jit->addObjectFile(*dylibOr, std::move(obj)))
+  // Copy the memory into the JIT - we don't know if the BufferRef will go away
+  // cause the JIT doesn't propagate the refcount.
+  std::unique_ptr<llvm::MemoryBuffer> objMemBuf =
+      llvm::MemoryBuffer::getMemBufferCopy(obj->getBuffer());
+  if (auto err = jit->addObjectFile(*dylibOr, std::move(objMemBuf)))
     return M::Error(toString(std::move(err)));
 
   return success();

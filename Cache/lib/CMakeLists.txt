@@ -10,6 +10,8 @@ add_modular_library(MCache
 
   LINK_LIBS PUBLIC
   LLVMSupport
+  LLCLRuntime
+  LLCLSupport
   MSupport
 
   DEPENDS

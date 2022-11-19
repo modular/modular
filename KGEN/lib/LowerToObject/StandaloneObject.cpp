@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LowerToObjectImpl.h"
 #include "Support/TempFile.h"
 #include "Support/TimeProfiler.h"
@@ -27,6 +28,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace Cache;
 
 //===----------------------------------------------------------------------===//
 // produceStandaloneModule
@@ -124,7 +126,7 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
 // produceStandaloneObject
 //===----------------------------------------------------------------------===//
 
-FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
+FailureOr<BufferRef>
 ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-object");
   Location loc = module.getLoc();
@@ -136,9 +138,11 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   if (failed(machineOr))
     return emitError(loc) << machineOr.getError();
 
-  CacheFindResult objOr = getCaches().getComposite().find(*slicedModule);
-  if (objOr.hasValue())
-    return objOr.takeValue();
+  auto objOr = getCaches().getComposite().find(*slicedModule);
+  // TODO: this is making an async process sync - fix this!
+  LLCL::await(objOr);
+  if (objOr->hasValue())
+    return objOr->takeValue();
 
   // Lower everything to LLVM.
   llvm::LLVMContext ctx;
@@ -150,18 +154,17 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   // Set the data layout on the module.
   llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
-  SmallVector<char, 0> objBuf;
-  if (failed(compileLLVMToObject(*llvmModule, **machineOr, objBuf)))
+  WriteableBufferRef objBuf = WriteableBuffer::get();
+  if (failed(compileLLVMToObject(*llvmModule, **machineOr, *objBuf)))
     return failure();
 
-  // Turn it into a memory buffer so we can put it into the cache.
-  auto obj = std::make_unique<llvm::SmallVectorMemoryBuffer>(
-      std::move(objBuf), /*RequiresNullTerminator=*/false);
-
   // Insert the compiled object into the cache.
-  if (auto err = getCaches().getComposite().insert(*slicedModule, *obj))
-    return mlir::emitError(loc) << err.getError();
+  auto err = getCaches().getComposite().insert(*slicedModule, objBuf.copy());
+  // TODO: this is making an async process sync - fix this!
+  LLCL::await(err);
+  if (err->isError())
+    return mlir::emitError(loc) << err->getError();
 
   // Return the object itself.
-  return std::unique_ptr<llvm::MemoryBuffer>(std::move(obj));
+  return {std::move(objBuf)};
 }

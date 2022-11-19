@@ -30,7 +30,7 @@ struct LLVMCacheKeyInfo {
 };
 
 /// Stores llvm::Module objects as bitcode, indexed by an MLIR module.
-using LLVMCache = M::BlobCache<LLVMCacheKeyInfo>;
+using LLVMCache = M::Cache::BlobCache<LLVMCacheKeyInfo>;
 
 /// Provides a way to hash a composite mlir::Module in order to map from that
 /// module to a compiled object for that module. This allows us to avoid both
@@ -44,7 +44,7 @@ struct CompositeObjectCacheKeyInfo {
 /// file for that module. A composite module is created when we produce a
 /// standalone object - we take several symbols and merge them together, then
 /// produce a single object for that merged (composite) module.
-using CompositeObjectCache = M::BlobCache<CompositeObjectCacheKeyInfo>;
+using CompositeObjectCache = M::Cache::BlobCache<CompositeObjectCacheKeyInfo>;
 
 /// Provides a basic way to interact with the set of caches needed
 /// lowering/raising to/from LLVM and objects.
@@ -58,10 +58,12 @@ using CompositeObjectCache = M::BlobCache<CompositeObjectCacheKeyInfo>;
 ///     that composite.
 class LoweringCacheCollection {
 public:
-  explicit LoweringCacheCollection(StringRef basePath)
-      : llvm(getDefaultBackendChain(
+  explicit LoweringCacheCollection(LLCL::Runtime &runtime, StringRef basePath)
+      : llvm(Cache::getDefaultBackendChain(
+            runtime,
             (std::filesystem::path(basePath.str()) / "llvm").string())),
-        composite(getDefaultBackendChain(
+        composite(Cache::getDefaultBackendChain(
+            runtime,
             (std::filesystem::path(basePath.str()) / "composite").string())) {}
 
   LLVMCache &getLLVM() { return llvm; }
@@ -76,17 +78,17 @@ private:
 /// functions to LLVM, and then to objects.
 class ObjectCompiler {
 public:
-  ObjectCompiler(StringRef basePath, ModuleOp module)
-      : caches(basePath), module(module), symtab(module) {
+  ObjectCompiler(LLCL::Runtime &runtime, StringRef basePath, ModuleOp module)
+      : caches(runtime, basePath), module(module), symtab(module) {
     for (auto e : module.getOps<ExportOp>())
       for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
         exportedSymbols.insert(sym.getAttr());
   }
 
   /// Construct an ObjectCompiler with a specific set of exports.
-  ObjectCompiler(StringRef basePath, ModuleOp module,
+  ObjectCompiler(LLCL::Runtime &runtime, StringRef basePath, ModuleOp module,
                  DenseSet<StringAttr> exports)
-      : caches(basePath), module(module), symtab(module),
+      : caches(runtime, basePath), module(module), symtab(module),
         exportedSymbols(std::move(exports)) {}
 
   /// Lower all exported `kgen.func` to llvm and populate the composite module
@@ -95,8 +97,8 @@ public:
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// object.
-  FailureOr<std::unique_ptr<llvm::MemoryBuffer>>
-  produceStandaloneObject(TargetInfoAttr target, bool isJIT);
+  FailureOr<Cache::BufferRef> produceStandaloneObject(TargetInfoAttr target,
+                                                      bool isJIT);
 
   /// Writes function declarations for all exported symbols.
   LogicalResult produceFunctionDecls(raw_ostream &os);

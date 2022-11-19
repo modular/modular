@@ -28,12 +28,14 @@ inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 
 /// This function allows the user to deflate an operation by eliding the body
 /// and storing it in the cache.
-LogicalResult deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache);
+LLCL::AsyncValueRef<LogicalResult> deflateOp(Operation *symbol,
+                                             BlobCache<RegionCacheKey> &cache);
 
 /// This function allows the user to inflate a cached op into its original
 /// form by pulling the regions attached to it from the cache and re-attaching
 /// them to the op.
-LogicalResult inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache);
+LLCL::AsyncValueRef<LogicalResult> inflateOp(Operation *cached,
+                                             BlobCache<RegionCacheKey> &cache);
 } // namespace M::Cache
 
 //===----------------------------------------------------------------------===//

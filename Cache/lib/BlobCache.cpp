@@ -6,6 +6,8 @@
 
 #include "Cache/BlobCache.h"
 #include "Config/Config.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/FileUtilities.h"
@@ -14,12 +16,14 @@
 #include "llvm/Support/Process.h"
 
 using namespace M;
+using namespace Cache;
+using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
 // Hashing
 //===----------------------------------------------------------------------===//
 
-std::string M::Detail::finalizeBlobKeyHash(StringRef hash) {
+std::string M::Cache::Detail::finalizeBlobKeyHash(StringRef hash) {
   // Incorporate the current version into the hash.
   return std::to_string(
       size_t(llvm::hash_combine(hash, StringRef(MODULAR_VERSION_STRING))));
@@ -29,42 +33,45 @@ std::string M::Detail::finalizeBlobKeyHash(StringRef hash) {
 // BlobCacheBackend
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess BlobCacheBackend::insert(StringRef keyHash,
-                                        llvm::MemoryBufferRef obj) {
-  RETURN_ERROR(insertImpl(keyHash, obj));
+AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
+                                                       BufferRef obj) {
+  if (auto err = insertImpl(keyHash->getBuffer(), obj.copy()))
+    return createReady<ErrorOrSuccess>(err.takeError());
 
   if (delegate)
-    RETURN_ERROR(delegate->insert(keyHash, obj));
+    return delegate->insert(std::move(keyHash), std::move(obj));
 
-  return success();
+  return createReady<ErrorOrSuccess>(success());
 }
 
-bool BlobCacheBackend::contains(StringRef keyHash) {
-  if (containsImpl(keyHash))
-    return true;
+AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
+  if (containsImpl(keyHash->getBuffer()))
+    return createReady(true);
   if (delegate)
-    return delegate->contains(keyHash);
-  return false;
+    return delegate->contains(std::move(keyHash));
+  return createReady(false);
 }
 
-CacheFindResult BlobCacheBackend::find(StringRef keyHash) {
-  if (containsImpl(keyHash))
-    return this->findImpl(keyHash);
+AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
+  if (containsImpl(keyHash->getBuffer()))
+    return createReady(this->findImpl(keyHash->getBuffer()));
 
   if (!delegate)
-    return CacheFindResult::error("could not find item '" + keyHash + "'");
+    return createReady(CacheFindResult::error("could not find item '" +
+                                              keyHash->getBuffer() + "'"));
 
-  auto itemOr = delegate->find(keyHash);
-  if (itemOr.isError())
-    return CacheFindResult::error(itemOr.takeError());
+  auto itemOr = delegate->find(keyHash.copy());
+  if (itemOr->isError())
+    return createReady(CacheFindResult::error(itemOr->takeError()));
 
-  std::unique_ptr<llvm::MemoryBuffer> item = itemOr.takeValue();
+  BufferRef item = itemOr->takeValue();
+
   // Store the item in our cache level so we can get a cache hit later.
-  if (auto err = insertImpl(keyHash, *item))
-    return CacheFindResult::error(err.takeError());
+  if (auto err = insertImpl(keyHash->getBuffer(), item.copy()))
+    return createReady(CacheFindResult::error(err.takeError()));
 
   // Return the item.
-  return CacheFindResult::value(std::move(item));
+  return createReady(CacheFindResult::value(std::move(item)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -75,11 +82,11 @@ namespace {
 /// Provides an in-memory backend that stores memory buffers in an
 /// llvm::StringMap.
 struct InMemoryBackend : public BlobCacheBackend {
-  ErrorOrSuccess insertImpl(StringRef keyHash,
-                            llvm::MemoryBufferRef obj) override {
+  InMemoryBackend(LLCL::Runtime &runtime) : BlobCacheBackend(runtime) {}
+
+  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
     // Store the item in this cache.
-    cache[keyHash] = llvm::MemoryBuffer::getMemBufferCopy(
-        obj.getBuffer(), obj.getBufferIdentifier());
+    cache[keyHash] = obj->getBuffer().str();
     return success();
   }
 
@@ -92,18 +99,17 @@ struct InMemoryBackend : public BlobCacheBackend {
     if (found == cache.end())
       return CacheFindResult::error("could not find item '" + keyHash + "'");
 
-    // Create a memory buffer that aliases this same data.
-    auto &mbuf = (*found).second;
-    return CacheFindResult::value(llvm::MemoryBuffer::getMemBuffer(
-        mbuf->getBuffer(), mbuf->getBufferIdentifier()));
+    // Create a memory buffer that holds this same data.
+    return CacheFindResult::value(Buffer::get((*found).second));
   }
 
-  llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> cache;
+  llvm::StringMap<std::string> cache;
 };
 } // namespace
 
-std::unique_ptr<BlobCacheBackend> M::getInMemoryBackend() {
-  return std::make_unique<InMemoryBackend>();
+std::unique_ptr<BlobCacheBackend>
+M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
+  return std::make_unique<InMemoryBackend>(runtime);
 }
 
 //===----------------------------------------------------------------------===//
@@ -114,11 +120,11 @@ namespace {
 /// Provides a filesystem-backed backend that stores the buffers in binary files
 /// on disk.
 struct FilesystemBackend : public BlobCacheBackend {
-  explicit FilesystemBackend(const std::filesystem::path &basePath)
-      : basePath(basePath.string()) {}
+  explicit FilesystemBackend(LLCL::Runtime &runtime,
+                             const std::filesystem::path &basePath)
+      : BlobCacheBackend(runtime), basePath(basePath.string()) {}
 
-  ErrorOrSuccess insertImpl(StringRef keyHash,
-                            llvm::MemoryBufferRef obj) override {
+  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
     // Get the absolute path and create any directories we need to create.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
     std::error_code err;
@@ -132,10 +138,10 @@ struct FilesystemBackend : public BlobCacheBackend {
       llvm::Error err = llvm::writeFileAtomically(
           filePathStr + "-%%%%%%%%", filePathStr, [&](raw_ostream &os) {
             // Copy the data into the file buffer.
-            os.write(obj.getBufferStart(), obj.getBufferSize());
+            os.write(obj->getBufferStart(), obj->getBufferSize());
 
             // Compute and copy the HMAC as well.
-            SHA256Hash hash = hmacSHA256(obj.getBuffer(), kIntegrityKey);
+            SHA256Hash hash = hmacSHA256(obj->getBuffer(), kIntegrityKey);
             os.write((const char *)hash.data(), hash.size());
             return llvm::Error::success();
           });
@@ -188,18 +194,17 @@ struct FilesystemBackend : public BlobCacheBackend {
   CacheFindResult findImpl(StringRef keyHash) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
-    std::string filePathStr = filePath.string();
-    auto fileOr = llvm::MemoryBuffer::getFile(filePathStr);
-
+    auto bufOr = Buffer::getFile(filePath);
     // If the file doesn't exist, or it's empty, return an error.
-    if (!fileOr)
-      return CacheFindResult::error(Error(fileOr.getError().message()));
-    if ((*fileOr)->getBufferSize() == 0)
+    if (failed(bufOr))
+      return CacheFindResult::error(bufOr.takeError());
+
+    BufferRef buffer = std::move(*bufOr);
+    if (buffer->getBufferSize() == 0)
       return CacheFindResult::error("file '" + Twine(filePath.string()) +
                                     "' exists, but is empty");
 
-    std::unique_ptr<llvm::MemoryBuffer> fileBuf = std::move(*fileOr);
-    StringRef contentsAndHMAC = fileBuf->getBuffer();
+    StringRef contentsAndHMAC = buffer->getBuffer();
 
     // Get a StringRef of the contents without the HMAC.
     StringRef contents = contentsAndHMAC.drop_back(sha256Bytes);
@@ -216,11 +221,12 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // Now that we've verified the integrity of the file, return a memory buffer
     // that holds just the contents.
-    fileOr = llvm::MemoryBuffer::getFileSlice(filePathStr, contents.size(),
-                                              /*Offset=*/0);
-    if (!fileOr)
-      return CacheFindResult::error(Error(fileOr.getError().message()));
-    return CacheFindResult::value(std::move(*fileOr));
+    bufOr = Buffer::getFile(filePath, contents.size(),
+                            /*Offset=*/0);
+    if (failed(bufOr))
+      return CacheFindResult::error(bufOr.takeError());
+    // Otherwise, we're done.
+    return CacheFindResult::value(std::move(*bufOr));
   }
 
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
@@ -240,13 +246,15 @@ struct FilesystemBackend : public BlobCacheBackend {
 } // namespace
 
 std::unique_ptr<BlobCacheBackend>
-M::getFilesystemBackend(const std::filesystem::path &basePath) {
-  return std::make_unique<FilesystemBackend>(basePath);
+M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
+                               const std::filesystem::path &basePath) {
+  return std::make_unique<FilesystemBackend>(runtime, basePath);
 }
 
 std::unique_ptr<BlobCacheBackend>
-M::getDefaultBackendChain(const std::filesystem::path &basePath) {
-  auto backend = getInMemoryBackend();
+M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
+                                 const std::filesystem::path &basePath) {
+  auto backend = getInMemoryBackend(runtime);
 
   /* TODO: Disabled for now while we debug the filesystem backend
            implementation (c.f. issue #4394)
@@ -263,7 +271,7 @@ M::getDefaultBackendChain(const std::filesystem::path &basePath) {
   if (!base.is_absolute())
     base = derived / basePath;
 
-  backend->setDelegate(getFilesystemBackend(base));
+  backend->setDelegate(getFilesystemBackend(runtime, base));
   */
   return backend;
 }

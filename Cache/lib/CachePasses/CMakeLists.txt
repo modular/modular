@@ -12,5 +12,7 @@ add_modular_conversion_library(CachePasses
 
   LINK_LIBS PUBLIC
   CacheDialect
+  LLCLRuntime
+  LLCLSupport
   MLIRIR
   )

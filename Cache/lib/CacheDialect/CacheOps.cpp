@@ -7,6 +7,7 @@
 #include "Cache/CacheDialect/CacheOps.h"
 #include "Cache/CacheDialect/CacheAttrs.h"
 #include "Cache/CacheDialect/CacheDialect.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Builders.h"
@@ -19,6 +20,7 @@
 
 using namespace M;
 using namespace Cache;
+using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
 // Caching-related functionality
@@ -89,9 +91,8 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 ///  - Unique the references and assign them indices.
 ///  - Replace symbol uses with `cache.symbol_ref`
 ///  - Cache the region.
-static LogicalResult
-cacheSingleRegion(Region &r, OpBuilder &builder,
-                  SmallVectorImpl<RegionHashAttr> &hashes,
+static AsyncValueRef<LogicalResult>
+cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
                   BlobCache<M::Cache::RegionCacheKey> &cache) {
   SmallVector<SymbolRefAttr> symbolReferences;
   SmallVector<SymbolIndexAttr> refs;
@@ -130,96 +131,143 @@ cacheSingleRegion(Region &r, OpBuilder &builder,
   auto container = builder.create<ContainerOp>(r.getLoc(), r);
 
   // Create a place to store the bytecode.
-  std::string bytecode;
-  llvm::raw_string_ostream bytecodeStream(bytecode);
+  WriteableBufferRef bytecode = WriteableBuffer::get();
   // Store the container in bytecode.
-  mlir::writeBytecodeToFile(container, bytecodeStream);
-
-  // Now create a memory buffer and store it in the cache.
-  std::unique_ptr<llvm::MemoryBuffer> mbufOr =
-      llvm::MemoryBuffer::getMemBuffer(bytecode);
-  if (!mbufOr)
-    return mlir::emitError(r.getLoc())
-           << "could not get a memory buffer with the bytecode of a region "
-              "for caching";
+  mlir::writeBytecodeToFile(container, *bytecode);
 
   // Store it.
-  auto hashOr = cache.insert(&container.getBodyRegion(), *mbufOr);
-  if (failed(hashOr))
-    return mlir::emitError(r.getLoc()) << hashOr.getError();
+  auto hashOr = cache.insert(&container.getBodyRegion(), std::move(bytecode));
+  auto out = AsyncValueRef<LogicalResult>::allocate(hashOr.getRuntime());
+  // Keeping references is safe here because all the memory is owned by the
+  // MLIRContext, which is guaranteed to live longer than any of this.
+  hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
+    if (failed(*hashOr)) {
+      out.emplace(mlir::emitError(r.getLoc()) << hashOr->getError());
+      return;
+    }
 
-  // Finally, erase the container.
-  container.erase();
+    SmallVector<RegionHashAttr> hashVec;
+    // If we already have some hashes, we have to append to the end of that
+    // array.
+    auto hashes =
+        symbol->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
+    if (hashes)
+      hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
-  hashes.push_back(builder.getAttr<RegionHashAttr>(
-      *hashOr, llvm::makeArrayRef<SymbolRefAttr>(&*uniqueRefs.begin(),
-                                                 uniqueRefs.size())));
-  return success();
+    hashVec.push_back(builder.getAttr<RegionHashAttr>(
+        **hashOr, llvm::makeArrayRef<SymbolRefAttr>(&*uniqueRefs.begin(),
+                                                    uniqueRefs.size())));
+    symbol->setAttr(getRegionHashAttrName(),
+                    builder.getAttr<RegionHashArrayAttr>(hashVec));
+
+    // Finally, erase the container.
+    container.erase();
+
+    out.emplace(success());
+  });
+
+  return out;
 }
 
-LogicalResult M::Cache::deflateOp(Operation *symbol,
-                                  BlobCache<RegionCacheKey> &cache) {
+AsyncValueRef<LogicalResult>
+M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache) {
+  // Make sure LogicalResult is registered.
+  AsyncValue::registerType<LogicalResult>();
+
   OpBuilder builder(symbol);
 
-  SmallVector<RegionHashAttr> hashes;
-  for (Region &r : symbol->getRegions())
-    if (failed(cacheSingleRegion(r, builder, hashes, cache)))
-      return failure();
+  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
 
-  symbol->setAttr(getRegionHashAttrName(),
-                  builder.getAttr<RegionHashArrayAttr>(hashes));
-  return success();
+  SmallVector<AnyAsyncValueRef> results;
+  results.reserve(symbol->getNumRegions());
+  for (Region &r : symbol->getRegions())
+    results.push_back(cacheSingleRegion(r, builder, symbol, cache));
+
+  andThenMoving(results,
+                [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
+                  for (auto &v : values) {
+                    if (failed(v->get<LogicalResult>()))
+                      out.emplace(failure());
+                  }
+                  out.emplace(success());
+                });
+  return out;
 }
 
 /// Inflate a single region from `regionHash` and have `r` take its body.
-static LogicalResult inflateRegion(Region *r, RegionHashAttr regionHash,
-                                   BlobCache<RegionCacheKey> &cache) {
+static AsyncValueRef<LogicalResult>
+inflateRegion(Region *r, RegionHashAttr regionHash,
+              BlobCache<RegionCacheKey> &cache) {
+  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
+
   auto foundOr = cache.find(regionHash.getHash());
-  if (foundOr.isError())
-    return mlir::emitError(r->getLoc()) << foundOr.getError();
+  foundOr.andThen([&, foundOr = foundOr.copy(), out = out.copy()] {
+    if (foundOr->isError())
+      out.emplace(mlir::emitError(r->getLoc()) << foundOr->getError());
 
-  // Create a dummy block that we can use to inflate container ops.
-  Block b;
+    // Parse the bytecode for the region.
+    BufferRef bytecodeBuf = foundOr->takeValue();
+    std::unique_ptr<llvm::MemoryBuffer> bytecode =
+        llvm::MemoryBuffer::getMemBuffer(bytecodeBuf->getBuffer(),
+                                         /*BufferName=*/"",
+                                         /*RequiresNullTerminator=*/false);
 
-  // Parse the bytecode for the region.
-  std::unique_ptr<llvm::MemoryBuffer> bytecode = foundOr.takeValue();
-  if (failed(mlir::readBytecodeFile(
-          *bytecode, &b,
-          mlir::ParserConfig(r->getContext(), /*verifyAfterParse=*/false))))
-    return failure();
+    // Create a dummy block that we can use to inflate container ops.
+    Block b;
+    if (failed(mlir::readBytecodeFile(
+            *bytecode, &b,
+            mlir::ParserConfig(r->getContext(), /*verifyAfterParse=*/false))))
+      out.emplace(failure());
 
-  // Get the container and take its body.
-  ContainerOp container = cast<ContainerOp>(b.front());
-  r->takeBody(container.getBodyRegion());
+    // Get the container and take its body.
+    ContainerOp container = cast<ContainerOp>(b.front());
+    r->takeBody(container.getBodyRegion());
 
-  // Finish up by replacing symbols with their original names.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](SymbolIndexAttr symRef) {
-    return regionHash.getSymbols()[symRef.getIndex()];
+    // Finish up by replacing symbols with their original names.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](SymbolIndexAttr symRef) {
+      return regionHash.getSymbols()[symRef.getIndex()];
+    });
+    r->walk([&](Operation *op) { replacer.replaceElementsIn(op); });
+    out.emplace(success());
   });
-  r->walk([&](Operation *op) { replacer.replaceElementsIn(op); });
 
-  return success();
+  return out;
 }
 
-LogicalResult M::Cache::inflateOp(Operation *cached,
-                                  BlobCache<RegionCacheKey> &cache) {
+AsyncValueRef<LogicalResult>
+M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache) {
+  // Make sure LogicalResult is registered.
+  AsyncValue::registerType<LogicalResult>();
+
+  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
   auto hashes =
       cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-  if (!hashes)
-    return success();
-
-  // Fill in the regions on the operation.
-  for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions())) {
-    if (failed(inflateRegion(&region, regionHash, cache)))
-      return failure();
+  if (!hashes) {
+    out.emplace(success());
+    return out;
   }
 
-  // Remove the region hash attr.
-  cached->removeAttr(getRegionHashAttrName());
+  // Fill in the regions on the operation.
+  SmallVector<AnyAsyncValueRef> results;
+  for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
+    results.push_back(inflateRegion(&region, regionHash, cache));
 
-  // Done!
-  return success();
+  andThenMoving(results, [&](MutableArrayRef<AnyAsyncValueRef> values) {
+    for (auto &v : values) {
+      if (failed(v->get<LogicalResult>())) {
+        out.emplace(failure());
+        return;
+      }
+    }
+
+    // Remove the region hash attr.
+    cached->removeAttr(getRegionHashAttrName());
+    // Done!
+    out.emplace(success());
+  });
+
+  return out;
 }
 
 //===----------------------------------------------------------------------===//

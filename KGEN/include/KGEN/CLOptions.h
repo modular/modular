@@ -85,7 +85,7 @@ public:
 
   std::string getOutputPath() const;
 
-  LogicalResult emitObject(std::unique_ptr<llvm::MemoryBuffer> object) const;
+  LogicalResult emitObject(StringRef object) const;
 };
 } // namespace M
 

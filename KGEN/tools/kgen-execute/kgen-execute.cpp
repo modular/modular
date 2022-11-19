@@ -9,6 +9,7 @@
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -33,6 +34,7 @@ namespace {
 /// don't want to have it inline, and pulling it out into a functor makes it
 /// more readable.
 struct ProcessBuffer {
+  LLCL::Runtime &runtime;
   KGEN::ExecutionEngine &execEngine;
   KGENCLOptions &clOptions;
 
@@ -51,7 +53,7 @@ struct ProcessBuffer {
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
-    KGEN::ObjectCompiler compiler(".kgen_cache", *module);
+    KGEN::ObjectCompiler compiler(runtime, ".kgen_cache", *module);
 
     // Lower the input to an object.
     KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
@@ -62,11 +64,10 @@ struct ProcessBuffer {
         /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
       return failure();
-    std::unique_ptr<llvm::MemoryBuffer> standaloneObject =
-        std::move(*standaloneOr);
+    Cache::BufferRef standaloneObject = std::move(*standaloneOr);
 
     if (clOptions.cmd == Command::kEmit)
-      return clOptions.emitObject(std::move(standaloneObject));
+      return clOptions.emitObject(standaloneObject->getBuffer());
 
     SymbolTable &symtab = compiler.getSymbolTable();
     auto lookupFunc = [&](StringRef funcName) -> ErrorOr<KGEN::FuncOp> {
@@ -122,6 +123,11 @@ int main(int argc, char **argv) {
   // Initialize the compiler runtime.
   KGEN_CompilerRT_Initialize();
 
+  // Initialize the LLCL runtime.
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
   registerMLIRContextCLOptions();
@@ -142,7 +148,7 @@ int main(int argc, char **argv) {
   auto toolFn = [&](std::unique_ptr<llvm::MemoryBuffer> chunkBuffer,
                     raw_ostream &os) {
     return clOptions.configureMLIRContextAndSourceMgrAndExecute(
-        std::move(chunkBuffer), ProcessBuffer{execEngine, clOptions});
+        std::move(chunkBuffer), ProcessBuffer{runtime, execEngine, clOptions});
   };
 
   // Process the file.

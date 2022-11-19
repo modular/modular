@@ -22,10 +22,10 @@ namespace M::KGEN {
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(TargetInfoAttr targetInfo, bool isJIT);
 
-/// Compile the given LLVM module to an object file stored in `buf`.
+/// Compile the given LLVM module to an object file and write it to objStream.
 LogicalResult compileLLVMToObject(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine,
-                                  SmallVectorImpl<char> &buf);
+                                  llvm::raw_pwrite_stream &objStream);
 } // namespace M::KGEN
 
 #endif // LOWERTOOBJECTIMPL_H
