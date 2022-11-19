@@ -41,7 +41,7 @@ namespace M {
 constexpr uint64_t kUnknownSize = ~0;
 
 /// Denotes an unknown size in the 'raw signed form' encoding.
-constexpr int64_t kUnknownSignedSize = -1;
+constexpr int64_t kUnknownSignedSize = std::numeric_limits<int64_t>::min();
 
 /// Denotes an unknown size in the 'runtime form' encoding.
 constexpr size_t kRuntimeUnknownSize = ~0;
