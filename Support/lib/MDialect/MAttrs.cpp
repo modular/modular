@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrs.h"
-#include "Support/Compiler/ParsingUtils.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
