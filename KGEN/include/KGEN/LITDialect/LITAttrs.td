@@ -35,10 +35,9 @@ def UnboundMLIROperationAttr
     value operands, it materializes into a specific MLIR operation instance
   }];
 
-  // TODO: Support bound attributes.
   let parameters = (ins AttributeSelfTypeParameter<"">:$type,
-                        "StringAttr":$name);
-  let assemblyFormat = "$name $type";
+                        "StringAttr":$name, "DictionaryAttr":$attrs);
+  let assemblyFormat = "$name $attrs $type";
 }
 
 //===----------------------------------------------------------------------===//
