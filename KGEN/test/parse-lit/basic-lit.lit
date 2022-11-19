@@ -186,15 +186,19 @@ fn lvaluesAndRValues() -> index:
 
 # CHECK: lit.func @defTests({{.*}}, %untyped: !kgen.ref<@object>)
 def defTests(a: Int, b: Int, untyped):
-  # CHECK: %[[TMP:.*]] = pop.load %b_1
-  # CHECK-NEXT: pop.store %[[TMP]], %a_0
+  # CHECK: [[TMP:%.*]] = pop.load %b_1
+  # CHECK-NEXT: pop.store [[TMP]], %a_0
   a = b # Parameters are mutable!
 
 # CHECK: lit.func @mlirMagicTest(%x: bf16, %y: f8E5M2)
-fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2):
+fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.index:
   # CHECK: %a = lit.var.decl "a" : <index>
   var a : __mlir_type.index
   # CHECK: %b = lit.var.decl "b" : <f64>
   var b : __mlir_type.f64
   # CHECK: %c = lit.var.decl "c" : <pointer<pointer<f32>>>
   var c : __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
+
+  # CHECK: [[TMP:%.*]] = index.constant 2
+  # CHECK: kgen.return [[TMP:%.*]] : index
+  return __mlir_op.`index.shru`(4, 1)
