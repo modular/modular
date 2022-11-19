@@ -6,6 +6,7 @@
 
 add_modular_library(MCache
   BlobCache.cpp
+  Buffer.cpp
 
   LINK_LIBS PUBLIC
   LLVMSupport
