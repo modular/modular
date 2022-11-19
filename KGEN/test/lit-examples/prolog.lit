@@ -51,9 +51,7 @@ struct Bool:
      return self
 
   fn __lit_bool(self: Bool) -> __mlir_type.i1:
-     #return __mlir_op.`index.castu`(__mlir_type.i1, self.value)
-     var x: __mlir_type.i1
-     return x
+     return __mlir_op.`index.castu`[_type: __mlir_type.i1](self.value)
 
   @staticmethod
   fn true() -> Bool:

@@ -809,6 +809,8 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
                                                  TypedAttr calleeVal,
                                                  ExprEmitter &emitter) {
   auto unboundOp = cast<UnboundMLIROperationAttr>(calleeVal);
+  auto *context = emitter.getContext();
+
   if (!emitter.builder) {
     emitter.emitError(call.getLoc(), "cannot emit operation in this context");
     return {};
@@ -822,47 +824,58 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
       return {};
   }
 
+  // Set up the OperationState for the thing we're building.
   OperationState state(emitter.translateLocation(call.getLoc()),
                        unboundOp.getName());
   state.addOperands(opOperands);
 
-  SmallVector<NamedAttribute> attrs(unboundOp.getAttrs().begin(),
-                                    unboundOp.getAttrs().end());
-  state.addAttributes(attrs);
-
-  // Finally, figure out the return types using InferTypeOpInterface if the
-  // operation is registered and if it is present.
-  auto *context = emitter.getContext();
-  bool inferredTypes = false;
-  if (auto opNameInfo =
-          mlir::RegisteredOperationName::lookup(unboundOp.getName(), context)) {
-    if (auto inferTypesItf =
-            opNameInfo->getInterface<mlir::InferTypeOpInterface>()) {
-      if (failed(inferTypesItf->inferReturnTypes(
-              context, state.location, state.operands,
-              DictionaryAttr::get(context, state.attributes), state.regions,
-              state.types))) {
-        emitter.emitError(call.getLoc(),
-                          "unable to infer result type from MLIR operation ")
-            << unboundOp.getName();
+  // Process the attributes and figure out the result type if specified.
+  for (auto &attr : unboundOp.getAttrs()) {
+    if (attr.getName() == "_type") {
+      // The value must be a concrete or parametric type.
+      if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr.getValue())) {
+        state.types.push_back(type.getValue());
+      } else if (auto type =
+                     dyn_cast<ParameterizedTypeConstantAttr>(attr.getValue())) {
+        state.types.push_back(type.getValue());
+      } else {
+        emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
-
-      if (state.types.size() > 1) {
-        emitter.emitError(call.getLoc(),
-                          "cannot use operations with multiple results (yet) ")
-            << unboundOp.getName();
-      }
-
-      inferredTypes = true;
+      continue;
     }
+    state.addAttributes(attr);
   }
-  // If a result type wasn't specified, it must be set as an attribute.
-  if (!inferredTypes) {
-    emitter.emitError(call.getLoc(),
-                      "unable to infer result type from MLIR operation ")
-        << unboundOp.getName();
-    return {};
+
+  // Finally, if we don't already have a type, figure out the return types using
+  // InferTypeOpInterface if the operation is registered and if it is present.
+  auto inferType = [&]() -> LogicalResult {
+    auto opNameInfo =
+        mlir::RegisteredOperationName::lookup(unboundOp.getName(), context);
+    if (!opNameInfo)
+      return failure();
+    auto inferTypesItf = opNameInfo->getInterface<mlir::InferTypeOpInterface>();
+    if (!inferTypesItf)
+      return failure();
+    return inferTypesItf->inferReturnTypes(
+        context, state.location, state.operands,
+        DictionaryAttr::get(context, state.attributes), state.regions,
+        state.types);
+  };
+
+  if (state.types.empty()) {
+    if (failed(inferType())) {
+      emitter.emitError(call.getLoc(),
+                        "unable to infer result type from MLIR operation ")
+          << unboundOp.getName();
+      return {};
+    }
+    if (state.types.size() > 1) {
+      emitter.emitError(call.getLoc(),
+                        "cannot use operations with multiple results (yet) ")
+          << unboundOp.getName();
+      return {};
+    }
   }
 
   Operation *resultOp = emitter.builder->create(state);
@@ -875,7 +888,8 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
     // FIXME: This doesn't silence errors!
     mlir::ScopedDiagnosticHandler handler(
         context, [&](Diagnostic &diag) { errorMessage = diag.str(); });
-    // Verify that the resulting op is correctly constructed.  If not, we fail.
+    // Verify that the resulting op is correctly constructed.  If not, we
+    // fail.
     verificationError = failed(mlir::verify(resultOp));
   }
   if (verificationError) {
