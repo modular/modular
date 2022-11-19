@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MicroBenchmark.h"
+#include "Support/Host.h"
 #include "Support/MathExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -20,6 +21,8 @@
 #include <sstream>
 
 using namespace M;
+
+static void clearCache(uint8_t level);
 
 MicroBenchmark::MicroBenchmark(StringRef name, std::function<void(State &)> fn)
     : name(name), benchmarkFunction(std::move(fn)) {}
@@ -121,6 +124,10 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
       }
     }
 
+    // Clear the cache if requested.
+    if (options.clearCacheLevel > 0)
+      clearCache(options.clearCacheLevel);
+
     // If the maxBatchSize is specified, then prefer that over the subsequent
     // computations.
     if (options.maxBatchSize) {
@@ -151,6 +158,29 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
   }
 
   return success();
+}
+
+/// Clear the cache if requested.
+static void clearCache(uint8_t level) {
+  // There is nothing to do if the level is 0 or -1.
+  if (level <= 0)
+    return;
+
+  ErrorOr<size_t> cacheSize = getHostCPUCacheSize(level);
+
+  // If we cannot get the cache size, then we cannot clear the cache.
+  if (cacheSize.isError())
+    return;
+
+  // If the cacheSize is zero, then we cannot clear the cache at that level, so
+  // we try to clear the cache at lower-levels.
+  if (*cacheSize == 0)
+    return clearCache(level - 1);
+
+  // Otherwise, we allocate a buffer of the cache size and clear it. We also
+  // mark the buffer so that the compiler does not optimize it away.
+  std::vector<char> buffer(*cacheSize, 0);
+  MicroBenchmark::doNotOptimizeAway(buffer);
 }
 
 /// Formats the time based on the time unit specified.
