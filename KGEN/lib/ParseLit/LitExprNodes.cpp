@@ -74,7 +74,11 @@ ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   auto attr = rep.ir.getIfMAValue();
-  assert(attr);
+  if (!attr) {
+    auto type = rep.ir.getIfMTValue();
+    assert(type && "unknown rvalue kind");
+    attr = ParameterizedTypeConstantAttr::get(shared.getMLIRType(type, loc));
+  }
 
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
@@ -183,13 +187,70 @@ static ASTDecl *synthesizeMLIROpDeclEntry(StringRef name, SMLoc loc,
                                           ASTDecl &scope,
                                           ExprEmitter &emitter) {
   auto &shared = emitter.shared;
-  auto nameStr = StringAttr::get(shared.getContext(), name);
+  auto *context = shared.getContext();
+  auto nameStr = StringAttr::get(context, name);
 
-  auto result = UnboundMLIROperationAttr::get(emitter.getContext(),
-                                              nameStr.getType(), nameStr);
+  auto result = UnboundMLIROperationAttr::get(
+      context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
   return &shared.declResolver->addFullyResolvedDecl(
       MAValue(result), nameStr, emitter.translateLocation(loc),
       shared.getUnboundMLIROperatorType(), &scope);
+}
+
+/// Calculate the result of an __mlir_op.`thing`[attributes], applying the
+/// attributes list to the operation specification.
+static ASTTypeAnd<AnyValue>
+bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
+                                 TypedAttr opInfo, ExprEmitter &emitter) {
+  auto unboundOp = cast<UnboundMLIROperationAttr>(opInfo);
+  auto loc = subscript.getLoc();
+  auto *context = emitter.getContext();
+
+  // Only allow applying attributes to something without them.
+  if (!unboundOp.getAttrs().empty()) {
+    emitter.shared.emitError(loc, "operation already has attributes");
+    return {};
+  }
+
+  SmallVector<NamedAttribute> attrValues;
+
+  // Each element of the subscript must have a name identifier and a value as an
+  // MAValue.
+  for (auto *subscriptIdx : subscript.indices) {
+    auto *slice = dyn_cast<SliceNode>(subscriptIdx);
+    if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
+        !slice->upper || !isa<DeclRefNode>(slice->lower)) {
+      emitter.shared.emitError(
+          loc, "attribute spec requires an attribute name and attr value");
+      return {};
+    }
+
+    auto name = cast<DeclRefNode>(slice->lower)->spelling;
+
+    // Ok, we have a name and a value.  Emit the value and check to make sure it
+    // is an attribute value.
+    auto value = emitter.emitMAValue(slice->upper, "attribute value for '" +
+                                                       Twine(name) +
+                                                       "' must be constant");
+    if (!value)
+      return {};
+
+    attrValues.push_back(
+        NamedAttribute(StringAttr::get(context, name), value.ir.get()));
+  }
+
+  // Check for duplicate attribute specifications.
+  if (auto duplicate = DictionaryAttr::findDuplicate(attrValues, false)) {
+    emitter.shared.emitError(loc, "attribute ")
+        << duplicate->getName() << " redundantly specified";
+    return {};
+  }
+
+  // Return it.
+  auto attrs = DictionaryAttr::get(context, attrValues);
+  auto result = UnboundMLIROperationAttr::get(context, unboundOp.getType(),
+                                              unboundOp.getName(), attrs);
+  return {MAValue(result), emitter.shared.getUnboundMLIROperatorType()};
 }
 
 /// Perform a name lookup in the specified scope and return the named
@@ -745,20 +806,11 @@ static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
 /// Given a call to an UnboundMLIROperator, generate an MLIR operation with
 /// the operands as SSA values.
 static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
-                                                 RValue calleeVal,
+                                                 TypedAttr calleeVal,
                                                  ExprEmitter &emitter) {
+  auto unboundOp = cast<UnboundMLIROperationAttr>(calleeVal);
   if (!emitter.builder) {
     emitter.emitError(call.getLoc(), "cannot emit operation in this context");
-    return {};
-  }
-  auto maVal = calleeVal.getIfMAValue();
-  if (!maVal) {
-    emitter.emitError(call.getLoc(), "unknown unbound MLIR operator");
-    return {};
-  }
-  auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(maVal.get());
-  if (!unboundOp) {
-    emitter.emitError(call.getLoc(), "unknown unbound MLIR operator");
     return {};
   }
 
@@ -773,7 +825,10 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
   OperationState state(emitter.translateLocation(call.getLoc()),
                        unboundOp.getName());
   state.addOperands(opOperands);
-  // TODO: Translate attributes from opAttr when it can hold them.
+
+  SmallVector<NamedAttribute> attrs(unboundOp.getAttrs().begin(),
+                                    unboundOp.getAttrs().end());
+  state.addAttributes(attrs);
 
   // Finally, figure out the return types using InferTypeOpInterface if the
   // operation is registered and if it is present.
@@ -858,7 +913,7 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
   // actual operator!
   if (calleeVal.type.getDecl().magicKind ==
       MagicDeclKind::kUnboundMLIROperatorType)
-    return emitMLIROperatorCall(*this, calleeVal.ir, emitter);
+    return emitMLIROperatorCall(*this, calleeVal.ir.getIfMAValue(), emitter);
 
   emitter.emitError(getLoc(), "unable to call value of type ")
       << calleeVal.type;
@@ -985,7 +1040,12 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
             emitter.shared.getFunctionType(resultASTType)};
   }
 
-  // Emit each of the index values.
+  if (subValue.type.getDecl().magicKind ==
+      MagicDeclKind::kUnboundMLIROperatorType)
+    return bindAttributesToMLIROperatorCall(*this, subValue.ir.getIfMAValue(),
+                                            emitter);
+
+  // Emit each of the index values to generate error messages.
   SmallVector<RValue> indexValues;
   for (ExprNode *index : indices) {
     indexValues.push_back(emitter.emitRValue(index).ir);
