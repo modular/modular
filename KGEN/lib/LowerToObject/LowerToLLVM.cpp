@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -22,6 +23,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace Cache;
 
 //===----------------------------------------------------------------------===//
 // Hashers
@@ -106,10 +108,15 @@ ObjectCompiler::lowerKGENToLLVM(ModuleOp module, llvm::LLVMContext &ctx) {
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
   OwningOpRef<ModuleOp> singleModule = produceStandaloneModule();
-  CacheFindResult foundModule = caches.getLLVM().find(*singleModule);
-  if (foundModule.hasValue()) {
+  auto foundModule = caches.getLLVM().find(*singleModule);
+  // TODO: this is making an async process sync - fix this!
+  LLCL::await(foundModule);
+  if (foundModule->hasValue()) {
+    BufferRef moduleBuf = foundModule->takeValue();
     // Get the composite module.
-    auto llvmModuleOr = llvm::parseBitcodeFile(*foundModule, ctx);
+    std::unique_ptr<llvm::MemoryBuffer> mbuf =
+        llvm::MemoryBuffer::getMemBuffer(moduleBuf->getBuffer());
+    auto llvmModuleOr = llvm::parseBitcodeFile(*mbuf, ctx);
     if (auto err = llvmModuleOr.takeError()) {
       mlir::emitError(singleModule->getLoc()) << toString(std::move(err));
       return nullptr;
@@ -122,15 +129,15 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
   if (!llvmModule)
     return nullptr;
 
-  std::string bytes;
-  llvm::raw_string_ostream stream(bytes);
-  llvm::WriteBitcodeToFile(*llvmModule, stream);
+  WriteableBufferRef stream = WriteableBuffer::get();
+  llvm::WriteBitcodeToFile(*llvmModule, *stream);
 
   // Get the memory buffer and write it into the cache.
-  auto moduleBuf = llvm::MemoryBuffer::getMemBuffer(stream.str());
-  auto keyOr = caches.getLLVM().insert(*singleModule, *moduleBuf);
-  if (failed(keyOr)) {
-    mlir::emitError(singleModule->getLoc()) << keyOr.getError();
+  auto keyOr = caches.getLLVM().insert(*singleModule, std::move(stream));
+  // TODO: this is making an async process sync - fix this!
+  LLCL::await(keyOr);
+  if (failed(*keyOr)) {
+    mlir::emitError(singleModule->getLoc()) << keyOr->getError();
     return nullptr;
   }
 
@@ -146,6 +153,12 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+// TODO: delete this in favor of passing in an LLCL runtime to the pass.
+static Runtime getDefaultRuntime() {
+  return {LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+          LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__)};
+}
+
 namespace {
 class EmitLLVMPass : public M::KGEN::impl::EmitLLVMBase<EmitLLVMPass> {
 public:
@@ -156,7 +169,8 @@ public:
 } // namespace
 
 void EmitLLVMPass::runOnOperation() {
-  ObjectCompiler compiler(".kgen_cache", getOperation());
+  Runtime rt = getDefaultRuntime();
+  ObjectCompiler compiler(rt, ".kgen_cache", getOperation());
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
   auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);

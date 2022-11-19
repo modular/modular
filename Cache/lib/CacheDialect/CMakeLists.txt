@@ -15,7 +15,9 @@ add_modular_dialect_library(CacheDialect
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
-  MLIRIR
+  LLCLRuntime
+  LLCLSupport
   MCache
   MSupport
+  MLIRIR
   )

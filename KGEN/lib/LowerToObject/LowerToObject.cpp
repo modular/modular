@@ -36,7 +36,7 @@ using namespace KGEN;
 
 LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
-                                        SmallVectorImpl<char> &buf) {
+                                        llvm::raw_pwrite_stream &objStream) {
   TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
@@ -52,7 +52,6 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
       llvm::cast<llvm::PassManagerBase>(passManager));
 
   // Add passes to emit an object file.
-  llvm::raw_svector_ostream objStream(buf);
   targetMachine.addPassesToEmitFile(passManager, objStream, nullptr,
                                     llvm::CGFT_ObjectFile);
   // Run the pass manager to compile the module.

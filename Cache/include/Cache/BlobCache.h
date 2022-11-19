@@ -7,12 +7,16 @@
 #ifndef CACHE_BLOBCACHE_H
 #define CACHE_BLOBCACHE_H
 
+#include "Cache/Buffer.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/AsyncValueRef.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
+
 #include <filesystem>
 
-namespace M {
+namespace M::Cache {
 /// This type allows the BlobCache to differentiate between "an error
 /// occurred" and "the object was not found in the cache". This is because
 /// something not being in the cache isn't necessarily an error - that's a
@@ -23,9 +27,7 @@ struct CacheFindResult {
 
   /// Construct a CacheFindResult with a value. The CacheFindResult takes
   /// ownership of the value.
-  static CacheFindResult value(std::unique_ptr<llvm::MemoryBuffer> value) {
-    return {std::move(value)};
-  }
+  static CacheFindResult value(BufferRef value) { return {std::move(value)}; }
 
   /// Construct a CacheFindResult with an error. The CacheFindResult takes
   /// ownership of the error.
@@ -40,10 +42,10 @@ struct CacheFindResult {
 
   /// Take the value held in this result. This object is in an undefined state
   /// after this returns.
-  std::unique_ptr<llvm::MemoryBuffer> takeValue() { return std::move(get()); }
+  BufferRef takeValue() { return std::move(get()); }
 
-  /// Get a MemoryBufferRef from the underlying memory buffer.
-  llvm::MemoryBufferRef operator*() const { return *get(); }
+  /// Get a BufferRef from the underlying memory buffer.
+  const BufferRef &operator*() const { return get(); }
 
   /// Get the error string held by the underlying ErrorOr. The result
   /// maintains ownership of the string.
@@ -59,8 +61,7 @@ private:
   CacheFindResult(Error error) : valueOr(std::move(error)) {}
   /// Construct the CacheFindResult with a value - this puts it in the value
   /// state.
-  CacheFindResult(std::unique_ptr<llvm::MemoryBuffer> value)
-      : valueOr(std::move(value)) {}
+  CacheFindResult(BufferRef value) : valueOr(std::move(value)) {}
   /// Construct the CacheFindResult with nothing - this puts it in the "not in
   /// cache" state.
   CacheFindResult() : valueOr(llvm::None) {}
@@ -68,12 +69,12 @@ private:
   /// Provide a safe getter. This is private because we want the user to
   /// explicitly take ownership of the value rather than leaving it sitting in
   /// this result object if they're going to return it or something.
-  std::unique_ptr<llvm::MemoryBuffer> &get() {
+  BufferRef &get() {
     assert(!valueOr.isError() && valueOr->has_value());
     return valueOr.get().value();
   }
 
-  const std::unique_ptr<llvm::MemoryBuffer> &get() const {
+  const BufferRef &get() const {
     return const_cast<CacheFindResult *>(this)->get();
   }
 
@@ -81,7 +82,7 @@ private:
   /// indicated by having an error, while "not in cache" is indicated by
   /// llvm::None in the Optional, but no error in the ErrorOr. A value is
   /// indicated by having a value in the Optional *and* no error in the ErrorOr.
-  ErrorOr<Optional<std::unique_ptr<llvm::MemoryBuffer>>> valueOr;
+  ErrorOr<Optional<BufferRef>> valueOr;
 };
 
 /// This class is the backend interface for a BlobCache. The backend contains a
@@ -94,20 +95,28 @@ private:
 /// order that the BlobCache below will use to find an item.
 class BlobCacheBackend {
 public:
-  virtual ~BlobCacheBackend() = default;
+  /// Construct a BlobCacheBackend from an LLCL runtime.
+  BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {
+    // Register the types we use in the blob cache.
+    LLCL::AsyncValue::registerTypes<ErrorOrSuccess, bool, CacheFindResult>();
+  }
+  virtual ~BlobCacheBackend() {}
+
+  /// Return a reference to the LLCL runtime the backend was created with.
+  LLCL::Runtime &getRuntime() { return runtime; }
 
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  ErrorOrSuccess insert(StringRef keyHash, llvm::MemoryBufferRef obj);
+  LLCL::AsyncValueRef<ErrorOrSuccess> insert(BufferRef keyHash, BufferRef obj);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  bool contains(StringRef keyHash);
+  LLCL::AsyncValueRef<bool> contains(BufferRef keyHash);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  CacheFindResult find(StringRef keyHash);
+  LLCL::AsyncValueRef<CacheFindResult> find(BufferRef keyHash);
 
   /// Overwrite the current delegate.
   void setDelegate(std::unique_ptr<BlobCacheBackend> &&d) {
@@ -115,10 +124,12 @@ public:
   }
 
 protected:
+  /// NOTE: The asynchrony of the cache backend is handled by the
+  /// BlobCacheBackend class so the *Impl functions can more or less ignore it.
+
   /// Subclasses should use this to provide the implementation of actually
   /// storing an item.
-  virtual ErrorOrSuccess insertImpl(StringRef keyHash,
-                                    llvm::MemoryBufferRef obj) = 0;
+  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
   /// Subclasses should use this to provide the implementation of checking if an
   /// item exists.
   virtual bool containsImpl(StringRef keyHash) const = 0;
@@ -126,7 +137,18 @@ protected:
   /// item from storage.
   virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
 
+  /// Create a ready AsyncValueRef. This is just nice sugar to clean up the
+  /// callsites when we return an AsyncValueRef that's ready to go, such as
+  /// reporting an error.
+  template <typename T>
+  LLCL::AsyncValueRef<T> createReady(T &&val) {
+    return LLCL::AsyncValueRef<T>::createReady(runtime,
+                                               std::forward<T &&>(val));
+  }
+
 private:
+  /// The LLCL runtime we should use for managing asynchrony.
+  LLCL::Runtime &runtime;
   /// The next backend in the list. The public APIs handle nullptr here
   /// correctly, and the protected APIs (for the subclasses) should ignore the
   /// presence of this delegate entirely.
@@ -157,31 +179,52 @@ template <typename KeyInfo>
 class BlobCache {
 public:
   explicit BlobCache(std::unique_ptr<BlobCacheBackend> &&backendList)
-      : backendList(std::move(backendList)) {}
+      : runtime(backendList->getRuntime()),
+        backendList(std::move(backendList)) {
+    // Only one additional type we need registered on top of the ones provided
+    // by the backend list.
+    LLCL::AsyncValue::registerTypes<ErrorOr<std::string>>();
+  }
 
   using KeyTy = typename KeyInfo::KeyTy;
+
+  LLCL::Runtime &getRuntime() { return runtime; }
 
   /// Store an item in the provided backends. On a collision, the backends are
   /// expected to overwrite the existing contents, so it is incumbent on the
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
-  ErrorOr<std::string> insert(KeyTy key, llvm::MemoryBufferRef obj) {
+  LLCL::AsyncValueRef<ErrorOr<std::string>> insert(KeyTy key, BufferRef obj) {
     std::string keyHash = KeyInfo::hashKey(key);
-    if (auto err = backendList->insert(finalizeKeyHash(keyHash), obj))
-      return err.takeError();
+    auto insertAsync = backendList->insert(
+        Buffer::get(finalizeKeyHash(keyHash)), std::move(obj));
 
-    return keyHash;
+    // Allocate a space for the output.
+    auto out = LLCL::AsyncValueRef<ErrorOr<std::string>>::allocate(runtime);
+    insertAsync.andThen([keyHash = std::move(keyHash), out = out.copy(),
+                         insertAsync = insertAsync.copy()] {
+      // If insertion failed, propagate the error. Otherwise, hand over the key
+      // hash.
+      if (insertAsync->isError())
+        out.emplace(insertAsync->takeError());
+      else
+        out.emplace(keyHash);
+    });
+
+    return out;
   }
 
   /// Check if any of the provided backends have the item.
-  bool contains(KeyTy key) const {
-    return backendList->contains(buildFullKeyHash(key));
+  LLCL::AsyncValueRef<bool> contains(KeyTy key) const {
+    auto hash = Buffer::get(buildFullKeyHash(key));
+    return backendList->contains(std::move(hash));
   }
 
   /// Get the item from any of the provided backends.
-  CacheFindResult find(KeyTy key) {
-    return backendList->find(buildFullKeyHash(key));
+  LLCL::AsyncValueRef<CacheFindResult> find(KeyTy key) {
+    auto hash = Buffer::get(buildFullKeyHash(key));
+    return backendList->find(std::move(hash));
   }
 
 private:
@@ -194,22 +237,26 @@ private:
     return finalizeKeyHash(KeyInfo::hashKey(key));
   }
 
+  LLCL::Runtime &runtime;
+
   std::unique_ptr<BlobCacheBackend> backendList;
 };
 
 /// Returns an in-memory implementation of the BlobCacheBackend.
-std::unique_ptr<BlobCacheBackend> getInMemoryBackend();
+std::unique_ptr<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD.
 std::unique_ptr<BlobCacheBackend>
-getFilesystemBackend(const std::filesystem::path &basePath = "");
+getFilesystemBackend(LLCL::Runtime &runtime,
+                     const std::filesystem::path &basePath = "");
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `basePath` is passed to getFilesystemBackend
 /// directly.
 std::unique_ptr<BlobCacheBackend>
-getDefaultBackendChain(const std::filesystem::path &basePath = "");
-} // namespace M
+getDefaultBackendChain(LLCL::Runtime &runtime,
+                       const std::filesystem::path &basePath = "");
+} // namespace M::Cache
 
 #endif // CACHE_BLOBCACHE_H

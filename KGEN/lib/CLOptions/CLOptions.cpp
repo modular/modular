@@ -102,14 +102,13 @@ std::string KGENCLOptions::getOutputPath() const {
   return objPath.string();
 }
 
-LogicalResult
-KGENCLOptions::emitObject(std::unique_ptr<llvm::MemoryBuffer> object) const {
+LogicalResult KGENCLOptions::emitObject(StringRef object) const {
   std::unique_ptr<llvm::ToolOutputFile> outFile =
       getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)
     return failure();
 
-  outFile->os().write(object->getBufferStart(), object->getBufferSize());
+  outFile->os().write(object.begin(), object.size());
   outFile->keep();
 
   return mlir::success();

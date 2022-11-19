@@ -7,6 +7,7 @@
 #ifndef KGEN_EXECUTION_ENGINE_H
 #define KGEN_EXECUTION_ENGINE_H
 
+#include "Cache/Buffer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
@@ -16,6 +17,10 @@
 namespace llvm {
 class JITEventListener;
 } // namespace llvm
+
+namespace M::LLCL {
+class Runtime;
+}
 
 namespace M::KGEN {
 class ObjectCompiler;
@@ -72,12 +77,11 @@ public:
   /// Add an MLIR module to the execution engine. This will perform slicing for
   /// every func and generate self-contained libraries. Uses `libName` as the
   /// name for the JITDylib to avoid ODR violations.
-  ErrorOrSuccess add(ModuleOp module, ArrayRef<FuncOp> exports,
-                     StringRef libName);
+  ErrorOrSuccess add(LLCL::Runtime &runtime, ModuleOp module,
+                     ArrayRef<FuncOp> exports, StringRef libName);
 
   /// Add an object to the JIT.
-  ErrorOrSuccess add(StringRef libName,
-                     std::unique_ptr<llvm::MemoryBuffer> obj);
+  ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
   ErrorOr<CompiledFunc> lookup(StringRef libName, FuncOp func);

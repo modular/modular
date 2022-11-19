@@ -7,6 +7,7 @@
 #include "SelectFastestFunction.h"
 
 #include "KGEN/ExecutionEngine.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/MicroBenchmark.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/Debug.h"
@@ -22,11 +23,16 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // Create the execution engine.
   UNWRAP_ERROR(engine, ExecutionEngine::create());
 
+  // TODO: The elaborator should take a reference to the runtime.
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  if (auto err = engine.add(cast<ModuleOp>(symtab.getOp()), funcsToCompile,
-                            "evaluateSpecializations"))
+  if (auto err = engine.add(runtime, cast<ModuleOp>(symtab.getOp()),
+                            funcsToCompile, "evaluateSpecializations"))
     return err.takeError();
 
   // Get pointers to all the candidates.

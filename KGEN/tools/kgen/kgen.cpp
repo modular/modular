@@ -30,6 +30,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ToolOutputFile.h"
 
+#include "LLCL/Runtime/Runtime.h"
 #include <filesystem>
 
 using namespace M;
@@ -241,7 +242,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
-  ObjectCompiler compiler(".kgen_cache", *theModule);
+  // Initialize the LLCL runtime.
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+
+  ObjectCompiler compiler(runtime, ".kgen_cache", *theModule);
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
 
@@ -251,12 +257,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
-  std::unique_ptr<llvm::MemoryBuffer> standaloneObject =
-      std::move(*standaloneOr);
+  Cache::BufferRef standaloneObject = std::move(*standaloneOr);
 
   // If we're emitting the object, do it.
   if (clOptions.cmd == Command::kEmit) {
-    if (failed(clOptions.emitObject(std::move(standaloneObject))))
+    if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
       return failure();
 
     std::string objPath = clOptions.getOutputPath();
