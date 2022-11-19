@@ -40,9 +40,9 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
 #===------------------------------------------------------------------------===#
 
 struct Bool:
-  var value : __mlir_type.index
+  var value : __mlir_type.i1
 
-  fn __new__(value: __mlir_type.index) -> Bool:
+  fn __new__(value: __mlir_type.i1) -> Bool:
     var result: Bool
     result.value = value
     return result
@@ -51,15 +51,15 @@ struct Bool:
      return self
 
   fn __lit_bool(self: Bool) -> __mlir_type.i1:
-     return __mlir_op.`index.castu`[_type: __mlir_type.i1](self.value)
+     return self.value
 
   @staticmethod
   fn true() -> Bool:
-    return Bool(1)
+    return Bool(__mlir_op.`index.castu`[_type: __mlir_type.i1](1))
 
   @staticmethod
   fn false() -> Bool:
-    return Bool(0)
+    return Bool(__mlir_op.`index.castu`[_type: __mlir_type.i1](0))
 
 #===------------------------------------------------------------------------===#
 # Int
@@ -82,31 +82,31 @@ struct Int:
     return result
 
   fn __lt__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __le__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __eq__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __ne__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __gt__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __ge__(self, rhs: Int) -> Bool:
-    return Bool(0) #TODO
+    return Bool.false() #TODO
 
   fn __pos__(self) -> Int:
     return Int(self.value)
 
   fn __neg__(self) -> Int:
-    return Int(0) #TODO
+    return Int(__mlir_op.`index.sub`(0, self.value))
 
   fn __invert__(self) -> Int:
-    return Int(0) #TODO
+    return self ^ -Int(1)
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.ref<@Int>, %rhs: !kgen.ref<@Int>) -> !kgen.ref<@Int> {
   fn __add__(self, rhs: Int) -> Int:
@@ -125,31 +125,31 @@ struct Int:
     return Int(__mlir_op.`index.mul`(self.value, rhs.value))
 
   fn __truediv__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __floordiv__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __mod__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __pow__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __lshift__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __rshift__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this
 
   fn __and__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this (index.and doesn't exist!)
 
   fn __xor__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this (index.xor doesn't exist!)
 
   fn __or__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Use this somehow. :)
+    return Int(rhs.value)      # TODO: Implement this (index.or doesn't exist!)
 
   #===----------------------------------------------------------------------===#
   # In place operations.
