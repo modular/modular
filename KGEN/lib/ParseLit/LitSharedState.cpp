@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/Location.h"
 #include "llvm/Support/SourceMgr.h"
 #include <set>
@@ -196,8 +197,9 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
   impl->mlirTypeDecl = &resolver.addMagicDecl(
       "__mlir_type", MagicDeclKind::k__mlir_type, &builtinsDecl);
-  impl->mlirTypeDecl = &resolver.addMagicDecl(
-      "__mlir_op", MagicDeclKind::k__mlir_op, &builtinsDecl);
+  resolver.addMagicDecl("__mlir_op", MagicDeclKind::k__mlir_op, &builtinsDecl);
+  resolver.addMagicDecl("__mlir_attr", MagicDeclKind::k__mlir_attr,
+                        &builtinsDecl);
 
   // Add a declarations for builtin types.
   impl->typeTypeDecl =
@@ -282,7 +284,8 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::k__mlir_op:
-      emitError(loc, "__mlir_op is not a type");
+    case MagicDeclKind::k__mlir_attr:
+      emitError(loc, "__mlir_* is not a type");
       return result = TypeCheckErrorType::get(context);
     case MagicDeclKind::k__mlir_type:
       emitError(
@@ -355,4 +358,58 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
 
 Type LitSharedState::getMLIRType(MValue type, SMLoc loc) {
   return getMLIRType(type, translateLocation(loc));
+}
+
+/// When a lookup in __mlir_type fails for a named field, this method tries to
+/// resolve it.  On success, it lazily creates a resolved declaration.  On
+/// failure, it bails out.
+ASTDecl *LitSharedState::synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
+                                                     ASTDecl &scope) {
+  Type result;
+  {
+    // Capture errors thrown by parseType and ignore them.
+    // FIXME: This doesn't silence errors!
+    mlir::ScopedDiagnosticHandler handler(getContext(),
+                                          [](Diagnostic &diag) {});
+
+    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
+    // Copy the string into a temporary smallvector so we can make sure it is
+    // nul terminated for the MLIR asmparser.
+    SmallString<64> tmpBuf(name.begin(), name.end());
+    tmpBuf.push_back(0);
+    result = mlir::parseType(StringRef(tmpBuf).drop_back(), getContext());
+  }
+  if (!result) {
+    emitError(loc, "unknown MLIR type: ") << name;
+    return nullptr;
+  }
+
+  return &declResolver->addFullyResolvedDecl(
+      result, StringAttr::get(getContext(), name), translateLocation(loc),
+      getTypeType(), &scope);
+}
+
+/// Given an MLIR type, return an ASTType that we can use for type system
+/// processing.  This should only be used for low level operations touching
+/// MLIR, it isn't efficient and shouldn't be used for general user defined
+/// types.
+ASTType LitSharedState::getASTTypeForMLIRType(Type mlirType, SMLoc loc) {
+  // To get an ASTType from an MLIR type, we stringify the MLIR type and look
+  // it up on the __mlir_type declaration.
+  std::string typeStr;
+  llvm::raw_string_ostream(typeStr) << mlirType;
+
+  // See if we already have this declaration.
+  auto &mlirTypeScope = getMLIRTypeScope();
+  ASTDecl *typeDecl =
+      mlirTypeScope.lookup(StringAttr::get(getContext(), typeStr));
+
+  // If not, synthesize it.
+  if (!typeDecl) {
+    typeDecl = synthesizeMLIRTypeDeclEntry(typeStr, loc, mlirTypeScope);
+    if (!typeDecl)
+      return {};
+  }
+
+  return getASTType(*typeDecl, {});
 }

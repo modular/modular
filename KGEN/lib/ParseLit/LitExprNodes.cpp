@@ -150,43 +150,52 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   return shared.getTypeCheckErrorType();
 }
 
-/// When a lookup in __mlir_type fails for a named field, this method tries to
+/// When a lookup in __mlir_attr fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
-                                            ASTDecl &scope,
-                                            LitSharedState &shared) {
-  Type result;
+static ASTTypeAnd<AnyValue>
+synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
+  auto &shared = emitter.shared;
+
+  Attribute result;
+  std::string errorMsg;
   {
-    // Capture errors thrown by parseType and ignore them.
+    // Capture errors thrown by parseAttribute and ignore them.
     // FIXME: This doesn't silence errors!
     mlir::ScopedDiagnosticHandler handler(shared.getContext(),
-                                          [](Diagnostic &diag) {});
+                                          [&](Diagnostic &diag) {
+                                            errorMsg = diag.str();
+                                            printf("hello\n");
+                                          });
 
     // FIXME(https://github.com/llvm/llvm-project/issues/58964)
     // Copy the string into a temporary smallvector so we can make sure it is
     // nul terminated for the MLIR asmparser.
     SmallString<64> tmpBuf(name.begin(), name.end());
     tmpBuf.push_back(0);
-    result =
-        mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
+    result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
+                                  shared.getContext());
   }
   if (!result) {
-    shared.emitError(loc, "unknown MLIR type: ") << name;
-    return nullptr;
+    shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+    return {};
   }
 
-  return &shared.declResolver->addFullyResolvedDecl(
-      result, StringAttr::get(shared.getContext(), name),
-      shared.translateLocation(loc), shared.getTypeType(), &scope);
+  auto typedAttr = dyn_cast<TypedAttr>(result);
+  if (!typedAttr) {
+    shared.emitError(loc, "MLIR attribute has no type: ") << result;
+    return {};
+  }
+
+  auto astType = shared.getASTTypeForMLIRType(typedAttr.getType(), loc);
+  return {MAValue(result), astType};
 }
 
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static ASTTypeAnd<AnyValue> synthesizeMLIROpDeclEntry(StringRef name, SMLoc loc,
-                                                      ASTDecl &scope,
-                                                      ExprEmitter &emitter) {
+static ASTTypeAnd<AnyValue> synthesizeMLIROpFromString(StringRef name,
+                                                       ExprEmitter &emitter) {
   auto &shared = emitter.shared;
   auto *context = shared.getContext();
   auto nameStr = StringAttr::get(context, name);
@@ -269,7 +278,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     // If this is a lookup in __mlir_type, then try to lazily synthesize the
     // element in question.
     if (scope.magicKind == MagicDeclKind::k__mlir_type)
-      return synthesizeMLIRTypeDeclEntry(name, loc, scope, shared);
+      return shared.synthesizeMLIRTypeDeclEntry(name, loc, scope);
 
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
@@ -297,8 +306,8 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
         varDecl, nameAttr, implicitDeclType, &scope);
   }
 
-  // If the lookup succeeded, make sure the signature for the referenced decl is
-  // understood.
+  // If the lookup succeeded, make sure the signature for the referenced decl
+  // is understood.
   auto resolveResult = shared.declResolver->resolve(
       *lookupResult, DeclResolvedness::signatureResolved, loc);
 
@@ -471,8 +480,8 @@ static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
 
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
-/// TODO: This should take the parameters on the enclosing decl being referenced
-/// to support things like SomeType[42].member()
+/// TODO: This should take the parameters on the enclosing decl being
+/// referenced to support things like SomeType[42].member()
 static ASTTypeAnd<AnyValue>
 emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
                         ExprEmitter &emitter, ASTType implicitDeclType = {}) {
@@ -516,33 +525,6 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   emitter.emitError(loc, "use of declaration \"")
       << memberName << "\" as a value isn't supported yet";
   return {};
-}
-
-/// Given an MLIR type, return an ASTType that we can use for type system
-/// processing.  This should only be used for low level operations touching
-/// MLIR, it isn't efficient and shouldn't be used for general user defined
-/// types.
-static ASTType getASTTypeForMLIRType(Type mlirType, SMLoc loc,
-                                     LitSharedState &shared) {
-
-  // To get an ASTType from an MLIR type, we stringify the MLIR type and look it
-  // up on the __mlir_type declaration.
-  std::string typeStr;
-  llvm::raw_string_ostream(typeStr) << mlirType;
-
-  // See if we already have this declaration.
-  auto &mlirTypeScope = shared.getMLIRTypeScope();
-  ASTDecl *typeDecl =
-      mlirTypeScope.lookup(StringAttr::get(shared.getContext(), typeStr));
-
-  // If not, synthesize it.
-  if (!typeDecl) {
-    typeDecl = synthesizeMLIRTypeDeclEntry(typeStr, loc, mlirTypeScope, shared);
-    if (!typeDecl)
-      return {};
-  }
-
-  return shared.getASTType(*typeDecl, {});
 }
 
 /// This helper emits a method call to a special function (`kind`) on the
@@ -633,9 +615,11 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   if (ASTType baseType = baseVal.ir.getIfMTValue()) {
     // Handle __mlir_op.`xxx` references.
     if (baseType.getDecl().magicKind == MagicDeclKind::k__mlir_op)
-      return synthesizeMLIROpDeclEntry(attrSpelling, getLoc(),
-                                       baseType.getDecl(), emitter);
-
+      return synthesizeMLIROpFromString(attrSpelling, emitter);
+    // Handle __mlir_attr.`xxx` references.
+    if (baseType.getDecl().magicKind == MagicDeclKind::k__mlir_attr)
+      return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
+    // Normal member reference.
     auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
                                              getLoc(), emitter);
     return {rValueAnd.ir, rValueAnd.type};
@@ -910,8 +894,8 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
   assert(resultOp->getNumResults() == 1 &&
          "Only support single result ops so far");
 
-  auto astType = getASTTypeForMLIRType(resultOp->getResult(0).getType(),
-                                       call.getLoc(), emitter.shared);
+  auto astType = emitter.shared.getASTTypeForMLIRType(
+      resultOp->getResult(0).getType(), call.getLoc());
 
   // Check to see if we can fold this operation.  This enables use of __mlir_op
   // to produce meta-values without forcing them into the dynamic value domain.

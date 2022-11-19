@@ -199,6 +199,11 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   # CHECK: %c = lit.var.decl "c" : <pointer<pointer<f32>>>
   var c : __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
 
+  # CHECK: %d = lit.var.decl "d" : <i17>
+  # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
+  # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
+  var d = __mlir_attr.`4: i17`
+
   # CHECK: [[TMP:%.*]] = index.constant 2
   # CHECK: kgen.return [[TMP:%.*]] : index
   return __mlir_op.`index.shru`(4, 1)
