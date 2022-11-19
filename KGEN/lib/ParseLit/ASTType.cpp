@@ -78,10 +78,9 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     case MagicDeclKind::kNormal:
       llvm_unreachable("not a magic declaration?");
     case MagicDeclKind::k__mlir_type:
-      os << "__mlir_type";
-      break;
     case MagicDeclKind::k__mlir_op:
-      os << "<<k__mlir_op isn't a type>>";
+    case MagicDeclKind::k__mlir_attr:
+      os << "<<__mlir_* isn't a type>>";
       break;
     case MagicDeclKind::kUnboundMLIROperatorType:
       os << "<<unbound MLIR operator type>>";

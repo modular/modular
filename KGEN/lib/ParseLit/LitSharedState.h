@@ -51,6 +51,12 @@ public:
   /// Get a uniqued and pointer sized reference to an ASTType.
   ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBinding> params);
 
+  /// Given an MLIR type, return an ASTType that we can use for type system
+  /// processing.  This should only be used for low level operations touching
+  /// MLIR, it isn't efficient and shouldn't be used for general user defined
+  /// types.
+  ASTType getASTTypeForMLIRType(Type mlirType, llvm::SMLoc loc);
+
   /// Return the MLIR type that corresponds to this AST type.  On error, this
   /// emits an error at the specified location and returns an error type.
   Type getMLIRType(MValue type, llvm::SMLoc loc);
@@ -123,6 +129,12 @@ public:
   /// starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 
+  /// When a lookup in __mlir_type fails for a named field, this method tries to
+  /// resolve it.  On success, it lazily creates a resolved declaration.  On
+  /// failure, it bails out.
+  ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, llvm::SMLoc loc,
+                                       ASTDecl &scope);
+
 private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
@@ -160,8 +172,9 @@ enum class MagicDeclKind : uint8_t {
   // This type is produced when an error is detected to simplify clients.
   kTypeCheckErrorType,
 
-  k__mlir_type, // __mlir_type declaration itself.
-  k__mlir_op,   // __mlir_op declaration itself.
+  k__mlir_type, // __mlir_type declaration.
+  k__mlir_op,   // __mlir_op declaration.
+  k__mlir_attr, // __mlir_attr declaration.
 
   /// This is the type held by a partially bound MLIR operator, e.g.
   ///   __mlir_op.`pop.abs` or

@@ -83,6 +83,8 @@ struct Int:
 
   fn __lt__(self, rhs: Int) -> Bool:
     return Bool.false() #TODO
+    #return Bool(__mlir_op.`index.cmp`[pred:
+    #          __mlir_attr.`#index<cmp_predicate lt>`](self.value, rhs.value))
 
   fn __le__(self, rhs: Int) -> Bool:
     return Bool.false() #TODO

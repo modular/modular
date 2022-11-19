@@ -311,8 +311,14 @@ fn expr_errors():
 
   # expected-error @+1 {{'index.constant' op attribute 'value' failed to satisfy constraint: index attribute}}
   var c42e = __mlir_op.`index.constant`[value : 42.0]()
-
   var c42 = __mlir_op.`index.constant`[value : 42]() # Good
+
+  # expected-error @+1 {{invalid MLIR attribute:}}
+  __mlir_attr.`#index<cmp_predicate xeq>`
+
+  # expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
+  __mlir_attr.`#index<cmp_predicate eq>`
+
 
 fn slice_expression(a: Int):
   a[:]    # expected-error {{slice values not implemented yet}}
