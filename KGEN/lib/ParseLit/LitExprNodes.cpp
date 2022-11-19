@@ -1275,107 +1275,39 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
   if (lhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType ||
-      rhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType)
-    specialFnKind = SpecialFunctionKind::kNormal;
-
-  if (specialFnKind != SpecialFunctionKind::kNormal) {
-    // TODO: Add support for radd, looking up on the RHS.
-    ArgumentValueType argValues[] = {{lhsRep, lhs->getLoc()},
-                                     {rhsRep, rhs->getLoc()}};
-    return emitter.emitSpecialFunctionCall(
-        {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
-        getLoc());
-  }
-
-  // TODO: Remove all this legacy code.
-
-  auto lhsRVal = emitter.emitRValue(lhsRep, lhs->getLoc());
-  auto rhsRVal = emitter.emitRValue(rhsRep, rhs->getLoc());
-  if (!lhsRep.ir || !rhsRep.ir)
-    return {};
-  if (lhsRep.type.getDecl().magicKind != MagicDeclKind::kIndexType ||
-      rhsRep.type.getDecl().magicKind != MagicDeclKind::kIndexType) {
-    emitter.emitError(getLoc(),
-                      "binary operator with interesting types not implemented");
-    return {};
-  }
-
-  // If these are both parameter values, we can fold them using parameter
-  // expressions.
-  if (auto lhsParam = lhsRVal.ir.getIfMAValue()) {
-    if (auto rhsParam = rhsRVal.ir.getIfMAValue()) {
-      POC opcode;
-      switch (kind) {
-      default:
-        llvm_unreachable("unknown binary operator");
-      case kAdd:
-        opcode = POC::Add;
-        break;
-      case kMul:
-        opcode = POC::Mul;
-        break;
-      }
-      return {MValue(ParamOperatorAttr::get(opcode, lhsParam, rhsParam)),
-              emitter.shared.getIndexType()};
+      rhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType) {
+    auto lhsParam =
+        emitter.emitMAValue(lhs, "expecting parameter values as operands");
+    auto rhsParam =
+        emitter.emitMAValue(rhs, "expecting parameter values as operands");
+    // If these are both parameter values, we can fold them using parameter
+    // expressions.
+    if (!lhsParam || !rhsParam) {
+      emitter.emitError(getLoc(), "expecting parameter values as operands");
+      return {};
     }
+    POC opcode;
+    switch (kind) {
+    default:
+      llvm_unreachable("unknown binary operator");
+    case kAdd:
+      opcode = POC::Add;
+      break;
+    case kMul:
+      opcode = POC::Mul;
+      break;
+    }
+    return {MValue(ParamOperatorAttr::get(opcode, lhsParam.ir, rhsParam.ir)),
+            emitter.shared.getIndexType()};
   }
 
-  assert(emitter.builder && "cannot have dynamic values without a builder");
-
-  auto lhsVal = emitter.emitDRValue(lhsRVal, lhs->getLoc()).ir;
-  auto rhsVal = emitter.emitDRValue(rhsRVal, rhs->getLoc()).ir;
-  auto loc = emitter.translateLocation(getLoc());
-
-  // TODO: implement properly these operations once we have a real type system
-  //       also, logical operators should implement short circuiting of the
-  //       operands.
-  Value result;
-  switch (kind) {
-  default:
-    emitter.emitError(getLoc(),
-                      "cannot emit binary operator on this index value yet");
-    return {};
-
-  case kAdd:
-    result = emitter.builder->create<mlir::index::AddOp>(loc, lhsVal, rhsVal);
-    break;
-  case kSub:
-    result = emitter.builder->create<mlir::index::SubOp>(loc, lhsVal, rhsVal);
-    break;
-  case kBoolAnd:
-  case kBitwiseAnd:
-    result = emitter.builder->create<mlir::index::AddOp>(loc, lhsVal, rhsVal);
-    break;
-  case kBoolOr:
-  case kBitwiseOr:
-    result = emitter.builder->create<mlir::index::SubOp>(loc, lhsVal, rhsVal);
-    break;
-  case kBitwiseXor:
-    result = emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal, rhsVal);
-    break;
-  case kMul:
-  case kMatrixMul:
-    result = emitter.builder->create<mlir::index::MulOp>(loc, lhsVal, rhsVal);
-    break;
-  case kDiv:
-  case kFloorDiv:
-    // TODO(types): kDiv should be floating point division
-    result = emitter.builder->create<mlir::index::DivSOp>(loc, lhsVal, rhsVal);
-    break;
-  case kCmpEqual:
-    result = emitter.builder->create<mlir::index::RemUOp>(loc, lhsVal, rhsVal);
-    break;
-  case kModulo:
-    result = emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal, rhsVal);
-    break;
-  case kExp:
-    // TODO(types): this should be an exponentiation op
-    // eventually we should call object.__pow__(self, other[, modulo])
-    result = emitter.builder->create<mlir::index::RemSOp>(loc, lhsVal, rhsVal);
-    break;
-  }
-
-  return {DRValue(result), emitter.shared.getIndexType()};
+  assert(specialFnKind != SpecialFunctionKind::kNormal);
+  // TODO: Add support for radd, looking up on the RHS.
+  ArgumentValueType argValues[] = {{lhsRep, lhs->getLoc()},
+                                   {rhsRep, rhs->getLoc()}};
+  return emitter.emitSpecialFunctionCall(
+      {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
+      getLoc());
 }
 
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
