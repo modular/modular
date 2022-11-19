@@ -184,18 +184,17 @@ static ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static ASTDecl *synthesizeMLIROpDeclEntry(StringRef name, SMLoc loc,
-                                          ASTDecl &scope,
-                                          ExprEmitter &emitter) {
+static ASTTypeAnd<AnyValue> synthesizeMLIROpDeclEntry(StringRef name, SMLoc loc,
+                                                      ASTDecl &scope,
+                                                      ExprEmitter &emitter) {
   auto &shared = emitter.shared;
   auto *context = shared.getContext();
   auto nameStr = StringAttr::get(context, name);
 
   auto result = UnboundMLIROperationAttr::get(
       context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
-  return &shared.declResolver->addFullyResolvedDecl(
-      MAValue(result), nameStr, emitter.translateLocation(loc),
-      shared.getUnboundMLIROperatorType(), &scope);
+
+  return {MAValue(result), shared.getUnboundMLIROperatorType()};
 }
 
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
@@ -267,12 +266,10 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
   // Handle the case where lookup fails.
   if (!lookupResult) {
-    // If this is a lookup in __mlir_type or __mlir_op, then try to lazily
-    // synthesize the element in question.
+    // If this is a lookup in __mlir_type, then try to lazily synthesize the
+    // element in question.
     if (scope.magicKind == MagicDeclKind::k__mlir_type)
       return synthesizeMLIRTypeDeclEntry(name, loc, scope, shared);
-    if (scope.magicKind == MagicDeclKind::k__mlir_op)
-      return synthesizeMLIROpDeclEntry(name, loc, scope, *this);
 
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
@@ -634,6 +631,11 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // Handle member references on types.
   if (ASTType baseType = baseVal.ir.getIfMTValue()) {
+    // Handle __mlir_op.`xxx` references.
+    if (baseType.getDecl().magicKind == MagicDeclKind::k__mlir_op)
+      return synthesizeMLIROpDeclEntry(attrSpelling, getLoc(),
+                                       baseType.getDecl(), emitter);
+
     auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
                                              getLoc(), emitter);
     return {rValueAnd.ir, rValueAnd.type};
