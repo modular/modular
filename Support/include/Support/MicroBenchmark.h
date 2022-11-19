@@ -166,6 +166,14 @@ struct MicroBenchmark {
     /// function withing the Modular stack. When enabled, the warning is printed
     /// at most once in the session.
     bool printWarningIfDebugMode = true;
+    /// When positive, the benchmark will clear the level of cache specified
+    /// prior to each iteration of the function. The cache level must be between
+    /// 1 and 4, where 1 specifies the L1 cache, 2 specifies the L2 cache, etc.
+    /// If the cache level is -1, then the cache is not cleared. Note that
+    /// specifying a clear cache level will need to be performed in conjunction
+    /// with setting the maxBatchSize to 1 to be effective. Also note that this
+    /// will slow down the benchmarking process.
+    int8_t clearCacheLevel = -1;
   };
 
   /// Options used to control the report output. The user can specify which
