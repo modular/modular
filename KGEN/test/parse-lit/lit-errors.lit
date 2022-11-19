@@ -99,7 +99,7 @@ def missing_type_on_var_decl():
 
 
 def invalid_conversion(a: Int, b: index):
-  a = b+1 # expected-error {{cannot convert value of type '!builtin.index' to 'Int'}}
+  a = b # expected-error {{cannot convert value of type '!builtin.index' to 'Int'}}
 
 struct NotBoolConvertible:
 
@@ -285,7 +285,7 @@ struct SpecialFunctions:
 
 fn expr_errors():
   var x: __mlir_type.index
-  x += x # expected-error {{cannot emit binary operator on this index value yet}}
+  x += x # expected-error {{expecting parameter values as operands}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
