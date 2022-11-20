@@ -397,7 +397,7 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
       typeExpr = TypeConstantAttr::get(
-          RefType::get(FlatSymbolRefAttr::get(ref), *paramValues));
+          DeclRefType::get(FlatSymbolRefAttr::get(ref), *paramValues));
       return success();
     }
   }
@@ -458,7 +458,7 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
         p << SIMDType::getMnemonic();
         popType.print(p);
       })
-      .Case([&](RefType ref) {
+      .Case([&](DeclRefType ref) {
         p << ref.getSymbol();
         printOptionalParamBindSpec(p, ref.getParamValues());
       })

@@ -206,10 +206,10 @@ def SignatureType
 }
 
 //===----------------------------------------------------------------------===//
-// RefType
+// DeclRefType
 //===----------------------------------------------------------------------===//
 
-def RefType : KGENType<"Ref", "ref",
+def DeclRefType : KGENType<"DeclRef", "ref",
     [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{

@@ -53,9 +53,9 @@ private:
   /// specification.
   virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) {}
 
-  /// When we encounter a RefType, check that its parameter bindings match
+  /// When we encounter a DeclRefType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
-  virtual void verifyRefType(RefType typeDef) {}
+  virtual void verifyRefType(DeclRefType typeDef) {}
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
@@ -148,8 +148,8 @@ void ParameterCollector::collectUsesFromTypes(
     return;
   }
 
-  // Check any RefType's we encounter.
-  if (auto typeDef = dyn_cast<RefType>(type))
+  // Check any DeclRefType's we encounter.
+  if (auto typeDef = dyn_cast<DeclRefType>(type))
     verifyRefType(typeDef);
 
   // Save the number of nested parameters before recursing and check whether the
@@ -307,7 +307,7 @@ struct DeclParameterVerifier final : public ParameterCollector {
 
   void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
 
-  void verifyRefType(RefType typeDef) override;
+  void verifyRefType(DeclRefType typeDef) override;
 
   /// This is the top level declaration that we're analyzing.
   KGENDeclInterface topLevelOp;
@@ -553,10 +553,10 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     hadError = true;
 }
 
-/// The first time we encounter a RefType, check to see if its parameter
+/// The first time we encounter a DeclRefType, check to see if its parameter
 /// bindings agrees with the parameter declarations of the referred type
 /// dedclaration.
-void DeclParameterVerifier::verifyRefType(RefType refType) {
+void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   // We only check this during the op verification phase.
   if (!symbolTable)
     return;

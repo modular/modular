@@ -828,7 +828,7 @@ def StructCreateOp : KGENOp<"struct.create", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs RefType:$result);
+  let results = (outs DeclRefType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` functional-type(operands, results)
   }];
@@ -859,8 +859,8 @@ def StructInsertOp : KGENOp<"struct.insert", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, AnyType:$value, RefType:$container);
-  let results = (outs RefType:$result);
+  let arguments = (ins StrAttr:$field, AnyType:$value, DeclRefType:$container);
+  let results = (outs DeclRefType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
@@ -890,7 +890,7 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, RefType:$container);
+  let arguments = (ins StrAttr:$field, DeclRefType:$container);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -921,7 +921,7 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, PointerOf<RefType>:$container);
+  let arguments = (ins StrAttr:$field, PointerOf<DeclRefType>:$container);
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`

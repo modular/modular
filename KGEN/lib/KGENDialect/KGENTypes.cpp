@@ -210,14 +210,15 @@ Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
-// RefType
+// DeclRefType
 //===----------------------------------------------------------------------===//
 
-RefType RefType::get(FlatSymbolRefAttr name, ParamBindArrayAttr paramValues) {
+DeclRefType DeclRefType::get(FlatSymbolRefAttr name,
+                             ParamBindArrayAttr paramValues) {
   return get(name.getContext(), name, paramValues);
 }
 
-RefType RefType::get(FlatSymbolRefAttr name) {
+DeclRefType DeclRefType::get(FlatSymbolRefAttr name) {
   return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
 }
 
