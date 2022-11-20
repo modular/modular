@@ -250,22 +250,22 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   while (!isTokenStartOfNextStatement() &&
          unsigned(minPrec) < unsigned(infixInfo.precedence)) {
     LitToken::Kind tokKind = getToken().getKind();
-    auto loc = consumeToken().getLoc();
+    auto binOpLoc = consumeToken().getLoc();
 
     if (tokKind == LitToken::Kind::kw_if) {
       // Conditional if - else expression.
       // trueExpr 'if' condition 'else' falseExpr.
-      ExprNode *condition;
-      if (parseExpression(condition, infixInfo.precedence))
+      ExprNode *cond;
+      if (parseExpression(cond, infixInfo.precedence))
         return failure();
 
       ExprNode *falseExpr;
+      auto elseLoc = getToken().getLoc();
       if (parseToken(LitToken::Kind::kw_else,
                      "expecting an 'else' followed by an expression") ||
           parseExpression(falseExpr, infixInfo.precedence))
         return failure();
-      expr = alloc<TernaryOpNode>(infixInfo.nodeKind, condition, expr,
-                                  falseExpr, loc);
+      expr = alloc<IfElseOpNode>(expr, binOpLoc, cond, elseLoc, falseExpr);
       infixInfo = InfixInfo::get(getToken().getKind());
       continue;
     }
@@ -287,7 +287,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     ExprNode *rhs;
     if (parseExpression(rhs, infixInfo.precedence))
       return failure();
-    expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, loc, rhs);
+    expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, binOpLoc, rhs);
     infixInfo = InfixInfo::get(getToken().getKind());
   }
   return success();
@@ -461,16 +461,19 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
 /// keyword_item         ::=  identifier "=" expression
 ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   SmallVector<ExprNode *> args;
+  SMLoc rparenLoc;
   // TODO: Handle comprehension arguments, stars, etc.
-  if (!consumeIf(LitToken::r_paren)) {
+  if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
     llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
     if (parseExpressionList(args, LitToken::r_paren) ||
+        getLocation(rparenLoc) ||
         parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
       return failure();
     }
   }
-  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<ExprNode *>(args));
+  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<ExprNode *>(args),
+                           rparenLoc);
   return success();
 }
 
@@ -529,12 +532,14 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     return success();
   };
 
+  SMLoc rsquareLoc;
   if (parseCommaSeparatedList(parseExprOrSlice, LitToken::r_square) ||
+      getLocation(rsquareLoc) ||
       parseToken(LitToken::r_square, "expected ']' in call argument list"))
     return failure();
 
   result = alloc<SubscriptNode>(result, lsquareLoc,
-                                copyArrayRef<ExprNode *>(indices));
+                                copyArrayRef<ExprNode *>(indices), rsquareLoc);
   return success();
 }
 
