@@ -48,7 +48,7 @@ def missing_ret_val() -> index:
   return # expected-error {{returned value has type 'None' but 'def' expected '!builtin.index'}}
 
 def ret_type_mismatch() -> index:
-  return 4.0 # expected-error {{returned value has type 'FloatLiteralType' but 'def' expected '!builtin.index'}}
+  return 4.0 # expected-error {{returned value has type '__mlir_type.f64' but 'def' expected '!builtin.index'}}
 
 def meta_param_then_param_redef[
       dt: index # expected-note {{previous definition here}}
@@ -68,7 +68,7 @@ struct ReturnFromStruct:
   return 42
 
 def var_decl_without_type():
-  # expected-error @+1 {{initializer has type 'FloatLiteralType' but declared type is 'Int'}}
+  # expected-error @+1 {{initializer has type '__mlir_type.f64' but declared type is 'Int'}}
   var y : Int = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}

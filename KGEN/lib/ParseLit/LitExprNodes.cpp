@@ -605,7 +605,10 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
-  return {AnyValue(attr), emitter.shared.getFloatLiteralType()};
+  // FIXME: This should eventually use emitter.shared.getFloatLiteralType()
+  // when we support conversions.
+  return {AnyValue(attr),
+          emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc())};
 }
 
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
