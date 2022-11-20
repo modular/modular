@@ -80,6 +80,11 @@ public:
     return endCursorState == cursor.getState();
   }
 
+  /// Return the SymbolRefAttr for a declaration, including all scoping that may
+  /// be needed, making it unique for every declaration.  This returns null for
+  /// named values that do not have a declaration.
+  SymbolRefAttr getSymbolRef() const;
+
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
     if (Operation *op = dyn_cast<Operation *>(irValue))

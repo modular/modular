@@ -53,7 +53,7 @@ public:
            ASTTypeStorage *>
       uniquedASTTypes;
 
-  // TODO(complile time): This is horribly inefficient.
+  // TODO(compile time): This is horribly inefficient.
   // Switch to StorageUniquer or something else?
   std::set<std::vector<LitSharedState::ParamBinding>, AttributeVectorComparison>
       uniquedParams;
@@ -343,8 +343,9 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
 
     // Everything looks good, go forth!
     auto typeParams = ParamBindArrayAttr::get(context, attrBindings);
-    return result = RefType::get(FlatSymbolRefAttr::get(typeDecl.getNameAttr()),
-                                 typeParams);
+    // FIXME: Shouldn't force a flat attr.
+    auto flatAttr = cast<FlatSymbolRefAttr>(decl.getSymbolRef());
+    return result = RefType::get(flatAttr, typeParams);
   }
 
   // If this is a direct reference to an MLIR type, use it.
