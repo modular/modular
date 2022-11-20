@@ -22,6 +22,7 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ExprEmitter;
 class ASTDecl;
+class ExprNode;
 
 template <typename ValueType>
 struct ASTTypeAnd {
@@ -34,8 +35,10 @@ struct ASTTypeAnd {
 };
 
 template <typename ValueType>
-struct ASTTypeSMLocAnd : public ASTTypeAnd<ValueType> {
-  llvm::SMLoc loc;
+struct ASTTypeExprAnd : public ASTTypeAnd<ValueType> {
+  /// This is the expression a value was produced from, carrying location and
+  /// additional semantic information.
+  const ExprNode *expr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -189,7 +192,7 @@ public:
   /// This returns null if emission fails.
   ASTTypeAnd<AnyValue>
   emitSpecialFunctionCall(ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
-                          ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands,
+                          ArrayRef<ASTTypeExprAnd<AnyValue>> operands,
                           SMLoc callLoc);
 
   /// This helper emits the specified expression as a meta value, diagnosing the

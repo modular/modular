@@ -385,23 +385,22 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
                                        LitStmtParser &parser) {
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
-  ASTTypeAnd<DRValue> cond = parser.getExprEmitter().emitDRValue(condExp);
+  auto exprEmitter = parser.getExprEmitter();
+  ASTTypeAnd<DRValue> cond = exprEmitter.emitDRValue(condExp);
   if (!cond)
     return failure();
 
   SMLoc condLoc = condExp->getLoc();
-  ASTTypeSMLocAnd<AnyValue> argValue = {{cond.ir, cond.type}, condLoc};
-  ASTTypeAnd<AnyValue> boolCall =
-      parser.getExprEmitter().emitSpecialFunctionCall(
-          cond, SpecialFunctionKind::kBool, argValue, condLoc);
+  ASTTypeExprAnd<AnyValue> argValue = {{cond.ir, cond.type}, condExp};
+  ASTTypeAnd<AnyValue> boolCall = exprEmitter.emitSpecialFunctionCall(
+      cond, SpecialFunctionKind::kBool, argValue, condLoc);
   if (!boolCall)
     return failure();
 
-  argValue = {boolCall, condLoc};
-  ASTTypeAnd<AnyValue> litBoolCall =
-      parser.getExprEmitter().emitSpecialFunctionCall(
-          {boolCall.ir.getIfDRValue(), boolCall.type},
-          SpecialFunctionKind::kLitBool, argValue, condLoc);
+  argValue = {boolCall, condExp};
+  ASTTypeAnd<AnyValue> litBoolCall = exprEmitter.emitSpecialFunctionCall(
+      {boolCall.ir.getIfDRValue(), boolCall.type},
+      SpecialFunctionKind::kLitBool, argValue, condLoc);
   if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
     return failure();
 
