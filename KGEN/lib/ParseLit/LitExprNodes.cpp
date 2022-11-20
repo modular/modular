@@ -1349,8 +1349,8 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
                                        getLoc());
 }
 
-ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
-                                           ASTType contextualType) const {
+ASTTypeAnd<AnyValue> IfElseOpNode::emitIR(ExprEmitter &emitter,
+                                          ASTType contextualType) const {
   ASTTypeAnd<DRValue> cond = emitter.emitDRValue(condExpr);
   if (!cond)
     return {};

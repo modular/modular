@@ -127,6 +127,8 @@ public:
 
   /// Return the primary location for this node for error reporting purposes.
   virtual SMLoc getLoc() const = 0;
+  /// Return the source range spanned by this expression.
+  virtual llvm::SMRange getRange() const = 0;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
