@@ -14,7 +14,7 @@ using namespace M::KGEN::LIT;
 using namespace M;
 
 InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
-  auto diag = emitError(translateLocation(loc), message);
+  auto diag = getSharedState().emitError(loc, message);
 
   // If we hit a parse error in response to a lexer error, then the lexer
   // already reported the error.
