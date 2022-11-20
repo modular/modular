@@ -64,6 +64,7 @@ ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
     [[fallthrough]];
   case 'K':
     multiplier *= 1024;
+    break;
   default:
     break;
   }
