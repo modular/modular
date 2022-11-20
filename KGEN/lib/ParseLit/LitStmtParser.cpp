@@ -392,15 +392,14 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
 
   SMLoc condLoc = condExp->getLoc();
   ASTTypeExprAnd<AnyValue> argValue = {{cond.ir, cond.type}, condExp};
-  ASTTypeAnd<AnyValue> boolCall = exprEmitter.emitSpecialFunctionCall(
-      cond, SpecialFunctionKind::kBool, argValue, condLoc);
+  ASTTypeAnd<AnyValue> boolCall = exprEmitter.emitSpecialMethodCall(
+      cond.type, SpecialFunctionKind::kBool, argValue, condLoc);
   if (!boolCall)
     return failure();
 
   argValue = {boolCall, condExp};
-  ASTTypeAnd<AnyValue> litBoolCall = exprEmitter.emitSpecialFunctionCall(
-      {boolCall.ir.getIfDRValue(), boolCall.type},
-      SpecialFunctionKind::kLitBool, argValue, condLoc);
+  ASTTypeAnd<AnyValue> litBoolCall = exprEmitter.emitSpecialMethodCall(
+      boolCall.type, SpecialFunctionKind::kLitBool, argValue, condLoc);
   if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
     return failure();
 

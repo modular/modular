@@ -550,21 +550,21 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   return {};
 }
 
-/// This helper emits a method call to a special function (`kind`) on the
-/// `caller` object with the provided `operands`. If the special function
-/// is not implemented by the caller it emits an error.
-/// This returns null if emission fails.
-ASTTypeAnd<AnyValue> ExprEmitter::emitSpecialFunctionCall(
-    ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
-    ArrayRef<ASTTypeExprAnd<AnyValue>> operands, SMLoc callLoc) {
+/// This helper emits a method call to a special function (`kind`) on `type`
+/// with the provided `operands`. This emits an error if the special function
+/// is not implemented by the type and returns null.
+ASTTypeAnd<AnyValue>
+ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
+                                   ArrayRef<ASTTypeExprAnd<AnyValue>> operands,
+                                   SMLoc callLoc) {
 
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   // Look up the special function on the expr type.
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
-  ASTDecl *lookupResult = caller.type.getDecl().lookup(nameAttr);
+  ASTDecl *lookupResult = type.getDecl().lookup(nameAttr);
   if (!lookupResult) {
-    emitError(callLoc, "") << caller.type << " does not implement the "
-                           << nameAttr << " special method";
+    emitError(callLoc, "") << type << " does not implement the " << nameAttr
+                           << " special method";
     return {};
   }
 
@@ -1328,9 +1328,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnKind != SpecialFunctionKind::kNormal);
   // TODO: Add support for radd, looking up on the RHS.
   ASTTypeExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
-  return emitter.emitSpecialFunctionCall(
-      {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
-      getLoc());
+  return emitter.emitSpecialMethodCall(lhsRep.type, specialFnKind, argValues,
+                                       getLoc());
 }
 
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
@@ -1346,10 +1345,8 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
          "Unary operators are implemented via special methods");
 
   ASTTypeExprAnd<AnyValue> argValue = {exprRep, subExpr};
-
-  return emitter.emitSpecialFunctionCall(
-      {exprRep.ir.getIfDRValue(), exprRep.type}, specialFnKind, argValue,
-      getLoc());
+  return emitter.emitSpecialMethodCall(exprRep.type, specialFnKind, argValue,
+                                       getLoc());
 }
 
 ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
@@ -1360,15 +1357,14 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
 
   SMLoc condLoc = condExpr->getLoc();
   ASTTypeExprAnd<AnyValue> argValue = {{cond.ir, cond.type}, condExpr};
-  ASTTypeAnd<AnyValue> boolCall = emitter.emitSpecialFunctionCall(
-      cond, SpecialFunctionKind::kBool, argValue, condLoc);
+  ASTTypeAnd<AnyValue> boolCall = emitter.emitSpecialMethodCall(
+      cond.type, SpecialFunctionKind::kBool, argValue, condLoc);
   if (!boolCall)
     return {};
 
   argValue = {boolCall, condExpr};
-  ASTTypeAnd<AnyValue> litBoolCall = emitter.emitSpecialFunctionCall(
-      {boolCall.ir.getIfDRValue(), boolCall.type},
-      SpecialFunctionKind::kLitBool, argValue, condLoc);
+  ASTTypeAnd<AnyValue> litBoolCall = emitter.emitSpecialMethodCall(
+      boolCall.type, SpecialFunctionKind::kLitBool, argValue, condLoc);
   if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
     return {};
 
