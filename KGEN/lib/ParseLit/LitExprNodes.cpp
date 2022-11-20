@@ -349,7 +349,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 /// values.
 static ASTTypeAnd<AnyValue>
 emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
-                 ArrayRef<ArgumentValueType> operands, SMLoc callLoc,
+                 ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands, SMLoc callLoc,
                  ExprEmitter &emitter) {
   if (!calleeValAndType)
     return {};
@@ -408,19 +408,18 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
     // lvalue.
     Value argVal;
     if (isa<POP::PointerType>(expectedType)) {
-      argVal = argAnyValueTypeAndLoc.first.ir.getIfLValue();
+      argVal = argAnyValueTypeAndLoc.ir.getIfLValue();
       if (!argVal) {
         emitter.emitError(
-            argAnyValueTypeAndLoc.second,
+            argAnyValueTypeAndLoc.loc,
             "operand must be mutable in order to pass as a by-ref argument");
         return {};
       }
     } else {
       // Otherwise, we pass as an r-value.
-      argVal = emitter
-                   .emitDRValue(argAnyValueTypeAndLoc.first,
-                                argAnyValueTypeAndLoc.second)
-                   .ir;
+      argVal =
+          emitter.emitDRValue(argAnyValueTypeAndLoc, argAnyValueTypeAndLoc.loc)
+              .ir;
     }
 
     if (!argVal)
@@ -428,8 +427,8 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
 
     // TODO: Handle implicit conversions.
     if (argVal.getType() != expectedType) {
-      emitter.emitError(argAnyValueTypeAndLoc.second, "value of type ")
-          << argAnyValueTypeAndLoc.first.type
+      emitter.emitError(argAnyValueTypeAndLoc.loc, "value of type ")
+          << argAnyValueTypeAndLoc.type
           << " cannot be converted to expected type "
           // TODO: Print pretty expected type when we have it.
           << expectedType;
@@ -476,10 +475,10 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
 static ASTTypeAnd<AnyValue>
 emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
                  ExprEmitter &emitter) {
-  SmallVector<ArgumentValueType> operands;
+  SmallVector<ASTTypeSMLocAnd<AnyValue>> operands;
   for (ExprNode *arg : call.args) {
     operands.push_back({arg->emitIR(emitter), arg->getLoc()});
-    if (!operands.back().first)
+    if (!operands.back())
       return {};
   }
   return emitFunctionCall(calleeValAndType, operands, call.getLoc(), emitter);
@@ -556,7 +555,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 /// This returns null if emission fails.
 ASTTypeAnd<AnyValue> ExprEmitter::emitSpecialFunctionCall(
     ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
-    ArrayRef<ArgumentValueType> operands, SMLoc callLoc) {
+    ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands, SMLoc callLoc) {
 
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   // Look up the special function on the expr type.
@@ -844,6 +843,10 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
 
   // Process the attributes and figure out the result type if specified.
   for (auto &attr : unboundOp.getAttrs()) {
+    // TODO: Support zero results and multiple results by expanding _type to
+    // take an array of types, e.g. `_type: [__mlir_type.i1, __mlir_type.i32]`.
+    // This will require teaching Lit to emit arrays of attributes as an
+    // ArrayAttr or something.
     if (attr.getName() == "_type") {
       // The value must be a concrete or parametric type.
       if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr.getValue())) {
@@ -1323,8 +1326,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);
   // TODO: Add support for radd, looking up on the RHS.
-  ArgumentValueType argValues[] = {{lhsRep, lhs->getLoc()},
-                                   {rhsRep, rhs->getLoc()}};
+  ASTTypeSMLocAnd<AnyValue> argValues[] = {{lhsRep, lhs->getLoc()},
+                                           {rhsRep, rhs->getLoc()}};
   return emitter.emitSpecialFunctionCall(
       {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
       getLoc());
@@ -1342,7 +1345,7 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  ArgumentValueType argValue = {exprRep, subExpr->getLoc()};
+  ASTTypeSMLocAnd<AnyValue> argValue = {exprRep, subExpr->getLoc()};
 
   return emitter.emitSpecialFunctionCall(
       {exprRep.ir.getIfDRValue(), exprRep.type}, specialFnKind, argValue,
@@ -1356,7 +1359,7 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
     return {};
 
   SMLoc condLoc = condExpr->getLoc();
-  ArgumentValueType argValue = {{cond.ir, cond.type}, condLoc};
+  ASTTypeSMLocAnd<AnyValue> argValue = {{cond.ir, cond.type}, condLoc};
   ASTTypeAnd<AnyValue> boolCall = emitter.emitSpecialFunctionCall(
       cond, SpecialFunctionKind::kBool, argValue, condLoc);
   if (!boolCall)
