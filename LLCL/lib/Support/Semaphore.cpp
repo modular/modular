@@ -147,7 +147,7 @@ Semaphore::Impl::~Impl() {}
 void Semaphore::Impl::post() {
   {
     // Acquire the lock and increment the counter.
-    std::lock_guard lock(mut);
+    std::lock_guard<std::mutex> lock(mut);
     ++counter;
   }
 
@@ -156,7 +156,7 @@ void Semaphore::Impl::post() {
 
 bool Semaphore::Impl::wait() {
   // Use the condition variable to wait for counter to be greater than 0.
-  std::unique_lock lock(mut);
+  std::unique_lock<std::mutex> lock(mut);
 
   // If there is no timeout specified, use cv.wait to wait forever.
   cv.wait(lock, [&] { return counter > 0; });
@@ -165,7 +165,7 @@ bool Semaphore::Impl::wait() {
 
 bool Semaphore::Impl::wait(int64_t timeoutNS) {
   // Use the condition variable to wait for counter to be greater than 0.
-  std::unique_lock lock(mut);
+  std::unique_lock<std::mutex> lock(mut);
 
   // There's a timeout specified so wait for that number of nanoseconds.
   using namespace std::chrono_literals;
