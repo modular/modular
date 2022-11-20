@@ -33,7 +33,10 @@ struct ASTTypeAnd {
   operator bool() const { return ir; }
 };
 
-using ArgumentValueType = std::pair<ASTTypeAnd<AnyValue>, SMLoc>;
+template <typename ValueType>
+struct ASTTypeSMLocAnd : public ASTTypeAnd<ValueType> {
+  llvm::SMLoc loc;
+};
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -186,7 +189,8 @@ public:
   /// This returns null if emission fails.
   ASTTypeAnd<AnyValue>
   emitSpecialFunctionCall(ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
-                          ArrayRef<ArgumentValueType> operands, SMLoc callLoc);
+                          ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands,
+                          SMLoc callLoc);
 
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the

@@ -390,7 +390,7 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
     return failure();
 
   SMLoc condLoc = condExp->getLoc();
-  ArgumentValueType argValue = {{cond.ir, cond.type}, condLoc};
+  ASTTypeSMLocAnd<AnyValue> argValue = {{cond.ir, cond.type}, condLoc};
   ASTTypeAnd<AnyValue> boolCall =
       parser.getExprEmitter().emitSpecialFunctionCall(
           cond, SpecialFunctionKind::kBool, argValue, condLoc);

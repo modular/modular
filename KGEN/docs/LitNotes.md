@@ -119,11 +119,11 @@ lit.struct.decl @EmptyStruct {}
 lit.func @static(%x: !kgen.ref<@EmptyStruct>) {..}
 ```
 
-Because user defined type work this way, roughly the entire MLIR type system is
-separated off - but this is a good thing.  Lightning gives you access to arbitrary
-MLIR types, using the `__mlir_type` magic identifier, which you can access named
-types (in full MLIR syntax) as properties (note that the backticks are helpful
-for accessing things that don't fit into a standard Python identifier syntax):
+Byond user defined types, the entire MLIR type system is exposed using the
+`__mlir_type` magic identifier.  With it, you can access named
+types (in full MLIR syntax) as named properties.  The backticks syntax for an
+identifier are helpful for accessing things that don't fit into a standard
+Python identifier syntax:
 
 ```python
 fn takeMLIRTypes(a: __mlir_type.f32,
