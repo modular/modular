@@ -349,7 +349,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 /// values.
 static ASTTypeAnd<AnyValue>
 emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
-                 ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands, SMLoc callLoc,
+                 ArrayRef<ASTTypeExprAnd<AnyValue>> operands, SMLoc callLoc,
                  ExprEmitter &emitter) {
   if (!calleeValAndType)
     return {};
@@ -411,15 +411,16 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
       argVal = argAnyValueTypeAndLoc.ir.getIfLValue();
       if (!argVal) {
         emitter.emitError(
-            argAnyValueTypeAndLoc.loc,
+            argAnyValueTypeAndLoc.expr->getLoc(),
             "operand must be mutable in order to pass as a by-ref argument");
         return {};
       }
     } else {
       // Otherwise, we pass as an r-value.
-      argVal =
-          emitter.emitDRValue(argAnyValueTypeAndLoc, argAnyValueTypeAndLoc.loc)
-              .ir;
+      argVal = emitter
+                   .emitDRValue(argAnyValueTypeAndLoc,
+                                argAnyValueTypeAndLoc.expr->getLoc())
+                   .ir;
     }
 
     if (!argVal)
@@ -427,7 +428,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
 
     // TODO: Handle implicit conversions.
     if (argVal.getType() != expectedType) {
-      emitter.emitError(argAnyValueTypeAndLoc.loc, "value of type ")
+      emitter.emitError(argAnyValueTypeAndLoc.expr->getLoc(), "value of type ")
           << argAnyValueTypeAndLoc.type
           << " cannot be converted to expected type "
           // TODO: Print pretty expected type when we have it.
@@ -475,9 +476,9 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
 static ASTTypeAnd<AnyValue>
 emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
                  ExprEmitter &emitter) {
-  SmallVector<ASTTypeSMLocAnd<AnyValue>> operands;
+  SmallVector<ASTTypeExprAnd<AnyValue>> operands;
   for (ExprNode *arg : call.args) {
-    operands.push_back({arg->emitIR(emitter), arg->getLoc()});
+    operands.push_back({arg->emitIR(emitter), arg});
     if (!operands.back())
       return {};
   }
@@ -555,7 +556,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 /// This returns null if emission fails.
 ASTTypeAnd<AnyValue> ExprEmitter::emitSpecialFunctionCall(
     ASTTypeAnd<DRValue> caller, SpecialFunctionKind kind,
-    ArrayRef<ASTTypeSMLocAnd<AnyValue>> operands, SMLoc callLoc) {
+    ArrayRef<ASTTypeExprAnd<AnyValue>> operands, SMLoc callLoc) {
 
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   // Look up the special function on the expr type.
@@ -1326,8 +1327,7 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);
   // TODO: Add support for radd, looking up on the RHS.
-  ASTTypeSMLocAnd<AnyValue> argValues[] = {{lhsRep, lhs->getLoc()},
-                                           {rhsRep, rhs->getLoc()}};
+  ASTTypeExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
   return emitter.emitSpecialFunctionCall(
       {lhsRep.ir.getIfDRValue(), lhsRep.type}, specialFnKind, argValues,
       getLoc());
@@ -1345,7 +1345,7 @@ ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  ASTTypeSMLocAnd<AnyValue> argValue = {exprRep, subExpr->getLoc()};
+  ASTTypeExprAnd<AnyValue> argValue = {exprRep, subExpr};
 
   return emitter.emitSpecialFunctionCall(
       {exprRep.ir.getIfDRValue(), exprRep.type}, specialFnKind, argValue,
@@ -1359,13 +1359,13 @@ ASTTypeAnd<AnyValue> TernaryOpNode::emitIR(ExprEmitter &emitter,
     return {};
 
   SMLoc condLoc = condExpr->getLoc();
-  ASTTypeSMLocAnd<AnyValue> argValue = {{cond.ir, cond.type}, condLoc};
+  ASTTypeExprAnd<AnyValue> argValue = {{cond.ir, cond.type}, condExpr};
   ASTTypeAnd<AnyValue> boolCall = emitter.emitSpecialFunctionCall(
       cond, SpecialFunctionKind::kBool, argValue, condLoc);
   if (!boolCall)
     return {};
 
-  argValue = {boolCall, condLoc};
+  argValue = {boolCall, condExpr};
   ASTTypeAnd<AnyValue> litBoolCall = emitter.emitSpecialFunctionCall(
       {boolCall.ir.getIfDRValue(), boolCall.type},
       SpecialFunctionKind::kLitBool, argValue, condLoc);
