@@ -1,4 +1,5 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
+
 
 __include "prolog.lit"
 
@@ -18,14 +19,31 @@ __include "prolog.lit"
 #     kgen.return %t1 : !pop.scalar<type>
 #   }
 
-def fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[type]:
+fn fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[type]:
   # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
   return x
 
 @interface
-def erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]: ...
+fn erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]: ...
 
 @implements(erf_scalar)
-def erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
-# expected-error @+1 {{'Scalar[type]' does not implement the "__mul__" special method}}
-  return x * fma[type](x*x, -0.37612638903183752463, 1.1283791670955125739)
+fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
+#  TODO: return x * fma[type](x*x, -0.37612638903183752463, 1.1283791670955125739)
+  return x
+
+
+# CHECK-LABEL: lit.func @fma_f32
+fn fma_f32(x: F32, y: F32, z: F32) -> F32:
+# CHECK: %0 = kgen.call_param[(!kgen.ref<@F32>, !kgen.ref<@F32>) -> !kgen.ref<@F32>: @F32::@__mul__](%x, %y)
+# CHECK: %1 = kgen.call_param[(!kgen.ref<@F32>, !kgen.ref<@F32>) -> !kgen.ref<@F32>: @F32::@__add__](%0, %z)
+# CHECK: kgen.return %1 : !kgen.ref<@F32>
+  return x*y+z
+
+@interface
+fn erf_scalar_f32(x: F32) -> F32: ...
+
+# CHECK-LABEL: lit.func @erf_scalar_taylor_f32
+@implements(erf_scalar_f32)
+fn erf_scalar_taylor_f32(x: F32) -> F32:
+  # CHECK: = kgen.param.constant: f64 = <0.37612638903183754>
+  return x * fma_f32(x*x, -F32(0.37612638903183752463), F32(1.1283791670955125739))
