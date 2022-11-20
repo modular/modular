@@ -345,7 +345,7 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
     auto typeParams = ParamBindArrayAttr::get(context, attrBindings);
     // FIXME: Shouldn't force a flat attr.
     auto flatAttr = cast<FlatSymbolRefAttr>(decl.getSymbolRef());
-    return result = RefType::get(flatAttr, typeParams);
+    return result = DeclRefType::get(flatAttr, typeParams);
   }
 
   // If this is a direct reference to an MLIR type, use it.

@@ -1375,7 +1375,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 /// parameterized under different domains. We have to rebind them.
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 RefType ref) {
+                 DeclRefType ref) {
   auto module = KGENModule::from(user, symbolTable);
   auto structDecl = module.lookup<StructDeclOp>(ref.getName());
   // Currently, this is impossible to fail because the symbol use was verified
@@ -1440,7 +1440,7 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
-                         RefType ref, StringAttr fieldName, Type type) {
+                         DeclRefType ref, StringAttr fieldName, Type type) {
   auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
@@ -1473,7 +1473,8 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(
       symbolTable, *this,
-      cast<RefType>(cast<TypeConstantAttr>(refExpr).getValue()), getFieldAttr(),
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
+      getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
 }
 

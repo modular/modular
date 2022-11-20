@@ -44,12 +44,12 @@ public:
       : IRRewriter(ctx), structDecls(structDecls) {}
 
   /// Get the index of the struct field.
-  int64_t getField(StringAttr name, RefType ref) const {
+  int64_t getField(StringAttr name, DeclRefType ref) const {
     return structDecls.fields.lookup({ref.getName(), name});
   }
 
   /// Replace a KGEN struct with a POP struct.
-  Type substituteStructRef(RefType ref);
+  Type substituteStructRef(DeclRefType ref);
 
   /// Recursively substitute types.
   Type substituteTypes(Type type);
@@ -66,7 +66,7 @@ private:
 };
 } // namespace
 
-Type StructOperationLowerer::substituteStructRef(RefType ref) {
+Type StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fieldTypes.find(ref.getName());
   assert(it != structDecls.fieldTypes.end());
   // Substitute parameters into the field types.
@@ -81,13 +81,13 @@ Type StructOperationLowerer::substituteStructRef(RefType ref) {
 }
 
 Type StructOperationLowerer::substituteTypes(Type type) {
-  if (auto ref = dyn_cast<RefType>(type))
+  if (auto ref = dyn_cast<DeclRefType>(type))
     type = substituteStructRef(ref);
   auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
   if (!itf)
     return type;
   return itf.replaceSubElements([&](Type type) -> Type {
-    if (auto ref = dyn_cast<RefType>(type))
+    if (auto ref = dyn_cast<DeclRefType>(type))
       return substituteStructRef(ref);
     return type;
   });
@@ -95,7 +95,7 @@ Type StructOperationLowerer::substituteTypes(Type type) {
 
 void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
   auto type = op->getResultTypes().front();
-  if (!isa<RefType>(type))
+  if (!isa<DeclRefType>(type))
     return IRRewriter::replaceOp(op, values);
   auto source = create<mlir::UnrealizedConversionCastOp>(op->getLoc(), type,
                                                          values.front());
@@ -129,7 +129,7 @@ static void lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
                           StructOperationLowerer &lowerer) {
   Type structType = op.getContainer().getType().getResolvedElementType();
   int64_t index =
-      lowerer.getField(op.getFieldAttr(), cast<RefType>(structType));
+      lowerer.getField(op.getFieldAttr(), cast<DeclRefType>(structType));
   lowerer.replaceOpWithNewOp<POP::StructGEPOp>(op, adaptor.getContainer(),
                                                lowerer.getIndexAttr(index));
 }

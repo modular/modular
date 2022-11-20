@@ -21,7 +21,7 @@ using namespace KGEN;
 
 /// Lookup the struct declaration and rebind it.
 static std::pair<StructDeclOp, ParameterEvaluator>
-lookupStructDecl(SymbolTable &symtab, RefType type) {
+lookupStructDecl(SymbolTable &symtab, DeclRefType type) {
   ParameterEvaluator evaluator(&symtab);
   for (ParamBindAttr bind : type.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
@@ -35,8 +35,9 @@ static Optional<int64_t> computeAlignof(SymbolTable &symtab,
 
 /// Build the expression to compute the alignment of a struct type. Returns none
 /// if it could not be computed.
-static Optional<int64_t>
-computeStructAlignof(SymbolTable &symtab, TargetInfoAttr target, RefType type) {
+static Optional<int64_t> computeStructAlignof(SymbolTable &symtab,
+                                              TargetInfoAttr target,
+                                              DeclRefType type) {
   auto [decl, evaluator] = lookupStructDecl(symtab, type);
   if (!decl)
     return {};
@@ -57,7 +58,7 @@ computeStructAlignof(SymbolTable &symtab, TargetInfoAttr target, RefType type) {
 /// Get the alignemnt of a type.
 static Optional<int64_t> computeAlignof(SymbolTable &symtab,
                                         TargetInfoAttr target, Type type) {
-  if (auto ref = dyn_cast<RefType>(type))
+  if (auto ref = dyn_cast<DeclRefType>(type))
     return computeStructAlignof(symtab, target, ref);
   return DataLayoutInterface::getTypeAlignInBytes(target, type);
 }
@@ -68,8 +69,9 @@ static Optional<int64_t> computeSizeof(SymbolTable &symtab,
 
 /// Build the expression to compute the size of a struct type. Returns none if
 /// it could not be computed.
-static Optional<int64_t>
-computeStructSizeof(SymbolTable &symtab, TargetInfoAttr target, RefType type) {
+static Optional<int64_t> computeStructSizeof(SymbolTable &symtab,
+                                             TargetInfoAttr target,
+                                             DeclRefType type) {
   auto [decl, evaluator] = lookupStructDecl(symtab, type);
   if (!decl)
     return {};
@@ -94,7 +96,7 @@ computeStructSizeof(SymbolTable &symtab, TargetInfoAttr target, RefType type) {
 /// Get the size of a type.
 static Optional<int64_t> computeSizeof(SymbolTable &symtab,
                                        TargetInfoAttr target, Type type) {
-  if (auto ref = dyn_cast<RefType>(type))
+  if (auto ref = dyn_cast<DeclRefType>(type))
     return computeStructSizeof(symtab, target, ref);
   return DataLayoutInterface::getTypeSizeInBytes(target, type);
 }
@@ -106,7 +108,7 @@ ParameterEvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
   if (!typeCst)
     return {op};
-  auto ref = dyn_cast<RefType>(typeCst.getValue());
+  auto ref = dyn_cast<DeclRefType>(typeCst.getValue());
   if (!ref)
     return {op};
   // FIXME: Target info should be passed through the operator.

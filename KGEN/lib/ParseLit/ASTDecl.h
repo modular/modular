@@ -19,7 +19,7 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
-class RefType;
+class DeclRefType;
 }
 
 namespace M::KGEN::LIT {

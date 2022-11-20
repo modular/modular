@@ -141,7 +141,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 /// parameterized under different domains. We have to rebind them.
 static LogicalResult
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 RefType ref,
+                 DeclRefType ref,
                  std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
   auto module = KGENModule::from(user, symbolTable);
   auto structDecl = module.lookup<LITStructDeclOp>(ref.getName());
@@ -158,7 +158,7 @@ lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
-                         RefType ref, StringAttr fieldName, Type type) {
+                         DeclRefType ref, StringAttr fieldName, Type type) {
 
   std::pair<LITStructDeclOp, ParameterEvaluator> structDeclEval;
   if (failed(lookupStructDecl(symbolTable, op, ref, structDeclEval)))
@@ -183,8 +183,9 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
 LogicalResult
 LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getStructVal().getType();
-  return verifyStructFieldAndType(symbolTable, *this, cast<RefType>(structType),
-                                  getFieldAttr(), getResult().getType());
+  return verifyStructFieldAndType(symbolTable, *this,
+                                  cast<DeclRefType>(structType), getFieldAttr(),
+                                  getResult().getType());
 }
 
 LogicalResult
@@ -192,7 +193,8 @@ LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(
       symbolTable, *this,
-      cast<RefType>(cast<TypeConstantAttr>(refExpr).getValue()), getFieldAttr(),
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
+      getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
 }
 

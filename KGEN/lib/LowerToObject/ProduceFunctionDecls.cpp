@@ -105,7 +105,7 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
       return success();
     }
 
-    if (auto ref = dyn_cast<RefType>(t)) {
+    if (auto ref = dyn_cast<DeclRefType>(t)) {
       auto decl = symtab.lookup<StructDeclOp>(ref.getName());
       ParameterEvaluator evaluator;
       for (ParamBindAttr bind : ref.getParamValues())
