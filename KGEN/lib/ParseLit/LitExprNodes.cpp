@@ -487,17 +487,14 @@ emitFunctionCall(const CallNode &call, ASTTypeAnd<RValue> calleeValAndType,
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &decl,
+static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
                                             ExprEmitter &emitter) {
-  // Generate a nested symbol ref if we are a method in a struct.
-  SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnOp.getNameAttr());
-  if (auto parentStruct = dyn_cast<LITStructDeclOp>(*decl.getParentDecl()))
-    symbolRef = SymbolRefAttr::get(parentStruct.getNameAttr(),
-                                   cast<FlatSymbolRefAttr>(symbolRef));
-  auto fnAttr = SymbolConstantAttr::get(symbolRef, fnOp.getSignature());
+  // SymbolConstantAttr provides a type for the SymbolRefAttr.
+  auto fnAttr =
+      SymbolConstantAttr::get(fnDecl.getSymbolRef(), fnOp.getSignature());
 
   // TODO: Correct argument/parameter type.
-  ASTType astType = emitter.shared.getFunctionType(decl.getResolvedType());
+  ASTType astType = emitter.shared.getFunctionType(fnDecl.getResolvedType());
   return {MValue(fnAttr), astType};
 }
 

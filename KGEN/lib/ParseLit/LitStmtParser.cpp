@@ -604,6 +604,10 @@ void FnAttributes::processDecorator(ExprNode *decorator,
     if (implementedInterface)
       parser.emitError(decorator->getLoc(),
                        "only one @implements decorator is allowed");
+
+    // FIXME: This is incorrect. This should do name lookup on the specified
+    // name and use getSymbolRef() on the returned ASTDecl, rather than forming
+    // it directly.  There is no reason to force interfaces to be top-level.
     StringRef interfaceName =
         cast<DeclRefNode>(callNode->args.front())->spelling;
     implementedInterface =

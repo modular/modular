@@ -44,6 +44,34 @@ RValue ASTDecl::getIfRValue() const {
   return {};
 }
 
+/// Return the SymbolRefAttr for a declaration, including all scoping that may
+/// be needed, making it unique for every declaration.  This returns null for
+/// named values that do not have a declaration.
+SymbolRefAttr ASTDecl::getSymbolRef() const {
+  auto *op = getIfOperation();
+  if (!op)
+    return {};
+
+  if (auto structOp = dyn_cast<LITStructDeclOp>(op)) {
+    // TODO: Support nested/local structs.
+    return FlatSymbolRefAttr::get(structOp.getNameAttr());
+  }
+
+  if (auto fnOp = dyn_cast<LITFuncOp>(op)) {
+    // TODO: Support multiple levels of nesting.  This should be recursive, and
+    // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
+    // forms a properly flattened reference by unwinding the RHS if it isn't
+    // flat.
+    SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnOp.getNameAttr());
+    if (auto parentStruct = dyn_cast<LITStructDeclOp>(*getParentDecl()))
+      symbolRef = SymbolRefAttr::get(parentStruct.getNameAttr(),
+                                     cast<FlatSymbolRefAttr>(symbolRef));
+    return symbolRef;
+  }
+
+  return {};
+}
+
 /// Given an MLIR op for a struct declaration, return the self type.
 ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<LITStructDeclOp>(*this);
