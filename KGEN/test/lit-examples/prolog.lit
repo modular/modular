@@ -8,7 +8,16 @@
 #===------------------------------------------------------------------------===#
 
 struct DType:
-  pass
+  var value : __mlir_type.`!kgen.dtype`
+
+  fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
+    var result: DType
+    result.value = value
+    return result
+
+  @staticmethod
+  fn getF32() -> DType:
+    return DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
 
 struct Scalar[type: DType]:
   pass
