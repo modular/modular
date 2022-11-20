@@ -934,14 +934,22 @@ static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
     auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
     // If the result was some other value that already exists, use it.
     if (auto val = dyn_cast<Value>(folded)) {
-      resultOp->erase();
-      return {DRValue(val), astType};
+      // FIXME: This should be an assert but pop seems broken:
+      // https://github.com/modularml/modular/issues/5162
+      if (val.getType() == resultOp->getResult(0).getType()) {
+        resultOp->erase();
+        return {DRValue(val), astType};
+      }
     }
 
     if (auto attr = dyn_cast<TypedAttr>(cast<Attribute>(folded))) {
-      // If it is a constant, make an MAValue result.
-      resultOp->erase();
-      return {MAValue(attr), astType};
+      // FIXME: This should be an assert but pop seems broken:
+      // https://github.com/modularml/modular/issues/5162
+      if (attr.getType() == resultOp->getResult(0).getType()) {
+        // If it is a constant, make an MAValue result.
+        resultOp->erase();
+        return {MAValue(attr), astType};
+      }
     }
   }
 

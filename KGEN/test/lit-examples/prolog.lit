@@ -50,6 +50,9 @@ struct Bool:
   fn __bool__(self: Bool) -> Bool:
      return self
 
+  # This method is a special hook used by the compiler to test boolean objects
+  # in control flow conditions.  It should be implemented by Bool but not other
+  # general boolean convertible types (they should implement __bool__ instead).
   fn __lit_bool(self: Bool) -> __mlir_type.i1:
      return self.value
 
@@ -108,7 +111,7 @@ struct Int:
                 __mlir_attr.`#index<cmp_predicate sge>`](self.value, rhs.value))
 
   fn __pos__(self) -> Int:
-    return Int(self.value)
+    return self
 
   fn __neg__(self) -> Int:
     return Int(__mlir_op.`index.sub`(0, self.value))
@@ -218,6 +221,122 @@ struct Int:
   fn __ior__(&self, rhs: Int) -> Int:
     self = self.__or__(rhs)
     return self
+
+#===------------------------------------------------------------------------===#
+# F32
+#===------------------------------------------------------------------------===#
+#
+# TODO: This should eventually be a typealias for a generic scalar type when
+# parameters are fully working, and we have typealiases.
+#
+
+# CHECK-LABEL: lit.struct.decl @F32 {
+struct F32:
+  var value : __mlir_type.`!pop.scalar<f32>`
+
+  # Literals always are represented with f64 for now.
+  fn __new__(value: __mlir_type.f64) -> F32:
+    var pop64 = __mlir_op.`pop.cast_from_builtin`
+      [_type: __mlir_type.`!pop.scalar<f64>`](value)
+    return _getFromStorage(__mlir_op.`pop.cast`
+      [_type: __mlir_type.`!pop.scalar<f32>`](pop64))
+
+  # TODO: This should be an overloaded __new__ someday.
+  @staticmethod
+  fn _getFromStorage(value: __mlir_type.`!pop.scalar<f32>`) -> F32:
+    var result: F32
+    result.value = value
+    return result
+
+  @staticmethod
+  fn _getBool(value: __mlir_type.`!pop.scalar<bool>`) -> Bool:
+    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](value))
+
+  fn __lt__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
+
+  fn __le__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
+
+  fn __eq__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                       __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
+
+  fn __ne__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
+
+  fn __gt__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
+
+  fn __ge__(self, rhs: F32) -> Bool:
+    return _getBool(__mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+
+  fn __pos__(self) -> F32:
+    return self
+
+  fn __neg__(self) -> F32:
+    var zero = __mlir_op.`pop.constant`[value: __mlir_attr.`0.0: f32`,
+                                        _type: __mlir_type.`!pop.scalar<f32>`]()
+    return F32._getFromStorage(__mlir_op.`pop.sub`(zero, self.value))
+
+  fn __add__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(__mlir_op.`pop.add`(self.value, rhs.value))
+
+  fn __sub__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(__mlir_op.`pop.sub`(self.value, rhs.value))
+
+  fn __mul__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(__mlir_op.`pop.mul`(self.value, rhs.value))
+
+  fn __truediv__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+
+  fn __floordiv__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+
+  fn __mod__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+
+  fn __pow__(self, rhs: F32) -> F32:
+    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+
+  #===----------------------------------------------------------------------===#
+  # In place operations.
+  #===----------------------------------------------------------------------===#
+
+  fn __iadd__(&self, rhs: F32) -> F32:
+    self = self.__add__(rhs)
+    return self
+
+  fn __isub__(&self, rhs: F32) -> F32:
+    self = self.__sub__(rhs)
+    return self
+
+  fn __imul__(&self, rhs: F32) -> F32:
+    self = self.__mul__(rhs)
+    return self
+
+  fn __itruediv__(&self, rhs: F32) -> F32:
+    self = self.__truediv__(rhs)
+    return self
+
+  fn __ifloordiv__(&self, rhs: F32) -> F32:
+    self = self.__floordiv__(rhs)
+    return self
+
+  fn __imod__(&self, rhs: F32) -> F32:
+    self = self.__mod__(rhs)
+    return self
+
+  fn __ipow__(&self, rhs: F32) -> F32:
+    self = self.__pow__(rhs)
+    return self
+
 
 # TODO: Enable this with & sugar on 'type' type.
 struct Pointer[ElementType: type]:
