@@ -241,4 +241,43 @@ def DeclRefType : KGENType<"DeclRef", "ref",
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// LITDeclRefType
+//===----------------------------------------------------------------------===//
+
+/// TODO: This should be part of the LIT level, except that POP needs to depend
+/// on it for pretty printing/parsing purposes so we can get <?@foo<..>> syntax.
+def LITDeclRefType : KGENType<"LITDeclRef", "litdeclref",
+    [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+  let summary = "Reference to a type declaration.";
+  let description = [{
+    A `!kgen.litdeclref` type references a type declaration and binds parameter
+    values to the type.  Unlike the lower level !kgen.ref type, it is more
+    flexible: it allows nested symbols and partially specified parameter
+    bindings.  These are resolved when lowering to kgen.
+
+    Example:
+
+    ```mlir
+    !kgen.litdeclref<@MyStruct<size = 1, T:dtype = fooType>>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol,
+                        "ParamBindArrayAttr":$paramValues);
+  let assemblyFormat = [{
+    `<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "ParamBindArrayAttr":$paramValues)>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name)>
+  ];
+
+  let extraClassDeclaration = [{
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

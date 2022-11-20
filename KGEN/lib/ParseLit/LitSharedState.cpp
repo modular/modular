@@ -14,7 +14,6 @@
 #include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -343,9 +342,7 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
 
     // Everything looks good, go forth!
     auto typeParams = ParamBindArrayAttr::get(context, attrBindings);
-    // FIXME: Shouldn't force a flat attr.
-    auto flatAttr = cast<FlatSymbolRefAttr>(decl.getSymbolRef());
-    return result = DeclRefType::get(flatAttr, typeParams);
+    return result = LITDeclRefType::get(decl.getSymbolRef(), typeParams);
   }
 
   // If this is a direct reference to an MLIR type, use it.

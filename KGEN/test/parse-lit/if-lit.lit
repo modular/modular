@@ -2,25 +2,25 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @test_if(%a: !kgen.ref<@Bool>, %b: !kgen.ref<@Bool>, %c: !kgen.ref<@Bool>) -> !kgen.ref<@Bool> {
+# CHECK-LABEL: lit.func @test_if(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>, %c: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool> {
 def test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   # CHECK:          hlcf.if
   if a:
-    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" : <@Int>
+    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
     var inside_a: Int
   # CHECK:          } else {
   # CHECK:            hlcf.if
   elif b:
-    # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <@Int>
+    # CHECK-NEXT: %inside_b = lit.var.decl "inside_b"
     var inside_b : Int
   # CHECK:            } else {
   # CHECK:              hlcf.if
   elif c:
-    # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <@Int>
+    # CHECK-NEXT: %inside_c = lit.var.decl "inside_c"
     var inside_c: Int
   # CHECK:              } else {
   else:
-    # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <@Int>
+    # CHECK-NEXT: %inside_else = lit.var.decl "inside_else"
     var inside_else: Int
   # CHECK:                hlcf.yield
   # CHECK-NEXT:         }
@@ -32,30 +32,30 @@ def test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   return a
 
 
-# CHECK-LABEL: lit.func @test_if_nested(%a: !kgen.ref<@Bool>, %b: !kgen.ref<@Bool>, %c: !kgen.ref<@Bool>) -> !kgen.ref<@Bool> {
+# CHECK-LABEL: lit.func @test_if_nested(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>, %c: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool> {
 def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-  #CHECK:        %[[LOAD_A:.*]] = pop.load %a_0  : !pop.pointer<@Bool>
+  #CHECK:        %[[LOAD_A:.*]] = pop.load %a_0
   #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%[[LOAD_A]])
   #CHECK-NEXT:   %[[LIT_BOOL:.*]]  = kgen.call_param{{.*}}  @Bool::@__lit_bool](%[[BOOL]])
   # CHECK-NEXT:              hlcf.if %[[LIT_BOOL]]
   if a:
-    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" : <@Int>
+    # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
     var inside_a: Int
   # CHECK:                   } else {
   # CHECK:                     hlcf.if
   else:
     if b:
-      # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" : <@Int>
+      # CHECK-NEXT: %inside_b = lit.var.decl "inside_b"
       var inside_b : Int
   # CHECK:                     } else {
   # CHECK:                       hlcf.if
     else:
       if c:
-        # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" : <@Int>
+        # CHECK-NEXT: %inside_c = lit.var.decl "inside_c"
         var inside_c: Int
   # CHECK:                       } else {
       else:
-        # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" : <@Int>
+        # CHECK-NEXT: %inside_else = lit.var.decl "inside_else"
         var inside_else: Int
   # CHECK:                         hlcf.yield
   # CHECK:                       }

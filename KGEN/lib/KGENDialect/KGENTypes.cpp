@@ -223,6 +223,19 @@ DeclRefType DeclRefType::get(FlatSymbolRefAttr name) {
 }
 
 //===----------------------------------------------------------------------===//
+// LITDeclRefType
+//===----------------------------------------------------------------------===//
+
+LITDeclRefType LITDeclRefType::get(SymbolRefAttr name,
+                                   ParamBindArrayAttr paramValues) {
+  return get(name.getContext(), name, paramValues);
+}
+
+LITDeclRefType LITDeclRefType::get(SymbolRefAttr name) {
+  return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

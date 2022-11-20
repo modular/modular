@@ -128,7 +128,7 @@ def WeirdMetaParams(a: Thing[1, "foo"]):
 
 def voidReturningFn(): pass
 def badCall():
-  # expected-error @+1 {{value of type 'None' cannot be converted to expected type '!kgen.ref<@NotBoolConvertible>'}}
+  # expected-error @+1 {{value of type 'None' cannot be converted to expected type '!kgen.litdeclref<@NotBoolConvertible>'}}
   test_bool_context(voidReturningFn())
 
 
@@ -136,7 +136,7 @@ def generic_fn[a: DType, b: index](c : index):
 
 def call_generic[dt: DType]():
   generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
-  generic_fn[1, dt](57) # expected-error {{index has type '!builtin.index' but declaration expects '!kgen.ref<@DType>'}}
+  generic_fn[1, dt](57) # expected-error {{index has type '!builtin.index' but declaration expects '!kgen.litdeclref<@DType>'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}

@@ -141,10 +141,10 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 /// parameterized under different domains. We have to rebind them.
 static LogicalResult
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 DeclRefType ref,
+                 LITDeclRefType ref,
                  std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
   auto module = KGENModule::from(user, symbolTable);
-  auto structDecl = module.lookup<LITStructDeclOp>(ref.getName());
+  auto structDecl = module.lookup<LITStructDeclOp>(ref.getSymbol());
   if (!structDecl)
     return user->emitOpError("expected a struct declaration");
 
@@ -158,7 +158,7 @@ lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
-                         DeclRefType ref, StringAttr fieldName, Type type) {
+                         LITDeclRefType ref, StringAttr fieldName, Type type) {
 
   std::pair<LITStructDeclOp, ParameterEvaluator> structDeclEval;
   if (failed(lookupStructDecl(symbolTable, op, ref, structDeclEval)))
@@ -177,15 +177,15 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
   }
 
   return op->emitOpError("struct ")
-         << ref.getName() << " has no field named " << fieldName;
+         << ref.getSymbol() << " has no field named " << fieldName;
 }
 
 LogicalResult
 LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getStructVal().getType();
   return verifyStructFieldAndType(symbolTable, *this,
-                                  cast<DeclRefType>(structType), getFieldAttr(),
-                                  getResult().getType());
+                                  cast<LITDeclRefType>(structType),
+                                  getFieldAttr(), getResult().getType());
 }
 
 LogicalResult
@@ -193,7 +193,7 @@ LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(
       symbolTable, *this,
-      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
+      cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
       getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
 }
