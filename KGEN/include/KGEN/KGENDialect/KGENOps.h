@@ -49,8 +49,8 @@ public:
     return dyn_cast_or_null<OpT>(symbolTable.lookupSymbolIn(module, name));
   }
   template <typename OpT>
-  OpT lookup(FlatSymbolRefAttr symbol) {
-    return lookup<OpT>(symbol.getAttr());
+  OpT lookup(SymbolRefAttr symbol) {
+    return dyn_cast_or_null<OpT>(symbolTable.lookupSymbolIn(module, symbol));
   }
 
 private:
