@@ -618,7 +618,7 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
                                           size_t curIndent) {
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(LitToken::kw_def);
-  Location loc = getTokenLocation();
+  SMLoc loc = getToken().getLoc();
   consumeToken();
 
   StringAttr name;
@@ -647,7 +647,7 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   if (attrs.isInterface && isMethod)
     emitError(loc, "interfaces cannot be nested inside a struct");
 
-  auto funcDecl = builder.create<LITFuncOp>(loc, name);
+  auto funcDecl = builder.create<LITFuncOp>(translateLocation(loc), name);
   if (attrs.isInterface)
     funcDecl.setIsInterfaceAttr(mlir::UnitAttr::get(getContext()));
   if (attrs.implementedInterface)

@@ -52,12 +52,13 @@ public:
     return getSharedState().emitError(loc, message);
   }
 
+  /// Emit an error at a specific lexer location.
+  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
+
   /// Emit an error at the current token.
   InFlightDiagnostic emitError(const Twine &message = {}) {
     return emitError(getToken().getLoc(), message);
   }
-  /// Emit an error at a specific lexer location.
-  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
 
   //===--------------------------------------------------------------------===//
   // Location Handling
