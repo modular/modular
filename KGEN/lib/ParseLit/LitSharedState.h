@@ -77,13 +77,6 @@ public:
   /// This is the "type" type, which can bind to any lit type.
   ASTType getTypeType() const;
 
-  // TODO: Add IntegerLiteralType.
-  ASTType getFloatLiteralType() const;
-  ASTType getStringLiteralType() const;
-
-  /// This is the decl for the builtin 'index' type.
-  // ASTType getIndexType() const;
-
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
@@ -189,12 +182,7 @@ enum class MagicDeclKind : uint8_t {
 
   // This is the 'type' type.
   kTypeType,
-  // TODO: builtin.IntegerLiteralType
-  // This is the '__builtin.FloatLiteralType' type.
-  kFloatLiteralType,
-  // This is the '__builtin.StringLiteralType' type.
-  kStringLiteralType,
-  // This is the __builtin.mlirtype["lit.none"] type.
+  // This is the None type.
   kNoneType,
   // This is a FunctionType that is lowered to a KGEN::SignatureType.
   kFunctionType,

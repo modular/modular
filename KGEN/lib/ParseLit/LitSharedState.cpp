@@ -66,9 +66,6 @@ public:
   ASTDecl *mlirTypeDecl = nullptr;
   /// This is the "type" type, which can bind to any lit type.
   ASTDecl *typeTypeDecl = nullptr;
-  // TODO: Add IntegerLiteralType.
-  ASTDecl *floatLiteralTypeDecl = nullptr;
-  ASTDecl *stringLiteralTypeDecl = nullptr;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
   /// This is the decl for the builtin signature type.
@@ -148,14 +145,6 @@ ASTType LitSharedState::getTypeType() const {
   return impl->typeTypeDecl->getResolvedType();
 }
 
-ASTType LitSharedState::getFloatLiteralType() const {
-  return impl->floatLiteralTypeDecl->getResolvedType();
-}
-
-ASTType LitSharedState::getStringLiteralType() const {
-  return impl->stringLiteralTypeDecl->getResolvedType();
-}
-
 ASTType LitSharedState::getNoneType() const {
   return impl->noneDecl->getResolvedType();
 }
@@ -197,10 +186,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   // Add a declarations for builtin types.
   impl->typeTypeDecl =
       &resolver.addMagicDecl("type", MagicDeclKind::kTypeType, &builtinsDecl);
-  impl->floatLiteralTypeDecl = &resolver.addMagicDecl(
-      "FloatLiteralType", MagicDeclKind::kFloatLiteralType, &builtinsDecl);
-  impl->stringLiteralTypeDecl = &resolver.addMagicDecl(
-      "StringLiteralType", MagicDeclKind::kStringLiteralType, &builtinsDecl);
   impl->noneDecl =
       &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
 
@@ -287,11 +272,6 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
       return result = TypeCheckErrorType::get(context);
     case MagicDeclKind::kTypeType:
       return result = MLIRTypeType::get(context);
-    case MagicDeclKind::kFloatLiteralType:
-      return result = Float64Type::get(context);
-    case MagicDeclKind::kStringLiteralType:
-      // FIXME: Add a sensible type.
-      return result = IndexType::get(context);
     case MagicDeclKind::kNoneType:
       return result = KGEN::NoneType::get(context);
     case MagicDeclKind::kTypeCheckErrorType:
