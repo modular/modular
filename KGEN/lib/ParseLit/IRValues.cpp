@@ -126,7 +126,7 @@ TypedAttr MValue::lowerToAttribute(LitSharedState &shared, Location loc) const {
   // If this is a type, convert it.
   auto astType = getIfMTValue();
   assert(astType && "Unknown MValue kind");
-  return ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc));
+  return ParameterizedTypeConstantAttr::get(astType.getMLIRType());
 }
 
 /// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
@@ -142,5 +142,5 @@ TypedAttr MValue::lowerToAttribute(LitSharedState &shared,
   // If this is a type, convert it.
   auto astType = getIfMTValue();
   assert(astType && "Unknown MValue kind");
-  return ParameterizedTypeConstantAttr::get(shared.getMLIRType(astType, loc));
+  return ParameterizedTypeConstantAttr::get(astType.getMLIRType());
 }

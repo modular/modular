@@ -306,13 +306,11 @@ struct ParsedMetaSignature {
       }
 
       ASTType paramType;
-      auto loc = p.getToken().getLoc();
       if (p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
           p.parseType(paramType, decl, None))
         return failure();
-      inputDecls.push_back(ParamDeclAttr::get(
-          name, p.getSharedState().getMLIRType(paramType, loc)));
+      inputDecls.push_back(ParamDeclAttr::get(name, paramType.getMLIRType()));
       inputASTTypes.push_back(paramType);
       return success();
     };
@@ -574,7 +572,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   // a fn can return void.  We can provide a guaranteed optimization to remove
   // it though.
   ASTType resultType;
-  SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, decl, None))
       return failure();
@@ -602,7 +599,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   // The resolvedType for a function is the return type of the function.
   decl.setResolvedType(resultType);
-  auto resultIRType = sharedState.getMLIRType(resultType, resultLoc);
+  auto resultIRType = resultType.getMLIRType();
 
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
@@ -613,7 +610,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
     // Install the correct MLIR Type, which is the MLIR projection of the AST
     // type with any convention changes applied.
-    auto mlirType = sharedState.getMLIRType(param.type, param.loc);
+    auto mlirType = param.type.getMLIRType();
     if (param.isByRef)
       mlirType = POP::PointerType::get(mlirType);
     paramTypes.push_back(mlirType);
@@ -727,15 +724,12 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
-  SMLoc typeLoc;
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    typeLoc = p.getToken().getLoc();
     if (p.parseType(type, decl, decl.getIndentation()))
       return failure();
-    varOp.getResult().setType(
-        POP::PointerType::get(sharedState.getMLIRType(type, typeLoc)));
+    varOp.getResult().setType(POP::PointerType::get(type.getMLIRType()));
   }
 
   // Parse the initializer if present.
@@ -767,8 +761,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     // Infer the type if we lack a declared type (`var x = 42`)
     if (!type) {
       type = rhsValue.type;
-      varOp.getResult().setType(POP::PointerType::get(
-          sharedState.getMLIRType(type, initValue->getLoc())));
+      varOp.getResult().setType(POP::PointerType::get(type.getMLIRType()));
     }
 
     // The types line up, do a store.

@@ -56,11 +56,6 @@ public:
   /// Get a uniqued and pointer sized reference to an ASTType.
   ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBinding> params);
 
-  /// Return the MLIR type that corresponds to this AST type.  On error, this
-  /// emits an error at the specified location and returns an error type.
-  Type getMLIRType(MValue type, llvm::SMLoc loc);
-  Type getMLIRType(MValue type, Location loc);
-
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
 

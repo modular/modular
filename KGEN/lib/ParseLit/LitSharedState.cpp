@@ -190,19 +190,3 @@ ASTType LitSharedState::getASTType(ASTDecl &decl,
   return ASTType(LITDeclRefType::get(
       symbol, ParamBindArrayAttr::get(getContext(), paramValues)));
 }
-
-/// Return the MLIR type that corresponds to this AST type, emitting an error
-/// if malformed at the specified location and returning a null type.
-Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
-  assert(typeVal && "Cannot get MLIR type from a null value");
-
-  // If this value is an attribute for the type, then return it as a Type.
-  if (auto attrVal = typeVal.getIfMAValue())
-    return ParamRefType::get(attrVal);
-
-  return typeVal.getIfMTValue().getMLIRType();
-}
-
-Type LitSharedState::getMLIRType(MValue type, SMLoc loc) {
-  return getMLIRType(type, translateLocation(loc));
-}
