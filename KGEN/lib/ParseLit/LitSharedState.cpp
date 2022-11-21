@@ -152,16 +152,33 @@ ASTType LitSharedState::getFunctionType(MValue resultType) {
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   auto &resolver = *declResolver;
 
-  impl->mlirTypeDecl = &resolver.addMagicDecl(
-      "__mlir_type", MagicDeclKind::k__mlir_type, &builtinsDecl);
-  resolver.addMagicDecl("__mlir_op", MagicDeclKind::k__mlir_op, &builtinsDecl);
-  resolver.addMagicDecl("__mlir_attr", MagicDeclKind::k__mlir_attr,
-                        &builtinsDecl);
-
   /// FIXME: These should be a user declared types in the standard library,
   /// which are looked up here instead of being synthesized.
   auto b = builtinsDecl.getDeclEndBuilder();
   auto loc = builtinsDecl.getLoc();
+
+  // Given a LITStructDeclOp that is completely initialized, add it to the
+  // resolver.
+  auto addCompletedStructDecl = [&](LITStructDeclOp structOp, ASTDecl *&decl) {
+    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
+                             LitLexerCursor(), LitLexerCursor(), 0);
+    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
+    decl->resolvedness = DeclResolvedness::fullyResolved;
+  };
+
+  auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
+    auto structOp = b.create<LITStructDeclOp>(loc, b.getStringAttr(name));
+    addCompletedStructDecl(structOp, decl);
+  };
+
+  addEmptyStructDecl("__mlir_type", impl->mlirTypeDecl);
+  impl->mlirTypeDecl->magicKind = MagicDeclKind::k__mlir_type;
+
+  ASTDecl *mlirOpDecl = nullptr, *mlirAttrDecl = nullptr;
+  addEmptyStructDecl("__mlir_op", mlirOpDecl);
+  mlirOpDecl->magicKind = MagicDeclKind::k__mlir_op;
+  addEmptyStructDecl("__mlir_attr", mlirAttrDecl);
+  mlirAttrDecl->magicKind = MagicDeclKind::k__mlir_attr;
 
   // Add a declarations for builtin types.
   impl->typeType = resolver
@@ -177,15 +194,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
       getASTTypeForMLIRType(TypeCheckErrorType::get(context), smLoc);
   impl->typeCheckErrorType.getDecl(*this).hasReferenceError = true;
 
-  // Given a LITStructDeclOp that is completely initialized, add it to the
-  // resolver.
-  auto addCompletedStructDecl = [&](LITStructDeclOp structOp, ASTDecl *&decl) {
-    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
-                             LitLexerCursor(), LitLexerCursor(), 0);
-    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
-    decl->resolvedness = DeclResolvedness::fullyResolved;
-  };
-
   // Add a declaration for `struct Function<ResultType: type>:` which gets a
   // magic lowering to KGEN::SignatureType.
   // TODO: This currently only carries result type, it should carry variadic
@@ -198,8 +206,7 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
 
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.
-  auto objectOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("object"));
-  addCompletedStructDecl(objectOp, impl->objectDecl);
+  addEmptyStructDecl("object", impl->objectDecl);
 }
 
 auto LitSharedState::getUniquedParams(ArrayRef<ParamBinding> params)
