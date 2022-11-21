@@ -103,7 +103,7 @@ There are a few different components of this, which we explain here:
 
 **Types**
 
-User defined types in Lightning are defines as structs (and eventually classes,
+User defined types in Lightning are defined as structs (and eventually classes,
 variants, etc).  These all turn into an MLIR `lit.struct.decl` operation, and
 references to them use the `!kgen.declref<@Symbol>` type, e.g. this:
 
@@ -119,7 +119,7 @@ lit.struct.decl @EmptyStruct {}
 lit.func @static(%x: !kgen.declref<@EmptyStruct>) {..}
 ```
 
-Byond user defined types, the entire MLIR type system is exposed using the
+Beyond user defined types, the entire MLIR type system is exposed using the
 `__mlir_type` magic identifier.  With it, you can access named
 types (in full MLIR syntax) as named properties.  The backticks syntax for an
 identifier are helpful for accessing things that don't fit into a standard
