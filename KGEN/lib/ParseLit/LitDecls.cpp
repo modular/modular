@@ -114,6 +114,13 @@ DeclResolver::~DeclResolver() {
     decl->~ASTDecl();
 }
 
+/// Given the symbol for a lit declaration, return the ASTDecl that
+/// corresponds to it.  This doesn't allow null symbols, so it always
+/// succeeds.
+ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) {
+  return declResolver->getDeclForSymbol(symbol);
+}
+
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
                                StringAttr name, ASTDecl *parentDecl,
@@ -125,11 +132,21 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
 
   // If this has a parent and a name, insert it into the parents name table so
   // name lookup will resolve it.
-  if (!parentDecl || !name)
+  if (!parentDecl || !name) {
+    assert(!decl->getSymbolRef() && "Can't have symbol without a name");
     return *decl;
+  }
 
+  // Remember the named decl in the symbol table so it can be looked up.
   auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
-  if (!inserted) {
+  if (inserted) {
+    // If the decl also has a symbol, remember it, so we can look up decls by
+    // symbol.
+    if (SymbolRefAttr symbol = decl->getSymbolRef()) {
+      assert(!declForSymbol.count(symbol) && "Symbol redefinition/collision");
+      declForSymbol[symbol] = decl;
+    }
+  } else {
     ASTDecl *existing = it->second;
     auto diag =
         sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
@@ -141,6 +158,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
     decl->hasReferenceError = true;
     existing->hasReferenceError = true;
   }
+
   return *decl;
 }
 
@@ -502,7 +520,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
     // Ignore methods without special handling.
     break;
   case SpecialFunctionKind::kInit:
-    if (isa<LITStructDeclOp>(selfType.getDecl()))
+    if (isa<LITStructDeclOp>(selfType.getDecl(shared)))
       return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
     // __init__ on classes must return NoneType.
