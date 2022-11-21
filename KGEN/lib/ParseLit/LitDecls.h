@@ -72,11 +72,6 @@ public:
                                 loc, type, parentDecl);
   }
 
-  /// Add a "magic" declaration that has special handling to this scope.  This
-  /// is used for builtin machinery internal to the language.
-  ASTDecl &addMagicDecl(StringRef name, MagicDeclKind kind,
-                        ASTDecl *parentDecl);
-
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
   LogicalResult resolve(ASTDecl &decl, DeclResolvedness howResolved,

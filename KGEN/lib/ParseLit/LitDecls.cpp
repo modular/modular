@@ -190,20 +190,6 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
   return decl;
 }
 
-/// Add a "magic" declaration that has special handling to this scope.  This
-/// is used for builtin machinery internal to the language.
-ASTDecl &DeclResolver::addMagicDecl(StringRef name, MagicDeclKind kind,
-                                    ASTDecl *parentDecl) {
-  assert(parentDecl && "top level isn't magic");
-  auto &decl = addDecl(MAValue(), parentDecl->getLoc(),
-                       StringAttr::get(getContext(), name), parentDecl,
-                       LitLexerCursor(), LitLexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fullyResolved;
-  decl.magicKind = kind;
-  decl.setResolvedType(sharedState.getASTType(decl, {}));
-  return decl;
-}
-
 /// Resolve all of the declarations that are visible.
 void DeclResolver::resolveAll(SMLoc loc) {
   // We can do this in any order, but choose to use the order they are
