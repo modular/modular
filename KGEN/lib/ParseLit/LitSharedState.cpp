@@ -36,8 +36,6 @@ public:
 
   /// This is the __mlir_type declaration.
   ASTDecl *mlirTypeDecl = nullptr;
-  /// This is the decl for the builtin signature type.
-  ASTDecl *functionDecl = nullptr;
 
   // These should move the standard library and be looked up from there on
   // demand.
@@ -108,14 +106,6 @@ ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getResolvedType();
 }
 
-// FIXME: This isn't correctly parameterized; we need variadics.
-ASTType LitSharedState::getFunctionType(MValue resultType) {
-  auto functionStruct = cast<LITStructDeclOp>(*impl->functionDecl);
-  assert(functionStruct.getParamDecls().size() == 1 && "Have a result type");
-  ParamDeclAttr resultDecl = functionStruct.getParamDecls()[0];
-  return getASTType(*impl->functionDecl, ParamBinding{resultDecl, resultType});
-}
-
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   auto &resolver = *declResolver;
@@ -154,16 +144,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   // Make the error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
-
-  // Add a declaration for `struct Function<ResultType: type>:` which gets a
-  // magic lowering to KGEN::SignatureType.
-  // TODO: This currently only carries result type, it should carry variadic
-  // meta parameter and argument packs.
-  auto functionOp = b.create<LITStructDeclOp>(loc, b.getStringAttr("Function"));
-  functionOp.setParamDecls(
-      ParamDeclAttr::get("ResultType", b.getType<MLIRTypeType>()));
-  addCompletedStructDecl(functionOp, impl->functionDecl);
-  impl->functionDecl->magicKind = MagicDeclKind::kFunctionType;
 
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.
