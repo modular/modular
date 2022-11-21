@@ -122,13 +122,13 @@ def MultipleThingMetaparams(a: Thing[1,2][1]):
 def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
-# expected-error @+1 {{parameter of type '__mlir_type.f64' cannot be converted to expected type 'index'}}
+# expected-error @+1 {{parameter of type '__mlir_type.f64' cannot be converted to expected type '__mlir_type.index'}}
 def WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
 def voidReturningFn(): pass
 def badCall():
-  # expected-error @+1 {{value of type 'None' cannot be converted to expected type '!kgen.litdeclref<@NotBoolConvertible>'}}
+  # expected-error @+1 {{value of type 'None' cannot be converted to expected type 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -136,7 +136,7 @@ def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
   generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
-  generic_fn[1, dt](57) # expected-error {{index has type '__mlir_type.index' but declaration expects '!kgen.litdeclref<@DType>'}}
+  generic_fn[1, dt](57) # expected-error {{index has type '__mlir_type.index' but declaration expects 'DType'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}
