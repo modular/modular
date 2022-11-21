@@ -70,8 +70,6 @@ public:
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
 
-  /// This is the type of values like "__mlir_op.`pop.add`"
-  ASTType getUnboundMLIROperatorType() const;
   ASTDecl &getMLIRTypeScope() const; // decl for __mlir_type.
 
   /// This is the "type" type, which can bind to any lit type.
@@ -167,23 +165,10 @@ enum class MagicDeclKind : uint8_t {
   // This is not a magic declaration, process it as normal.
   kNormal,
 
-  // This type is produced when an error is detected to simplify clients.
-  kTypeCheckErrorType,
-
   k__mlir_type, // __mlir_type declaration.
   k__mlir_op,   // __mlir_op declaration.
   k__mlir_attr, // __mlir_attr declaration.
 
-  /// This is the type held by a partially bound MLIR operator, e.g.
-  ///   __mlir_op.`pop.abs` or
-  ///   __mlir_op.`pop.constant`[value: __mlir_type.i64: 42].
-  /// It is produced by synthesized declarations and cannot be written directly.
-  kUnboundMLIROperatorType,
-
-  // This is the 'type' type.
-  kTypeType,
-  // This is the None type.
-  kNoneType,
   // This is a FunctionType that is lowered to a KGEN::SignatureType.
   kFunctionType,
 };
