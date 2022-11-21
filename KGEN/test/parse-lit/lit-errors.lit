@@ -285,7 +285,7 @@ struct SpecialFunctions:
 
 fn expr_errors():
   var x: __mlir_type.index
-  x += x # expected-error {{expecting parameter values as operands}}
+  x += x # expected-error {{'!builtin.index' does not implement the "__iadd__" special method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()

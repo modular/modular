@@ -217,8 +217,8 @@ static ASTTypeAnd<AnyValue> synthesizeMLIROpFromString(StringRef name,
 /// attributes list to the operation specification.
 static ASTTypeAnd<AnyValue>
 bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
-                                 TypedAttr opInfo, ExprEmitter &emitter) {
-  auto unboundOp = cast<UnboundMLIROperationAttr>(opInfo);
+                                 UnboundMLIROperationAttr unboundOp,
+                                 ExprEmitter &emitter) {
   auto loc = subscript.getLoc();
   auto *context = emitter.getContext();
 
@@ -370,7 +370,8 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
   // The ASTType of calleeVal must be a magic function type, for the IR to
   // have signature type.  We cannot have error types or anything else here.
   // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeType.getDecl().magicKind == MagicDeclKind::kFunctionType);
+  assert(calleeType.getDecl(emitter.shared).magicKind ==
+         MagicDeclKind::kFunctionType);
   assert(calleeType.getParamValues().size() == 1 &&
          "FunctionType should have one (result) parameter");
   auto resultASTTypeVal = calleeType.getParamValues()[0].second;
@@ -557,7 +558,7 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   // Look up the special function on the expr type.
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
-  ASTDecl *lookupResult = type.getDecl().lookup(nameAttr);
+  ASTDecl *lookupResult = type.getDecl(shared).lookup(nameAttr);
   if (!lookupResult) {
     emitError(callLoc, "") << type << " does not implement the " << nameAttr
                            << " special method";
@@ -635,20 +636,21 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // Handle member references on types.
   if (ASTType baseType = baseVal.ir.getIfMTValue()) {
+    ASTDecl &typeDecl = baseType.getDecl(emitter.shared);
     // Handle __mlir_op.`xxx` references.
-    if (baseType.getDecl().magicKind == MagicDeclKind::k__mlir_op)
+    if (typeDecl.magicKind == MagicDeclKind::k__mlir_op)
       return synthesizeMLIROpFromString(attrSpelling, emitter);
     // Handle __mlir_attr.`xxx` references.
-    if (baseType.getDecl().magicKind == MagicDeclKind::k__mlir_attr)
+    if (typeDecl.magicKind == MagicDeclKind::k__mlir_attr)
       return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
     // Normal member reference.
-    auto rValueAnd = emitDeclMemberReference(baseType.getDecl(), attrSpelling,
-                                             getLoc(), emitter);
+    auto rValueAnd =
+        emitDeclMemberReference(typeDecl, attrSpelling, getLoc(), emitter);
     return {rValueAnd.ir, rValueAnd.type};
   }
 
   // Otherwise, it must be an access to a field of a value.
-  ASTDecl &typeDecl = baseVal.type.getDecl();
+  ASTDecl &typeDecl = baseVal.type.getDecl(emitter.shared);
   auto typeParams = baseVal.type.getParamValues();
   if (!typeParams.empty()) {
     emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
@@ -800,24 +802,23 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
                                                 ASTType calledType,
                                                 ExprEmitter &emitter) {
+  ASTDecl &calledDecl = calledType.getDecl(emitter.shared);
   // Ensure the type specified is fully resolved, so all its members are known.
   if (failed(emitter.shared.declResolver->resolve(
-          calledType.getDecl(), DeclResolvedness::fullyResolved,
-          call.getLoc())))
+          calledDecl, DeclResolvedness::fullyResolved, call.getLoc())))
     return {};
 
-  auto newMemberVal = emitDeclMemberReference(calledType.getDecl(), "__new__",
-                                              call.getLoc(), emitter);
+  auto newMemberVal =
+      emitDeclMemberReference(calledDecl, "__new__", call.getLoc(), emitter);
   return emitFunctionCall(call, emitter.emitRValue(newMemberVal, call.getLoc()),
                           emitter);
 }
 
 /// Given a call to an UnboundMLIROperator, generate an MLIR operation with
 /// the operands as SSA values.
-static ASTTypeAnd<AnyValue> emitMLIROperatorCall(const CallNode &call,
-                                                 TypedAttr calleeVal,
-                                                 ExprEmitter &emitter) {
-  auto unboundOp = cast<UnboundMLIROperationAttr>(calleeVal);
+static ASTTypeAnd<AnyValue>
+emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
+                     ExprEmitter &emitter) {
   auto *context = emitter.getContext();
 
   if (!emitter.builder) {
@@ -973,9 +974,11 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
 
   // If this is the invocation of an unbound MLIR operator, bind it into an
   // actual operator!
-  if (calleeVal.type.getDecl().magicKind ==
-      MagicDeclKind::kUnboundMLIROperatorType)
-    return emitMLIROperatorCall(*this, calleeVal.ir.getIfMAValue(), emitter);
+  if (auto maValue = calleeVal.ir.getIfMAValue()) {
+    if (auto unboundOperator =
+            dyn_cast<UnboundMLIROperationAttr>(maValue.get()))
+      return emitMLIROperatorCall(*this, unboundOperator, emitter);
+  }
 
   emitter.emitError(getLoc(), "unable to call value of type ")
       << calleeVal.type;
@@ -1006,7 +1009,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    auto structOp = dyn_cast<LITStructDeclOp>(astType.getDecl());
+    ASTDecl &typeDecl = astType.getDecl(emitter.shared);
+    auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
     if (!structOp) {
       emitter.emitError(getLoc(), "unknown parameterized type ") << astType;
       return {};
@@ -1045,7 +1049,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     }
 
     // Ok, we succeeded at reparameterizing the type.
-    auto result = emitter.shared.getASTType(astType.getDecl(), paramBindings);
+    auto result = emitter.shared.getASTType(typeDecl, paramBindings);
     return {MValue(result), emitter.shared.getTypeType()};
   }
 
@@ -1057,7 +1061,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     // The ASTType of subValue must be a magic function type, for the IR to have
     // signature type.  We cannot have error types or anything else here.
     // TODO: Switch to key off the AST type when it carries everything we need.
-    assert(subValue.type.getDecl().magicKind == MagicDeclKind::kFunctionType);
+    assert(subValue.type.getDecl(emitter.shared).magicKind ==
+           MagicDeclKind::kFunctionType);
     assert(subValue.type.getParamValues().size() == 1 &&
            "FunctionType should have one (result) parameter");
     auto resultASTType = subValue.type.getParamValues()[0].second;
@@ -1102,10 +1107,11 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
             emitter.shared.getFunctionType(resultASTType)};
   }
 
-  if (subValue.type.getDecl().magicKind ==
-      MagicDeclKind::kUnboundMLIROperatorType)
-    return bindAttributesToMLIROperatorCall(*this, subValue.ir.getIfMAValue(),
-                                            emitter);
+  if (auto maValue = subValue.ir.getIfMAValue()) {
+    if (auto unboundOperator =
+            dyn_cast<UnboundMLIROperationAttr>(maValue.get()))
+      return bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
+  }
 
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> indexValues;
@@ -1136,7 +1142,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
       return {};
 
     // TODO(types): allow all types.
-    if (exprRep.type.getDecl().magicKind != MagicDeclKind::kIndexType) {
+    if (!exprRep.ir.getType(emitter.getContext()).isIndex()) {
       emitter.emitError(
           getLoc(), "List expression with interesting types not implemented");
       return {};
@@ -1294,8 +1300,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if (lhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType ||
-      rhsRep.type.getDecl().magicKind == MagicDeclKind::kIndexType) {
+  if (lhsRep.ir.getType(emitter.getContext()).isIndex() &&
+      rhsRep.ir.getType(emitter.getContext()).isIndex()) {
     auto lhsParam =
         emitter.emitMAValue(lhs, "expecting parameter values as operands");
     auto rhsParam =

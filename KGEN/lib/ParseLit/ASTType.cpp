@@ -35,7 +35,7 @@ ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
 
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
-  if (&getDecl() != &other.getDecl() ||
+  if (&pointer->decl != &other.pointer->decl ||
       getParamValues().size() != other.getParamValues().size())
     return false;
 
@@ -69,7 +69,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
   if (!type)
     return os << "<<NULL ASTTYPE>>";
 
-  ASTDecl &decl = type.getDecl();
+  ASTDecl &decl = type.getDecl(); // FIXME.
   if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();

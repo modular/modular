@@ -23,6 +23,7 @@ class ParamBindAttr;
 
 namespace M::KGEN::LIT {
 class ASTDecl;
+class LitSharedState;
 class MValue;
 enum class MagicDeclKind : uint8_t;
 
@@ -64,6 +65,7 @@ public:
   ASTType() : pointer(nullptr) {}
 
   // Accessors for the type.
+  ASTDecl &getDecl(LitSharedState &shared) const { return getDecl(); }
   ASTDecl &getDecl() const {
     assert(pointer && "Cannot dereference null ASTType");
     return pointer->decl;

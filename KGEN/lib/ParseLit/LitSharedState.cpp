@@ -277,7 +277,7 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
     return result;
 
   // If this is a magic declaration, provide custom lowering for it.
-  ASTDecl &decl = type.getDecl();
+  ASTDecl &decl = type.getDecl(*this);
   if (decl.isMagic()) {
     switch (decl.magicKind) {
     case MagicDeclKind::kNormal:
