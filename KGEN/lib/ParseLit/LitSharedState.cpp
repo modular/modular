@@ -149,19 +149,3 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   // standard library.
   addEmptyStructDecl("object", impl->objectDecl);
 }
-
-/// Get a uniqued and pointer sized reference to an ASTType.
-ASTType LitSharedState::getASTType(ASTDecl &decl,
-                                   ArrayRef<ParamBinding> params) {
-  auto symbol = decl.getSymbolRef();
-  assert(symbol && "cannot get type for decl without a symbol");
-
-  SmallVector<ParamBindAttr> paramValues;
-  for (auto param : params) {
-    TypedAttr value = param.second.get();
-    paramValues.push_back(ParamBindAttr::get(param.first, value));
-  }
-
-  return ASTType(LITDeclRefType::get(
-      symbol, ParamBindArrayAttr::get(getContext(), paramValues)));
-}

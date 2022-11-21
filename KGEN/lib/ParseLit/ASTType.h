@@ -40,10 +40,6 @@ public:
   /// from.  If this is a raw MLIR type, return null.
   ASTDecl *getDecl(LitSharedState &shared) const;
 
-  using ParamBinding = std::pair<ParamDeclAttr, MValue>;
-  // FIXME: Don't return std::vector!
-  std::vector<ParamBinding> getParamValues() const;
-
   /// ASTType is nullable.
   bool isNull() const { return !type; }
   explicit operator bool() const { return !!type; }

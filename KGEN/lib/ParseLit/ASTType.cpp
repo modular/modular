@@ -30,19 +30,6 @@ ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
   return nullptr;
 }
 
-std::vector<ASTType::ParamBinding> ASTType::getParamValues() const {
-  assert(type && "Cannot dereference null ASTType");
-  auto declRef = dyn_cast<LITDeclRefType>(type);
-  if (!declRef)
-    return {};
-
-  std::vector<ASTType::ParamBinding> result;
-  for (auto bind : declRef.getParamValues())
-    result.push_back({bind.getDecl(), MValue(bind.getValue())});
-
-  return result;
-}
-
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   return type == other.type;

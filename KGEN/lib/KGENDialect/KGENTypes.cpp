@@ -218,8 +218,14 @@ DeclRefType DeclRefType::get(FlatSymbolRefAttr name,
   return get(name.getContext(), name, paramValues);
 }
 
+DeclRefType DeclRefType::get(FlatSymbolRefAttr name,
+                             ArrayRef<ParamBindAttr> paramValues) {
+  return get(name.getContext(), name,
+             ParamBindArrayAttr::get(name.getContext(), paramValues));
+}
+
 DeclRefType DeclRefType::get(FlatSymbolRefAttr name) {
-  return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
+  return get(name, ArrayRef<ParamBindAttr>());
 }
 
 //===----------------------------------------------------------------------===//
@@ -231,8 +237,14 @@ LITDeclRefType LITDeclRefType::get(SymbolRefAttr name,
   return get(name.getContext(), name, paramValues);
 }
 
+LITDeclRefType LITDeclRefType::get(SymbolRefAttr name,
+                                   ArrayRef<ParamBindAttr> paramValues) {
+  return get(name.getContext(), name,
+             ParamBindArrayAttr::get(name.getContext(), paramValues));
+}
+
 LITDeclRefType LITDeclRefType::get(SymbolRefAttr name) {
-  return get(name, ParamBindArrayAttr::get(name.getContext(), {}));
+  return get(name, ArrayRef<ParamBindAttr>());
 }
 
 //===----------------------------------------------------------------------===//

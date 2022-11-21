@@ -75,17 +75,17 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<LITStructDeclOp>(*this);
 
-  SmallVector<LitSharedState::ParamBinding> parameters;
+  SmallVector<ParamBindAttr> parameters;
   for (auto decl : structOp.getParamDecls()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
     TypedAttr ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
-    parameters.push_back({decl, ref});
+    parameters.push_back(ParamBindAttr::get(decl, ref));
   }
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return state.getASTType(*this, parameters);
+  return LITDeclRefType::get(getSymbolRef(), parameters);
 }
 
 //===----------------------------------------------------------------------===//
