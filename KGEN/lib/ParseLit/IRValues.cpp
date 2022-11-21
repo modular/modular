@@ -11,6 +11,7 @@
 #include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/Support/SMLoc.h"
 
@@ -106,4 +107,23 @@ Type MValue::getIfTypeValue() const {
   if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(attr))
     return type.getValue();
   return {};
+}
+
+/// This method returns the type of this value when projected as an RValue.
+/// If this is already an RValue, it is the type of the value.  If this is
+/// an LValue, it strips off the pointer type.
+ASTType AnyValue::getRValueType() const {
+  if (auto lv = getIfLValue())
+    return lv.getRValueType();
+  return getType();
+}
+
+/// This method returns the type of this value when projected as an RValue.
+/// If this is already an RValue, it is the type of the value.  If this is
+/// an LValue, it strips off the pointer type.
+ASTType LValue::getRValueType() const {
+  TypedAttr attrType = llvm::cast<POP::PointerType>(getType()).getElementType();
+  Type type = MValue(attrType).getIfTypeValue();
+  assert(type && "LValue element type shouldn't be a parameter");
+  return type;
 }
