@@ -122,8 +122,8 @@ def MultipleThingMetaparams(a: Thing[1,2][1]):
 def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
   pass
 
-# expected-error @+1 {{parameter of type 'StringLiteralType' cannot be converted to expected type 'index'}}
-def WeirdMetaParams(a: Thing[1, "foo"]):
+# expected-error @+1 {{parameter of type '__mlir_type.f64' cannot be converted to expected type 'index'}}
+def WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
 def voidReturningFn(): pass

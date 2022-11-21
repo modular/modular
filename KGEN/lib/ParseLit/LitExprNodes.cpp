@@ -613,8 +613,9 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
                                                ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  return {AnyValue(StringAttr::get(emitter.getContext(), value)),
-          emitter.shared.getStringLiteralType()};
+  auto attr = StringAttr::get(emitter.getContext(), value);
+  return {AnyValue(),
+          emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc())};
 }
 
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
