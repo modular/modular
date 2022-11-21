@@ -4,17 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
+add_modular_conversion_library(DebugInfoToLLVM
+  DebugInfoToLLVM.cpp
 
-  LINK_LIBS PRIVATE
+  DEPENDS
+  DebugInfoToLLVMIncGen
+
+  LINK_LIBS PUBLIC
+  DebugInfoTransforms
   DebugInfoDialect
-  DebugInfoToLLVM
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MSupport
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-  )
+  MLIRLLVMCommonConversion
+  MLIRLLVMDialect
+  MLIRPass
+)

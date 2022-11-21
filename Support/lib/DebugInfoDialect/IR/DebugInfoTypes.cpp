@@ -27,6 +27,46 @@ void DebugInfoDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
+// DIType
+//===----------------------------------------------------------------------===//
+
+uint64_t DIType::getSizeInBits() const {
+  if (auto arrayType = dyn_cast<DIArrayType>()) {
+    return arrayType.getElementCount() *
+           arrayType.getElementType().getSizeInBits();
+  }
+  if (auto basicType = dyn_cast<DIBasicType>())
+    return basicType.getSizeInBits();
+  if (auto memberType = dyn_cast<DIMemberType>())
+    return memberType.getType().getSizeInBits();
+  if (auto pointerType = dyn_cast<DIPointerType>())
+    return pointerType.getSizeInBits();
+  if (auto structType = dyn_cast<DIStructType>())
+    return structType.getSizeInBits();
+  if (auto vectorType = dyn_cast<DIVectorType>()) {
+    return vectorType.getElementCount() *
+           vectorType.getElementType().getSizeInBits();
+  }
+  return 0;
+}
+
+uint32_t DIType::getAlignInBits() const {
+  if (auto arrayType = dyn_cast<DIArrayType>())
+    return arrayType.getElementType().getAlignInBits();
+  if (auto basicType = dyn_cast<DIBasicType>())
+    return basicType.getAlignInBits();
+  if (auto memberType = dyn_cast<DIMemberType>())
+    return memberType.getType().getAlignInBits();
+  if (auto pointerType = dyn_cast<DIPointerType>())
+    return pointerType.getAlignInBits();
+  if (auto structType = dyn_cast<DIStructType>())
+    return structType.getAlignInBits();
+  if (auto vectorType = dyn_cast<DIVectorType>())
+    return vectorType.getElementType().getAlignInBits();
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
 // DIBasicType
 //===----------------------------------------------------------------------===//
 
@@ -52,6 +92,41 @@ DIBasicType DIBasicFloatType::get(MLIRContext *ctx, const Twine &name,
                                   uint64_t sizeInBits, uint32_t alignInBits) {
   return DIBasicType::get(ctx, StringAttr::get(ctx, name), sizeInBits,
                           alignInBits, llvm::dwarf::DW_ATE_float);
+}
+
+//===----------------------------------------------------------------------===//
+// DIStructType
+//===----------------------------------------------------------------------===//
+
+uint64_t DIStructType::getSizeInBits() const {
+  uint64_t structSize = 0;
+  uint32_t structAlign = 0;
+  for (DIMemberType member : getMembers()) {
+    uint32_t memberAlign = member.getAlignInBits();
+    if (!memberAlign)
+      return 0;
+
+    structSize =
+        llvm::alignTo(structSize + member.getSizeInBits(), memberAlign);
+    structAlign = std::max(structAlign, memberAlign);
+  }
+
+  // Pad the struct size to the largest element alignment.
+  if (structAlign)
+    structSize = llvm::alignTo(structSize, structAlign);
+  return structSize;
+}
+
+uint32_t DIStructType::getAlignInBits() const {
+  // The alignment is the max alignment of any of the members.
+  uint32_t align = 0;
+  for (DIMemberType member : getMembers()) {
+    uint32_t memberAlign = member.getAlignInBits();
+    if (!memberAlign)
+      return 0;
+    align = std::max(align, memberAlign);
+  }
+  return align;
 }
 
 //===----------------------------------------------------------------------===//

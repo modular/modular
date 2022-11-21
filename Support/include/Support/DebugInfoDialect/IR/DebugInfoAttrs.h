@@ -55,4 +55,37 @@ public:
 #define GET_ATTRDEF_CLASSES
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h.inc"
 
+//===----------------------------------------------------------------------===//
+// Support
+//===----------------------------------------------------------------------===//
+
+namespace M::DebugInfo {
+/// Extract a debug info scope from the given location.
+DIScopeAttr extractScope(Location loc);
+/// Extract the debug info scope from the location of the given operation.
+DIScopeAttr extractScope(Operation *op);
+template <typename ScopeAttrT>
+ScopeAttrT extractScope(Operation *op) {
+  return dyn_cast_or_null<ScopeAttrT>(extractScope(op));
+}
+
+/// This class represents an attribute/type replacer with proper defaults for
+/// updating debug information within operations.
+class DIAttrTypeReplacer : public mlir::AttrTypeReplacer {
+public:
+  /// TODO: Upstream this templated version to AttrTypeReplacer.
+  template <typename T, typename U>
+  T replace(U value) {
+    return dyn_cast_if_present<T>(replace(value));
+  }
+  using mlir::AttrTypeReplacer::replace;
+
+  /// Replace elements within the given operation.
+  void replaceElementsIn(Operation *op);
+
+  /// Replace elements within the given operation, and any nested operations.
+  void recursivelyReplaceElementsIn(Operation *op);
+};
+} // namespace M::DebugInfo
+
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H

@@ -4,5 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(DebugInfoToLLVM)
-add_subdirectory(IR)
+add_mlir_library(DebugInfoTransforms
+  Conversion.cpp
+
+  LINK_LIBS PUBLIC
+  DebugInfoDialect
+)
