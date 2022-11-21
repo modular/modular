@@ -48,11 +48,11 @@ lit.func @struct_inf
 
 kgen.struct.decl @Foo<N> {}
 
-kgen.generator.interface @doFoo<N>(%a: !kgen.ref<@Foo<N = N>>)
+kgen.generator.interface @doFoo<N>(%a: !kgen.declref<@Foo<N = N>>)
 
 // CHECK-LABEL: kgen.generator @doFooImpl_thunk<N>
 // CHECK: constraints <[eq(N, 1)
-// CHECK: kgen.rebind %arg0 : !kgen.ref<@Foo<N = N>> to !kgen.ref<@Foo<N = 1>>
-lit.func @doFooImpl<N>(%a: !kgen.ref<@Foo<N = 1>>) implements @doFoo {
+// CHECK: kgen.rebind %arg0 : !kgen.declref<@Foo<N = N>> to !kgen.declref<@Foo<N = 1>>
+lit.func @doFooImpl<N>(%a: !kgen.declref<@Foo<N = 1>>) implements @doFoo {
   kgen.return
 }

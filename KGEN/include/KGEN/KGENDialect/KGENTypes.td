@@ -209,17 +209,17 @@ def SignatureType
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def DeclRefType : KGENType<"DeclRef", "ref",
+def DeclRefType : KGENType<"DeclRef", "declref",
     [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
-    A `!kgen.ref` type references a type declaration and binds parameter values
+    A `!kgen.declref` type references a type declaration and binds parameter values
     to the type.
 
     Example:
 
     ```mlir
-    !kgen.ref<@MyStruct<size = 1, T:dtype = fooType>>
+    !kgen.declref<@MyStruct<size = 1, T:dtype = fooType>>
     ```
   }];
 
@@ -253,7 +253,7 @@ def LITDeclRefType : KGENType<"LITDeclRef", "litdeclref",
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!kgen.litdeclref` type references a type declaration and binds parameter
-    values to the type.  Unlike the lower level !kgen.ref type, it is more
+    values to the type.  Unlike the lower level !kgen.declref type, it is more
     flexible: it allows nested symbols and partially specified parameter
     bindings.  These are resolved when lowering to kgen.
 

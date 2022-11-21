@@ -12,7 +12,7 @@
 kgen.struct.decl @SmallVector<N, T: type> {
   data: !pop.array<N, T>
 }
-!structTest = !kgen.ref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
+!structTest = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
 
 // CHECK: "test.types"
 "test.types"() {

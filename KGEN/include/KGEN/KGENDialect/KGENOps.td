@@ -485,7 +485,7 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
 
     ```mlir
     %0:2 = kgen.call_indirect %fn(%arg0, %arg1)
-      : (index, !kgen.ref<@Foo>) -> (!pop.simd<2, si32>, !kgen.ref<@Bar>)
+      : (index, !kgen.declref<@Foo>) -> (!pop.simd<2, si32>, !kgen.declref<@Bar>)
     ```
   }];
 
@@ -823,7 +823,7 @@ def StructCreateOp : KGENOp<"struct.create", [Pure,
 
     %0 = kgen.struct.create(%a, %b, %c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !kgen.ref<@MyStruct<T: dtype = type>>
+      -> !kgen.declref<@MyStruct<T: dtype = type>>
     ```
   }];
 
@@ -855,7 +855,7 @@ def StructInsertOp : KGENOp<"struct.insert", [Pure,
     }
 
     %0 = kgen.struct.insert %fieldVal, %struct[a]
-      : !pop.scalar<f64> into !kgen.ref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> into !kgen.declref<@MyStruct<T: dtype = f64>>
     ```
   }];
 
@@ -886,7 +886,7 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
     }
 
     %0 = kgen.struct.extract %struct[a]
-      : !pop.scalar<f64> from !kgen.ref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> from !kgen.declref<@MyStruct<T: dtype = f64>>
     ```
   }];
 

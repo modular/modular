@@ -479,8 +479,8 @@ kgen.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
-  %0 = kgen.param.constant = <add(get_sizeof(!kgen.ref<@A>), get_sizeof(!kgen.ref<@B>))>
+  // CHECK: <add(get_sizeof(!kgen.declref<@A>), get_sizeof(!kgen.declref<@B>))>
+  %0 = kgen.param.constant = <add(get_sizeof(!kgen.declref<@A>), get_sizeof(!kgen.declref<@B>))>
   kgen.return
 }
 
