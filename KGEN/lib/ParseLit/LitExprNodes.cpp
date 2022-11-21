@@ -593,7 +593,9 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
 
   // TODO: Switch to builtin.IntegerLiteralType.
-  return {AnyValue(attr), emitter.shared.getIndexType()};
+  auto indexType =
+      emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc());
+  return {AnyValue(attr), indexType};
 }
 
 ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
@@ -1154,7 +1156,10 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
     Location loc = emitter.translateLocation(getLoc());
     last = DRValue(emitter.builder->create<mlir::index::ConstantOp>(loc, 0));
   }
-  return {last, emitter.shared.getIndexType()};
+
+  auto indexType = emitter.shared.getASTTypeForMLIRType(
+      IndexType::get(emitter.getContext()), getLoc());
+  return {last, indexType};
 }
 
 /// Given an operator, return the SpecialFunction that implements it.
@@ -1323,8 +1328,10 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
       opcode = POC::Mul;
       break;
     }
-    return {MValue(ParamOperatorAttr::get(opcode, lhsParam.ir, rhsParam.ir)),
-            emitter.shared.getIndexType()};
+    auto resultAttr = ParamOperatorAttr::get(opcode, lhsParam.ir, rhsParam.ir);
+    auto attrType =
+        emitter.shared.getASTTypeForMLIRType(resultAttr.getType(), getLoc());
+    return {MValue(resultAttr), attrType};
   }
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);

@@ -44,20 +44,20 @@ return 32 # expected-error {{cannot return from this context}}
 def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
-def missing_ret_val() -> index:
-  return # expected-error {{returned value has type 'None' but 'def' expected '!builtin.index'}}
+def missing_ret_val() -> __mlir_type.index:
+  return # expected-error {{returned value has type 'None' but 'def' expected '__mlir_type.index'}}
 
-def ret_type_mismatch() -> index:
-  return 4.0 # expected-error {{returned value has type '__mlir_type.f64' but 'def' expected '!builtin.index'}}
+def ret_type_mismatch() -> __mlir_type.index:
+  return 4.0 # expected-error {{returned value has type '__mlir_type.f64' but 'def' expected '__mlir_type.index'}}
 
 def meta_param_then_param_redef[
-      dt: index # expected-note {{previous definition here}}
-    ](dt: index):    # expected-error {{invalid redefinition of "dt"}}
+      dt: __mlir_type.index # expected-note {{previous definition here}}
+    ](dt: __mlir_type.index):    # expected-error {{invalid redefinition of "dt"}}
   pass
 
 # expected-note @below {{previous definition here}}
 # expected-error @below {{invalid redefinition of "x"}}
-def param_redef(x: index, x: index):
+def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
@@ -75,15 +75,15 @@ def var_decl_without_type():
   var x
 
 struct StructMemberRedefinition:
-  var x : index  # expected-note {{previous definition here}}
-  var x : index  # expected-error {{invalid redefinition of "x"}}
+  var x : __mlir_type.index  # expected-note {{previous definition here}}
+  var x : __mlir_type.index  # expected-error {{invalid redefinition of "x"}}
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
   var x : Int  # expected-error {{invalid redefinition of "x"}}
   x+4   # no follow-on error.
 
-var globalvar : index
+var globalvar : __mlir_type.index
 def err():
   var y : globalvar  # expected-error {{expected a type}}
 
@@ -98,8 +98,8 @@ def missing_type_on_var_decl():
   abc+abc
 
 
-def invalid_conversion(a: Int, b: index):
-  a = b # expected-error {{cannot convert value of type '!builtin.index' to 'Int'}}
+def invalid_conversion(a: Int, b: __mlir_type.index):
+  a = b # expected-error {{cannot convert value of type '__mlir_type.index' to 'Int'}}
 
 struct NotBoolConvertible:
 
@@ -107,7 +107,7 @@ def test_bool_context(a: NotBoolConvertible):
   if a: # expected-error {{'NotBoolConvertible' does not implement the "__bool__" special method}}
      pass
 
-struct Thing[a: index, b: index]:
+struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
 
 def GoodUseOfThing(a: Thing[4, 5]):
   pass
@@ -132,11 +132,11 @@ def badCall():
   test_bool_context(voidReturningFn())
 
 
-def generic_fn[a: DType, b: index](c : index):
+def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
   generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
-  generic_fn[1, dt](57) # expected-error {{index has type '!builtin.index' but declaration expects '!kgen.litdeclref<@DType>'}}
+  generic_fn[1, dt](57) # expected-error {{index has type '__mlir_type.index' but declaration expects '!kgen.litdeclref<@DType>'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}
@@ -179,50 +179,50 @@ struct WrongSelfType[a: Int]:
 
 @interface
 # expected-error @+1 {{interfaces must have no body}}
-def bad_interface_with_body0(x: index) -> index:
+def bad_interface_with_body0(x: __mlir_type.index) -> __mlir_type.index:
   return 0
 
 @interface
 # expected-error @+1 {{interfaces must have no body}}
-def bad_interface_with_body1(x: index) -> index:
+def bad_interface_with_body1(x: __mlir_type.index) -> __mlir_type.index:
   ...
   return 0
 
 struct NoNestedInterface:
   @interface
   # expected-error @+1 {{interfaces cannot be nested inside a struct}}
-  def foo(self) -> index:
+  def foo(self) -> __mlir_type.index:
 
 @interface
-def good_interface(x: index) -> index:
+def good_interface(x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(good_interface)
 @interface
 # expected-error @+2 {{interfaces cannot implement other interfaces}}
 # expected-error @+1 {{interfaces must have no body}}
-def incompatible_decorators(x: index) -> index:
+def incompatible_decorators(x: __mlir_type.index) -> __mlir_type.index:
   return 1
 
 # expected-error @+1 {{unsupported decorator}}
 @impl(good_interface)
-def func_impl0(x: index) -> index:
+def func_impl0(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 # expected-error @+1 {{@implements decorator must specify one interface by name}}
 @implements(good_interface, good_interface)
-def func_impl1(x: index) -> index:
+def func_impl1(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 @implements(good_interface)
 # expected-error @+1 {{only one @implements decorator is allowed}}
 @implements(good_interface)
-def func_impl2(x: index) -> index:
+def func_impl2(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 @implements(xyz)
 # expected-error @+1 {{this function implements an unknown interface: xyz}}
-def func_impl3(x: index) -> index:
+def func_impl3(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 struct struct_bar:
@@ -230,7 +230,7 @@ struct struct_bar:
 
 @implements(struct_bar)
 # expected-error @+1 {{not an interface: struct_bar}}
-def func_impl4(x: index) -> index:
+def func_impl4(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 
@@ -285,12 +285,12 @@ struct SpecialFunctions:
 
 fn expr_errors():
   var x: __mlir_type.index
-  x += x # expected-error {{'!builtin.index' does not implement the "__iadd__" special method}}
+  x += x # expected-error {{'__mlir_type.index' does not implement the "__iadd__" special method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
 
-  # expected-error @+1 {{cannot access fields in type '!builtin.index'}}
+  # expected-error @+1 {{cannot access fields in type '__mlir_type.index'}}
   __mlir_op.`index.add`(x, x).x
 
   # expected-error @+1 {{operation already has attributes}}

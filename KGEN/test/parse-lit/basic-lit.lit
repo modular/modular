@@ -10,15 +10,15 @@ __include "../lit-examples/prolog.lit"
 fn empty_def():
   # Pass isn't required.
 
-fn take_3index(a: index, b: index, c: index) -> index:
+fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
   return a
 
 # CHECK-LABEL: lit.func @fancy_signature
 # CHECK-SAME: <dt: !kgen.litdeclref<@DType>, size>
 # CHECK-SAME: (%x: !kgen.litdeclref<@SIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>,
 # CHECK-SAME:  %exp: !kgen.litdeclref<@SIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>) -> index {
-fn fancy_signature[dt: DType, size: index]
-  (x: SIMD[size, dt], exp: (SIMD)[size, dt]) -> index:
+fn fancy_signature[dt: DType, size: __mlir_type.index]
+  (x: SIMD[size, dt], exp: (SIMD)[size, dt]) -> __mlir_type.index:
 
   # CHECK: %local = lit.var.decl "local" : <index>
   # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
@@ -129,10 +129,10 @@ def patterns():
 
 
 # CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.litdeclref<@DType>> {
-struct SIMD[size: index, dt: DType]:
+struct SIMD[size: __mlir_type.index, dt: DType]:
   pass
 
-fn generic_fn[a: DType, b: index, c: type](d : index):
+fn generic_fn[a: DType, b: __mlir_type.index, c: type](d : __mlir_type.index):
 
 # CHECK: @call_generic<dt: !kgen.litdeclref<@DType>>()
 fn call_generic[dt: DType]():
@@ -146,21 +146,21 @@ fn call_generic[dt: DType]():
 
 @interface
 #CHECK: lit.func @func_interface0<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
-fn func_interface0[type: DType](x: index) -> index:
+fn func_interface0[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 
 @interface
 #CHECK: lit.func @func_interface1<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
-fn func_interface1[type: DType](x: index) -> index: pass
+fn func_interface1[type: DType](x: __mlir_type.index) -> __mlir_type.index: pass
 
 @interface
 #CHECK: lit.func @func_interface2<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
-fn func_interface2[type: DType](x: index) -> index:
+fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(func_interface2)
 #CHECK: lit.func @func_impl<type: !kgen.litdeclref<@DType>>(%x: index) -> index
 #CHECK:    implements @func_interface2 {
-fn func_impl[type: DType](x: index) -> index:
+fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.litdeclref<@Int>, %b: !pop.pointer<@Int?>) -> !lit.none
@@ -177,7 +177,7 @@ fn byval_byref_function(a: Int, &b: Int):
   byval_byref_function(b, b)
 
 # CHECK: lit.func @lvaluesAndRValues()
-fn lvaluesAndRValues() -> index:
+fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[FOUR:%.*]] = index.constant 4
   # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.litdeclref<@Int>: @Int::@__new__]([[FOUR]])
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>

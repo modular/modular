@@ -96,9 +96,6 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
     case MagicDeclKind::kStringLiteralType:
       os << "StringLiteralType";
       break;
-    case MagicDeclKind::kIndexType:
-      os << "!builtin.index";
-      break;
     case MagicDeclKind::kNoneType:
       os << "None";
       break;
