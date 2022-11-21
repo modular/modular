@@ -6,6 +6,7 @@
 
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -24,6 +25,7 @@ int main(int argc, char **argv) {
   mlir::registerCanonicalizer();
   M::HLCF::registerLowerHLCFToLLVMPass();
   DebugInfo::registerDebugInfoToLLVMPass();
+  DebugInfo::registerTransformsPasses();
   return failed(
       mlir::MlirOptMain(argc, argv, "index optimizer driver", registry));
 }
