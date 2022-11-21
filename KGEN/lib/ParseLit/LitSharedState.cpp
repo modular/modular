@@ -158,12 +158,7 @@ ASTType LitSharedState::getASTType(ASTDecl &decl,
 
   SmallVector<ParamBindAttr> paramValues;
   for (auto param : params) {
-    TypedAttr value = param.second.getIfMAValue();
-    if (!value) {
-      auto mlirType = param.second.getIfMTValue().getMLIRType();
-      value = ParameterizedTypeConstantAttr::get(mlirType);
-    }
-
+    TypedAttr value = param.second.get();
     paramValues.push_back(ParamBindAttr::get(param.first, value));
   }
 

@@ -22,20 +22,16 @@ using namespace M::KGEN::LIT;
 // IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage = PointerUnion<MAValue, ASTType, DRValue, LValue>;
+using VariantStorage = PointerUnion<MValue, DRValue, LValue>;
 
 static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
                                  bool isDump = false) {
   if (storage.isNull()) {
     os << "<NULL IR Value>\n";
-  } else if (auto val = dyn_cast<MAValue>(storage)) {
+  } else if (auto val = dyn_cast<MValue>(storage)) {
     if (isDump)
-      os << "MA: ";
+      os << "M: ";
     os << val.get();
-  } else if (auto val = dyn_cast<ASTType>(storage)) {
-    if (isDump)
-      os << "MT: ";
-    os << val;
   } else if (auto val = dyn_cast<DRValue>(storage)) {
     if (isDump)
       os << "DR: ";
@@ -51,7 +47,7 @@ static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
 }
 
 raw_ostream &LIT::operator<<(raw_ostream &os, MValue value) {
-  return printStorage(os, value.getStorage());
+  return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
   return printStorage(os, value.getStorage());
@@ -60,9 +56,6 @@ raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
   return printStorage(os, value.getStorage());
 }
 
-void MValue::dump() const {
-  printStorage(llvm::errs(), getStorage(), true) << '\n';
-}
 void RValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
@@ -78,7 +71,7 @@ static std::string getStorageAsString(VariantStorage storage) {
 }
 
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, MValue value) {
-  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
+  return diag << '\'' << getStorageAsString(value) << '\'';
 }
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, RValue value) {
   return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
@@ -87,60 +80,30 @@ mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
   return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
 }
 
-static Type getTypeFrom(VariantStorage storage, MLIRContext *context) {
+static Type getTypeFrom(VariantStorage storage) {
   if (storage.isNull())
     return Type();
-  if (auto attr = dyn_cast<MAValue>(storage))
+  if (auto attr = dyn_cast<MValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<DRValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<LValue>(storage))
-    return value.getType();
-
-  if (isa<ASTType>(storage))
-    return MLIRTypeType::get(context);
-
-  // TODO: Handle ASTType.
-  llvm_unreachable("unhandled case ASTType");
+  return cast<LValue>(storage).getType();
 }
 
-Type MValue::getType(MLIRContext *context) const {
-  return getTypeFrom(storage, context);
-}
-Type RValue::getType(MLIRContext *context) const {
-  return getTypeFrom(storage, context);
-}
-Type AnyValue::getType(MLIRContext *context) const {
-  return getTypeFrom(storage, context);
-}
+Type RValue::getType() const { return getTypeFrom(storage); }
+Type AnyValue::getType() const { return getTypeFrom(storage); }
 
-/// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
-/// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
-TypedAttr MValue::lowerToAttribute(LitSharedState &shared, Location loc) const {
-  assert(!isNull() && "Cannot emit null attribute");
+MValue::MValue(Type value)
+    : storage(ParameterizedTypeConstantAttr::get(value)) {}
 
-  // If this is already an attribute, return it.
-  if (auto attr = getIfMAValue())
-    return attr;
-
-  // If this is a type, convert it.
-  auto astType = getIfMTValue();
-  assert(astType && "Unknown MValue kind");
-  return ParameterizedTypeConstantAttr::get(astType.getMLIRType());
-}
-
-/// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
-/// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
-TypedAttr MValue::lowerToAttribute(LitSharedState &shared,
-                                   llvm::SMLoc loc) const {
-  assert(!isNull() && "Cannot emit null attribute");
-
-  // If this is already an attribute, return it.
-  if (auto attr = getIfMAValue())
-    return attr;
-
-  // If this is a type, convert it.
-  auto astType = getIfMTValue();
-  assert(astType && "Unknown MValue kind");
-  return ParameterizedTypeConstantAttr::get(astType.getMLIRType());
+/// If this value /is/ a type return it.
+/// FIXME: virtually all users of this are going to be incorrect with type
+/// variables.
+Type MValue::getIfTypeValue() const {
+  auto attr = get();
+  if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr))
+    return type.getValue();
+  if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(attr))
+    return type.getValue();
+  return {};
 }
