@@ -669,13 +669,6 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     return {};
   }
 
-  auto typeParams = baseVal.type.getParamValues();
-  if (!typeParams.empty()) {
-    emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
-        << baseVal.type;
-    return {};
-  }
-
   if (!isa<LITStructDeclOp>(*typeDecl)) {
     emitter.emitError(getLoc(), "cannot access fields in type ")
         << baseVal.type;
@@ -1019,39 +1012,42 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 
   // If the sub-value is an unbound Type, try binding things to it!
   if (auto typeValue = subValue.ir.getIfTypeValue()) {
-    ASTType astType(typeValue);
-    // If already parameterized, give up.
-    if (!astType.getParamValues().empty()) {
-      emitter.emitError(
-          getLoc(),
-          "cannot apply more parameters to an already parameterized type ")
-          << astType;
+    auto declRef = dyn_cast<LITDeclRefType>(typeValue);
+    if (!declRef) {
+      emitter.emitError(getLoc(), "MLIR type ")
+          << ASTType(typeValue) << " has no parameters";
       return {};
     }
 
-    ASTDecl *typeDecl = astType.getDecl(emitter.shared);
-    if (!typeDecl) {
-      emitter.emitError(getLoc(), "MLIR type ")
-          << astType << " has no parameters";
+    // If already parameterized, give up.
+    if (!declRef.getParamValues().empty()) {
+      emitter.emitError(
+          getLoc(),
+          "cannot apply more parameters to an already parameterized type ")
+          << ASTType(typeValue);
       return {};
     }
-    auto structOp = dyn_cast<LITStructDeclOp>(*typeDecl);
+
+    ASTDecl &typeDecl = emitter.shared.getDeclForSymbol(declRef.getSymbol());
+
+    auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
     if (!structOp) {
-      emitter.emitError(getLoc(), "unknown parameterized type ") << astType;
+      emitter.emitError(getLoc(), "unknown parameterized type ")
+          << ASTType(typeValue);
       return {};
     }
 
     auto numParams = structOp.getParamDecls().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "")
-          << astType << " requires " << numParams << " meta parameter"
-          << plural(numParams) << " but " << indices.size()
+          << ASTType(typeValue) << " requires " << numParams
+          << " meta parameter" << plural(numParams) << " but " << indices.size()
           << " were specified";
       return {};
     }
 
     // Emit each of the indices as parameter expressions.
-    SmallVector<LitSharedState::ParamBinding> paramBindings;
+    SmallVector<ParamBindAttr> paramBindings;
     for (auto [indexExpr, decl] :
          llvm::zip(indices, structOp.getParamDecls())) {
       // TODO: Slice syntax is the obvious way to support named parameter
@@ -1070,13 +1066,12 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
             << decl.getType();
         return {};
       }
-      paramBindings.push_back({decl, indexVal.ir});
+      paramBindings.push_back(ParamBindAttr::get(decl, indexVal.ir));
     }
 
     // Ok, we succeeded at reparameterizing the type.
-    auto result = emitter.shared.getASTType(*typeDecl, paramBindings);
-    return {MValue(result.getMLIRType()),
-            MLIRTypeType::get(emitter.getContext())};
+    auto result = LITDeclRefType::get(typeDecl.getSymbolRef(), paramBindings);
+    return {MValue(result), MLIRTypeType::get(emitter.getContext())};
   }
 
   // If we have a value of signature type, we can bind parameters to it.

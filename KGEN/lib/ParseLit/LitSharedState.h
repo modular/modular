@@ -46,15 +46,10 @@ public:
 
   MLIRContext *getContext() const { return context; }
 
-  using ParamBinding = std::pair<ParamDeclAttr, MValue>;
-
   /// Given the symbol for a lit declaration, return the ASTDecl that
   /// corresponds to it.  This doesn't allow null symbols, so it always
   /// succeeds.
   ASTDecl &getDeclForSymbol(SymbolRefAttr symbol);
-
-  /// Get a uniqued and pointer sized reference to an ASTType.
-  ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBinding> params);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;

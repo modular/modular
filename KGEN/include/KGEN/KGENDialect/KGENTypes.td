@@ -230,9 +230,11 @@ def DeclRefType : KGENType<"DeclRef", "declref",
   }];
 
   let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name)>,
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name,
                                         "ParamBindArrayAttr":$paramValues)>,
-    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name)>
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name,
+                                        "ArrayRef<ParamBindAttr>":$paramValues)>
   ];
 
   let extraClassDeclaration = [{
@@ -271,9 +273,12 @@ def LITDeclRefType : KGENType<"LITDeclRef", "litdeclref",
   }];
 
   let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
                                         "ParamBindArrayAttr":$paramValues)>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name)>
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "ArrayRef<ParamBindAttr>":$paramValues)>
+
   ];
 
   let extraClassDeclaration = [{
