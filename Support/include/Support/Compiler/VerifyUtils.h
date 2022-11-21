@@ -8,23 +8,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/TypeUtilities.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+
+namespace M {
 
 /// Check that the op has the expected result types.
-inline mlir::LogicalResult checkResultTypes(mlir::Operation *op,
-                                            mlir::TypeRange expectedTypes) {
-  if (op->getNumOperands() != expectedTypes.size()) {
-    return op->emitOpError("expected ")
-           << expectedTypes.size() << " operands for enclosing op";
-  }
+LogicalResult checkResultTypes(Operation *op, TypeRange expectedTypes);
 
-  for (size_t i = 0, e = op->getNumOperands(); i != e; ++i) {
-    auto t = op->getOperand(i).getType();
-    if (t != expectedTypes[i]) {
-      return op->emitOpError("operand #")
-             << i << " has type " << t << " but should be " << expectedTypes[i];
-    }
-  }
-  return mlir::success();
-}
+} // namespace M
