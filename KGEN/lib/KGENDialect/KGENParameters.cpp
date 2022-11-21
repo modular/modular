@@ -584,7 +584,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   SmallString<32> paramName("@");
   paramName.append(refType.getName());
   if (failed(verifyParamDeclsMatch(
-          "!kgen.ref symbol use",
+          "!kgen.declref symbol use",
           llvm::to_vector(llvm::map_range(
               refType.getParamValues(),
               [](ParamBindAttr value) { return value.getDecl(); })),

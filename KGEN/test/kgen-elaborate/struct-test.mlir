@@ -6,11 +6,11 @@ kgen.struct.decl @FooStruct<T:type> {
 }
 
 kgen.generator.interface @wrapInFoo<T:type>(!pop.pointer<T>)
-    -> !kgen.ref<@FooStruct<T:type = T>>
+    -> !kgen.declref<@FooStruct<T:type = T>>
 
 kgen.generator @wrapInFooImpl<T:type>(%a: !pop.pointer<T>)
-    -> !kgen.ref<@FooStruct<T:type = T>>
+    -> !kgen.declref<@FooStruct<T:type = T>>
     implements @wrapInFoo {
-  %0 = kgen.struct.create(%a) : (!pop.pointer<T>) -> !kgen.ref<@FooStruct<T:type = T>>
-  kgen.return %0 : !kgen.ref<@FooStruct<T:type = T>>
+  %0 = kgen.struct.create(%a) : (!pop.pointer<T>) -> !kgen.declref<@FooStruct<T:type = T>>
+  kgen.return %0 : !kgen.declref<@FooStruct<T:type = T>>
 }

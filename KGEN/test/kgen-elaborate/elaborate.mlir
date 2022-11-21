@@ -617,18 +617,18 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 // CHECK-LABEL: @"struct_sizeof
 kgen.generator @struct_sizeof<T1: type, T2: type>() {
   // CHECK-NEXT: <4>
-  %0 = kgen.param.constant = <get_alignof(!kgen.ref<@Int20>)>
+  %0 = kgen.param.constant = <get_alignof(!kgen.declref<@Int20>)>
   // CHECK-NEXT: <4>
-  %1 = kgen.param.constant = <get_sizeof(!kgen.ref<@Int20>)>
+  %1 = kgen.param.constant = <get_sizeof(!kgen.declref<@Int20>)>
   // CHECK-NEXT: <8>
-  %2 = kgen.param.constant = <get_alignof(!kgen.ref<@Pair<T1: type = T1, T2: type = T2>>)>
+  %2 = kgen.param.constant = <get_alignof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>)>
   // CHECK-NEXT: <16>
-  %3 = kgen.param.constant = <get_sizeof(!kgen.ref<@Pair<T1: type = T1, T2: type = T2>>)>
+  %3 = kgen.param.constant = <get_sizeof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>)>
   kgen.return
 }
 
 kgen.generator @elaborate() {
-  kgen.call @struct_sizeof<T1: type = !kgen.ref<@Int40>, T2: type = !kgen.ref<@Int20>>() : () -> ()
+  kgen.call @struct_sizeof<T1: type = !kgen.declref<@Int40>, T2: type = !kgen.declref<@Int20>>() : () -> ()
   kgen.return
 }
 

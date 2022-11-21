@@ -32,7 +32,7 @@ kgen.generator @useANestedInclude(%arg0: si32) -> si32 {
   kgen.return %0 : si32
 }
 
-kgen.generator.interface @wrapInFoo<T:type>(!pop.pointer<T>) -> !kgen.ref<@FooStruct<T:type = T>>
+kgen.generator.interface @wrapInFoo<T:type>(!pop.pointer<T>) -> !kgen.declref<@FooStruct<T:type = T>>
 
 // CHECK-LABEL: @FooStruct
 kgen.struct.decl @FooStruct<T:type> {
@@ -40,8 +40,8 @@ kgen.struct.decl @FooStruct<T:type> {
 }
 
 // CHECK-LABEL: kgen.func @useStruct
-kgen.generator @useStruct(%a: !pop.pointer<i32>) -> !kgen.ref<@FooStruct<T:type = i32>>{
+kgen.generator @useStruct(%a: !pop.pointer<i32>) -> !kgen.declref<@FooStruct<T:type = i32>>{
   // CHECK: kgen.call @"wrapInFooImpl,T=i32"
-  %0 = kgen.call @wrapInFoo<T:type = i32>(%a) : (!pop.pointer<i32>) -> !kgen.ref<@FooStruct<T:type = i32>>
-  kgen.return %0 : !kgen.ref<@FooStruct<T:type = i32>>
+  %0 = kgen.call @wrapInFoo<T:type = i32>(%a) : (!pop.pointer<i32>) -> !kgen.declref<@FooStruct<T:type = i32>>
+  kgen.return %0 : !kgen.declref<@FooStruct<T:type = i32>>
 }
