@@ -26,24 +26,28 @@ class ASTDecl;
 class LitSharedState;
 class MValue;
 
-/// This type represents an AST type for a value or declaration, which is an
-/// MLIRType.
+/// This is a simple wrapper around an MLIR Type that provides helpful utilities
+/// for working with our types, provides pretty printing in diagnostics, and
 ///
 class ASTType {
 public:
-  ASTType() {}
-  ASTType(Type type) : type(type) {}
+  /// The MLIR version of the type is conveniently accessible.
+  Type mlirType;
 
-  Type getMLIRType() const { return type; }
+  ASTType() {}
+
+  // Implicitly convert to and from MLIR Type.
+  ASTType(Type mlirType) : mlirType(mlirType) {}
+  operator Type() const { return mlirType; }
+
+  /// ASTType is nullable.
+  bool isNull() const { return !mlirType; }
+  explicit operator bool() const { return !!mlirType; }
+  bool operator!() const { return !mlirType; }
 
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type, return null.
   ASTDecl *getDecl(LitSharedState &shared) const;
-
-  /// ASTType is nullable.
-  bool isNull() const { return !type; }
-  explicit operator bool() const { return !!type; }
-  bool operator!() const { return !type; }
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
@@ -59,14 +63,11 @@ public:
 
   /// ASTType can be put into a PointerUnion, these are implementation details.
   void *getAsVoidPointer() const {
-    return const_cast<void *>(type.getAsOpaquePointer());
+    return const_cast<void *>(mlirType.getAsOpaquePointer());
   }
   static ASTType getFromVoidPointer(void *ptr) {
     return ASTType(Type::getFromOpaquePointer(ptr));
   }
-
-private:
-  Type type;
 };
 
 mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);

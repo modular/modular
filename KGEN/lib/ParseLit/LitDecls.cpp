@@ -310,7 +310,7 @@ struct ParsedMetaSignature {
                        "meta parameters always require a type") ||
           p.parseType(paramType, decl, None))
         return failure();
-      inputDecls.push_back(ParamDeclAttr::get(name, paramType.getMLIRType()));
+      inputDecls.push_back(ParamDeclAttr::get(name, paramType));
       inputASTTypes.push_back(paramType);
       return success();
     };
@@ -609,7 +609,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
     // Install the correct MLIR Type, which is the MLIR projection of the AST
     // type with any convention changes applied.
-    auto mlirType = param.type.getMLIRType();
+    Type mlirType = param.type;
     if (param.isByRef)
       mlirType = POP::PointerType::get(mlirType);
     paramTypes.push_back(mlirType);
@@ -621,7 +621,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
-  funcOp.setType(builder.getFunctionType(paramTypes, resultType.getMLIRType()));
+  funcOp.setType(builder.getFunctionType(paramTypes, {resultType.mlirType}));
   funcOp.setParamDeclsAttr(
       builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
@@ -728,7 +728,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   if (p.consumeIf(LitToken::colon)) {
     if (p.parseType(type, decl, decl.getIndentation()))
       return failure();
-    varOp.getResult().setType(POP::PointerType::get(type.getMLIRType()));
+    varOp.getResult().setType(POP::PointerType::get(type));
   }
 
   // Parse the initializer if present.
@@ -760,7 +760,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     // Infer the type if we lack a declared type (`var x = 42`)
     if (!type) {
       type = rhsValue.type;
-      varOp.getResult().setType(POP::PointerType::get(type.getMLIRType()));
+      varOp.getResult().setType(POP::PointerType::get(type));
     }
 
     // The types line up, do a store.

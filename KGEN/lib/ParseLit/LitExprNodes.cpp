@@ -305,8 +305,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     //
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    Type declIRType = implicitDeclType.getMLIRType();
-    declIRType = POP::PointerType::get(declIRType);
+    Type declIRType = POP::PointerType::get(implicitDeclType);
 
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
@@ -405,9 +404,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
     if (argVal.getType() != expectedType) {
       emitter.emitError(argAnyValueTypeAndLoc.expr->getLoc(), "value of type ")
           << argAnyValueTypeAndLoc.type
-          << " cannot be converted to expected type "
-          // TODO: Print pretty expected type when we have it.
-          << expectedType;
+          << " cannot be converted to expected type " << ASTType(expectedType);
       return {};
     }
     valueArguments.push_back(argVal);
@@ -718,7 +715,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
     // TODO(Issue #4321): Perform parameter substitution
     Value resultVal = emitter.builder->create<LITStructExtractOp>(
-        emitter.translateLocation(getLoc()), varASTType.getMLIRType(),
+        emitter.translateLocation(getLoc()), varASTType.mlirType,
         varOp.getNameAttr(), baseRV.ir);
     return {DRValue(resultVal), varASTType};
   }
@@ -1060,10 +1057,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       // TODO: Support conversions.
       if (indexVal.ir.getType() != decl.getType()) {
         emitter.emitError(indexExpr->getLoc(), "parameter of type ")
-            << indexVal.type
-            << " cannot be converted to expected type "
-            // TODO: Pretty type.
-            << decl.getType();
+            << indexVal.type << " cannot be converted to expected type "
+            << ASTType(decl.getType());
         return {};
       }
       paramBindings.push_back(ParamBindAttr::get(decl, indexVal.ir));
@@ -1105,8 +1100,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       // parameters changes the types of later ones.
       if (val.ir.getType() != decl.getType()) {
         emitter.emitError(idx->getLoc(), "index has type ")
-            // TODO: Print pretty decl type.
-            << val.type << " but declaration expects " << decl.getType();
+            << ASTType(val.type) << " but declaration expects "
+            << ASTType(decl.getType());
         return {};
       }
       bindOperands.push_back(val.ir);
@@ -1404,6 +1399,6 @@ ASTTypeAnd<AnyValue> IfElseOpNode::emitIR(ExprEmitter &emitter,
     return {};
   }
   // Ensure the correct type is used.
-  ifOp->getResult(0).setType(trueVal.type.getMLIRType());
+  ifOp->getResult(0).setType(trueVal.type);
   return {(DRValue)ifOp.getResult(0), trueVal.type};
 }

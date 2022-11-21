@@ -25,14 +25,14 @@ using namespace M::KGEN::LIT;
 //===----------------------------------------------------------------------===//
 
 ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
-  if (auto declRef = dyn_cast<LITDeclRefType>(type))
+  if (auto declRef = dyn_cast<LITDeclRefType>(mlirType))
     return &shared.getDeclForSymbol(declRef.getSymbol());
   return nullptr;
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
-  return type == other.type;
+  return mlirType == other.mlirType;
 }
 
 /// Convert this type to a human readable string representation so it can be
@@ -41,7 +41,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
   if (!astType)
     return os << "<<NULL ASTTYPE>>";
 
-  auto type = astType.getMLIRType();
+  auto type = astType.mlirType;
   if (auto declRef = dyn_cast<LITDeclRefType>(type)) {
     // TODO: Could include name scope information.
     os << declRef.getSymbol().getRootReference().str();
