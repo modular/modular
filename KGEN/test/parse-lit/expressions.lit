@@ -24,39 +24,39 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call_param{{.*}} @Int::@__pow__](%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**a**z
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call_param{{.*}} @Int::@__neg__](%[[INT_TWO]])
   # CHECK-NEXT:  %[[MUL:.*]] = kgen.call_param{{.*}} @Int::@__mul__](%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call_param{{.*}} @Int::@__add__](%[[Z]], %[[MUL]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) * -Int(2)
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call_param{{.*}} @Int::@__neg__](%[[INT_TWO]])
   # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.call_param{{.*}} @Int::@__floordiv__](%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call_param{{.*}} @Int::@__add__](%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) // -Int(2)
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call_param{{.*}} @Int::@__neg__](%[[INT_TWO]])
   # CHECK-NEXT:  %[[MOD:.*]] = kgen.call_param{{.*}} @Int::@__mod__](%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call_param{{.*}} @Int::@__add__](%[[Z]], %[[MOD]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) % -Int(2)
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[THREE]])
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call_param{{.*}} @Int::@__add__](%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])

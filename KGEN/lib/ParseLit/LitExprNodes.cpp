@@ -46,9 +46,11 @@ ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
   if (!rep) // Already diagnosed error.
     return {};
 
+  // If this is already an RValue, then we are done.
   if (auto rvRep = rep.ir.getIfRValue())
     return {rvRep, rep.type};
 
+  // Finally, if this is an LValue, emit a load.
   auto pointer = rep.ir.getIfLValue();
   assert(pointer);
 
@@ -57,10 +59,9 @@ ASTTypeAnd<RValue> ExprEmitter::emitRValue(ASTTypeAnd<AnyValue> rep,
     return {};
   }
 
-  // Finally, if this is an LValue, emit a load.
   Value load = builder->create<POP::LoadOp>(translateLocation(loc), pointer,
                                             /*alignment*/ None);
-  return {DRValue(load), rep.type};
+  return {DRValue(load), load.getType()};
 }
 
 ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
@@ -401,9 +402,9 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
       return {};
 
     // TODO: Handle implicit conversions.
-    if (argVal.getType() != expectedType) {
+    if (!ASTType(argVal.getType()).isEqualCanon(expectedType)) {
       emitter.emitError(argAnyValueTypeAndLoc.expr->getLoc(), "value of type ")
-          << argAnyValueTypeAndLoc.type
+          << ASTType(argVal.getType())
           << " cannot be converted to expected type " << ASTType(expectedType);
       return {};
     }
@@ -1243,20 +1244,22 @@ static SpecialFunctionKind getOpSpecialFunctions(ExprNode::Kind kind) {
 
 ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
                                        ASTType contextualType) const {
-  ASTTypeAnd<AnyValue> lhsRep, rhsRep;
+  ASTTypeAnd<AnyValue> lhsRep;
+  ASTTypeAnd<RValue> rhsRep;
 
   // We generally emit the LHS before the RHS, but need to do special things
   // for an assignment statement.
   if (!isAssignmentStmt()) {
-    lhsRep = lhs->emitIR(emitter);
-    rhsRep = rhs->emitIR(emitter);
+    auto lhsRV = emitter.emitRValue(lhs);
+    lhsRep = {lhsRV.ir, lhsRV.type};
+    rhsRep = emitter.emitRValue(rhs);
     if (!lhsRep || !rhsRep)
       return {};
   } else {
     // In an assignment, we emit the RHS first as a value and the LHS as an
     // lvalue with a contextual type.  This is required to enable the 'implicit
     // declaration' behavior in a def.
-    rhsRep = rhs->emitIR(emitter);
+    rhsRep = emitter.emitRValue(rhs);
     if (!rhsRep)
       return {};
 
@@ -1332,7 +1335,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);
   // TODO: Add support for radd, looking up on the RHS.
-  ASTTypeExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
+  ASTTypeExprAnd<AnyValue> argValues[] = {{lhsRep, lhs},
+                                          {{rhsRep.ir, rhsRep.type}, rhs}};
   return emitter.emitSpecialMethodCall(lhsRep.type, specialFnKind, argValues,
                                        getLoc());
 }
