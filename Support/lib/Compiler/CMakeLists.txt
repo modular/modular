@@ -6,6 +6,7 @@
 
 add_modular_mlir_library(MCompilerSupport
   MLIRDType.cpp
+  VerifyUtils.cpp
 
   LINK_LIBS PUBLIC
   MSupportML
