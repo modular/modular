@@ -19,6 +19,8 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "SelectFastestFunction.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
@@ -1092,8 +1094,13 @@ void ParameterRewriter::completeGeneratorUserProcessing(
     for (auto [operand, argument] :
          llvm::zip(newCalleeFunc.getArguments(), user->getOperands()))
       bv.map(operand, argument);
-    for (Operation &op : newCalleeFunc.getBody()->without_terminator())
-      b.clone(op, bv);
+
+    for (Operation &op : newCalleeFunc.getBody()->without_terminator()) {
+      Operation *cloned = b.clone(op, bv);
+      cloned->walk([&](Operation *op) {
+        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), user->getLoc()));
+      });
+    }
     Operation *terminator =
         b.clone(*newCalleeFunc.getBody()->getTerminator(), bv);
     b.replaceOp(user, terminator->getOperands());
@@ -1276,8 +1283,13 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
 
   // Clone all of the operations in the block.
   OpBuilder b(call);
-  for (auto &bodyOp : bodyBlock)
-    b.insert(cloneOperation(&bodyOp, mapper, operationMap));
+  for (auto &bodyOp : bodyBlock) {
+    Operation *clonedOp =
+        b.insert(cloneOperation(&bodyOp, mapper, operationMap));
+    clonedOp->walk([&](Operation *newOp) {
+      newOp->setLoc(mlir::CallSiteLoc::get(newOp->getLoc(), call->getLoc()));
+    });
+  }
 
   // Lookup all the parameter decls and uses in the body of region, we will
   // visit all of them as the evaluator continues processing the ops we just
@@ -1358,6 +1370,13 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
+
+  // If this operation has a subprogram scope, update the location. The
+  // subprogram may reference parameters within its types.
+  if (DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op)) {
+    op->setLoc(
+        cast<Location>(getEvaluator().getReboundAttribute(op->getLoc())));
+  }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1488,6 +1507,9 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
   rewriterWorklist.emplace_back(new ParameterRewriter(
       *this, func, symtab, std::move(opsToRewrite), inlined));
 
+  // Extract the debug info from the function, if it's present.
+  auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
+
   // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
   SmallVector<ElaboratedGeneratorOrCalleeError> results;
@@ -1510,6 +1532,19 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
       results.push_back(rewriter->takeDiagnosticAndEraseFunc());
     }
   }
+
+  // If we had a subprogram, update uses with the newly elaborated subprogram.
+  if (oldFuncSp) {
+    auto newFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
+    if (newFuncSp != oldFuncSp) {
+      DebugInfo::DIAttrTypeReplacer replacer;
+      replacer.addReplacement([&](DebugInfo::DISubprogramAttr attr) {
+        return attr == oldFuncSp ? newFuncSp : attr;
+      });
+      replacer.recursivelyReplaceElementsIn(func);
+    }
+  }
+
   return results;
 }
 
@@ -1563,13 +1598,46 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // To handle this, we let the symbol table autorename it, but keep track of
   // the first successful implementation in a map.  We rename it back after the
   // module has finished elaboration.
+  FuncOp firstSuccessfulImpl;
   if (inputParamValues.empty()) {
     for (auto &candidate : result) {
       if (std::holds_alternative<ElaboratedGenerator>(candidate)) {
-        firstConcreteFuncForGenerator.insert(
+        auto it = firstConcreteFuncForGenerator.insert(
             {generator, std::get<ElaboratedGenerator>(candidate).func});
+        firstSuccessfulImpl = it.first->second;
         break;
       }
+    }
+  }
+
+  // If the generator had debug information, update the debug info for any
+  // elaborated instantiations.
+  if (DebugInfo::extractScope(generator)) {
+    for (auto &candidate : result) {
+      if (!std::holds_alternative<ElaboratedGenerator>(candidate))
+        continue;
+      FuncOp elabFunc = std::get<ElaboratedGenerator>(candidate).func;
+
+      // If this function was the first successful instantiation, it will get to
+      // inherit the original name of the generator (i.e., nothing to do here).
+      if (elabFunc == firstSuccessfulImpl)
+        continue;
+
+      // Otherwise, we need to update the sub program to use the new linkage
+      // name.
+      auto oldSpAttr =
+          DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(elabFunc);
+      auto newSpAttr = DebugInfo::DISubprogramAttr::get(
+          b.getContext(), oldSpAttr.getCompileUnit(), oldSpAttr.getScope(),
+          oldSpAttr.getName(), elabFunc.getNameAttr(), oldSpAttr.getFile(),
+          oldSpAttr.getLine(), oldSpAttr.getScopeLine(),
+          oldSpAttr.getSubprogramFlags(), oldSpAttr.getType());
+
+      DebugInfo::DIAttrTypeReplacer replacer;
+      replacer.addReplacement([&](DebugInfo::DISubprogramAttr attr) {
+        return attr == oldSpAttr ? newSpAttr : attr;
+      });
+      replacer.recursivelyReplaceElementsIn(elabFunc);
     }
   }
 
