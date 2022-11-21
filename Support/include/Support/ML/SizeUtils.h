@@ -13,10 +13,10 @@
 //  - uint64_t (aka 'raw form'), where ~0 denotes 'unknown', and the value
 //    cannot be zero. This is a BEF-friendly representation, since BEF has
 //    no support for optional attributes.
-//  - int64_t (aka 'raw signed form'), where -1 denotes 'unknown' and the value
-//    must otherwise be strictly positive. This matches the MLIR ShapedType
-//    convention, where ShapedType::kDynamicSize is -1, except we consider 0
-//    illegal.
+//  - int64_t (aka 'raw signed form'), where the MLIR ShapedType::kDynamicSize
+//    value denotes 'unknown', and the value must otherwise be strictly
+//    positive. This matches the MLIR ShapedType convention, except we consider
+//    0 illegal.
 //
 // At run time we have the representation:
 //  - size_t (aka 'runtime form'), where ~0 denotes 'unknown'.
@@ -41,6 +41,7 @@ namespace M {
 constexpr uint64_t kUnknownSize = ~0;
 
 /// Denotes an unknown size in the 'raw signed form' encoding.
+/// Copied from ShapedType::kDynamicSize so as to avoid dependency.
 constexpr int64_t kUnknownSignedSize = std::numeric_limits<int64_t>::min();
 
 /// Denotes an unknown size in the 'runtime form' encoding.
