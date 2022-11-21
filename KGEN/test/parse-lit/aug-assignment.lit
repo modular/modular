@@ -3,8 +3,8 @@
 __include "../lit-examples/prolog.lit"
 
 struct M:
-  var value : index
-  fn __new__(value: index) -> M:
+  var value : __mlir_type.index
+  fn __new__(value: __mlir_type.index) -> M:
     return M(0)
 
   fn __imatmul__(&self, rhs: M) -> M:

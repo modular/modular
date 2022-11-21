@@ -82,7 +82,7 @@ public:
   ASTType getStringLiteralType() const;
 
   /// This is the decl for the builtin 'index' type.
-  ASTType getIndexType() const;
+  // ASTType getIndexType() const;
 
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
@@ -132,7 +132,7 @@ public:
 
   /// Add declarations for magic things to the builtins decl when parsing
   /// starts.
-  void addBuiltinTypes(ASTDecl &builtinsDecl);
+  void addBuiltinTypes(ASTDecl &builtinsDecl, llvm::SMLoc smLoc);
 
   /// When a lookup in __mlir_type fails for a named field, this method tries to
   /// resolve it.  On success, it lazily creates a resolved declaration.  On
@@ -194,8 +194,6 @@ enum class MagicDeclKind : uint8_t {
   kFloatLiteralType,
   // This is the '__builtin.StringLiteralType' type.
   kStringLiteralType,
-  // This is the __builtin.mlirtype["builtin.index"] type.
-  kIndexType,
   // This is the __builtin.mlirtype["lit.none"] type.
   kNoneType,
   // This is a FunctionType that is lowered to a KGEN::SignatureType.

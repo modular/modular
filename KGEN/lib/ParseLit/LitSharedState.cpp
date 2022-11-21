@@ -69,8 +69,6 @@ public:
   // TODO: Add IntegerLiteralType.
   ASTDecl *floatLiteralTypeDecl = nullptr;
   ASTDecl *stringLiteralTypeDecl = nullptr;
-  /// This is the decl for the builtin 'index' type.
-  ASTDecl *indexDecl = nullptr;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTDecl *noneDecl = nullptr;
   /// This is the decl for the builtin signature type.
@@ -158,10 +156,6 @@ ASTType LitSharedState::getStringLiteralType() const {
   return impl->stringLiteralTypeDecl->getResolvedType();
 }
 
-ASTType LitSharedState::getIndexType() const {
-  return impl->indexDecl->getResolvedType();
-}
-
 ASTType LitSharedState::getNoneType() const {
   return impl->noneDecl->getResolvedType();
 }
@@ -179,7 +173,7 @@ ASTType LitSharedState::getFunctionType(MValue resultType) {
 }
 
 /// Add declarations for magic things to the builtins decl.
-void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
+void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   auto &resolver = *declResolver;
 
   // Make the error type.  Anything that references this will
@@ -207,8 +201,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
       "FloatLiteralType", MagicDeclKind::kFloatLiteralType, &builtinsDecl);
   impl->stringLiteralTypeDecl = &resolver.addMagicDecl(
       "StringLiteralType", MagicDeclKind::kStringLiteralType, &builtinsDecl);
-  impl->indexDecl =
-      &resolver.addMagicDecl("index", MagicDeclKind::kIndexType, &builtinsDecl);
   impl->noneDecl =
       &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
 
@@ -299,8 +291,6 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
       return result = Float64Type::get(context);
     case MagicDeclKind::kStringLiteralType:
       // FIXME: Add a sensible type.
-      return result = IndexType::get(context);
-    case MagicDeclKind::kIndexType:
       return result = IndexType::get(context);
     case MagicDeclKind::kNoneType:
       return result = KGEN::NoneType::get(context);

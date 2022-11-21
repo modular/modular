@@ -74,8 +74,8 @@ fn precedence_associativity(a: Int):
   z = -Int(2)**z
 
 struct M:
-  var value : index
-  fn __new__(value: index) -> M:
+  var value : __mlir_type.index
+  fn __new__(value: __mlir_type.index) -> M:
     return M(0)
   fn __neg__(self) -> M:
     return M(0)
@@ -173,7 +173,7 @@ z
   return x
 
 # CHECK-LABEL: lit.func @listValues() -> index {
-def listValues() -> index:
+def listValues() -> __mlir_type.index:
   # CHECK:      %[[ONE:.*]] = {{.*}} 1
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT: %[[THREE:.*]] = {{.*}} 3
