@@ -1,0 +1,69 @@
+// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm -allow-unregistered-dialect | FileCheck %s
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 32
+> : !debuginfo.unresolved<i32>
+
+// CHECK-LABEL: func @simple
+func.func @simple() {
+  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(0 : i32) : i32
+  %value = llvm.mlir.constant(0 : i32) : i32
+
+  // CHECK: llvm.dbg.value #{{.*}} = %[[VAL]] : i32
+  debuginfo.value #local_variable = %value : i32
+  return
+}
+
+// Test translation of dbg.value to dbg.addr.
+
+// CHECK-LABEL: func @value_to_addr_arg
+// CHECK-SAME: (%[[ARG:.*]]: i32)
+func.func @value_to_addr_arg(%arg: i32) -> i32 {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr<i32>
+  // CHECK: llvm.dbg.declare #{{.*}} = %[[ALLOC]] : <i32>
+  // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: return %[[RESULT]] : i32
+
+  debuginfo.value #local_variable = %arg : i32
+  return %arg : i32
+}
+
+// CHECK-LABEL: func @value_to_addr_op
+func.func @value_to_addr_op() -> i32 {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr<i32>
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: llvm.dbg.declare #{{.*}} = %[[ALLOC]] : <i32>
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: return %[[RESULT]] : i32
+
+  %value = "test.op"() : () -> i32
+  debuginfo.value #local_variable = %value : i32
+  return %value : i32
+}

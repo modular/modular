@@ -1,0 +1,63 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file provides support for converting debug info constructs.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H
+#define SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H
+
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+
+namespace M::DebugInfo {
+/// This class enables the conversion of DebugInfo constructs in the presence of
+/// type conversions. It describes how to convert the debug type information,
+/// and how to update location expressions to account for type changes.
+class DebugInfoTypeConverter {
+public:
+  DebugInfoTypeConverter();
+
+  /// Convert the given type to a debug info type. Returns a null type in the
+  /// case of failure.
+  DIType convertDebugType(Type type);
+
+  /// Attach a conversion the produces a new debug type for the given MLIR type.
+  template <typename FnT,
+            typename T = typename llvm::function_traits<FnT>::template arg_t<0>>
+  std::enable_if_t<std::is_same_v<T, Type>> addConversion(FnT &&conversion) {
+    // Wrap conversions that don't use a derived type to remove the need to
+    // explicitly skip DITypes. These are handled automatically.
+    replacer.addReplacement([conversion = std::forward<FnT>(conversion)](
+                                Type type) -> Optional<Type> {
+      if (isa<DIType>(type))
+        return llvm::None;
+      return conversion(type);
+    });
+  }
+  template <typename FnT,
+            typename T = typename llvm::function_traits<FnT>::template arg_t<0>>
+  std::enable_if_t<!std::is_same_v<T, Type>> addConversion(FnT &&conversion) {
+    replacer.addReplacement(std::forward<FnT>(conversion));
+  }
+
+  /// Attach a type converter, which is used to convert unresolved MLIR types as
+  /// necessary.
+  void addUnresolvedConverter(TypeConverter &converter);
+
+  /// Apply the converter recursively to the given operation.
+  void applyRecursively(Operation *op);
+
+private:
+  /// The underlying attr/type replacer, used to perform the actual
+  /// conversions.
+  mlir::AttrTypeReplacer replacer;
+};
+
+} // namespace M::DebugInfo
+
+#endif // SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H

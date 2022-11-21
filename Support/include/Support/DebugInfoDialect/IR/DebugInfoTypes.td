@@ -189,6 +189,13 @@ def DebugInfo_DIStructType : DIType<"DIStruct", "struct"> {
       return $_get(name.getContext(), name, members);
     }]>
   ];
+  let extraClassDeclaration = [{
+    /// Return the size of the type in bits.
+    uint64_t getSizeInBits() const;
+
+    /// Return the alignment of the type in bits.
+    uint32_t getAlignInBits() const;
+  }];
   let assemblyFormat = "`<` custom<Name>($name) `(` (`)`):($members^ `)`)? `>`";
 }
 

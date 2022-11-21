@@ -59,3 +59,31 @@ bool DIScopeAttr::classof(Attribute attr) {
 bool DILocalScopeAttr::classof(Attribute attr) {
   return llvm::isa<DILexicalBlockAttr, DISubprogramAttr>(attr);
 }
+
+//===----------------------------------------------------------------------===//
+// Support
+//===----------------------------------------------------------------------===//
+
+DIScopeAttr DebugInfo::extractScope(Location loc) {
+  if (auto fusedLoc =
+          loc->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>())
+    return fusedLoc.getMetadata();
+  return {};
+}
+
+DIScopeAttr DebugInfo::extractScope(Operation *op) {
+  return extractScope(op->getLoc());
+}
+
+void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {
+  // As an optimization, we only replace attributes within the dictionaries of
+  // DebugInfo operations. For everything else, we only check the location for
+  // debug info.
+  bool updateAttrs =
+      llvm::isa_and_present<DebugInfo::DebugInfoDialect>(op->getDialect());
+  AttrTypeReplacer::replaceElementsIn(op, updateAttrs, /*replaceLocs=*/true);
+}
+
+void DIAttrTypeReplacer::recursivelyReplaceElementsIn(Operation *op) {
+  op->walk([&](Operation *op) { replaceElementsIn(op); });
+}

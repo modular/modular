@@ -24,6 +24,14 @@ class DIType : public Type {
 public:
   using Type::Type;
 
+  /// Return the size of the type bits, or zero if the size cannot be
+  /// determined.
+  uint64_t getSizeInBits() const;
+
+  /// Return the alignment of the type bits, or zero if the alignment cannot
+  /// be determined.
+  uint32_t getAlignInBits() const;
+
   /// Support LLVM type casting.
   static bool classof(Type type) {
     return llvm::isa<DebugInfoDialect>(type.getDialect());
