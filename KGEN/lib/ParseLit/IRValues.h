@@ -53,6 +53,11 @@ class LValue : public Value {
 public:
   using Value::Value;
   LValue(Value v) : Value(v) {}
+
+  /// This method returns the type of this value when projected as an RValue.
+  /// If this is already an RValue, it is the type of the value.  If this is
+  /// an LValue, it strips off the pointer type.
+  ASTType getRValueType() const;
 };
 
 /// Instances of MValue model compile time values that are represented as MLIR
@@ -230,6 +235,11 @@ public:
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
   MValue getIfMValue() const { return dyn_cast<MValue>(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
+
+  /// This method returns the type of this value when projected as an RValue.
+  /// If this is already an RValue, it is the type of the value.  If this is
+  /// an LValue, it strips off the pointer type.
+  ASTType getRValueType() const;
 
   /// If this value /is/ a type return it.
   /// FIXME: virtually all users of this are going to be incorrect with type

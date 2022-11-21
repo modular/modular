@@ -492,7 +492,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
-    return {LValue(var.getResult()), decl->getResolvedType()};
+    return {LValue(var.getResult()), var.getType()};
 
   // Functions form an address.
   if (auto fnOp = dyn_cast<LITFuncOp>(*decl)) {
@@ -505,7 +505,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   if (auto rvalue = decl->getIfRValue())
     return {rvalue, decl->getResolvedType()};
   if (auto lvalue = decl->getIfLValue())
-    return {lvalue, decl->getResolvedType()};
+    return {lvalue, lvalue.getType()};
 
   // If this is a type declaration, return it as a type.
   if (isa<LITStructDeclOp>(*decl)) {
@@ -660,7 +660,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
   }
 
   // Otherwise, it must be an access to a field of a value.
-  ASTDecl *typeDecl = baseVal.type.getDecl(emitter.shared);
+  ASTDecl *typeDecl = baseVal.ir.getRValueType().getDecl(emitter.shared);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "MLIR type ")
         << baseVal.type << " has no attributes";
@@ -696,7 +696,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
       Value resultGEP = emitter.builder->create<LITStructGEPOp>(
           emitter.translateLocation(getLoc()), varOp.getType(),
           varOp.getNameAttr(), baseLV);
-      return {LValue(resultGEP), varASTType};
+      return {LValue(resultGEP), resultGEP.getType()};
     }
 
     // Otherwise, it must be an rvalue.
@@ -1284,9 +1284,9 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
       // Check to see if the destination type and the source type are
       // compatible.
       // TODO: Implement implicit conversions.
-      if (!lhsPat.type.isEqualCanon(rv.type)) {
+      if (!lhsPat.ir.getRValueType().isEqualCanon(rv.type)) {
         emitter.emitError(rhs->getLoc(), "cannot convert value of type ")
-            << rv.type << " to " << lhsPat.type;
+            << rv.type << " to " << lhsPat.ir.getRValueType();
         return {};
       }
 
@@ -1337,8 +1337,8 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
   // TODO: Add support for radd, looking up on the RHS.
   ASTTypeExprAnd<AnyValue> argValues[] = {{lhsRep, lhs},
                                           {{rhsRep.ir, rhsRep.type}, rhs}};
-  return emitter.emitSpecialMethodCall(lhsRep.type, specialFnKind, argValues,
-                                       getLoc());
+  return emitter.emitSpecialMethodCall(lhsRep.ir.getRValueType(), specialFnKind,
+                                       argValues, getLoc());
 }
 
 ASTTypeAnd<AnyValue> UnaryOpNode::emitIR(ExprEmitter &emitter,
