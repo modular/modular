@@ -66,9 +66,6 @@ public:
 
   ASTDecl &getMLIRTypeScope() const; // decl for __mlir_type.
 
-  /// This is the "type" type, which can bind to any lit type.
-  ASTType getTypeType() const;
-
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 

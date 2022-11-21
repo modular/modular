@@ -33,8 +33,6 @@ public:
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
-  /// This is the "type" type, which can bind to any lit type.
-  ASTType typeType;
 
   /// This is the __mlir_type declaration.
   ASTDecl *mlirTypeDecl = nullptr;
@@ -101,11 +99,9 @@ Location LitSharedState::translateLocation(SMLoc loc) const {
 ASTDecl &LitSharedState::getMLIRTypeScope() const {
   return *impl->mlirTypeDecl;
 }
-
 ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
-ASTType LitSharedState::getTypeType() const { return impl->typeType; }
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
 
 ASTType LitSharedState::getObjectType() const {
@@ -153,11 +149,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   mlirAttrDecl->magicKind = MagicDeclKind::k__mlir_attr;
 
   // Add a declarations for builtin types.
-  impl->typeType = resolver
-                       .addFullyResolvedDecl(
-                           MLIRTypeType::get(context), "type", loc,
-                           impl->mlirTypeDecl->getResolvedType(), &builtinsDecl)
-                       .getResolvedType();
   impl->noneType = KGEN::NoneType::get(context);
 
   // Make the error type.  Anything that references this will
@@ -182,12 +173,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
 /// Get a uniqued and pointer sized reference to an ASTType.
 ASTType LitSharedState::getASTType(ASTDecl &decl,
                                    ArrayRef<ParamBinding> params) {
-  // If this decl is just an MLIR type already, return it.
-  if (auto type = decl.getIfMLIRType()) {
-    assert(params.empty() && "Cannot parameterize an fixed mlir type");
-    return ASTType(type);
-  }
-
   auto symbol = decl.getSymbolRef();
   assert(symbol && "cannot get type for decl without a symbol");
 
