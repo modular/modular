@@ -25,8 +25,20 @@ class LLVMFuncOp;
 } // namespace LLVM
 } // namespace mlir
 
+namespace M::LLCL {
+class Runtime;
+}
+
 namespace M::Cache {
 class CacheDialect;
+
+/// Create an instance of the pass with the given LLCL::Runtime.
+std::unique_ptr<mlir::Pass> createDeflateSymbolsPass(LLCL::Runtime &rt);
+std::unique_ptr<mlir::Pass> createInflateSymbolsPass(LLCL::Runtime &rt);
+
+/// Register the cache passes - their constructors require the LLCL::Runtime
+/// provided.
+void registerCachePasses(LLCL::Runtime &rt);
 
 //===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration
