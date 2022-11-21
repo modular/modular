@@ -296,11 +296,6 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
 
   // Handle the case where lookup fails.
   if (!lookupResult) {
-    // If this is a lookup in __mlir_type, then try to lazily synthesize the
-    // element in question.
-    if (scope.magicKind == MagicDeclKind::k__mlir_type)
-      return shared.synthesizeMLIRTypeDeclEntry(name, loc, scope);
-
     // If there is a contextual type available then this is an implicit variable
     // definition, otherwise it is an error.  There will never be a contextual
     // type in a `fn`, only a `def`.
@@ -581,6 +576,29 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
                           *this);
 }
 
+/// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
+/// type.
+static Type parseMLIRType(StringRef name, SMLoc loc, LitSharedState &shared) {
+  Type result;
+  {
+    // Capture errors thrown by parseType and ignore them.
+    // FIXME: This doesn't silence errors!
+    mlir::ScopedDiagnosticHandler handler(shared.getContext(),
+                                          [](Diagnostic &diag) {});
+
+    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
+    // Copy the string into a temporary smallvector so we can make sure it is
+    // nul terminated for the MLIR asmparser.
+    SmallString<64> tmpBuf(name.begin(), name.end());
+    tmpBuf.push_back(0);
+    result =
+        mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
+  }
+  if (!result)
+    shared.emitError(loc, "unknown MLIR type: ") << name;
+  return result;
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
@@ -653,6 +671,15 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     // Handle __mlir_attr.`xxx` references.
     if (typeDecl->magicKind == MagicDeclKind::k__mlir_attr)
       return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
+    // If this is a lookup in __mlir_type, then try to lazily synthesize the
+    // element in question.
+    if (typeDecl->magicKind == MagicDeclKind::k__mlir_type) {
+      Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
+      if (!result)
+        return {};
+      return {ASTType(result), emitter.shared.getTypeType()};
+    }
+
     // Normal member reference.
     auto rValueAnd =
         emitDeclMemberReference(*typeDecl, attrSpelling, getLoc(), emitter);

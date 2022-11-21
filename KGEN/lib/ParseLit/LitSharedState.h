@@ -119,12 +119,6 @@ public:
   /// starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl, llvm::SMLoc smLoc);
 
-  /// When a lookup in __mlir_type fails for a named field, this method tries to
-  /// resolve it.  On success, it lazily creates a resolved declaration.  On
-  /// failure, it bails out.
-  ASTDecl *synthesizeMLIRTypeDeclEntry(StringRef name, llvm::SMLoc loc,
-                                       ASTDecl &scope);
-
 private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
