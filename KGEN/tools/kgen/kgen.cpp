@@ -245,7 +245,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Initialize the LLCL runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+      LLCL::createSingleThreadWorkQueue());
 
   ObjectCompiler compiler(runtime, ".kgen_cache", *theModule);
 

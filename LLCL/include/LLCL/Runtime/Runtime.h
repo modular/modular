@@ -19,6 +19,7 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "llvm/ADT/StringRef.h"
 #include <atomic>
 
 namespace M {
@@ -35,8 +36,11 @@ class WorkQueue;
 ///
 class Runtime final {
 public:
+  /// Construct runtime with allocator and workQueue. If profileFilename is
+  /// non-empty then time profiling will be activated and the profile JSON
+  /// will be written to that file.
   Runtime(std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename);
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {});
   ~Runtime();
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.

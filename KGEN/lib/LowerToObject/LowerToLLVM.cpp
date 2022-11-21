@@ -156,7 +156,7 @@ namespace M::KGEN {
 // TODO: delete this in favor of passing in an LLCL runtime to the pass.
 static Runtime getDefaultRuntime() {
   return {LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-          LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__)};
+          LLCL::createSingleThreadWorkQueue()};
 }
 
 namespace {
