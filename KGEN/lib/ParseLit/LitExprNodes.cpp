@@ -77,7 +77,7 @@ ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
   if (!attr) {
     auto type = rep.ir.getIfMTValue();
     assert(type && "unknown rvalue kind");
-    attr = ParameterizedTypeConstantAttr::get(shared.getMLIRType(type, loc));
+    attr = ParameterizedTypeConstantAttr::get(type.getMLIRType());
   }
 
   auto location = translateLocation(loc);
@@ -309,7 +309,7 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     //
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    Type declIRType = shared.getMLIRType(implicitDeclType, loc);
+    Type declIRType = implicitDeclType.getMLIRType();
     declIRType = POP::PointerType::get(declIRType);
 
     // Use this builder to place any VarDeclOps. In Python there is only one
@@ -746,9 +746,8 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
     // TODO(Issue #4321): Perform parameter substitution
     Value resultVal = emitter.builder->create<LITStructExtractOp>(
-        emitter.translateLocation(getLoc()),
-        emitter.shared.getMLIRType(varASTType, getLoc()), varOp.getNameAttr(),
-        baseRV.ir);
+        emitter.translateLocation(getLoc()), varASTType.getMLIRType(),
+        varOp.getNameAttr(), baseRV.ir);
     return {DRValue(resultVal), varASTType};
   }
 
@@ -1445,8 +1444,7 @@ ASTTypeAnd<AnyValue> IfElseOpNode::emitIR(ExprEmitter &emitter,
         << trueVal.type << " is not compatible with " << falseVal.type;
     return {};
   }
-  Type resultType = emitter.shared.getMLIRType(trueVal.type, ifLoc);
   // Ensure the correct type is used.
-  ifOp->getResult(0).setType(resultType);
+  ifOp->getResult(0).setType(trueVal.type.getMLIRType());
   return {(DRValue)ifOp.getResult(0), trueVal.type};
 }
