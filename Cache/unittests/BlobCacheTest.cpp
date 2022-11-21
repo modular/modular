@@ -37,8 +37,7 @@ protected:
   BlobCache<StringKeyInfo> cache;
   BlobCacheTest()
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
-                createSingleThreadWorkQueue(),
-                llvm::StringLiteral("BlobCacheTest.cpp")),
+                createSingleThreadWorkQueue()),
         cache(getDefaultBackendChain(runtime, "")) {}
 };
 

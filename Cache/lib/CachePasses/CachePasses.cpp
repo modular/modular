@@ -24,7 +24,7 @@ using namespace LLCL;
 // TODO: delete this in favor of passing in an LLCL runtime to the pass.
 static Runtime getDefaultRuntime() {
   return {createLeakCheckAllocator(createMallocAllocator()),
-          createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__)};
+          createSingleThreadWorkQueue()};
 }
 
 namespace M::Cache {

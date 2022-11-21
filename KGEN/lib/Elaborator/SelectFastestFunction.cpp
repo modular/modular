@@ -26,7 +26,7 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // TODO: The elaborator should take a reference to the runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+      LLCL::createSingleThreadWorkQueue());
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);

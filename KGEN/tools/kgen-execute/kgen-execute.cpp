@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
   // Initialize the LLCL runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue(), llvm::StringLiteral(__FILE__));
+      LLCL::createSingleThreadWorkQueue());
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
