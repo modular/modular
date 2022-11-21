@@ -194,8 +194,7 @@ synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
     return {};
   }
 
-  auto astType = emitter.shared.getASTTypeForMLIRType(typedAttr.getType(), loc);
-  return {MAValue(typedAttr), astType};
+  return {MAValue(typedAttr), typedAttr.getType()};
 }
 
 /// When a lookup in __mlir_op fails for a named field, this method tries to
@@ -599,9 +598,7 @@ ASTTypeAnd<AnyValue> IntLiteralNode::emitIR(ExprEmitter &emitter,
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
 
   // TODO: Switch to builtin.IntegerLiteralType.
-  auto indexType =
-      emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc());
-  return {AnyValue(attr), indexType};
+  return {AnyValue(attr), attr.getType()};
 }
 
 ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
@@ -612,23 +609,21 @@ ASTTypeAnd<AnyValue> FloatLiteralNode::emitIR(ExprEmitter &emitter,
                              APFloat(value.convertToDouble()));
   // FIXME: This should eventually use emitter.shared.getFloatLiteralType()
   // when we support conversions.
-  return {AnyValue(attr),
-          emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc())};
+  return {AnyValue(attr), attr.getType()};
 }
 
 ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
                                                ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   auto attr = StringAttr::get(emitter.getContext(), value);
-  return {AnyValue(),
-          emitter.shared.getASTTypeForMLIRType(attr.getType(), getLoc())};
+  return {AnyValue(), attr.getType()};
 }
 
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                              ASTType contextualType) const {
   auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
   return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
-          emitter.shared.getNoneType()};
+          noneMLIRType};
 }
 
 ASTTypeAnd<AnyValue> DeclRefNode::emitIR(ExprEmitter &emitter,
@@ -948,8 +943,7 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
   assert(resultOp->getNumResults() == 1 &&
          "Only support single result ops so far");
 
-  auto astType = emitter.shared.getASTTypeForMLIRType(
-      resultOp->getResult(0).getType(), call.getLoc());
+  auto resultType = resultOp->getResult(0).getType();
 
   // Check to see if we can fold this operation.  This enables use of __mlir_op
   // to produce meta-values without forcing them into the dynamic value domain.
@@ -966,7 +960,7 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
       // https://github.com/modularml/modular/issues/5162
       if (val.getType() == resultOp->getResult(0).getType()) {
         resultOp->erase();
-        return {DRValue(val), astType};
+        return {DRValue(val), resultType};
       }
     }
 
@@ -976,13 +970,13 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
       if (attr.getType() == resultOp->getResult(0).getType()) {
         // If it is a constant, make an MAValue result.
         resultOp->erase();
-        return {MAValue(attr), astType};
+        return {MAValue(attr), resultType};
       }
     }
   }
 
   // If folding failed, return the operation normally.
-  return {DRValue(resultOp->getResult(0)), astType};
+  return {DRValue(resultOp->getResult(0)), resultType};
 }
 
 ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
@@ -1187,9 +1181,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
     last = DRValue(emitter.builder->create<mlir::index::ConstantOp>(loc, 0));
   }
 
-  auto indexType = emitter.shared.getASTTypeForMLIRType(
-      IndexType::get(emitter.getContext()), getLoc());
-  return {last, indexType};
+  return {last, IndexType::get(emitter.getContext())};
 }
 
 /// Given an operator, return the SpecialFunction that implements it.
@@ -1359,9 +1351,7 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
       break;
     }
     auto resultAttr = ParamOperatorAttr::get(opcode, lhsParam.ir, rhsParam.ir);
-    auto attrType =
-        emitter.shared.getASTTypeForMLIRType(resultAttr.getType(), getLoc());
-    return {MValue(resultAttr), attrType};
+    return {MValue(resultAttr), resultAttr.getType()};
   }
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);

@@ -158,12 +158,11 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
                            MLIRTypeType::get(context), "type", loc,
                            impl->mlirTypeDecl->getResolvedType(), &builtinsDecl)
                        .getResolvedType();
-  impl->noneType = getASTTypeForMLIRType(KGEN::NoneType::get(context), smLoc);
+  impl->noneType = KGEN::NoneType::get(context);
 
   // Make the error type.  Anything that references this will
   // considering it erroneous and already declared as such.
-  impl->typeCheckErrorType =
-      getASTTypeForMLIRType(TypeCheckErrorType::get(context), smLoc);
+  impl->typeCheckErrorType = TypeCheckErrorType::get(context);
 
   // Add a declaration for `struct Function<ResultType: type>:` which gets a
   // magic lowering to KGEN::SignatureType.
@@ -250,29 +249,4 @@ ASTDecl *LitSharedState::synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
   return &declResolver->addFullyResolvedDecl(
       result, StringAttr::get(getContext(), name), translateLocation(loc),
       getTypeType(), &scope);
-}
-
-/// Given an MLIR type, return an ASTType that we can use for type system
-/// processing.  This should only be used for low level operations touching
-/// MLIR, it isn't efficient and shouldn't be used for general user defined
-/// types.
-ASTType LitSharedState::getASTTypeForMLIRType(Type mlirType, SMLoc loc) {
-  // To get an ASTType from an MLIR type, we stringify the MLIR type and look
-  // it up on the __mlir_type declaration.
-  std::string typeStr;
-  llvm::raw_string_ostream(typeStr) << mlirType;
-
-  // See if we already have this declaration.
-  auto &mlirTypeScope = getMLIRTypeScope();
-  ASTDecl *typeDecl =
-      mlirTypeScope.lookup(StringAttr::get(getContext(), typeStr));
-
-  // If not, synthesize it.
-  if (!typeDecl) {
-    typeDecl = synthesizeMLIRTypeDeclEntry(typeStr, loc, mlirTypeScope);
-    if (!typeDecl)
-      return {};
-  }
-
-  return getASTType(*typeDecl, {});
 }

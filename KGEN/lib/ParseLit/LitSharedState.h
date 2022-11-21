@@ -56,12 +56,6 @@ public:
   /// Get a uniqued and pointer sized reference to an ASTType.
   ASTType getASTType(ASTDecl &decl, ArrayRef<ParamBinding> params);
 
-  /// Given an MLIR type, return an ASTType that we can use for type system
-  /// processing.  This should only be used for low level operations touching
-  /// MLIR, it isn't efficient and shouldn't be used for general user defined
-  /// types.
-  ASTType getASTTypeForMLIRType(Type mlirType, llvm::SMLoc loc);
-
   /// Return the MLIR type that corresponds to this AST type.  On error, this
   /// emits an error at the specified location and returns an error type.
   Type getMLIRType(MValue type, llvm::SMLoc loc);
