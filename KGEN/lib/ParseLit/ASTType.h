@@ -25,59 +25,29 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class LitSharedState;
 class MValue;
-enum class MagicDeclKind : uint8_t;
 
-/// This is the underlying storage for an ASTType and shouldn't be interacted
-/// with directly.  Use ASTType instead.
-class ASTTypeStorage {
-private:
-  friend class LitSharedState;
-  friend class ASTType;
-  ASTTypeStorage(ASTDecl &decl,
-                 ArrayRef<std::pair<ParamDeclAttr, MValue>> paramValues);
-  ASTTypeStorage(const ASTTypeStorage &) = delete;
-  const ASTTypeStorage &operator=(const ASTTypeStorage &) = delete;
-
-  // Note that this is bump pointer allocated and its destructor is never run.
-  ASTDecl &decl;
-  ArrayRef<std::pair<ParamDeclAttr, MValue>> paramValues;
-
-  /// This is a cached MLIR type that is filled in the first time an ASTType is
-  /// converted to an MLIR type.  On error converting the type, the error is
-  /// diagnosed and this is filled in with an error type.
-  Type mlirType;
-};
-
-/// This type represents an AST type for a value or declaration, which is a
-/// pointer to the DeclAST that defines it as well as any bound parameters.
+/// This type represents an AST type for a value or declaration, which is an
+/// MLIRType.
 ///
-/// Instances of this type are always created by LitSharedState to ensure that
-/// their parameter arrays are uniqued and this can be copied around with ease.
-/// This type is typically used via ASTType.
-///
-/// The bound parameters may themselves refer to other parameters in the
-/// enclosing scope, e.g. in the case of `SomeType[size*42]`.
-///
-/// This is a pointer-sized reference to a uniqued ASTType, maintained in the
-/// persistent allocator for the current parse.
 class ASTType {
 public:
-  ASTType() : pointer(nullptr) {}
+  ASTType() {}
+  ASTType(Type type) : type(type) {}
 
-  // Accessors for the type.
-  ASTDecl &getDecl(LitSharedState &shared) const { return getDecl(); }
-  ASTDecl &getDecl() const {
-    assert(pointer && "Cannot dereference null ASTType");
-    return pointer->decl;
-  }
+  Type getMLIRType() const { return type; }
+
+  /// If this is a user declared type, return the declaration that this came
+  /// from.  If this is a raw MLIR type, return null.
+  ASTDecl *getDecl(LitSharedState &shared) const;
 
   using ParamBinding = std::pair<ParamDeclAttr, MValue>;
-  ArrayRef<ParamBinding> getParamValues() const;
+  // FIXME: Don't return std::vector!
+  std::vector<ParamBinding> getParamValues() const;
 
   /// ASTType is nullable.
-  bool isNull() const { return pointer == nullptr; }
-  explicit operator bool() const { return pointer != nullptr; }
-  bool operator!() const { return pointer == nullptr; }
+  bool isNull() const { return !type; }
+  explicit operator bool() const { return !!type; }
+  bool operator!() const { return !type; }
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
@@ -92,15 +62,15 @@ public:
   void dump() const;
 
   /// ASTType can be put into a PointerUnion, these are implementation details.
-  void *getAsVoidPointer() const { return pointer; }
+  void *getAsVoidPointer() const {
+    return const_cast<void *>(type.getAsOpaquePointer());
+  }
   static ASTType getFromVoidPointer(void *ptr) {
-    return ASTType(static_cast<ASTTypeStorage *>(ptr));
+    return ASTType(Type::getFromOpaquePointer(ptr));
   }
 
 private:
-  friend class LitSharedState;
-  ASTType(ASTTypeStorage *pointer) : pointer(pointer) {}
-  ASTTypeStorage *pointer;
+  Type type;
 };
 
 mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);

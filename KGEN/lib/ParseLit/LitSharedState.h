@@ -137,8 +137,6 @@ private:
 
   class Impl;
   std::unique_ptr<Impl> impl;
-
-  ArrayRef<ParamBinding> getUniquedParams(ArrayRef<ParamBinding> params);
 };
 
 /// This enum indicates how much parsing and type checking has been done on
