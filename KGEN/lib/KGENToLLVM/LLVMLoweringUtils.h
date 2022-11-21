@@ -7,6 +7,7 @@
 #ifndef KGEN_LLVM_LOWERING_UTILS_H
 #define KGEN_LLVM_LOWERING_UTILS_H
 
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/IR/Value.h"
@@ -47,6 +48,17 @@ private:
   /// TODO: We don't have a model for target-specific data layout. Use MLIR's
   /// default data layout.
   mlir::DataLayout dl;
+};
+
+//===----------------------------------------------------------------------===//
+// POPToLLVMDebugInfoTypeConverter
+//===----------------------------------------------------------------------===//
+
+/// A specialized debug info type converter for converting from POP types to
+/// LLVM.
+struct POPToLLVMDebugInfoTypeConverter
+    : public DebugInfo::DebugInfoTypeConverter {
+  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter);
 };
 
 //===----------------------------------------------------------------------===//

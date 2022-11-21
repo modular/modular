@@ -11,6 +11,8 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -470,6 +472,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populateKGENToLLVMPatterns(typeConverter, patterns);
+  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
+      [&](Operation *op) { return typeConverter.isLegal(op); });
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
@@ -489,4 +494,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // Break up structs in top-level funcs exposed to C.
   if (failed(emitWrappers(theModule, topLevelFuncs)))
     return signalPassFailure();
+
+  // Convert the debug info within the IR.
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
+  debugTypeConverter.applyRecursively(theModule);
 }

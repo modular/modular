@@ -58,6 +58,11 @@ private:
   mlir::AttrTypeReplacer replacer;
 };
 
+/// Populate conversion patterns for transforming debug info dialect operations
+/// in the presence of type conversions.
+void populateTypeConversionPatterns(RewritePatternSet &patterns,
+                                    TypeConverter &converter);
+
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H
