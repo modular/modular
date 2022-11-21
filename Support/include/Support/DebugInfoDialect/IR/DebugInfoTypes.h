@@ -1,0 +1,75 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOTYPES_H
+#define SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOTYPES_H
+
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Types.h"
+
+//===----------------------------------------------------------------------===//
+// DebugInfoType
+//===----------------------------------------------------------------------===//
+
+namespace M::DebugInfo {
+class DIFileAttr;
+class DIScopeAttr;
+
+/// This class represents the base class of DebugInfo types.
+class DIType : public Type {
+public:
+  using Type::Type;
+
+  /// Support LLVM type casting.
+  static bool classof(Type type) {
+    return llvm::isa<DebugInfoDialect>(type.getDialect());
+  }
+};
+} // namespace M::DebugInfo
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
+
+#define GET_TYPEDEF_CLASSES
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h.inc"
+
+//===----------------------------------------------------------------------===//
+// DIBasicType
+//===----------------------------------------------------------------------===//
+
+namespace M::DebugInfo {
+/// Simple basic type wrapper for types encoded as a boolean.
+class DIBasicBoolType : public DIBasicType {
+public:
+  static DIBasicType get(MLIRContext *ctx, const Twine &name,
+                         uint64_t sizeInBits, uint32_t alignInBits);
+};
+
+/// Simple basic type wrapper for types encoded as an unsigned integer.
+class DIBasicUIntType : public DIBasicType {
+public:
+  static DIBasicType get(MLIRContext *ctx, const Twine &name,
+                         uint64_t sizeInBits, uint32_t alignInBits);
+};
+
+/// Simple basic type wrapper for types encoded as a signed integer.
+class DIBasicSIntType : public DIBasicType {
+public:
+  static DIBasicType get(MLIRContext *ctx, const Twine &name,
+                         uint64_t sizeInBits, uint32_t alignInBits);
+};
+
+/// Simple basic type wrapper for types encoded as a float.
+class DIBasicFloatType : public DIBasicType {
+public:
+  static DIBasicType get(MLIRContext *ctx, const Twine &name,
+                         uint64_t sizeInBits, uint32_t alignInBits);
+};
+} // namespace M::DebugInfo
+
+#endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOTYPES_H

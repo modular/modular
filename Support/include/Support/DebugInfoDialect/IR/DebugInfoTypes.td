@@ -1,0 +1,326 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef DEBUGINFOTYPES_TD
+#define DEBUGINFOTYPES_TD
+
+include "Support/DebugInfoDialect/IR/DebugInfoDialect.td"
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/SubElementInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// DIType
+//===----------------------------------------------------------------------===//
+
+// Base class for debug info dialect types.
+class DIType<string name, string typeMnemonic, list<Trait> traits = [],
+             string baseCppClass = "DIType">
+    : TypeDef<DebugInfoDialect, name, traits # [SubElementTypeInterface], baseCppClass> {
+  let mnemonic = typeMnemonic;
+  let assemblyFormat = "`` `<` struct(params) `>` ``";
+}
+
+//===----------------------------------------------------------------------===//
+// DIArrayType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIArrayType : DIType<"DIArray", "array"> {
+  let summary = "Array type debug info description";
+  let description = [{
+    A `debuginfo.array` type represents the debug information for an array
+    type. It contains the element type and the size of the array.
+
+    Example:
+
+    ```mlir
+    !debuginfo.array<10 x !elementType>
+    ```
+  }];
+  let parameters = (ins
+    "DIType":$elementType,
+    "uint64_t":$elementCount
+  );
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "DIType":$elementType, "uint64_t":$elementCount
+    ), [{
+      return $_get(elementType.getContext(), elementType, elementCount);
+    }]>
+  ];
+  let assemblyFormat = "`<` $elementCount `x` $elementType `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DIBasicType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIBasicType : DIType<"DIBasic", "basic"> {
+  let summary = "Basic type debug info description";
+  let description = [{
+    The `debuginfo.basic` types represents the debug information for a basic
+    type. A basic type is a type that is not defined in terms of other types.
+
+    Example:
+
+    ```mlir
+    !debuginfo.basic<f32 {
+      sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_float
+    }>
+    ```
+  }];
+  let parameters = (ins
+    "StringAttr":$name,
+    "uint64_t":$sizeInBits,
+    "uint32_t":$alignInBits,
+    DIEncodingParameter:$encoding
+  );
+
+  let builders = [
+    TypeBuilder<(ins
+      "const Twine &":$name, "uint64_t":$sizeInBits, "uint32_t":$alignInBits,
+      "unsigned":$encoding
+    ), [{
+      return $_get($_ctxt, StringAttr::get($_ctxt, name), sizeInBits,
+                   alignInBits, encoding);
+    }]>
+  ];
+
+  let assemblyFormat = [{
+    `<`
+      custom<Name>($name) ` `
+      `{` struct($sizeInBits, $alignInBits, $encoding) `}`
+    `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// DIMemberType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIMemberType : DIType<"DIMember", "member"> {
+  let summary = "Data member type debug info description";
+  let description = [{
+    The `debuginfo.member` type represents the debug information for a data
+    member, e.g. an element within a struct.
+
+    Example:
+
+    ```mlir
+    !debuginfo.member<x: !type>
+    ```
+  }];
+  let parameters = (ins
+    "StringAttr":$name,
+    "DIType":$type
+  );
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "StringAttr":$name, "DIType":$type
+    ), [{
+      return $_get(name.getContext(), name, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` custom<Name>($name) `` `:` $type `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DIPointerType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_PointerType : DIType<"DIPointer", "ptr"> {
+  let summary = "Pointer type debug info description";
+  let description = [{
+    The `debuginfo.ptr` type represents the debug information for a pointer
+    type.
+
+    Example:
+
+    ```mlir
+    !debuginfo.ptr<!elementType {sizeInBits = 64, alignInBits = 64}>
+    ```
+  }];
+  let parameters = (ins
+    "DIType":$elementType,
+    "unsigned":$sizeInBits,
+    "unsigned":$alignInBits
+  );
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "DIType":$elementType, "unsigned":$sizeInBits,
+      "unsigned":$alignInBits
+    ), [{
+      return $_get(elementType.getContext(), elementType, sizeInBits,
+                   alignInBits);
+    }]>
+  ];
+  let assemblyFormat = [{
+    `<` $elementType ` ` `{` struct($sizeInBits, $alignInBits) `}` `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// DIStructType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIStructType : DIType<"DIStruct", "struct"> {
+  let summary = "Composite struct type debug info description";
+  let description = [{
+    The `debuginfo.struct` type represents the debug information for a struct
+    type.
+
+    Example:
+
+    ```mlir
+    !debuginfo.struct<Foo(!member1, !member2)>
+    ```
+  }];
+  let parameters = (ins
+    "StringAttr":$name,
+    OptionalArrayRefParameter<"DIMemberType">:$members
+  );
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "StringAttr":$name, CArg<"ArrayRef<DIMemberType>", "llvm::None">:$members
+    ), [{
+      return $_get(name.getContext(), name, members);
+    }]>
+  ];
+  let assemblyFormat = "`<` custom<Name>($name) `(` (`)`):($members^ `)`)? `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DISubroutineType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DISubroutineType : DIType<"DISubroutine", "subroutine", [
+    SubElementTypeInterface
+  ]> {
+  let summary = "Subroutine type debug info description";
+  let description = [{
+    The `debuginfo.subroutine` type represents the debug information for a
+    function type.
+
+    Example:
+
+    ```mlir
+    !debuginfo.subroutine<() -> (): DW_CC_normal>
+    ```
+  }];
+  let parameters = (ins
+    DICallingConventionParameter:$callingConvention,
+    OptionalArrayRefParameter<"DIType">:$argumentTypes,
+    OptionalArrayRefParameter<"DIType">:$resultTypes
+  );
+  let builders = [
+    TypeBuilder<(ins "ArrayRef<DIType>":$argTypes,
+                     "ArrayRef<DIType>":$resultTypes), [{
+      return $_get($_ctxt, llvm::dwarf::DW_CC_normal, argTypes, resultTypes);
+    }]>
+  ];
+  let assemblyFormat = [{
+    `<`
+      `(` (`)`):($argumentTypes^ `)`)? `->` `(` (`)`):($resultTypes^ `)`)? ``
+       `:` $callingConvention
+    `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// DIUnresolvedMLIRType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIUnresolvedMLIRType : DIType<
+    "DIUnresolvedMLIR", "unresolved"
+  > {
+  let summary = "Unresolved MLIR type debug info description";
+  let description = [{
+    The `debuginfo.unresolved` type represents the debug information for an
+    unresolved MLIR type. This allows for carrying forward MLIR types that have
+    yet to reach a point where the debug information can be fully defined. For
+    example, some types, such as `index`, do not have a proper representation
+    defined until a certain stage of lowering. Allow unresolved types within
+    the debug info type system allows for progressively lowering of debug
+    information alongside the IR it represents. 
+
+    Example:
+
+    ```mlir
+    !debuginfo.unresolved<index>
+    ```
+  }];
+  let parameters = (ins "Type":$type);
+  let assemblyFormat = "`<` $type `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+      return $_get(type.getContext(), type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// DIUnspecifiedType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIUnspecifiedType : DIType<"DIUnspecified", "unspecified"> {
+  let summary = "Unspecified type debug info description";
+  let description = [{
+    The `debuginfo.unspecified` type represents the debug information for an
+    unspecified type. Some languages have constructs in which a type may be
+    left unspecified or the absence of a type may be explicitly indicated.
+
+    Example:
+
+    ```mlir
+    !debuginfo.unspecified<"void">
+    ```
+  }];
+  let parameters = (ins "StringAttr":$name);
+  let assemblyFormat = "`<` $name `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "StringAttr":$name), [{
+      return $_get(name.getContext(), name);
+    }]>,
+    TypeBuilder<(ins "StringRef":$name), [{
+      return $_get($_ctxt, StringAttr::get($_ctxt, name));
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// DIVectorType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIVectorType : DIType<"DIVector", "vector"> {
+  let summary = "Vector type debug info description";
+  let description = [{
+    The `debuginfo.vector` type represents the debug information for a vector
+    type. It contains the element type and the size of the vector.
+
+    Example:
+
+    ```mlir
+    !debuginfo.vector<10 x !elementType>
+    ```
+  }];
+  let parameters = (ins
+    "DIType":$elementType,
+    "uint64_t":$elementCount
+  );
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "DIType":$elementType, "uint64_t":$elementCount
+    ), [{
+      return $_get(elementType.getContext(), elementType, elementCount);
+    }]>
+  ];
+  let assemblyFormat = "`<` $elementCount `x` $elementType `>`";
+}
+
+#endif // DEBUGINFOTYPES_TD
