@@ -64,10 +64,6 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
-  /// This is the decl for the Function type.
-  // FIXME: This isn't correctly parameterized; we need variadics.
-  ASTType getFunctionType(MValue resultType);
-
   /// This is the decl for the builtin lit.object struct type.
   ASTType getObjectType() const;
 
@@ -146,9 +142,6 @@ enum class MagicDeclKind : uint8_t {
   k__mlir_type, // __mlir_type declaration.
   k__mlir_op,   // __mlir_op declaration.
   k__mlir_attr, // __mlir_attr declaration.
-
-  // This is a FunctionType that is lowered to a KGEN::SignatureType.
-  kFunctionType,
 };
 
 } // namespace M::KGEN::LIT

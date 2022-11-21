@@ -361,21 +361,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
     return {};
   }
 
-  // The ASTType of calleeVal must be a magic function type, for the IR to
-  // have signature type.  We cannot have error types or anything else here.
-  // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeType.getDecl(emitter.shared)->magicKind ==
-         MagicDeclKind::kFunctionType);
-  assert(calleeType.getParamValues().size() == 1 &&
-         "FunctionType should have one (result) parameter");
-  auto resultASTTypeVal = calleeType.getParamValues()[0].second;
-
-  auto resultASTType = resultASTTypeVal.getIfMTValue();
-  if (!resultASTType) {
-    // TODO: We have no way to represent a symbolic value of ASTType.
-    emitError("unable to call function value with parametric result type");
-    return {};
-  }
+  auto resultType = calleeIRType.getValues().getResult(0);
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
@@ -463,7 +449,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
   }
 
   // Value returning call returns its result.
-  return {DRValue(resultVal), resultASTType};
+  return {DRValue(resultVal), resultType};
 }
 
 /// Emit a function call for a call node with the specified operands.
@@ -487,9 +473,7 @@ static ASTTypeAnd<MValue> emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
   auto fnAttr =
       SymbolConstantAttr::get(fnDecl.getSymbolRef(), fnOp.getSignature());
 
-  // TODO: Correct argument/parameter type.
-  ASTType astType = emitter.shared.getFunctionType(fnDecl.getResolvedType());
-  return {MValue(fnAttr), astType};
+  return {MValue(fnAttr), fnAttr.getType()};
 }
 
 /// Given an ASTType 'containingType', look up a named member of it and return
@@ -1106,15 +1090,6 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
   if (auto signature =
           dyn_cast<SignatureType>(subValue.ir.getType(emitter.getContext()))) {
 
-    // The ASTType of subValue must be a magic function type, for the IR to have
-    // signature type.  We cannot have error types or anything else here.
-    // TODO: Switch to key off the AST type when it carries everything we need.
-    assert(subValue.type.getDecl(emitter.shared)->magicKind ==
-           MagicDeclKind::kFunctionType);
-    assert(subValue.type.getParamValues().size() == 1 &&
-           "FunctionType should have one (result) parameter");
-    auto resultASTType = subValue.type.getParamValues()[0].second;
-
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -1150,9 +1125,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       bindOperands.push_back(val.ir);
     }
     // Okay, everything checks out, form the bind operation.
-    return {MValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
-            // TODO: Correct signature type.
-            emitter.shared.getFunctionType(resultASTType)};
+    auto attr = ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+    return {MValue(attr), attr.getType()};
   }
 
   if (auto maValue = subValue.ir.getIfMAValue()) {
