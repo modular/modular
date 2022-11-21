@@ -221,32 +221,3 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
 Type LitSharedState::getMLIRType(MValue type, SMLoc loc) {
   return getMLIRType(type, translateLocation(loc));
 }
-
-/// When a lookup in __mlir_type fails for a named field, this method tries to
-/// resolve it.  On success, it lazily creates a resolved declaration.  On
-/// failure, it bails out.
-ASTDecl *LitSharedState::synthesizeMLIRTypeDeclEntry(StringRef name, SMLoc loc,
-                                                     ASTDecl &scope) {
-  Type result;
-  {
-    // Capture errors thrown by parseType and ignore them.
-    // FIXME: This doesn't silence errors!
-    mlir::ScopedDiagnosticHandler handler(getContext(),
-                                          [](Diagnostic &diag) {});
-
-    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
-    // Copy the string into a temporary smallvector so we can make sure it is
-    // nul terminated for the MLIR asmparser.
-    SmallString<64> tmpBuf(name.begin(), name.end());
-    tmpBuf.push_back(0);
-    result = mlir::parseType(StringRef(tmpBuf).drop_back(), getContext());
-  }
-  if (!result) {
-    emitError(loc, "unknown MLIR type: ") << name;
-    return nullptr;
-  }
-
-  return &declResolver->addFullyResolvedDecl(
-      result, StringAttr::get(getContext(), name), translateLocation(loc),
-      getTypeType(), &scope);
-}
