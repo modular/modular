@@ -73,16 +73,11 @@ ASTTypeAnd<DRValue> ExprEmitter::emitDRValue(ASTTypeAnd<RValue> rep,
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = rep.ir.getIfMAValue();
-  if (!attr) {
-    auto type = rep.ir.getIfMTValue();
-    assert(type && "unknown rvalue kind");
-    attr = ParameterizedTypeConstantAttr::get(type.getMLIRType());
-  }
+  auto attr = rep.ir.getIfMValue().get();
 
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr.get()))
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
@@ -137,12 +132,13 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
     return shared.getTypeCheckErrorType();
 
   // If this emitted a type, we can lower it.
-  if (auto astType = value.ir.getIfMTValue())
-    return astType;
+  if (auto type = value.ir.getIfTypeValue())
+    return type;
 
-  // If we emitted a NoneAttr then convert it to a NoneType.  This is a special
-  // case because "None" is both a value and a type, and defaults to a value.
-  if (isa<KGEN::NoneAttr>(value.ir.getIfMAValue().get()))
+  // If we emitted a NoneAttr then convert it to a NoneType.  This is a
+  // special case because "None" is both a value and a type, and defaults to a
+  // value.
+  if (isa<KGEN::NoneAttr>(value.ir.get()))
     return shared.getNoneType();
 
   emitError(node->getLoc(), "expected a type, not a value");
@@ -194,7 +190,7 @@ synthesizeMLIRAttrFromString(StringRef name, SMLoc loc, ExprEmitter &emitter) {
     return {};
   }
 
-  return {MAValue(typedAttr), typedAttr.getType()};
+  return {MValue(typedAttr), typedAttr.getType()};
 }
 
 /// When a lookup in __mlir_op fails for a named field, this method tries to
@@ -209,7 +205,7 @@ static ASTTypeAnd<AnyValue> synthesizeMLIROpFromString(StringRef name,
   auto result = UnboundMLIROperationAttr::get(
       context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
 
-  return {MAValue(result), shared.getNoneType()};
+  return {MValue(result), shared.getNoneType()};
 }
 
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
@@ -242,7 +238,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
     // Otherwise emit the value as an MAValue.  This allows references to
     // parameter expressions.
-    auto value = emitter.emitMAValue(
+    auto value = emitter.emitMValue(
         node, "attribute value for '" + Twine(name) + "' must be constant");
     if (!value)
       return {};
@@ -280,7 +276,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   auto attrs = DictionaryAttr::get(context, attrValues);
   auto result = UnboundMLIROperationAttr::get(context, unboundOp.getType(),
                                               unboundOp.getName(), attrs);
-  return {MAValue(result), emitter.shared.getNoneType()};
+  return {MValue(result), emitter.shared.getNoneType()};
 }
 
 /// Perform a name lookup in the specified scope and return the named
@@ -352,16 +348,15 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
   };
 
   RValue calleeVal = calleeValAndType.ir;
-  ASTType calleeType = calleeValAndType.type;
 
-  auto calleeAnyType = calleeVal.getType(emitter.getContext());
+  auto calleeAnyType = calleeVal.getType();
   SignatureType calleeIRType = dyn_cast<SignatureType>(calleeAnyType);
   if (!calleeIRType) {
     emitError("invalid function to call");
     return {};
   }
 
-  auto resultType = calleeIRType.getValues().getResult(0);
+  Type resultType = calleeIRType.getValues().getResult(0);
 
   // If there are any unbound parameters then we cannot call it.
   // TODO: infer the parameters from the types of the operands.
@@ -428,7 +423,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
   Value resultVal;
   auto loc = emitter.translateLocation(callLoc);
   auto resultTypes = calleeIRType.getValues().getResults();
-  if (auto calleeParam = calleeVal.getIfMAValue()) {
+  if (auto calleeParam = calleeVal.getIfMValue()) {
     resultVal =
         emitter.builder
             ->create<CallParamOp>(loc, resultTypes, calleeParam,
@@ -438,8 +433,8 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
             .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
-    auto calleeDRVal =
-        emitter.emitDRValue({AnyValue(calleeVal), calleeType}, callLoc);
+    auto calleeDRVal = emitter.emitDRValue(
+        {AnyValue(calleeVal), calleeValAndType.type}, callLoc);
     if (!calleeDRVal)
       return {};
     resultVal = emitter.builder
@@ -516,7 +511,7 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
 
   // If this is a type declaration, return it as a type.
   if (isa<LITStructDeclOp>(*decl)) {
-    auto astType = emitter.shared.getASTType(*decl, {});
+    auto astType = LITDeclRefType::get(decl->getSymbolRef());
     return {MValue(astType), MLIRTypeType::get(emitter.getContext())};
   }
 
@@ -620,7 +615,7 @@ ASTTypeAnd<AnyValue> StringLiteralNode::emitIR(ExprEmitter &emitter,
 ASTTypeAnd<AnyValue> NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                              ASTType contextualType) const {
   auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
-  return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
+  return {MValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
           noneMLIRType};
 }
 
@@ -637,7 +632,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     return {};
 
   // Handle member references on types.
-  if (ASTType baseType = baseVal.ir.getIfMTValue()) {
+  if (ASTType baseType = baseVal.ir.getIfTypeValue()) {
     ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
     if (!typeDecl) {
       emitter.emitError(getLoc(), "MLIR type ")
@@ -657,7 +652,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
       Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
       if (!result)
         return {};
-      return {ASTType(result), MLIRTypeType::get(emitter.getContext())};
+      return {result, MLIRTypeType::get(emitter.getContext())};
     }
 
     // Normal member reference.
@@ -751,8 +746,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     // method first since that requires an lvalue.
     // TODO: Move this to ASTType checking when it can represent parameter
     // types.
-    auto symbolIRType =
-        cast<SignatureType>(fnRef.ir.getType(emitter.getContext()));
+    auto symbolIRType = cast<SignatureType>(fnRef.ir.getType());
     Type firstArgIRType = symbolIRType.getValues().getInputs()[0];
     Value firstArgValue;
     if (isa<POP::PointerType>(firstArgIRType)) {
@@ -875,15 +869,14 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
     // ArrayAttr or something.
     if (attr.getName() == "_type") {
       // The value must be a concrete or parametric type.
-      if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr.getValue())) {
-        state.types.push_back(type.getValue());
-      } else if (auto type =
-                     dyn_cast<ParameterizedTypeConstantAttr>(attr.getValue())) {
-        state.types.push_back(type.getValue());
-      } else {
+      Type type;
+      if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
+        type = MValue(typedAttr).getIfTypeValue();
+      if (!type) {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
+      state.types.push_back(type);
       continue;
     }
     state.addAttributes(attr);
@@ -942,7 +935,7 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
   // If we succeeded and have no types, then install a None type.
   if (resultOp->getNumResults() == 0) {
     auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
-    return {MAValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
+    return {MValue(NoneAttr::get(emitter.getContext(), noneMLIRType)),
             emitter.shared.getNoneType()};
   }
 
@@ -976,7 +969,7 @@ emitMLIROperatorCall(const CallNode &call, UnboundMLIROperationAttr unboundOp,
       if (attr.getType() == resultOp->getResult(0).getType()) {
         // If it is a constant, make an MAValue result.
         resultOp->erase();
-        return {MAValue(attr), resultType};
+        return {MValue(attr), resultType};
       }
     }
   }
@@ -992,18 +985,17 @@ ASTTypeAnd<AnyValue> CallNode::emitIR(ExprEmitter &emitter,
     return {};
 
   // Invoking a type is a call to an initialize for the type.
-  if (ASTType calledType = calleeVal.ir.getIfMTValue())
+  if (ASTType calledType = calleeVal.ir.getIfTypeValue())
     return emitInitializerCall(*this, calledType, emitter);
 
   // Otherwise, handle callable functions.
-  if (isa<SignatureType>(calleeVal.ir.getType(emitter.getContext())))
+  if (isa<SignatureType>(calleeVal.ir.getType()))
     return emitFunctionCall(*this, calleeVal, emitter);
 
   // If this is the invocation of an unbound MLIR operator, bind it into an
   // actual operator!
-  if (auto maValue = calleeVal.ir.getIfMAValue()) {
-    if (auto unboundOperator =
-            dyn_cast<UnboundMLIROperationAttr>(maValue.get()))
+  if (auto mValue = calleeVal.ir.getIfMValue()) {
+    if (auto unboundOperator = dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
       return emitMLIROperatorCall(*this, unboundOperator, emitter);
   }
 
@@ -1025,8 +1017,9 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
   if (!subValue)
     return {};
 
-  // If the sub-value is an unbound ASTType, try binding things to it!
-  if (auto astType = subValue.ir.getIfMTValue()) {
+  // If the sub-value is an unbound Type, try binding things to it!
+  if (auto typeValue = subValue.ir.getIfTypeValue()) {
+    ASTType astType(typeValue);
     // If already parameterized, give up.
     if (!astType.getParamValues().empty()) {
       emitter.emitError(
@@ -1069,7 +1062,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
         return {};
 
       // TODO: Support conversions.
-      if (indexVal.ir.getType(emitter.getContext()) != decl.getType()) {
+      if (indexVal.ir.getType() != decl.getType()) {
         emitter.emitError(indexExpr->getLoc(), "parameter of type ")
             << indexVal.type
             << " cannot be converted to expected type "
@@ -1082,14 +1075,13 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 
     // Ok, we succeeded at reparameterizing the type.
     auto result = emitter.shared.getASTType(*typeDecl, paramBindings);
-    return {MValue(result), MLIRTypeType::get(emitter.getContext())};
+    return {MValue(result.getMLIRType()),
+            MLIRTypeType::get(emitter.getContext())};
   }
 
   // If we have a value of signature type, we can bind parameters to it.
   // TODO(SignatureASTTypes): Use subValue.type when we have signatures.
-  if (auto signature =
-          dyn_cast<SignatureType>(subValue.ir.getType(emitter.getContext()))) {
-
+  if (auto signature = dyn_cast<SignatureType>(subValue.ir.getType())) {
     size_t numParams = signature.getInputParams().size();
     if (numParams != indices.size()) {
       emitter.emitError(getLoc(), "signature expects ")
@@ -1097,7 +1089,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    auto declParam = subValue.ir.getIfMAValue();
+    auto declParam = subValue.ir.getIfMValue();
     if (!declParam) {
       emitter.emitError(getLoc(), "cannot parameterize dynamic value");
       return {};
@@ -1107,7 +1099,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     SmallVector<TypedAttr> bindOperands;
     bindOperands.push_back(declParam);
     for (auto [idx, decl] : llvm::zip(indices, signature.getInputParams())) {
-      auto val = emitter.emitMAValue(
+      auto val = emitter.emitMValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val.ir)
         return {};
@@ -1129,9 +1121,8 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     return {MValue(attr), attr.getType()};
   }
 
-  if (auto maValue = subValue.ir.getIfMAValue()) {
-    if (auto unboundOperator =
-            dyn_cast<UnboundMLIROperationAttr>(maValue.get()))
+  if (auto mValue = subValue.ir.getIfMValue()) {
+    if (auto unboundOperator = dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
       return bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
   }
 
@@ -1164,7 +1155,7 @@ ASTTypeAnd<AnyValue> ListExprNode::emitIR(ExprEmitter &emitter,
       return {};
 
     // TODO(types): allow all types.
-    if (!exprRep.ir.getType(emitter.getContext()).isIndex()) {
+    if (!exprRep.ir.getType().isIndex()) {
       emitter.emitError(
           getLoc(), "List expression with interesting types not implemented");
       return {};
@@ -1323,12 +1314,11 @@ ASTTypeAnd<AnyValue> BinOpNode::emitIR(ExprEmitter &emitter,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if (lhsRep.ir.getType(emitter.getContext()).isIndex() &&
-      rhsRep.ir.getType(emitter.getContext()).isIndex()) {
+  if (lhsRep.ir.getType().isIndex() && rhsRep.ir.getType().isIndex()) {
     auto lhsParam =
-        emitter.emitMAValue(lhs, "expecting parameter values as operands");
+        emitter.emitMValue(lhs, "expecting parameter values as operands");
     auto rhsParam =
-        emitter.emitMAValue(rhs, "expecting parameter values as operands");
+        emitter.emitMValue(rhs, "expecting parameter values as operands");
     // If these are both parameter values, we can fold them using parameter
     // expressions.
     if (!lhsParam || !rhsParam) {

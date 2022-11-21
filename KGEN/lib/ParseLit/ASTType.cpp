@@ -37,17 +37,8 @@ std::vector<ASTType::ParamBinding> ASTType::getParamValues() const {
     return {};
 
   std::vector<ASTType::ParamBinding> result;
-  for (auto bind : declRef.getParamValues()) {
-    TypedAttr x = bind.getValue();
-
-    if (auto type = dyn_cast<ConcreteTypeConstantAttr>(x)) {
-      result.push_back({bind.getDecl(), MValue(ASTType(type.getValue()))});
-    } else if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(x)) {
-      result.push_back({bind.getDecl(), MValue(ASTType(type.getValue()))});
-    } else {
-      result.push_back({bind.getDecl(), MValue(x)});
-    }
-  }
+  for (auto bind : declRef.getParamValues())
+    result.push_back({bind.getDecl(), MValue(bind.getValue())});
 
   return result;
 }

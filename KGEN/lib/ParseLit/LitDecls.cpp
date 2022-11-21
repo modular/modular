@@ -35,8 +35,8 @@ using namespace M::KGEN::LIT;
 /// If this is an RValue, return it otherwise return null.
 RValue ASTDecl::getIfRValue() const {
   // Meta value.
-  if (auto attr = dyn_cast_or_null<MAValue>(irValue))
-    return MValue(attr);
+  if (auto attr = dyn_cast_or_null<MValue>(irValue))
+    return attr;
   // DRValue.
   if (auto value = dyn_cast_or_null<DRValue>(irValue))
     return value;
@@ -330,7 +330,7 @@ struct ParsedMetaSignature {
          llvm::zip(inputDecls, inputASTTypes, inputLocs)) {
       auto paramRef =
           ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
-      declResolver.addFullyResolvedDecl(MAValue(paramRef), paramDecl.getName(),
+      declResolver.addFullyResolvedDecl(MValue(paramRef), paramDecl.getName(),
                                         loc, type, &decl);
     }
   }
@@ -599,7 +599,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   // The resolvedType for a function is the return type of the function.
   decl.setResolvedType(resultType);
-  auto resultIRType = resultType.getMLIRType();
 
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
@@ -622,7 +621,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
-  funcOp.setType(builder.getFunctionType(paramTypes, resultIRType));
+  funcOp.setType(builder.getFunctionType(paramTypes, resultType.getMLIRType()));
   funcOp.setParamDeclsAttr(
       builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);

@@ -16,9 +16,7 @@
 //     LValue (Value)       <- Expr with a runtime address.
 //     RValue               <- Expr without an address
 //       DRValue (Value)    <- Expr with a dynamic value (only known at runtime)
-//       MValue             <- Expr with a meta-value (known at compile time)
-//         MAValue          <- MLIR Attribute type value
-//         ASTType          <- Type value
+//       MValue (TypedAttr) <- Expr with a meta-value (known at compile time)
 //
 //===----------------------------------------------------------------------===//
 
@@ -57,14 +55,15 @@ public:
   LValue(Value v) : Value(v) {}
 };
 
-/// Instances of MAValue model compile time values that are represented as MLIR
+/// Instances of MValue model compile time values that are represented as MLIR
 /// attributes.
-class MAValue {
+class MValue {
 public:
-  MAValue() {}
-  MAValue(TypedAttr v) : storage(v) {}
+  MValue() {}
+  MValue(TypedAttr v) : storage(v) {}
+  MValue(Type value);
 
-  MAValue &operator=(TypedAttr newVal) {
+  MValue &operator=(TypedAttr newVal) {
     storage = newVal;
     return *this;
   }
@@ -79,12 +78,17 @@ public:
   /// Return the type for the contained representation, or null if null.
   Type getType() const { return get().getType(); }
 
+  /// If this value /is/ a type return it.
+  /// FIXME: virtually all users of this are going to be incorrect with type
+  /// variables.
+  Type getIfTypeValue() const;
+
   const void *getAsOpaquePointer() const {
     return storage.getAsOpaquePointer();
   }
 
-  static MAValue getFromOpaquePointer(void *ptr) {
-    MAValue result;
+  static MValue getFromOpaquePointer(void *ptr) {
+    MValue result;
     result.storage = Attribute::getFromOpaquePointer(ptr);
     return result;
   }
@@ -92,6 +96,8 @@ public:
 private:
   Attribute storage;
 };
+raw_ostream &operator<<(raw_ostream &os, MValue value);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, MValue value);
 
 } // namespace M::KGEN::LIT
 
@@ -130,14 +136,14 @@ public:
 };
 
 template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::MAValue> {
+struct PointerLikeTypeTraits<M::KGEN::LIT::MValue> {
 public:
-  using MAValue = M::KGEN::LIT::MAValue;
-  static const void *getAsVoidPointer(MAValue value) {
-    return value.getAsOpaquePointer();
+  using MValue = M::KGEN::LIT::MValue;
+  static const void *getAsVoidPointer(MValue value) {
+    return value.get().getAsOpaquePointer();
   }
-  static MAValue getFromVoidPointer(void *pointer) {
-    return MAValue(cast_or_null<mlir::TypedAttr>(
+  static MValue getFromVoidPointer(void *pointer) {
+    return MValue(cast_or_null<mlir::TypedAttr>(
         mlir::Attribute::getFromOpaquePointer(pointer)));
   }
   enum {
@@ -152,7 +158,7 @@ namespace M::KGEN::LIT {
 template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
-  using Storage = PointerUnion<MAValue, ASTType, DRValue, LValue>;
+  using Storage = PointerUnion<MValue, DRValue, LValue>;
 
   bool isNull() const { return storage.isNull(); }
   bool operator!() const { return storage.isNull(); }
@@ -174,64 +180,38 @@ protected:
   Storage storage;
 };
 
-/// Instances of MValue model a known-compile-time meta value, represented by an
-/// MLIR attribute or an ASTType.
-///
-/// MValue = MAValue|ASTType.
-class MValue : public VariantValueStorage<MValue> {
-public:
-  MValue() {}
-  MValue(TypedAttr attr) : VariantValueStorage(MAValue(attr)) {}
-  MValue(MAValue value) : VariantValueStorage(value) {}
-  MValue(ASTType type) : VariantValueStorage(type) {}
-
-  static MValue getFrom(Storage storage) {
-    // Initialize conditionally based on what is in Storage.
-    MValue result;
-    if (isa<MAValue, ASTType>(storage))
-      result.storage = storage;
-    return result;
-  }
-
-  MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
-  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
-
-  /// Lower this MValue to a TypedAttr.  If this contains an ASTType, it is
-  /// lowered to an MLIRType and wrapped in a ParameteredTypeConstantAttr.
-  TypedAttr lowerToAttribute(LitSharedState &shared, Location loc) const;
-  TypedAttr lowerToAttribute(LitSharedState &shared, llvm::SMLoc loc) const;
-
-  /// Return the type for the contained representation, or null if null.
-  Type getType(MLIRContext *context) const;
-  void dump() const;
-};
-raw_ostream &operator<<(raw_ostream &os, MValue value);
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, MValue value);
-
 /// RValue = MValue|DRValue.
 class RValue : public VariantValueStorage<RValue> {
 public:
   RValue() {}
-  RValue(MValue metaValue) : VariantValueStorage(metaValue.getStorage()) {}
+  RValue(MValue metaValue) : VariantValueStorage(metaValue) {}
   RValue(TypedAttr value) : VariantValueStorage(value) {}
+  RValue(Type value) : VariantValueStorage(MValue(value)) {}
   RValue(DRValue value) : VariantValueStorage(value) {}
 
   static RValue getFrom(Storage storage) {
     RValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<MAValue, ASTType, DRValue>(storage))
+    if (isa<MValue, DRValue>(storage))
       result.storage = storage;
     return result;
   }
 
   /// If this contains a metavalue, return it; otherwise return null.
-  MValue getIfMValue() const { return MValue::getFrom(storage); }
+  MValue getIfMValue() const { return dyn_cast<MValue>(storage); }
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
-  MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
-  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
+
+  /// If this value /is/ a type return it.
+  /// FIXME: virtually all users of this are going to be incorrect with type
+  /// variables.
+  Type getIfTypeValue() const {
+    if (auto mValue = getIfMValue())
+      return mValue.getIfTypeValue();
+    return {};
+  }
 
   /// Return the type for the contained representation, or null if null.
-  Type getType(MLIRContext *context) const;
+  Type getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, RValue value);
@@ -241,25 +221,30 @@ mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, RValue value);
 class AnyValue : public VariantValueStorage<AnyValue> {
 public:
   AnyValue() {}
-  AnyValue(MValue value) : VariantValueStorage(value.getStorage()) {}
+  AnyValue(MValue value) : VariantValueStorage(value) {}
   AnyValue(RValue value) : VariantValueStorage(value.getStorage()) {}
-  AnyValue(TypedAttr value) : VariantValueStorage(MAValue(value)) {}
-  AnyValue(ASTType value) : VariantValueStorage(value) {}
-  AnyValue(MAValue value) : VariantValueStorage(value) {}
+  AnyValue(TypedAttr value) : VariantValueStorage(MValue(value)) {}
+  AnyValue(Type value) : VariantValueStorage(MValue(value)) {}
   AnyValue(DRValue value) : VariantValueStorage(value) {}
   AnyValue(LValue value) : VariantValueStorage(value) {}
 
   LValue getIfLValue() const { return dyn_cast<LValue>(storage); }
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
-  MAValue getIfMAValue() const { return dyn_cast<MAValue>(storage); }
-  ASTType getIfMTValue() const { return dyn_cast<ASTType>(storage); }
-
+  MValue getIfMValue() const { return dyn_cast<MValue>(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
-  MValue getIfMValue() const { return MValue::getFrom(storage); }
+
+  /// If this value /is/ a type return it.
+  /// FIXME: virtually all users of this are going to be incorrect with type
+  /// variables.
+  Type getIfTypeValue() const {
+    if (auto mValue = getIfMValue())
+      return mValue.getIfTypeValue();
+    return {};
+  }
 
   /// Return the type for the contained representation, or null if they are
-  /// both null.  In the case of an LValue, this will return the PointerType.
-  Type getType(MLIRContext *context) const;
+  /// both null.
+  Type getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
@@ -268,21 +253,6 @@ mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, AnyValue value);
 } // namespace M::KGEN::LIT
 
 namespace llvm {
-template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::MValue> {
-public:
-  using MValue = M::KGEN::LIT::MValue;
-  using Storage = MValue::Storage;
-  using StorageTraits = PointerLikeTypeTraits<Storage>;
-  static void *getAsVoidPointer(MValue value) {
-    return StorageTraits::getAsVoidPointer(value.getStorage());
-  }
-  static MValue getFromVoidPointer(void *pointer) {
-    return MValue::getFromStorage(StorageTraits::getFromVoidPointer(pointer));
-  }
-  enum { NumLowBitsAvailable = StorageTraits::NumLowBitsAvailable };
-};
-
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::RValue> {
 public:
