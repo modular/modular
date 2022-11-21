@@ -11,6 +11,7 @@ add_modular_mlir_library(KGENElaborator
   SelectFastestFunction.cpp
 
   LINK_LIBS PUBLIC
+  DebugInfoDialect
   KGENDialect
   KGENExecutionEngine
   MLIRIR
