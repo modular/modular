@@ -73,32 +73,13 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
   if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
     // TODO: Could include name scope information.
     os << typeDecl.getName();
-  } else if (decl.isMagic()) {
-    switch (decl.magicKind) {
-    case MagicDeclKind::kNormal:
-      llvm_unreachable("not a magic declaration?");
-    case MagicDeclKind::k__mlir_type:
-    case MagicDeclKind::k__mlir_op:
-    case MagicDeclKind::k__mlir_attr:
-      os << "<<__mlir_* isn't a type>>";
-      break;
-    case MagicDeclKind::kUnboundMLIROperatorType:
-      os << "<<unbound MLIR operator type>>";
-      break;
-    case MagicDeclKind::kFunctionType:
-      llvm_unreachable("Implemented as a struct, so should be handled");
-    case MagicDeclKind::kTypeType:
-      os << "type";
-      break;
-    case MagicDeclKind::kNoneType:
-      os << "None";
-      break;
-    case MagicDeclKind::kTypeCheckErrorType:
-      os << "<<TypeCheckError>>";
-      break;
-    }
   } else if (auto type = decl.getIfMLIRType()) {
-    os << "__mlir_type." << type;
+    if (isa<KGEN::NoneType>(type))
+      os << "None";
+    else if (isa<MLIRTypeType>(type))
+      os << "type";
+    else
+      os << "__mlir_type." << type;
   } else {
     // TODO: Add "aka" information when we have "type defs".
     os << "<<unknown ASTType>>";

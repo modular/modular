@@ -210,7 +210,7 @@ static ASTTypeAnd<AnyValue> synthesizeMLIROpFromString(StringRef name,
   auto result = UnboundMLIROperationAttr::get(
       context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
 
-  return {MAValue(result), shared.getUnboundMLIROperatorType()};
+  return {MAValue(result), shared.getNoneType()};
 }
 
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
@@ -281,7 +281,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   auto attrs = DictionaryAttr::get(context, attrValues);
   auto result = UnboundMLIROperationAttr::get(context, unboundOp.getType(),
                                               unboundOp.getName(), attrs);
-  return {MAValue(result), emitter.shared.getUnboundMLIROperatorType()};
+  return {MAValue(result), emitter.shared.getNoneType()};
 }
 
 /// Perform a name lookup in the specified scope and return the named

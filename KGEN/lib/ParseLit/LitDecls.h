@@ -65,6 +65,12 @@ public:
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr name,
                                 Location loc, ASTType type,
                                 ASTDecl *parentDecl);
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
+                                Location loc, ASTType type,
+                                ASTDecl *parentDecl) {
+    return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name),
+                                loc, type, parentDecl);
+  }
 
   /// Add a "magic" declaration that has special handling to this scope.  This
   /// is used for builtin machinery internal to the language.

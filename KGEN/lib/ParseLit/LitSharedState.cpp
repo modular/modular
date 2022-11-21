@@ -58,16 +58,14 @@ public:
       uniquedParams;
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
-  ASTDecl *typeCheckErrorTypeDecl = nullptr;
+  ASTType typeCheckErrorType;
+  /// This is the decl for the builtin 'kgen.none' type.
+  ASTType noneType;
+  /// This is the "type" type, which can bind to any lit type.
+  ASTType typeType;
 
-  /// This is the type of values like "__mlir_op.`pop.add`".
-  ASTDecl *unboundMLIROperatorTypeDecl = nullptr;
   /// This is the __mlir_type declaration.
   ASTDecl *mlirTypeDecl = nullptr;
-  /// This is the "type" type, which can bind to any lit type.
-  ASTDecl *typeTypeDecl = nullptr;
-  /// This is the decl for the builtin 'kgen.none' type.
-  ASTDecl *noneDecl = nullptr;
   /// This is the decl for the builtin signature type.
   ASTDecl *functionDecl = nullptr;
 
@@ -128,26 +126,15 @@ Location LitSharedState::translateLocation(SMLoc loc) const {
                              lineAndColumn.second);
 }
 
-ASTType LitSharedState::getTypeCheckErrorType() const {
-  return impl->typeCheckErrorTypeDecl->getResolvedType();
-}
-
-/// This is the type of values like "__mlir_op.`pop.add`"
-ASTType LitSharedState::getUnboundMLIROperatorType() const {
-  return impl->unboundMLIROperatorTypeDecl->getResolvedType();
-}
-
 ASTDecl &LitSharedState::getMLIRTypeScope() const {
   return *impl->mlirTypeDecl;
 }
 
-ASTType LitSharedState::getTypeType() const {
-  return impl->typeTypeDecl->getResolvedType();
+ASTType LitSharedState::getTypeCheckErrorType() const {
+  return impl->typeCheckErrorType;
 }
-
-ASTType LitSharedState::getNoneType() const {
-  return impl->noneDecl->getResolvedType();
-}
+ASTType LitSharedState::getTypeType() const { return impl->typeType; }
+ASTType LitSharedState::getNoneType() const { return impl->noneType; }
 
 ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getResolvedType();
@@ -165,34 +152,30 @@ ASTType LitSharedState::getFunctionType(MValue resultType) {
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   auto &resolver = *declResolver;
 
-  // Make the error type.  Anything that references this will
-  // considering it erroneous and already declared as such.
-  impl->typeCheckErrorTypeDecl =
-      &resolver.addMagicDecl("<<type check error>>",
-                             MagicDeclKind::kTypeCheckErrorType, &builtinsDecl);
-  impl->typeCheckErrorTypeDecl->hasReferenceError = true;
-
-  // This is the type used by unbound MLIR operator types.
-  impl->unboundMLIROperatorTypeDecl = &resolver.addMagicDecl(
-      "<<unbound MLIR operator type>>", MagicDeclKind::kUnboundMLIROperatorType,
-      &builtinsDecl);
-
   impl->mlirTypeDecl = &resolver.addMagicDecl(
       "__mlir_type", MagicDeclKind::k__mlir_type, &builtinsDecl);
   resolver.addMagicDecl("__mlir_op", MagicDeclKind::k__mlir_op, &builtinsDecl);
   resolver.addMagicDecl("__mlir_attr", MagicDeclKind::k__mlir_attr,
                         &builtinsDecl);
 
-  // Add a declarations for builtin types.
-  impl->typeTypeDecl =
-      &resolver.addMagicDecl("type", MagicDeclKind::kTypeType, &builtinsDecl);
-  impl->noneDecl =
-      &resolver.addMagicDecl("None", MagicDeclKind::kNoneType, &builtinsDecl);
-
   /// FIXME: These should be a user declared types in the standard library,
   /// which are looked up here instead of being synthesized.
   auto b = builtinsDecl.getDeclEndBuilder();
   auto loc = builtinsDecl.getLoc();
+
+  // Add a declarations for builtin types.
+  impl->typeType = resolver
+                       .addFullyResolvedDecl(
+                           MLIRTypeType::get(context), "type", loc,
+                           impl->mlirTypeDecl->getResolvedType(), &builtinsDecl)
+                       .getResolvedType();
+  impl->noneType = getASTTypeForMLIRType(KGEN::NoneType::get(context), smLoc);
+
+  // Make the error type.  Anything that references this will
+  // considering it erroneous and already declared as such.
+  impl->typeCheckErrorType =
+      getASTTypeForMLIRType(TypeCheckErrorType::get(context), smLoc);
+  impl->typeCheckErrorType.getDecl(*this).hasReferenceError = true;
 
   // Given a LITStructDeclOp that is completely initialized, add it to the
   // resolver.
@@ -266,15 +249,6 @@ Type LitSharedState::getMLIRType(MValue typeVal, Location loc) {
     case MagicDeclKind::k__mlir_type:
       emitError(
           loc, "cannot use __mlir_type directly, use properties of it instead");
-      return result = TypeCheckErrorType::get(context);
-    case MagicDeclKind::kUnboundMLIROperatorType:
-      emitError(loc, "cannot use __mlir_op operation as a type");
-      return result = TypeCheckErrorType::get(context);
-    case MagicDeclKind::kTypeType:
-      return result = MLIRTypeType::get(context);
-    case MagicDeclKind::kNoneType:
-      return result = KGEN::NoneType::get(context);
-    case MagicDeclKind::kTypeCheckErrorType:
       return result = TypeCheckErrorType::get(context);
     case MagicDeclKind::kFunctionType:
       // TODO: Support argument signature.
