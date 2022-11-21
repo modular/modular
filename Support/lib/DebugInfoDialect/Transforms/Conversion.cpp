@@ -97,3 +97,25 @@ void DebugInfoTypeConverter::applyRecursively(Operation *op) {
       [&](DIType type) { return replacer.replace(type); });
   opReplacer.recursivelyReplaceElementsIn(op);
 }
+
+//===----------------------------------------------------------------------===//
+// Conversion Patterns
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct ConvertDebugValue : public mlir::OpConversionPattern<ValueOp> {
+  using OpConversionPattern<ValueOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ValueOp op, ValueOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.updateRootInPlace(op, [&] { op.setOperand(adaptor.getValue()); });
+    return success();
+  }
+};
+} // namespace
+
+void DebugInfo::populateTypeConversionPatterns(RewritePatternSet &patterns,
+                                               TypeConverter &converter) {
+  patterns.add<ConvertDebugValue>(converter, patterns.getContext());
+}

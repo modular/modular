@@ -12,6 +12,8 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
@@ -1495,9 +1497,18 @@ void LowerPOPToLLVMPass::runOnOperation() {
   populatePOPToLLVMPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation>(typeConverter,
                                              &func->getFunctionBody().front());
+  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
+      [&](Operation *op) { return typeConverter.isLegal(op); });
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();
+
+  // If this function has debug info, update any unresolved pop types.
+  if (DebugInfo::extractScope(*func)) {
+    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
+    debugTypeConverter.applyRecursively(*func);
+  }
 }
 
 namespace {
@@ -1632,6 +1643,10 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   DenseMap<TypedAttr, LLVM::GlobalOp> constants;
   target.addIllegalOp<GlobalConstantOp>();
   patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
+
+  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
+      [&](Operation *op) { return typeConverter.isLegal(op); });
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))

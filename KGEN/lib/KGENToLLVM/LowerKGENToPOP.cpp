@@ -11,6 +11,9 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/BlockAndValueMapping.h"
@@ -30,10 +33,11 @@ namespace {
 struct StructDeclarations {
   /// A map from struct name and field name to index. Used for lowering `insert`
   /// and `extract` ops.
-  DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fields;
+  DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fieldIndices;
 
-  /// A map from struct name to field types. Used for type conversions.
-  DenseMap<StringAttr, SmallVector<Type>> fieldTypes;
+  /// A map from struct name to field names and types. Used for type
+  /// conversions.
+  DenseMap<StringAttr, SmallVector<std::pair<StringAttr, Type>>> fields;
 };
 
 /// Struct operations need to refer to the struct declaration symbol.
@@ -45,11 +49,16 @@ public:
 
   /// Get the index of the struct field.
   int64_t getField(StringAttr name, DeclRefType ref) const {
-    return structDecls.fields.lookup({ref.getName(), name});
+    return structDecls.fieldIndices.lookup({ref.getName(), name});
   }
 
   /// Replace a KGEN struct with a POP struct.
   Type substituteStructRef(DeclRefType ref);
+
+  /// Try to build debug informatino for the given struct ref.
+  DebugInfo::DIType
+  buildDebugInfoForStructRef(DeclRefType ref,
+                             DebugInfo::DebugInfoTypeConverter &converter);
 
   /// Recursively substitute types.
   Type substituteTypes(Type type);
@@ -67,17 +76,37 @@ private:
 } // namespace
 
 Type StructOperationLowerer::substituteStructRef(DeclRefType ref) {
-  auto it = structDecls.fieldTypes.find(ref.getName());
-  assert(it != structDecls.fieldTypes.end());
+  auto it = structDecls.fields.find(ref.getName());
+  assert(it != structDecls.fields.end());
+
   // Substitute parameters into the field types.
   ParameterEvaluator evaluator;
   for (ParamBindAttr bind : ref.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
 
   SmallVector<Type> elementTypes;
-  for (Type type : it->second)
+  for (Type type : llvm::make_second_range(it->second))
     elementTypes.push_back(evaluator.getReboundType(type));
   return POP::StructType::get(ref.getContext(), elementTypes);
+}
+
+DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
+    DeclRefType ref, DebugInfo::DebugInfoTypeConverter &converter) {
+  auto it = structDecls.fields.find(ref.getName());
+  if (it == structDecls.fields.end())
+    return {};
+
+  // Substitute parameters into the field types.
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : ref.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+  SmallVector<DebugInfo::DIMemberType> elementTypes;
+  for (auto [name, type] : it->second) {
+    elementTypes.push_back(DebugInfo::DIMemberType::get(
+        name, converter.convertDebugType(evaluator.getReboundType(type))));
+  }
+  return DebugInfo::DIStructType::get(ref.getName(), elementTypes);
 }
 
 Type StructOperationLowerer::substituteTypes(Type type) {
@@ -578,6 +607,29 @@ struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
   }
 };
 
+/// Expand lists in a debuginfo.value. Lists don't have a runtime
+/// representation, but we use an array for the purposes of showing the
+/// debuginfo.
+struct ExpandListDebugValue
+    : public mlir::OpRewritePattern<DebugInfo::ValueOp> {
+  ExpandListDebugValue(MLIRContext *ctx)
+      : OpRewritePattern<DebugInfo::ValueOp>(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(DebugInfo::ValueOp op,
+                                PatternRewriter &b) const override {
+    auto list = dyn_cast<ListType>(op.getValue().getType());
+    if (!list)
+      return failure();
+
+    ValueRange elements = materializeListDestConversion(
+        b, mlir::TypedValue<ListType>(op.getValue()));
+    b.updateRootInPlace(op, [&] {
+      op.setOperand(b.create<POP::ArrayCreateOp>(op.getLoc(), elements));
+    });
+    return success();
+  }
+};
+
 /// Expand lists in a generic operation by expanding operands, results, and
 /// block arguments in-place.
 struct ExpandGenericOperation : public mlir::RewritePattern {
@@ -712,14 +764,13 @@ void LowerKGENToPOPPass::runOnOperation() {
   StructDeclarations structDecls;
   for (auto decl :
        llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
-    SmallVector<Type> fieldTypes;
+    SmallVector<std::pair<StringAttr, Type>> fields;
     for (auto [idx, field] : llvm::enumerate(decl.getFieldDecls())) {
-      fieldTypes.push_back(field.getType());
-      structDecls.fields.try_emplace({decl.getNameAttr(), field.getNameAttr()},
-                                     idx);
+      fields.emplace_back(field.getNameAttr(), field.getType());
+      structDecls.fieldIndices.try_emplace(
+          {decl.getNameAttr(), field.getNameAttr()}, idx);
     }
-    structDecls.fieldTypes.try_emplace(decl.getNameAttr(),
-                                       std::move(fieldTypes));
+    structDecls.fields.try_emplace(decl.getNameAttr(), std::move(fields));
     decl->erase();
   }
   StructOperationLowerer structLowerer(&getContext(), structDecls);
@@ -731,26 +782,40 @@ void LowerKGENToPOPPass::runOnOperation() {
             [&](auto op) { structLowerer.materializeLowering(op); });
   });
 
+  // Build a converter to handle updating converted types within debug info
+  // constructs.
+  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
+  debugTypeConverter.addConversion([&](Type type) -> Optional<Type> {
+    Type newType = structLowerer.substituteTypes(type);
+    if (newType != type)
+      return debugTypeConverter.convertDebugType(newType);
+    return llvm::None;
+  });
+  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
+    return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
+  });
+  debugTypeConverter.addConversion([&](ListType type) -> Optional<Type> {
+    Type elementType = type.getResolvedElementType();
+    if (!elementType)
+      return llvm::None;
+
+    // Treat a list as an array for the sake of debugging.
+    return DebugInfo::DIArrayType::get(
+        debugTypeConverter.convertDebugType(elementType),
+        *type.getResolvedLength());
+  });
+
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types.
-  getOperation()->walk([&](Operation *op) {
-    // Substitute any references in attributes.
-    op->setAttrs(op->getAttrDictionary()
-                     .replaceSubElements([&](Type type) {
-                       return structLowerer.substituteTypes(type);
-                     })
-                     .cast<DictionaryAttr>());
-
-    // Substitute the result types.
-    for (OpResult result : op->getOpResults())
-      result.setType(structLowerer.substituteTypes(result.getType()));
-
-    // Substitute the block argument types.
-    for (Region &region : op->getRegions())
-      for (Block &block : region)
-        for (BlockArgument arg : block.getArguments())
-          arg.setType(structLowerer.substituteTypes(arg.getType()));
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](Type type) -> Type { return structLowerer.substituteTypes(type); });
+  replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
+    return debugTypeConverter.convertDebugType(type);
   });
+  replacer.recursivelyReplaceElementsIn(getOperation(), /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
 
   // Transpose boundary operations involving lists. We have to do this after
   // KGEN structs are lowered so that we don't have to iterate between both. Use
@@ -758,10 +823,11 @@ void LowerKGENToPOPPass::runOnOperation() {
   mlir::GreedyRewriteConfig config;
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
-  patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListIterateOp,
-                  ExpandStructConstructOp, ExpandStructGetOp,
-                  ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListLoad,
-                  ExpandListStore, ExpandGenericOperation>(&getContext());
+  patterns
+      .insert<ExpandListConstantOp, ExpandListGetOp, ExpandListIterateOp,
+              ExpandStructConstructOp, ExpandStructGetOp, ExpandStructReplaceOp,
+              ExpandStructGEPOp, ExpandListLoad, ExpandListStore,
+              ExpandListDebugValue, ExpandGenericOperation>(&getContext());
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 

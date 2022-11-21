@@ -13,6 +13,7 @@
 #include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "KGEN/ZAPDialect/ZAPOps.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
+#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -618,20 +619,21 @@ void LowerZAPToPOPPass::runOnOperation() {
     }
   }
 
+  // Build a converter to handle updating lowered ZAP types within debug info
+  // constructs.
+  DebugInfo::DebugInfoTypeConverter converter;
+  converter.addConversion(
+      [&](Type type) { return converter.convertDebugType(convertType(type)); });
+
   // Lower all ZAP remaining types.
-  auto convertNestedTypes = [](Type type) {
-    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type))
-      return convertType(itf.replaceSubElements(convertType));
-    return convertType(type);
-  };
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(convertType);
+  replacer.addReplacement(
+      [&](DebugInfo::DIType type) { return converter.convertDebugType(type); });
+
   theModule.walk([&](Operation *op) {
-    op->setAttrs(cast<DictionaryAttr>(
-        op->getAttrDictionary().replaceSubElements(convertType)));
-    for (Value value : op->getResults())
-      value.setType(convertNestedTypes(value.getType()));
-    for (Region &region : op->getRegions())
-      for (Value value : region.getArguments())
-        value.setType(convertNestedTypes(value.getType()));
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+                               /*replaceTypes=*/true);
     if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
       if (llvm::any_of(cast.getOperandTypes(), [&](Type type) {
             return &type.getDialect() == zapDialect;
