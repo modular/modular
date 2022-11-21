@@ -88,9 +88,7 @@ public:
   }
 
   static MValue getFromOpaquePointer(void *ptr) {
-    MValue result;
-    result.storage = Attribute::getFromOpaquePointer(ptr);
-    return result;
+    return {Attribute::getFromOpaquePointer(ptr)};
   }
 
 private:

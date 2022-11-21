@@ -13,18 +13,11 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
-
-namespace M::KGEN {
-class ParamDeclAttr;
-class ParamBindAttr;
-} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class ASTDecl;
 class LitSharedState;
-class MValue;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
