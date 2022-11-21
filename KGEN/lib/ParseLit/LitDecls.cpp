@@ -506,7 +506,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
     // Ignore methods without special handling.
     break;
   case SpecialFunctionKind::kInit:
-    if (isa<LITStructDeclOp>(selfType.getDecl(shared)))
+    if (isa<LITStructDeclOp>(*decl.getParentDecl()))
       return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
     // __init__ on classes must return NoneType.
@@ -754,7 +754,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     // in structs etc.
     auto rhsValue = emitter.emitDRValue(initValue);
     if (!rhsValue)
-      return success(); // Parse succeeded.
+      return failure();
 
     // If we had a declared type, coerce the expression value to it.
     // TODO(implicit conversions etc).

@@ -370,7 +370,7 @@ emitFunctionCall(ASTTypeAnd<RValue> calleeValAndType,
   // The ASTType of calleeVal must be a magic function type, for the IR to
   // have signature type.  We cannot have error types or anything else here.
   // TODO: Switch to key off the AST type when it carries everything we need.
-  assert(calleeType.getDecl(emitter.shared).magicKind ==
+  assert(calleeType.getDecl(emitter.shared)->magicKind ==
          MagicDeclKind::kFunctionType);
   assert(calleeType.getParamValues().size() == 1 &&
          "FunctionType should have one (result) parameter");
@@ -537,10 +537,14 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
     return {lvalue, decl->getResolvedType()};
 
   // If this is a type declaration, return it as a type.
-  if (isa<LITStructDeclOp>(*decl) || decl->isMagic() || decl->getIfMLIRType()) {
+  if (isa<LITStructDeclOp>(*decl)) {
     auto astType = emitter.shared.getASTType(*decl, {});
     return {MValue(astType), emitter.shared.getTypeType()};
   }
+
+  // Return MLIR types as an MValue.
+  if (auto type = decl->getIfMLIRType())
+    return {MValue(ASTType(type)), ASTType(type)};
 
   emitter.emitError(loc, "use of declaration \"")
       << memberName << "\" as a value isn't supported yet";
@@ -558,7 +562,9 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   // Look up the special function on the expr type.
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
-  ASTDecl *lookupResult = type.getDecl(shared).lookup(nameAttr);
+  ASTDecl *lookupResult = nullptr;
+  if (auto *decl = type.getDecl(shared))
+    lookupResult = decl->lookup(nameAttr);
   if (!lookupResult) {
     emitError(callLoc, "") << type << " does not implement the " << nameAttr
                            << " special method";
@@ -639,21 +645,33 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // Handle member references on types.
   if (ASTType baseType = baseVal.ir.getIfMTValue()) {
-    ASTDecl &typeDecl = baseType.getDecl(emitter.shared);
+    ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
+    if (!typeDecl) {
+      emitter.emitError(getLoc(), "MLIR type ")
+          << baseType << " has no attributes";
+      return {};
+    }
+
     // Handle __mlir_op.`xxx` references.
-    if (typeDecl.magicKind == MagicDeclKind::k__mlir_op)
+    if (typeDecl->magicKind == MagicDeclKind::k__mlir_op)
       return synthesizeMLIROpFromString(attrSpelling, emitter);
     // Handle __mlir_attr.`xxx` references.
-    if (typeDecl.magicKind == MagicDeclKind::k__mlir_attr)
+    if (typeDecl->magicKind == MagicDeclKind::k__mlir_attr)
       return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
     // Normal member reference.
     auto rValueAnd =
-        emitDeclMemberReference(typeDecl, attrSpelling, getLoc(), emitter);
+        emitDeclMemberReference(*typeDecl, attrSpelling, getLoc(), emitter);
     return {rValueAnd.ir, rValueAnd.type};
   }
 
   // Otherwise, it must be an access to a field of a value.
-  ASTDecl &typeDecl = baseVal.type.getDecl(emitter.shared);
+  ASTDecl *typeDecl = baseVal.type.getDecl(emitter.shared);
+  if (!typeDecl) {
+    emitter.emitError(getLoc(), "MLIR type ")
+        << baseVal.type << " has no attributes";
+    return {};
+  }
+
   auto typeParams = baseVal.type.getParamValues();
   if (!typeParams.empty()) {
     emitter.emitError(getLoc(), "TODO: Cannot handle parameterized types ")
@@ -661,7 +679,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
     return {};
   }
 
-  if (!isa<LITStructDeclOp>(typeDecl)) {
+  if (!isa<LITStructDeclOp>(*typeDecl)) {
     emitter.emitError(getLoc(), "cannot access fields in type ")
         << baseVal.type;
     return {};
@@ -669,7 +687,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // Find the member being accessed.
   ASTDecl *memberDecl = emitter.lookupDecl(
-      attrSpelling, getLoc(), typeDecl, [&](InFlightDiagnostic diag) {
+      attrSpelling, getLoc(), *typeDecl, [&](InFlightDiagnostic diag) {
         diag << "object has no attribute '" << attrSpelling << "'";
       });
   if (!memberDecl)
@@ -805,14 +823,20 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
 static ASTTypeAnd<AnyValue> emitInitializerCall(const CallNode &call,
                                                 ASTType calledType,
                                                 ExprEmitter &emitter) {
-  ASTDecl &calledDecl = calledType.getDecl(emitter.shared);
+  ASTDecl *calledDecl = calledType.getDecl(emitter.shared);
+  if (!calledDecl) {
+    emitter.emitError(call.getLoc(), "cannot create instance of MLIR type ")
+        << calledType;
+    return {};
+  }
+
   // Ensure the type specified is fully resolved, so all its members are known.
   if (failed(emitter.shared.declResolver->resolve(
-          calledDecl, DeclResolvedness::fullyResolved, call.getLoc())))
+          *calledDecl, DeclResolvedness::fullyResolved, call.getLoc())))
     return {};
 
   auto newMemberVal =
-      emitDeclMemberReference(calledDecl, "__new__", call.getLoc(), emitter);
+      emitDeclMemberReference(*calledDecl, "__new__", call.getLoc(), emitter);
   return emitFunctionCall(call, emitter.emitRValue(newMemberVal, call.getLoc()),
                           emitter);
 }
@@ -1012,8 +1036,13 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    ASTDecl &typeDecl = astType.getDecl(emitter.shared);
-    auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
+    ASTDecl *typeDecl = astType.getDecl(emitter.shared);
+    if (!typeDecl) {
+      emitter.emitError(getLoc(), "MLIR type ")
+          << astType << " has no parameters";
+      return {};
+    }
+    auto structOp = dyn_cast<LITStructDeclOp>(*typeDecl);
     if (!structOp) {
       emitter.emitError(getLoc(), "unknown parameterized type ") << astType;
       return {};
@@ -1052,7 +1081,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     }
 
     // Ok, we succeeded at reparameterizing the type.
-    auto result = emitter.shared.getASTType(typeDecl, paramBindings);
+    auto result = emitter.shared.getASTType(*typeDecl, paramBindings);
     return {MValue(result), emitter.shared.getTypeType()};
   }
 
@@ -1064,7 +1093,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
     // The ASTType of subValue must be a magic function type, for the IR to have
     // signature type.  We cannot have error types or anything else here.
     // TODO: Switch to key off the AST type when it carries everything we need.
-    assert(subValue.type.getDecl(emitter.shared).magicKind ==
+    assert(subValue.type.getDecl(emitter.shared)->magicKind ==
            MagicDeclKind::kFunctionType);
     assert(subValue.type.getParamValues().size() == 1 &&
            "FunctionType should have one (result) parameter");

@@ -24,79 +24,67 @@ using namespace M::KGEN::LIT;
 // ASTType
 //===----------------------------------------------------------------------===//
 
-ASTTypeStorage::ASTTypeStorage(
-    ASTDecl &decl, ArrayRef<LitSharedState::ParamBinding> paramValues)
-    : decl(decl), paramValues(paramValues) {}
+ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
+  if (auto declRef = dyn_cast<LITDeclRefType>(type))
+    return &shared.getDeclForSymbol(declRef.getSymbol());
+  return nullptr;
+}
 
-ArrayRef<ASTType::ParamBinding> ASTType::getParamValues() const {
-  assert(pointer && "Cannot dereference null ASTType");
-  return pointer->paramValues;
+std::vector<ASTType::ParamBinding> ASTType::getParamValues() const {
+  assert(type && "Cannot dereference null ASTType");
+  auto declRef = dyn_cast<LITDeclRefType>(type);
+  if (!declRef)
+    return {};
+
+  std::vector<ASTType::ParamBinding> result;
+  for (auto bind : declRef.getParamValues()) {
+    TypedAttr x = bind.getValue();
+
+    if (auto type = dyn_cast<ConcreteTypeConstantAttr>(x)) {
+      result.push_back({bind.getDecl(), MValue(ASTType(type.getValue()))});
+    } else if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(x)) {
+      result.push_back({bind.getDecl(), MValue(ASTType(type.getValue()))});
+    } else {
+      result.push_back({bind.getDecl(), MValue(x)});
+    }
+  }
+
+  return result;
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
-  if (&pointer->decl != &other.pointer->decl ||
-      getParamValues().size() != other.getParamValues().size())
-    return false;
-
-  for (auto [p1, p2] : llvm::zip(getParamValues(), other.getParamValues())) {
-    // Compare the names of the parameters.
-    if (p1.first != p2.first)
-      return false;
-    // If both values are attributes, compare with pointer equality.
-    if (auto lhsAttr = p1.second.getIfMAValue())
-      if (auto rhsAttr = p2.second.getIfMAValue()) {
-        if (lhsAttr.get() != rhsAttr.get())
-          return false;
-        continue;
-      }
-    // If both are ASTTypes, recurse.
-    if (auto lhsType = p1.second.getIfMTValue())
-      if (auto rhsType = p2.second.getIfMTValue()) {
-        if (!lhsType.isEqualCanon(rhsType))
-          return false;
-        continue;
-      }
-    // Otherwise they are different kinds.
-    return false;
-  }
-  return true;
+  return type == other.type;
 }
 
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
-raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType type) {
-  if (!type)
+raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
+  if (!astType)
     return os << "<<NULL ASTTYPE>>";
 
-  ASTDecl &decl = type.getDecl(); // FIXME.
-  if (auto typeDecl = dyn_cast<LITStructDeclOp>(decl)) {
+  auto type = astType.getMLIRType();
+  if (auto declRef = dyn_cast<LITDeclRefType>(type)) {
     // TODO: Could include name scope information.
-    os << typeDecl.getName();
-  } else if (auto type = decl.getIfMLIRType()) {
+    os << declRef.getSymbol().getRootReference().str();
+
+    ParamBindArrayAttr params = declRef.getParamValues();
+    if (!params.empty()) {
+      os << '[';
+      llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
+        printParamValue(bind.getValue(), os);
+      });
+      os << ']';
+    }
+  } else {
     if (isa<KGEN::NoneType>(type))
       os << "None";
     else if (isa<MLIRTypeType>(type))
       os << "type";
     else
       os << "__mlir_type." << type;
-  } else {
-    // TODO: Add "aka" information when we have "type defs".
-    os << "<<unknown ASTType>>";
   }
 
-  ArrayRef<LitSharedState::ParamBinding> params = type.getParamValues();
-  if (!params.empty()) {
-    os << '[';
-    llvm::interleaveComma(params, os, [&](LitSharedState::ParamBinding bind) {
-      // TODO: This isn't really right, but will work enough for now.
-      if (auto attrVal = bind.second.getIfMAValue())
-        printParamValue(attrVal.get(), os);
-      else
-        os << bind.second.getIfMTValue();
-    });
-    os << ']';
-  }
   return os;
 }
 
