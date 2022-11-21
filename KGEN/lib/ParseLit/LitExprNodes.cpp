@@ -533,12 +533,8 @@ emitDeclMemberReference(ASTDecl &container, StringRef memberName, SMLoc loc,
   // If this is a type declaration, return it as a type.
   if (isa<LITStructDeclOp>(*decl)) {
     auto astType = emitter.shared.getASTType(*decl, {});
-    return {MValue(astType), emitter.shared.getTypeType()};
+    return {MValue(astType), MLIRTypeType::get(emitter.getContext())};
   }
-
-  // Return MLIR types as an MValue.
-  if (auto type = decl->getIfMLIRType())
-    return {MValue(ASTType(type)), ASTType(type)};
 
   emitter.emitError(loc, "use of declaration \"")
       << memberName << "\" as a value isn't supported yet";
@@ -677,7 +673,7 @@ ASTTypeAnd<AnyValue> AttributeRefNode::emitIR(ExprEmitter &emitter,
       Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
       if (!result)
         return {};
-      return {ASTType(result), emitter.shared.getTypeType()};
+      return {ASTType(result), MLIRTypeType::get(emitter.getContext())};
     }
 
     // Normal member reference.
@@ -1103,7 +1099,7 @@ ASTTypeAnd<AnyValue> SubscriptNode::emitIR(ExprEmitter &emitter,
 
     // Ok, we succeeded at reparameterizing the type.
     auto result = emitter.shared.getASTType(*typeDecl, paramBindings);
-    return {MValue(result), emitter.shared.getTypeType()};
+    return {MValue(result), MLIRTypeType::get(emitter.getContext())};
   }
 
   // If we have a value of signature type, we can bind parameters to it.

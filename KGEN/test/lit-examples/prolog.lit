@@ -314,7 +314,7 @@ struct F32:
 #===------------------------------------------------------------------------===#
 
 # TODO: Enable this with & sugar on 'type' type.
-struct Pointer[ElementType: type]:
+struct Pointer[ElementType: __mlir_type.`!kgen.mlirtype`]:
   pass
 
 
