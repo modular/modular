@@ -4,16 +4,4 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(support-dialect-opt
-  support-dialect-opt.cpp
-
-  LINK_LIBS PRIVATE
-  DebugInfoDialect
-  HLCFDialect
-  HLCFToLLVM
-  MDialect
-  MSupport
-  MLIRFuncDialect
-  MLIROptLib
-  MLIRTransforms
-  )
+add_subdirectory(IR)

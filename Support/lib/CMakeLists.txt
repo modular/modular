@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(Benchmark)
+add_subdirectory(DebugInfoDialect)
 add_subdirectory(HLCFDialect)
 add_subdirectory(HLCFToLLVM)
 add_subdirectory(MDialect)

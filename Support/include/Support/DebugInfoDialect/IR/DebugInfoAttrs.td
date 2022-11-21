@@ -1,0 +1,253 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef DEBUGINFOATTRS_TD
+#define DEBUGINFOATTRS_TD
+
+include "Support/DebugInfoDialect/IR/DebugInfoDialect.td"
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/SubElementInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// DIAttr
+//===----------------------------------------------------------------------===//
+
+// Base class for debug info dialect attributes.
+class DIAttr<string name, string attrMnemonic, list<Trait> traits = [],
+                   string baseCppClass = "DIAttr">
+    : AttrDef<DebugInfoDialect, name, traits, baseCppClass> {
+  let mnemonic = attrMnemonic;
+}
+
+// Base class for debug info scope attributes.
+class DIScopeAttr<string name, string attrMnemonic, list<Trait> traits = [],
+                  string baseCppClass = "DIScopeAttr">
+    : DIAttr<name, attrMnemonic, traits, baseCppClass>;
+
+// Base class for debug info local scope attributes.
+class DILocalScopeAttr<string name, string attrMnemonic, list<Trait> traits = [],
+                       string baseCppClass = "DILocalScopeAttr">
+    : DIAttr<name, attrMnemonic, traits, baseCppClass>;
+
+//===----------------------------------------------------------------------===//
+// DICompileUnitAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit", [
+    SubElementAttrInterface
+  ]> {
+  let summary = "A single file compilation unit description.";
+  let description = [{
+    The `debuginfo.compile_unit` attribute represents a compilation scope for
+    a specific file within the given source language, and contains
+    configuration information for the generation of debug info for that file.
+
+    Example:
+
+    ```mlir
+    #compile_unit = #debuginfo.compile_unit<
+      sourceLanguage = DW_LANG_C,
+      file = #file,
+      producer = "MLIR",
+      isOptimized = true,
+      emissionKind = Full
+    >
+    ```
+  }];
+  let parameters = (ins
+    DILanguageParameter:$sourceLanguage,
+    "DIFileAttr":$file,
+    "StringAttr":$producer,
+    "bool":$isOptimized,
+    "EmissionKind":$emissionKind
+  );
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "unsigned":$sourceLanguage, "DIFileAttr":$file, "StringRef":$producer,
+      "bool":$isOptimized, "EmissionKind":$emissionKind
+    ), [{
+      MLIRContext *ctx = file.getContext();
+      return $_get(ctx, sourceLanguage, file, StringAttr::get(ctx, producer),
+                   isOptimized, emissionKind);
+    }]>
+  ];
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DIFileAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIFileAttr : DIScopeAttr<"DIFile", "file"> {
+  let summary = "A source file description.";
+  let description = [{
+    The `debuginfo.file` attribute represents a debug scope for the given
+    file name and directory.
+
+    Example:
+
+    ```mlir
+    #file = #debuginfo.file<"foo.c" in "/mlir/">
+    ```
+  }];
+  let parameters = (ins "StringAttr":$name, "StringAttr":$directory);
+  let builders = [AttrBuilder<(ins "StringRef":$name, "StringRef":$directory), [{
+      return $_get($_ctxt, StringAttr::get($_ctxt, name),
+                   StringAttr::get($_ctxt, directory));
+    }]>
+  ];
+
+  let assemblyFormat = "`<` $name `in` $directory `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DILexicalBlockAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DILexicalBlockAttr : DILocalScopeAttr<
+  "DILexicalBlock", "lexical_block", [
+    SubElementAttrInterface
+  ]> {
+  let summary = "A lexical block scope.";
+  let description = [{
+    The `debuginfo.lexical_block` attribute represents a lexical block debug
+    scope. A lexical block describes a sequence of source statements that may
+    contain any number of declarations.
+
+    Example:
+
+    ```mlir
+    #lex_block = #debuginfo.lexical_block<
+      scope = #subprogram,
+      file = #file,
+      line = 10,
+      column = 1
+    >
+    ```
+  }];
+  let parameters = (ins
+    "DILocalScopeAttr":$scope,
+    "DIFileAttr":$file,
+    "unsigned":$line,
+    "unsigned":$column
+  );
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "DILocalScopeAttr":$scope, "DIFileAttr":$file, "unsigned":$line,
+      "unsigned":$column
+    ), [{
+      return $_get(file.getContext(), scope, file, line, column);
+    }]>
+  ];
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DILocalVariableAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", [
+    SubElementAttrInterface, TypedAttrInterface
+  ]> {
+  let summary = "A variable or subprogram argument description.";
+  let description = [{
+    The `debuginfo.local_variable` attribute represents a variable or
+    subprogram argument description. When representing an argument, the `arg`
+    field should be 1-based index of the argument.
+
+    Example:
+
+    ```mlir
+    #local_variable = #debuginfo.local_variable<
+      scope = #lex_block,
+      name = "foo",
+      file = #debuginfo.file<"foo.c" in "/mlir/">,
+      line = 10,
+      arg = 0
+    > : !debuginfo.unresolved<index>
+    ```
+  }];
+  let parameters = (ins
+    "DILocalScopeAttr":$scope,
+    "StringAttr":$name,
+    "DIFileAttr":$file,
+    "unsigned":$line,
+    "unsigned":$arg,
+    OptionalParameter<"unsigned", "0">:$alignInBits,
+    AttributeSelfTypeParameter<"", "DIType">:$type
+  );
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "DILocalScopeAttr":$scope, "StringRef":$name, "DIFileAttr":$file,
+      "unsigned":$line, "unsigned":$arg, "unsigned":$alignInBits,
+      "DIType":$type
+    ), [{
+      MLIRContext *ctx = file.getContext();
+      return $_get(ctx, scope, StringAttr::get(ctx, name), file, line,
+                   arg, alignInBits, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DISubprogramAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", [
+  SubElementAttrInterface,
+  TypedAttrInterface
+  ]> {
+  let summary = "A subprogram, i.e., function, description.";
+  let description = [{
+    The `debuginfo.subprogram` attribute represents the debug information for
+    a function.
+
+    Example:
+
+    ```mlir
+    #subprogram = #debuginfo.subprogram<
+      compileUnit = #compile_unit,
+      scope = #file,
+      name = "foo",
+      linkageName = "foo",
+      file = #file,
+      line = 10,
+      scopeLine = 10,
+      subprogramFlags = Definition
+    > : !debuginfo.subroutine<() -> (): DW_CC_normal>
+    ```
+  }];
+
+  let parameters = (ins
+    "DICompileUnitAttr":$compileUnit,
+    "DIScopeAttr":$scope,
+    "StringAttr":$name,
+    "StringAttr":$linkageName,
+    "DIFileAttr":$file,
+    "unsigned":$line,
+    "unsigned":$scopeLine,
+    "SubprogramFlags":$subprogramFlags,
+    AttributeSelfTypeParameter<"", "DISubroutineType">:$type
+  );
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringRef":$name, 
+      "StringRef":$linkageName, "DIFileAttr":$file, "unsigned":$line, 
+      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags, 
+      "DISubroutineType":$type
+    ), [{
+      MLIRContext *ctx = file.getContext();
+      return $_get(ctx, compileUnit, scope, StringAttr::get(ctx, name),
+                   StringAttr::get(ctx, linkageName), file, line,
+                   scopeLine, subprogramFlags, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+#endif
