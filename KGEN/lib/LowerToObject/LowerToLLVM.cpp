@@ -8,6 +8,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -169,13 +170,12 @@ private:
 } // namespace
 
 void EmitLLVMPass::runOnOperation() {
-  /// If no runtime was provided, create one.
-  if (!runtime) {
-    new (runtime) Runtime(createLeakCheckAllocator(createMallocAllocator()),
-                          createSingleThreadWorkQueue());
-  }
+  // If no runtime was provided, create one.
+  auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
+      runtime, createLeakCheckAllocator(createMallocAllocator()),
+      createSingleThreadWorkQueue());
 
-  ObjectCompiler compiler(*runtime, ".kgen_cache", getOperation());
+  ObjectCompiler compiler(*rt, ".kgen_cache", getOperation());
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
   auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);
