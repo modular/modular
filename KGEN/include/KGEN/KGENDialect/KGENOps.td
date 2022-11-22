@@ -960,6 +960,35 @@ def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
 }
 
 //===----------------------------------------------------------------------===//
+// ListMakeOp
+//===----------------------------------------------------------------------===//
+
+def ListMakeOp : KGENOp<"list.make", [Pure, TypesMatchWith<"list element type",
+    "result", "operands",
+    "ParamRefType::get($_self.cast<ListType>().getElementType())",
+    "typeRangeMatches">]> {
+  let summary = "Form a list.";
+  let description = [{
+    The `kgen.list.make` operation forms a list using the provided operands.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.list.make(%arg0, %arg1) : <index[2]>
+    ```
+
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs ListType:$result);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` type($result)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ListIterateOp
 //===----------------------------------------------------------------------===//
 
@@ -1064,7 +1093,7 @@ def IterateOp : KGENOp<"iterate", [
     ```mlir
     // Sum the numbers from 0 to 9.
     %zero = index.constant 0
-    %sum = kgen.iterate (idx) in 
+    %sum = kgen.iterate (idx) in
         // for (ssize_t idx = 0; idx < 10: ++idx)
         [(0), (idx) -> add(idx, 1), (idx) -> lt (idx, 10)]
         // Loop-carried values.
