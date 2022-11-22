@@ -965,12 +965,16 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   }
 
   // If the operand is an expression function, substitute the parameter
-  // declarations.
+  // declarations. If any parameter value is not a simple constant, we cannot
+  // simplify the bound function.
   if (auto exprFunc = dyn_cast<ExprFuncAttr>(operands.front())) {
     ParameterEvaluator evaluator;
     for (auto [param, value] :
-         llvm::zip(exprFunc.getParamDecls(), operands.drop_front()))
+         llvm::zip(exprFunc.getParamDecls(), operands.drop_front())) {
+      if (!isSimpleConstant(value))
+        return {};
       evaluator.setParameterValue(param, value);
+    }
     // Bind inputs to themselves.
     for (ParamDeclAttr input : exprFunc.getInputs())
       evaluator.setParameterValue(
