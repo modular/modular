@@ -287,11 +287,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto loc = consumeToken(LitToken::kw_return).getLoc();
 
-  SmallVector<Value> operandValues;
-  SmallVector<ASTType> operandTypes;
-
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
+  SmallVector<Value> operandValues;
   if (!getToken().getIndentation().has_value()) {
     // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(operandExprs, returnIndent,
@@ -309,8 +307,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     auto value = getExprEmitter().emitDRValue(expr);
     if (!value)
       return failure();
-    operandValues.push_back(value.ir);
-    operandTypes.push_back(value.type);
+    operandValues.push_back(value);
   }
 
   // We don't support formation of tuples / multiple result values yet.
@@ -333,7 +330,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   if (operandValues[0].getType() != decl.getResultTypes()[0]) {
     emitError(loc, "returned value has type ")
-        << operandTypes[0] << " but 'def' expected "
+        << ASTType(operandValues[0].getType()) << " but 'def' expected "
         << containingDecl.getResolvedType();
     return success();
   }
@@ -385,24 +382,23 @@ static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
   // TODO(parameters): If the condition is a meta value, don't emit dead code
   // to test it.
   auto exprEmitter = parser.getExprEmitter();
-  ASTTypeAnd<DRValue> cond = exprEmitter.emitDRValue(condExp);
+  DRValue cond = exprEmitter.emitDRValue(condExp);
   if (!cond)
     return failure();
 
   SMLoc condLoc = condExp->getLoc();
-  ASTTypeExprAnd<AnyValue> argValue = {{cond.ir, cond.type}, condExp};
-  ASTTypeAnd<AnyValue> boolCall = exprEmitter.emitSpecialMethodCall(
-      cond.type, SpecialFunctionKind::kBool, argValue, condLoc);
+  AnyValue boolCall = exprEmitter.emitSpecialMethodCall(
+      cond.getType(), SpecialFunctionKind::kBool, {{cond, condExp}}, condLoc);
   if (!boolCall)
     return failure();
 
-  argValue = {boolCall, condExp};
-  ASTTypeAnd<AnyValue> litBoolCall = exprEmitter.emitSpecialMethodCall(
-      boolCall.type, SpecialFunctionKind::kLitBool, argValue, condLoc);
-  if (!litBoolCall || !litBoolCall.ir.getIfDRValue())
+  AnyValue litBoolCall = exprEmitter.emitSpecialMethodCall(
+      boolCall.getType(), SpecialFunctionKind::kLitBool, {{boolCall, condExp}},
+      condLoc);
+  if (!litBoolCall || !litBoolCall.getIfDRValue())
     return failure();
 
-  condValue = static_cast<Value>(litBoolCall.ir.getIfDRValue());
+  condValue = static_cast<Value>(litBoolCall.getIfDRValue());
   return success();
 }
 
