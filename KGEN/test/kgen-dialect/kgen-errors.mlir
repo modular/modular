@@ -1068,3 +1068,31 @@ kgen.generator @apply_error<fn: (index) -> index>() {
   // expected-error @below {{custom op 'kgen.param.declare' 'apply' input #0 is '!kgen.dtype' but function expected 'index'}}
   kgen.param.declare fn = <apply(:(index) -> index fn, :dtype f32)>
 }
+
+// -----
+
+kgen.generator @iterate<next: (index) -> index, cond: (index) -> i1>() {
+  // expected-error @below {{custom op 'kgen.iterate' not enough init values}}
+  kgen.iterate (I) in [(), next, cond] {
+    kgen.return
+  }
+}
+
+// -----
+
+kgen.generator @iterate<next: (index) -> index, cond: (index) -> i1>() {
+  // expected-error @below {{custom op 'kgen.iterate' too many init values}}
+  kgen.iterate (I) in [(0, 1), next, cond] {
+    kgen.return
+  }
+}
+
+// -----
+
+kgen.generator @iterate<next: (index) -> index, cond: (index) -> i1>() {
+  // expected-error @below {{'kgen.iterate' op body results should match argument types}}
+  kgen.iterate (I) in [(0), next, cond] {
+    %0 = kgen.param.constant = <I>
+    kgen.return %0 : index
+  }
+}

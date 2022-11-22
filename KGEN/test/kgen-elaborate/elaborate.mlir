@@ -1156,3 +1156,25 @@ kgen.generator @check() {
   %0 = kgen.param.constant: i1 = <result>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @"expand_iterate,U0=0,V0=2"
+kgen.generator @expand_iterate<U0, V0>(%arg0: index) -> index {
+  // %0 = kgen.param.constant = <2>
+  // %1 = index.add %0, %arg0
+  // %2 = kgen.param.constant = <4>
+  // %3 = index.add %2, %1
+  // kgen.return %3 : index
+  %0 = kgen.iterate (U, V) in [(U0, V0), #kgen.expr.func<(a, b) -> (add(a, 1), add(b, 1))>, #kgen.expr.func<(a, b) -> lt(a, 2)>] (%arg1 = %arg0) -> index {
+    %0 = kgen.param.constant = <add(U, V)>
+    %1 = index.add %0, %arg1
+    kgen.return %1 : index
+  }
+  kgen.return %0 : index
+}
+
+kgen.generator @do_it(%arg0: index) {
+  kgen.call @expand_iterate<U0 = 0, V0 = 2>(%arg0) : (index) -> index
+  kgen.return
+}

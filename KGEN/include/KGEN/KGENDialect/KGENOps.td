@@ -449,7 +449,7 @@ def RegionBodyOp : RegionBodyBaseOp<"region.body",
 //===----------------------------------------------------------------------===//
 
 def RegionOpenBodyOp : RegionBodyBaseOp<"region.open_body",
-    [HasParent<"InlinedCallOp">]> {
+    [ParentOneOf<["InlinedCallOp", "IterateOp"]>]> {
   let summary = "Define a region parameter body.";
   let description = [{
     The `kgen.region.open_body` operation defines a region parameter that is not
@@ -1036,6 +1036,76 @@ def ListYieldOp : KGENOp<"list.yield", [Pure, Terminator,
   let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
 
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// IterateOp
+//===----------------------------------------------------------------------===//
+
+def IterateOp : KGENOp<"iterate", [
+    RecursivelySpeculatable, RecursiveMemoryEffects,
+    AllTypesMatch<["arguments", "results"]>]> {
+  let summary = "Bounded iteration.";
+  let description = [{
+    The `kgen.iterate` operation iterates over a range of values starting from
+    an initial value and iteratively applying a map function `f` to form a
+    sequence of values. A loop body is executed with the parameter values of
+    each set of values with loop-carried values. This operation is useful since
+    KGEN forbids recursive elaboration, so we cannot iterate using recursion
+    like in C++. The `kgen.iterate` simulates recursive expansion but with bound
+    guarantees.
+
+    The operation takes an initial value `I(0)` and an affine map and forms a
+    sequence `I(i+1) = map(I(i))`. The loop iterates until any index in `I(i)`
+    fails to satisfy the iterate check function.
+
+    Example:
+
+    ```mlir
+    // Sum the numbers from 0 to 9.
+    %zero = index.constant 0
+    %sum = kgen.iterate (idx) in 
+        // for (ssize_t idx = 0; idx < 10: ++idx)
+        [(0), (idx) -> add(idx, 1), (idx) -> lt (idx, 10)]
+        // Loop-carried values.
+        (%acc = %zero) -> index {
+      // Materialize the parameter index as a value.
+      %rhs = kgen.param.constant = <idx>
+      %next = index.add %acc, %rhs
+      kgen.retuen %next
+    }
+    ```
+
+    Example:
+
+    ```mlir
+    // Iterate with two variables.
+    %zero = index.constant 0
+    %total = kgen.iterate (U: i32, V: i64) in
+        [(0, 1), (U, V) -> (add(U, 1), add(V, 2)), (U, V) -> lt(add(U, V), 32)]
+        (%v = %zero) -> index {
+      %sum = kgen.param.constant = <add(U, V)>
+      %next = index.add %v, %sum
+      kgen.return %next : index
+    }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$arguments,
+                       ParameterExprArrayAttr:$init,
+                       AttrOfType<SignatureType>:$next,
+                       AttrOfType<SignatureType>:$cond,
+                       DefaultValuedAttr<ParamDeclArrayAttr,
+                                         "None">:$paramDecls);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    custom<Iterate>($arguments, type($arguments), $init, $next, $cond, $body)
+    attr-dict
+  }];
+
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -1636,6 +1636,145 @@ LogicalResult ListYieldOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// IterateOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseIterate(OpAsmParser &p,
+             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &arguments,
+             SmallVectorImpl<Type> &argumentTypes, ParameterExprArrayAttr &init,
+             TypedAttr &next, TypedAttr &cond, Region &body) {
+  // Parse the parameter declarations `(` (name `:` type)* `)` `in` `[`
+  SmallVector<Type> paramTypes;
+  SmallVector<ParamDeclAttr> params;
+  auto parseParam = [&] {
+    StringAttr name;
+    if (parseParamName(p, name) ||
+        parseColonTypeOrIndex(p, paramTypes.emplace_back()))
+      return failure();
+    params.push_back(ParamDeclAttr::get(name, paramTypes.back()));
+    return mlir::success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseParam) ||
+      p.parseKeyword("in") || p.parseLSquare())
+    return failure();
+
+  // Parse the init values using the types of the parameters
+  SmallVector<TypedAttr> initVals;
+  initVals.reserve(params.size());
+  auto paramTypeIt = paramTypes.begin(), paramTypeE = paramTypes.end();
+  auto parseInit = [&]() -> ParseResult {
+    if (paramTypeIt == paramTypeE)
+      return p.emitError(p.getCurrentLocation(), "too many init values");
+    return parseParamValue(p, initVals.emplace_back(), *paramTypeIt++);
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseInit))
+    return failure();
+  if (paramTypeIt != paramTypeE)
+    return p.emitError(p.getCurrentLocation(), "not enough init values");
+
+  auto nextFnType = SignatureType::get(p.getContext(), paramTypes, paramTypes);
+  auto condFnType = SignatureType::get(p.getContext(), paramTypes,
+                                       p.getBuilder().getI1Type());
+  if (p.parseComma() || parseParamValue(p, next, nextFnType) ||
+      p.parseComma() || parseParamValue(p, cond, condFnType) ||
+      p.parseRSquare())
+    return failure();
+
+  SmallVector<OpAsmParser::Argument> bodyArgs;
+  if (succeeded(p.parseOptionalLParen())) {
+    auto parseArg = [&] {
+      if (p.parseArgument(bodyArgs.emplace_back()) || p.parseEqual() ||
+          p.parseOperand(arguments.emplace_back()))
+        return failure();
+      return mlir::success();
+    };
+    if (p.parseCommaSeparatedList(parseArg) || p.parseRParen() ||
+        p.parseArrowTypeList(argumentTypes))
+      return failure();
+    for (auto [idx, type] : llvm::enumerate(argumentTypes))
+      bodyArgs[idx].type = type;
+  }
+
+  Region regionBody;
+  Optional<Location> regionBodyLoc =
+      p.getEncodedSourceLoc(p.getCurrentLocation());
+  if (p.parseRegion(regionBody, bodyArgs) ||
+      p.parseOptionalLocationSpecifier(regionBodyLoc))
+    return failure();
+  body.push_back(new Block);
+  OpBuilder b(p.getContext());
+  b.setInsertionPointToStart(&body.front());
+  auto bodyOp = b.create<RegionOpenBodyOp>(
+      *regionBodyLoc, params, ArrayRef<Type>(), ArrayRef<ConstraintAttr>());
+  bodyOp.getBodyRegion().takeBody(regionBody);
+
+  init = ParameterExprArrayAttr::get(p.getContext(), initVals);
+  return success();
+}
+
+static void printIterate(OpAsmPrinter &p, Operation *op, ValueRange arguments,
+                         TypeRange argumentTypes, ParameterExprArrayAttr init,
+                         TypedAttr next, TypedAttr cond, Region &body) {
+  p << '(';
+  auto bodyOp = cast<RegionOpenBodyOp>(body.front().front());
+  llvm::interleaveComma(bodyOp.getParamDecls(), p, [&](ParamDeclAttr param) {
+    printParamName(p, param.getName());
+    printColonTypeOrIndex(p.getStream(), param.getType());
+  });
+  p << ") in [(";
+  llvm::interleaveComma(init, p, [&](TypedAttr initVal) {
+    printParamValue(initVal, p.getStream());
+  });
+  p << "), ";
+  printParamValue(next, p.getStream());
+  p << ", ";
+  printParamValue(cond, p.getStream());
+  p << "] ";
+  if (!arguments.empty()) {
+    p << '(';
+    llvm::interleaveComma(
+        llvm::seq<unsigned>(0, arguments.size()), p, [&](unsigned i) {
+          p << bodyOp.getBodyRegion().getArgument(i) << " = " << arguments[i];
+        });
+    p << ')';
+    p.printArrowTypeList(argumentTypes);
+    p << ' ';
+  }
+  p.printRegion(bodyOp.getBodyRegion(), /*printEntryBlockArgs=*/false);
+  p.printOptionalLocationSpecifier(bodyOp.getLoc());
+}
+
+LogicalResult IterateOp::verifyRegions() {
+  auto body = cast<RegionOpenBodyOp>(getBody().front().getTerminator());
+  if (!body || body != &getBody().front().front())
+    return emitOpError("expected a single open region body");
+
+  unsigned numParams = body.getParamDecls().size();
+  if (numParams != getInit().size())
+    return emitOpError("expected ") << numParams << " init values";
+  SmallVector<Type> paramTypes;
+  for (auto [init, param] : llvm::zip(getInit(), body.getParamDecls())) {
+    if (init.getType() != param.getType())
+      return emitOpError("init types do not match parameter types");
+    paramTypes.push_back(init.getType());
+  }
+
+  auto nextFnSig = SignatureType::get(getContext(), paramTypes, paramTypes);
+  if (getNext().getType() != nextFnSig)
+    return emitOpError("next function should have type ") << nextFnSig;
+  auto condFnSig = SignatureType::get(getContext(), paramTypes,
+                                      Builder(getContext()).getI1Type());
+  if (getCond().getType() != condFnSig)
+    return emitOpError("cond function should have type ") << condFnSig;
+
+  if (body.getReturnOp().getOperandTypes() != getArguments().getTypes())
+    return emitOpError("body results should match argument types");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
 
