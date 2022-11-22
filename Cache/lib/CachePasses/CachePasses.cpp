@@ -9,6 +9,7 @@
 #include "Cache/CacheDialect/CacheOps.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/STLExtras.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
@@ -37,14 +38,13 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    if (!runtime) {
-      new (runtime) Runtime(createLeakCheckAllocator(createMallocAllocator()),
-                            createSingleThreadWorkQueue());
-    }
+    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
+        runtime, createLeakCheckAllocator(createMallocAllocator()),
+        createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<RegionCacheKey> cache(getFilesystemBackend(
-        *runtime, std::filesystem::path(cacheDir.getValue())));
+    BlobCache<RegionCacheKey> cache(
+        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each symbol.
     SmallVector<AnyAsyncValueRef> results;
     for (auto &op : getOperation()) {
@@ -89,14 +89,13 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    if (!runtime) {
-      new (runtime) Runtime(createLeakCheckAllocator(createMallocAllocator()),
-                            createSingleThreadWorkQueue());
-    }
+    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
+        runtime, createLeakCheckAllocator(createMallocAllocator()),
+        createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<RegionCacheKey> cache(getFilesystemBackend(
-        *runtime, std::filesystem::path(cacheDir.getValue())));
+    BlobCache<RegionCacheKey> cache(
+        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each deflated op.
     SmallVector<AnyAsyncValueRef> results;
     for (auto &sym : getOperation()) {
