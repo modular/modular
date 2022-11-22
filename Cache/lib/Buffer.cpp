@@ -159,9 +159,15 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
   if (size == 0) {
     size = status.getSize();
   } else if (status.getSize() < size) {
+    // On Windows, the resize_file_before_mapping_readwrite is a no-op which
+    // takes an integer file handle (and not an llvm::fs::file_t). To avoid
+    // compilation failure, we just skip calling the
+    // resize_file_before_mapping_readwrite function.
+#ifndef _WIN32
     if (auto err =
             llvm::sys::fs::resize_file_before_mapping_readwrite(fd, size))
       return Error(err.message());
+#endif // _WIN32
   }
 
   std::error_code ec;
