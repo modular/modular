@@ -284,5 +284,23 @@ def LITDeclRefType : KGENType<"LITDeclRef", "litdeclref",
   let extraClassDeclaration = [{
   }];
 }
+//===----------------------------------------------------------------------===//
+// TargetType
+//===----------------------------------------------------------------------===//
+
+def TargetType : KGENType<"Target", "target"> {
+  let summary = "The type of a target.";
+  let description = [{
+    A `!kgen.target` is the type of a target. It is used for parameterizing
+    kernels by target.
+
+    Example:
+    ```mlir
+    kgen.generator @target_params<t: !kgen.target>() {
+      ...
+    }
+    ```
+  }];
+}
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

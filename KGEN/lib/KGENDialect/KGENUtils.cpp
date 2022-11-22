@@ -85,6 +85,11 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return success();
   }
 
+  if (succeeded(parser.parseOptionalKeyword("target"))) {
+    type = parser.getBuilder().getType<TargetType>();
+    return LogicalResult::success();
+  }
+
   // Helper for building (and checking) a Signature type.
   llvm::SMLoc typeLoc = parser.getCurrentLocation();
   auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
@@ -143,6 +148,8 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     os << "dtype";
   } else if (isa<StringType>(type)) {
     os << "string";
+  } else if (isa<TargetType>(type)) {
+    os << "target";
   } else if (auto list = dyn_cast<ListType>(type)) {
     os << "list<";
     printParamValue(list.getElementType(), os);
@@ -395,7 +402,6 @@ enum class POCAliases : uint32_t {
   GT, // !(<)
   GE, // !(<=)
   NOT_IN,
-
   // This is an unknown opcode name.
   kInvalid,
 };
@@ -787,8 +793,8 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (opcode == POC::In || opcode == POC::EQ || opcode == POC::LT ||
-      opcode == POC::LE)
+  if (llvm::is_contained(
+          {POC::In, POC::EQ, POC::LT, POC::LE, POC::TargetSupports}, opcode))
     printColonTypeOrIndexPrefix(os, operands[0].getType());
 
   switch (opcode) {

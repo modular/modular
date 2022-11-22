@@ -413,6 +413,20 @@ kgen.generator @string_params<a: string, b: string>()
   kgen.return
 }
 
+// TARGET TYPES
+// CHECK-LABEL: kgen.generator @target_params<t0: target, t1: target>()
+kgen.generator @target_params<t0: target, t1: target>()
+  // CHECK: constraints <[target_supports(:target t0, t1),
+  constraints <[target_supports(:target t0, t1), "must support target!!"]> {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @target_params2<t0: target>()
+kgen.generator @target_params2<t0: target>()
+  // CHECK: constraints <[target_supports(:target t0, #kgen.target<"triple", "cpu", "features", 3>),
+  constraints <[target_supports(:target t0, #kgen.target<"triple", "cpu", "features", 3>), "must support target!!"]> {
+  kgen.return
+}
 
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<
