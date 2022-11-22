@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type>()  {
+kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
   // CHECK: "someop"() {
   "someop" () {
@@ -138,6 +138,9 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int2)>
   %40 = kgen.param.constant : i1 = <eq(:i1 int1, int2)>
 
+  // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
+  %41 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
+
   kgen.return
 }
 
@@ -270,6 +273,9 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant: i1 = <in(0, [4294967296, 8589934592])>
   %20 = kgen.param.constant: i1 = <in(0, [shl(1, 32), shl(2, 32)])>
 
+  // CHECK: = kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], p1)>
+  %22 = kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], p1)>
+
   kgen.return
 }
 
@@ -322,6 +328,9 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: <eq(:list<index[2]> [1, 2], list)>
   kgen.param.declare list: list<index[2]> = <[3, 4]>
   kgen.param.declare compareLists: i1 = <eq(:list<index[2]> [1, 2], list)>
+
+  // CHECK: = <2>
+  kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], 1)>
 
   kgen.return
 }

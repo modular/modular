@@ -495,6 +495,14 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         }))
       return failure();
     return success();
+  case (uint32_t)POC::GetListElement:
+    if (!isa_and_nonnull<ListType>(type))
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a list type for 'get_list_element'");
+    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
+        parseIndexParamValue(p, operands.emplace_back()))
+      return failure();
+    return success();
   case (uint32_t)POC::BindSignature:
   case (uint32_t)POC::Apply:
     if (!isa_and_nonnull<SignatureType>(type))
@@ -813,6 +821,8 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
     os << "]";
     break;
 
+  case POC::GetListElement:
+  case POC::Apply:
   case POC::BindSignature:
     // Print types on all operands.
     llvm::interleaveComma(operands, os, [&](TypedAttr operand) {
