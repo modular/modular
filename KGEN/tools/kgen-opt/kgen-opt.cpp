@@ -10,6 +10,7 @@
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENPasses.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
@@ -42,6 +43,13 @@ int main(int argc, char **argv) {
   mlir::registerCanonicalizerPass();
   mlir::registerReconcileUnrealizedCasts();
   mlir::registerConvertIndexToLLVMPass();
+
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue());
+  // Register the EmitLLVM pass with the runtime instance.
+  KGEN::registerEmitLLVMPass(runtime);
+
   KGEN::registerPasses();
   KGEN::registerLowerToLLVMPipeline();
 

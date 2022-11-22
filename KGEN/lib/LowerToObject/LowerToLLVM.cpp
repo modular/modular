@@ -7,6 +7,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -24,6 +25,7 @@
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
+using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
 // Hashers
@@ -153,24 +155,27 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-// TODO: delete this in favor of passing in an LLCL runtime to the pass.
-static Runtime getDefaultRuntime() {
-  return {LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-          LLCL::createSingleThreadWorkQueue()};
-}
-
 namespace {
 class EmitLLVMPass : public M::KGEN::impl::EmitLLVMBase<EmitLLVMPass> {
 public:
   using EmitLLVMBase::EmitLLVMBase;
+  EmitLLVMPass(Runtime &rt) : EmitLLVMBase::EmitLLVMBase(), runtime(&rt) {}
 
   void runOnOperation() override;
+
+private:
+  Runtime *runtime;
 };
 } // namespace
 
 void EmitLLVMPass::runOnOperation() {
-  Runtime rt = getDefaultRuntime();
-  ObjectCompiler compiler(rt, ".kgen_cache", getOperation());
+  /// If no runtime was provided, create one.
+  if (!runtime) {
+    new (runtime) Runtime(createLeakCheckAllocator(createMallocAllocator()),
+                          createSingleThreadWorkQueue());
+  }
+
+  ObjectCompiler compiler(*runtime, ".kgen_cache", getOperation());
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
   auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);
@@ -195,4 +200,12 @@ void EmitLLVMPass::runOnOperation() {
   }
 
   llvmModule->print(llvm::outs(), nullptr);
+}
+
+std::unique_ptr<Pass> M::KGEN::createEmitLLVMPass(Runtime &rt) {
+  return std::make_unique<EmitLLVMPass>(rt);
+}
+
+void M::KGEN::registerEmitLLVMPass(Runtime &rt) {
+  mlir::registerPass([&]() { return createEmitLLVMPass(rt); });
 }
