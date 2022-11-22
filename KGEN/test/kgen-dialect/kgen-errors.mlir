@@ -600,6 +600,22 @@ kgen.struct.decl @StructReturns<() -> dtype> {
 
 // -----
 
+kgen.generator @target_params<t0: i1, t1: i1>()
+  // expected-error @+1 {{custom op 'kgen.generator' target_supports only allowed on target types}}
+  constraints <[target_supports(:i1 t0, t1), "must support target!!"]> {
+  kgen.return
+}
+
+// -----
+
+kgen.generator @target_params<t0: i1, t1: i1>()
+  // expected-error @+1 {{custom op 'kgen.generator' target_supports must have two operands}}
+  constraints <[target_supports(:i1 t0), "must support target!!"]> {
+  kgen.return
+}
+
+// -----
+
 kgen.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
   x : i32

@@ -236,6 +236,16 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "relational comparisons only allowed on index or "
                             "integer values";
     break;
+  case POC::TargetSupports:
+    if (operands.size() != 2)
+      return emitError() << "target_supports must have two operands";
+    if (!type.isInteger(1))
+      return emitError() << "target_supports return i1";
+    // TargetSupports only work on target types.
+    if (!operands[0].getType().isa<TargetType>() ||
+        !operands[1].getType().isa<TargetType>())
+      return emitError() << "target_supports only allowed on target types";
+    break;
   case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
@@ -811,6 +821,18 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.sle(b); });
 }
 
+static Attribute simplifyTargetSupports(SmallVectorImpl<TypedAttr> &operands) {
+  // TODO: Make simplifyTargetSupports more granular than just checking that the
+  // TargetAttrInfos are the same.
+  if (operands[0].isa<TargetInfoAttr>() && operands[1].isa<TargetInfoAttr>()) {
+    bool targetsAreSame = (operands[0] == operands[1]);
+    return IntegerAttr::get(
+        IntegerType::get(operands[0].getContext(), targetsAreSame),
+        IntegerType::Signless);
+  }
+  return {};
+}
+
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
 /// operands have the same type.
 static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
@@ -1054,6 +1076,10 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(context, 1);
     break;
+  case POC::TargetSupports:
+    result = simplifyTargetSupports(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
   case POC::In:
     result = simplifyIn(operands);
     resultType = IntegerType::get(context, 1);
@@ -1140,7 +1166,6 @@ ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
-
 Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
