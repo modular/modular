@@ -874,7 +874,7 @@ struct ConvertPOPArrayGet : public mlir::ConvertOpToLLVMPattern<ArrayGetOp> {
   matchAndRewrite(ArrayGetOp op, ArrayGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getArray(), op.getIndexAttr().getInt());
+        op, adaptor.getArray(), cast<IntegerAttr>(op.getIndex()).getInt());
     return success();
   }
 };
@@ -891,7 +891,8 @@ struct ConvertPOPArrayReplace
   matchAndRewrite(ArrayReplaceOp op, ArrayReplaceOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-        op, adaptor.getArray(), adaptor.getValue(), op.getIndexAttr().getInt());
+        op, adaptor.getArray(), adaptor.getValue(),
+        cast<IntegerAttr>(op.getIndex()).getInt());
     return success();
   }
 };

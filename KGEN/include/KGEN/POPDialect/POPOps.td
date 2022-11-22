@@ -1029,7 +1029,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $ptr custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
+    $ptr `` custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
     qualified(type($ptr))
   }];
 
@@ -1063,7 +1063,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
                        Arg<POP_PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<TypedAttrInterface>:$alignment);
   let assemblyFormat = [{
-    $arg `,` $ptr custom<OptionalAlignmentParamValue>($alignment) attr-dict
+    $arg `,` $ptr `` custom<OptionalAlignmentParamValue>($alignment) attr-dict
     `:` qualified(type($ptr))
   }];
 
@@ -1381,11 +1381,11 @@ def POP_ArrayGetOp : POPOp<"array.get", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_ArrayType:$array,
-                       ConfinedAttr<IndexAttr, [IntNonNegative]>:$index);
+  let arguments = (ins POP_ArrayType:$array, AttrOfType<Index>:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $array `[` $index `]` attr-dict `:` qualified(type($array))
+    $array `[` custom<IndexParamValue>($index) `]` attr-dict `:`
+    qualified(type($array))
   }];
 
   let builders = [OpBuilder<(ins "Value":$array, "int64_t":$index)>];
@@ -1416,10 +1416,12 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
     ```
   }];
 
-  let arguments = (ins AnyType:$value, POP_ArrayType:$array, IndexAttr:$index);
+  let arguments = (ins AnyType:$value, POP_ArrayType:$array,
+                       AttrOfType<Index>:$index);
   let results = (outs POP_ArrayType:$result);
   let assemblyFormat = [{
-    $value `,` $array `[` $index `]` attr-dict `:` qualified(type($result))
+    $value `,` $array `[` custom<IndexParamValue>($index) `]` attr-dict `:`
+    qualified(type($result))
   }];
 
   let hasVerifier = 1;

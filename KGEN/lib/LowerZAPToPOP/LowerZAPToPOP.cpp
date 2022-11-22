@@ -303,7 +303,7 @@ struct ConvertZAPNDBufferDim : public mlir::OpRewritePattern<NDBufferDimOp> {
       Value shape = rewriter.create<StructGetOp>(
           op->getLoc(), convertValue(op.getNDBuffer()), kNDBufferShapePosition);
       rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
-                                              op.getIndex());
+                                              op.getIndexAttr());
     }
     return success();
   }

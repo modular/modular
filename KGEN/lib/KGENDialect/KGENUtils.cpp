@@ -1241,7 +1241,7 @@ void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                             TypedAttr alignment) {
   if (!alignment)
     return;
-  p << "align ";
+  p << " align ";
   printParamValue(p, alignment);
   p << " ";
 }
