@@ -751,21 +751,21 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 
     // If we had a declared type, coerce the expression value to it.
     // TODO(implicit conversions etc).
-    if (type && !type.isEqualCanon(rhsValue.type)) {
+    if (type && !type.isEqualCanon(rhsValue.getType())) {
       p.emitError(initValue->getLoc(), "initializer has type ")
-          << rhsValue.type << " but declared type is " << type;
+          << ASTType(rhsValue.getType()) << " but declared type is " << type;
       return failure(); // Not sure which type is right.
     }
 
     // Infer the type if we lack a declared type (`var x = 42`)
     if (!type) {
-      type = rhsValue.type;
+      type = rhsValue.getType();
       varOp.getResult().setType(POP::PointerType::get(type));
     }
 
     // The types line up, do a store.
     auto loc = sharedState.translateLocation(initValue->getLoc());
-    builder.create<POP::StoreOp>(loc, rhsValue.ir, varOp,
+    builder.create<POP::StoreOp>(loc, rhsValue, varOp,
                                  /*alignment*/ None);
   }
 

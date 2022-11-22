@@ -25,17 +25,13 @@ class ASTDecl;
 class ExprNode;
 
 template <typename ValueType>
-struct ASTTypeAnd {
-  ValueType ir; // This is the IR representation of this.
-  ASTType type; // This is the AST type.
+struct ASTExprAnd {
+  ValueType ir;
 
   bool isNull() const { return ir; }
   bool operator!() const { return !ir; }
   operator bool() const { return ir; }
-};
 
-template <typename ValueType>
-struct ASTTypeExprAnd : public ASTTypeAnd<ValueType> {
   /// This is the expression a value was produced from, carrying location and
   /// additional semantic information.
   const ExprNode *expr;
@@ -133,8 +129,8 @@ public:
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
-  virtual ASTTypeAnd<AnyValue> emitIR(ExprEmitter &emitter,
-                                      ASTType contextualType = {}) const = 0;
+  virtual AnyValue emitIR(ExprEmitter &emitter,
+                          ASTType contextualType = {}) const = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -166,24 +162,24 @@ public:
   MLIRContext *getContext() const { return shared.context; }
 
   /// This helper emits the specified value rep as an RValue.
-  ASTTypeAnd<RValue> emitRValue(const ExprNode *node) {
+  RValue emitRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
     return emitRValue(node->emitIR(*this), node->getLoc());
   }
-  ASTTypeAnd<RValue> emitRValue(ASTTypeAnd<AnyValue> rep, SMLoc loc);
+  RValue emitRValue(AnyValue rep, SMLoc loc);
 
   /// This helper emits the specified value rep as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  ASTTypeAnd<DRValue> emitDRValue(ASTTypeAnd<RValue> rep, SMLoc loc);
-  ASTTypeAnd<DRValue> emitDRValue(ASTTypeAnd<AnyValue> rep, SMLoc loc) {
+  DRValue emitDRValue(RValue rep, SMLoc loc);
+  DRValue emitDRValue(AnyValue rep, SMLoc loc) {
     return emitDRValue(emitRValue(rep, loc), loc);
   }
 
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  ASTTypeAnd<DRValue> emitDRValue(const ExprNode *node) {
+  DRValue emitDRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
     return emitDRValue(node->emitIR(*this), node->getLoc());
   }
@@ -191,15 +187,14 @@ public:
   /// This helper emits a method call to a special function (`kind`) on `type`
   /// with the provided `operands`. This emits an error if the special function
   /// is not implemented by the type and returns null.
-  ASTTypeAnd<AnyValue>
-  emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
-                        ArrayRef<ASTTypeExprAnd<AnyValue>> operands,
-                        SMLoc callLoc);
+  AnyValue emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
+                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                 SMLoc callLoc);
 
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
-  ASTTypeAnd<MValue> emitMValue(const ExprNode *node, const Twine &message);
+  MValue emitMValue(const ExprNode *node, const Twine &message);
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will be
@@ -207,8 +202,8 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  ASTTypeAnd<LValue> emitLValue(const ExprNode *node, ASTType contextualType,
-                                const Twine &message);
+  LValue emitLValue(const ExprNode *node, ASTType contextualType,
+                    const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This never returns null MLIR Types - if the
