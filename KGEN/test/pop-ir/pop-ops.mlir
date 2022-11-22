@@ -988,7 +988,7 @@ kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !pop.scalar<f32> {
 }
 
 // CHECK-LABEL: @array_ops
-kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
+kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
     -> (!pop.array<2, T>, !pop.pointer<T>) {
   // CHECK: pop.array.create [%arg0, %arg0] : !pop.array<2, T>
   %0 = pop.array.create [%arg0, %arg0] : !pop.array<2, T>
@@ -1007,6 +1007,11 @@ kgen.generator @array_ops<N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T>)
   %6 = index.constant 2
   // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
   %7 = pop.array.gep %5[%6] : <array<4, T>>
+
+  // CHECK: pop.array.get %{{.*}}[idx]
+  %8 = pop.array.get %0[idx] : !pop.array<2, T>
+  // CHECK: pop.array.replace %arg0, %{{.*}}[idx]
+  %9 = pop.array.replace %arg0, %0[idx] : !pop.array<2, T>
 
   kgen.return %2, %7 : !pop.array<2, T>, !pop.pointer<T>
 }

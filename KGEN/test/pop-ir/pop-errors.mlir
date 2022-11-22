@@ -271,7 +271,7 @@ kgen.func @invalid_array_create(%arg0: i32) {
 // -----
 
 kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
-  // expected-error @below {{index attribute whose value is non-negative}}
+  // expected-error @below {{'pop.array.get' op array index out of bounds: -1}}
   %0 = pop.array.get %arg0[-1] : !pop.array<1, i32>
   kgen.return
 }
@@ -279,7 +279,7 @@ kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
 // -----
 
 kgen.func @array_out_of_bounds(%arg0: !pop.array<1, i32>) {
-  // expected-error @below {{array index out of bounds (2 >= 1)}}
+  // expected-error @below {{'pop.array.get' op array index out of bounds: 2}}
   %0 = pop.array.get %arg0[2] : !pop.array<1, i32>
   kgen.return
 }

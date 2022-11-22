@@ -642,14 +642,16 @@ LogicalResult ArrayRepeatOp::verify() {
 //===----------------------------------------------------------------------===//
 
 // If the array has a concrete size, do a bounds check.
-static LogicalResult verifyArrayIndex(Operation *op, IntegerAttr indexAttr,
+static LogicalResult verifyArrayIndex(Operation *op, TypedAttr indexExpr,
                                       POP::ArrayType arrayType) {
-  if (Optional<int64_t> size = arrayType.getResolvedSize()) {
-    int64_t index = indexAttr.getInt();
-    if (index >= *size)
-      return op->emitOpError("array index out of bounds (")
-             << index << " >= " << *size << ")";
-  }
+  Optional<int64_t> size = arrayType.getResolvedSize();
+  auto indexAttr = dyn_cast<IntegerAttr>(indexExpr);
+  if (!size || !indexAttr)
+    return success();
+
+  int64_t index = indexAttr.getInt();
+  if (index < 0 || index >= *size)
+    return op->emitOpError("array index out of bounds: ") << index;
   return success();
 }
 
@@ -662,7 +664,7 @@ void ArrayGetOp::build(OpBuilder &b, OperationState &state, Value array,
 }
 
 LogicalResult ArrayGetOp::verify() {
-  return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
+  return verifyArrayIndex(*this, getIndex(), getArray().getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -670,7 +672,7 @@ LogicalResult ArrayGetOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult ArrayReplaceOp::verify() {
-  return verifyArrayIndex(*this, getIndexAttr(), getArray().getType());
+  return verifyArrayIndex(*this, getIndex(), getArray().getType());
 }
 
 //===----------------------------------------------------------------------===//
