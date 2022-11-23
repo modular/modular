@@ -112,6 +112,7 @@ void registerEmitLLVMPass(LLCL::Runtime &rt);
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
+                          LLCL::Runtime &runtime,
                           const ElaborateGeneratorsOptions &options = {});
 
 } // namespace M::KGEN

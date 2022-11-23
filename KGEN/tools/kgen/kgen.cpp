@@ -229,9 +229,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   pm.addPass(createPruneImpossibleVariants());
 
   pm.addPass(mlir::createCanonicalizerPass());
+
+  // Set up the runtime.
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue());
+
   if (clOptions.cmd != Command::kGenLibraryFile) {
     pm.addPass(createElaborateGenerators(
-        includedFiles, {clOptions.searchPaths, clOptions.enableSearch}));
+        includedFiles, runtime,
+        {clOptions.searchPaths, clOptions.enableSearch}));
   }
 
   // Run the pass manager.
@@ -249,11 +256,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kGenLibraryFile ||
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
-
-  // Initialize the LLCL runtime.
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
 
   ObjectCompiler compiler(runtime, ".kgen_cache", *theModule,
                           compilationOptions);
