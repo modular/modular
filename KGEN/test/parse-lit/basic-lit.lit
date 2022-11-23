@@ -220,3 +220,7 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   # CHECK: [[TMP:%.*]] = index.constant 2
   # CHECK: kgen.return [[TMP:%.*]] : index
   return __mlir_op.`index.shru`(4, 1)
+
+fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
+  var a : __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[dtype]
+  var b : __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[4, dtype]
