@@ -16,13 +16,14 @@
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
+class AnalysisManager;
 class LLVMTypeConverter;
 } // namespace mlir
 
 namespace M::HLCF {
 /// Lower all control-flow trees contained within the provided operation to
-/// LLVM.
-LogicalResult lowerControlFlowToLLVM(Operation *op,
+/// LLVM, given the top-level analysis manager.
+LogicalResult lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
                                      mlir::LLVMTypeConverter &typeConverter);
 
 //===----------------------------------------------------------------------===//

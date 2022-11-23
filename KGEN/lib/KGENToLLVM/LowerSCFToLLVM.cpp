@@ -522,7 +522,8 @@ void LowerSCFToLLVMPass::runOnOperation() {
   POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
 
   // Run HLCF lowerings.
-  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), typeConverter)))
+  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), getAnalysisManager(),
+                                          typeConverter)))
     return signalPassFailure();
 
   // Populate patterns and run the conversion.
