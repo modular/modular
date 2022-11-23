@@ -87,9 +87,11 @@ std::string CompositeObjectCacheKeyInfo::hashKey(ModuleOp key) {
 // lowerToLLVM implementation
 //===----------------------------------------------------------------------===//
 
-static LogicalResult convertToLLVM(ModuleOp module) {
+static LogicalResult
+convertToLLVM(ModuleOp module, const CompilationOptions &compilationOptions) {
   mlir::PassManager pm(module.getContext());
-  LowerToLLVMOptions options;
+  LowerToLLVMOptions options(compilationOptions.getDIEmissionKind(),
+                             compilationOptions.debugAtLevel);
   pm.addPass(createLowerZAPToPOP());
   buildLowerToLLVMPipeline(pm, options);
   return pm.run(module);
@@ -101,7 +103,7 @@ static LogicalResult convertToLLVM(ModuleOp module) {
 
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerKGENToLLVM(ModuleOp module, llvm::LLVMContext &ctx) {
-  if (failed(convertToLLVM(module)))
+  if (failed(convertToLLVM(module, options)))
     return nullptr;
 
   // Turn the thing into an LLVM module.
@@ -175,7 +177,10 @@ void EmitLLVMPass::runOnOperation() {
       runtime, createLeakCheckAllocator(createMallocAllocator()),
       createSingleThreadWorkQueue());
 
-  ObjectCompiler compiler(*rt, ".kgen_cache", getOperation());
+  // TODO: Populate compilation options from pass options.
+  ObjectCompiler compiler(*rt, ".kgen_cache", getOperation(),
+                          CompilationOptions());
+
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
   auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);

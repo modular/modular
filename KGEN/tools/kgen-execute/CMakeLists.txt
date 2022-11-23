@@ -8,6 +8,7 @@ add_modular_tool(kgen-execute
   kgen-execute.cpp
 
   LINK_LIBS PRIVATE
+  DebugInfoTransforms
   KGENCLOptions
   MLIRParser
   KGENEmitObject

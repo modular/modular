@@ -6,6 +6,7 @@
 
 #include "SelectFastestFunction.h"
 
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/MicroBenchmark.h"
@@ -21,7 +22,7 @@ ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
-  UNWRAP_ERROR(engine, ExecutionEngine::create());
+  UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
 
   // TODO: The elaborator should take a reference to the runtime.
   LLCL::Runtime runtime(

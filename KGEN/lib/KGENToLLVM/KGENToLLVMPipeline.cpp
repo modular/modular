@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
+#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/ForwardDecls.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -36,11 +37,20 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(
       mlir::createConvertIndexToLLVMPass());
-  pm.addPass(DebugInfo::createDebugInfoToLLVM());
 
   // And finally canonicalize again.
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCSEPass());
+
+  // If requested, generate debug info at the LLVM level.
+  if (options.debugAtLevel.hasValue() &&
+      options.debugAtLevel == CompilationOptions::kDebugAtLLVM) {
+    pm.addPass(DebugInfo::createDebugInfoSnapshot(
+        {options.debugInfoLevel, /*filename*/ ""}));
+  }
+
+  // Run the LLVM lowering for debug info last.
+  pm.addPass(DebugInfo::createDebugInfoToLLVM());
 }
 
 void M::KGEN::registerLowerToLLVMPipeline() {

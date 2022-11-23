@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
@@ -29,7 +30,8 @@ using namespace KGEN;
 using namespace Cache;
 
 /// Setup the machine properties from the current architecture.
-static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
+static ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+createHostTargetMachine(const CompilationOptions &options) {
   auto targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string errorMessage;
   const auto *target =
@@ -48,8 +50,8 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       targetTriple, cpu, features.getString(), /*Options=*/{},
-      /*RM=*/llvm::Reloc::Model::PIC_,
-      /*CM=*/None, /*OL=*/llvm::CodeGenOpt::Aggressive, /*JIT=*/true));
+      /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/None,
+      /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/true));
   if (!machine)
     return Error("unable to create target machine");
 
@@ -60,8 +62,9 @@ static ErrorOr<std::unique_ptr<llvm::TargetMachine>> createHostTargetMachine() {
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
-M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
-  ExecutionEngine ee(nullptr);
+M::ErrorOr<ExecutionEngine>
+ExecutionEngine::create(const CompilationOptions &options) {
+  ExecutionEngine ee(nullptr, options);
 
   // Ensure the native target is initialized.
   llvm::InitializeNativeTarget();
@@ -69,7 +72,7 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
 
   // Create the target machine.
-  RETURN_ERROR(createHostTargetMachine());
+  RETURN_ERROR(createHostTargetMachine(options));
 
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.
@@ -110,8 +113,10 @@ M::ErrorOr<ExecutionEngine> ExecutionEngine::create() {
   return ee;
 }
 
-ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit)
-    : ctx(std::make_unique<llvm::LLVMContext>()), jit(std::move(jit)),
+ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
+                                 CompilationOptions options)
+    : options(options), ctx(std::make_unique<llvm::LLVMContext>()),
+      jit(std::move(jit)),
       gdbListener(llvm::JITEventListener::createGDBRegistrationListener()),
       perfListener(nullptr) {
   // Attach the perf listener.
@@ -136,8 +141,8 @@ M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
   for (auto e : exports)
     exportedSymbols.insert(e.getSymNameAttr());
 
-  compiler = std::make_unique<ObjectCompiler>(runtime, ".kgen_cache", module,
-                                              std::move(exportedSymbols));
+  compiler = std::make_unique<ObjectCompiler>(
+      runtime, ".kgen_cache", module, std::move(exportedSymbols), options);
 
   // Produce a standalone object for all the exports.
   auto objOr = compiler->produceStandaloneObject(

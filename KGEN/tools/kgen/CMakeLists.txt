@@ -9,6 +9,8 @@ add_modular_tool(kgen
   kgen.cpp
 
   LINK_LIBS PRIVATE
+  DebugInfoToLLVM
+  DebugInfoTransforms
   KGENCLOptions
   LITDialect
   KGENCompilerRT

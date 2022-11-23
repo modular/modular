@@ -134,7 +134,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
 
   // Create the target machine.
-  auto machineOr = createTargetMachine(target, isJIT);
+  auto machineOr = createTargetMachine(target, options, isJIT);
   if (failed(machineOr))
     return emitError(loc) << machineOr.getError();
 

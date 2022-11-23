@@ -11,6 +11,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -39,6 +40,8 @@ struct ProcessBuffer {
   KGENCLOptions &clOptions;
 
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
+    KGEN::CompilationOptions compilationOptions =
+        clOptions.getCompilationOptions();
     DialectRegistry registry;
     // Don't need LIT here.
     registry.insert<KGEN::KGENDialect, KGEN::POP::POPDialect, HLCF::HLCFDialect,
@@ -49,11 +52,17 @@ struct ProcessBuffer {
     ctx->loadAllAvailableDialects();
 
     // Open the input file.
-    OwningOpRef<ModuleOp> module = parseSourceFile<ModuleOp>(sourceMgr, ctx);
+    OwningOpRef<ModuleOp> module;
+    if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
+      module = DebugInfo::parseSourceFileWithDebugInfo(
+          sourceMgr, ctx, compilationOptions.getDIEmissionKind());
+    else
+      module = parseSourceFile<ModuleOp>(sourceMgr, ctx);
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
-    KGEN::ObjectCompiler compiler(runtime, ".kgen_cache", *module);
+    KGEN::ObjectCompiler compiler(runtime, ".kgen_cache", *module,
+                                  compilationOptions);
 
     // Lower the input to an object.
     KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
@@ -137,7 +146,8 @@ int main(int argc, char **argv) {
   std::unique_ptr<llvm::MemoryBuffer> inputFile =
       clOptions.openInputFileOrExit();
 
-  auto engineOr = KGEN::ExecutionEngine::create();
+  auto engineOr =
+      KGEN::ExecutionEngine::create(clOptions.getCompilationOptions());
   if (engineOr.isError())
     clOptions.reportError(engineOr.getError());
 

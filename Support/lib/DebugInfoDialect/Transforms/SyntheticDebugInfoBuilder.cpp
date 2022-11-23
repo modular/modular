@@ -48,8 +48,9 @@ namespace {
 class DebugInfoBuilder {
 public:
   DebugInfoBuilder(MLIRContext *context, mlir::AsmParserState &asmState,
-                   llvm::SourceMgr &sourceMgr)
-      : builder(context), asmState(asmState), sourceMgr(sourceMgr) {
+                   llvm::SourceMgr &sourceMgr, EmissionKind emissionKind)
+      : builder(context), asmState(asmState), sourceMgr(sourceMgr),
+        emissionKind(emissionKind) {
     // Build the main file descriptor.
     StringRef filename = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())
                              ->getBufferIdentifier();
@@ -99,10 +100,16 @@ private:
 
   /// The source manager that owns the state within `asmState`.
   llvm::SourceMgr &sourceMgr;
+
+  /// The kind of debug information emission.
+  EmissionKind emissionKind;
 };
 } // namespace
 
 void DebugInfoBuilder::build(Operation *op) {
+  if (emissionKind == EmissionKind::None)
+    return;
+
   // Attach compile unit information to `op`.
   auto topLevelScope = DICompileUnitAttr::get(
       llvm::dwarf::SourceLanguage::DW_LANG_C, fileAttr, /*producer=*/"MLIR",
@@ -113,6 +120,11 @@ void DebugInfoBuilder::build(Operation *op) {
     if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op)) {
       DILocalScopeAttr scope = buildDebugInfo(topLevelScope, funcOp);
       if (funcOp.isExternal())
+        return WalkResult::skip();
+
+      // Don't recurse if we only want line table information. We really just
+      // need a subprogram for that.
+      if (emissionKind == EmissionKind::LineTablesOnly)
         return WalkResult::skip();
 
       Region &body = funcOp.getFunctionBody();
@@ -310,7 +322,8 @@ DebugInfoBuilder::extractLineColumn(llvm::SMRange loc) {
 
 OwningOpRef<ModuleOp>
 DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
-                                        const mlir::ParserConfig &config) {
+                                        const mlir::ParserConfig &config,
+                                        EmissionKind emissionKind) {
   const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   // If the buffer is bytecode we can't attach debug info directly on parse, so
@@ -318,7 +331,8 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
   if (mlir::isBytecode(*sourceBuf)) {
     OwningOpRef<ModuleOp> module =
         mlir::parseSourceFile<ModuleOp>(sourceMgr, config);
-    if (!module || failed(snapshotDebugInfo(*module)))
+    if (!module ||
+        failed(snapshotDebugInfo(*module, /*filename=*/"", emissionKind)))
       return nullptr;
     return module;
   }
@@ -338,7 +352,8 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
           &block, config.getContext(), parserLoc);
 
   // Attach debug info to the module op.
-  DebugInfoBuilder builder(config.getContext(), parserState, sourceMgr);
+  DebugInfoBuilder builder(config.getContext(), parserState, sourceMgr,
+                           emissionKind);
   builder.build(*moduleOp);
   return moduleOp;
 }
@@ -347,7 +362,8 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
 // Snapshot Entry
 //===----------------------------------------------------------------------===//
 
-LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename) {
+LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename,
+                                           EmissionKind emissionKind) {
   // Kill any pre-existing debug info operations.
   op->walk([](Operation *op) {
     if (llvm::isa_and_present<DebugInfoDialect>(op->getDialect()))
@@ -393,7 +409,8 @@ LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename) {
 
   // Attach debug info to the newly parsed operation.
   Operation *parsedOp = &block.front();
-  DebugInfoBuilder builder(op->getContext(), parserState, sourceMgr);
+  DebugInfoBuilder builder(op->getContext(), parserState, sourceMgr,
+                           emissionKind);
   builder.build(parsedOp);
 
   // Replace the current operation with the reconstructed parser version.
@@ -427,6 +444,6 @@ struct DebugInfoSnapshot
 } // namespace
 
 void DebugInfoSnapshot::runOnOperation() {
-  if (failed(snapshotDebugInfo(getOperation(), filename)))
+  if (failed(snapshotDebugInfo(getOperation(), filename, emissionKind)))
     signalPassFailure();
 }
