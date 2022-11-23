@@ -4,18 +4,10 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(Analysis)
-
-add_modular_dialect_library(HLCFDialect
-  HLCFDialect.cpp
-  HLCFOps.cpp
-
-  DEPENDS
-  MLIRHLCFIncGen
+add_modular_library(HLCFAnalysis
+  ControlFlowTree.cpp
 
   LINK_LIBS PUBLIC
-  HLCFAnalysis
-
   MLIRIR
-  MLIRSideEffectInterfaces
+  MLIRPass
 )

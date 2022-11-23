@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
+#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -27,13 +28,9 @@ namespace {
 /// between terminators and their branch targets and then start lowering the
 /// operations.
 struct ControlFlowConverter {
-  explicit ControlFlowConverter(MLIRContext *ctx,
+  explicit ControlFlowConverter(MLIRContext *ctx, ControlFlowTree &tree,
                                 mlir::LLVMTypeConverter &typeConverter)
-      : b(ctx), typeConverter(typeConverter) {}
-
-  /// Build the control-flow relations.
-  void buildTree(Operation *node, unsigned &nodeId,
-                 SmallVectorImpl<unsigned> &loopIds);
+      : b(ctx), tree(tree), typeConverter(typeConverter) {}
 
   /// Lower the control-flow node.
   LogicalResult lowerNode(Operation *node, unsigned &termId);
@@ -44,52 +41,17 @@ struct ControlFlowConverter {
   /// The rewriter to use.
   mlir::IRRewriter b;
 
+  /// The control flow tree analysis.
+  ControlFlowTree &tree;
+
   /// The type converter to use to convert result and argument types.
   mlir::LLVMTypeConverter &typeConverter;
 
   /// A map of operations to their lowered entry and exit blocks. The ID is the
   /// depth-first visit order of the operation.
   SmallVector<std::pair<Block *, Block *>> blocks;
-
-  /// A map of terminators to their branch target and a flag indicating whether
-  /// the target is before or after the operation.
-  SmallVector<std::pair<unsigned, bool>> targets;
 };
 } // namespace
-
-void ControlFlowConverter::buildTree(Operation *node, unsigned &nodeId,
-                                     SmallVectorImpl<unsigned> &loopIds) {
-  auto loop = dyn_cast<LoopOp>(node);
-  if (loop)
-    loopIds.push_back(nodeId);
-
-  // Process the immediate terminators and then the nested nodes. This order has
-  // to be mirrored in the rewrite walk.
-  for (Region &region : node->getRegions()) {
-    for (Block &block : region) {
-      Operation *terminator = block.getTerminator();
-      if (!terminator->hasTrait<OpTrait::ControlFlowTerminator>())
-        continue;
-      if (isa<YieldOp>(terminator))
-        targets.emplace_back(nodeId, true);
-      else if (isa<BreakOp>(terminator))
-        targets.emplace_back(loopIds.back(), true);
-      else if (isa<ContinueOp>(terminator))
-        targets.emplace_back(loopIds.back(), false);
-    }
-  }
-  for (Region &region : node->getRegions()) {
-    for (Operation &op : region.getOps()) {
-      if (!op.hasTrait<OpTrait::ControlFlowNode>())
-        continue;
-      ++nodeId;
-      buildTree(&op, nodeId, loopIds);
-    }
-  }
-
-  if (loop)
-    loopIds.pop_back();
-}
 
 LogicalResult ControlFlowConverter::lowerNode(Operation *node,
                                               unsigned &termId) {
@@ -206,8 +168,8 @@ LogicalResult ControlFlowConverter::lowerTerminator(Operation *term,
     return success();
   }
 
-  assert(termId < targets.size() && "malformed tree");
-  auto [nodeId, after] = targets[termId];
+  assert(termId < tree.targets.size() && "malformed tree");
+  auto [nodeId, after] = tree.targets[termId];
   assert(nodeId < blocks.size() && "malformed tree");
   Block *target = after ? blocks[nodeId].second : blocks[nodeId].first;
   b.replaceOpWithNewOp<LLVM::BrOp>(term, results, target);
@@ -217,22 +179,20 @@ LogicalResult ControlFlowConverter::lowerTerminator(Operation *term,
 
 /// Lower a single control-flow tree.
 static LogicalResult
-lowerControlFlowTree(Operation *root, mlir::LLVMTypeConverter &typeConverter) {
+lowerControlFlowTree(Operation *root, ControlFlowTree &tree,
+                     mlir::LLVMTypeConverter &typeConverter) {
   assert(!root->getParentOp()->hasTrait<OpTrait::ControlFlowNode>());
-  ControlFlowConverter converter(root->getContext(), typeConverter);
+  ControlFlowConverter converter(root->getContext(), tree, typeConverter);
 
   // Build the control-flow tree.
-  unsigned nodeId = 0;
-  SmallVector<unsigned> loopIds;
-  converter.buildTree(root, nodeId, loopIds);
-  converter.blocks.reserve(nodeId);
+  converter.blocks.reserve(tree.ops.size());
 
   unsigned termId = 0;
   return converter.lowerNode(root, termId);
 }
 
 LogicalResult
-HLCF::lowerControlFlowToLLVM(Operation *op,
+HLCF::lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
                              mlir::LLVMTypeConverter &typeConverter) {
   // Collect all the roots first since the lowering will break the walk order.
   SmallVector<Operation *> roots;
@@ -242,9 +202,12 @@ HLCF::lowerControlFlowToLLVM(Operation *op,
       roots.push_back(op);
   });
 
-  for (Operation *root : roots)
-    if (failed(lowerControlFlowTree(root, typeConverter)))
+  for (Operation *root : roots) {
+    mlir::AnalysisManager nestedMgr = mgr.nest(root);
+    auto &tree = nestedMgr.getAnalysis<ControlFlowTree>();
+    if (failed(lowerControlFlowTree(root, tree, typeConverter)))
       return failure();
+  }
   return success();
 }
 
@@ -269,7 +232,8 @@ struct LowerHLCFToLLVMPass
   void runOnOperation() override {
     // This is a test pass. Use the default index width.
     mlir::LLVMTypeConverter typeConverter(&getContext());
-    if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), typeConverter)))
+    if (failed(HLCF::lowerControlFlowToLLVM(
+            getOperation(), getAnalysisManager(), typeConverter)))
       return signalPassFailure();
   }
 };
