@@ -59,7 +59,7 @@ ErrorOr<TensorShape> broadcastedShape(const TensorShape &a,
 /// returned by the BCastList helper class. The i'th element denotes the
 /// (flattened) batch index of the input that must be used to compute the i'th
 /// batch output.
-void ComputeBatchIndices(int64_t output_batch_size, ArrayRef<int64_t> reshape,
+void computeBatchIndices(int64_t outputBatchSize, ArrayRef<int64_t> reshape,
                          ArrayRef<int64_t> bcast,
                          llvm::SmallVectorImpl<int64_t> &out_indices);
 
@@ -74,56 +74,48 @@ public:
 
   /// Constructs all helper shapes, following the aforementioned rules.
   ///
-  /// If "fewer_dims_optimization" is set to true (the default), the
+  /// If "fewerDimsOptimization" is set to true (the default), the
   /// implementation tries to reduce intermediate dimensions needed to be more
   /// efficient. This is transparent to the caller. If false, all intermediate
-  /// shapes (except for grad_{x,y}_reduce_idx()) have the same number of
-  /// dimensions as the larger of the two inputs.
-  ///
-  /// If return_flattened_batch_indices is true, the implementation will compute
-  /// for each output member of the flattened output, which batch indices of
-  /// each input correspond to it. This is disabled by default.
+  /// shapes have the same number of dimensions as the larger of the two inputs.
   explicit BCastList(ArrayRef<ArrayRef<int64_t>>,
-                     bool fewer_dims_optimization = true,
-                     bool return_flattened_batch_indices = false);
+                     bool fewerDimsOptimization = true);
 
   ~BCastList() = default;
 
   /// Returns true if and only if two operands are compatible according to the
   /// broadcasting rule.
-  bool IsValid() const { return valid_; }
-  bool IsBroadcastingRequired() const { return broadcasting_required_; }
+  bool isValid() const { return valid; }
+  bool isBroadcastingRequired() const { return broadcastingRequired; }
 
-  /// If and only if IsValid(), the following fields can be used in implementing
+  /// If and only if isValid(), the following fields can be used in implementing
   /// a broadcasted binary tensor operation according to the broadcasting rule.
-  ArrayRef<int64_t> reshape(int i) const { return reshape_[i]; }
-  ArrayRef<int64_t> bcast(int i) const { return bcast_[i]; }
-  ArrayRef<int64_t> result_shape() const { return result_; }
-  ArrayRef<int64_t> output_shape() const { return output_; }
-  ArrayRef<int64_t> grad_reduce_idx(int i) const { return grad_reduce_idx_[i]; }
-  int64_t output_batch_size() const { return output_batch_size_; }
+  ArrayRef<int64_t> getReshape(int i) const { return reshape[i]; }
+  ArrayRef<int64_t> getBCast(int i) const { return bcast[i]; }
+  ArrayRef<int64_t> getResultShape() const { return result; }
+  ArrayRef<int64_t> getOutputShape() const { return output; }
+  int64_t getOutputBatchSize() const { return outputBatchSize; }
 
   /// Returns the mapping from the flattened output batch indices to x's
   /// flattened batch indices. The result is a vector of length
-  /// output_batch_size(). To compute the i'th batch output, a binary
-  /// matmul-like operation should use the `x_batch_indices()[i]`th batch index
+  /// getOutputBatchSize(). To compute the i'th batch output, a binary
+  /// matmul-like operation should use the `getXBatchIndices()[i]`th batch index
   /// of `x`. Note: Returns an empty vector if broadcasting is not required.
-  /// Callers should only use this when IsBroadcastingRequired() returns true.
-  ArrayRef<int64_t> batch_indices(int i) const { return batch_indices_[i]; }
+  /// Callers should only use this when isBroadcastingRequired() returns true.
+  ArrayRef<int64_t> getBatchIindices(int i) const { return batch_indices_[i]; }
 
 protected:
-  bool valid_ = true;
-  bool broadcasting_required_ = true;
-  SmallVector<Vec, N> reshape_;
-  SmallVector<Vec, N> bcast_;
-  Vec result_;
-  Vec output_;
-  SmallVector<Vec, N> grad_reduce_idx_;
+  bool valid = true;
+  bool broadcastingRequired = true;
+  SmallVector<Vec, N> reshape;
+  SmallVector<Vec, N> bcast;
+  Vec result;
+  Vec output;
 
-  int64_t output_batch_size_;
+  int64_t outputBatchSize = 1;
   SmallVector<SmallVector<int64_t>, N> batch_indices_;
 
-  static void Reverse(llvm::SmallVectorImpl<int64_t> &shape) {
+  static void reverse(llvm::SmallVectorImpl<int64_t> &shape) {
     std::reverse(shape.begin(), shape.end());
   }
 
@@ -147,69 +139,50 @@ protected:
 ///
 /// BCast takes the shape of two tensors and computes a few vectors of int32
 /// that are useful for the caller to reshape the tensors, apply the right
-/// broadcasts to them, compute the broadcasted operation, and possibly the
-/// gradients. In a nutshell, the caller is expected to compute the broadcasted
-/// operation as following:
+/// broadcasts to them, and compute the broadcasted operation. In a nutshell,
+/// the caller is expected to compute the broadcasted operation as following:
 ///
 ///   BCast b(x.shape(), y.shape());
-///   output = x.reshape(b.x_reshape()).broadcast(b.x_bcast())
+///   output = x.reshape(b.getXReshape()).broadcast(b.getXBCast())
 ///            _op_
-///            y.reshape(b.y_reshape()).broadcast(b.y_bcast())
-///
-/// For the gradient computation,
-///   grad_x = sum(grad * backprop_x(x, y), grad_x_reduce_idx)
-///            .reshape(x.shape())
-///   grad_y = sum(grad * backprop_y(x, y), grad_y_reduce_idx)
-///            .reshape(y.shape())
-/// backprop_x and backprop_y are functionals of the binary function "op", e.g.,
-///   for +, backprop_x(x, y) = backprop_y(x, y) = 1;
-///   for *, backprop_x(x, y) =  y, backprop_y(x, y) = x;
-///   for /, backprop_x(x, y) = 1/y, backprop_y(x, y) = -x/y^2;
-///
-/// The multiplication in the grad * backprop_x itself is also broadcasting
-/// following the same rule.
+///            y.reshape(b.getYReshape()).broadcast(b.getYBCast())
 class BCast : public BCastList<2> {
 public:
   /// Constructs all helper shapes, following the aforementioned rules.
   ///
-  /// If "fewer_dims_optimization" is set to true (the default), the
+  /// If "fewerDimsOptimization" is set to true (the default), the
   /// implementation tries to reduce intermediate dimensions needed to be more
   /// efficient. This is transparent to the caller.
   ///
-  /// If false, all intermediate shapes (except for grad_{x,y}_reduce_idx())
-  /// have the same number of dimensions as the larger of the two inputs.
+  /// If false, all intermediate shapes have the same number of dimensions as
+  /// the larger of the two inputs.
   using Vec = SmallVector<int64_t, 4>;
 
   BCast(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
-        bool fewer_dims_optimization = true,
-        bool return_flattened_batch_indices = false);
+        bool fewerDimsOptimization = true);
 
   ~BCast() = default;
 
-  /// If and only if IsValid(), the following fields can be used in implementing
+  /// If and only if isValid(), the following fields can be used in implementing
   /// a broadcasted binary tensor operation according to the broadcasting rule.
-  ArrayRef<int64_t> x_reshape() const { return reshape_[0]; }
-  ArrayRef<int64_t> x_bcast() const { return bcast_[0]; }
-  ArrayRef<int64_t> y_reshape() const { return reshape_[1]; }
-  ArrayRef<int64_t> y_bcast() const { return bcast_[1]; }
-  ArrayRef<int64_t> result_shape() const { return result_; }
-  ArrayRef<int64_t> output_shape() const { return output_; }
-  ArrayRef<int64_t> grad_x_reduce_idx() const { return grad_reduce_idx_[0]; }
-  ArrayRef<int64_t> grad_y_reduce_idx() const { return grad_reduce_idx_[1]; }
+  ArrayRef<int64_t> getXReshape() const { return reshape[0]; }
+  ArrayRef<int64_t> getXBCast() const { return bcast[0]; }
+  ArrayRef<int64_t> getYReshape() const { return reshape[1]; }
+  ArrayRef<int64_t> getYBCast() const { return bcast[1]; }
 
   /// Returns the mapping from the flattened output batch indices to x's
   /// flattened batch indices. The result is a vector of length
-  /// output_batch_size(). To compute the i'th batch output, a binary
-  /// matmul-like operation should use the `x_batch_indices()[i]`th batch index
+  /// getOutputBatchSize(). To compute the i'th batch output, a binary
+  /// matmul-like operation should use the `getXBatchIndices()[i]`th batch index
   /// of `x`. Note: Returns an empty vector if broadcasting is not required.
-  /// Callers should only use this when IsBroadcastingRequired() returns true.
+  /// Callers should only use this when isBroadcastingRequired() returns true.
 
-  ArrayRef<int64_t> x_batch_indices() const { return batch_indices_[0]; }
+  ArrayRef<int64_t> getXBatchIndices() const { return batch_indices_[0]; }
   /// Returns the mapping from the flattened output batch indices to y's
-  /// flattened batch indices. Similar to x_batch_indices().
+  /// flattened batch indices. Similar to getXBatchIndices().
   /// Note: Returns an empty vector if broadcasting is not required. Callers
-  /// should only use this when IsBroadcastingRequired() returns true.
-  ArrayRef<int64_t> y_batch_indices() const { return batch_indices_[1]; }
+  /// should only use this when isBroadcastingRequired() returns true.
+  ArrayRef<int64_t> getYBatchIndices() const { return batch_indices_[1]; }
 
 private:
   BCast(const BCast &) = delete;
