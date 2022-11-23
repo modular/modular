@@ -326,9 +326,17 @@ fn expr_errors():
   var b : __mlir_type.`!pop.simd<#lit<placeholder index>, f32>`[4, 57]
 
 
-
 fn slice_expression(a: Int):
   a[:]    # expected-error {{slice values not implemented yet}}
   a[::]   # expected-error {{slice values not implemented yet}}
   a[1:2]  # expected-error {{slice values not implemented yet}}
   a[:2:3] # expected-error {{slice values not implemented yet}}
+
+# expected-note @+1 {{previous definition here}}
+struct Parameterized[p1: Int]:
+  # expected-error @+1 {{invalid redefinition of "p1"}}
+  fn a[p1: Int]():  # Cannot shadow parameter names.
+
+  # expected-error @+2 {{invalid redefinition of "p2"}}
+  # expected-note @+1 {{previous definition here}}
+  fn b[p2: Int, p2: Int, p3: Int]():  # Cannot shadow parameter names.

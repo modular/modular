@@ -91,7 +91,7 @@ struct Pair[dt: DType]:
   var a : SIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @__new__() -> !kgen.litdeclref<@Pair<dt: !kgen.litdeclref<@DType> = dt>> attributes {isStatic}
+  # CHECK: lit.func @__new__<dt: !kgen.litdeclref<@DType>>() -> !kgen.litdeclref<@Pair<dt: !kgen.litdeclref<@DType> = dt>> attributes {isStatic}
   fn __new__() -> Pair[dt]:
     var result : Pair[dt]
     # TODO: Fill this in.

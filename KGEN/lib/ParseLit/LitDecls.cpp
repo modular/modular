@@ -288,11 +288,17 @@ namespace {
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
+  ASTDecl &decl;
   SmallVector<ParamDeclAttr> inputDecls;
-  SmallVector<ASTType> inputASTTypes;
-  std::vector<Location> inputLocs;
+  SmallVector<Location> inputLocs;
 
-  ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
+  ParsedMetaSignature(ASTDecl &decl) : decl(decl) {
+    // Declarations inherit all of their parent declaration parameters, e.g.
+    // a method decl would get the parameters from the enclosing struct.
+    addParentParams(decl.getParentDecl());
+  }
+
+  ParseResult parseOptionalMetaSignature(LitParserBase &p) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
@@ -311,7 +317,6 @@ struct ParsedMetaSignature {
           p.parseType(paramType, decl, None))
         return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
-      inputASTTypes.push_back(paramType);
       return success();
     };
 
@@ -325,13 +330,25 @@ struct ParsedMetaSignature {
   /// specified scope for the declaration, so name lookup will find them.
   void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
-    // TODO: Use inputTypes.
-    for (auto [paramDecl, type, loc] :
-         llvm::zip(inputDecls, inputASTTypes, inputLocs)) {
+    for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs)) {
       auto paramRef =
           ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
       declResolver.addFullyResolvedDecl(MValue(paramRef), paramDecl.getName(),
-                                        loc, type, &decl);
+                                        loc, paramDecl.getType(), &decl);
+    }
+  }
+
+private:
+  /// Add all parameter declarations from the specified enclosing parameter set
+  /// to this WIP parameter list that we are building up.
+  void addParentParams(ASTDecl *parent) {
+    if (!parent)
+      return;
+
+    if (LITStructDeclOp structDecl = dyn_cast<LITStructDeclOp>(*parent)) {
+      auto paramDecls = structDecl.getParamDecls();
+      inputDecls.append(paramDecls.begin(), paramDecls.end());
+      inputLocs.append(paramDecls.size(), structDecl->getLoc());
     }
   }
 };
@@ -545,9 +562,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
                                              ASTDecl &decl) {
   LitParserBase p(lexer);
 
-  ParsedMetaSignature metaSignature;
+  ParsedMetaSignature metaSignature(decl);
+
   SmallVector<ParsedParam> params;
-  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
+  if (metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -566,16 +584,14 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   }
 
   // Parse the result type if present.
-
-  // TODO: This will be one difference between a def and fn: no result type on
-  // a def should default to returning a (default initialized) Object, whereas
-  // a fn can return void.  We can provide a guaranteed optimization to remove
-  // it though.
   ASTType resultType;
   if (p.consumeIf(LitToken::minus_greater)) {
     if (p.parseType(resultType, decl, None))
       return failure();
   } else {
+    // TODO(def): A missing result type on a def should default to returning a
+    // (default initialized) 'object' instance.  Add this with a guaranteed
+    // optimization to remove it.
     resultType = sharedState.getNoneType();
   }
 
@@ -607,8 +623,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     paramLocs.push_back(p.translateLocation(param.loc));
     paramNames.push_back(param.name);
 
-    // Install the correct MLIR Type, which is the MLIR projection of the AST
-    // type with any convention changes applied.
+    // Adjust by-ref parameter types to include convention changes.
     Type mlirType = param.type;
     if (param.isByRef)
       mlirType = POP::PointerType::get(mlirType);
@@ -801,8 +816,8 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
-  ParsedMetaSignature metaSignature;
-  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
+  ParsedMetaSignature metaSignature(decl);
+  if (metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
