@@ -76,3 +76,26 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
   %1 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>](%a)
   kgen.return
 }
+
+// -----
+
+lit.struct.decl @A {
+   %x = lit.var.decl "x" : <index>
+ }
+
+// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) -> !lit.none {
+ lit.func @rhslitdeclref_no_params(%x: !kgen.litdeclref<@A>) -> !lit.none {
+   %0 = kgen.param.constant: !lit.none = <#lit.none>
+   kgen.return %0 : !lit.none
+ }
+
+// -----
+
+lit.struct.decl @A<b, c> {
+  %x = lit.var.decl "x" : <index>
+}
+// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.none {
+lit.func @rhslitdeclref_params(%x: !kgen.litdeclref<@A<b = 10, c = 11>>) -> !lit.none {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  kgen.return %0 : !lit.none
+}
