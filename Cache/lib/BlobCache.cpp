@@ -13,7 +13,6 @@
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace Cache;
@@ -57,8 +56,7 @@ AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
     return createReady(this->findImpl(keyHash->getBuffer()));
 
   if (!delegate)
-    return createReady(CacheFindResult::error("could not find item '" +
-                                              keyHash->getBuffer() + "'"));
+    return createReady(CacheFindResult::notInCache());
 
   auto itemOr = delegate->find(keyHash.copy());
   if (itemOr->isError())
@@ -97,7 +95,7 @@ struct InMemoryBackend : public BlobCacheBackend {
   CacheFindResult findImpl(StringRef keyHash) const override {
     auto found = cache.find(keyHash);
     if (found == cache.end())
-      return CacheFindResult::error("could not find item '" + keyHash + "'");
+      return CacheFindResult::notInCache();
 
     // Create a memory buffer that holds this same data.
     return CacheFindResult::value(Buffer::get((*found).second));

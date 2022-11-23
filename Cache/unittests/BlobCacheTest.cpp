@@ -51,7 +51,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
   });
 }
 
-TEST_F(BlobCacheTest, FindShouldReturnErrorForNonexistantItem) {
+TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
   auto dneOr = cache.find("does not exist");
   dneOr.andThen([dneOr = dneOr.copy()] {
     EXPECT_FALSE(dneOr->hasValue() && !dneOr->isError())
