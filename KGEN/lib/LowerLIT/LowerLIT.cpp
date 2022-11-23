@@ -644,6 +644,66 @@ static void renameSymbolReferences(Operation *op) {
   });
 }
 
+// Convenience wrapper instead of a std::pair.
+struct NameAndType {
+  StringAttr name;
+  Type type;
+};
+
+// Look for LITDeclRefTypes and replace them with DeclRefType ones.
+// structParamDecls is used to lookup struct declarations and theirs respective
+// param decls for error checking.
+static void lowerLITDeclRefTypes(
+    DenseMap<StringAttr, SmallVector<NameAndType>> &structParamDecls,
+    ModuleOp module) {
+  SymbolTable symbolTable(module);
+  for (auto &op : module.getOps()) {
+    // Type references can be used in nested types. Walk through all the types
+    // and rewrite them in-place to use the lowered types.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](Type type) -> Type {
+      auto refType = dyn_cast<LITDeclRefType>(type);
+      if (!refType)
+        return type;
+
+      SymbolRefAttr symbol = refType.getSymbol();
+      if (!symbol.getNestedReferences().empty()) {
+        // TODO: handle this case once we support struct nesting in the
+        // parser.
+        op.emitError("nested references not yet supported");
+        return type;
+      }
+      ParamBindArrayAttr paramValues = refType.getParamValues();
+      StringAttr symName = symbol.getLeafReference();
+      auto it = structParamDecls.find(symName);
+      assert(it != structParamDecls.end());
+      auto structDefDecls = it->second;
+      if (paramValues.size() != structDefDecls.size()) {
+        op.emitError("'" + symName.getValue() + "' expected ")
+            << structDefDecls.size() << " parameters but found "
+            << paramValues.size();
+        return type;
+      }
+      for (auto [decl, binding] : llvm::zip(structDefDecls, paramValues)) {
+        if (decl.name != binding.getName() || decl.type != binding.getType()) {
+          op.emitError("'" + symName.getValue() + "' expected parameter ")
+              << decl.name.getValue() << " of type " << decl.type
+              << " but use bound " << binding.getName() << " of type "
+              << binding.getType();
+          return type;
+        }
+      }
+      type = DeclRefType::get(
+          FlatSymbolRefAttr::get(type.getContext(), symName), paramValues);
+
+      return type;
+    });
+    replacer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/true,
+                                          /*replaceTypes=*/true);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
@@ -652,6 +712,9 @@ namespace {
 
 struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
   void runOnOperation() override {
+    /// A map from struct name to parameter declaration names and types.
+    /// Used for type conversion LITDeclRefType -> DeclRefType.
+    DenseMap<StringAttr, SmallVector<NameAndType>> structParamDecls;
     // TODO: This has to be a module pass because this mutates the body of the
     // module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
@@ -661,10 +724,16 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
         if (failed(lowerLITFunc(func, symbolTable)))
           return signalPassFailure();
       } else if (auto litStructDecl = dyn_cast<KGEN::LITStructDeclOp>(op)) {
+        SmallVector<NameAndType> params;
+        for (ParamDeclAttr param : litStructDecl.getParamDecls())
+          params.emplace_back(NameAndType{param.getName(), param.getType()});
+        structParamDecls.try_emplace(litStructDecl.getNameAttr(), params);
+
         if (failed(lowerLITStructDecl(litStructDecl, symbolTable)))
           return signalPassFailure();
       }
     }
+    lowerLITDeclRefTypes(structParamDecls, module);
     renameSymbolReferences(module);
   }
 };

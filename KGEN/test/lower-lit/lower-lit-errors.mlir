@@ -173,3 +173,22 @@ kgen.generator.interface @itf<ty: dtype>()
 lit.func @impl3() implements @itf {
   kgen.return
 }
+
+
+// -----
+
+lit.struct.decl @A<b, c> {
+ %x = lit.var.decl "x" : <index>
+}
+
+// expected-error @+1 {{'A' expected parameter c of type 'index' but use bound "e" of type 'index'}}
+lit.func @bad_litdeclref0(%x: !kgen.litdeclref<@A<b = 10, e = 11>>) -> !lit.none {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  kgen.return %0 : !lit.none
+}
+
+// expected-error @+1 {{'A' expected 2 parameters but found 1}}
+lit.func @bad_litdeclref1(%x: !kgen.litdeclref<@A<b = 10>>) -> !lit.none {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  kgen.return %0 : !lit.none
+}
