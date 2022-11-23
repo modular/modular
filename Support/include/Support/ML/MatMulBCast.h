@@ -53,39 +53,39 @@ public:
 
   MatMulBCast(ArrayRef<int64_t> x, ArrayRef<int64_t> y);
 
-  bool IsValid() const {
-    return !broadcasting_required_ || (batch_bcast_ && batch_bcast_->IsValid());
+  bool isValid() const {
+    return !broadcastingRequired || (batchBCast && batchBCast->isValid());
   }
-  bool IsBroadcastingRequired() const { return broadcasting_required_; }
+  bool isBroadcastingRequired() const { return broadcastingRequired; }
 
-  int64_t output_batch_size() const { return output_batch_size_; }
-  int64_t x_batch_size() const { return x_batch_size_; }
-  int64_t y_batch_size() const { return y_batch_size_; }
-  const TensorShape &output_batch_shape() const { return output_batch_shape_; }
+  int64_t getOutputBatchSize() const { return outputBatchSize; }
+  int64_t getXBatchSize() const { return xBatchSize; }
+  int64_t getYBatchSize() const { return yBatchSize; }
+  const TensorShape &getOutputBatchShape() const { return outputBatchShape; }
 
   /// Returns the mapping from the flattened output batch indices to x's
   /// flattened batch indices. The result is a vector of length
-  /// output_batch_size(). To compute the i'th batch output, a binary
-  /// matmul-like operation should use the `x_batch_indices()[i]`th batch index
+  /// getOutputBatchSize(). To compute the i'th batch output, a binary
+  /// matmul-like operation should use the `getXBatchIndices()[i]`th batch index
   /// of `x`. Note: Returns an empty vector if broadcasting is not required.
-  /// Callers should only use this when IsBroadcastingRequired() returns true.
-  ArrayRef<int64_t> x_batch_indices() const { return x_batch_indices_; }
+  /// Callers should only use this when isBroadcastingRequired() returns true.
+  ArrayRef<int64_t> getXBatchIndices() const { return xBatchIndices; }
 
   /// Returns the mapping from the flattened output batch indices to y's
-  /// flattened batch indices. Similar to x_batch_indices(). Note: Returns an
+  /// flattened batch indices. Similar to getXBatchIndices(). Note: Returns an
   /// empty vector if broadcasting is not required. Callers should only use this
-  /// when IsBroadcastingRequired() returns true.
-  ArrayRef<int64_t> y_batch_indices() const { return y_batch_indices_; }
+  /// when isBroadcastingRequired() returns true.
+  ArrayRef<int64_t> getYBatchIndices() const { return yBatchIndices; }
 
 private:
-  std::unique_ptr<BCast> batch_bcast_;
-  bool broadcasting_required_ = false;
-  int64_t x_batch_size_ = 1;
-  int64_t y_batch_size_ = 1;
-  TensorShape output_batch_shape_;
-  int64_t output_batch_size_ = 1;
-  SmallVector<int64_t> x_batch_indices_;
-  SmallVector<int64_t> y_batch_indices_;
+  std::unique_ptr<BCast> batchBCast;
+  bool broadcastingRequired = false;
+  int64_t xBatchSize = 1;
+  int64_t yBatchSize = 1;
+  TensorShape outputBatchShape;
+  int64_t outputBatchSize = 1;
+  SmallVector<int64_t> xBatchIndices;
+  SmallVector<int64_t> yBatchIndices;
 };
 
 } // namespace M
