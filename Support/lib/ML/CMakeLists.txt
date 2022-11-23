@@ -5,10 +5,10 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MSupportML
-  BCast.cpp
+  BroadcastShape.cpp
   CompiledFrameworkLabel.cpp
   DType.cpp
-  MatMulBCast.cpp
+  MatMulBroadcast.cpp
   TensorShape.cpp
   TensorSpec.cpp
 
