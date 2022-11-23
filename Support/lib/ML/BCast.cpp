@@ -5,8 +5,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/BCast.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Twine.h"
 
 using namespace M;
+
+ErrorOr<TensorShape> M::broadcastedShape(const TensorShape &a,
+                                         const TensorShape &b) {
+  // On some platforms ssize_t and int64_t are defined differently.
+  BCast bcast(SmallVector<int64_t>(a.begin(), a.end()),
+              SmallVector<int64_t>(b.begin(), b.end()),
+              /*fewer_dims_optimization=*/false);
+
+  if (bcast.IsValid())
+    return TensorShape(bcast.result_shape());
+  return Error("Incompatible shapes between " + a.getAsString() + " and " +
+               b.getAsString());
+}
 
 void M::ComputeBatchIndices(int64_t output_batch_size,
                             ArrayRef<int64_t> reshape, ArrayRef<int64_t> bcast,

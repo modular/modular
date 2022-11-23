@@ -40,10 +40,19 @@ limitations under the License.
 
 #include <algorithm>
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ML/TensorShape.h"
 #include "llvm/ADT/ArrayRef.h"
 
 namespace M {
+
+/// Computes the shape of the output tensor given the shape of the two input
+/// tensor shapes. This follows the NumPy broadcasting rules]
+/// (https://docs.scipy.org/doc/numpy/user/basics.broadcasting.html#general-broadcasting-rules).
+/// If the shapes are not compatible, then an error is returned.
+ErrorOr<TensorShape> broadcastedShape(const TensorShape &a,
+                                      const TensorShape &b);
 
 /// Returns the mapping from the output batch indices to the corresponding
 /// input's batch indices, given the input's "reshape" and "bcast" shapes as

@@ -14,6 +14,7 @@ add_modular_unittest(
   TEST_NAME
   SupportTests
 
+  BCastTest.cpp
   FunctionExtrasTest.cpp
   HMACTest.cpp
   MathExtras.cpp
@@ -23,4 +24,5 @@ add_modular_unittest(
 
   LINK_LIBS PRIVATE
   MSupport
+  MSupportML
 )
