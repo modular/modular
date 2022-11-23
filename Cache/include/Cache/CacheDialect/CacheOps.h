@@ -27,15 +27,21 @@ struct RegionCacheKey {
 inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 
 /// This function allows the user to deflate an operation by eliding the body
-/// and storing it in the cache.
-LLCL::AsyncValueRef<LogicalResult> deflateOp(Operation *symbol,
-                                             BlobCache<RegionCacheKey> &cache);
+/// and storing it in the cache. If the operation is already deflated this is a
+/// no-op. The deflation is implemented as an `andThen` on `chain` - this is to
+/// simplify calling code which is also likely async.
+LLCL::AsyncValueRef<LogicalResult>
+deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
+          LLCL::AsyncValueRef<LogicalResult> chain);
 
 /// This function allows the user to inflate a cached op into its original
 /// form by pulling the regions attached to it from the cache and re-attaching
-/// them to the op.
-LLCL::AsyncValueRef<LogicalResult> inflateOp(Operation *cached,
-                                             BlobCache<RegionCacheKey> &cache);
+/// them to the op. If the op is not deflated, this is a no-op. The inflation is
+/// implemented as an `andThen` on `chain` - this is to simplify calling code
+/// which is also likely async.
+LLCL::AsyncValueRef<LogicalResult>
+inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
+          LLCL::AsyncValueRef<LogicalResult> chain);
 } // namespace M::Cache
 
 //===----------------------------------------------------------------------===//

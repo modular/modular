@@ -38,6 +38,8 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
+    AsyncValue::registerType<LogicalResult>();
+
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());
@@ -51,7 +53,9 @@ public:
       if (!op.hasAttr(SymbolTable::getSymbolAttrName()))
         continue;
 
-      results.push_back(deflateOp(&op, cache));
+      results.push_back(
+          deflateOp(&op, cache,
+                    AsyncValueRef<LogicalResult>::createReady(*rt, success())));
     }
 
     await(results);
@@ -89,6 +93,8 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
+    AsyncValue::registerType<LogicalResult>();
+
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());
@@ -102,7 +108,9 @@ public:
       if (!sym.hasAttr(getRegionHashAttrName()))
         continue;
 
-      results.push_back(inflateOp(&sym, cache));
+      results.push_back(
+          inflateOp(&sym, cache,
+                    AsyncValueRef<LogicalResult>::createReady(*rt, success())));
     }
 
     await(results);

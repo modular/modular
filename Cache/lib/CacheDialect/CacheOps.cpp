@@ -23,7 +23,7 @@ using namespace Cache;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
-// Caching-related functionality
+// Caching regions
 //===----------------------------------------------------------------------===//
 
 std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
@@ -170,27 +170,40 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
 }
 
 AsyncValueRef<LogicalResult>
-M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache) {
-  // Make sure LogicalResult is registered.
-  AsyncValue::registerType<LogicalResult>();
+M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
+                    AsyncValueRef<LogicalResult> chain) {
+  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+  // Hang the actual deflation off the input chain. This will allow users to not
+  // worry about sequencing w.r.t. this operation, they can just pass in the
+  // chain.
+  chain.andThen([symbol, &cache, out = out.copy(), chain = chain.copy()] {
+    if (failed(*chain)) {
+      out.emplace(failure());
+      return;
+    }
 
-  OpBuilder builder(symbol);
+    // If the op is already deflated, we're done!
+    if (symbol->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
+      out.emplace(success());
+      return;
+    }
 
-  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
+    OpBuilder builder(symbol);
+    SmallVector<AnyAsyncValueRef> results;
+    results.reserve(symbol->getNumRegions());
+    for (Region &r : symbol->getRegions())
+      results.push_back(cacheSingleRegion(r, builder, symbol, cache));
 
-  SmallVector<AnyAsyncValueRef> results;
-  results.reserve(symbol->getNumRegions());
-  for (Region &r : symbol->getRegions())
-    results.push_back(cacheSingleRegion(r, builder, symbol, cache));
+    andThenMoving(results,
+                  [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
+                    for (auto &v : values) {
+                      if (failed(v->get<LogicalResult>()))
+                        out.emplace(failure());
+                    }
+                    out.emplace(success());
+                  });
+  });
 
-  andThenMoving(results,
-                [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
-                  for (auto &v : values) {
-                    if (failed(v->get<LogicalResult>()))
-                      out.emplace(failure());
-                  }
-                  out.emplace(success());
-                });
   return out;
 }
 
@@ -201,7 +214,7 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
   auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
 
   auto foundOr = cache.find(regionHash.getHash());
-  foundOr.andThen([&, foundOr = foundOr.copy(), out = out.copy()] {
+  foundOr.andThen([r, regionHash, foundOr = foundOr.copy(), out = out.copy()] {
     if (foundOr->isError())
       out.emplace(mlir::emitError(r->getLoc()) << foundOr->getError());
 
@@ -236,35 +249,39 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
 }
 
 AsyncValueRef<LogicalResult>
-M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache) {
-  // Make sure LogicalResult is registered.
-  AsyncValue::registerType<LogicalResult>();
-
+M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
+                    AsyncValueRef<LogicalResult> chain) {
   auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
-  auto hashes =
-      cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-  if (!hashes) {
-    out.emplace(success());
-    return out;
-  }
 
-  // Fill in the regions on the operation.
-  SmallVector<AnyAsyncValueRef> results;
-  for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
-    results.push_back(inflateRegion(&region, regionHash, cache));
+  // Hang the inflation off the input chain.
+  chain.andThen([cached, &cache, chain = chain.copy(), out = out.copy()] {
+    auto hashes =
+        cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
+    // If the op doesn't have any region hashes on it, we're done.
+    if (!hashes)
+      return;
 
-  andThenMoving(results, [&](MutableArrayRef<AnyAsyncValueRef> values) {
-    for (auto &v : values) {
-      if (failed(v->get<LogicalResult>())) {
-        out.emplace(failure());
-        return;
+    // Fill in the regions on the operation.
+    SmallVector<AnyAsyncValueRef> results;
+    for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
+      results.push_back(inflateRegion(&region, regionHash, cache));
+
+    // Once all the regions are cached, remove the region hash attr and resolve
+    // success/failure.
+    andThenMoving(results, [cached, out = out.copy()](
+                               MutableArrayRef<AnyAsyncValueRef> values) {
+      for (auto &v : values) {
+        if (failed(v->get<LogicalResult>())) {
+          out.emplace(failure());
+          return;
+        }
       }
-    }
 
-    // Remove the region hash attr.
-    cached->removeAttr(getRegionHashAttrName());
-    // Done!
-    out.emplace(success());
+      // Remove the region hash attr.
+      cached->removeAttr(getRegionHashAttrName());
+      // Done!
+      out.emplace(success());
+    });
   });
 
   return out;
