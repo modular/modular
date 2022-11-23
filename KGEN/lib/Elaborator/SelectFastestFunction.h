@@ -10,10 +10,15 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ForwardDecls.h"
 
+namespace M::LLCL {
+class Runtime;
+}
+
 namespace M::KGEN {
 /// Given a list of valid specializations for an interface, select the best
 /// specialization according to a user-defined evaluator function.
 ErrorOr<size_t> evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
+                                        LLCL::Runtime &runtime,
                                         ArrayRef<FuncOp> specializations);
 } // namespace M::KGEN
 

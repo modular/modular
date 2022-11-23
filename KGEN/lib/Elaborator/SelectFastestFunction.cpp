@@ -20,14 +20,10 @@ using namespace KGEN;
 
 ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
+                                 LLCL::Runtime &runtime,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
   UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
-
-  // TODO: The elaborator should take a reference to the runtime.
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);

@@ -18,12 +18,14 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "SelectFastestFunction.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ML/DType.h"
+#include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -226,8 +228,10 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, bool enableSearch = false)
-      : symtab(symtab), regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
+  Elaborator(SymbolTable &symtab, LLCL::Runtime &runtime,
+             bool enableSearch = false)
+      : symtab(symtab), runtime(runtime),
+        regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
         enableSearch(enableSearch) {}
 
   /// Scan the primary and library module to collect all the interfaces,
@@ -367,6 +371,10 @@ private:
 private:
   /// This symbol table allows efficient lookups across the module.
   SymbolTable &symtab;
+
+  /// This provides a runtime reference for the Elaborator and all its
+  /// functionality.
+  LLCL::Runtime &runtime;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -1846,7 +1854,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
 
   ErrorOr<size_t> bestSpecializationIdxOr =
-      evaluateSpecializations(evalFunc, symtab, searchInputs);
+      evaluateSpecializations(evalFunc, symtab, runtime, searchInputs);
   if (failed(bestSpecializationIdxOr))
     return {
         reportCalleeExpansionError(itf, bestSpecializationIdxOr.getError())};
@@ -2096,11 +2104,12 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(SymbolTable &symtab,
+                                     LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   auto primary = cast<ModuleOp>(symtab.getOp());
-  Elaborator elaborator(symtab, enableSearch);
+  Elaborator elaborator(symtab, runtime, enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -2212,11 +2221,16 @@ namespace {
 struct ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
   ElaborateGeneratorsPass(SmallVectorImpl<std::string> &includedFiles,
+                          LLCL::Runtime &runtime,
                           const ElaborateGeneratorsOptions &options)
       : ElaborateGeneratorsBase(options), includedFiles(&includedFiles) {}
   using ElaborateGeneratorsBase::ElaborateGeneratorsBase;
 
   void runOnOperation() override {
+    auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
+        runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+        LLCL::createSingleThreadWorkQueue());
+
     ModuleOp theModule = getOperation();
 
     SmallVector<std::filesystem::path> paths;
@@ -2236,12 +2250,14 @@ struct ElaborateGeneratorsPass
     if (failed(resolveIncludes(symtab, paths, includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(symtab, primaryGenerators, shouldDoSearch)))
+    if (failed(elaborateGenerators(symtab, *rt, primaryGenerators,
+                                   shouldDoSearch)))
       return signalPassFailure();
   }
 
   /// An optional set of included files that were found during processing.
   SmallVectorImpl<std::string> *includedFiles = nullptr;
+  LLCL::Runtime *runtime = nullptr;
 };
 
 /// Resolve includes in a pass. This pass only does include resolution.
@@ -2266,6 +2282,8 @@ struct ResolveIncludesPass
 
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
+                                LLCL::Runtime &runtime,
                                 const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(includedFiles, options);
+  return std::make_unique<ElaborateGeneratorsPass>(includedFiles, runtime,
+                                                   options);
 }
