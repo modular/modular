@@ -53,8 +53,8 @@ template <typename T>
 struct ConditionallyOwnedPointer {
   /// Allocate a `T *` that this class will own (and therefore delete).
   template <typename... Args>
-  static ConditionallyOwnedPointer allocate(Args... args) {
-    return ConditionallyOwnedPointer(std::forward<Args>(args)...);
+  static ConditionallyOwnedPointer allocate(Args &&...args) {
+    return ConditionallyOwnedPointer(std::forward<Args &&>(args)...);
   }
 
   /// Borrow the provided `T *`.
@@ -65,11 +65,11 @@ struct ConditionallyOwnedPointer {
   /// If `ptr` is provided, do not allocate a new pointer and borrow it.
   /// Otherwise, allocate a new one.
   template <typename... Args>
-  static ConditionallyOwnedPointer allocateIfNeeded(T *ptr, Args... args) {
+  static ConditionallyOwnedPointer allocateIfNeeded(T *ptr, Args &&...args) {
     if (ptr)
       return borrow(ptr);
 
-    return allocate(std::forward<Args>(args)...);
+    return allocate(std::forward<Args &&>(args)...);
   }
 
   /// A default instance of this class - it has nothing inside it.
@@ -83,13 +83,15 @@ struct ConditionallyOwnedPointer {
 
   /// Transparent accessors to get at the underlying pointer.
   T *operator->() { return ptr; }
+  const T *operator->() const { return ptr; }
   T &operator*() { return *ptr; }
+  const T &operator*() const { return *ptr; }
 
 private:
   ConditionallyOwnedPointer(T *ptr) : ptr(ptr), shouldDelete(false) {}
   template <typename... Args>
-  ConditionallyOwnedPointer(Args... args)
-      : ptr(new T(std::forward<Args>(args)...)), shouldDelete(true) {}
+  ConditionallyOwnedPointer(Args &&...args)
+      : ptr(new T(std::forward<Args &&>(args)...)), shouldDelete(true) {}
 
   T *ptr;
   bool shouldDelete;
