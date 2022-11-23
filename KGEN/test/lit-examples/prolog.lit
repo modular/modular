@@ -318,6 +318,7 @@ struct Pointer[ElementType: __mlir_type.`!kgen.mlirtype`]:
   pass
 
 
+# NOTE: This would be more naturally modeled as an enum, but this works for now.
 struct DType:
   var value : __mlir_type.`!kgen.dtype`
 
@@ -326,9 +327,23 @@ struct DType:
     result.value = value
     return result
 
+  # TODO: This should be something like:
+  # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
   @staticmethod
   fn getF32() -> DType:
     return DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
+
+  @staticmethod
+  fn getF64() -> DType:
+    return DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
+
+  @staticmethod
+  fn getSI32() -> DType:
+    return DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
+
+  @staticmethod
+  fn getSI64() -> DType:
+    return DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
 
 struct Scalar[type: DType]:
   pass
@@ -340,8 +355,7 @@ struct Scalar[type: DType]:
 # CHECK-LABEL: lit.struct.decl @Scalar2<type: dtype> {
 struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
   # CHECK: %value = lit.var.decl "value" : <scalar<type>>
-  # NOTE: We really need a better way to define this than using "type" magically!
-  var value: __mlir_type.`!pop.scalar<type>`
+  var value: __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[type]
 
   fn __new__(value: __mlir_type.`!pop.scalar<type>`) -> Scalar2[type]:
     var result: Scalar2[type]

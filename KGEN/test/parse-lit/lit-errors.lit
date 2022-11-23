@@ -319,6 +319,13 @@ fn expr_errors():
   # expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
+  # expected-error @+1 {{parameter of type '__mlir_type.index' cannot be converted to expected type '__mlir_type.!kgen.dtype'}}
+  var a : __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[1]
+
+  # expected-error @+1 {{unused parameter when substituting into MLIR type '__mlir_type.!pop.simd<#lit<placeholder index>, f32>'}}
+  var b : __mlir_type.`!pop.simd<#lit<placeholder index>, f32>`[4, 57]
+
+
 
 fn slice_expression(a: Int):
   a[:]    # expected-error {{slice values not implemented yet}}

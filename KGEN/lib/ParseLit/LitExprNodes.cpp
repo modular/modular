@@ -968,6 +968,143 @@ AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return {};
 }
 
+/// Given a value of type type, substitute parameters into the type, producing
+/// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
+static AnyValue
+substituteParametersIntoUserDefinedType(LITDeclRefType declRef,
+                                        const SubscriptNode &subscript,
+                                        ExprEmitter &emitter) {
+  // If already parameterized, give up.
+  // TODO: Why not allow multiple partial type applications?
+  if (!declRef.getParamValues().empty()) {
+    emitter.emitError(
+        subscript.getLoc(),
+        "cannot apply more parameters to an already parameterized type ")
+        << ASTType(declRef);
+    return {};
+  }
+
+  ASTDecl &typeDecl = emitter.shared.getDeclForSymbol(declRef.getSymbol());
+  auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
+  if (!structOp) {
+    emitter.emitError(subscript.getLoc(), "unknown parameterized type ")
+        << ASTType(declRef);
+    return {};
+  }
+
+  auto numParams = structOp.getParamDecls().size();
+  if (numParams != subscript.indices.size()) {
+    emitter.emitError(subscript.getLoc(), "")
+        << ASTType(declRef) << " requires " << numParams << " meta parameter"
+        << plural(numParams) << " but " << subscript.indices.size()
+        << " were specified";
+    return {};
+  }
+
+  // Emit each of the indices as parameter expressions.
+  SmallVector<ParamBindAttr> paramBindings;
+  for (auto [indexExpr, decl] :
+       llvm::zip(subscript.indices, structOp.getParamDecls())) {
+    // TODO: Slice syntax is the obvious way to support named parameter
+    // arguments.
+    auto indexVal = emitter.emitMValue(
+        indexExpr, "type parameters may not be a run-time value");
+    if (!indexVal)
+      return {};
+
+    // TODO: Support conversions.
+    if (indexVal.getType() != decl.getType()) {
+      emitter.emitError(indexExpr->getLoc(), "parameter of type ")
+          << ASTType(indexVal.getType())
+          << " cannot be converted to expected type "
+          << ASTType(decl.getType());
+      return {};
+    }
+    paramBindings.push_back(ParamBindAttr::get(decl, indexVal));
+  }
+
+  // Ok, we succeeded at reparameterizing the type.
+  return MValue(LITDeclRefType::get(typeDecl.getSymbolRef(), paramBindings));
+}
+
+/// Given a value of type type, substitute parameters into the type, producing
+/// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
+static AnyValue substituteParametersIntoMLIRType(Type type,
+                                                 const SubscriptNode &subscript,
+                                                 ExprEmitter &emitter) {
+  auto itf = dyn_cast_or_null<mlir::SubElementTypeInterface>(type);
+  if (!itf) {
+    emitter.emitError(subscript.getLoc(), "MLIR type ")
+        << ASTType(type) << " has no parameters";
+    return {};
+  }
+
+  // Collect all the attributes and types out of this type.
+  SmallVector<PointerUnion<Type, Attribute>> params;
+  itf.walkImmediateSubElements([&](Attribute attr) { params.push_back(attr); },
+                               [&](Type type) { params.push_back(type); });
+
+  // Figure out the replacements.
+  unsigned nextIdx = 0;
+  SmallVector<Attribute> newAttrs;
+  SmallVector<Type> newTypes;
+
+  for (auto &elt : params) {
+    if (auto type = dyn_cast<Type>(elt)) {
+      // Types aren't replacable with attributes.
+      newTypes.push_back(type);
+      continue;
+    }
+
+    auto attr = dyn_cast<Attribute>(elt);
+    if (!attr) {
+      emitter.emitError(subscript.getLoc(), "MLIR type ")
+          << ASTType(type) << " has unknown parameter";
+      return {};
+    }
+
+    auto placeholder = dyn_cast<PlaceholderAttr>(attr);
+    if (!placeholder || nextIdx >= subscript.indices.size()) {
+      newAttrs.push_back(attr);
+      continue;
+    }
+
+    ExprNode *indexVal = subscript.indices[nextIdx++];
+    TypedAttr newVal = emitter.emitMValue(
+        indexVal, "expected meta value in type substitution list");
+    if (!newVal)
+      return {};
+
+    // TODO: Support conversions.
+    auto expectedType = cast<PlaceholderAttr>(attr).getType();
+    if (newVal.getType() != expectedType) {
+      emitter.emitError(indexVal->getLoc(), "parameter of type ")
+          << ASTType(newVal.getType())
+          << " cannot be converted to expected type " << ASTType(expectedType);
+      return {};
+    }
+    newAttrs.push_back(newVal);
+  }
+
+  // Reject extraneous subscript indices.
+  if (nextIdx != subscript.indices.size()) {
+    emitter.emitError(subscript.indices[nextIdx]->getLoc(),
+                      "unused parameter when substituting into MLIR type ")
+        << ASTType(type);
+    return {};
+  }
+
+  // Rewrite the type with the substitutions.
+  Type result = itf.replaceImmediateSubElements(newAttrs, newTypes);
+  if (!result) {
+    emitter.emitError(subscript.getLoc(),
+                      "failed to substitute parameters into ")
+        << ASTType(type);
+    return {};
+  }
+  return result;
+}
+
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
                                ASTType contextualType) const {
   // Subscripting a generic function binds the parameter expressions.
@@ -977,65 +1114,12 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
 
   // If the sub-value is an unbound Type, try binding things to it!
   if (auto typeValue = subValue.getIfTypeValue()) {
-    auto declRef = dyn_cast<LITDeclRefType>(typeValue);
-    if (!declRef) {
-      emitter.emitError(getLoc(), "MLIR type ")
-          << ASTType(typeValue) << " has no parameters";
-      return {};
-    }
+    // Handle user-defined types.
+    if (auto declRef = dyn_cast<LITDeclRefType>(typeValue))
+      return substituteParametersIntoUserDefinedType(declRef, *this, emitter);
 
-    // If already parameterized, give up.
-    if (!declRef.getParamValues().empty()) {
-      emitter.emitError(
-          getLoc(),
-          "cannot apply more parameters to an already parameterized type ")
-          << ASTType(typeValue);
-      return {};
-    }
-
-    ASTDecl &typeDecl = emitter.shared.getDeclForSymbol(declRef.getSymbol());
-
-    auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
-    if (!structOp) {
-      emitter.emitError(getLoc(), "unknown parameterized type ")
-          << ASTType(typeValue);
-      return {};
-    }
-
-    auto numParams = structOp.getParamDecls().size();
-    if (numParams != indices.size()) {
-      emitter.emitError(getLoc(), "")
-          << ASTType(typeValue) << " requires " << numParams
-          << " meta parameter" << plural(numParams) << " but " << indices.size()
-          << " were specified";
-      return {};
-    }
-
-    // Emit each of the indices as parameter expressions.
-    SmallVector<ParamBindAttr> paramBindings;
-    for (auto [indexExpr, decl] :
-         llvm::zip(indices, structOp.getParamDecls())) {
-      // TODO: Slice syntax is the obvious way to support named parameter
-      // arguments.
-      auto indexVal = emitter.emitMValue(
-          indexExpr, "type parameters may not be a run-time value");
-      if (!indexVal)
-        return {};
-
-      // TODO: Support conversions.
-      if (indexVal.getType() != decl.getType()) {
-        emitter.emitError(indexExpr->getLoc(), "parameter of type ")
-            << ASTType(indexVal.getType())
-            << " cannot be converted to expected type "
-            << ASTType(decl.getType());
-        return {};
-      }
-      paramBindings.push_back(ParamBindAttr::get(decl, indexVal));
-    }
-
-    // Ok, we succeeded at reparameterizing the type.
-    auto result = LITDeclRefType::get(typeDecl.getSymbolRef(), paramBindings);
-    return MValue(result);
+    // Handle __mlir_type types.
+    return substituteParametersIntoMLIRType(typeValue, *this, emitter);
   }
 
   // If we have a value of signature type, we can bind parameters to it.
