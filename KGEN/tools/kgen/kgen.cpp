@@ -14,6 +14,8 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -195,8 +197,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect,
-                  scf::SCFDialect>();
+  registry.insert<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
+                  index::IndexDialect, LLVM::LLVMDialect, scf::SCFDialect>();
 
   mlir::registerLLVMDialectTranslation(registry);
 
@@ -207,7 +209,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // later.
   ctx->allowUnregisteredDialects();
 
-  OwningOpRef<ModuleOp> theModule = parseSourceFile<ModuleOp>(mgr, ctx);
+  CompilationOptions compilationOptions = clOptions.getCompilationOptions();
+  OwningOpRef<ModuleOp> theModule;
+  if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
+    theModule = DebugInfo::parseSourceFileWithDebugInfo(
+        mgr, ctx, compilationOptions.getDIEmissionKind());
+  else
+    theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
@@ -247,7 +255,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
 
-  ObjectCompiler compiler(runtime, ".kgen_cache", *theModule);
+  ObjectCompiler compiler(runtime, ".kgen_cache", *theModule,
+                          compilationOptions);
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
 
@@ -279,7 +288,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Now we can load it into the JIT - we're definitely executing the thing.
 
   // Now create the execution engine so we can JIT.
-  auto engineOr = ExecutionEngine::create();
+  auto engineOr = ExecutionEngine::create(compilationOptions);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   ExecutionEngine engine = std::move(*engineOr);

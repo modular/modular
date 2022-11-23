@@ -8,6 +8,7 @@
 #define KGEN_EXECUTION_ENGINE_H
 
 #include "Cache/Buffer.h"
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
@@ -24,6 +25,7 @@ class Runtime;
 
 namespace M::KGEN {
 class ObjectCompiler;
+struct CompilationOptions;
 
 /// This class provides an interface to interact with a compiled func. You
 /// can either invoke the func, or get it as an object. The lifetime of one of
@@ -72,7 +74,7 @@ public:
   /// This class is move-constructible.
   ExecutionEngine(ExecutionEngine &&other);
 
-  static ErrorOr<ExecutionEngine> create();
+  static ErrorOr<ExecutionEngine> create(const CompilationOptions &options);
 
   /// Add an MLIR module to the execution engine. This will perform slicing for
   /// every func and generate self-contained libraries. Uses `libName` as the
@@ -87,13 +89,17 @@ public:
   ErrorOr<CompiledFunc> lookup(StringRef libName, FuncOp func);
 
 private:
-  explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit);
+  explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
+                           CompilationOptions options);
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
 
   /// Caches required for traversing up/down the compilation chain.
   std::unique_ptr<ObjectCompiler> compiler;
+
+  /// The compilation options to use.
+  CompilationOptions options;
 
   /// Objects required for the ORCJIT.
   llvm::orc::ThreadSafeContext ctx;

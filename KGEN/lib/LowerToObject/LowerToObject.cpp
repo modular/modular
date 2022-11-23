@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LowerToObject.h"
+#include "KGEN/CompilationOptions.h"
 #include "LowerToObjectImpl.h"
 #include "Support/ErrorOr.h"
 #include "Support/TempFile.h"
@@ -44,7 +45,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
   llvm::PassManagerBuilder passManagerBuilder;
 
   // Set up the pass manager builder to populate the passes we want.
-  passManagerBuilder.OptLevel = 3;
+  passManagerBuilder.OptLevel = targetMachine.getOptLevel();
 
   // Set up the pass manager and populate it.
   targetMachine.adjustPassManager(passManagerBuilder);
@@ -65,7 +66,8 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-KGEN::createTargetMachine(TargetInfoAttr targetInfo, bool isJIT) {
+KGEN::createTargetMachine(TargetInfoAttr targetInfo,
+                          const CompilationOptions &options, bool isJIT) {
   { // TODO: remove this once we have more cross-compilation capability.
     auto targetTriple = llvm::sys::getDefaultTargetTriple();
     assert(targetInfo.getTriple() == targetTriple &&
@@ -87,7 +89,7 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo, bool isJIT) {
       targetInfo.getTriple(), targetInfo.getCpu(), targetInfo.getFeatures(),
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
-      /*CM=*/None, /*OL=*/llvm::CodeGenOpt::Aggressive, /*JIT=*/isJIT));
+      /*CM=*/None, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
   if (!machine)
     return Error("unable to create target machine");
 

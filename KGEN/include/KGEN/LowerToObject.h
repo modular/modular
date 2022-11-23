@@ -8,6 +8,7 @@
 #define KGEN_LOWERTOOBJECT_H
 
 #include "Cache/BlobCache.h"
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/StringSet.h"
@@ -78,8 +79,10 @@ private:
 /// functions to LLVM, and then to objects.
 class ObjectCompiler {
 public:
-  ObjectCompiler(LLCL::Runtime &runtime, StringRef basePath, ModuleOp module)
-      : caches(runtime, basePath), module(module), symtab(module) {
+  ObjectCompiler(LLCL::Runtime &runtime, StringRef basePath, ModuleOp module,
+                 const CompilationOptions &options)
+      : caches(runtime, basePath), module(module), symtab(module),
+        options(options) {
     for (auto e : module.getOps<ExportOp>())
       for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
         exportedSymbols.insert(sym.getAttr());
@@ -87,9 +90,10 @@ public:
 
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, StringRef basePath, ModuleOp module,
-                 DenseSet<StringAttr> exports)
+                 DenseSet<StringAttr> exports,
+                 const CompilationOptions &options)
       : caches(runtime, basePath), module(module), symtab(module),
-        exportedSymbols(std::move(exports)) {}
+        exportedSymbols(std::move(exports)), options(options) {}
 
   /// Lower all exported `kgen.func` to llvm and populate the composite module
   /// in the cache. Returns the LLVM module on success, and nullptr on failure.
@@ -124,8 +128,8 @@ private:
   OwningOpRef<ModuleOp> produceStandaloneModule();
 
   /// Lower a KGEN module to an LLVMIR module.
-  static std::unique_ptr<llvm::Module> lowerKGENToLLVM(ModuleOp module,
-                                                       llvm::LLVMContext &ctx);
+  std::unique_ptr<llvm::Module> lowerKGENToLLVM(ModuleOp module,
+                                                llvm::LLVMContext &ctx);
 
   /// The caches needed for lowering/raising.
   LoweringCacheCollection caches;
@@ -139,6 +143,9 @@ private:
   /// This is a list of exported symbol names so we don't constantly recompute
   /// it.
   DenseSet<StringAttr> exportedSymbols;
+
+  /// The compilation options to use.
+  CompilationOptions options;
 };
 } // namespace M::KGEN
 

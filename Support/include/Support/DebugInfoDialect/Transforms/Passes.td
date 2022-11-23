@@ -23,6 +23,9 @@ def DebugInfoSnapshot : Pass<"debuginfo-snapshot"> {
   }];
 
   let options = [
+    Option<"emissionKind", "emission", "EmissionKind",
+           /*default=*/"EmissionKind::Full",
+           "The kind of debug info emission">,
     Option<"filename", "filename", "std::string", /*default=*/"",
            "The filename to print the generated IR">
   ];

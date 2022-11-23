@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENPASSES_H
 #define KGEN_KGENPASSES_H
 
+#include "CompilationOptions.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
@@ -43,6 +44,34 @@ class POPDialect;
 /// Options for the KGEN to LLVM pipeline.
 struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
+  LowerToLLVMOptions(
+      DebugInfo::EmissionKind diLevel = DebugInfo::EmissionKind::None,
+      Optional<CompilationOptions::DebugAtLevel> diAtLevel = llvm::None) {
+    debugInfoLevel = diLevel;
+    if (diAtLevel)
+      debugAtLevel = *diAtLevel;
+  }
+
+  Option<DebugInfo::EmissionKind> debugInfoLevel{
+      *this, "debug-level",
+      llvm::cl::desc("The level of debug info to use during compilation"),
+      llvm::cl::values(
+          clEnumValN(DebugInfo::EmissionKind::None, "none",
+                     "Disable all debug info."),
+          clEnumValN(DebugInfo::EmissionKind::LineTablesOnly,
+                     "only-line-tables",
+                     "Only generate debug info for line number tables."),
+          clEnumValN(DebugInfo::EmissionKind::Full, "full",
+                     "Generate full debug info.")),
+      llvm::cl::init(DebugInfo::EmissionKind::None)};
+
+  Option<CompilationOptions::DebugAtLevel> debugAtLevel{
+      *this, "debug-at",
+      llvm::cl::desc("The abstraction level to generate debug info at"),
+      llvm::cl::values(clEnumValN(KGEN::CompilationOptions::kDebugAtLLVM,
+                                  "llvm",
+                                  "Generate debug info for the LLVM level."))};
+
   Option<std::string> topLevelKernel{
       *this, "top-level-kernel",
       llvm::cl::desc("The name of the top-level kernel. If specified, the "

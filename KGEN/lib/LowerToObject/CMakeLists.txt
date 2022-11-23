@@ -18,6 +18,7 @@ add_modular_mlir_library(KGENEmitObject
   nativecodegen
 
   LINK_LIBS PUBLIC
+  DebugInfoToLLVM
   KGENDialect
   KGENToLLVM
   LowerZAPToPOP
