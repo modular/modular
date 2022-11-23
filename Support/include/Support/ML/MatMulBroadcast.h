@@ -38,20 +38,21 @@ limitations under the License.
 #ifndef SUPPORT_ML_MATMULBCAST_H
 #define SUPPORT_ML_MATMULBCAST_H
 
-#include "Support/ML/BCast.h"
+#include "Support/ML/BroadcastShape.h"
 #include "Support/ML/TensorShape.h"
 
 namespace M {
 
-/// Simple wrapper over BCast specialized for MatMul. Provides utilities for
-/// broadcasting across batch dimensions for binary MatMul-like operations. If
-/// neither argument has batch dimensions (rank <= 2) then no broadcasting is
-/// needed and the operation MatMul operation is considered valid.
-class MatMulBCast {
+/// Simple wrapper over BroadcastShape specialized for MatMul. Provides
+/// utilities for broadcasting across batch dimensions for binary MatMul-like
+/// operations. If neither argument has batch dimensions (rank <= 2) then no
+/// broadcasting is needed and the operation MatMul operation is considered
+/// valid.
+class MatMulBroadcast {
 public:
-  using Vec = BCast::Vec;
+  using Vec = BroadcastShape::Vec;
 
-  MatMulBCast(ArrayRef<int64_t> x, ArrayRef<int64_t> y);
+  MatMulBroadcast(ArrayRef<int64_t> x, ArrayRef<int64_t> y);
 
   bool isValid() const {
     return !broadcastingRequired || (batchBCast && batchBCast->isValid());
@@ -78,7 +79,7 @@ public:
   ArrayRef<int64_t> getYBatchIndices() const { return yBatchIndices; }
 
 private:
-  std::unique_ptr<BCast> batchBCast;
+  std::unique_ptr<BroadcastShape> batchBCast;
   bool broadcastingRequired = false;
   int64_t xBatchSize = 1;
   int64_t yBatchSize = 1;

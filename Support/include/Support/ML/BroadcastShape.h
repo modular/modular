@@ -123,8 +123,8 @@ protected:
   void operator=(const BCastList &) = delete;
 };
 
-/// BCast is a helper for broadcasting binary tensor operations, following the
-/// rules of numpy (See
+/// BroadcastShape is a helper for broadcasting binary tensor operations,
+/// following the rules of numpy (See
 /// http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html).
 ///
 /// The rule has the following properties:
@@ -137,16 +137,16 @@ protected:
 ///   2. Two dimensions are compatible for broadcasting if both are the same or
 ///   either is 1.
 ///
-/// BCast takes the shape of two tensors and computes a few vectors of int32
-/// that are useful for the caller to reshape the tensors, apply the right
+/// BroadcastShape takes the shape of two tensors and computes a few vectors of
+/// int32 that are useful for the caller to reshape the tensors, apply the right
 /// broadcasts to them, and compute the broadcasted operation. In a nutshell,
 /// the caller is expected to compute the broadcasted operation as following:
 ///
-///   BCast b(x.shape(), y.shape());
+///   BroadcastShape b(x.shape(), y.shape());
 ///   output = x.reshape(b.getXReshape()).broadcast(b.getXBCast())
 ///            _op_
 ///            y.reshape(b.getYReshape()).broadcast(b.getYBCast())
-class BCast : public BCastList<2> {
+class BroadcastShape : public BCastList<2> {
 public:
   /// Constructs all helper shapes, following the aforementioned rules.
   ///
@@ -158,10 +158,10 @@ public:
   /// the larger of the two inputs.
   using Vec = SmallVector<int64_t, 4>;
 
-  BCast(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
-        bool fewerDimsOptimization = true);
+  BroadcastShape(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
+                 bool fewerDimsOptimization = true);
 
-  ~BCast() = default;
+  ~BroadcastShape() = default;
 
   /// If and only if isValid(), the following fields can be used in implementing
   /// a broadcasted binary tensor operation according to the broadcasting rule.
@@ -185,8 +185,8 @@ public:
   ArrayRef<int64_t> getYBatchIndices() const { return batch_indices_[1]; }
 
 private:
-  BCast(const BCast &) = delete;
-  void operator=(const BCast &) = delete;
+  BroadcastShape(const BroadcastShape &) = delete;
+  void operator=(const BroadcastShape &) = delete;
 };
 
 } // namespace M

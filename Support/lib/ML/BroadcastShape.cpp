@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/ML/BCast.h"
+#include "Support/ML/BroadcastShape.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 
@@ -13,9 +13,9 @@ using namespace M;
 ErrorOr<TensorShape> M::broadcastedShape(const TensorShape &a,
                                          const TensorShape &b) {
   // On some platforms ssize_t and int64_t are defined differently.
-  BCast bcast(SmallVector<int64_t>(a.begin(), a.end()),
-              SmallVector<int64_t>(b.begin(), b.end()),
-              /*fewerDimsOptimization=*/false);
+  BroadcastShape bcast(SmallVector<int64_t>(a.begin(), a.end()),
+                       SmallVector<int64_t>(b.begin(), b.end()),
+                       /*fewerDimsOptimization=*/false);
 
   if (bcast.isValid())
     return TensorShape(bcast.getResultShape());
@@ -204,7 +204,7 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
   reverse(output);
 }
 
-M::BCast::BCast(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
-                bool fewerDimsOptimization)
+M::BroadcastShape::BroadcastShape(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
+                                  bool fewerDimsOptimization)
     : BCastList<2>(SmallVector<ArrayRef<int64_t>, 2>({x, y}),
                    fewerDimsOptimization) {}
