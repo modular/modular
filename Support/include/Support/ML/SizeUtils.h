@@ -7,19 +7,31 @@
 // Helpers for working with size, alignment and dimension values at both
 // compile time and runtime using various encoding strategies.
 //
-// At compile time we have three representations:
-//  - Optional<uint64_t> (aka 'clean form'), where none denotes 'unknown', and
-//    the value cannot be zero. This is most convenient in the compiler.
-//  - uint64_t (aka 'raw form'), where ~0 denotes 'unknown', and the value
-//    cannot be zero. This is a BEF-friendly representation, since BEF has
-//    no support for optional attributes.
+// At compile time we have four (!) representations:
+//  - uint64_t (aka 'plain form'), where the value cannot be zero or the
+//    sentinel used by the raw form. This is the representation to use both
+//    at compile time and at runtime when you just want a size_t like value
+//    which can never be 'unknown'. It can transition to BEF attributes
+//    directly.
+//  - Optional<uint64_t> (aka 'optional form'), where none denotes 'unknown',
+//    and the value cannot be zero or the sentinel used by the raw form.
+//    This is the representation to use at compile time when you need a size_t
+//    which could also be 'unknown'. However, it cannot transition to BEF
+//    attributes, which requires the use of the 'raw form' below.
+//  - uint64_t (aka 'raw form'), where +max denotes 'unknown', and the value
+//    cannot be zero. This is the representation to use when transitioning to
+//    BEF attributes since they cannot represent the Optional none value.
 //  - int64_t (aka 'raw signed form'), where the MLIR ShapedType::kDynamicSize
 //    value denotes 'unknown', and the value must otherwise be strictly
-//    positive. This matches the MLIR ShapedType convention, except we consider
-//    0 illegal.
+//    positive. This is the representation already chosen by the MLIR
+//    ShapedType interface, and is ubiquitous in MLIR dialects. Use this
+//    representation when interfacing with other dialects via ShapedType.
+//    Note that many runtimes also use a signed integer for dimensions, however
+//    tend to use -1 to denote 'unknown', so be careful.
 //
-// At run time we have the representation:
-//  - size_t (aka 'runtime form'), where ~0 denotes 'unknown'.
+// At run time we have the single representation:
+//  - size_t (aka 'runtime form'), where +max denotes 'unknown' and the value
+//    cannot be zero.
 // (However note the MLIR index type is represented as ssize_t at runtime.)
 //
 // The utilities here help validate and translate these encodings.
@@ -38,20 +50,29 @@
 namespace M {
 
 /// Denotes an unknown size in the 'raw form' encoding.
-constexpr uint64_t kUnknownSize = ~0;
+constexpr uint64_t kUnknownSize = std::numeric_limits<uint64_t>::max();
 
 /// Denotes an unknown size in the 'raw signed form' encoding.
 /// Copied from ShapedType::kDynamicSize so as to avoid dependency.
 constexpr int64_t kUnknownSignedSize = std::numeric_limits<int64_t>::min();
 
 /// Denotes an unknown size in the 'runtime form' encoding.
-constexpr size_t kRuntimeUnknownSize = ~0;
+constexpr size_t kRuntimeUnknownSize = std::numeric_limits<size_t>::max();
 
-/// Returns true if size in clean form is specified.
-inline bool hasSize(Optional<uint64_t> size) { return size.has_value(); }
+/// Returns true if size in plain form is valid.
+inline bool isValidPlainSize(uint64_t size) {
+  return size > 0 && size != kUnknownSize;
+}
 
-/// Returns true if size in clean from is valid.
-inline bool isValidSize(Optional<uint64_t> size) { return !size || *size > 0; }
+/// Returns true if size in optional form is specified.
+inline bool hasOptSize(Optional<uint64_t> optSize) {
+  return optSize.has_value();
+}
+
+/// Returns true if size in optional form is valid.
+inline bool isValidOptSize(Optional<uint64_t> optSize) {
+  return !optSize || isValidPlainSize(*optSize);
+}
 
 /// Returns true if size in raw form is specified.
 inline bool hasRawSize(uint64_t rawSize) { return rawSize != kUnknownSize; }
@@ -71,53 +92,79 @@ inline bool isValidRawSignedSize(int64_t rawSignedSize) {
   return rawSignedSize == kUnknownSignedSize || rawSignedSize > 0;
 }
 
-/// Translates size from clean form to raw form.
+/// Returns true if size in runtime form is specified.
+inline bool hasRuntimeSize(size_t runtimeSize) {
+  return runtimeSize != kRuntimeUnknownSize;
+}
+
+/// Returns true if size in runtime form is valid.
+inline bool isValidRuntimeSize(size_t runtimeSize) {
+  return runtimeSize == kRuntimeUnknownSize || runtimeSize > 0;
+}
+
+/// Translates size from optional form to raw form.
 /// We assert check for validity, so there's no checking in release builds.
-inline uint64_t asRawSize(Optional<uint64_t> size) {
-  assert(isValidSize(size) && "invalid size");
-  if (!size)
+inline uint64_t optSizeToRawSize(Optional<uint64_t> optSize) {
+  assert(isValidOptSize(optSize) && "invalid optional size");
+  if (!optSize)
     return kUnknownSize;
-  assert(*size != kUnknownSize && "cannot represent size as raw size");
-  return *size;
+  assert(*optSize != kUnknownSize &&
+         "cannot represent optional size as raw size");
+  return *optSize;
 }
 
-/// Translates size from clean form to raw signed form.
+/// Translates size from optional form to raw signed form.
 /// We assert check for validity, so there's no checking in release builds.
-inline int64_t asRawSignedSize(Optional<uint64_t> size) {
-  assert(isValidSize(size) && "invalid size");
-  if (!size)
+inline int64_t optSizeToRawSignedSize(Optional<uint64_t> optSize) {
+  assert(isValidOptSize(optSize) && "invalid optional size");
+  if (!optSize)
     return kUnknownSignedSize;
-  assert(*size != kUnknownSize && "cannot represent size as raw size");
-  assert(*size <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) &&
-         "size is too large to represent in signed form");
-  return static_cast<int64_t>(*size);
+  assert(*optSize != kUnknownSize &&
+         "cannot represent optional size as raw size");
+  assert(*optSize <=
+             static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) &&
+         "optional size is too large to represent in signed form");
+  return static_cast<int64_t>(*optSize);
 }
 
-/// Translates size from raw form to clean form.
+/// Translates size from raw form to optional form.
 /// We assert check for validity, so there's no checking in release builds.
-inline Optional<uint64_t> asCleanSize(uint64_t rawSize) {
+inline Optional<uint64_t> rawSizeToOptSize(uint64_t rawSize) {
   assert(isValidRawSize(rawSize) && "invalid raw form size");
   return rawSize == kUnknownSize ? Optional<uint64_t>() : rawSize;
 }
 
 /// Translates size from raw signed form to clean form.
 /// We assert check for validity, so there's no checking in release builds.
-inline Optional<uint64_t> asCleanSize(int64_t rawSignedSize) {
+inline Optional<uint64_t> rawSignedSizeToOptSize(int64_t rawSignedSize) {
   assert(isValidRawSignedSize(rawSignedSize) && "invalid raw form size");
   return rawSignedSize == kUnknownSignedSize
              ? Optional<uint64_t>()
              : static_cast<uint64_t>(rawSignedSize);
 }
 
+/// Translates size from plain form to runtime form.
+/// We assert check for validity and no overflow, so there's no checking in
+/// release builds.
+inline size_t plainSizeToRuntimeSize(uint64_t size) {
+  assert(isValidPlainSize(size) && "invalid plain form size");
+  assert(size <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
+         "size in plain form is too large to represent in runtime form");
+  size_t runtimeSize = static_cast<size_t>(size);
+  assert(runtimeSize != kRuntimeUnknownSize &&
+         "cannot represent plain size in runtime form");
+  return runtimeSize;
+}
+
 /// Translates size from raw form to runtime form.
 /// We assert check for validity and no overflow, so there's no checking in
 /// release builds.
-inline size_t asRuntimeSize(uint64_t rawSize) {
-  assert(isValidSize(rawSize) && "invalid raw form size");
+inline size_t rawSizeToRuntimeSize(uint64_t rawSize) {
+  assert(isValidRawSize(rawSize) && "invalid raw form size");
   if (rawSize == kUnknownSize)
     return kRuntimeUnknownSize;
   assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
-         "raw size is too large to represent in runtime form");
+         "size in raw form is too large to represent in runtime form");
   size_t runtimeSize = static_cast<size_t>(rawSize);
   assert(runtimeSize != kRuntimeUnknownSize &&
          "cannot represent raw size in runtime form");
@@ -127,21 +174,22 @@ inline size_t asRuntimeSize(uint64_t rawSize) {
 /// Translates size from raw form to runtime form. If the raw form is the
 /// distinguished unknown value the defaultSize is returned.
 /// We assert check for validity, so there's no checking in release builds.
-inline size_t asRuntimeSizeOrDefault(uint64_t rawSize, size_t defaultSize) {
-  assert(isValidSize(rawSize) && "invalid raw form size");
+inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
+                                            size_t defaultSize) {
+  assert(isValidRawSize(rawSize) && "invalid raw form size");
   if (rawSize == kUnknownSize)
     return defaultSize;
   assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
-         "raw size too large to represent in runtime form");
+         "size in raw form too large to represent in runtime form");
   size_t runtimeSize = static_cast<size_t>(rawSize);
   assert(runtimeSize != kRuntimeUnknownSize &&
          "cannot represent raw size in runtime form");
   return static_cast<size_t>(rawSize);
 }
 
-/// Returns true if align in clean form is valid.
-inline bool isValidAlign(Optional<uint64_t> align) {
-  return !align || llvm::isPowerOf2_64(*align);
+/// Returns true if align in optional form is valid.
+inline bool isValidOptAlign(Optional<uint64_t> optAlign) {
+  return !optAlign || llvm::isPowerOf2_64(*optAlign);
 }
 
 /// Returns true if align in raw form is valid.
@@ -149,15 +197,15 @@ inline bool isValidRawAlign(uint64_t rawAlign) {
   return rawAlign == kUnknownSize || llvm::isPowerOf2_64(rawAlign);
 }
 
-/// Translates align in clean form to it's llvm::MaybeAlign
+/// Translates align in optional form to it's llvm::MaybeAlign
 /// representation. We assert check for validity (inside llvm::Align), so
 /// there's no checking in release builds.
-inline llvm::MaybeAlign asMaybeAlign(Optional<uint64_t> align) {
-  return llvm::MaybeAlign(align.value_or(0));
+inline llvm::MaybeAlign optAlignToMaybeAlign(Optional<uint64_t> optAlign) {
+  return llvm::MaybeAlign(optAlign.value_or(0));
 }
 
-/// Translates align in llvm::MaybeAlign form to it's clean representation.
-inline Optional<uint64_t> fromMaybeAlign(llvm::MaybeAlign align) {
+/// Translates align in llvm::MaybeAlign form to it's optional form.
+inline Optional<uint64_t> maybeAlignToOptAlign(llvm::MaybeAlign align) {
   return align ? align->value() : Optional<uint64_t>();
 }
 
