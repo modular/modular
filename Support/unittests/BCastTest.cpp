@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Kernels/Support/BroadcastingUtils.h"
+#include "Support/ML/BCast.h"
 #include "Support/ML/TensorShape.h"
 
 #include "gtest/gtest.h"
