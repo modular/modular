@@ -444,18 +444,20 @@ static AnyValue emitFunctionCall(const CallNode &call, RValue calleeVal,
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
 static MValue emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
+                                ArrayRef<ParamBindAttr> bindings, SMLoc loc,
                                 ExprEmitter &emitter) {
-  // SymbolConstantAttr provides a type for the SymbolRefAttr.
-  auto fnAttr =
-      SymbolConstantAttr::get(fnDecl.getSymbolRef(), fnOp.getSignature());
-  return MValue(fnAttr);
+  // SymbolConstantAttr provides a type for the SymbolRefAttr with the
+  // parameters substituted in.
+  return MValue(SymbolConstantAttr::get(
+      fnDecl.getSymbolRef(),
+      ParamBindArrayAttr::get(emitter.getContext(), bindings),
+      fnOp.getSignature()));
 }
 
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
-/// TODO: This should take the parameters on the enclosing decl being referenced
-/// to support things like SomeType[42].member()
 static AnyValue emitDeclMemberReference(ASTDecl &container,
+                                        ArrayRef<ParamBindAttr> bindings,
                                         StringRef memberName, SMLoc loc,
                                         ExprEmitter &emitter,
                                         ASTType implicitDeclType = {}) {
@@ -479,7 +481,7 @@ static AnyValue emitDeclMemberReference(ASTDecl &container,
 
   // Functions form an address.
   if (auto fnOp = dyn_cast<LITFuncOp>(*decl))
-    return emitFuncReference(fnOp, *decl, emitter);
+    return emitFuncReference(fnOp, *decl, bindings, loc, emitter);
 
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl->getIfRValue())
@@ -521,7 +523,8 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
           *lookupResult, DeclResolvedness::signatureResolved, callLoc)))
     return {};
   MValue callee =
-      emitFuncReference(cast<LITFuncOp>(*lookupResult), *lookupResult, *this);
+      emitFuncReference(cast<LITFuncOp>(*lookupResult), *lookupResult,
+                        type.getParamBindings(), callLoc, *this);
   assert(callee && "always succeeds");
   return emitFunctionCall(RValue(callee), operands, callLoc, *this);
 }
@@ -595,8 +598,8 @@ AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
 
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
                              ASTType contextualType) const {
-  return emitDeclMemberReference(emitter.declScope, spelling, getLoc(), emitter,
-                                 contextualType);
+  return emitDeclMemberReference(emitter.declScope, /*no param bindings*/ {},
+                                 spelling, getLoc(), emitter, contextualType);
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
@@ -630,11 +633,13 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     }
 
     // Normal member reference.
-    return emitDeclMemberReference(*typeDecl, attrSpelling, getLoc(), emitter);
+    return emitDeclMemberReference(*typeDecl, baseType.getParamBindings(),
+                                   attrSpelling, getLoc(), emitter);
   }
 
   // Otherwise, it must be an access to a field of a value.
-  ASTDecl *typeDecl = baseVal.getRValueType().getDecl(emitter.shared);
+  ASTType baseRVType = baseVal.getRValueType();
+  ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "MLIR type ")
         << ASTType(baseVal.getType()) << " has no attributes";
@@ -698,7 +703,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
   // Handle method references.
   if (auto fnOp = dyn_cast<LITFuncOp>(*memberDecl)) {
     // Get a symbol for the underlying function.
-    MValue fnRef = emitFuncReference(fnOp, *memberDecl, emitter);
+    MValue fnRef = emitFuncReference(
+        fnOp, *memberDecl, baseRVType.getParamBindings(), getLoc(), emitter);
     assert(fnRef && "always succeeds");
 
     // If the callee is a static method, we can directly reference it without
@@ -794,7 +800,8 @@ static AnyValue emitInitializerCall(const CallNode &call, ASTType calledType,
     return {};
 
   auto newMemberVal =
-      emitDeclMemberReference(*calledDecl, "__new__", call.getLoc(), emitter);
+      emitDeclMemberReference(*calledDecl, calledType.getParamBindings(),
+                              "__new__", call.getLoc(), emitter);
   return emitFunctionCall(call, emitter.emitRValue(newMemberVal, call.getLoc()),
                           emitter);
 }

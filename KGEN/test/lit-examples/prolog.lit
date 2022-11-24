@@ -361,7 +361,17 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
     result.value = value
     return result
 
+  # CHECK-LABEL: lit.func @__add__(%self: !kgen.litdeclref<@Scalar2<type: dtype = type>>,
   fn __add__(self, rhs: Scalar2[type]) -> Scalar2[type]:
-    var result : Scalar2[type]
-    return result
-    #return Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
+    # CHECK: %0 = lit.struct.extract %self[value] : !pop.scalar<type> from <@Scalar2<type: dtype = type>>
+    # CHECK: %1 = lit.struct.extract %rhs[value] : !pop.scalar<type> from <@Scalar2<type: dtype = type>>
+    # CHECK: %2 = pop.add %0, %1 : !pop.scalar<type>
+    # CHECK: %3 = kgen.call_param[(!pop.scalar<type>) -> !kgen.litdeclref<@Scalar2<type: dtype = type>>: @Scalar2::@__new__<type: dtype = type>](%2)
+    # CHECK: kgen.return %3 : !kgen.litdeclref<@Scalar2<type: dtype = type>>
+    return  Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
+
+  fn __sub__(self, rhs: Scalar2[type]) -> Scalar2[type]:
+    return Scalar2[type](__mlir_op.`pop.sub`(self.value, rhs.value))
+
+  fn __mul__(self, rhs: Scalar2[type]) -> Scalar2[type]:
+    return Scalar2[type](__mlir_op.`pop.mul`(self.value, rhs.value))

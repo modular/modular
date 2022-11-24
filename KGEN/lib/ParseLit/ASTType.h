@@ -15,6 +15,10 @@
 #include "mlir/IR/Types.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
 
+namespace M::KGEN {
+class ParamBindAttr;
+}
+
 namespace M::KGEN::LIT {
 class ASTDecl;
 class LitSharedState;
@@ -41,6 +45,11 @@ public:
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type, return null.
   ASTDecl *getDecl(LitSharedState &shared) const;
+
+  /// If this is a parametric user defined type, return all parameter bindings
+  /// on this reference to the type.  Note that this is potentially a partial
+  /// binding set - incomplete bindings (missing bindings) are valid.
+  ArrayRef<ParamBindAttr> getParamBindings() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
