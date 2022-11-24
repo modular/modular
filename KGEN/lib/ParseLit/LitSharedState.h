@@ -54,8 +54,6 @@ public:
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
 
-  ASTDecl &getMLIRTypeScope() const; // decl for __mlir_type.
-
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
@@ -98,8 +96,7 @@ public:
     return ArrayRef<T>(result, elements.size());
   }
 
-  /// Add declarations for magic things to the builtins decl when parsing
-  /// starts.
+  /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl, llvm::SMLoc smLoc);
 
 private:
@@ -126,17 +123,6 @@ enum class DeclResolvedness : int8_t {
   /// This declaration has been fully type checked, including its body.  Any
   /// declarations within the body may not be fully resolved though.
   fullyResolved
-};
-
-/// This keeps track of specific kinds of "magic" declarations that do not have
-/// a standard AST representation.
-enum class MagicDeclKind : uint8_t {
-  // This is not a magic declaration, process it as normal.
-  kNormal,
-
-  k__mlir_type, // __mlir_type declaration.
-  k__mlir_op,   // __mlir_op declaration.
-  k__mlir_attr, // __mlir_attr declaration.
 };
 
 } // namespace M::KGEN::LIT

@@ -54,10 +54,6 @@ public:
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
 
-  /// Return true if this is a "magic" declaration that has custom lowering,
-  /// and possibly no IR representation.
-  bool isMagic() const { return magicKind != MagicDeclKind::kNormal; }
-
   Location getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 
@@ -147,8 +143,6 @@ public:
   /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
   /// every reference to 'x' because the type will be bogus.
   bool hasReferenceError = false;
-
-  MagicDeclKind magicKind = MagicDeclKind::kNormal;
 
   /// For LitFuncOp declarations, this indicates whether it was defined with a
   /// 'def' keyword.  False means it was defined as a 'fn'.

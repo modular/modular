@@ -34,9 +34,6 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
 
-  /// This is the __mlir_type declaration.
-  ASTDecl *mlirTypeDecl = nullptr;
-
   // These should move the standard library and be looked up from there on
   // demand.
 
@@ -94,9 +91,6 @@ Location LitSharedState::translateLocation(SMLoc loc) const {
                              lineAndColumn.second);
 }
 
-ASTDecl &LitSharedState::getMLIRTypeScope() const {
-  return *impl->mlirTypeDecl;
-}
 ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
@@ -110,40 +104,35 @@ ASTType LitSharedState::getObjectType() const {
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   auto &resolver = *declResolver;
 
-  /// FIXME: These should be a user declared types in the standard library,
-  /// which are looked up here instead of being synthesized.
-  auto b = builtinsDecl.getDeclEndBuilder();
-  auto loc = builtinsDecl.getLoc();
-
-  // Given a LITStructDeclOp that is completely initialized, add it to the
-  // resolver.
-  auto addCompletedStructDecl = [&](LITStructDeclOp structOp, ASTDecl *&decl) {
-    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
-                             LitLexerCursor(), LitLexerCursor(), 0);
-    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
-    decl->resolvedness = DeclResolvedness::fullyResolved;
-  };
-
-  auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
-    auto structOp = b.create<LITStructDeclOp>(loc, b.getStringAttr(name));
-    addCompletedStructDecl(structOp, decl);
-  };
-
-  addEmptyStructDecl("__mlir_type", impl->mlirTypeDecl);
-  impl->mlirTypeDecl->magicKind = MagicDeclKind::k__mlir_type;
-
-  ASTDecl *mlirOpDecl = nullptr, *mlirAttrDecl = nullptr;
-  addEmptyStructDecl("__mlir_op", mlirOpDecl);
-  mlirOpDecl->magicKind = MagicDeclKind::k__mlir_op;
-  addEmptyStructDecl("__mlir_attr", mlirAttrDecl);
-  mlirAttrDecl->magicKind = MagicDeclKind::k__mlir_attr;
-
   // Add a declarations for builtin types.
   impl->noneType = KGEN::NoneType::get(context);
 
   // Make the error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
+
+  auto b = builtinsDecl.getDeclEndBuilder();
+  auto loc = builtinsDecl.getLoc();
+
+  // Add an empty struct with the specified name to the resolver.
+  auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
+    auto structOp = b.create<LITStructDeclOp>(loc, b.getStringAttr(name));
+    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
+                             LitLexerCursor(), LitLexerCursor(), 0);
+    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
+    decl->resolvedness = DeclResolvedness::fullyResolved;
+  };
+
+  ASTDecl *mlirAttrDecl = nullptr, *mlirOpDecl = nullptr,
+          *mlirTypeDecl = nullptr;
+  addEmptyStructDecl("__mlir_attr", mlirAttrDecl);
+  mlirAttrDecl->setResolvedType(MagicMLIRAttrType::get(context));
+
+  addEmptyStructDecl("__mlir_op", mlirOpDecl);
+  mlirOpDecl->setResolvedType(MagicMLIROpType::get(context));
+
+  addEmptyStructDecl("__mlir_type", mlirTypeDecl);
+  mlirTypeDecl->setResolvedType(MagicMLIRTypeType::get(context));
 
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.

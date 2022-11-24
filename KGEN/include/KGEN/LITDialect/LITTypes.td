@@ -64,4 +64,21 @@ def LITNoneType : LITType<"None", "none"> {
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// Types for magic declarations.
+//===----------------------------------------------------------------------===//
+
+def MagicMLIRAttrType : LITType<"MagicMLIRAttr", "magic.__mlir_attr"> {
+  let summary = "Type of the __mlir_attr declaration";
+}
+
+def MagicMLIROpType : LITType<"MagicMLIROp", "magic.__mlir_op"> {
+  let summary = "Type of the __mlir_op declaration";
+}
+
+def MagicMLIRTypeType : LITType<"MagicMLIRType", "magic.__mlir_type"> {
+  let summary = "Type of the __mlir_type declaration";
+}
+
 #endif // KGEN_LITDIALECT_LITTYPES_TD
