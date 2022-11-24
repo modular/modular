@@ -617,19 +617,18 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
       return {};
     }
 
-    // Handle __mlir_op.`xxx` references.
-    if (typeDecl->magicKind == MagicDeclKind::k__mlir_op)
-      return synthesizeMLIROpFromString(attrSpelling, emitter);
-    // Handle __mlir_attr.`xxx` references.
-    if (typeDecl->magicKind == MagicDeclKind::k__mlir_attr)
-      return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
-    // If this is a lookup in __mlir_type, then try to lazily synthesize the
-    // element in question.
-    if (typeDecl->magicKind == MagicDeclKind::k__mlir_type) {
-      Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
-      if (!result)
-        return {};
-      return result;
+    // Handle __mlir_op.`xxx` references, lazily synthesizing values when
+    // they are referenced.
+    if (typeDecl->resolvedness == DeclResolvedness::fullyResolved) {
+      auto resolvedMLIRType = typeDecl->getResolvedType().mlirType;
+      if (isa<MagicMLIRAttrType>(resolvedMLIRType))
+        return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
+      if (isa<MagicMLIROpType>(resolvedMLIRType))
+        return synthesizeMLIROpFromString(attrSpelling, emitter);
+      if (isa<MagicMLIRTypeType>(resolvedMLIRType)) {
+        Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
+        return result ? AnyValue(result) : AnyValue();
+      }
     }
 
     // Normal member reference.
