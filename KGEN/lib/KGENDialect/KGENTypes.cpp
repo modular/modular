@@ -138,7 +138,7 @@ SignatureType SignatureType::getSpecializedSignature(
   if (inputParamValues.size() != getInputParams().size()) {
     emitErrorFn() << "caller has " << inputParamValues.size()
                   << " input parameters but callee expects "
-                  << getInputParams().size();
+                  << getInputParams().size() << "; signature is " << *this;
     return SignatureType();
   }
 
