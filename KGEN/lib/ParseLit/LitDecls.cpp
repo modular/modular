@@ -289,7 +289,6 @@ namespace {
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
-  SmallVector<ASTType> inputASTTypes;
   std::vector<Location> inputLocs;
 
   ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
@@ -311,7 +310,6 @@ struct ParsedMetaSignature {
           p.parseType(paramType, decl, None))
         return failure();
       inputDecls.push_back(ParamDeclAttr::get(name, paramType));
-      inputASTTypes.push_back(paramType);
       return success();
     };
 
@@ -325,13 +323,11 @@ struct ParsedMetaSignature {
   /// specified scope for the declaration, so name lookup will find them.
   void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
-    // TODO: Use inputTypes.
-    for (auto [paramDecl, type, loc] :
-         llvm::zip(inputDecls, inputASTTypes, inputLocs)) {
+    for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs)) {
       auto paramRef =
           ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
       declResolver.addFullyResolvedDecl(MValue(paramRef), paramDecl.getName(),
-                                        loc, type, &decl);
+                                        loc, paramDecl.getType(), &decl);
     }
   }
 };
@@ -550,6 +546,18 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   if (metaSignature.parseOptionalMetaSignature(p, decl) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
+
+  // Add meta parameters from an enclosing declaration to the symbol table.
+  // These are /in/ our current scope because we do not want name conflicts with
+  // them and they are instance (not type-level) values.
+  // TODO: Generalize this to support nested structs and functions.
+  if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl.getParentDecl())) {
+    for (auto param : structDecl.getParamDecls()) {
+      auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
+      addFullyResolvedDecl(MValue(paramRef), param.getName(),
+                           structDecl->getLoc(), param.getType(), &decl);
+    }
+  }
 
   // Add the meta parameters to the symbol table.  We add all of these after
   // generic signature parsing so types used in the signature list resolve to
