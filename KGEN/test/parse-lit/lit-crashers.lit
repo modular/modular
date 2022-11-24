@@ -1,0 +1,7 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s
+
+struct Crash1[XXX: __mlir_type.index]:
+  fn __new__(a: __mlir_type.f32)
+
+  # expected-error @+1 {{expected ':' in function definition}}
+  fn f():

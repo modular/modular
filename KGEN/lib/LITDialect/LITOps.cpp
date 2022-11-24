@@ -107,8 +107,13 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void LITFuncOp::build(OpBuilder &builder, OperationState &result,
                       StringAttr name) {
   auto context = builder.getContext();
-  auto functionType =
-      builder.getFunctionType(ArrayRef<Type>(), ArrayRef<Type>());
+
+  // Before resolution, we treat the function as having type ()->Error,
+  // because parse or other errors forming the signature won't update the
+  // representation.  This makes sure that the error case doesn't break
+  // invariants (that functions always have a single result).
+  auto errorType = builder.getType<TypeCheckErrorType>();
+  auto functionType = builder.getFunctionType(ArrayRef<Type>(), {errorType});
   build(builder, result, name, StringArrayAttr::get(context, {}),
         TypeAttr::get(functionType), ParamDeclArrayAttr::get(context, {}),
         TypeArrayAttr::get(context, {}), ConstraintArrayAttr::get(context, {}),
