@@ -11,6 +11,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/CodeGen.h"
+#include "llvm/Support/ErrorHandling.h"
 
 namespace M::KGEN {
 /// This class provides a set of options used to control the compilation of
@@ -67,6 +68,7 @@ struct CompilationOptions {
     case kFullDebugInfo:
       return DebugInfo::EmissionKind::Full;
     }
+    llvm_unreachable("unhandled debug level");
   }
 
   unsigned optimizationLevel : 2;
