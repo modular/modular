@@ -1322,8 +1322,11 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     // If this variable is being declared in a `def` definition, then we allow
     // implicit declarations of variables.  In `fn` and top level, we do not.
     ASTType lhsContextualType;
-    if (emitter.declScope.isDef)
-      lhsContextualType = rhsRep.getType();
+    if (auto funcContext =
+            dyn_cast_or_null<LITFuncOp>(emitter.declScope.getIfOperation())) {
+      if (funcContext.getIsDef())
+        lhsContextualType = rhsRep.getType();
+    }
 
     // Emit the LHS pattern as an lvalue.
     auto lhsLV = emitter.emitLValue(lhs, lhsContextualType,

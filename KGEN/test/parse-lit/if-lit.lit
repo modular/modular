@@ -2,8 +2,8 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @test_if(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>, %c: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool> {
-def test_if(a: Bool, b: Bool, c: Bool) -> Bool:
+# CHECK-LABEL: lit.func @test_if(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>, %c: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool>
+fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   # CHECK:          hlcf.if
   if a:
     # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
@@ -33,9 +33,8 @@ def test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.func @test_if_nested(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>, %c: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool> {
-def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-  #CHECK:        %[[LOAD_A:.*]] = pop.load %a_0
-  #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%[[LOAD_A]])
+fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
+  #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%a)
   #CHECK-NEXT:   %[[LIT_BOOL:.*]]  = kgen.call_param{{.*}}  @Bool::@__lit_bool](%[[BOOL]])
   # CHECK-NEXT:              hlcf.if %[[LIT_BOOL]]
   if a:

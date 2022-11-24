@@ -654,19 +654,18 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   if (attrs.isStatic)
     funcDecl.setIsStaticAttr(mlir::UnitAttr::get(getContext()));
 
+  // Remember if this was declared as a 'def' or 'fn' because this affects
+  // certain downstream behavior.
+  if (isDef)
+    funcDecl.setIsDefAttr(mlir::UnitAttr::get(getContext()));
+
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  auto &decl =
-      getDeclResolver().addDecl(funcDecl, baseName, &containingDecl,
-                                startCursor, getLexer().getCursor(), curIndent);
-
-  // Remember if this was declared as a 'def' or 'fn' because this affects
-  // certain downstream behavior.
-  decl.isDef = isDef;
-
+  getDeclResolver().addDecl(funcDecl, baseName, &containingDecl, startCursor,
+                            getLexer().getCursor(), curIndent);
   return success();
 }
 
