@@ -313,11 +313,6 @@ struct F32:
 # WIP Types
 #===------------------------------------------------------------------------===#
 
-# TODO: Enable this with & sugar on 'type' type.
-struct Pointer[ElementType: __mlir_type.`!kgen.mlirtype`]:
-  pass
-
-
 # NOTE: This would be more naturally modeled as an enum, but this works for now.
 struct DType:
   var value : __mlir_type.`!kgen.dtype`
@@ -357,13 +352,16 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
   # CHECK: %value = lit.var.decl "value" : <scalar<type>>
   var value: __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[type]
 
+  # CHECK-LABEL:  lit.func @__new__(%value_0: !pop.scalar<type>) -> !kgen.litdeclref<@Scalar2<type: dtype = type>> attributes {isStatic}
   fn __new__(value: __mlir_type.`!pop.scalar<type>`) -> Scalar2[type]:
+    # CHECK: %result = lit.var.decl "result" : <@Scalar2<type: dtype = type>?>
     var result: Scalar2[type]
-    # TODO.
+    # CHECK: %0 = lit.struct.gep %result[value] : <scalar<type>> from <@Scalar2<type: dtype = type>?>
+    # CHECK: pop.store %value_0, %0 : !pop.pointer<scalar<type>>
+    result.value = value
     return result
 
   fn __add__(self, rhs: Scalar2[type]) -> Scalar2[type]:
     var result : Scalar2[type]
-    # TODO: Need proper parameterization support.
     return result
     #return Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
