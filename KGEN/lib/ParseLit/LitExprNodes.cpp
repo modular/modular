@@ -602,41 +602,50 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
                                  spelling, getLoc(), emitter, contextualType);
 }
 
+/// Emit an expression 'x.y' where x is known to be a Type value.
+static AnyValue emitTypeAttributeRef(ASTType baseType,
+                                     const AttributeRefNode &node,
+                                     ExprEmitter &emitter) {
+  auto attrSpelling = node.attrSpelling;
+  auto loc = node.getLoc();
+
+  ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
+  if (!typeDecl) {
+    emitter.emitError(loc, "MLIR type ") << baseType << " has no attributes";
+    return {};
+  }
+
+  // Handle __mlir_op.`xxx` references, lazily synthesizing values when
+  // they are referenced.
+  if (typeDecl->resolvedness == DeclResolvedness::fullyResolved) {
+    auto resolvedMLIRType = typeDecl->getResolvedType().mlirType;
+    if (isa<MagicMLIRAttrType>(resolvedMLIRType))
+      return synthesizeMLIRAttrFromString(attrSpelling, loc, emitter);
+    if (isa<MagicMLIROpType>(resolvedMLIRType))
+      return synthesizeMLIROpFromString(attrSpelling, emitter);
+    if (isa<MagicMLIRTypeType>(resolvedMLIRType)) {
+      Type result = parseMLIRType(attrSpelling, loc, emitter.shared);
+      return result ? AnyValue(result) : AnyValue();
+    }
+  }
+
+  // Normal member reference.
+  return emitDeclMemberReference(*typeDecl, baseType.getParamBindings(),
+                                 attrSpelling, loc, emitter);
+}
+
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
                                   ASTType contextualType) const {
   auto baseVal = base->emitIR(emitter);
   if (!baseVal)
     return {};
 
-  // Handle member references on types.
-  if (ASTType baseType = baseVal.getIfTypeValue()) {
-    ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
-    if (!typeDecl) {
-      emitter.emitError(getLoc(), "MLIR type ")
-          << baseType << " has no attributes";
-      return {};
-    }
+  // Handle member references on types, like Int.member.
+  if (ASTType baseType = baseVal.getIfTypeValue())
+    return emitTypeAttributeRef(baseType, *this, emitter);
 
-    // Handle __mlir_op.`xxx` references, lazily synthesizing values when
-    // they are referenced.
-    if (typeDecl->resolvedness == DeclResolvedness::fullyResolved) {
-      auto resolvedMLIRType = typeDecl->getResolvedType().mlirType;
-      if (isa<MagicMLIRAttrType>(resolvedMLIRType))
-        return synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter);
-      if (isa<MagicMLIROpType>(resolvedMLIRType))
-        return synthesizeMLIROpFromString(attrSpelling, emitter);
-      if (isa<MagicMLIRTypeType>(resolvedMLIRType)) {
-        Type result = parseMLIRType(attrSpelling, getLoc(), emitter.shared);
-        return result ? AnyValue(result) : AnyValue();
-      }
-    }
-
-    // Normal member reference.
-    return emitDeclMemberReference(*typeDecl, baseType.getParamBindings(),
-                                   attrSpelling, getLoc(), emitter);
-  }
-
-  // Otherwise, it must be an access to a field of a value.
+  // Otherwise, it must be an access to a field of a value.  Emit the value as
+  // an rvalue.
   ASTType baseRVType = baseVal.getRValueType();
   ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
   if (!typeDecl) {
@@ -661,8 +670,6 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
 
   // If the field is a variable, emit a reference to it.
   if (auto varOp = dyn_cast<VarDeclOp>(*memberDecl)) {
-    auto varASTType = memberDecl->getResolvedType();
-
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
       if (!emitter.builder) {
@@ -691,6 +698,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
                         "TODO: cannot access member in parameter context");
       return {};
     }
+
+    auto varASTType = memberDecl->getResolvedType();
 
     // TODO(Issue #4321): Perform parameter substitution
     Value resultVal = emitter.builder->create<LITStructExtractOp>(

@@ -26,7 +26,11 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ReturnOp LITFuncOp::getReturnOp() {
-  return cast<ReturnOp>(getBody()->getTerminator());
+  // Tolerate malformed IR because this is used by the printer.
+  Block *body = getBody();
+  if (body && !body->empty())
+    return dyn_cast_or_null<ReturnOp>(&body->back());
+  return {};
 }
 
 /// Parses a LIT Generator.
@@ -57,20 +61,28 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   bool isInterface = getIsInterface();
   Block *body = getBody();
-  if (!isInterface && body->empty())
-    return emitOpError("expected non-empty function body");
 
-  if (isInterface && !body->empty())
-    return emitOpError("expected empty function body");
+  if (isInterface) {
+    if (!body->empty())
+      return emitOpError("expected empty function body");
 
-  if (isInterface && getImplements().has_value())
-    return emitOpError("@interface and @implements decorators "
-                       "cannot be set at the same time");
+    if (getImplements().has_value())
+      return emitOpError("@interface and @implements decorators "
+                         "cannot be set at the same time");
+  } else {
+    if (body->empty())
+      return emitOpError("expected non-empty function body");
 
-  // Check result types match the ReturnOp.
-  if (!isInterface && failed(getReturnOp().checkArgumentTypes(
-                          getResultParamTypes(), {getResultTypes()})))
-    return failure();
+    // Verify the return operation if this is a non-interface.
+    auto returnOp = getReturnOp();
+    if (!returnOp)
+      return emitOpError("lit.func should have a return");
+
+    // Check result types match the ReturnOp.
+    if (failed(returnOp.checkArgumentTypes(getResultParamTypes(),
+                                           {getResultTypes()})))
+      return failure();
+  }
 
   // If this function is top-level, see if the parameter definitions and uses
   // within the generator are structured correctly.

@@ -439,14 +439,13 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `pop.fma` operation takes three `!pop.scalar` or `!pop.simd` types (`a`,
-    `b`, and `c`) and computes the fma operation `a * b + c`. The operand and
-    result types must be the same.
+    The `pop.fma` operation takes three `!pop.simd` types (`a`, `b`, and `c`)
+    and computes the fma operation `a * b + c`. The operand and result types
+    must be the same.
 
     Example:
 
     ```mlir
-    %d = pop.fma %a, %b, %c : !pop.scalar<type>
     %d = pop.fma %a, %b, %c : !pop.simd<size, type>
     ```
   }];
