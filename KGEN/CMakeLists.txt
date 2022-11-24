@@ -49,6 +49,21 @@ macro(_setup_libs)
   endforeach ()
 endmacro()
 
+# This function reads the CMAKE_BUILD_TYPE and sets up the KGEN optimization and
+# debug flags into KGEN_OPTIMIZATION_LEVEL and KGEN_DEBUG_LEVEL respectively.
+macro(_setup_debug_flags)
+  string(TOLOWER ${CMAKE_BUILD_TYPE} build_type)
+  set(KGEN_OPTIMIZATION_LEVEL 3)
+  set(KGEN_DEBUG_LEVEL "none")
+  if (build_type STREQUAL "debug")
+    set(KGEN_OPTIMIZATION_LEVEL 0)
+    set(KGEN_DEBUG_LEVEL "full")
+  elseif (build_type STREQUAL "relwithdebinfo")
+    set(KGEN_DEBUG_LEVEL "full")
+  endif()
+endmacro()
+
+
 # This function takes a target name, a single source file, and a list of
 # targets to link. It generates the pre-elaboration library files to be used
 # by other kgen files.
@@ -66,6 +81,7 @@ function(add_kgen_library target)
   cmake_parse_arguments(KGEN "SAVE_TEMPS" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
+  _setup_debug_flags()
 
   if (NOT KGEN_OUTPUT)
     set(KGEN_OUTPUT ${target}.lib.mlirbc)
@@ -76,6 +92,8 @@ function(add_kgen_library target)
     COMMAND $<TARGET_FILE:kgen>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
+      -O${KGEN_OPTIMIZATION_LEVEL}
+      -debug-level=${KGEN_DEBUG_LEVEL}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
   )
@@ -102,6 +120,7 @@ function(add_kgen_kernel target)
   cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
+  _setup_debug_flags()
 
   # If we built with MODULAR_KGEN_ENABLE_SEARCH=ON, then turn on
   # KGEN_ENABLE_SEARCH unconditionally.
@@ -127,6 +146,8 @@ function(add_kgen_kernel target)
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${object_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${object_file_name_rel}.d
+    -O${KGEN_OPTIMIZATION_LEVEL}
+    -debug-level=${KGEN_DEBUG_LEVEL}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name}.d
