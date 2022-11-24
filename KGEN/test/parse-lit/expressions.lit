@@ -172,7 +172,7 @@ z
   # CHECK-NEXT: kgen.return %[[TMP]]
   return x
 
-# CHECK-LABEL: lit.func @listValues() -> index {
+# CHECK-LABEL: lit.func @listValues() -> index attributes {isDef} {
 def listValues() -> __mlir_type.index:
   # CHECK:      %[[ONE:.*]] = {{.*}} 1
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
@@ -195,7 +195,7 @@ def listValues() -> __mlir_type.index:
   a = []
   return a
 
-# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.litdeclref<@Bool>) -> !lit.none {
+# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.litdeclref<@Bool>) -> !lit.none
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int?>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0

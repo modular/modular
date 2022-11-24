@@ -54,6 +54,7 @@ let description = [{
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
+                       UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region AnyRegion:$bodyRegion);
 

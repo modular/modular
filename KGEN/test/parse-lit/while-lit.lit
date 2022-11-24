@@ -2,7 +2,7 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @test_while(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool> {
+# CHECK-LABEL: lit.func @test_while(%a: !kgen.litdeclref<@Bool>, %b: !kgen.litdeclref<@Bool>) -> !kgen.litdeclref<@Bool>
 # CHECK:       %inside_a = lit.var.decl "inside_a"
 # CHECK:       %inside_b = lit.var.decl "inside_b"
 # CHECK:       %inside_else = lit.var.decl "inside_else"

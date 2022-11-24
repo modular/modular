@@ -418,21 +418,13 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 ///
 /// This returns failure after emitting an error when a type checking problem
 /// is detected.
-static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
+static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           ASTType &resultType,
                                           LitSharedState &shared) {
-  SpecialFunctionInfo fnInfo;
-  bool isStatic = false;
-
-  // We either have a function or interface.  Functions are more general and
-  // therefore have more checking to perform.
-  auto funcOp = dyn_cast<LITFuncOp>(op);
-  if (funcOp) {
-    fnInfo = SpecialFunctionInfo::get(funcOp.getName());
-    isStatic = funcOp.getIsStatic();
-  }
+  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(op.getName());
+  bool isStatic = op.getIsStatic();
 
   // If this definition is a struct/class member, return the self type
   // otherwise return a null type.
@@ -453,8 +445,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
     if (!selfType)
       return op->emitError("special function must be a method");
 
-    assert(funcOp && "Cannot have special function generators");
-    funcOp.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
+    op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
     isStatic = true;
   }
 
@@ -522,7 +513,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, Operation *op,
     if (!param.type) {
       // If we are in a 'def', we infer object type for Python compatibility, in
       // an 'fn' we report an error.
-      if (decl.isDef) {
+      if (op.getIsDef()) {
         param.type = shared.getObjectType();
       } else {
         op->emitError("'fn' parameter type must be specified");
@@ -670,7 +661,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     }
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
-    if (!decl.isDef) {
+    if (!funcOp.getIsDef()) {
       addFullyResolvedDecl(DRValue(arg), param.name, arg.getLoc(), param.type,
                            &decl);
       continue;
