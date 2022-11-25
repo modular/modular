@@ -375,3 +375,7 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
 
   fn __mul__(self, rhs: Scalar2[type]) -> Scalar2[type]:
     return Scalar2[type](__mlir_op.`pop.mul`(self.value, rhs.value))
+
+  fn fma(self, multiplier: Scalar2[type], accumulator: Scalar2[type]) -> Scalar2[type]:
+    return Scalar2[type](__mlir_op.`pop.fma`(self.value, multiplier.value,
+                                             accumulator.value))

@@ -668,19 +668,18 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
   if (!memberDecl)
     return {};
 
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(),
+                      "TODO: cannot access member in parameter context");
+    return {};
+  }
+
   // If the field is a variable, emit a reference to it.
   if (auto varOp = dyn_cast<VarDeclOp>(*memberDecl)) {
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
-      if (!emitter.builder) {
-        emitter.emitError(
-            getLoc(), "TODO: cannot access lvalue member in parameter context");
-        return {};
-      }
-      // TODO(Issue #4321): Perform parameter substitution
       Value resultGEP = emitter.builder->create<LITStructGEPOp>(
-          emitter.translateLocation(getLoc()), varOp.getType(),
-          varOp.getNameAttr(), baseLV);
+          emitter.translateLocation(getLoc()), baseLV, varOp);
       return LValue(resultGEP);
     }
 
@@ -693,18 +692,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     if (!baseRV)
       return {};
 
-    if (!emitter.builder) {
-      emitter.emitError(getLoc(),
-                        "TODO: cannot access member in parameter context");
-      return {};
-    }
-
-    auto varASTType = memberDecl->getResolvedType();
-
-    // TODO(Issue #4321): Perform parameter substitution
     Value resultVal = emitter.builder->create<LITStructExtractOp>(
-        emitter.translateLocation(getLoc()), varASTType.mlirType,
-        varOp.getNameAttr(), baseRV);
+        emitter.translateLocation(getLoc()), baseRV, varOp);
     return DRValue(resultVal);
   }
 
@@ -751,12 +740,6 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
       firstArgValue = emitter.emitDRValue(baseVal, getLoc());
       if (!firstArgValue)
         return {};
-    }
-
-    if (!emitter.builder) {
-      emitter.emitError(getLoc(),
-                        "TODO: cannot access method in parameter context");
-      return {};
     }
 
     assert(firstArgIRType == firstArgValue.getType() &&

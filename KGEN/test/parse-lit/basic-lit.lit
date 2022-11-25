@@ -221,6 +221,24 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   # CHECK: kgen.return [[TMP:%.*]] : index
   return __mlir_op.`index.shru`(4, 1)
 
+# CHECK-LABEL: lit.func @mlirTypesAndAttrs
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
+  # CHECK: %a = lit.var.decl "a" : <scalar<dtype>>
   var a : __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[dtype]
+  # CHECK: %b = lit.var.decl "b" : <simd<4, dtype>>
   var b : __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[4, dtype]
+
+
+# CHECK-LABEL: lit.func @testScalar2(
+fn testScalar2(a: Scalar2[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
+               b: Scalar2[__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
+               &ref: Scalar2[__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
+  # CHECK: %field1 = lit.var.decl "field1" : <scalar<f64>>
+  var field1 = a.value
+  # CHECK: %field2 = lit.var.decl "field2" : <scalar<si32>>
+  var field2 = ref.value
+
+  #a.fma(a, a)
+  #b.fma(b, b)
+  #var x = a+a
+  #var y = b+b
