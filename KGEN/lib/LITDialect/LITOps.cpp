@@ -198,14 +198,6 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
 }
 
 LogicalResult
-LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  Type structType = getStructVal().getType();
-  return verifyStructFieldAndType(symbolTable, *this,
-                                  cast<LITDeclRefType>(structType),
-                                  getFieldAttr(), getResult().getType());
-}
-
-LogicalResult
 LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(
@@ -213,6 +205,62 @@ LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
       getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
+}
+
+void LITStructGEPOp::build(OpBuilder &builder, OperationState &result,
+                           Value structBasePtr, VarDeclOp field) {
+  TypedAttr refExpr =
+      cast<POP::PointerType>(structBasePtr.getType()).getElementType();
+  auto structType =
+      cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
+
+  // Ensure the field comes from the struct type in question.
+  assert(structType.getSymbol().getRootReference() ==
+         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
+
+  // Remap the type of the field based on any bound parameter types from the
+  // base reference.
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : structType.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+  Type reboundType =
+      evaluator.getReboundType(field.getType().getResolvedElementType());
+
+  build(builder, result, POP::PointerType::get(reboundType),
+        field.getNameAttr(), structBasePtr);
+}
+
+//===----------------------------------------------------------------------===//
+// LITStructExtractOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  Type structType = getStructVal().getType();
+  return verifyStructFieldAndType(symbolTable, *this,
+                                  cast<LITDeclRefType>(structType),
+                                  getFieldAttr(), getResult().getType());
+}
+
+void LITStructExtractOp::build(OpBuilder &builder, OperationState &result,
+                               Value structBasePtr, VarDeclOp field) {
+  auto structType = cast<LITDeclRefType>(structBasePtr.getType());
+
+  // Ensure the field comes from the struct type in question.
+  assert(structType.getSymbol().getRootReference() ==
+         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
+
+  // Remap the type of the field based on any bound parameter types from the
+  // base reference.
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : structType.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+
+  Type reboundType =
+      evaluator.getReboundType(field.getType().getResolvedElementType());
+
+  build(builder, result, reboundType, field.getNameAttr(), structBasePtr);
 }
 
 //===----------------------------------------------------------------------===//

@@ -135,6 +135,11 @@ def LITStructExtractOp : LITOp<"struct.extract", [Pure,
     $structVal `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($result) `from` type($structVal)
   }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBase, "VarDeclOp":$field)>
+  ];
 }
 
 
@@ -156,6 +161,11 @@ def LITStructGEPOp : LITOp<"struct.gep", [Pure,
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($result) `from` type($container)
   }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBasePtr, "VarDeclOp":$field)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
