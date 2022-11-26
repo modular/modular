@@ -498,17 +498,10 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitOpError("evaluator ")
            << evaluator.getSymbol() << " does not refer to a KGEN declaration";
 
-  // Build the expected evaluator signature.
-  SmallVector<ParamDeclAttr> decls;
-  decls.reserve(evaluator.getParamValues().size());
-  for (ParamBindAttr bind : evaluator.getParamValues())
-    decls.push_back(bind.getDecl());
   auto index = IndexType::get(getContext());
   auto evaluatorType = FunctionType::get(
       getContext(), {POP::PointerType::get(getFunctionType()), index}, index);
-  auto expectedSignature =
-      SignatureType::get(ParamDeclArrayAttr::get(getContext(), decls),
-                         TypeArrayAttr::get(getContext(), {}), evaluatorType);
+  auto expectedSignature = SignatureType::get(evaluatorType);
 
   // Get the specialized callee signature.
   SignatureType funcSignature = func.getSignature().getSpecializedSignature(
@@ -573,6 +566,17 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
       calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
   if (!calleeSignature)
     return failure();
+
+  // The caller's parameters are bound now, so drop them.  TODO: The caller
+  // signature type shouldn't carry these input parameters at all!
+  if (!callerInputParams.empty()) {
+    assert(callerInputParams.size() == callerSignature.getInputParams().size());
+
+    /// Return a signature type with the input parameters dropped.
+    callerSignature = SignatureType::get(
+        ParamDeclArrayAttr::get(callerSignature.getContext(), {}),
+        callerSignature.getResultParamTypes(), callerSignature.getValues());
+  }
 
   return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
                                    "callee", calleeSignature, calleeLoc);
