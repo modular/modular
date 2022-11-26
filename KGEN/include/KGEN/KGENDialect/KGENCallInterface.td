@@ -26,8 +26,7 @@ def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
     InterfaceMethod<[{
       Get the signature type of the callee.
     }], "SignatureType", "getSignature", (ins), [{}], [{
-      return SignatureType::get($_op.getParamValuesAttr(),
-                                $_op.getParamDeclsAttr(),
+      return SignatureType::get($_op.getParamDeclsAttr(),
                                 $_op.getFunctionType());
     }]>,
     InterfaceMethod<[{
