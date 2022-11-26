@@ -880,7 +880,7 @@ kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], (i32, i32) -> ()>, 
 // -----
 
 kgen.generator @partial_apply(%arg0: !kgen.signature<[], [], (i32) -> ()>, %arg1: i64) {
-  // expected-error @below {{'kgen.partial_apply' op input bound to argument #0 should be 'i32' but got 'i64'}}
+  // expected-error @below {{'kgen.partial_apply' op input bound to argument #0}}
   "kgen.partial_apply"(%arg0, %arg1) {boundInputs = array<i64: 0>} : (!kgen.signature<[], [], (i32) -> ()>, i64) -> !kgen.signature<[], [], () -> ()>
   kgen.return
 }

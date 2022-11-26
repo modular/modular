@@ -153,39 +153,34 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
   p << name.getValue();
 }
 
-/// Lookup the declaration for the struct. When checking field types, we can't
-/// directly compare operation types to the struct field types because they are
-/// parameterized under different domains. We have to rebind them.
-static LogicalResult
-lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 LITDeclRefType ref,
-                 std::pair<LITStructDeclOp, ParameterEvaluator> &result) {
-  auto module = KGENModule::from(user, symbolTable);
-  auto structDecl = module.lookup<LITStructDeclOp>(ref.getSymbol());
-  if (!structDecl)
-    return user->emitOpError("expected a struct declaration");
+/// Given a struct type with bound parameters and a field decl within it,
+/// calculate and return the correct type for the field given substitutions.
+static Type getReboundFieldType(LITDeclRefType structType, VarDeclOp field) {
+  // Ensure the field comes from the struct type in question.
+  assert(structType.getSymbol().getRootReference() ==
+         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
 
+  // Remap the type of the field based on any bound parameter types from the
+  // base reference.
   ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : ref.getParamValues())
+  for (ParamBindAttr bind : structType.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
 
-  result = std::make_pair(structDecl, std::move(evaluator));
-  return success();
+  return evaluator.getReboundType(field.getType().getResolvedElementType());
 }
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          LITDeclRefType ref, StringAttr fieldName, Type type) {
+  auto module = KGENModule::from(op, symbolTable);
+  auto structDecl = module.lookup<LITStructDeclOp>(ref.getSymbol());
+  if (!structDecl)
+    return op->emitOpError("expected a struct declaration");
 
-  std::pair<LITStructDeclOp, ParameterEvaluator> structDeclEval;
-  if (failed(lookupStructDecl(symbolTable, op, ref, structDeclEval)))
-    return failure();
-  auto [structDecl, evaluator] = structDeclEval;
   for (VarDeclOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != fieldName)
       continue;
-    Type reboundType =
-        evaluator.getReboundType(fieldDecl.getType().getResolvedElementType());
+    Type reboundType = getReboundFieldType(ref, fieldDecl);
     if (reboundType != type)
       return op->emitOpError("cannot extract value of type ")
              << type << " from struct field " << fieldName << " which has type "
@@ -213,21 +208,8 @@ void LITStructGEPOp::build(OpBuilder &builder, OperationState &result,
       cast<POP::PointerType>(structBasePtr.getType()).getElementType();
   auto structType =
       cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
-
-  // Ensure the field comes from the struct type in question.
-  assert(structType.getSymbol().getRootReference() ==
-         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
-
-  // Remap the type of the field based on any bound parameter types from the
-  // base reference.
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : structType.getParamValues())
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-
-  Type reboundType =
-      evaluator.getReboundType(field.getType().getResolvedElementType());
-
-  build(builder, result, POP::PointerType::get(reboundType),
+  build(builder, result,
+        POP::PointerType::get(getReboundFieldType(structType, field)),
         field.getNameAttr(), structBasePtr);
 }
 
@@ -246,21 +228,8 @@ LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void LITStructExtractOp::build(OpBuilder &builder, OperationState &result,
                                Value structBasePtr, VarDeclOp field) {
   auto structType = cast<LITDeclRefType>(structBasePtr.getType());
-
-  // Ensure the field comes from the struct type in question.
-  assert(structType.getSymbol().getRootReference() ==
-         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
-
-  // Remap the type of the field based on any bound parameter types from the
-  // base reference.
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : structType.getParamValues())
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-
-  Type reboundType =
-      evaluator.getReboundType(field.getType().getResolvedElementType());
-
-  build(builder, result, reboundType, field.getNameAttr(), structBasePtr);
+  build(builder, result, getReboundFieldType(structType, field),
+        field.getNameAttr(), structBasePtr);
 }
 
 //===----------------------------------------------------------------------===//

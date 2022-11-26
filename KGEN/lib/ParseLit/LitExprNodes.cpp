@@ -448,6 +448,9 @@ static MValue emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
                                 ExprEmitter &emitter) {
   // SymbolConstantAttr provides a type for the SymbolRefAttr with the
   // parameters substituted in.
+
+  // FIXME: Need to substitute bound parameters into the signature, but this
+  // is super awkward due to Issue #5336.
   return MValue(SymbolConstantAttr::get(
       fnDecl.getSymbolRef(),
       ParamBindArrayAttr::get(emitter.getContext(), bindings),
@@ -674,13 +677,14 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     return {};
   }
 
+  auto mlirLoc = emitter.translateLocation(getLoc());
+
   // If the field is a variable, emit a reference to it.
   if (auto varOp = dyn_cast<VarDeclOp>(*memberDecl)) {
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
-      Value resultGEP = emitter.builder->create<LITStructGEPOp>(
-          emitter.translateLocation(getLoc()), baseLV, varOp);
-      return LValue(resultGEP);
+      return LValue(
+          emitter.builder->create<LITStructGEPOp>(mlirLoc, baseLV, varOp));
     }
 
     // Otherwise, it must be an rvalue.
@@ -692,9 +696,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     if (!baseRV)
       return {};
 
-    Value resultVal = emitter.builder->create<LITStructExtractOp>(
-        emitter.translateLocation(getLoc()), baseRV, varOp);
-    return DRValue(resultVal);
+    return DRValue(
+        emitter.builder->create<LITStructExtractOp>(mlirLoc, baseRV, varOp));
   }
 
   // Handle method references.
@@ -745,28 +748,16 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
     assert(firstArgIRType == firstArgValue.getType() &&
            "base types should always structurally line up");
 
-    // PartialApply takes the callee as a Value.
+    // For an instance value, we have to partially apply the callee to the first
+    // argument of the reference.  Materialize callee as a DRValue for
+    // partial_apply.
     auto calleeDRVal = emitter.emitDRValue(AnyValue(fnRef), getLoc());
 
     // Partial apply wants to know what operands to bind, we always bind the
     // first one.
     auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
-
-    // The result type will be a signature type with one fewer value argument.
-    auto resultFnType = emitter.builder->getFunctionType(
-        symbolIRType.getValues().getInputs().drop_front(),
-        symbolIRType.getValues().getResults());
-    auto resultSigType =
-        SignatureType::get(symbolIRType.getInputParams(),
-                           symbolIRType.getResultParamTypes(), resultFnType);
-
-    // TODO(Issue #4321): Perform parameter substitution
-    Value result = emitter.builder->create<PartialApplyOp>(
-        emitter.translateLocation(getLoc()), resultSigType, calleeDRVal,
-        mlir::ValueRange(firstArgValue), zeroAttr);
-
-    // TODO: We should have proper function argument types.
-    return DRValue(result);
+    return DRValue(emitter.builder->create<PartialApplyOp>(
+        mlirLoc, calleeDRVal, mlir::ValueRange(firstArgValue), zeroAttr));
   }
 
   // TODO: Handle parameter member references.

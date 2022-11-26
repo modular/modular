@@ -18,6 +18,7 @@ include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // FIXME: KGENDialect should not depend on POPDialect.
@@ -505,7 +506,8 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
 
-def PartialApplyOp : KGENOp<"partial_apply", [Pure]> {
+def PartialApplyOp : KGENOp<"partial_apply",
+      [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "partially apply arguments to a callable";
   let description = [{
     The `kgen.partial_apply` operation takes a callable of `!kgen.signature`
