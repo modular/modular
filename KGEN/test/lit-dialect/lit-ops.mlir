@@ -61,28 +61,28 @@ lit.func @noneTypeAndValue() -> !lit.none {
 
 // CHECK-LABEL: lit.struct.decl @A
 lit.struct.decl @A {
-  // CHECK-NEXT: lit.func @"A::foo"
-  lit.func @"A::foo"(%self: !kgen.declref<@A>) {
+  // CHECK-NEXT: lit.func @foo
+  lit.func @foo(%self: !kgen.declref<@A>) {
     kgen.return
   }
 }
 
 // CHECK-LABEL: lit.struct.decl @B
 lit.struct.decl @B {
-  // CHECK-NEXT: lit.func @"B::foo"
-  lit.func @"B::foo"(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
-    // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @A::@"A::foo"]
-    kgen.call_param[(!kgen.declref<@A>) -> (): @A::@"A::foo"](%a)
+  // CHECK-NEXT: lit.func @foo
+  lit.func @foo(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
+    // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @A::@foo]
+    kgen.call_param[(!kgen.declref<@A>) -> (): @A::@foo](%a)
     kgen.return
   }
 }
 
 // CHECK-LABEL: lit.func @main
 lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@B>, !kgen.declref<@A>) -> (): @B::@"B::foo"]
-  kgen.call_param[(!kgen.declref<@B>, !kgen.declref<@A>) -> (): @B::@"B::foo"](%b, %a)
-  // CHECK-NEXT: constant: (!kgen.declref<@A>) -> () = <@A::@"A::foo">
-  %0 = kgen.param.constant: (!kgen.declref<@A>) -> () = <@A::@"A::foo">
+  // CHECK-NEXT: call_param[(!kgen.declref<@B>, !kgen.declref<@A>) -> (): @B::@foo]
+  kgen.call_param[(!kgen.declref<@B>, !kgen.declref<@A>) -> (): @B::@foo](%b, %a)
+  // CHECK-NEXT: constant: (!kgen.declref<@A>) -> () = <@A::@foo>
+  %0 = kgen.param.constant: (!kgen.declref<@A>) -> () = <@A::@foo>
   kgen.return
 }
 
@@ -99,10 +99,10 @@ lit.struct.decl @A<N> {
 
 // CHECK-LABEL: lit.func @main
 lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
-  // CHECK-NEXT: call_param[<N, M>(!kgen.declref<@A<N = N>>) -> index: @A::@"A::foo"]<N = 1, M = 2>
-  %0 = kgen.call_param[<N, M>(!kgen.declref<@A<N = N>>) -> index: @A::@"A::foo"]<N = 1, M = 2>(%a)
-  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@"A::foo"<N = 1, M = 2>]
-  %1 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@"A::foo"<N = 1, M = 2>](%a)
+  // CHECK-NEXT: call_param[<N, M>(!kgen.declref<@A<N = N>>) -> index: @A::@foo]<N = 1, M = 2>
+  %0 = kgen.call_param[<N, M>(!kgen.declref<@A<N = N>>) -> index: @A::@foo]<N = 1, M = 2>(%a)
+  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>]
+  %1 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>](%a)
   kgen.return
 }
 

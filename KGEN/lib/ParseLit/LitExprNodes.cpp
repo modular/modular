@@ -458,9 +458,7 @@ static MValue emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
           llvm_unreachable("should always bind parameters correctly!");
         });
 
-  // FIXME: Need to substitute bound parameters into the signature, but this
-  // is super awkward due to Issue #5336.
-  return MValue(SymbolConstantAttr::get(
+  return MValue(LITSymbolConstantAttr::get(
       fnDecl.getSymbolRef(),
       ParamBindArrayAttr::get(emitter.getContext(), bindings), signature));
 }
