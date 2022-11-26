@@ -149,6 +149,10 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
   unsigned paramNo = 0;
   for (auto [bind, decl] : llvm::zip(inputParamValues, getInputParams())) {
     if (bind.getName() != decl.getName()) {
@@ -157,24 +161,24 @@ SignatureType SignatureType::getSpecializedSignature(
                     << decl.getName();
       return SignatureType();
     }
+
+    // Bound parameters are allowed to refine the type of subsequent parameters,
+    // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
+    // the second parameter will be refined when the first parameter is bound.
+    auto remappedDeclType = evaluator.getReboundType(decl.getType());
+    if (bind.getType() != remappedDeclType) {
+      emitErrorFn() << "caller input parameter #" << paramNo << " has type "
+                    << bind.getType() << " but callee expected name "
+                    << decl.getType();
+      return SignatureType();
+    }
+
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
     ++paramNo;
   }
 
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-  auto remapParamDeclType = [&](ParamDeclAttr attr) -> ParamDeclAttr {
-    auto newTy = remapType(attr.getType());
-    return newTy == attr.getType() ? attr
-                                   : ParamDeclAttr::get(attr.getName(), newTy);
-  };
-
   // Remap the parameter decls and result types.
-  SmallVector<ParamDeclAttr> newInputParams;
   SmallVector<Type> newParamResultTypes;
-  llvm::append_range(newInputParams,
-                     llvm::map_range(getInputParams(), remapParamDeclType));
   llvm::append_range(newParamResultTypes,
                      llvm::map_range(getResultParamTypes(), remapType));
 
@@ -186,7 +190,7 @@ SignatureType SignatureType::getSpecializedSignature(
                      llvm::map_range(getValues().getResults(), remapType));
 
   return SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), newInputParams),
+      ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), newParamResultTypes),
       FunctionType::get(getContext(), inputTypes, resultTypes));
 }
