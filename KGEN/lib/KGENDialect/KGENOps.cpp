@@ -567,17 +567,6 @@ static ParseResult verifyCallAndCallee(Operation *theCall,
   if (!calleeSignature)
     return failure();
 
-  // The caller's parameters are bound now, so drop them.  TODO: The caller
-  // signature type shouldn't carry these input parameters at all!
-  if (!callerInputParams.empty()) {
-    assert(callerInputParams.size() == callerSignature.getInputParams().size());
-
-    /// Return a signature type with the input parameters dropped.
-    callerSignature = SignatureType::get(
-        ParamDeclArrayAttr::get(callerSignature.getContext(), {}),
-        callerSignature.getResultParamTypes(), callerSignature.getValues());
-  }
-
   return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
                                    "callee", calleeSignature, calleeLoc);
 }

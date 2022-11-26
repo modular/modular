@@ -88,20 +88,14 @@ Type ListType::getResolvedElementType() const {
 // SignatureType
 //===----------------------------------------------------------------------===//
 
-SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
+SignatureType SignatureType::get(ParamDeclArrayAttr resultParams,
                                  FunctionType values) {
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  inputParamDecls.reserve(inputParams.size());
-  for (ParamBindAttr inputParam : inputParams)
-    inputParamDecls.push_back(inputParam.getDecl());
-
   SmallVector<Type> resultParamTypes;
   resultParamTypes.reserve(resultParams.size());
   for (ParamDeclAttr resultParam : resultParams)
     resultParamTypes.push_back(resultParam.getType());
 
-  return get(ParamDeclArrayAttr::get(values.getContext(), inputParamDecls),
+  return get(ParamDeclArrayAttr::get(values.getContext(), {}),
              TypeArrayAttr::get(values.getContext(), resultParamTypes), values);
 }
 

@@ -178,8 +178,7 @@ def SignatureType
                  values);
     }]>,
     TypeBuilderWithInferredContext<(ins
-        "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
-        "FunctionType":$values)>,
+        "ParamDeclArrayAttr":$resultParams, "FunctionType":$values)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];
