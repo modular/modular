@@ -107,8 +107,8 @@ struct Int:
   fn __mul__(self, rhs: Int) -> Int:
     return Int(__mlir_op.`index.mul`(self.value, rhs.value))
 
-  fn __truediv__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+  #fn __truediv__(self, rhs: Int) -> Int:
+  #  return Int(rhs.value)      # TODO: Implement this
 
   fn __floordiv__(self, rhs: Int) -> Int:
     return Int(rhs.value)      # TODO: Implement this
@@ -141,57 +141,55 @@ struct Int:
   # CHECK-LABEL: lit.func @__iadd__(%self: !pop.pointer<@Int?>, %rhs: !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int> {
   fn __iadd__(&self, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int?>
-    # CHECK: %1 = kgen.param.constant: (!kgen.litdeclref<@Int>, !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int> = <@Int::@__add__>
-    # CHECK: %2 = kgen.partial_apply %1(%0, ?) : (!kgen.litdeclref<@Int>, !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int>
-    # CHECK: %3 = kgen.call_indirect %2(%rhs) : (!kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int>
-    # CHECK: pop.store %3, %self
-    self = self.__add__(rhs)
-    # CHECK: %4 = pop.load %self
-    # CHECK: kgen.return %4
+    # CHECK: %1 = kgen.call_param[(!kgen.litdeclref<@Int>, !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int>: @Int::@__add__](%0, %rhs)
+    # CHECK: pop.store %1, %self
+    self = self + rhs
+    # CHECK: %2 = pop.load %self
+    # CHECK: kgen.return %2
     return self
 
   fn __isub__(&self, rhs: Int) -> Int:
-    self = self.__sub__(rhs)
+    self = self - rhs
     return self
 
   fn __imul__(&self, rhs: Int) -> Int:
-    self = self.__mul__(rhs)
+    self = self * rhs
     return self
 
-  fn __itruediv__(&self, rhs: Int) -> Int:
-    self = self.__truediv__(rhs)
-    return self
+  #fn __itruediv__(&self, rhs: Int) -> Int:
+  #  self = self / rhs
+  #  return self
 
   fn __ifloordiv__(&self, rhs: Int) -> Int:
-    self = self.__floordiv__(rhs)
+    self = self // rhs
     return self
 
   fn __imod__(&self, rhs: Int) -> Int:
-    self = self.__mod__(rhs)
+    self = self % rhs
     return self
 
   fn __ipow__(&self, rhs: Int) -> Int:
-    self = self.__pow__(rhs)
+    self = self ** rhs
     return self
 
   fn __ilshift__(&self, rhs: Int) -> Int:
-    self = self.__lshift__(rhs)
+    self = self << rhs
     return self
 
   fn __irshift__(&self, rhs: Int) -> Int:
-    self = self.__rshift__(rhs)
+    self = self >> rhs
     return self
 
   fn __iand__(&self, rhs: Int) -> Int:
-    self = self.__and__(rhs)
+    self = self & rhs
     return self
 
   fn __ixor__(&self, rhs: Int) -> Int:
-    self = self.__xor__(rhs)
+    self = self ^ rhs
     return self
 
   fn __ior__(&self, rhs: Int) -> Int:
-    self = self.__or__(rhs)
+    self = self | rhs
     return self
 
 #===------------------------------------------------------------------------===#
@@ -266,48 +264,43 @@ struct F32:
     return F32._getFromStorage(__mlir_op.`pop.mul`(self.value, rhs.value))
 
   fn __truediv__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+    return F32._getFromStorage(__mlir_op.`pop.div`(self.value, rhs.value))
 
-  fn __floordiv__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(rhs.value)      # TODO: Implement this
-
-  fn __mod__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(rhs.value)      # TODO: Implement this
-
-  fn __pow__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(rhs.value)      # TODO: Implement this
+  # fn __floordiv__(self, rhs: F32) -> F32: # TODO: Implement this
+  # fn __mod__(self, rhs: F32) -> F32: # TODO: Implement this
+  # fn __pow__(self, rhs: F32) -> F32: # TODO: Implement this
 
   #===----------------------------------------------------------------------===#
   # In place operations.
   #===----------------------------------------------------------------------===#
 
   fn __iadd__(&self, rhs: F32) -> F32:
-    self = self.__add__(rhs)
+    self = self + rhs
     return self
 
   fn __isub__(&self, rhs: F32) -> F32:
-    self = self.__sub__(rhs)
+    self = self - rhs
     return self
 
   fn __imul__(&self, rhs: F32) -> F32:
-    self = self.__mul__(rhs)
+    self = self * rhs
     return self
 
   fn __itruediv__(&self, rhs: F32) -> F32:
-    self = self.__truediv__(rhs)
+    self = self / rhs
     return self
 
-  fn __ifloordiv__(&self, rhs: F32) -> F32:
-    self = self.__floordiv__(rhs)
-    return self
+  #fn __ifloordiv__(&self, rhs: F32) -> F32:
+  #  self = self.__floordiv__(rhs)
+  #  return self
 
-  fn __imod__(&self, rhs: F32) -> F32:
-    self = self.__mod__(rhs)
-    return self
+  #fn __imod__(&self, rhs: F32) -> F32:
+  #  self = self.__mod__(rhs)
+  #  return self
 
-  fn __ipow__(&self, rhs: F32) -> F32:
-    self = self.__pow__(rhs)
-    return self
+  #fn __ipow__(&self, rhs: F32) -> F32:
+  #  self = self.__pow__(rhs)
+  #  return self
 
 #===------------------------------------------------------------------------===#
 # WIP Types
@@ -344,82 +337,122 @@ struct Scalar[type: DType]:
   pass
 
 #===------------------------------------------------------------------------===#
-# Scalar2 - Scalar using !kgen.dtype, phase this in to replace Scalar for C.
+# SIMD
 #===------------------------------------------------------------------------===#
 
-# CHECK-LABEL: lit.struct.decl @Scalar2<type: dtype> {
-struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
-  # CHECK: %value = lit.var.decl "value" : <scalar<type>>
-  var value: __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[type]
+# CHECK-LABEL: lit.struct.decl @SIMD<size, type: dtype> {
+struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
+  # CHECK: %value = lit.var.decl "value" : <simd<size, type>>
+  var value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]
 
-  # CHECK-LABEL:  lit.func @__new__(%value_0: !pop.scalar<type>) -> !kgen.litdeclref<@Scalar2<type: dtype = type>> attributes {isStatic}
-  fn __new__(value: __mlir_type.`!pop.scalar<type>`) -> Scalar2[type]:
-    # CHECK: %result = lit.var.decl "result" : <@Scalar2<type: dtype = type>?>
-    var result: Scalar2[type]
-    # CHECK: %0 = lit.struct.gep %result[value] : <scalar<type>> from <@Scalar2<type: dtype = type>?>
-    # CHECK: pop.store %value_0, %0 : !pop.pointer<scalar<type>>
+  # CHECK-LABEL:  lit.func @__new__(%value_0: !pop.simd<size, type>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>> attributes {isStatic}
+  fn __new__(value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]) -> SIMD[size, type]:
+    # CHECK: %result = lit.var.decl "result" : <@SIMD<size = size, type: dtype = type>?>
+    var result: SIMD[size, type]
+    # CHECK: %0 = lit.struct.gep %result[value] : <simd<size, type>> from <@SIMD<size = size, type: dtype = type>?>
+    # CHECK: pop.store %value_0, %0 : !pop.pointer<simd<size, type>>
     result.value = value
     return result
 
   # FIXME: These should be merged into __new__ when we support overloading.
   @staticmethod
-  fn getFP(value: __mlir_type.f64) -> Scalar2[type]:
+  fn getFP(value: __mlir_type.f64) -> SIMD[size, type]:
     var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
-    var result : Scalar2[type]
-    result.value = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[type]](pop)
+    var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #lit<placeholder !kgen.dtype>>`[type]](pop)
+    var result : SIMD[size, type]
+    result.value = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]](popCast)
     return result
 
-  # CHECK-LABEL: lit.func @__add__(%self: !kgen.litdeclref<@Scalar2<type: dtype = type>>,
-  fn __add__(self, rhs: Scalar2[type]) -> Scalar2[type]:
-    # CHECK: %0 = lit.struct.extract %self[value] : !pop.scalar<type> from <@Scalar2<type: dtype = type>>
-    # CHECK: %1 = lit.struct.extract %rhs[value] : !pop.scalar<type> from <@Scalar2<type: dtype = type>>
-    # CHECK: %2 = pop.add %0, %1 : !pop.scalar<type>
-    # CHECK: %3 = kgen.call_param[(!pop.scalar<type>) -> !kgen.litdeclref<@Scalar2<type: dtype = type>>: @Scalar2::@__new__<type: dtype = type>](%2)
-    # CHECK: kgen.return %3 : !kgen.litdeclref<@Scalar2<type: dtype = type>>
-    return  Scalar2[type](__mlir_op.`pop.add`(self.value, rhs.value))
+  # CHECK-LABEL: lit.func @__add__(%self: !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>,
+  fn __add__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    # CHECK: %0 = lit.struct.extract %self[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
+    # CHECK: %1 = lit.struct.extract %rhs[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
+    # CHECK: %2 = pop.add %0, %1 : !pop.simd<size, type>
+    # CHECK: %3 = kgen.call_param[(!pop.simd<size, type>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>: @SIMD::@__new__<size = size, type: dtype = type>](%2)
+    # CHECK: kgen.return %3 : !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>
+    return  SIMD[size, type](__mlir_op.`pop.add`(self.value, rhs.value))
 
-  fn __sub__(self, rhs: Scalar2[type]) -> Scalar2[type]:
-    return Scalar2[type](__mlir_op.`pop.sub`(self.value, rhs.value))
+  fn __sub__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    return SIMD[size, type](__mlir_op.`pop.sub`(self.value, rhs.value))
 
-  fn __mul__(self, rhs: Scalar2[type]) -> Scalar2[type]:
-    return Scalar2[type](__mlir_op.`pop.mul`(self.value, rhs.value))
+  fn __mul__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    return SIMD[size, type](__mlir_op.`pop.mul`(self.value, rhs.value))
 
-  @staticmethod
-  fn _getBool(value: __mlir_type.`!pop.scalar<bool>`) -> Bool:
-    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](value))
+  fn __truediv__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    return SIMD[size, type](__mlir_op.`pop.div`(self.value, rhs.value))
 
-  fn __lt__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                            __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
+  # fn __floordiv__(self, rhs: F32) -> F32: # TODO: Implement this
+  # fn __mod__(self, rhs: F32) -> F32: # TODO: Implement this
+  # fn __pow__(self, rhs: F32) -> F32: # TODO: Implement this
 
-  fn __le__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                          __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
+#  @staticmethod
+#  fn _getBool(value: __mlir_type.`!pop.simd<#lit<placeholder index>, bool>`[size])
+#     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:#
+#    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](tmp))
 
-  fn __eq__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                          __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
+  fn __lt__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
 
-  fn __ne__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                          __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
+  fn __le__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
 
-  fn __gt__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                          __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
+  fn __eq__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
 
-  fn __ge__(self, rhs: Scalar2[type]) -> Bool:
-    return _getBool[type](__mlir_op.`pop.cmp`[pred:
-                          __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+  fn __ne__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
 
-  fn __pos__(self) -> Scalar2[type]:
+  fn __gt__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
+
+  fn __ge__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
+        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+
+  fn __pos__(self) -> SIMD[size, type]:
     return self
 
-  fn __neg__(self) -> Scalar2[type]:
-    return Scalar2[type](__mlir_op.`pop.neg`(self.value))
+  fn __neg__(self) -> SIMD[size, type]:
+    return SIMD[size, type](__mlir_op.`pop.neg`(self.value))
 
+  #===----------------------------------------------------------------------===#
+  # In place operations.
+  #===----------------------------------------------------------------------===#
+
+  fn __iadd__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    self = self + rhs
+    return self
+
+  fn __isub__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    self = self - rhs
+    return self
+
+  fn __imul__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    self = self * rhs
+    return self
+
+  fn __itruediv__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+    self = self / rhs
+    return self
+
+  #fn __ifloordiv__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #  self = self // rhs
+  #  return self
+
+  #fn __imod__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #  self = self.__mod__(rhs)
+  #  return self
+
+  #fn __ipow__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #  self = self.__pow__(rhs)
+  #  return self
 
   # TODO: Move to global function.
-  fn fma(self, multiplier: Scalar2[type], accumulator: Scalar2[type]) -> Scalar2[type]:
-    return Scalar2[type](__mlir_op.`pop.fma`(self.value, multiplier.value,
+  fn fma(self, multiplier: SIMD[size, type], accumulator: SIMD[size, type]) -> SIMD[size, type]:
+    return SIMD[size, type](__mlir_op.`pop.fma`(self.value, multiplier.value,
                                              accumulator.value))
