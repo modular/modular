@@ -67,6 +67,10 @@ let description = [{
 
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
+
+    /// Return the full signature of this method, including parameters from
+    /// enclosing struct declarations.
+    SignatureType getFullSignature();
   }];
 
   let builders = [

@@ -447,14 +447,22 @@ static MValue emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
                                 ArrayRef<ParamBindAttr> bindings, SMLoc loc,
                                 ExprEmitter &emitter) {
   // SymbolConstantAttr provides a type for the SymbolRefAttr with the
-  // parameters substituted in.
+  // parameters substituted in.  The function reference binds any parameter
+  // bindings present on the access (in bindings), which typically concretizes
+  // the signature.
+  auto signature = fnOp.getFullSignature();
+
+  if (!bindings.empty())
+    signature = signature.getSpecializedSignature(
+        bindings, [&]() -> InFlightDiagnostic {
+          llvm_unreachable("should always bind parameters correctly!");
+        });
 
   // FIXME: Need to substitute bound parameters into the signature, but this
   // is super awkward due to Issue #5336.
   return MValue(SymbolConstantAttr::get(
       fnDecl.getSymbolRef(),
-      ParamBindArrayAttr::get(emitter.getContext(), bindings),
-      fnOp.getSignature()));
+      ParamBindArrayAttr::get(emitter.getContext(), bindings), signature));
 }
 
 /// Given an ASTType 'containingType', look up a named member of it and return
