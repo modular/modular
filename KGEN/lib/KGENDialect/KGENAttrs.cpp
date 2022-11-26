@@ -964,6 +964,24 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
         resultType);
   }
 
+  // If the actual operand is a LITSymbolConstantAttr operand, then we can
+  // simplify the bind_signature by folding the parameter values into it
+  // directly.
+  if (auto symbolConstant = dyn_cast<LITSymbolConstantAttr>(operands.front())) {
+    assert(symbolConstant.getParamValues().empty() &&
+           "cannot have already bound the input parmaeter, because we'd end up "
+           "with a nongeneric signature that would fail verification");
+
+    auto signature = cast<SignatureType>(symbolConstant.getType());
+    SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
+        signature.getInputParams(), operands.drop_front());
+
+    return LITSymbolConstantAttr::get(
+        symbolConstant.getSymbolRef(),
+        ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
+        resultType);
+  }
+
   // If the operand is an expression function, substitute the parameter
   // declarations. If any parameter value is not a simple constant, we cannot
   // simplify the bound function.

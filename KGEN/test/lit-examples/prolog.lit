@@ -361,6 +361,14 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
     result.value = value
     return result
 
+  # FIXME: These should be merged into __new__ when we support overloading.
+  @staticmethod
+  fn getFP(value: __mlir_type.f64) -> Scalar2[type]:
+    var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
+    var result : Scalar2[type]
+    result.value = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<#lit<placeholder !kgen.dtype>>`[type]](pop)
+    return result
+
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.litdeclref<@Scalar2<type: dtype = type>>,
   fn __add__(self, rhs: Scalar2[type]) -> Scalar2[type]:
     # CHECK: %0 = lit.struct.extract %self[value] : !pop.scalar<type> from <@Scalar2<type: dtype = type>>
@@ -376,6 +384,42 @@ struct Scalar2[type: __mlir_type.`!kgen.dtype`]:
   fn __mul__(self, rhs: Scalar2[type]) -> Scalar2[type]:
     return Scalar2[type](__mlir_op.`pop.mul`(self.value, rhs.value))
 
+  @staticmethod
+  fn _getBool(value: __mlir_type.`!pop.scalar<bool>`) -> Bool:
+    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](value))
+
+  fn __lt__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                            __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
+
+  fn __le__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                          __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
+
+  fn __eq__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                          __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
+
+  fn __ne__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                          __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
+
+  fn __gt__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                          __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
+
+  fn __ge__(self, rhs: Scalar2[type]) -> Bool:
+    return _getBool[type](__mlir_op.`pop.cmp`[pred:
+                          __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+
+  fn __pos__(self) -> Scalar2[type]:
+    return self
+
+  fn __neg__(self) -> Scalar2[type]:
+    return Scalar2[type](__mlir_op.`pop.neg`(self.value))
+
+
+  # TODO: Move to global function.
   fn fma(self, multiplier: Scalar2[type], accumulator: Scalar2[type]) -> Scalar2[type]:
     return Scalar2[type](__mlir_op.`pop.fma`(self.value, multiplier.value,
                                              accumulator.value))
