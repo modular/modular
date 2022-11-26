@@ -4,6 +4,10 @@ __include "../lit-examples/prolog.lit"
 
 # CHECK: module {
 
+# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: !kgen.litdeclref<@DType>> {
+struct OurSIMD[size: __mlir_type.index, dt: DType]:
+  pass
+
 # CHECK-LABEL: lit.func @empty_def() -> !lit.none {
 # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK: kgen.return %0 : !lit.none
@@ -15,10 +19,10 @@ fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index)
 
 # CHECK-LABEL: lit.func @fancy_signature
 # CHECK-SAME: <dt: !kgen.litdeclref<@DType>, size>
-# CHECK-SAME: (%x: !kgen.litdeclref<@SIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>,
-# CHECK-SAME:  %exp: !kgen.litdeclref<@SIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>) -> index {
+# CHECK-SAME: (%x: !kgen.litdeclref<@OurSIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>,
+# CHECK-SAME:  %exp: !kgen.litdeclref<@OurSIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>) -> index {
 fn fancy_signature[dt: DType, size: __mlir_type.index]
-  (x: SIMD[size, dt], exp: (SIMD)[size, dt]) -> __mlir_type.index:
+  (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> __mlir_type.index:
 
   # CHECK: %local = lit.var.decl "local" : <index>
   # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
@@ -86,9 +90,9 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.litdeclref<@DType>> {
 struct Pair[dt: DType]:
- # CHECK: %a = lit.var.decl "a" : <@SIMD<size = 42, dt: !kgen.litdeclref<@DType> = dt>?>
+ # CHECK: %a = lit.var.decl "a" : <@OurSIMD<size = 42, dt: !kgen.litdeclref<@DType> = dt>?>
  # CHECK: %b = lit.var.decl "b" : <@Int?>
-  var a : SIMD[42, dt]
+  var a : OurSIMD[42, dt]
   var b : Int
 
   # CHECK: lit.func @__new__() -> !kgen.litdeclref<@Pair<dt: !kgen.litdeclref<@DType> = dt>> attributes {isStatic}
@@ -128,10 +132,6 @@ def patterns():
   (someInt) += someInt
 
 
-# CHECK-LABEL: lit.struct.decl @SIMD<size, dt: !kgen.litdeclref<@DType>> {
-struct SIMD[size: __mlir_type.index, dt: DType]:
-  pass
-
 fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
 
 # CHECK: @call_generic<dt: !kgen.litdeclref<@DType>>()
@@ -141,8 +141,8 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: [[TMP:%.*]] = index.constant 57
-  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.litdeclref<@DType> = dt, b = 13, c: type = !kgen.litdeclref<@SIMD<size = 4, dt: !kgen.litdeclref<@DType> = dt>>>]([[TMP]])
-  generic_fn[dt, 13, SIMD[4, dt]](57)
+  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.litdeclref<@DType> = dt, b = 13, c: type = !kgen.litdeclref<@OurSIMD<size = 4, dt: !kgen.litdeclref<@DType> = dt>>>]([[TMP]])
+  generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 @interface
 #CHECK: lit.func @func_interface0<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
@@ -229,10 +229,10 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
   var b : __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[4, dtype]
 
 
-# CHECK-LABEL: lit.func @testScalar2(
-fn testScalar2(a: Scalar2[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
-               b: Scalar2[__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-               &ref: Scalar2[__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
+# CHECK-LABEL: lit.func @testSIMD(
+fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
+            b: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
+            &ref: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   # CHECK: %field1 = lit.var.decl "field1" : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.var.decl "field2" : <scalar<si32>>
@@ -241,9 +241,9 @@ fn testScalar2(a: Scalar2[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
   # Test calls to methods and operators on parameterized type.
   a.fma(a, a)
   b.fma(b, b)
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@Scalar2<type: dtype = f64>>, !kgen.litdeclref<@Scalar2<type: dtype = f64>>) -> !kgen.litdeclref<@Scalar2<type: dtype = f64>>: @Scalar2::@__add__<type: dtype = f64>](%a, %a)
+  # CHECK: kgen.call_param[(!kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>, !kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>) -> !kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>: @SIMD::@__add__<size = 1, type: dtype = f64>](%a, %a)
   var x = a+a
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@Scalar2<type: dtype = si32>>, !kgen.litdeclref<@Scalar2<type: dtype = si32>>) -> !kgen.litdeclref<@Scalar2<type: dtype = si32>>: @Scalar2::@__add__<type: dtype = si32>](%b, %b)
+  # CHECK: kgen.call_param[(!kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>, !kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>) -> !kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>: @SIMD::@__add__<size = 1, type: dtype = si32>](%b, %b)
   var y = b+b
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
@@ -256,6 +256,6 @@ struct TestParamStruct[A: __mlir_type.index]:
   fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
+# Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # TODO: Support partially bound parameters.
-  #a.method[7](TestParamStruct[11]())
+  # a.method[7](TestParamStruct[11]())

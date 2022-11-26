@@ -51,7 +51,7 @@ fn erf_scalar_taylor_f32(x: F32) -> F32:
 
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @erf_taylor<type: dtype>(%x: !kgen.litdeclref<@Scalar2<type: dtype = type>>) -> !kgen.litdeclref<@Scalar2<type: dtype = type>>
-fn erf_taylor[type: __mlir_type.`!kgen.dtype`](x: Scalar2[type]) -> Scalar2[type]:
+# CHECK-LABEL: lit.func @erf_taylor_vector<size, type: dtype>(%x: !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>> {
+fn erf_taylor_vector[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`](x: SIMD[size, type]) -> SIMD[size, type]:
   # CHECK: = kgen.param.constant: f64 = <0.37612638903183754>
-  return x * (x*x).fma(-Scalar2[type].getFP(0.37612638903183752463), Scalar2[type].getFP(1.1283791670955125739))
+  return x * (x*x).fma(-SIMD[size, type].getFP(0.37612638903183752463), SIMD[size, type].getFP(1.1283791670955125739))

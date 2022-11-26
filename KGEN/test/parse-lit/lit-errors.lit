@@ -343,8 +343,8 @@ struct Parameterized[p1: Int]:
   fn b[p2: Int, p2: Int, p3: Int]():  # Cannot shadow parameter names.
 
 
-fn testScalar2(a: Scalar2[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
-               b: Scalar2[__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
-#  var x = a+a
-#  var y = b+b
-#  var z = b+a
+fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
+            b: SIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
+  var x = a+a
+  var y = b+b
+  var z = b+a # expected-error {{value of type 'SIMD[1, f64]' cannot be converted to expected type 'SIMD[2, si32]'}}
