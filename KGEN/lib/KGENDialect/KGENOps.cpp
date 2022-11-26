@@ -30,6 +30,7 @@
 
 using namespace M;
 using namespace KGEN;
+using mlir::TypedValue;
 
 //===----------------------------------------------------------------------===//
 // custom<ParamConstantOpValue>
@@ -1026,6 +1027,81 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
 
+static Type computePartialApplyResultType(Optional<Location> loc,
+                                          TypedValue<SignatureType> callee,
+                                          ValueRange inputs,
+                                          ArrayRef<int64_t> boundInputs) {
+  auto emitError = [&](const Twine &msg) -> Type {
+    (void)mlir::emitOptionalError(loc, "'kgen.partial_apply' op " + msg);
+    return {};
+  };
+  // Ensure the indices are sorted.
+  if (!llvm::is_sorted(boundInputs))
+    return emitError("expected indices to be sorted ascending");
+  if (boundInputs.size() != inputs.size())
+    return emitError("mismatch between number of indices and inputs: " +
+                     Twine(boundInputs.size()) + " vs " + Twine(inputs.size()));
+
+  auto origSignature = callee.getType();
+
+  DenseSet<int64_t> seenInputs;
+  seenInputs.reserve(boundInputs.size());
+  ArrayRef<Type> argumentTypes = origSignature.getValues().getInputs();
+  SmallVector<Type> newInputTypes;
+  unsigned lastIdx = 0;
+  for (auto [input, index] : llvm::zip(inputs, boundInputs)) {
+    if (index >= static_cast<int64_t>(argumentTypes.size()))
+      return emitError("bound input index is out of range: " + Twine(index));
+    if (!seenInputs.insert(index).second)
+      return emitError("duplicate bound input index: " + Twine(index));
+    if (input.getType() != argumentTypes[index])
+      return emitError("input bound to argument #" + Twine(index) +
+                       " is incorrect");
+    // Pick the types of arguments that aren't bound.
+    while (lastIdx++ < index)
+      newInputTypes.push_back(argumentTypes[lastIdx - 1]);
+  }
+  for (; lastIdx < argumentTypes.size(); ++lastIdx)
+    newInputTypes.push_back(argumentTypes[lastIdx]);
+
+  assert(newInputTypes.size() == argumentTypes.size() - boundInputs.size());
+
+  auto resultFnType =
+      FunctionType::get(origSignature.getContext(), newInputTypes,
+                        origSignature.getValues().getResults());
+  return SignatureType::get(origSignature.getInputParams(),
+                            origSignature.getResultParamTypes(), resultFnType);
+}
+
+LogicalResult PartialApplyOp::inferReturnTypes(
+    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
+
+  mlir::OperationName name(getOperationName(), attrs.getContext());
+  auto boundInputs =
+      attrs.getAs<mlir::DenseI64ArrayAttr>(getBoundInputsAttrName(name));
+  if (!boundInputs || operands.empty() ||
+      !isa<SignatureType>(operands[0].getType()))
+    return mlir::emitOptionalError(loc, "missing required attributes");
+
+  types.push_back(
+      computePartialApplyResultType(loc, (TypedValue<SignatureType>)operands[0],
+                                    operands.drop_front(), boundInputs));
+  return success(types.back() != Type());
+}
+
+/// Verify the operation is well-formed. It is not possible to get an
+/// ill-formed operation using the pretty syntax, but it is possible from C++.
+LogicalResult PartialApplyOp::verify() {
+  auto resultType = computePartialApplyResultType(
+      getLoc(), getCallee(), getInputs(), getBoundInputs());
+  if (!resultType)
+    return failure();
+  if (resultType != getType())
+    return emitOpError("result signature does not match");
+  return success();
+}
+
 /// Parse the input operands, using `?` to represent a placeholder value.
 static ParseResult parseBoundInputs(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &inputs,
@@ -1104,44 +1180,6 @@ static void printBoundInputs(OpAsmPrinter &p, Operation *op, ValueRange inputs,
   llvm::interleaveComma(llvm::seq<int64_t>(0, calleeSig.getNumInputs()), p,
                         eachFn);
   p << ") : " << calleeSig;
-}
-
-/// Verify the operation is well-formed. It is not possible to get an ill-formed
-/// operation using the pretty syntax, but it is possible from C++.
-LogicalResult PartialApplyOp::verify() {
-  // Ensure the indices are sorted.
-  if (!llvm::is_sorted(getBoundInputs()))
-    return emitOpError("expected indices to be sorted ascending");
-  if (getBoundInputs().size() != getInputs().size())
-    return emitOpError("mismatch between number of indices and inputs: ")
-           << getBoundInputs().size() << " vs " << getInputs().size();
-
-  DenseSet<int64_t> seenInputs;
-  seenInputs.reserve(getBoundInputs().size());
-  ArrayRef<Type> argumentTypes = getCallee().getType().getValues().getInputs();
-  SmallVector<Type> resultTypes;
-  unsigned lastIdx = 0;
-  for (auto [input, index] : llvm::zip(getInputs(), getBoundInputs())) {
-    if (index >= static_cast<int64_t>(argumentTypes.size()))
-      return emitOpError("bound input index is out of range: ") << index;
-    if (!seenInputs.insert(index).second)
-      return emitOpError("duplicate bound input index: ") << index;
-    if (input.getType() != argumentTypes[index])
-      return emitOpError("input bound to argument #")
-             << index << " should be " << argumentTypes[index] << " but got "
-             << input.getType();
-    // Pick the types of arguments that aren't bound.
-    while (lastIdx++ < index)
-      resultTypes.push_back(argumentTypes[lastIdx - 1]);
-  }
-  for (; lastIdx < argumentTypes.size(); ++lastIdx)
-    resultTypes.push_back(argumentTypes[lastIdx]);
-
-  assert(resultTypes.size() == argumentTypes.size() - getBoundInputs().size());
-  if (resultTypes != getType().getValues().getInputs())
-    return emitOpError("result signature does not match");
-
-  return success();
 }
 
 /// Canonicalize `partial_apply(partial_apply))` by folding the bound operands

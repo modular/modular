@@ -238,7 +238,11 @@ fn testScalar2(a: Scalar2[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
   # CHECK: %field2 = lit.var.decl "field2" : <scalar<si32>>
   var field2 = ref.value
 
-  #a.fma(a, a)
+#  a.fma
+  #(a, a)
   #b.fma(b, b)
   #var x = a+a
   #var y = b+b
+
+struct TestParamStruct[A: __mlir_type.index]:
+  fn method[B: __mlir_type.index, C: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
