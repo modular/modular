@@ -258,4 +258,11 @@ struct TestParamStruct[A: __mlir_type.index]:
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # a.method[7](TestParamStruct[11]())
+  # CHECK: %arg11 = lit.var.decl "arg11" : <@TestParamStruct<A = 11>?>
+  # CHECK: %0 = kgen.call_param[() -> !kgen.litdeclref<@TestParamStruct<A = 11>>: @TestParamStruct::@__new__<A = 11>]()
+  # CHECK: pop.store %0, %arg11 : !pop.pointer<@TestParamStruct<A = 11>?>
+  var arg11 = TestParamStruct[11]()
+
+  # CHECK: %1 = pop.load %arg11 : !pop.pointer<@TestParamStruct<A = 11>?>
+  # CHECK: %2 = kgen.call_param[(!kgen.litdeclref<@TestParamStruct<A = 4>>, !kgen.litdeclref<@TestParamStruct<A = 11>>) -> !lit.none: @TestParamStruct::@method<A = 4, B = 7>](%a, %1)
+  a.method[7](arg11)

@@ -135,7 +135,7 @@ def badCall():
 def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
-  generic_fn[1, dt, 42](57) # expected-error {{signature expects 2 parameter values}}
+  generic_fn[dt, 1, 42](57) # expected-error {{signature expects 2 parameter values}}
   generic_fn[1, dt](57) # expected-error {{index has type '__mlir_type.index' but declaration expects 'DType'}}
 
 def field_indexes(a: Int):
@@ -162,7 +162,7 @@ def BadDecorator(): pass
 def StaticMethod(): pass
 
 # expected-error @+1 {{special function must be a method}}
-def __new__(): pass
+def __add__(): pass
 
 struct WrongType:
   # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
@@ -334,7 +334,7 @@ fn slice_expression(a: Int):
 
 
 # expected-note @+1 {{previous definition here}}
-struct Parameterized[p1: Int]:
+struct Parameterized[p1: __mlir_type.index]:
   # expected-error @+1 {{invalid redefinition of "p1"}}
   fn a[p1: Int]():  # Cannot shadow parameter names.
 
@@ -342,6 +342,21 @@ struct Parameterized[p1: Int]:
   # expected-note @+1 {{previous definition here}}
   fn b[p2: Int, p2: Int, p3: Int]():  # Cannot shadow parameter names.
 
+  fn __new__() -> Parameterized[p1]:
+    var result: Parameterized[p1]
+    return result
+
+  fn method[B: __mlir_type.index](self, other: Parameterized[p1+B]):
+    pass
+
+# Test that we support partially bound parameters and diagnose incorrect uses
+# of parameters.
+fn testTestParamStruct(a: Parameterized[4]):
+  a.method[7](Parameterized[11]())
+  # expected-error @+1 {{value of type 'Parameterized[12]' cannot be converted to expected type 'Parameterized[11]'}}
+  a.method[7](Parameterized[12]())
+  a.method[2](Parameterized[6]())
+  a.method[2, 7] # expected-error {{too many parameters bound, signature expects 2 parameter values}}
 
 fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: SIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
