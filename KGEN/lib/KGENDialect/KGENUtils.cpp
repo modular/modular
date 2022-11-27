@@ -733,7 +733,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a SignatureType, we expect a symbol name or a
   // SymbolConstantAttr.  We need special parsing logic here because
   // FlatSymbolRefAttr isn't a TypedAttr.
-  if (isa<SignatureType>(type)) {
+  if (auto sigType = dyn_cast<SignatureType>(type)) {
     Attribute attr;
     if (p.parseAttribute(attr, type))
       return failure();
@@ -743,7 +743,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-      value = SymbolConstantAttr::get(symbol, paramValues.value(), type);
+      value = SymbolConstantAttr::get(symbol, paramValues.value(), sigType);
       return success();
     }
 
@@ -752,7 +752,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-      value = LITSymbolConstantAttr::get(symbol, paramValues.value(), type);
+      value = LITSymbolConstantAttr::get(symbol, paramValues.value(), sigType);
       return success();
     }
 
