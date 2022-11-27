@@ -943,9 +943,11 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     return operands[0];
 
   // Otherwise, compute the result type. If an error is producted, just abort.
-  resultType = *verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
-    llvm_unreachable("invalid bind_signature operator");
-  });
+  SignatureType resultSig =
+      *verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
+        llvm_unreachable("invalid bind_signature operator");
+      });
+  resultType = resultSig;
 
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
@@ -954,14 +956,14 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
            "cannot have already bound the input parmaeter, because we'd end up "
            "with a nongeneric signature that would fail verification");
 
-    auto signature = cast<SignatureType>(symbolConstant.getType());
+    SignatureType signature = symbolConstant.getType();
     SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
         signature.getInputParams(), operands.drop_front());
 
     return SymbolConstantAttr::get(
         symbolConstant.getSymbol(),
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
-        resultType);
+        resultSig);
   }
 
   // If the actual operand is a LITSymbolConstantAttr operand, then we can
@@ -972,14 +974,14 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
            "cannot have already bound the input parmaeter, because we'd end up "
            "with a nongeneric signature that would fail verification");
 
-    auto signature = cast<SignatureType>(symbolConstant.getType());
+    SignatureType signature = symbolConstant.getType();
     SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
         signature.getInputParams(), operands.drop_front());
 
     return LITSymbolConstantAttr::get(
         symbolConstant.getSymbolRef(),
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
-        resultType);
+        resultSig);
   }
 
   // If the operand is an expression function, substitute the parameter
@@ -1004,8 +1006,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       exprs.push_back(evaluator.getReboundAttribute(expr));
     return ExprFuncAttr::get(
         exprFunc.getInputs(),
-        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs),
-        cast<SignatureType>(resultType));
+        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs), resultSig);
   }
 
   return {};

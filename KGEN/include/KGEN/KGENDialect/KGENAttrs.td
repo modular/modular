@@ -429,17 +429,17 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
 
   let parameters = (ins "FlatSymbolRefAttr":$symbolRef,
                         "ParamBindArrayAttr":$paramValues,
-                        AttributeSelfTypeParameter<"">:$type);
+                        AttributeSelfTypeParameter<"", "KGEN::SignatureType">:$type);
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
-                                        "Type":$type), [{
+                                        "KGEN::SignatureType":$type), [{
       auto *context = symbol.getContext();
       return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
     }]>,
     AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
                                         "ParamBindArrayAttr":$paramValues,
-                                        "Type":$type), [{
+                                        "KGEN::SignatureType":$type), [{
       return get(symbol.getContext(), symbol, paramValues, type);
     }]>,
   ];
@@ -472,17 +472,17 @@ def LITSymbolConstantAttr : ExprAttr<"LITSymbolConstant", "symbol.constant"> {
 
   let parameters = (ins "SymbolRefAttr":$symbolRef,
                         "ParamBindArrayAttr":$paramValues,
-                        AttributeSelfTypeParameter<"">:$type);
+                        AttributeSelfTypeParameter<"", "KGEN::SignatureType">:$type);
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "Type":$type), [{
+                                        "KGEN::SignatureType":$type), [{
       auto *context = symbol.getContext();
       return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
     }]>,
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
                                         "ParamBindArrayAttr":$paramValues,
-                                        "Type":$type), [{
+                                        "KGEN::SignatureType":$type), [{
       return get(symbol.getContext(), symbol, paramValues, type);
     }]>,
   ];

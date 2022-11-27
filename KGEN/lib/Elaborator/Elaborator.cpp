@@ -1124,7 +1124,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
     auto itf = cast<GeneratorInterfaceOp>(user);
     itf.setEvaluatorAttr(SymbolConstantAttr::get(
         FlatSymbolRefAttr::get(newCalleeFunc.getSymNameAttr()),
-        NoneType::get(itf.getContext())));
+        newCalleeFunc.getSignature()));
   }
 
   // Bind the result parameters to the output parameter decls.
