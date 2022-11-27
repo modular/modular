@@ -322,18 +322,6 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
   return lookupResult;
 }
 
-/// Get a symbol for a direct reference to the specified function in its
-/// enclosing context.  This does not bind any values to arguments.
-static LITSymbolConstantAttr emitFuncReference(LITFuncOp fnOp, ASTDecl &fnDecl,
-                                               ArrayRef<ParamBindAttr> bindings,
-                                               SMLoc loc,
-                                               ExprEmitter &emitter) {
-  return LITSymbolConstantAttr::get(
-      fnDecl.getSymbolRef(),
-      ParamBindArrayAttr::get(emitter.getContext(), bindings),
-      fnOp.getFullSignature());
-}
-
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
 static CallableValue
@@ -359,8 +347,8 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     return {{AnyValue(LValue(var.getResult())), node}};
 
   // Functions form an address.
-  if (auto fnOp = dyn_cast<LITFuncOp>(*decl))
-    return emitFuncReference(fnOp, *decl, bindings, node->getLoc(), emitter);
+  if (isa<LITFuncOp>(*decl))
+    return CallableValue(node->getLoc(), *decl, bindings);
 
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl->getIfRValue())
@@ -419,35 +407,54 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
-CallableValue::CallableValue(LITSymbolConstantAttr symbol)
-    : targetSymbol(symbol) {}
+LITSymbolConstantAttr
+DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
+  SignatureType resultType = type;
 
-CallableValue::CallableValue(LITSymbolConstantAttr symbol,
-                             ASTExprAnd<AnyValue> baseVal)
-    : baseVal(baseVal), targetSymbol(symbol) {}
+  // SymbolConstantAttr provides a type for the SymbolRefAttr with the
+  // parameters substituted in.  The function reference binds any parameter
+  // bindings present on the access (in bindings), which typically concretizes
+  // the signature.
+  if (bindings.empty()) {
+    resultType = type;
+  } else {
+    resultType = resultType.getSpecializedSignature(
+        bindings,
+        [&]() -> InFlightDiagnostic { return emitter.emitError(loc, ""); });
+    if (!resultType)
+      return {};
+  }
 
-LITSymbolConstantAttr CallableValue::getTargetSymbol() const {
-  return cast_or_null<LITSymbolConstantAttr>(targetSymbol);
+  return LITSymbolConstantAttr::get(symbol, bindings, resultType);
 }
+
+/// Get a symbol for a direct reference to the specified function in its
+/// enclosing context.  This does not bind any values to arguments.
+CallableValue::CallableValue(SMLoc loc, ASTDecl &fnDecl,
+                             ArrayRef<ParamBindAttr> bindings)
+    : CallableValue(loc, fnDecl.getSymbolRef(),
+                    cast<LITFuncOp>(fnDecl).getFullSignature(), bindings) {}
 
 /// Emit this as a flattened RValue or LValue.  This returns null on failure.
 AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.
-  auto symbol = getTargetSymbol();
-  if (!symbol)
+  if (!direct)
     return baseVal.ir;
+
+  auto directSymbolAttr = direct->getBoundConstantAttr(emitter);
+  if (!directSymbolAttr)
+    return {};
 
   // If we have no base value, then we are just a symbol, return it.
   if (!baseVal)
-    return MValue(symbol);
+    return MValue(directSymbolAttr);
 
   auto loc = baseVal.expr->getLoc();
 
   // Otherwise, we have a base symbol for an instance method /and/ a self
   // value to apply to it.  Partially apply it to form a result closure.
-  auto symbolIRType = symbol.getType();
-  Type firstArgIRType = symbolIRType.getValues().getInputs()[0];
+  Type firstArgIRType = directSymbolAttr.getType().getValues().getInputs()[0];
   Value firstArgValue;
   if (isa<POP::PointerType>(firstArgIRType)) {
     LValue baseLV = baseVal.ir.getIfLValue();
@@ -480,7 +487,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a DRValue for
   // partial_apply.
-  auto calleeDRVal = emitter.emitDRValue(AnyValue(symbol), loc);
+  auto calleeDRVal = emitter.emitDRValue(AnyValue(directSymbolAttr), loc);
 
   // Partial apply wants to know what operands to bind, we always bind the
   // first one.
@@ -506,12 +513,12 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // to simplify the logic below.
   bool isMethodInvocation = false;
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
-  if (calleeVal.baseVal && calleeVal.getTargetSymbol()) {
+  if (calleeVal.baseVal && calleeVal.direct) {
     operandsWithSelf.reserve(operands.size() + 1);
     operandsWithSelf.push_back(calleeVal.baseVal);
     operandsWithSelf.append(operands.begin(), operands.end());
-    calleeVal = CallableValue(calleeVal.getTargetSymbol());
     operands = operandsWithSelf;
+    calleeVal.baseVal = {};
     isMethodInvocation = true;
   }
 
@@ -522,40 +529,34 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // Figure out the type of the function to call, which is either symbol or a
   // normal rvalue.
   SignatureType calleeSig;
-  SmallVector<ParamBindAttr> inputParamBindings;
-  if (auto symbol = calleeVal.getTargetSymbol()) {
-    // For direct calls, process input meta parameters.
+
+  // This is the callee symbol constant for a direct call, or the SSA value for
+  // an indirect call.
+  PointerUnion<Attribute, Value> callee;
+  if (calleeVal.direct) {
+    LITSymbolConstantAttr symbol =
+        calleeVal.direct->getBoundConstantAttr(emitter);
+    if (!symbol)
+      return {};
+
     calleeSig = symbol.getType();
-    inputParamBindings.append(symbol.getParamValues().begin(),
-                              symbol.getParamValues().end());
-
-    // SymbolConstantAttr provides a type for the SymbolRefAttr with the
-    // parameters substituted in.  The function reference binds any parameter
-    // bindings present on the access (in bindings), which typically concretizes
-    // the signature.
-    if (!inputParamBindings.empty()) {
-      calleeSig = calleeSig.getSpecializedSignature(
-          inputParamBindings,
-          [&]() -> InFlightDiagnostic { return emitError(""); });
-      if (!calleeSig)
-        return {};
-
-      // Remapped.
-      calleeVal = LITSymbolConstantAttr::get(
-          symbol.getSymbolRef(), symbol.getParamValues(), calleeSig);
-    }
-
+    callee = symbol;
   } else {
-    // Otherwise we have an indirect calls.
-    calleeSig =
-        dyn_cast<SignatureType>(calleeVal.baseVal.ir.getRValueType().mlirType);
+    // Otherwise we have an indirect call, emit the callee value as a DRValue so
+    // we can call it with call_indirect.
+    auto calleeDRVal = emitter.emitDRValue(calleeVal.baseVal.ir, callLoc);
+    if (!calleeDRVal)
+      return {};
+
+    calleeSig = dyn_cast<SignatureType>(calleeDRVal.getType());
     if (!calleeSig) {
-      emitError("invalid function to call");
+      emitError("invalid function type to call ")
+          << ASTType(calleeDRVal.getType());
       return {};
     }
-    assert(calleeSig.getInputParams().empty() &&
-           "rvalues cannot have input parameters");
+    callee = calleeDRVal;
   }
+
   assert(calleeSig.getResultParamTypes().empty() &&
          "TODO: meta results not implemented yet");
 
@@ -615,23 +616,20 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   Value resultVal;
   auto loc = emitter.translateLocation(callLoc);
   auto resultTypes = calleeSig.getValues().getResults();
-  if (auto target = calleeVal.getTargetSymbol()) {
+  if (auto target = dyn_cast<Attribute>(callee)) {
     // TODO: Change this into a lit.call that accepts a non-flat symbol.
 
     // FIXME: Move result type inference into CallOp/CallIndirectOp.
-    resultVal =
-        emitter.builder
-            ->create<CallParamOp>(loc, resultTypes, target,
-                                  /*inputParams*/ ArrayRef<ParamBindAttr>(),
-                                  /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-                                  /*operands*/ valueArguments)
-            .getResult(0);
+    resultVal = emitter.builder
+                    ->create<CallParamOp>(
+                        loc, resultTypes, cast<LITSymbolConstantAttr>(target),
+                        /*inputParams*/ ArrayRef<ParamBindAttr>(),
+                        /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+                        /*operands*/ valueArguments)
+                    .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
-    auto calleeDRVal = emitter.emitDRValue(calleeVal.baseVal.ir, callLoc);
-    if (!calleeDRVal)
-      return {};
-    assert(inputParamBindings.empty());
+    auto calleeDRVal = cast<Value>(callee);
     resultVal = emitter.builder
                     ->create<CallIndirectOp>(loc, resultTypes, calleeDRVal,
                                              /*operands*/ valueArguments)
@@ -643,7 +641,8 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
 }
 
 /// Emit a function call for a call node with the specified operands.
-static AnyValue emitFunctionCall(const CallNode &call, CallableValue calleeVal,
+static AnyValue emitFunctionCall(const CallNode &call,
+                                 const CallableValue &calleeVal,
                                  ExprEmitter &emitter) {
   SmallVector<ASTExprAnd<AnyValue>> operands;
   for (ExprNode *arg : call.args) {
@@ -678,10 +677,7 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   if (failed(shared.declResolver->resolve(
           *lookupResult, DeclResolvedness::signatureResolved, callLoc)))
     return {};
-  CallableValue callee(emitFuncReference(cast<LITFuncOp>(*lookupResult),
-                                         *lookupResult, type.getParamBindings(),
-                                         callLoc, *this));
-  assert(callee && "always succeeds");
+  CallableValue callee(callLoc, *lookupResult, type.getParamBindings());
   return emitFunctionCall(callee, operands, callLoc, *this);
 }
 
@@ -839,18 +835,17 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   // Handle method references.
   if (auto fnOp = dyn_cast<LITFuncOp>(*memberDecl)) {
     // Get a symbol for the underlying function.
-    LITSymbolConstantAttr fnRef = emitFuncReference(
-        fnOp, *memberDecl, baseRVType.getParamBindings(), getLoc(), emitter);
-    assert(fnRef && "always succeeds");
+    CallableValue fnRef(getLoc(), *memberDecl, baseRVType.getParamBindings());
 
     // If the callee is a static method, we can directly reference it without
     // binding a self parameter.
     if (fnOp.getIsStatic())
-      return CallableValue(fnRef);
+      return fnRef;
 
     // If this is an instance method, we bind the base value and the symbol
     // together into a callable.
-    return CallableValue(fnRef, {baseVal, base});
+    fnRef.baseVal = {baseVal, base};
+    return fnRef;
   }
 
   if (!emitter.builder) {
@@ -915,12 +910,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Process the attributes and figure out the result type if specified.
   for (auto &attr : unboundOp.getAttrs()) {
-    // TODO: Support zero results and multiple results by expanding _type to
-    // take an array of types, e.g. `_type: [__mlir_type.i1,
-    // __mlir_type.i32]`. This will require teaching Lit to emit arrays of
-    // attributes as an ArrayAttr or something.
     if (attr.getName() == "_type") {
-      // The value must be a concrete or parametric type.
+      // The value must be a type value, or array thereof.
       Type type;
       if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
         type = MValue(typedAttr).getIfTypeValue();
@@ -1046,7 +1037,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
   // If the returned RValue is a type value (as in `T()` or `T[123]()`), then
   // this is an invocation of the initializer for the type.
-  if (!calleeVal.getTargetSymbol())
+  if (!calleeVal.direct)
     if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue())
       calleeVal = emitInitializerCallable(calledType, this, emitter);
 
@@ -1213,13 +1204,13 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
 
   // If the subValue has a bound callable symbol, then this is applying (more)
   // meta values to bind its parameters.
-  if (auto baseSymbol = subValue.getTargetSymbol()) {
+  if (subValue.direct) {
     // We can bind additional parameters to a signature.
-    SignatureType signature = baseSymbol.getType();
+    SignatureType signature = subValue.direct->type;
 
     // TODO: For now we just support positional arguments, we could support
     // named arguments in the future.
-    SmallVector<ParamBindAttr> bindings(baseSymbol.getParamValues().getValue());
+    SmallVector<ParamBindAttr> bindings(subValue.direct->bindings.getValue());
     size_t numParams = signature.getInputParams().size();
 
     // Process each subscript entry as a binding.
@@ -1250,12 +1241,10 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       bindings.push_back(ParamBindAttr::get(decl.getName(), val));
     }
 
-    // Okay, everything checks out, form the bind operation.
-    return {LITSymbolConstantAttr::get(
-                baseSymbol.getSymbolRef(),
-                ParamBindArrayAttr::get(emitter.getContext(), bindings),
-                baseSymbol.getType()),
-            subValue.baseVal};
+    // Okay, everything checks out, form the new binding array.
+    subValue.direct->bindings =
+        ParamBindArrayAttr::get(emitter.getContext(), bindings);
+    return subValue;
   }
 
   // Otherwise, if there is no symbol, it is just an LValue or RValue being

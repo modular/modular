@@ -13,14 +13,13 @@
 #define LIT_EXPRS_H
 
 #include "IRValues.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "LitSharedState.h"
 #include "SpecialFunctions.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/Support/SMLoc.h"
 
-namespace M::KGEN {
-class LITSymbolConstantAttr;
-}
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ASTDecl;
@@ -146,6 +145,24 @@ public:
 // CallableValue
 //===----------------------------------------------------------------------===//
 
+/// This struct models something that can be directly called, e.g. a global
+/// symbol with any binding information.
+struct DirectCallable {
+  llvm::SMLoc loc;
+
+  /// The function that may be called directly.
+  SymbolRefAttr symbol;
+  /// The full signature of the symbol.
+  SignatureType type;
+  /// Any bound parameters.
+  ParamBindArrayAttr bindings;
+
+  /// Perform subsitutions of the specified bindings into the symbol, returning
+  /// the resultant LITSymbolConstant attr or producing an error message and
+  /// returning null.
+  LITSymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+};
+
 /// This class is returned by the emitCallable hooks on AST expressions, which
 /// captures aggregate callable values.  This is required to hold parametric
 /// callees before their parameters are bound, e.g. in `obj.method[p1,p2](...)`
@@ -160,26 +177,26 @@ public:
   /// argument to a call to the symbol.
   ASTExprAnd<AnyValue> baseVal;
 
-  /// When non-null, this is a staticly known callee that potentially has
-  /// parameters bound.
+  /// If present, this callable value is a reference to a fixed symbol.
   /// TODO: Extend to support overload sets.
-  LITSymbolConstantAttr getTargetSymbol() const;
+  Optional<DirectCallable> direct;
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
-  CallableValue(LITSymbolConstantAttr symbol);
-  CallableValue(LITSymbolConstantAttr symbol, ASTExprAnd<AnyValue> baseVal);
+  CallableValue(llvm::SMLoc loc, SymbolRefAttr symbol, SignatureType type,
+                ArrayRef<ParamBindAttr> bindings = {})
+      : direct({loc, symbol, type,
+                ParamBindArrayAttr::get(type.getContext(), bindings)}) {}
+  CallableValue(llvm::SMLoc loc, ASTDecl &fnDecl,
+                ArrayRef<ParamBindAttr> bindings);
 
-  bool isNull() const { return !baseVal && !targetSymbol; }
+  bool isNull() const { return !baseVal && !direct; }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  /// Emit this as a flattened RValue or LValue.  This returns null on failure.
+  /// Emit this as a flattened RValue or LValue.  This returns null on
+  /// failure.
   AnyValue emitAsValue(ExprEmitter &emitter) const;
-
-private:
-  /// If non-null, this is always a LITSymbolConstantAttr.
-  Attribute targetSymbol;
 };
 
 //===----------------------------------------------------------------------===//
