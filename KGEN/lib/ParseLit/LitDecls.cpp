@@ -700,7 +700,7 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
         defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
 
-      auto noneAttr = b.getType<NoneAttr>(defOp.getResultType());
+      auto noneAttr = b.getAttr<NoneAttr>(defOp.getResultType());
       Value noneVal = b.create<ParamConstantOp>(loc, noneAttr);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {

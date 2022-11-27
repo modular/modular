@@ -7,6 +7,14 @@
 #
 #===------------------------------------------------------------------------===#
 
+# CHECK-LABEL: assertParam
+fn assertParam[condVal: __mlir_type.i1]():
+# CHECK: kgen.param.assert <condVal>, "param assertion failed"
+  __mlir_op.`kgen.param.assert`[_type: [],
+                                cond: condVal,
+                                message: "param assertion failed"]()
+
+
 #===------------------------------------------------------------------------===#
 # Bool
 #===------------------------------------------------------------------------===#
