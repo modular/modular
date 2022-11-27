@@ -462,7 +462,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
 // LITSymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-def LITSymbolConstantAttr : ExprAttr<"LITSymbolConstant", "symbol.constant"> {
+def LITSymbolConstantAttr : ExprAttr<"LITSymbolConstant", "lit.symbol.constant"> {
   let summary = "Possibly-nested function reference";
   let description = [{
     This is a value of !kgen.signature type, which refers to a lit.func with
