@@ -172,27 +172,21 @@ z
   # CHECK-NEXT: kgen.return %[[TMP]]
   return x
 
-# CHECK-LABEL: lit.func @listValues() -> index attributes {isDef} {
-def listValues() -> __mlir_type.index:
-  # CHECK:      %[[ONE:.*]] = {{.*}} 1
-  # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[THREE:.*]] = {{.*}} 3
+# CHECK-LABEL: lit.func @listValues() -> index
+fn listValues() -> __mlir_type.index:
+  # CHECK: %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT: pop.store %[[THREE:.*]], %a
-  a = [1, 2, 2+1]
-  # CHECK:      %[[ONE:.*]] = {{.*}} 1
-  # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[THREE:.*]] = {{.*}} 3
+  var a = [1, 2, 2+1]
+  # CHECK: %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT: pop.store %[[THREE:.*]], %a
   a = [1, 2, 2+1,]
-  # CHECK:      %[[ONE:.*]] = {{.*}} 1
-  # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[THREE:.*]] = {{.*}} 3
+  # CHECK: %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT: pop.store %[[THREE:.*]], %a
   a = [1, 2,
             2+1]
-  # CHECK:      %[[ZERO:.*]] = {{.*}} 0
-  # CHECK-NEXT: pop.store %[[ZERO:.*]], %a
-  a = []
+  # CHECK:      %[[NONE:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: pop.store %[[NONE:.*]], %b
+  var b = []
   return a
 
 # CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.litdeclref<@Bool>) -> !lit.none

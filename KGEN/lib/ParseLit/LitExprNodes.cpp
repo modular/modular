@@ -909,17 +909,20 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   state.addOperands(opOperands);
 
   // Process the attributes and figure out the result type if specified.
+  bool hadTypeSpec = false;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
       // The value must be a type value, or array thereof.
-      Type type;
-      if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
-        type = MValue(typedAttr).getIfTypeValue();
-      if (!type) {
+      if (isa<NoneAttr>(attr.getValue())) {
+        // TODO: We don't currently have array attrs for lists, but we use
+        // NoneAttr to mark an empty list for operations with no result.
+      } else if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue())) {
+        state.types.push_back(MValue(typedAttr).getIfTypeValue());
+      } else {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
-      state.types.push_back(type);
+      hadTypeSpec = true;
       continue;
     }
     state.addAttributes(attr);
@@ -942,7 +945,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         state.types);
   };
 
-  if (state.types.empty()) {
+  if (!hadTypeSpec) {
     if (failed(inferType())) {
       emitter.emitError(call.getLoc(),
                         "unable to infer result type from MLIR operation ")
@@ -1287,29 +1290,26 @@ AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
 
 AnyValue ListExprNode::emitIR(ExprEmitter &emitter,
                               ASTType contextualType) const {
-  // TODO: here we return the last expression, we should return a list object
-  // instead.
-  DRValue last;
+  SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
-    RValue exprRep = emitter.emitRValue(expr);
-    if (!exprRep)
+    elements.push_back(emitter.emitRValue(expr));
+    if (!elements.back())
       return {};
-
-    // TODO(types): allow all types.
-    if (!exprRep.getType().isIndex()) {
-      emitter.emitError(
-          getLoc(), "List expression with interesting types not implemented");
-      return {};
-    }
-    assert(emitter.builder && "cannot have dynamic values without a builder");
-    last = emitter.emitDRValue(exprRep, expr->getLoc());
-  }
-  if (exprs.empty()) {
-    Location loc = emitter.translateLocation(getLoc());
-    last = DRValue(emitter.builder->create<mlir::index::ConstantOp>(loc, 0));
   }
 
-  return last;
+  // TODO: If all of these are meta values, produce some typed array constant.
+  // We cannot use ArrayAttr here though, because it isn't a TypedAttr.
+
+  // TODO: Form a dynamic array value instead of returning the last element.
+  if (!elements.empty())
+    return elements.back();
+
+  // TODO: None is the wrong thing, but is useful for now for referring to type
+  // arrays used by __mlir_op.
+  auto noneType = emitter.shared.getNoneType();
+  // TODO: NoneAttr should have a nicer builder.
+  auto noneAttr = NoneAttr::get(emitter.getContext(), noneType);
+  return MValue(noneAttr);
 }
 
 /// Given an operator, return the SpecialFunction that implements it.
