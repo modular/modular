@@ -93,6 +93,8 @@ struct DeclRefNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  CallableValue emitCallable(ExprEmitter &emitter,
+                             ASTType contextualType) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -112,6 +114,8 @@ struct AttributeRefNode final : public ExprNode {
     return {base->getRange().Start, getSMLocFromStringRef(attrSpelling)};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  CallableValue emitCallable(ExprEmitter &emitter,
+                             ASTType contextualType) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -152,6 +156,8 @@ struct SubscriptNode final : public ExprNode {
     return {base->getRange().Start, rsquareLoc};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  CallableValue emitCallable(ExprEmitter &emitter,
+                             ASTType contextualType) const override;
 };
 
 /// This is an expression that produces a slice value in a SubscriptNode index
@@ -204,6 +210,11 @@ struct ParenExprNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   llvm::SMRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+
+  CallableValue emitCallable(ExprEmitter &emitter,
+                             ASTType contextualType) const override {
+    return subExpr->emitCallable(emitter, contextualType);
+  }
 };
 
 struct ListExprNode final : public ExprNode {
