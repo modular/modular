@@ -24,8 +24,8 @@ M::MatMulBroadcast::MatMulBroadcast(ArrayRef<int64_t> x, ArrayRef<int64_t> y) {
 
   xBatchSize = TensorShape(batchBCast->getXReshape()).getNumElements();
   yBatchSize = TensorShape(batchBCast->getYReshape()).getNumElements();
-  outputBatchShape = TensorShape(batchBCast->getOutputShape());
-  outputBatchSize = outputBatchShape.getNumElements();
+  outputBatchShape = llvm::to_vector(batchBCast->getOutputShape());
+  outputBatchSize = TensorShape(outputBatchShape).getNumElements();
   broadcastingRequired = std::min(xBatchSize, yBatchSize) != outputBatchSize;
 
   if (broadcastingRequired) {
