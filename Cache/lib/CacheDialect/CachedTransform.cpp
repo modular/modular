@@ -211,9 +211,7 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     auto pmResult = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
     chain.andThen(
         [op, &pm, chain = chain.copy(), pmResult = pmResult.copy()]() mutable {
-          if (failed(*chain))
-            return pmResult.emplace(failure());
-          if (failed(pm.run(op)))
+          if (failed(*chain) || failed(pm.run(op)))
             return pmResult.emplace(failure());
 
           pmResult.emplace(success());
