@@ -196,10 +196,10 @@ M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
 
     andThenMoving(results,
                   [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
-                    for (auto &v : values) {
+                    for (auto &v : values)
                       if (failed(v->get<LogicalResult>()))
-                        out.emplace(failure());
-                    }
+                        return out.emplace(failure());
+
                     out.emplace(success());
                   });
   });
@@ -270,12 +270,9 @@ M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
     // success/failure.
     andThenMoving(results, [cached, out = out.copy()](
                                MutableArrayRef<AnyAsyncValueRef> values) {
-      for (auto &v : values) {
-        if (failed(v->get<LogicalResult>())) {
-          out.emplace(failure());
-          return;
-        }
-      }
+      for (auto &v : values)
+        if (failed(v->get<LogicalResult>()))
+          return out.emplace(failure());
 
       // Remove the region hash attr.
       cached->removeAttr(getRegionHashAttrName());
