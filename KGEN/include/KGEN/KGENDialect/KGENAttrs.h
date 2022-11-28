@@ -19,6 +19,15 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Triple.h"
+
+namespace llvm {
+
+inline hash_code hash_value(llvm::Triple triple) {
+  return hash_value(triple.normalize());
+}
+
+} // namespace llvm
 
 namespace M::KGEN {
 class ListType;

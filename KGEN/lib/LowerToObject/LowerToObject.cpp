@@ -70,7 +70,7 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo,
                           const CompilationOptions &options, bool isJIT) {
   { // TODO: remove this once we have more cross-compilation capability.
     auto targetTriple = llvm::sys::getDefaultTargetTriple();
-    assert(targetInfo.getTriple() == targetTriple &&
+    assert(targetInfo.getTripleStr() == targetTriple &&
            "TODO: target info must match host for now");
   }
 
@@ -80,13 +80,13 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo,
 
   std::string errorMessage;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
-      targetInfo.getTriple().str(), errorMessage);
+      targetInfo.getTripleStr(), errorMessage);
   if (!target)
-    return Error("no target exists for '" + targetInfo.getTriple() +
+    return Error("no target exists for '" + targetInfo.getTripleStr() +
                  "': " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      targetInfo.getTriple(), targetInfo.getCpu(), targetInfo.getFeatures(),
+      targetInfo.getTripleStr(), targetInfo.getCpu(), targetInfo.getFeatures(),
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
       /*CM=*/None, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));

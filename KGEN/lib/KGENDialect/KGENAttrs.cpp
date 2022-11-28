@@ -20,6 +20,8 @@
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/Host.h"
 
+#include "llvm/ADT/Triple.h"
+
 using namespace M;
 using namespace M::KGEN;
 
@@ -1488,6 +1490,50 @@ Type ParameterizedTypeConstantAttr::getValue() const {
   return getImpl()->value;
 }
 
+void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
+  odsPrinter << "<\"" << getTripleStr() << "\", \"" << getCpu() << "\", \""
+             << getFeatures() << "\", " << getPointerSize() << '>';
+}
+
+// TargetInfoAttr is either
+// #kgen.target<"triple", "cpu", "features", "pointerSize">
+// or #kgen.target<host>
+mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
+                                      mlir::Type odsType) {
+
+  parser.parseLess();
+
+  // #kgen.target<host>
+  StringRef host;
+  if (succeeded(parser.parseOptionalKeyword(&host))) {
+    if (host != "host")
+      // We expect the keyword to be "host"
+      return {};
+
+    parser.parseGreater();
+    return TargetInfoAttr::getForHost(parser.getContext());
+  }
+
+  // #kgen.target<"triple", "cpu", "features", ptrSize>
+  std::string tripleStr;
+  std::string cpuStr;
+  std::string featuresStr;
+  int64_t pointerSize;
+
+  if (parser.parseString(&tripleStr) || parser.parseComma() ||
+      parser.parseString(&cpuStr) || parser.parseComma() ||
+      parser.parseString(&featuresStr) || parser.parseComma() ||
+      parser.parseInteger(pointerSize) || parser.parseGreater()) {
+    return {};
+  }
+
+  llvm::Triple triple = llvm::Triple(tripleStr);
+
+  mlir::MLIRContext *ctx = parser.getContext();
+  return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
+                             TargetType::get(ctx));
+}
+
 TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
   auto targetTriple = llvm::sys::getDefaultTargetTriple();
 
@@ -1502,6 +1548,7 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
       features.AddFeature(f.first(), f.second);
 
   // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, targetTriple, cpu, features.getString(),
-                             sizeof(ssize_t), StringType::get(ctx));
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
+                             features.getString(), sizeof(ssize_t),
+                             TargetType::get(ctx));
 }
