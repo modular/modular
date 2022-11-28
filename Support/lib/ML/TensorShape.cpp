@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/TensorShape.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/raw_ostream.h"
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//
@@ -106,7 +108,16 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
 //===----------------------------------------------------------------------===//
 
 void TensorShape::print(raw_ostream &os) const {
-  llvm::interleave(getDims(), os, "x");
+  llvm::interleave(
+      getDims(), os,
+      [&](ssize_t dim) {
+        if (mlir::ShapedType::isDynamic(dim)) {
+          os << "?";
+          return;
+        }
+        os << dim;
+      },
+      "x");
 }
 
 std::string TensorShape::getAsString() const {
