@@ -62,7 +62,7 @@ public:
   int64_t getOutputBatchSize() const { return outputBatchSize; }
   int64_t getXBatchSize() const { return xBatchSize; }
   int64_t getYBatchSize() const { return yBatchSize; }
-  const TensorShape &getOutputBatchShape() const { return outputBatchShape; }
+  ArrayRef<int64_t> getOutputBatchShape() const { return outputBatchShape; }
 
   /// Returns the mapping from the flattened output batch indices to x's
   /// flattened batch indices. The result is a vector of length
@@ -83,7 +83,7 @@ private:
   bool broadcastingRequired = false;
   int64_t xBatchSize = 1;
   int64_t yBatchSize = 1;
-  TensorShape outputBatchShape;
+  SmallVector<int64_t> outputBatchShape;
   int64_t outputBatchSize = 1;
   SmallVector<int64_t> xBatchIndices;
   SmallVector<int64_t> yBatchIndices;
