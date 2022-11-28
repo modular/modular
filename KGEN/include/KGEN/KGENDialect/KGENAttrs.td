@@ -593,21 +593,52 @@ def ConstraintArrayAttr
 //===----------------------------------------------------------------------===//
 
 def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
-  let parameters = (ins StringRefParameter<"">:$triple,
+  let parameters = (ins "llvm::Triple":$triple,
                         StringRefParameter<"">:$cpu,
                         StringRefParameter<"">:$features,
                         "int64_t":$pointerSize,
                         AttributeSelfTypeParameter<"">:$type);
+  let summary = "kgen target";
+  let description = [{
+    An attribute representing a target of type !kgen.target. It contains the
+    target triple, cpu, features, and pointer size.
 
-  let assemblyFormat = [{
-    `<` $triple `,` $cpu `,` $features `,` $pointerSize `>`
+    There are two text formats that represent this attribute:
+      `#kgen.target<host>` and
+      `#kgen.target<"triple", "cpu", "features", ptrSize>`
+
+    `#kgen.target<host>` is sugar for the TargetInfoAttr corresponding to the
+    host machine. It will NOT be printed as `kgen.target<host>`.
+
+    Example:
+
+    ```mlir
+    kgen.generator @target_host<t0: target>()
+      constraints <[target_supports(:target #kgen.target<host>, t0),
+                                    "Must support the target!"]> {
+      kgen.return
+    }
+
+    kgen.generator @target_host<t0: target>()
+      constraints <[target_supports(:target
+        #kgen.target<"triple", "cpu", "features", ptrSize>,
+        t0), "Must support the target!"]> {
+      kgen.return
+    }
+    ```
   }];
+
+  let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
     /// Provides a stable hash function for use as part of a cache key.
     llvm::hash_code hash() const {
-      return llvm::hash_combine(getTriple(), getCpu(), getFeatures(),
+      return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
                                 getPointerSize());
+    }
+
+    std::string getTripleStr() const {
+      return getTriple().normalize();
     }
 
     static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);

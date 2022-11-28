@@ -440,6 +440,14 @@ kgen.generator @target_params2<t0: target>()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @target_host<t0: target>()
+kgen.generator @target_host<t0: target>()
+  // COM: constraints <[target_supports(:target #kgen.target<"x86_64-unknown-linux-gnu", "znver3", "-avx512pf,...">, t0),
+  // CHECK: constraints <[target_supports(:target #kgen.target<
+  constraints <[target_supports(:target #kgen.target<host>, t0), "must support target!!"]> {
+  kgen.return
+}
+
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<
 kgen.generator @region_params
