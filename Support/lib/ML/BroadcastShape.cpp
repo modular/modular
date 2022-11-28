@@ -8,6 +8,11 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 
+// TODO: This is the same value that MLIR uses currently. We need to decide how
+// to reference it, but Support/ML shouldn't depend on mlir, so we may need to
+// move this file.
+static constexpr int64_t kDynamicSize = std::numeric_limits<int64_t>::min();
+
 using namespace M;
 
 ErrorOr<TensorShape> M::broadcastedShape(const TensorShape &a,
@@ -59,7 +64,8 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
 
   // Safely multiplies dimensions taking into account symbolic shapes.
   auto mul_dims = [](int64_t dim1, int64_t dim2) -> int64_t {
-    return dim1 != 0 && dim2 != 0 && (dim1 < 0 || dim2 < 0) ? -1 : dim1 * dim2;
+    const bool isDynamic = dim1 != 0 && dim2 != 0 && (dim1 < 0 || dim2 < 0);
+    return isDynamic ? kDynamicSize : dim1 * dim2;
   };
 
   bool all_equal = true;
@@ -115,10 +121,9 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     current_is_one[i] = false;
   }
   bool output_dim_set = false;
-  int output_dim = -1;
   bool set_one = false;
   for (size_t j = 0; j < largest_rank; ++j) {
-    output_dim = -1;
+    int64_t output_dim = kDynamicSize;
     output_dim_set = false;
     // Find which indices are 1.
     for (int i = 0; i < N; ++i) {
