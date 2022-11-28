@@ -35,8 +35,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef SUPPORT_ML_MATMULBCAST_H
-#define SUPPORT_ML_MATMULBCAST_H
+#ifndef SUPPORT_ML_MATMULBROADCAST_H
+#define SUPPORT_ML_MATMULBROADCAST_H
 
 #include "Support/ML/BroadcastShape.h"
 #include "Support/ML/TensorShape.h"
@@ -91,4 +91,4 @@ private:
 
 } // namespace M
 
-#endif // SUPPORT_ML_MATMULBCAST_H
+#endif // SUPPORT_ML_MATMULBROADCAST_H

@@ -114,7 +114,6 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     prev_is_one[i] = false;
     current_is_one[i] = false;
   }
-  Vec output;
   bool output_dim_set = false;
   int output_dim = -1;
   bool set_one = false;

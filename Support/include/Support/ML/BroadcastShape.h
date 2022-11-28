@@ -35,8 +35,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef SUPPORT_ML_BCAST_H
-#define SUPPORT_ML_BCAST_H
+#ifndef SUPPORT_ML_BROADCASTSHAPE_H
+#define SUPPORT_ML_BROADCASTSHAPE_H
 
 #include <algorithm>
 
@@ -191,4 +191,4 @@ private:
 
 } // namespace M
 
-#endif // SUPPORT_ML_BCAST_H
+#endif // SUPPORT_ML_BROADCASTSHAPE_H
