@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/TensorSpec.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -14,7 +15,16 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 void TensorSpec::print(raw_ostream &os) const {
-  llvm::interleave(getDims(), os, "x");
+  llvm::interleave(
+      getDims(), os,
+      [&](ssize_t dim) {
+        if (mlir::ShapedType::isDynamic(dim)) {
+          os << "?";
+          return;
+        }
+        os << dim;
+      },
+      "x");
   if (getRank() != 0)
     os << 'x';
   os << getEltType();
