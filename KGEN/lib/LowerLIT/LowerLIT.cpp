@@ -644,11 +644,13 @@ static void renameSymbolReferences(Operation *op) {
   });
 }
 
+namespace {
 // Convenience wrapper instead of a std::pair.
 struct NameAndType {
   StringAttr name;
   Type type;
 };
+} // namespace
 
 // Look for LITDeclRefTypes and replace them with DeclRefType ones.
 // structParamDecls is used to lookup struct declarations and theirs respective
