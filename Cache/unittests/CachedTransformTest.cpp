@@ -22,11 +22,14 @@ using namespace Cache;
 using namespace LLCL;
 using namespace mlir;
 
+namespace {
 class TestPass
     : public mlir::PassWrapper<TestPass, OperationPass<mlir::func::FuncOp>> {
 public:
   TestPass(bool *actuallyRun) : actuallyRun(actuallyRun) {}
   using PassWrapper::PassWrapper;
+
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestPass);
 
   void runOnOperation() override {
     if (!*actuallyRun)
@@ -44,6 +47,7 @@ public:
 
   bool *actuallyRun;
 };
+} // namespace
 
 static constexpr char mlirString[] = R"(
 func.func private @someFunc() {
