@@ -612,7 +612,7 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
 /// references in symbol constants.
 static void renameSymbolReferences(Operation *op) {
   auto trimSymbolConstant = [](Attribute attr) -> Attribute {
-    if (auto symbolCst = dyn_cast<SymbolConstantAttr>(attr)) {
+    if (auto symbolCst = dyn_cast<LITSymbolConstantAttr>(attr)) {
       SymbolRefAttr symRef = symbolCst.getSymbolRef();
       SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
       for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
