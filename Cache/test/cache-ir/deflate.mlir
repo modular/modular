@@ -13,7 +13,14 @@ func.func private @trivial(%arg0: i32) {
   return
 }
 
-// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"IrA5UZnO267JoloA9sG21RXfNT0kcH2mYYwUxBr8ESU="[@trivial]>]>}
+// COM: Empty funcs still have regions, they're just...empty! Their hashes must therefore match.
+
+// CHECK-LABEL: func.func private @empty1() attributes {region_hashes = #cache<regions[<"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">]>}
+func.func private @empty1()
+// CHECK-LABEL: func.func private @empty2() attributes {region_hashes = #cache<regions[<"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">]>}
+func.func private @empty2()
+
+// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"I5l3gqO4/9OLXplvOlYzfapo7ZkT5cSPWQNPBaHDTuM="[@trivial]>]>}
 
 // ROUNDTRIP: func.func private @caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -25,7 +32,7 @@ func.func private @caller(%arg0: i32) {
   return
 }
 
-// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"TWsbzGIvYfTNilkZPcjuUuPdm23nP/6TPAzwRp8QCXE="[@trivial, @caller]>]>}
+// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"TqvkgwX3ENTrquxZn8d/fFBYk9xcQ3UkNVCO/QRoDyg="[@trivial, @caller]>]>}
 
 // ROUNDTRIP: func.func private @multi_caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -48,13 +55,13 @@ func.func private @another_trivial(%arg0: i32) {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }) {region0_type = (i32) -> (), region_hashes = #cache<regions[
-// CHECK-SAME: <"N5Kv1S+GQXt0lF5dDFGNeUInHOHLyUkRuBn/DZ+85v8="[@trivial]>
+// CHECK-SAME: <"rdBvD5Aa6w7ld/MUW6aFwm4R5UAW/rwWmhVaNLwaCZk="[@trivial]>
 // COM: thse two *should* be the same - different symbol names but in the same position.
 // COM: They aren't because we currently hash locations which are not region-relative.
-// CHECK-SAME: <"nnzb/p3DOh4m7lCDNow2CZIehKOfOZEfcqhfOI+1JVw="[@trivial, @caller]>
-// CHECK-SAME: <"xaR5TkYNDnHvkXFWksmuRcDHZ9nMQUpmUSV1L8z/R/k="[@another_trivial, @caller]>
+// CHECK-SAME: <"xYXGZG7b0AFAOhX61T9C8DHDL8nd5FzbnC7sg6cOFc8="[@trivial, @caller]>
+// CHECK-SAME: <"WzI/hr1vwJKONW/7I7fXUTOBMbj90PTPR8flZ0v4Kfw="[@another_trivial, @caller]>
 // COM: This one should be different because the cache indices are different.
-// CHECK-SAME: <"/1An198ZqlfpdZDZIzQ9xptBeJBjpRhcmf2lHskP6Ao="[@trivial]>
+// CHECK-SAME: <"waCg8krXr+GAilrjEfOfrHcBieYn10TIfBbeS/R0R9g="[@trivial]>
 // CHECK-SAME: sym_name = "multi_region"} : () -> ()
 
 // ROUNDTRIP: "some.symbol.op"() ({
