@@ -8,6 +8,7 @@ add_modular_dialect_library(CacheDialect
   CacheAttrs.cpp
   CacheDialect.cpp
   CacheOps.cpp
+  CachedTransform.cpp
 
   DEPENDS
   MLIRCacheIncGen
@@ -19,5 +20,7 @@ add_modular_dialect_library(CacheDialect
   LLCLSupport
   MCache
   MSupport
+  MLIRBytecodeReader
+  MLIRBytecodeWriter
   MLIRIR
   )

@@ -16,10 +16,17 @@ add_modular_unittest(
 
   BlobCacheTest.cpp
   BufferTest.cpp
+  CachedTransformTest.cpp
 
   LINK_LIBS PRIVATE
-  MSupport
-  MCache
+  CacheDialect
   LLCLRuntime
   LLCLSupport
+  MSupport
+  MCache
+
+  MLIRFuncDialect
+  MLIRIR
+  MLIRParser
+  MLIRPass
 )

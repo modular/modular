@@ -1,0 +1,132 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Cache/CacheDialect/CachedTransform.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+
+#include "Cache/CacheDialect/CacheDialect.h"
+#include "mlir/Parser/Parser.h"
+#include "gtest/gtest.h"
+
+using namespace M;
+using namespace Cache;
+using namespace LLCL;
+using namespace mlir;
+
+class TestPass
+    : public mlir::PassWrapper<TestPass, OperationPass<mlir::func::FuncOp>> {
+public:
+  TestPass(bool *actuallyRun) : actuallyRun(actuallyRun) {}
+  using PassWrapper::PassWrapper;
+
+  void runOnOperation() override {
+    if (!*actuallyRun)
+      assert(false && "should not run the pass!");
+    // Get the return and put a specific attribute on it.
+    func::FuncOp func = getOperation();
+    auto returnOp =
+        cast<func::ReturnOp>(func.getFunctionBody().front().getTerminator());
+    // Remove the attr if it's already there.
+    if (returnOp->hasAttr("hello"))
+      returnOp->removeAttr("hello");
+    else
+      returnOp->setAttr("hello", StringAttr::get(&getContext(), "world"));
+  }
+
+  bool *actuallyRun;
+};
+
+static constexpr char mlirString[] = R"(
+func.func private @someFunc() {
+  return
+}
+)";
+
+TEST(CachedTransformTest, CacheHits) {
+  Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
+                  createSingleThreadWorkQueue());
+
+  // Register the LogicalResult type.
+  AsyncValue::registerType<LogicalResult>();
+
+  BlobCache<RegionCacheKey> regionCache(getDefaultBackendChain(runtime, ""));
+  BlobCache<TransformCacheKey> transformCache(
+      getDefaultBackendChain(runtime, ""));
+
+  DialectRegistry registry;
+  registry.insert<mlir::func::FuncDialect, Cache::CacheDialect>();
+
+  MLIRContext ctx(registry);
+  ctx.loadAllAvailableDialects();
+
+  bool actuallyRun = true;
+
+  mlir::PassManager pm(&ctx);
+  pm.addNestedPass<func::FuncOp>(std::make_unique<TestPass>(&actuallyRun));
+
+  auto readyChain =
+      AsyncValueRef<LogicalResult>::createReady(runtime, mlir::success());
+
+  // Parse the source string
+  mlir::OwningOpRef<ModuleOp> module1 =
+      mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
+  // Do the transform. This will deflate the module.
+  auto xform = cachedTransform(*module1, regionCache, transformCache,
+                               std::move(readyChain), pm);
+  // We have to inflate the func now.
+  auto inflate = inflateOp(*module1, regionCache, std::move(xform));
+  await(inflate);
+  EXPECT_TRUE(succeeded(*inflate));
+  auto func = module1->lookupSymbol<func::FuncOp>("someFunc");
+  auto returnOp =
+      cast<func::ReturnOp>(func.getFunctionBody().front().getTerminator());
+  EXPECT_TRUE(returnOp->hasAttrOfType<StringAttr>("hello") &&
+              returnOp->getAttrOfType<StringAttr>("hello").getValue() ==
+                  "world");
+
+  // Parse the source string again for module2
+  mlir::OwningOpRef<ModuleOp> module2 =
+      mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
+  // Do the same transform again, we should get a cache hit this time. We can
+  // check by setting `actuallyRun` to false - this is a horrible hack but it's
+  // the way we can confirm we got a cache hit without changing the key. The
+  // pass should not run and therefore this code should not assert.
+  actuallyRun = false;
+  xform = cachedTransform(*module2, regionCache, transformCache,
+                          std::move(inflate), pm);
+  // We have to inflate the func now.
+  inflate = inflateOp(*module2, regionCache, std::move(xform));
+  await(inflate);
+  EXPECT_TRUE(succeeded(*inflate));
+  auto func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
+  returnOp =
+      cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());
+  EXPECT_TRUE(returnOp->hasAttrOfType<StringAttr>("hello"));
+  EXPECT_TRUE(returnOp->getAttrOfType<StringAttr>("hello").getValue() ==
+              "world");
+
+  // Now the IR has changed, re-run the pass. In this case, it should remove the
+  // attribute.
+  actuallyRun = true;
+  xform = cachedTransform(*module2, regionCache, transformCache,
+                          std::move(inflate), pm);
+  // We have to inflate the func now to check the result...
+  inflate = inflateOp(*module2, regionCache, std::move(xform));
+  await(inflate);
+  EXPECT_TRUE(succeeded(*inflate));
+  func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
+  returnOp =
+      cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());
+  // Running the pass on IR that has the attr should result in removing the
+  // attr.
+  EXPECT_FALSE(returnOp->hasAttrOfType<StringAttr>("hello"));
+}
