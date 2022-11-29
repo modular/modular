@@ -23,9 +23,8 @@ struct Bool:
   var value : __mlir_type.i1
 
   fn __new__(value: __mlir_type.i1) -> Bool:
-    var result: Bool
-    result.value = value
-    return result
+    return __mlir_op.`lit.struct.create`[_type: Bool](value)
+
 
   fn __bool__(self: Bool) -> Bool:
      return self
@@ -55,14 +54,9 @@ struct Int:
 
   # CHECK-LABEL: lit.func @__new__(%value_0: index) -> !kgen.litdeclref<@Int> attributes {isStatic} {
   fn __new__(value: __mlir_type.index) -> Int:
-    # CHECK: %result = lit.var.decl "result" : <@Int?>
-    var result: Int
-    # CHECK: %0 = lit.struct.gep %result[value] : <index> from <@Int?>
-    # CHECK: pop.store %value_0, %0 : !pop.pointer<index>
-    result.value = value
-    # CHECK: %1 = pop.load %result
-    # CHECK: kgen.return %1
-    return result
+    # CHECK: %0 = lit.struct.create(%value_0) : (index) -> !kgen.litdeclref<@Int>
+    # CHECK: kgen.return %0
+    return __mlir_op.`lit.struct.create`[_type: Int](value)
 
   # CHECK-LABEL: lit.func @__lt__
   fn __lt__(self, rhs: Int) -> Bool:
@@ -319,9 +313,7 @@ struct DType:
   var value : __mlir_type.`!kgen.dtype`
 
   fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
-    var result: DType
-    result.value = value
-    return result
+    return __mlir_op.`lit.struct.create`[_type: DType](value)
 
   # TODO: This should be something like:
   # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
@@ -355,21 +347,18 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
   # CHECK-LABEL:  lit.func @__new__(%value_0: !pop.simd<size, type>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>> attributes {isStatic}
   fn __new__(value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]) -> SIMD[size, type]:
-    # CHECK: %result = lit.var.decl "result" : <@SIMD<size = size, type: dtype = type>?>
-    var result: SIMD[size, type]
-    # CHECK: %0 = lit.struct.gep %result[value] : <simd<size, type>> from <@SIMD<size = size, type: dtype = type>?>
-    # CHECK: pop.store %value_0, %0 : !pop.pointer<simd<size, type>>
-    result.value = value
-    return result
+    # CHECK: %0 = lit.struct.create(%value_0) : (!pop.simd<size, type>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>
+    # CHECK: kgen.return %0
+    return __mlir_op.`lit.struct.create`[_type: SIMD[size, type]](value)
 
   # FIXME: These should be merged into __new__ when we support overloading.
   @staticmethod
   fn getFP(value: __mlir_type.f64) -> SIMD[size, type]:
+    # TODO: should be 'let' declarations to reduce IR size.
     var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
     var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #lit<placeholder !kgen.dtype>>`[type]](pop)
-    var result : SIMD[size, type]
-    result.value = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]](popCast)
-    return result
+    var result = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]](popCast)
+    return __mlir_op.`lit.struct.create`[_type: SIMD[size, type]](result)
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>,
   fn __add__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
@@ -378,7 +367,7 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     # CHECK: %2 = pop.add %0, %1 : !pop.simd<size, type>
     # CHECK: %3 = kgen.call_param[(!pop.simd<size, type>) -> !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>: @SIMD::@__new__<size = size, type: dtype = type>](%2)
     # CHECK: kgen.return %3 : !kgen.litdeclref<@SIMD<size = size, type: dtype = type>>
-    return  SIMD[size, type](__mlir_op.`pop.add`(self.value, rhs.value))
+    return SIMD[size, type](__mlir_op.`pop.add`(self.value, rhs.value))
 
   fn __sub__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
     return SIMD[size, type](__mlir_op.`pop.sub`(self.value, rhs.value))

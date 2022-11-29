@@ -122,6 +122,41 @@ def LITStructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
   let hasVerifier = 1;
 }
 
+
+//===----------------------------------------------------------------------===//
+// LITStructCreateOp
+//===----------------------------------------------------------------------===//
+
+def LITStructCreateOp : LITOp<"struct.create", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Create a parametric struct.";
+  let description = [{
+    The `lit.struct.create` operation creates a struct of the referred type
+    with the provided values as fields. The operands must match the fields in
+    the order they are declared.
+
+    Example:
+
+    ```mlir
+    kgen.struct.decl @MyStruct<T: dtype> {
+      a : !pop.scalar<T>
+      b : !pop.scalar<f32>
+      c : !pop.simd<2, T>
+    }
+
+    %0 = kgen.struct.create(%a, %b, %c) :
+      (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
+      -> !kgen.litdeclref<@MyStruct<T: dtype = type>>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs LITDeclRefType:$result);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // LITStructExtractOp
 //===----------------------------------------------------------------------===//
