@@ -677,12 +677,20 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(name, "expected name for 'var' declaration"))
     return failure();
 
-  // Emit the vardecl at the current insertion point.  Unlike implicitly
-  // declared variables, let/var declarations are always correctly scoped.
-  // TODO: Maintain scopes correctly so we don't have a conflict between things
-  // like "if cond: var x = 1 else var x = 2"
-  auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
-  auto varDecl = builder.create<VarDeclOp>(loc, varType, name);
+  // If we're in a struct, then this is a field declaration.
+  Operation *declOp;
+  if (isa<StructDeclOp>(containingDecl)) {
+    declOp = builder.create<StructFieldOp>(loc, name,
+                                           UnresolvedType::get(getContext()));
+  } else { // Otherwise this is a local variable definition.
+
+    // Emit the vardecl at the current insertion point.  Unlike implicitly
+    // declared variables, let/var declarations are always correctly scoped.
+    // TODO: Maintain scopes correctly so we don't have a conflict between
+    // things like "if cond: var x = 1 else var x = 2"
+    auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
+    declOp = builder.create<VarDeclOp>(loc, varType, name);
+  }
 
   // Process any decorators we will eventually want when they come up.
   if (!decorators.empty())
@@ -695,7 +703,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(varDecl, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();

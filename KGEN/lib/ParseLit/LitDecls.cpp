@@ -224,7 +224,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -247,7 +247,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
           if (resolveBody(op, lexer, decl))
@@ -820,4 +820,39 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   return LitParserBase::parseSuite(decl, lexer);
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldDecl implementation
+//===----------------------------------------------------------------------===//
+
+/// struct_field_decl_stmt ::= "var" identifier ":" expression
+/// TODO: Support default values?
+///
+LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
+  LitParserBase p(lexer);
+  ASTType type;
+  // Parse the type if present.
+  if (p.consumeIf(LitToken::colon)) {
+    if (p.parseType(type, decl, decl.getIndentation()))
+      return failure();
+    fieldOp.setType(type);
+  } else {
+    p.emitError(fieldOp.getLoc(), "struct field declaration must have a type");
+    return failure();
+  }
+
+  // The resolvedType of a variable declaration is the type of the decl.
+  decl.setResolvedType(type);
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(StructFieldOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  // Nothing to do for a var decl, we parse everything as part of its
+  // signature. We could move to parsing an initializer expression lazily when
+  // a type is present if there were a reason to do that (e.g. more laziness
+  // desired) in the future.
+  return success();
 }

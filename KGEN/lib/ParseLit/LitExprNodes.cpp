@@ -856,12 +856,12 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   auto mlirLoc = emitter.translateLocation(getLoc());
 
   // If the field is a variable, emit a reference to it.
-  if (auto varOp = dyn_cast<VarDeclOp>(*memberDecl)) {
+  if (auto fieldOp = dyn_cast<StructFieldOp>(*memberDecl)) {
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
-      return {{LValue(emitter.builder->create<LITStructGEPOp>(mlirLoc, baseLV,
-                                                              varOp)),
-               this}};
+      auto fieldPtr =
+          emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
+      return {{LValue(fieldPtr), this}};
     }
 
     // Otherwise, it must be an rvalue.
@@ -873,8 +873,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     if (!baseRV)
       return {};
 
-    return {{DRValue(emitter.builder->create<LITStructExtractOp>(
-                 mlirLoc, baseRV, varOp)),
+    return {{DRValue(emitter.builder->create<StructExtractOp>(mlirLoc, baseRV,
+                                                              fieldOp)),
              this}};
   }
 

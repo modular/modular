@@ -738,7 +738,7 @@ def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
   let description = [{
     The `kgen.struct.decl` operation is a top-level operation used to declare
     parametric KGEN struct types. Struct declarations are named with a symbol
-    and have a parameter declaration list. The body contains only
+    and have a parameter declaration list. The body contains
     `kgen.struct.field` operations that declare the contents of the struct.
 
     Example:
@@ -908,6 +908,11 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `from` qualified(type($container))
   }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBase, "StructFieldOp":$field)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -939,6 +944,12 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($result) `from` type($container)
   }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
+  ];
+
 }
 
 //===----------------------------------------------------------------------===//

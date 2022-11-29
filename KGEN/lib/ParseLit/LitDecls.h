@@ -20,6 +20,7 @@
 namespace M::KGEN {
 class LITFuncOp;
 class StructDeclOp;
+class StructFieldOp;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class VarDeclOp;
@@ -101,6 +102,10 @@ private:
   LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, LitLexer &lexer, ASTDecl &decl);
+
+  LogicalResult resolveSignature(StructFieldOp op, LitLexer &lexer,
+                                 ASTDecl &decl);
+  ParseResult resolveBody(StructFieldOp op, LitLexer &lexer, ASTDecl &decl);
 
   LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
