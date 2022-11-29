@@ -592,38 +592,17 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
 /// lowering, the symbol tree will be flat. Concatenate all nested symbol
 /// references in symbol constants.
 static void renameSymbolReferences(Operation *op) {
-  auto trimSymbolConstant = [](SymbolConstantAttr attr) -> Attribute {
-    // If this attribute is already flat, there is nothing to do.
-    if (isa<FlatSymbolRefAttr>(attr.getSymbol()))
-      return attr;
-
-    SymbolRefAttr symRef = attr.getSymbol();
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](SymbolRefAttr symRef) {
     SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
     for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
       qualifiedName.append("::");
       qualifiedName.append(symRefAttr.getValue());
     }
-    return SymbolConstantAttr::get(
-        FlatSymbolRefAttr::get(attr.getContext(), qualifiedName),
-        attr.getParamValues(), attr.getType());
-  };
-  auto trimInType = [&](Type type) {
-    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type))
-      return itf.replaceSubElements(trimSymbolConstant);
-    return type;
-  };
-
-  op->walk([&](Operation *op) {
-    // Search in operation attributes, result types, and argument types.
-    op->setAttrs(cast<DictionaryAttr>(
-        op->getAttrDictionary().replaceSubElements(trimSymbolConstant)));
-    for (OpResult result : op->getOpResults())
-      result.setType(trimInType(result.getType()));
-    for (Region &region : op->getRegions())
-      for (Block &block : region)
-        for (BlockArgument arg : block.getArguments())
-          arg.setType(trimInType(arg.getType()));
+    return FlatSymbolRefAttr::get(symRef.getContext(), qualifiedName);
   });
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
 }
 
 namespace {

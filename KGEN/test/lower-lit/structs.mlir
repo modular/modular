@@ -99,3 +99,18 @@ lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.no
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   kgen.return %0 : !lit.none
 }
+
+// -----
+
+kgen.struct.decl @A {
+  lit.func @B() {
+    kgen.return
+  }
+}
+
+// CHECK-LABEL: @callIt
+lit.func @callIt() {
+  // CHECK-NEXT: kgen.call @"A::B"
+  kgen.call @A::@B() : () -> ()
+  kgen.return
+}
