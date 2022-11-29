@@ -59,18 +59,16 @@ public:
                    ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(Operation *decl, StringAttr name, ASTType type,
+  ASTDecl &addFullyResolvedDecl(Operation *decl, StringAttr name,
                                 ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr name,
-                                Location loc, ASTType type,
-                                ASTDecl *parentDecl);
+                                Location loc, ASTDecl *parentDecl);
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
-                                Location loc, ASTType type,
-                                ASTDecl *parentDecl) {
+                                Location loc, ASTDecl *parentDecl) {
     return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name),
-                                loc, type, parentDecl);
+                                loc, parentDecl);
   }
 
   /// Resolve the specified declaration to at least the specified level of

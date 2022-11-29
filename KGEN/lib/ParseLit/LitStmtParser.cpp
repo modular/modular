@@ -331,7 +331,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   if (operandValues[0].getType() != decl.getResultTypes()[0]) {
     emitError(loc, "returned value has type ")
         << ASTType(operandValues[0].getType()) << " but 'def' expected "
-        << containingDecl.getResolvedType();
+        << ASTType(decl.getFunctionType().getResults()[0]);
     return success();
   }
 

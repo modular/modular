@@ -171,22 +171,20 @@ ASTDecl &DeclResolver::addDecl(Operation *op, StringAttr name,
 }
 
 ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, StringAttr name,
-                                            ASTType type, ASTDecl *parentDecl) {
+                                            ASTDecl *parentDecl) {
   auto &decl =
       addDecl(op, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
-  decl.setResolvedType(type);
   return decl;
 }
 
 /// Add a declaration that is already fully resolved.
 ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, Location loc,
-                                            ASTType type, ASTDecl *parentDecl) {
+                                            ASTDecl *parentDecl) {
   auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
-  decl.setResolvedType(type);
   return decl;
 }
 
@@ -327,7 +325,7 @@ struct ParsedMetaSignature {
       auto paramRef =
           ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
       declResolver.addFullyResolvedDecl(MValue(paramRef), paramDecl.getName(),
-                                        loc, paramDecl.getType(), &decl);
+                                        loc, &decl);
     }
   }
 };
@@ -437,7 +435,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
                                          DeclResolvedness::signatureResolved,
                                          decl.getCursor().getToken().getLoc());
       // The self type is stored as the resolved type.
-      selfType = parentDecl->getResolvedType();
+      selfType = parentDecl->getSelfType();
     }
 
   // __new__ and similar methods are implicitly static.
@@ -546,7 +544,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     for (auto param : structDecl.getParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
       addFullyResolvedDecl(MValue(paramRef), param.getName(),
-                           structDecl->getLoc(), param.getType(), &decl);
+                           structDecl->getLoc(), &decl);
     }
   }
 
@@ -595,9 +593,6 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
         param.type = sharedState.getTypeCheckErrorType();
     }
   }
-
-  // The resolvedType for a function is the return type of the function.
-  decl.setResolvedType(resultType);
 
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
@@ -655,22 +650,20 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     // are modeled with the IR-level POP::PointerType.
     if (isa<POP::PointerType>(arg.getType())) {
       // Arguments passed by-reference can be directly used.
-      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(), param.type,
-                           &decl);
+      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(), &decl);
       continue;
     }
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
     if (!funcOp.getIsDef()) {
-      addFullyResolvedDecl(DRValue(arg), param.name, arg.getLoc(), param.type,
-                           &decl);
+      addFullyResolvedDecl(DRValue(arg), param.name, arg.getLoc(), &decl);
       continue;
     }
 
     // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
-    addFullyResolvedDecl(varDecl, param.name, param.type, &decl);
+    addFullyResolvedDecl(varDecl, param.name, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -775,8 +768,6 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     return failure();
   }
 
-  // The resolvedType of a variable declaration is the type of the decl.
-  decl.setResolvedType(type);
   return success();
 }
 
@@ -813,7 +804,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
-  decl.setResolvedType(decl.computeSelfTypeForStruct(sharedState));
+  decl.setSelfType(decl.computeSelfTypeForStruct(sharedState));
   return success();
 }
 
@@ -843,8 +834,6 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
   }
 
-  // The resolvedType of a variable declaration is the type of the decl.
-  decl.setResolvedType(type);
   return success();
 }
 

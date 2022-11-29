@@ -306,8 +306,8 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     auto varDecl =
         OpBuilder(varDeclCursor)
             .create<VarDeclOp>(translateLocation(loc), declIRType, nameAttr);
-    lookupResult = &shared.declResolver->addFullyResolvedDecl(
-        varDecl, nameAttr, implicitDeclType, &scope);
+    lookupResult =
+        &shared.declResolver->addFullyResolvedDecl(varDecl, nameAttr, &scope);
   }
 
   // If the lookup succeeded, make sure the signature for the referenced decl
@@ -772,8 +772,9 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
 
   // Handle __mlir_op.`xxx` references, lazily synthesizing values when
   // they are referenced.
-  if (typeDecl->resolvedness == DeclResolvedness::fullyResolved) {
-    auto resolvedMLIRType = typeDecl->getResolvedType().mlirType;
+  if (typeDecl->resolvedness == DeclResolvedness::fullyResolved &&
+      isa<StructDeclOp>(*typeDecl)) {
+    auto resolvedMLIRType = typeDecl->getSelfType().mlirType;
     if (isa<MagicMLIRAttrType>(resolvedMLIRType))
       return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter), node}};
     if (isa<MagicMLIROpType>(resolvedMLIRType))
