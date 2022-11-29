@@ -18,6 +18,7 @@
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/Support/SHA256.h"
 
 using namespace M;
@@ -129,6 +130,13 @@ Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
     // For now, we only care about DenseResourceElementsAttr because that's how
     // we handle large attributes.
     replacer.addReplacement([&](ConstantHashAttr cacheAttr) -> Attribute {
+      // If `out` has already failed, then we have to just stop - this is not
+      // recoverable. In theory we could continue to append errors, but that
+      // could result in an error explosion so this is the safe option for now.
+      // We can always re-evaluate.
+      if (out.getPointer()->isReady() && failed(*out))
+        return nullptr;
+
       // Find the data in the cache.
       auto found = cache.find(cacheAttr.getHash());
       await(found);
@@ -138,7 +146,8 @@ Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
       }
       if (!found->hasValue()) {
         out.emplace(mlir::emitError(constant->getLoc())
-                    << "could not find object with hash: " << cacheAttr);
+                    << "hash '" << llvm::encodeBase64(cacheAttr.getHash())
+                    << "' could not be found in the cache");
         return nullptr;
       }
 
@@ -167,7 +176,10 @@ Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
 
     // Do the replacement now.
     replacer.replaceElementsIn(constant);
-    out.emplace(success());
+    // If out has not been set to failure (or something else), then set it to
+    // success.
+    if (!out.getPointer()->isReady())
+      out.emplace(success());
   });
 
   return out;
@@ -385,7 +397,12 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
   auto foundOr = cache.find(regionHash.getHash());
   foundOr.andThen([r, regionHash, foundOr = foundOr.copy(), out = out.copy()] {
     if (foundOr->isError())
-      out.emplace(mlir::emitError(r->getLoc()) << foundOr->getError());
+      return out.emplace(mlir::emitError(r->getLoc()) << foundOr->getError());
+    if (!foundOr->hasValue()) {
+      return out.emplace(mlir::emitError(r->getLoc())
+                         << "hash '" << llvm::encodeBase64(regionHash.getHash())
+                         << "' could not be found in the cache");
+    }
 
     // Parse the bytecode for the region.
     BufferRef bytecodeBuf = foundOr->takeValue();
