@@ -98,7 +98,7 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
 
 ASTType LitSharedState::getObjectType() const {
-  return impl->objectDecl->getResolvedType();
+  return impl->objectDecl->getSelfType();
 }
 
 /// Add declarations for magic things to the builtins decl.
@@ -120,20 +120,20 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
     auto structOp = b.create<StructDeclOp>(loc, b.getStringAttr(name));
     decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
                              LitLexerCursor(), LitLexerCursor(), 0);
-    decl->setResolvedType(decl->computeSelfTypeForStruct(*this));
+    decl->setSelfType(decl->computeSelfTypeForStruct(*this));
     decl->resolvedness = DeclResolvedness::fullyResolved;
   };
 
   ASTDecl *mlirAttrDecl = nullptr, *mlirOpDecl = nullptr,
           *mlirTypeDecl = nullptr;
   addEmptyStructDecl("__mlir_attr", mlirAttrDecl);
-  mlirAttrDecl->setResolvedType(MagicMLIRAttrType::get(context));
+  mlirAttrDecl->setSelfType(MagicMLIRAttrType::get(context));
 
   addEmptyStructDecl("__mlir_op", mlirOpDecl);
-  mlirOpDecl->setResolvedType(MagicMLIROpType::get(context));
+  mlirOpDecl->setSelfType(MagicMLIROpType::get(context));
 
   addEmptyStructDecl("__mlir_type", mlirTypeDecl);
-  mlirTypeDecl->setResolvedType(MagicMLIRTypeType::get(context));
+  mlirTypeDecl->setSelfType(MagicMLIRTypeType::get(context));
 
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.

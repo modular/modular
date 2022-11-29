@@ -86,21 +86,16 @@ public:
     return OpBuilder(getContext());
   }
 
-  /// This field holds a primary type for this declaration, valid after the
-  /// signature is type checked.  The meaning is different for various
-  /// declarations:
-  ///   VarDecl/ParamDecl: This is the type of the declaration.
-  ///   FuncDecl: This is the return type.
-  ///   StructDecl: This is the 'self' type, which includes parameters bound to
-  ///   references to the struct parameter declarations..
-  ASTType getResolvedType() const {
+  /// This return the 'self' type, which includes parameters bound to
+  /// references to the struct parameter declarations.
+  ASTType getSelfType() const {
     assert(resolvedness != DeclResolvedness::unparsed &&
            "signature must be resolved to get a resolved type");
-    return resolvedType;
+    return selfType;
   }
-  void setResolvedType(ASTType type) {
+  void setSelfType(ASTType type) {
     assert(type && "Cannot set null types");
-    resolvedType = type;
+    selfType = type;
   }
 
   /// Given an MLIR op for a struct declaration, return the self type.
@@ -161,8 +156,9 @@ private:
   /// debug information.
   Location loc;
 
-  /// This is a primary type for this declaration, see getResolvedType().
-  ASTType resolvedType;
+  /// For a type declaration like a struct, this is the type of 'self' in a
+  /// member.  This is only valid after signature resolution.
+  ASTType selfType;
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.
