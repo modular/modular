@@ -8,12 +8,17 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 
+using namespace M;
+
 // TODO: This is the same value that MLIR uses currently. We need to decide how
 // to reference it, but Support/ML shouldn't depend on mlir, so we may need to
 // move this file.
 static constexpr int64_t kDynamicSize = std::numeric_limits<int64_t>::min();
 
-using namespace M;
+int64_t M::multiplySymDims(int64_t dim1, int64_t dim2) {
+  const bool isDynamic = dim1 != 0 && dim2 != 0 && (dim1 < 0 || dim2 < 0);
+  return isDynamic ? kDynamicSize : dim1 * dim2;
+};
 
 ErrorOr<TensorShape> M::broadcastedShape(const TensorShape &a,
                                          const TensorShape &b) {
@@ -61,13 +66,6 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     bcast.emplace_back(Vec());
     batch_indices_.emplace_back(SmallVector<int64_t>());
   }
-
-  // Safely multiplies dimensions taking into account symbolic shapes.
-  auto mul_dims = [](int64_t dim1, int64_t dim2) -> int64_t {
-    const bool isDynamic = dim1 != 0 && dim2 != 0 && (dim1 < 0 || dim2 < 0);
-    return isDynamic ? kDynamicSize : dim1 * dim2;
-  };
-
   bool all_equal = true;
   size_t largest_rank = 0;
   outputBatchSize = 1;
@@ -84,7 +82,7 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     output.resize(rank);
     for (int i = 0; i < rank; i++) {
       const int64_t dim = x[0][i];
-      elements = mul_dims(elements, dim);
+      elements = multiplySymDims(elements, dim);
       output[i] = dim;
     }
     result.push_back(elements);
@@ -142,7 +140,7 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
       }
     }
     output.push_back(output_dim_set ? output_dim : 1);
-    outputBatchSize = mul_dims(outputBatchSize, output.back());
+    outputBatchSize = multiplySymDims(outputBatchSize, output.back());
     // All dimensions are 1.
     if (!output_dim_set) {
       if (!fewerDimsOptimization) {
@@ -175,11 +173,11 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
       // It is a run of the same broadcasting case as last time.
       // We can reshape the input so that fewer dimensions
       // are involved in the intermediate computation.
-      result.back() = mul_dims(result.back(), output_dim);
+      result.back() = multiplySymDims(result.back(), output_dim);
       for (int i = 0; i < N; ++i) {
-        reshape[i].back() = mul_dims(reshape[i].back(), copy[i][j]);
-        bcast[i].back() =
-            mul_dims(bcast[i].back(), current_is_one[i] ? output_dim : 1);
+        reshape[i].back() = multiplySymDims(reshape[i].back(), copy[i][j]);
+        bcast[i].back() = multiplySymDims(bcast[i].back(),
+                                          current_is_one[i] ? output_dim : 1);
       }
     } else {
       result.push_back(output_dim);
