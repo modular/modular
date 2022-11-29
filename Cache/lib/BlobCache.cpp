@@ -10,23 +10,15 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace Cache;
 using namespace LLCL;
-
-//===----------------------------------------------------------------------===//
-// Hashing
-//===----------------------------------------------------------------------===//
-
-std::string M::Cache::Detail::finalizeBlobKeyHash(StringRef hash) {
-  // Incorporate the current version into the hash.
-  return std::to_string(
-      size_t(llvm::hash_combine(hash, StringRef(MODULAR_VERSION_STRING))));
-}
 
 //===----------------------------------------------------------------------===//
 // BlobCacheBackend
@@ -61,6 +53,10 @@ AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
   auto itemOr = delegate->find(keyHash.copy());
   if (itemOr->isError())
     return createReady(CacheFindResult::error(itemOr->takeError()));
+
+  // Delegate doesn't have it either!
+  if (!itemOr->hasValue())
+    return createReady(CacheFindResult::notInCache());
 
   BufferRef item = itemOr->takeValue();
 
@@ -229,7 +225,7 @@ struct FilesystemBackend : public BlobCacheBackend {
 
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
     std::filesystem::path filepath(basePath);
-    filepath /= keyHash.str();
+    filepath /= llvm::encodeBase64(keyHash);
 
     return std::filesystem::absolute(filepath);
   }
@@ -254,8 +250,6 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
                                  const std::filesystem::path &basePath) {
   auto backend = getInMemoryBackend(runtime);
 
-  /* TODO: Disabled for now while we debug the filesystem backend
-           implementation (c.f. issue #4394)
   // Default to be in the `.derived` folder if we can.
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(
@@ -269,7 +263,31 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   if (!base.is_absolute())
     base = derived / basePath;
 
+  // Erase everything that lives in basePath other than `base/version` if
+  // we (a) have a `base`, (b) it exists, and (c) it's a directory.
+  if (!base.empty() && std::filesystem::exists(base, ec) &&
+      std::filesystem::is_directory(base, ec)) {
+    // Iterate the base path and remove directories that don't match the current
+    // version.
+    for (const std::filesystem::path &dirEntry :
+         std::filesystem::directory_iterator{base}) {
+      // It must be a directory, the parent must be `base` and the directory
+      // 'filename' must not match MODULAR_VERSION_STRING in order for it to be
+      // deleted.
+      if (!ec && std::filesystem::is_directory(dirEntry, ec) &&
+          dirEntry.parent_path() == base &&
+          dirEntry.filename() != MODULAR_VERSION_STRING)
+        std::filesystem::remove(dirEntry, ec);
+    }
+  }
+
+  if (ec) {
+    llvm::errs() << ec.message();
+    return nullptr;
+  }
+
+  base = base / MODULAR_VERSION_STRING;
+
   backend->setDelegate(getFilesystemBackend(runtime, base));
-  */
   return backend;
 }
