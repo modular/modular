@@ -731,7 +731,7 @@ def RebindOp : KGENOp<"rebind"> {
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
+def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     DeclareOpInterfaceMethods<KGENDeclInterface>, SingleBlock, NoTerminator]> {
   let summary = "Struct declaration.";
@@ -780,6 +780,12 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
     auto field_begin() { return getFieldDecls().begin(); }
     auto field_end() { return getFieldDecls().end(); }
   }];
+
+  let builders = [
+    // Create a struct with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
 
   let hasVerifier = 1;
   let hasRegionVerifier = 1;

@@ -3,11 +3,11 @@
 // CHECK-LABEL: kgen.struct.decl @AdderOneField {
 // CHECK-NEXT:    base : index
 // CHECK-NEXT:  }
-lit.struct.decl @AdderOneField {
+kgen.struct.decl @AdderOneField {
   %base = lit.var.decl "base" : <index>
 }
 
-lit.struct.decl @Adder<size> {
+kgen.struct.decl @Adder<size> {
   %base = lit.var.decl "base" : <index>
 
   // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size = size>>) {
@@ -30,7 +30,7 @@ lit.struct.decl @Adder<size> {
 // CHECK-LABEL: kgen.generator @"A::foo"
 
 // CHECK-LABEL: kgen.struct.decl @A
-lit.struct.decl @A {
+kgen.struct.decl @A {
   lit.func @foo(%self: !kgen.declref<@A>) {
     kgen.return
   }
@@ -40,7 +40,7 @@ lit.struct.decl @A {
 // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @"A::foo"]
 
 // CHECK-LABEL: kgen.struct.decl @B
-lit.struct.decl @B {
+kgen.struct.decl @B {
   lit.func @foo(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
     kgen.call_param[(!kgen.declref<@A>) -> (): @A::@foo](%a)
     kgen.return
@@ -61,7 +61,7 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 // CHECK-LABEL: kgen.generator @"A::foo"<N, M>
 
 // CHECK-LABEL: kgen.struct.decl @A<N>
-lit.struct.decl @A<N> {
+kgen.struct.decl @A<N> {
   lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
     kgen.return %0 : index
@@ -79,7 +79,7 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
 
 // -----
 
-lit.struct.decl @A {
+kgen.struct.decl @A {
    %x = lit.var.decl "x" : <index>
  }
 
@@ -91,7 +91,7 @@ lit.struct.decl @A {
 
 // -----
 
-lit.struct.decl @A<b, c> {
+kgen.struct.decl @A<b, c> {
   %x = lit.var.decl "x" : <index>
 }
 // CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.none {

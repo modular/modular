@@ -25,8 +25,8 @@ lit.func @vardecl<ty : dtype>() {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype> {
-lit.struct.decl @SomeStruct<ty: dtype> {
+// CHECK-LABEL: kgen.struct.decl @SomeStruct<ty: dtype> {
+kgen.struct.decl @SomeStruct<ty: dtype> {
   // CHECK-NEXT: lit.func @foo() {
   lit.func @foo() {
     kgen.return
@@ -59,16 +59,16 @@ lit.func @noneTypeAndValue() -> !lit.none {
 
 // -----
 
-// CHECK-LABEL: lit.struct.decl @A
-lit.struct.decl @A {
+// CHECK-LABEL: kgen.struct.decl @A
+kgen.struct.decl @A {
   // CHECK-NEXT: lit.func @foo
   lit.func @foo(%self: !kgen.declref<@A>) {
     kgen.return
   }
 }
 
-// CHECK-LABEL: lit.struct.decl @B
-lit.struct.decl @B {
+// CHECK-LABEL: kgen.struct.decl @B
+kgen.struct.decl @B {
   // CHECK-NEXT: lit.func @foo
   lit.func @foo(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
     // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @A::@foo]
@@ -90,8 +90,8 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 
 // -----
 
-// CHECK-LABEL: lit.struct.decl @A<N>
-lit.struct.decl @A<N> {
+// CHECK-LABEL: kgen.struct.decl @A<N>
+kgen.struct.decl @A<N> {
   // CHECK-NEXT: lit.func @foo<M>
   lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
@@ -108,6 +108,6 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @NoFields {
+// CHECK-LABEL: kgen.struct.decl @NoFields {
 // CHECK-NEXT: }
-lit.struct.decl @NoFields {}
+kgen.struct.decl @NoFields {}

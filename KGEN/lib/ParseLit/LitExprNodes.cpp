@@ -331,7 +331,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
   ASTDecl *decl = emitter.lookupDecl(
       memberName, node->getLoc(), container,
       [&](InFlightDiagnostic diag) {
-        if (auto structDecl = dyn_cast<LITStructDeclOp>(container)) {
+        if (auto structDecl = dyn_cast<StructDeclOp>(container)) {
           diag << structDecl.getName() << " has no '" << memberName
                << "' member";
         } else {
@@ -357,7 +357,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     return {{lvalue, node}};
 
   // If this is a type declaration, return it as a type.
-  if (isa<LITStructDeclOp>(*decl))
+  if (isa<StructDeclOp>(*decl))
     return {{MValue(DeclRefType::get(decl->getSymbolRef())), node}};
 
   emitter.emitError(node->getLoc(), "use of declaration \"")
@@ -817,7 +817,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {};
   }
 
-  if (!isa<LITStructDeclOp>(*typeDecl)) {
+  if (!isa<StructDeclOp>(*typeDecl)) {
     emitter.emitError(getLoc(), "cannot access fields in type ")
         << ASTType(baseVal.getType());
     return {};
@@ -1066,7 +1066,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
   }
 
   ASTDecl &typeDecl = emitter.shared.getDeclForSymbol(declRef.getSymbol());
-  auto structOp = dyn_cast<LITStructDeclOp>(typeDecl);
+  auto structOp = dyn_cast<StructDeclOp>(typeDecl);
   if (!structOp) {
     emitter.emitError(subscript.getLoc(), "unknown parameterized type ")
         << ASTType(declRef);

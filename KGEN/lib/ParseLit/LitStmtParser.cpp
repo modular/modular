@@ -266,7 +266,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
-  if (isa<LITStructDeclOp>(containingDecl))
+  if (isa<StructDeclOp>(containingDecl))
     emitError("invalid expression in this context");
 
   // Parse a single expression, an assignment stmt, or augmented assignment
@@ -632,7 +632,7 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   // Is this a method?
   bool isMethod = false;
   StringAttr baseName = name; // Save the unmangled name.
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(containingDecl))
+  if (auto structDecl = dyn_cast<StructDeclOp>(containingDecl))
     isMethod = true;
 
   if (attrs.isStatic && !isMethod) {
@@ -704,7 +704,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
-  if (isa<LITStructDeclOp>(containingDecl))
+  if (isa<StructDeclOp>(containingDecl))
     emitError("nested struct not supported here");
 
   auto loc = getTokenLocation();
@@ -716,7 +716,7 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(nameAttr, "expected struct name"))
     return failure();
 
-  auto newStruct = builder.create<LITStructDeclOp>(loc, nameAttr);
+  auto newStruct = builder.create<StructDeclOp>(loc, nameAttr);
 
   // Process any decorators we will eventually want when they come up.
   if (!decorators.empty())

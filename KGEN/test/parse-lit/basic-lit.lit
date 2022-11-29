@@ -4,7 +4,7 @@ __include "../lit-examples/prolog.lit"
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: !kgen.declref<@DType>> {
+# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
@@ -41,16 +41,16 @@ def noop():
   pass
   # CHECK-NEXT : kgen.return
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct {
+# CHECK-LABEL: kgen.struct.decl @EmptyStruct {
 struct EmptyStruct:
   # No body
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !kgen.declref<@Int>> {
+# CHECK-LABEL: kgen.struct.decl @OneLineStruct<size: !kgen.declref<@Int>> {
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @StructExample {
+# CHECK-LABEL: kgen.struct.decl @StructExample {
 struct StructExample:
   fn __new__() -> StructExample:
     var result : StructExample
@@ -88,7 +88,7 @@ fn simpleMath(a: Int, b: Int) -> Int:
   return a+b*a
 
 
-# CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.declref<@DType>> {
+# CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
  # CHECK: %a = lit.var.decl "a" : <@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
  # CHECK: %b = lit.var.decl "b" : <@Int>
@@ -246,7 +246,7 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   # CHECK: kgen.call @SIMD::@__add__<size = 1, type: dtype = si32>(%b, %b)
   var y = b+b
 
-# CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
+# CHECK-LABEL: kgen.struct.decl @TestParamStruct<A>
 struct TestParamStruct[A: __mlir_type.index]:
   fn __new__() -> TestParamStruct[A]:
     var result: TestParamStruct[A]

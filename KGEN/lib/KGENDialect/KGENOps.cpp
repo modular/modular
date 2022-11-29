@@ -1321,17 +1321,13 @@ LogicalResult StructDeclOp::verify() {
   return success();
 }
 
-/// The single region is only allowed to contain `struct.field` ops. Verify that
-/// there are no duplicate field names.
+/// Verify that there are no duplicate field names.
 LogicalResult StructDeclOp::verifyRegions() {
   SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
   for (Operation &op : getFields().front()) {
     auto field = dyn_cast<StructFieldOp>(&op);
-    if (!field) {
-      return emitOpError("expected only `kgen.struct.field` ops in its body")
-                 .attachNote(op.getLoc())
-             << "invalid child op here";
-    }
+    if (!field)
+      continue;
     auto [it, inserted] = seenFields.try_emplace(field.getNameAttr(), field);
     if (!inserted) {
       return (field.emitError("duplicate struct field ") << field.getNameAttr())
@@ -1346,6 +1342,14 @@ LogicalResult StructDeclOp::verifyRegions() {
 LogicalResult
 StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
+}
+
+void StructDeclOp::build(OpBuilder &builder, OperationState &result,
+                         StringAttr name) {
+  auto context = builder.getContext();
+  build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
+        TypeArrayAttr::get(context, {}));
+  result.regions[0]->push_back(new Block());
 }
 
 //===----------------------------------------------------------------------===//

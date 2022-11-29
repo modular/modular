@@ -589,16 +589,6 @@ kgen.struct.decl @StructReturns<() -> dtype> {
 
 // -----
 
-// expected-error @below {{expected only `kgen.struct.field` ops in its body}}
-"kgen.struct.decl"() ({
-^bb0:
-  // expected-note @below {{invalid child op here}}
-  "not_struct_field"() : () -> ()
-}) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
-    paramDecls = #kgen<param.decls[]>, resultParamTypes = #kgen<type.array[]>} : () -> ()
-
-// -----
-
 kgen.generator @target_params<t0: i1, t1: i1>()
   // expected-error @+1 {{custom op 'kgen.generator' target_supports only allowed on target types}}
   constraints <[target_supports(:i1 t0, t1), "must support target!!"]> {
