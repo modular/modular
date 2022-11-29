@@ -1500,17 +1500,13 @@ void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
 // or #kgen.target<host>
 mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
                                       mlir::Type odsType) {
-
-  parser.parseLess();
+  if (parser.parseLess())
+    return {};
 
   // #kgen.target<host>
-  StringRef host;
-  if (succeeded(parser.parseOptionalKeyword(&host))) {
-    if (host != "host")
-      // We expect the keyword to be "host"
+  if (succeeded(parser.parseOptionalKeyword("host"))) {
+    if (parser.parseGreater())
       return {};
-
-    parser.parseGreater();
     return TargetInfoAttr::getForHost(parser.getContext());
   }
 
@@ -1523,11 +1519,10 @@ mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
   if (parser.parseString(&tripleStr) || parser.parseComma() ||
       parser.parseString(&cpuStr) || parser.parseComma() ||
       parser.parseString(&featuresStr) || parser.parseComma() ||
-      parser.parseInteger(pointerSize) || parser.parseGreater()) {
+      parser.parseInteger(pointerSize) || parser.parseGreater())
     return {};
-  }
 
-  llvm::Triple triple = llvm::Triple(tripleStr);
+  llvm::Triple triple(tripleStr);
 
   mlir::MLIRContext *ctx = parser.getContext();
   return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
